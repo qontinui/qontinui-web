@@ -1,0 +1,50 @@
+# Backend (Python/FastAPI)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+.env
+*.sqlite3
+*.db
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Frontend (Next.js)
+node_modules/
+.next/
+out/
+build/
+dist/
+.env.local
+.env.production
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Docker
+.docker/
+
+# Uploads
+uploads/
+media/
+static/collected/
+temp-notes-tests/
