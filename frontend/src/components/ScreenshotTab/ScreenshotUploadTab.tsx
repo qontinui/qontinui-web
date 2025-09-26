@@ -1,11 +1,13 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Image, MousePointer, Square, Eye, Download, Trash2 } from 'lucide-react';
+import { Upload, Image, MousePointer, Square, Eye, Download, Trash2, Anchor, FileJson, FileCode } from 'lucide-react';
 import { Screenshot, SelectionMode, ScreenshotRegion, ScreenshotLocation } from '../../types/Screenshot';
 import ScreenshotCanvas from './ScreenshotCanvas';
 import RegionPropertiesPanel from './RegionPropertiesPanel';
 import LocationPropertiesPanel from './LocationPropertiesPanel';
 import StateAssociationPanel from './StateAssociationPanel';
+import AnchorRegionCreator from './AnchorRegionCreator';
 import { generateId } from '../../lib/utils';
+import { downloadStateExport, downloadPythonStateCode } from '../../lib/state-exporter';
 
 interface ScreenshotUploadTabProps {
   states: any[]; // Will be replaced with proper State type
@@ -21,6 +23,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('view');
   const [selectedRegion, setSelectedRegion] = useState<ScreenshotRegion | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<ScreenshotLocation | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -173,6 +176,16 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     onExport(screenshots);
   };
 
+  const handleExportJson = () => {
+    downloadStateExport(states, screenshots);
+    setShowExportMenu(false);
+  };
+
+  const handleExportPython = () => {
+    downloadPythonStateCode(states, screenshots);
+    setShowExportMenu(false);
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
@@ -216,14 +229,48 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           </button>
         </div>
 
-        <button
-          onClick={handleExportAll}
-          disabled={screenshots.length === 0}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Download className="w-4 h-4" />
-          Export Configuration
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            disabled={screenshots.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+
+          {/* Export Menu Dropdown */}
+          {showExportMenu && (
+            <div className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg z-10 border">
+              <div className="py-1">
+                <button
+                  onClick={handleExportJson}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center gap-2"
+                >
+                  <FileJson className="w-4 h-4" />
+                  Export as JSON
+                  <span className="text-xs text-gray-500 ml-auto">qontinui</span>
+                </button>
+                <button
+                  onClick={handleExportPython}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center gap-2"
+                >
+                  <FileCode className="w-4 h-4" />
+                  Export as Python Code
+                </button>
+                <div className="border-t my-1"></div>
+                <button
+                  onClick={handleExportAll}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Export Raw Data
+                  <span className="text-xs text-gray-500 ml-auto">debug</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Main Content */}
@@ -232,6 +279,17 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
         <div className="w-64 border-r bg-gray-50 overflow-y-auto">
           <div className="p-4">
             <h3 className="text-sm font-medium text-gray-700 mb-2">Screenshots ({screenshots.length})</h3>
+
+            {/* Anchor Region Creator */}
+            {selectedScreenshot && selectedScreenshot.locations.filter(l => l.anchor).length >= 2 && (
+              <div className="mb-4">
+                <AnchorRegionCreator
+                  locations={selectedScreenshot.locations}
+                  onRegionCreate={handleRegionCreate}
+                />
+              </div>
+            )}
+
             <div className="space-y-2">
               {screenshots.map(screenshot => (
                 <div
