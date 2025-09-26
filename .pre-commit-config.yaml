@@ -33,7 +33,7 @@ repos:
         entry: bash -c 'if git grep -I $'"'\r'"'$ -- "$(git rev-parse --show-toplevel)" >/dev/null; then echo "CRLF line endings detected. Convert to LF." >&2; exit 1; fi'
         language: system
         pass_filenames: false
-        stages: [commit]
+        stages: [pre-commit]
 
 ci:
   autofix_prs: true
