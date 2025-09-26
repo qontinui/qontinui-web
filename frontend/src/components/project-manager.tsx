@@ -36,7 +36,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(false);
-  
+
   // Dialog states
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
@@ -172,7 +172,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
               Save your current automation configuration as a project
             </DialogDescription>
           </DialogHeader>
-          
+
           {selectedProject ? (
             <div className="space-y-4">
               <div className="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-md">
@@ -210,7 +210,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
               </div>
             </div>
           )}
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
               Cancel
@@ -250,7 +250,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
               Select a project to load its configuration
             </DialogDescription>
           </DialogHeader>
-          
+
           <ScrollArea className="h-[300px] w-full rounded-md border p-4">
             {projects.length === 0 ? (
               <p className="text-sm text-zinc-500 text-center py-8">
@@ -293,7 +293,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
               </div>
             )}
           </ScrollArea>
-          
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setLoadDialogOpen(false)}>
               Close

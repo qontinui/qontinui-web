@@ -200,6 +200,7 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
 
       if (clickedRegion) {
         onRegionSelect(clickedRegion);
+        onLocationSelect(null); // Deselect location when region is selected
         return;
       }
 
@@ -211,6 +212,7 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
 
       if (clickedLocation) {
         onLocationSelect(clickedLocation);
+        onRegionSelect(null); // Deselect region when location is selected
         return;
       }
 

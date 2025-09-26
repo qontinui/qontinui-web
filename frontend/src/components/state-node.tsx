@@ -20,7 +20,7 @@ interface StateNodeData {
     name: string
     description: string
     initial?: boolean
-    identifyingImages: Array<{ image: string; threshold: number }>
+    identifyingImages: Array<{ image: string }>
   }
   images?: ImageAsset[]
   hasIncomingTransitions?: boolean
@@ -62,31 +62,20 @@ export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
             </div>
 
             {/* Identifying Images Thumbnail Grid */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-1">
-                <ImageIcon className="w-3 h-3 text-gray-400" />
-                <span className="text-xs text-gray-400">Identifying Images</span>
-              </div>
-
-              {state.identifyingImages.length === 0 ? (
-                <div className="grid grid-cols-3 gap-1">
-                  {[...Array(3)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="aspect-square bg-gray-700 rounded border-2 border-dashed border-gray-600 flex items-center justify-center"
-                    >
-                      <ImageIcon className="w-4 h-4 text-gray-500" />
-                    </div>
-                  ))}
+            {state.identifyingImages.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1">
+                  <ImageIcon className="w-3 h-3 text-gray-400" />
+                  <span className="text-xs text-gray-400">Identifying Images ({state.identifyingImages.length})</span>
                 </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-1">
+
+                <div className="grid grid-cols-3 gap-1 max-w-[150px]">
                   {state.identifyingImages.slice(0, 6).map((imgConfig, i) => {
                     const imageData = images.find(img => img.id === imgConfig.image)
                     return (
                       <div
                         key={i}
-                        className="aspect-square bg-gray-700 rounded border border-gray-600 flex items-center justify-center relative overflow-hidden"
+                        className="w-12 h-12 bg-gray-700 rounded border border-gray-600 flex items-center justify-center relative overflow-hidden"
                       >
                         {imageData ? (
                           <img
@@ -97,20 +86,18 @@ export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
                         ) : (
                           <ImageIcon className="w-4 h-4 text-gray-400" />
                         )}
-                        <Badge className="absolute -top-1 -right-1 text-xs px-1 py-0 h-4 bg-[#00D9FF] text-black">
-                          {Math.round(imgConfig.threshold * 100)}%
-                        </Badge>
                       </div>
                     )
                   })}
+                  {/* Show +N indicator if more than 6 images */}
                   {state.identifyingImages.length > 6 && (
-                    <div className="aspect-square bg-gray-700 rounded border border-gray-600 flex items-center justify-center">
+                    <div className="w-12 h-12 bg-gray-700 rounded border border-gray-600 flex items-center justify-center">
                       <span className="text-xs text-gray-400">+{state.identifyingImages.length - 6}</span>
                     </div>
                   )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

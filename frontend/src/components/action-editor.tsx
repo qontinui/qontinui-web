@@ -15,7 +15,7 @@ interface Process {
 
 interface Action {
   id: string
-  type: "FIND" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
+  type: "FIND" | "FIND_STATE_IMAGE" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
   config: Record<string, any>
 }
 
@@ -28,6 +28,7 @@ interface ActionEditorProps {
 
 const ACTION_TYPES = [
   { type: "FIND", label: "Find Element", color: "bg-blue-500" },
+  { type: "FIND_STATE_IMAGE", label: "Find any State Image", color: "bg-cyan-500" },
   { type: "CLICK", label: "Click", color: "bg-green-500" },
   { type: "TYPE", label: "Type Text", color: "bg-yellow-500" },
   { type: "DRAG", label: "Drag & Drop", color: "bg-purple-500" },
@@ -38,7 +39,7 @@ const ACTION_TYPES = [
 ] as const
 
 export function ActionEditor({ process, selectedAction, onSelectAction, onUpdateProcess }: ActionEditorProps) {
-  const { states, processes } = useAutomation()
+  const { states, processes, images } = useAutomation()
 
   const addAction = (type: Action["type"]) => {
     const newAction: Action = {
@@ -145,7 +146,7 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-gray-400 mt-1">{getActionSummary(action, states, processes)}</p>
+                      <p className="text-xs text-gray-400 mt-1">{getActionSummary(action, states, processes, images)}</p>
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -193,6 +194,14 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         pause_before_begin: 0,
         pause_after_end: 0,
       }
+    case "FIND_STATE_IMAGE":
+      return {
+        state: null,
+        similarity: 0.8,
+        strategy: "First",
+        pause_before_begin: 0,
+        pause_after_end: 0,
+      }
     case "CLICK":
       return {
         target: "Last Find Result",
@@ -205,6 +214,9 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
     case "TYPE":
       return {
         text: "",
+        textSource: "stateString",
+        selectedState: null,
+        selectedStateStrings: [],
         typing_delay: 50,
         clear_before: false,
         press_enter: false,
@@ -254,19 +266,62 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
   }
 }
 
-function getActionSummary(action: Action, states: any[], processes: any[]): string {
+function getActionSummary(action: Action, states: any[], processes: any[], images: any[]): string {
   switch (action.type) {
     case "FIND":
-      return action.config.image ? `Find ${action.config.image}` : "No image selected"
+      if (action.config.image) {
+        const image = images.find(img => img.id === action.config.image)
+        if (image) {
+          // Remove file extension from image name
+          const nameWithoutExtension = image.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, '')
+          return `Find ${nameWithoutExtension}`
+        }
+        return "Image not found"
+      }
+      return "No image selected"
+    case "FIND_STATE_IMAGE":
+      if (action.config.state) {
+        const state = states.find(s => s.id === action.config.state)
+        return state ? `Find any image from ${state.name}` : "State not found"
+      }
+      return "No state selected"
     case "CLICK":
       return `${action.config.clickType} click on ${action.config.target}`
     case "TYPE":
-      if (!action.config.text) return "No text specified"
-      // Truncate long text and show special keys
-      const displayText = action.config.text.length > 30 
-        ? action.config.text.substring(0, 30) + "..." 
-        : action.config.text
-      return `Type "${displayText.replace(/\n/g, '↵').replace(/\t/g, '→')}"`
+      if (action.config.textSource === "stateString") {
+        if (!action.config.selectedState) return "No state selected"
+        const state = states.find(s => s.id === action.config.selectedState)
+        if (!state) return "Invalid state"
+
+        if (action.config.selectedStateStrings?.length > 0 && state.strings) {
+          // Get the actual string values
+          const selectedStrings = state.strings
+            .filter(s => action.config.selectedStateStrings.includes(s.id))
+            .map(s => s.value)
+            .filter(v => v) // Remove empty values
+
+          if (selectedStrings.length === 0) {
+            return `No strings selected from ${state.name || state.id}`
+          }
+
+          // Join multiple strings with " | " and truncate if too long
+          const combinedText = selectedStrings.join(" | ")
+          const displayText = combinedText.length > 40
+            ? combinedText.substring(0, 40) + "..."
+            : combinedText
+
+          return `Type "${displayText.replace(/\n/g, '↵').replace(/\t/g, '→')}" (${state.name || state.id})`
+        } else {
+          return `No strings selected from ${state.name || state.id}`
+        }
+      } else {
+        if (!action.config.text) return "No text specified"
+        // Truncate long text and show special keys
+        const displayText = action.config.text.length > 30
+          ? action.config.text.substring(0, 30) + "..."
+          : action.config.text
+        return `Type "${displayText.replace(/\n/g, '↵').replace(/\t/g, '→')}"`
+      }
     case "DRAG":
       return `Drag from ${action.config.from} to ${action.config.to || "target"}`
     case "SCROLL":

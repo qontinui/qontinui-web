@@ -1,8 +1,8 @@
-from fastapi import Request, HTTPException, status
-from fastapi.responses import Response
-import secrets
 import hashlib
-from typing import Optional
+import secrets
+
+from fastapi import HTTPException, Request, status
+from fastapi.responses import Response
 
 # CSRF token storage (use Redis in production)
 csrf_tokens = {}
@@ -40,28 +40,29 @@ async def csrf_middleware(request: Request, call_next):
     csrf_token = request.headers.get("X-CSRF-Token")
     if not csrf_token:
         # Try to get from form data
-        if request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded"):
+        if request.headers.get("content-type", "").startswith(
+            "application/x-www-form-urlencoded"
+        ):
             form = await request.form()
             csrf_token = form.get("csrf_token")
 
     if not csrf_token:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="CSRF token missing"
+            status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token missing"
         )
 
     # Get session ID from cookie or header
-    session_id = request.cookies.get("session_id") or request.headers.get("X-Session-ID")
+    session_id = request.cookies.get("session_id") or request.headers.get(
+        "X-Session-ID"
+    )
     if not session_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Session ID missing"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Session ID missing"
         )
 
     if not verify_csrf_token(session_id, csrf_token):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid CSRF token"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token"
         )
 
     response = await call_next(request)
@@ -76,5 +77,5 @@ def set_csrf_cookie(response: Response, session_id: str, token: str):
         httponly=True,
         secure=True,  # Only over HTTPS in production
         samesite="strict",
-        max_age=3600  # 1 hour
+        max_age=3600,  # 1 hour
     )

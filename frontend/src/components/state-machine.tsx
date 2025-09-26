@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Square, Trash2, Settings, ArrowRight } from "lucide-react"
+import { Plus, Square, Trash2, Settings, ArrowRight, MapPin, Map, Type } from "lucide-react"
 import {
   ReactFlow,
   type Node,
@@ -25,17 +25,46 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { StateNode } from "@/components/state-node"
+import { TransitionNode } from "@/components/transition-node"
 import { TransitionEdge } from "@/components/transition-edge"
 import { useAutomation } from "@/contexts/automation-context"
 import { ImageSelector } from "@/components/image-selector"
-import { TransitionBuilder } from "@/components/transition-builder"
+import { OutgoingTransitionBuilder } from "@/components/outgoing-transition-builder"
+import { IncomingTransitionBuilder } from "@/components/incoming-transition-builder"
+import { StatePropertiesPanel } from "@/components/state-properties-panel"
+import { TransitionPropertiesPanel } from "@/components/transition-properties-panel"
+
+interface StateRegion {
+  id: string
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface StateLocation {
+  id: string
+  name: string
+  x: number
+  y: number
+}
+
+interface StateString {
+  id: string
+  name: string
+  value: string
+}
 
 interface State {
   id: string
   name: string
   description: string
   initial?: boolean  // Whether this state is expected to be active at start
-  identifyingImages: Array<{ image: string; threshold: number }>
+  identifyingImages: Array<{ image: string }>
+  regions: StateRegion[]
+  locations: StateLocation[]
+  strings: StateString[]
   position: { x: number; y: number }
 }
 
@@ -45,17 +74,14 @@ type TransitionType = "OutgoingTransition" | "IncomingTransition"
 interface BaseTransition {
   id: string
   type: TransitionType
-  processes: string[]
-  timeout: number
-  retryCount: number
+  process: string
 }
 
 interface OutgoingTransition extends BaseTransition {
   type: "OutgoingTransition"
   fromState: string
-  toState: string
-  staysVisible: boolean
   activateStates: string[]
+  staysVisible: boolean
   deactivateStates: string[]
 }
 
@@ -68,6 +94,7 @@ type Transition = OutgoingTransition | IncomingTransition
 
 const nodeTypes: NodeTypes = {
   stateNode: StateNode,
+  transitionNode: TransitionNode,
 }
 
 const edgeTypes = {
@@ -83,6 +110,7 @@ export function StateMachine() {
     transitions,
     addTransition,
     updateTransition,
+    deleteTransition,
     processes,
     images,
     updateImageUsage,
@@ -95,26 +123,79 @@ export function StateMachine() {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
 
+  // Helper function to find an empty space for a new node
+  const findEmptyPosition = useCallback(() => {
+    const nodeWidth = 200
+    const nodeHeight = 100
+    const spacing = 50
+    const gridCols = 5
+
+    // Get all occupied positions
+    const occupiedPositions = [
+      ...states.map(s => s.position),
+      ...transitions
+        .filter((t): t is OutgoingTransition => t.type === "OutgoingTransition" && t.activateStates.length > 1)
+        .map(t => t.position)
+        .filter(Boolean)
+    ]
+
+    // Try to find an empty grid position
+    for (let row = 0; row < 10; row++) {
+      for (let col = 0; col < gridCols; col++) {
+        const x = col * (nodeWidth + spacing) + 100
+        const y = row * (nodeHeight + spacing) + 100
+
+        // Check if this position overlaps with any existing node
+        const isOccupied = occupiedPositions.some(pos =>
+          pos &&
+          Math.abs(pos.x - x) < nodeWidth &&
+          Math.abs(pos.y - y) < nodeHeight
+        )
+
+        if (!isOccupied) {
+          return { x, y }
+        }
+      }
+    }
+
+    // Fallback to random position if grid is full
+    return {
+      x: Math.random() * 400 + 100,
+      y: Math.random() * 300 + 100
+    }
+  }, [states, transitions])
+
   // Handle node position changes
   const handleNodesChange = useCallback(
     (changes: any) => {
       // Call the original handler
       onNodesChange(changes)
-      
-      // Update state positions when nodes are dragged
+
+      // Update positions when nodes are dragged
       changes.forEach((change: any) => {
         if (change.type === 'position' && change.position) {
+          // Check if it's a state node
           const state = states.find(s => s.id === change.id)
           if (state) {
             updateState({
               ...state,
               position: change.position
             })
+          } else if (change.id.startsWith('transition-node-')) {
+            // It's a transition node, extract the transition ID
+            const transitionId = change.id.replace('transition-node-', '')
+            const transition = transitions.find(t => t.id === transitionId)
+            if (transition) {
+              updateTransition({
+                ...transition,
+                position: change.position
+              })
+            }
           }
         }
       })
     },
-    [onNodesChange, states, updateState]
+    [onNodesChange, states, updateState, transitions, updateTransition]
   )
 
   React.useEffect(() => {
@@ -125,7 +206,8 @@ export function StateMachine() {
         .map((t) => t.toState)
     )
 
-    const newNodes: Node[] = states.map((state) => ({
+    // Create state nodes
+    const stateNodes: Node[] = states.map((state) => ({
       id: state.id,
       type: "stateNode",
       position: state.position,
@@ -136,16 +218,97 @@ export function StateMachine() {
       },
     }))
 
-    const newEdges: Edge[] = transitions
+    // Create transition nodes and edges
+    const transitionNodes: Node[] = []
+    const newEdges: Edge[] = []
+
+    transitions
       .filter((t): t is OutgoingTransition => t.type === "OutgoingTransition")
-      .map((transition) => ({
-        id: transition.id,
-        source: transition.fromState,
-        target: transition.toState,
-        type: "transitionEdge",
-        data: { transition },
-        style: { stroke: "#BD00FF", strokeWidth: 2 },
-      }))
+      .forEach((transition) => {
+        const isMultiTarget = transition.activateStates.length > 1
+        const transitionNodeId = `transition-node-${transition.id}`
+        const sourceState = states.find(s => s.id === transition.fromState)
+
+        if (sourceState && transition.activateStates.length > 0) {
+          // Create a transition node for all transitions (both single and multi-target)
+            // Use saved position or try to position below the source state
+            let position = transition.position
+
+            if (!position) {
+              // Try to place it below the source state
+              const proposedPosition = {
+                x: sourceState.position.x,
+                y: sourceState.position.y + 150
+              }
+
+              // Check if this position is occupied
+              const isOccupied = [...states, ...transitions.filter(t => t.position)]
+                .some(item => {
+                  const pos = 'position' in item ? item.position : item.position
+                  return pos &&
+                    Math.abs(pos.x - proposedPosition.x) < 150 &&
+                    Math.abs(pos.y - proposedPosition.y) < 80
+                })
+
+              if (!isOccupied) {
+                position = proposedPosition
+              } else {
+                // Find an empty position
+                position = {
+                  x: sourceState.position.x + 200,
+                  y: sourceState.position.y
+                }
+              }
+
+              // Save the position for next time
+              updateTransition({
+                ...transition,
+                position: position
+              })
+            }
+
+            const transitionNode: Node = {
+              id: transitionNodeId,
+              type: "transitionNode",
+              position: position,
+              data: {
+                transition,
+                label: isMultiTarget ? `→ ${transition.activateStates.length} states` : `→`,
+                isSingleTarget: !isMultiTarget
+              },
+            }
+            transitionNodes.push(transitionNode)
+
+            // Create edge from source state to transition node
+            newEdges.push({
+              id: `${transition.id}-source`,
+              source: transition.fromState,
+              target: transitionNodeId,
+              type: "transitionEdge",
+              data: { transition, isMultiTarget: true },
+              style: { stroke: "#BD00FF", strokeWidth: 2 },
+            })
+
+            // Create edges from transition node to each target state
+            transition.activateStates.forEach((targetState, index) => {
+              newEdges.push({
+                id: `${transition.id}-target-${index}`,
+                source: transitionNodeId,
+                target: targetState,
+                type: "transitionEdge",
+                data: { transition, isMultiTarget: isMultiTarget },
+                style: {
+                  stroke: "#00D9FF",
+                  strokeWidth: 2,
+                  strokeDasharray: "5 5"
+                },
+                animated: true
+              })
+            })
+        }
+      })
+
+    const newNodes = [...stateNodes, ...transitionNodes]
 
     setNodes(newNodes)
     setEdges(newEdges)
@@ -157,7 +320,10 @@ export function StateMachine() {
       name: "New State",
       description: "",
       identifyingImages: [],
-      position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
+      regions: [],
+      locations: [],
+      strings: [],
+      position: findEmptyPosition(),
     }
 
     addState(newState)
@@ -177,13 +343,10 @@ export function StateMachine() {
         id: `transition-${Date.now()}`,
         type: "OutgoingTransition",
         fromState: params.source,
-        toState: params.target,
+        activateStates: [params.target], // Target state is just the first in activateStates
         staysVisible: false,
-        activateStates: [],
         deactivateStates: [],
-        processes: [],
-        timeout: 5000,
-        retryCount: 3,
+        process: "",
       }
 
       addTransition(newTransition)
@@ -204,7 +367,8 @@ export function StateMachine() {
   const updateSelectedTransition = (updates: Partial<Transition>) => {
     if (!selectedEdge) return
 
-    const currentTransition = transitions.find((t) => t.id === selectedEdge)
+    // Extract the transition ID from the edge ID (remove the "-index" suffix)
+    const currentTransition = transitions.find((t) => selectedEdge.startsWith(t.id))
     if (!currentTransition) return
 
     const updatedTransition = { ...currentTransition, ...updates }
@@ -217,11 +381,11 @@ export function StateMachine() {
     const currentState = states.find((s) => s.id === selectedNode)
     if (!currentState) return
 
-    const updatedImages = [...currentState.identifyingImages, { image: "", threshold: 0.8 }]
+    const updatedImages = [...currentState.identifyingImages, { image: "" }]
     updateSelectedState({ identifyingImages: updatedImages })
   }
 
-  const updateIdentifyingImage = (index: number, field: "image" | "threshold", value: any) => {
+  const updateIdentifyingImage = (index: number, field: "image", value: any) => {
     if (!selectedNode) return
 
     const currentState = states.find((s) => s.id === selectedNode)
@@ -259,8 +423,129 @@ export function StateMachine() {
     updateSelectedState({ identifyingImages: updatedImages })
   }
 
+  // Region management
+  const addRegion = () => {
+    if (!selectedNode) return
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState) return
+
+    const regions = currentState.regions || []
+    const newRegion: StateRegion = {
+      id: `region-${Date.now()}`,
+      name: `Region ${regions.length + 1}`,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100
+    }
+    updateSelectedState({ regions: [...regions, newRegion] })
+  }
+
+  const updateRegion = (index: number, field: keyof StateRegion, value: any) => {
+    if (!selectedNode) return
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState) return
+
+    const regions = currentState.regions || []
+    const updatedRegions = [...regions]
+    updatedRegions[index] = { ...updatedRegions[index], [field]: value }
+    updateSelectedState({ regions: updatedRegions })
+  }
+
+  const removeRegion = (index: number) => {
+    if (!selectedNode) return
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState) return
+
+    const regions = currentState.regions || []
+    const updatedRegions = regions.filter((_, i) => i !== index)
+    updateSelectedState({ regions: updatedRegions })
+  }
+
+  // Location management
+  const addLocation = () => {
+    if (!selectedNode) return
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState) return
+
+    const locations = currentState.locations || []
+    const newLocation: StateLocation = {
+      id: `location-${Date.now()}`,
+      name: `Location ${locations.length + 1}`,
+      x: 0,
+      y: 0
+    }
+    updateSelectedState({ locations: [...locations, newLocation] })
+  }
+
+  const updateLocation = (index: number, field: keyof StateLocation, value: any) => {
+    if (!selectedNode) return
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState) return
+
+    const locations = currentState.locations || []
+    const updatedLocations = [...locations]
+    updatedLocations[index] = { ...updatedLocations[index], [field]: value }
+    updateSelectedState({ locations: updatedLocations })
+  }
+
+  const removeLocation = (index: number) => {
+    if (!selectedNode) return
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState) return
+
+    const locations = currentState.locations || []
+    const updatedLocations = locations.filter((_, i) => i !== index)
+    updateSelectedState({ locations: updatedLocations })
+  }
+
+  // String management
+  const addString = () => {
+    if (!selectedNode) return
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState) return
+
+    const strings = currentState.strings || []
+    const newString: StateString = {
+      id: `string-${Date.now()}`,
+      name: `String ${strings.length + 1}`,
+      value: ""
+    }
+    updateSelectedState({ strings: [...strings, newString] })
+  }
+
+  const updateString = (index: number, field: keyof StateString, value: any) => {
+    if (!selectedNode) return
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState) return
+
+    const strings = currentState.strings || []
+    const updatedStrings = [...strings]
+    updatedStrings[index] = { ...updatedStrings[index], [field]: value }
+    updateSelectedState({ strings: updatedStrings })
+  }
+
+  const removeString = (index: number) => {
+    if (!selectedNode) return
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState) return
+
+    const strings = currentState.strings || []
+    const updatedStrings = strings.filter((_, i) => i !== index)
+    updateSelectedState({ strings: updatedStrings })
+  }
+
   const selectedState = selectedNode ? states.find((s) => s.id === selectedNode) : null
-  const selectedTransition = selectedEdge ? transitions.find((t) => t.id === selectedEdge) : null
+
+  // Extract the transition ID from the edge ID or direct transition ID
+  const selectedTransition = selectedEdge
+    ? transitions.find((t) => {
+        // Handle direct transition IDs (from clicking transition nodes)
+        if (t.id === selectedEdge) return true
+        // Handle edge IDs with suffixes
+        return selectedEdge.startsWith(t.id + '-')
+      })
+    : null
 
   return (
     <div className="flex h-full">
@@ -304,7 +589,11 @@ export function StateMachine() {
             )}
           </div>
 
-          <TransitionBuilder />
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">Transitions</h3>
+            <OutgoingTransitionBuilder />
+            <IncomingTransitionBuilder />
+          </div>
         </div>
       </div>
 
@@ -320,8 +609,15 @@ export function StateMachine() {
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onNodeClick={(_, node) => {
-              setSelectedNode(node.id)
-              setSelectedEdge(null)
+              if (node.type === 'transitionNode') {
+                // For transition nodes, select the transition instead of the node
+                const transitionId = node.id.replace('transition-node-', '')
+                setSelectedEdge(transitionId)
+                setSelectedNode(null)
+              } else {
+                setSelectedNode(node.id)
+                setSelectedEdge(null)
+              }
             }}
             onEdgeClick={(_, edge) => {
               setSelectedEdge(edge.id)
@@ -343,264 +639,34 @@ export function StateMachine() {
       {/* Right Panel */}
       <div className="w-96 border-l border-gray-800 bg-[#27272A]/50 overflow-y-auto p-4">
         {selectedState ? (
-          <Card className="border-gray-700 bg-[#27272A] h-full flex flex-col">
-            <CardHeader className="pb-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium text-[#00D9FF]">State Properties</CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden p-6">
-              <div className="space-y-2 flex-shrink-0">
-                <Label className="text-xs text-gray-400">State Name</Label>
-                <Input
-                  value={selectedState.name}
-                  onChange={(e) => updateSelectedState({ name: e.target.value })}
-                  className="bg-transparent border-gray-700"
-                />
-              </div>
-
-              <div className="space-y-2 flex-shrink-0">
-                <Label className="text-xs text-gray-400">Description</Label>
-                <Textarea
-                  value={selectedState.description}
-                  onChange={(e) => updateSelectedState({ description: e.target.value })}
-                  className="bg-transparent border-gray-700"
-                  rows={3}
-                />
-              </div>
-
-              <div className="flex items-center space-x-2 flex-shrink-0">
-                <Checkbox
-                  id="initial-state"
-                  checked={selectedState.initial || false}
-                  onCheckedChange={(checked) => updateSelectedState({ initial: checked as boolean })}
-                  className="border-gray-600 data-[state=checked]:bg-[#00D9FF] data-[state=checked]:border-[#00D9FF]"
-                />
-                <Label
-                  htmlFor="initial-state"
-                  className="text-xs text-gray-400 cursor-pointer"
-                >
-                  Initial State (Expected to be active at automation start)
-                </Label>
-              </div>
-
-              <div className="flex-1 flex flex-col min-h-0">
-                <div className="flex items-center justify-between mb-2">
-                  <Label className="text-xs text-gray-400">Identifying Images</Label>
-                  <Button variant="ghost" size="sm" onClick={addIdentifyingImage}>
-                    <Plus className="w-3 h-3" />
-                  </Button>
-                </div>
-
-                {selectedState.identifyingImages.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center border border-dashed border-gray-600 rounded">
-                    <p className="text-sm text-gray-500">No images configured</p>
-                  </div>
-                ) : (
-                  <div className="flex-1 space-y-2 overflow-y-auto pr-2">
-                    {selectedState.identifyingImages.map((imgConfig, index) => (
-                      <div key={index} className="space-y-2 p-2 bg-gray-800 rounded">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1">
-                            <ImageSelector
-                              selectedImage={imgConfig.image || null}
-                              onSelectImage={(imageId) => updateIdentifyingImage(index, "image", imageId)}
-                              images={images}
-                              placeholder="Select image"
-                            />
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-red-400 hover:text-red-300"
-                            onClick={() => removeIdentifyingImage(index)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs">
-                          <Label className="text-gray-400">Match Threshold:</Label>
-                          <Input
-                            type="number"
-                            min="0.1"
-                            max="1.0"
-                            step="0.1"
-                            value={imgConfig.threshold}
-                            onChange={(e) =>
-                              updateIdentifyingImage(index, "threshold", Number.parseFloat(e.target.value))
-                            }
-                            className="w-20 h-7 bg-transparent border-gray-700 text-xs"
-                          />
-                          <span className="text-gray-500">({(imgConfig.threshold * 100).toFixed(0)}%)</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <StatePropertiesPanel
+            state={selectedState}
+            images={images}
+            updateState={updateSelectedState}
+            addIdentifyingImage={addIdentifyingImage}
+            updateIdentifyingImage={updateIdentifyingImage}
+            removeIdentifyingImage={removeIdentifyingImage}
+            addRegion={addRegion}
+            updateRegion={updateRegion}
+            removeRegion={removeRegion}
+            addLocation={addLocation}
+            updateLocation={updateLocation}
+            removeLocation={removeLocation}
+            addString={addString}
+            updateString={updateString}
+            removeString={removeString}
+          />
         ) : selectedTransition ? (
-          <Card className="border-gray-700 bg-[#27272A] h-full flex flex-col">
-            <CardHeader className="pb-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium text-[#BD00FF]">Transition Properties</CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 space-y-4 overflow-y-auto p-6">
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-400">Type</Label>
-                <div className="p-2 bg-gray-800 rounded text-sm">
-                  {selectedTransition.type === "OutgoingTransition" ? (
-                    <span className="text-[#BD00FF]">OutgoingTransition</span>
-                  ) : (
-                    <span className="text-[#00FF88]">IncomingTransition</span>
-                  )}
-                </div>
-              </div>
-
-              {selectedTransition.type === "OutgoingTransition" ? (
-                <>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-gray-400">From State</Label>
-                    <div className="p-2 bg-gray-800 rounded text-sm">
-                      {states.find((s) => s.id === selectedTransition.fromState)?.name || "Unknown State"}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs text-gray-400">To State</Label>
-                    <div className="p-2 bg-gray-800 rounded text-sm">
-                      {states.find((s) => s.id === selectedTransition.toState)?.name || "Unknown State"}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="stays_visible"
-                      checked={selectedTransition.staysVisible}
-                      onCheckedChange={(checked) => updateSelectedTransition({ staysVisible: !!checked })}
-                    />
-                    <Label htmlFor="stays_visible" className="text-xs text-gray-400">
-                      Origin stays visible
-                    </Label>
-                  </div>
-
-                  {selectedTransition.activateStates.length > 0 && (
-                    <div className="space-y-2">
-                      <Label className="text-xs text-gray-400">Activate States</Label>
-                      <div className="p-2 bg-gray-800 rounded text-sm space-y-1">
-                        {selectedTransition.activateStates.map((stateId) => (
-                          <div key={stateId}>
-                            {states.find((s) => s.id === stateId)?.name || "Unknown State"}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedTransition.deactivateStates.length > 0 && (
-                    <div className="space-y-2">
-                      <Label className="text-xs text-gray-400">Deactivate States</Label>
-                      <div className="p-2 bg-gray-800 rounded text-sm space-y-1">
-                        {selectedTransition.deactivateStates.map((stateId) => (
-                          <div key={stateId}>
-                            {states.find((s) => s.id === stateId)?.name || "Unknown State"}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="space-y-2">
-                  <Label className="text-xs text-gray-400">State (executes when entering)</Label>
-                  <div className="p-2 bg-gray-800 rounded text-sm">
-                    {states.find((s) => s.id === selectedTransition.toState)?.name || "Unknown State"}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-gray-400">Processes</Label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      // Toggle all processes selection UI
-                      const allSelected = selectedTransition.processes.length === processes.length
-                      updateSelectedTransition({ 
-                        processes: allSelected ? [] : processes.map(p => p.id)
-                      })
-                    }}
-                    className="text-xs"
-                  >
-                    {selectedTransition.processes.length === processes.length ? 'Clear All' : 'Select All'}
-                  </Button>
-                </div>
-                {processes.length === 0 ? (
-                  <div className="text-center py-4 text-gray-500 border border-dashed border-gray-600 rounded">
-                    <p className="text-sm">No processes available</p>
-                    <p className="text-xs mt-1">Create processes in the Process Builder tab</p>
-                  </div>
-                ) : (
-                  <div className="space-y-1 max-h-48 overflow-y-auto">
-                    {processes.map((process) => {
-                      const isSelected = selectedTransition.processes.includes(process.id)
-                      return (
-                        <div
-                          key={process.id}
-                          className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
-                            isSelected
-                              ? "bg-[#BD00FF]/20 border border-[#BD00FF]"
-                              : "bg-gray-800 border border-gray-700 hover:border-gray-600"
-                          }`}
-                          onClick={() => {
-                            const newProcesses = isSelected
-                              ? selectedTransition.processes.filter(id => id !== process.id)
-                              : [...selectedTransition.processes, process.id]
-                            updateSelectedTransition({ processes: newProcesses })
-                          }}
-                        >
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => {}}
-                            className="pointer-events-none"
-                          />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{process.name}</p>
-                            {process.description && (
-                              <p className="text-xs text-gray-400">{process.description}</p>
-                            )}
-                          </div>
-                          <Badge variant="secondary" className="text-xs">
-                            {process.actions.length} actions
-                          </Badge>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-400">Success Timeout (ms)</Label>
-                <Input
-                  type="number"
-                  value={selectedTransition.timeout}
-                  onChange={(e) => updateSelectedTransition({ timeout: Number.parseInt(e.target.value) })}
-                  className="bg-transparent border-gray-700"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-400">Retry Count</Label>
-                <Input
-                  type="number"
-                  value={selectedTransition.retryCount}
-                  onChange={(e) => updateSelectedTransition({ retryCount: Number.parseInt(e.target.value) })}
-                  className="bg-transparent border-gray-700"
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <TransitionPropertiesPanel
+            transition={selectedTransition}
+            states={states}
+            processes={processes}
+            updateTransition={updateSelectedTransition}
+            deleteTransition={(transitionId) => {
+              deleteTransition(transitionId)
+              setSelectedEdge(null)
+            }}
+          />
         ) : (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">

@@ -1,0 +1,77 @@
+[tool.poetry]
+name = "qontinui-web"
+version = "0.1.0"
+description = "Web interface for Qontinui GUI automation platform"
+authors = ["Joshua Spinak <jspinak@hotmail.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.116.2"
+uvicorn = {extras = ["standard"], version = "^0.35.0"}
+sqlalchemy = "^2.0.43"
+alembic = "^1.16.5"
+pydantic = "^2.11.9"
+python-jose = {extras = ["cryptography"], version = "^3.5.0"}
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+python-multipart = "^0.0.20"
+asyncpg = "^0.30.0"
+psycopg2-binary = "^2.9.10"
+python-decouple = "^3.8"
+pydantic-settings = "^2.10.1"
+email-validator = "^2.3.0"
+slowapi = "^0.1.9"
+python-dateutil = "^2.9.0.post0"
+httpx = "^0.28.1"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.2"
+pytest-asyncio = "^1.2.0"
+black = "^25.1.0"
+flake8 = "^7.3.0"
+mypy = "^1.18.1"
+pre-commit = "^4.3.0"
+tox = "^4.30.2"
+ruff = "^0.13.0"
+isort = "^6.0.1"
+pylint = "^3.3.8"
+
+[tool.black]
+line-length = 88
+target-version = ['py311', 'py312']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "W", "I", "N", "UP"]
+ignore = [
+    "E501",  # Line too long (handled by black)
+    "N815",  # Variable in class scope should not be mixedCase (for Pydantic models)
+    "E402",  # Module level import not at top (needed for sys.path in alembic)
+    "F403",  # Star imports (needed for alembic models)
+]
+target-version = "py312"
+
+[tool.ruff.per-file-ignores]
+"test*.py" = ["F401"]
+"**/alembic/env.py" = ["E402", "F403"]
+"**/__init__.py" = ["F401"]
+
+[tool.pylint]
+max-line-length = 88
+disable = ["C0114", "C0115", "C0116"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

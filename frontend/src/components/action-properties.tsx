@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef } from "react"
+import { useRef, useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,7 +14,7 @@ import { useAutomation } from "@/contexts/automation-context"
 
 interface Action {
   id: string
-  type: "FIND" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
+  type: "FIND" | "FIND_STATE_IMAGE" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
   config: Record<string, any>
 }
 
@@ -25,6 +25,17 @@ interface ActionPropertiesProps {
 
 export function ActionProperties({ action, onUpdateAction }: ActionPropertiesProps) {
   const { images, updateImageUsage, removeImageUsage, states, processes } = useAutomation()
+  const textAreaRef = useRef<HTMLTextAreaElement>(null)
+  const [shouldOpenImageSelector, setShouldOpenImageSelector] = useState(false)
+
+  // Detect when a new FIND action is selected without an image
+  useEffect(() => {
+    if (action && action.type === "FIND" && !action.config.image) {
+      setShouldOpenImageSelector(true)
+    } else {
+      setShouldOpenImageSelector(false)
+    }
+  }, [action?.id, action?.type])
 
   if (!action) {
     return (
@@ -38,7 +49,7 @@ export function ActionProperties({ action, onUpdateAction }: ActionPropertiesPro
     )
   }
 
-  const updateConfig = (key: string, value: any) => {
+  const updateConfig = (key: string, value: any, additionalUpdates: Record<string, any> = {}) => {
     if (key === "image") {
       // Remove old image usage
       if (action.config.image) {
@@ -55,6 +66,7 @@ export function ActionProperties({ action, onUpdateAction }: ActionPropertiesPro
       config: {
         ...action.config,
         [key]: value,
+        ...additionalUpdates  // Merge any additional config updates
       },
     }
     onUpdateAction(updatedAction)
@@ -66,13 +78,13 @@ export function ActionProperties({ action, onUpdateAction }: ActionPropertiesPro
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-[#00D9FF]">{action.type} Properties</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">{renderActionProperties(action, updateConfig, images, states, processes)}</CardContent>
+        <CardContent className="space-y-4">{renderActionProperties(action, updateConfig, images, states, processes, textAreaRef, shouldOpenImageSelector)}</CardContent>
       </Card>
     </div>
   )
 }
 
-function renderActionProperties(action: Action, updateConfig: (key: string, value: any) => void, images: any[], states: any[], processes: any[]) {
+function renderActionProperties(action: Action, updateConfig: (key: string, value: any) => void, images: any[], states: any[], processes: any[], textAreaRef: React.RefObject<HTMLTextAreaElement>, shouldOpenImageSelector?: boolean) {
   switch (action.type) {
     case "FIND":
       return (
@@ -83,7 +95,10 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
               selectedImage={action.config.image || null}
               onSelectImage={(imageId) => updateConfig("image", imageId)}
               images={images}
+              states={states}
               placeholder="Select image to find"
+              showStateFilter={true}
+              initialOpen={shouldOpenImageSelector}
             />
           </div>
 
@@ -110,6 +125,67 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
                 <SelectItem value="First">First</SelectItem>
                 <SelectItem value="All">All</SelectItem>
                 <SelectItem value="Best">Best</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {renderTimingProperties(action, updateConfig)}
+        </>
+      )
+
+    case "FIND_STATE_IMAGE":
+      return (
+        <>
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-400">Select State</Label>
+            <Select value={action.config.state || ""} onValueChange={(value) => updateConfig("state", value)}>
+              <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectValue placeholder="Select a state" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#27272A] border-gray-700">
+                {states.map((state) => (
+                  <SelectItem key={state.id} value={state.id}>
+                    {state.name || state.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {action.config.state && (
+              <div className="text-xs text-gray-400 mt-2">
+                {(() => {
+                  const selectedState = states.find(s => s.id === action.config.state)
+                  if (selectedState && selectedState.identifyingImages?.length > 0) {
+                    return `Will find any of ${selectedState.identifyingImages.length} image${selectedState.identifyingImages.length > 1 ? 's' : ''} from ${selectedState.name}`
+                  }
+                  return selectedState ? `No images defined for ${selectedState.name}` : 'State not found'
+                })()}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-400">Similarity Threshold</Label>
+            <Input
+              type="number"
+              min="0.7"
+              max="1.0"
+              step="0.1"
+              value={action.config.similarity}
+              onChange={(e) => updateConfig("similarity", Number.parseFloat(e.target.value))}
+              className="bg-transparent border-gray-700"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-400">Search Strategy</Label>
+            <Select value={action.config.strategy} onValueChange={(value) => updateConfig("strategy", value)}>
+              <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectItem value="First">First Match</SelectItem>
+                <SelectItem value="All">All Matches</SelectItem>
+                <SelectItem value="Best">Best Match</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -267,34 +343,137 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
       )
 
     case "TYPE":
-      const textAreaRef = useRef<HTMLTextAreaElement>(null)
       return (
         <>
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-gray-400">Text to Type</Label>
-              <SpecialKeysSelector 
-                onInsertKey={(newText) => updateConfig("text", newText)}
-                textAreaRef={textAreaRef}
-              />
-            </div>
-            <Textarea
-              ref={textAreaRef}
-              value={action.config.text}
-              onChange={(e) => updateConfig("text", e.target.value)}
-              className="bg-transparent border-gray-700 font-mono text-sm"
-              placeholder="Enter text to type..."
-              rows={4}
-            />
-            {action.config.text && (
-              <div className="p-2 bg-gray-800/50 rounded-md border border-gray-700">
-                <div className="text-xs text-gray-500 mb-1">Preview:</div>
-                <div className="text-sm font-mono text-gray-300 break-all">
-                  <SpecialKeyDisplay text={action.config.text} />
-                </div>
-              </div>
-            )}
+            <Label className="text-xs text-gray-400">Text Source</Label>
+            <Select
+              value={action.config.textSource || "stateString"}
+              onValueChange={(value) => {
+                updateConfig("textSource", value)
+                // If switching to stateString and no state selected, try to select the first available state
+                if (value === "stateString" && !action.config.selectedState) {
+                  const statesWithStrings = states.filter(s => s.strings && s.strings.length > 0)
+                  if (statesWithStrings.length > 0) {
+                    updateConfig("selectedState", statesWithStrings[0].id)
+                  }
+                }
+              }}
+            >
+              <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectItem value="stateString">State String</SelectItem>
+                <SelectItem value="manual">Manual Text</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+
+          {action.config.textSource === "stateString" ? (
+            <>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">Select State</Label>
+                <Select
+                  value={action.config.selectedState || "none"}
+                  onValueChange={(value) => {
+                    const stateValue = value === "none" ? null : value
+                    // Update both selectedState and selectedStateStrings in one call
+                    updateConfig("selectedState", stateValue, { selectedStateStrings: [] })
+                  }}
+                >
+                  <SelectTrigger className="bg-transparent border-gray-700">
+                    <SelectValue placeholder="Select a state" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#27272A] border-gray-700">
+                    {states.filter(s => s.strings && s.strings.length > 0).length === 0 ? (
+                      <SelectItem value="none" disabled>
+                        No states with strings defined
+                      </SelectItem>
+                    ) : (
+                      <>
+                        <SelectItem value="none">Select a state...</SelectItem>
+                        {states.filter(s => s.strings && s.strings.length > 0).map((state) => (
+                          <SelectItem key={state.id} value={state.id}>
+                            {state.name || state.id} ({state.strings.length} string{state.strings.length !== 1 ? 's' : ''})
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {action.config.selectedState && (() => {
+                const selectedState = states.find(s => s.id === action.config.selectedState)
+                if (!selectedState || !selectedState.strings || selectedState.strings.length === 0) {
+                  return (
+                    <div className="text-xs text-gray-500 p-2 bg-gray-800/50 rounded">
+                      No strings defined in this state
+                    </div>
+                  )
+                }
+
+                return (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-gray-400">Select Strings</Label>
+                    <div className="space-y-2 max-h-48 overflow-y-auto p-2 bg-gray-800/50 rounded border border-gray-700">
+                      {selectedState.strings.map((str, index) => (
+                        <div key={str.id} className="flex items-start space-x-2">
+                          <Checkbox
+                            id={`string-${str.id}`}
+                            checked={action.config.selectedStateStrings?.includes(str.id) || false}
+                            onCheckedChange={(checked) => {
+                              const current = action.config.selectedStateStrings || []
+                              if (checked) {
+                                updateConfig("selectedStateStrings", [...current, str.id])
+                              } else {
+                                updateConfig("selectedStateStrings", current.filter(id => id !== str.id))
+                              }
+                            }}
+                          />
+                          <div className="flex-1">
+                            <Label htmlFor={`string-${str.id}`} className="text-xs text-gray-400">
+                              {index + 1}. {str.name || "Unnamed"}
+                            </Label>
+                            <div className="text-xs text-gray-500 font-mono mt-1 break-all">
+                              "{str.value}"
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+            </>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-gray-400">Text to Type</Label>
+                <SpecialKeysSelector
+                  onInsertKey={(newText) => updateConfig("text", newText)}
+                  textAreaRef={textAreaRef}
+                />
+              </div>
+              <Textarea
+                ref={textAreaRef}
+                value={action.config.text}
+                onChange={(e) => updateConfig("text", e.target.value)}
+                className="bg-transparent border-gray-700 font-mono text-sm"
+                placeholder="Enter text to type..."
+                rows={4}
+              />
+              {action.config.text && (
+                <div className="p-2 bg-gray-800/50 rounded-md border border-gray-700">
+                  <div className="text-xs text-gray-500 mb-1">Preview:</div>
+                  <div className="text-sm font-mono text-gray-300 break-all">
+                    <SpecialKeyDisplay text={action.config.text} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label className="text-xs text-gray-400">Typing Delay (ms)</Label>

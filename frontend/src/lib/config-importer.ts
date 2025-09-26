@@ -54,34 +54,34 @@ export interface ImportResult {
 
 export class ConfigImporter {
   private supportedVersions = ['1.0.0', '1.0.1', '1.1.0'];
-  
+
   /**
    * Import a Qontinui configuration from JSON
    */
   async importConfiguration(configJson: string | QontinuiConfig): Promise<ImportResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
-    
+
     try {
       // Parse JSON if string
-      const config: QontinuiConfig = typeof configJson === 'string' 
-        ? JSON.parse(configJson) 
+      const config: QontinuiConfig = typeof configJson === 'string'
+        ? JSON.parse(configJson)
         : configJson;
-      
+
       // Validate version compatibility
       if (!this.isVersionCompatible(config.version)) {
         warnings.push(`Configuration version ${config.version} may not be fully compatible`);
       }
-      
+
       // Import each component
       const images = await this.importImages(config.images);
       const processes = this.importProcesses(config.processes);
       const states = this.importStates(config.states, images);
       const transitions = this.importTransitions(config.transitions);
-      
+
       // Validate references
       this.validateReferences(states, processes, transitions, errors);
-      
+
       return {
         success: errors.length === 0,
         images,
@@ -104,32 +104,32 @@ export class ConfigImporter {
       };
     }
   }
-  
+
   /**
    * Check if the configuration version is compatible
    */
   private isVersionCompatible(version: string): boolean {
     const [major, minor] = version.split('.').map(Number);
     const [currentMajor] = '1.0.0'.split('.').map(Number);
-    
+
     // Major version must match
     if (major !== currentMajor) return false;
-    
+
     // Minor version differences are acceptable with warnings
     return true;
   }
-  
+
   /**
    * Import images from configuration
    */
   private async importImages(exportImages: ExportImageAsset[]): Promise<ImageAsset[]> {
     const images: ImageAsset[] = [];
-    
+
     for (const exportImage of exportImages) {
       try {
         // Convert base64 to blob URL
         const url = await this.base64ToUrl(exportImage.data, exportImage.format);
-        
+
         images.push({
           id: exportImage.id,
           name: exportImage.name,
@@ -143,10 +143,10 @@ export class ConfigImporter {
         console.error(`Failed to import image ${exportImage.name}:`, error);
       }
     }
-    
+
     return images;
   }
-  
+
   /**
    * Import processes from configuration
    */
@@ -162,13 +162,13 @@ export class ConfigImporter {
       }))
     }));
   }
-  
+
   /**
    * Transform imported action config to internal format
    */
   private importActionConfig(config: any, action: any): Record<string, any> {
     const internalConfig: Record<string, any> = {};
-    
+
     // Handle target
     if (config.target) {
       if (config.target.type === 'image') {
@@ -180,23 +180,29 @@ export class ConfigImporter {
         internalConfig.coordinates = config.target.coordinates;
       }
     }
-    
+
     // Copy other properties
     internalConfig.timeout = action.timeout;
     internalConfig.retryCount = action.retryCount;
     internalConfig.continueOnError = action.continueOnError;
-    
+
     // Handle type-specific properties
     if (config.text) internalConfig.text = config.text;
+    if (config.stateStringSource) {
+      internalConfig.textSource = 'stateString';
+      internalConfig.selectedState = config.stateStringSource.stateId;
+      internalConfig.selectedStateStrings = config.stateStringSource.stringIds || [];
+      internalConfig.useAllStateStrings = config.stateStringSource.useAll || false;
+    }
     if (config.keys) internalConfig.keys = config.keys;
     if (config.direction) internalConfig.direction = config.direction;
     if (config.distance) internalConfig.distance = config.distance;
     if (config.duration) internalConfig.duration = config.duration;
     if (config.destination) internalConfig.destination = config.destination;
-    
+
     return internalConfig;
   }
-  
+
   /**
    * Import states from configuration
    */
@@ -214,7 +220,7 @@ export class ConfigImporter {
           });
         }
       });
-      
+
       return {
         id: exportState.id,
         name: exportState.name,
@@ -228,7 +234,7 @@ export class ConfigImporter {
       };
     });
   }
-  
+
   /**
    * Import transitions from configuration
    */
@@ -241,7 +247,7 @@ export class ConfigImporter {
         timeout: exportTransition.timeout,
         retryCount: exportTransition.retryCount
       };
-      
+
       if (exportTransition.type === 'FromTransition') {
         transition.fromState = exportTransition.fromState;
         transition.toState = exportTransition.toState;
@@ -251,11 +257,11 @@ export class ConfigImporter {
       } else if (exportTransition.type === 'ToTransition') {
         transition.toState = exportTransition.toState;
       }
-      
+
       return transition;
     });
   }
-  
+
   /**
    * Validate references between components
    */
@@ -267,7 +273,7 @@ export class ConfigImporter {
   ): void {
     const stateIds = new Set(states.map(s => s.id));
     const processIds = new Set(processes.map(p => p.id));
-    
+
     // Check transition references
     transitions.forEach(transition => {
       // Check process references
@@ -276,7 +282,7 @@ export class ConfigImporter {
           errors.push(`Transition ${transition.id} references unknown process: ${processId}`);
         }
       });
-      
+
       // Check state references
       if (transition.type === 'FromTransition') {
         if (transition.fromState && !stateIds.has(transition.fromState)) {
@@ -292,7 +298,7 @@ export class ConfigImporter {
       }
     });
   }
-  
+
   /**
    * Convert base64 string to data URL
    */
@@ -300,7 +306,7 @@ export class ConfigImporter {
     // Return as data URL instead of blob URL to persist across sessions
     return `data:image/${format};base64,${base64}`;
   }
-  
+
   /**
    * Calculate size of base64 encoded data
    */
@@ -310,14 +316,14 @@ export class ConfigImporter {
     // Calculate approximate size in bytes
     return Math.round(data.length * 0.75);
   }
-  
+
   /**
    * Load configuration from file
    */
   async loadFromFile(file: File): Promise<ImportResult> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      
+
       reader.onload = async (e) => {
         try {
           const content = e.target?.result as string;
@@ -327,18 +333,18 @@ export class ConfigImporter {
           reject(error);
         }
       };
-      
+
       reader.onerror = () => reject(new Error('Failed to read file'));
       reader.readAsText(file);
     });
   }
-  
+
   /**
    * Validate configuration before import
    */
   validateBeforeImport(config: QontinuiConfig): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     // Check required fields
     if (!config.version) errors.push('Version is required');
     if (!config.metadata?.name) errors.push('Configuration name is required');
@@ -346,18 +352,18 @@ export class ConfigImporter {
     if (!Array.isArray(config.processes)) errors.push('Processes must be an array');
     if (!Array.isArray(config.states)) errors.push('States must be an array');
     if (!Array.isArray(config.transitions)) errors.push('Transitions must be an array');
-    
+
     // Check for at least one state
     if (config.states?.length === 0) {
       errors.push('At least one state is required');
     }
-    
+
     return {
       valid: errors.length === 0,
       errors
     };
   }
-  
+
   /**
    * Merge imported configuration with existing
    */
@@ -372,7 +378,7 @@ export class ConfigImporter {
   ): ImportResult {
     // Generate new IDs to avoid conflicts
     const idMap = new Map<string, string>();
-    
+
     // Merge images
     const mergedImages = [...existing.images];
     imported.images.forEach(image => {
@@ -383,13 +389,13 @@ export class ConfigImporter {
         id: newId
       });
     });
-    
+
     // Update process references
     const mergedProcesses = [...existing.processes];
     imported.processes.forEach(process => {
       const newId = `imported_${Date.now()}_${process.id}`;
       idMap.set(process.id, newId);
-      
+
       // Update image references in actions
       const updatedActions = process.actions.map(action => ({
         ...action,
@@ -398,49 +404,49 @@ export class ConfigImporter {
           imageId: action.config.imageId ? idMap.get(action.config.imageId) || action.config.imageId : undefined
         }
       }));
-      
+
       mergedProcesses.push({
         ...process,
         id: newId,
         actions: updatedActions
       });
     });
-    
+
     // Update state references
     const mergedStates = [...existing.states];
     imported.states.forEach(state => {
       const newId = `imported_${Date.now()}_${state.id}`;
       idMap.set(state.id, newId);
-      
+
       // Update image references
       const updatedImages = state.identifyingImages.map(img => ({
         ...img,
         image: idMap.get(img.image) || img.image
       }));
-      
+
       mergedStates.push({
         ...state,
         id: newId,
         identifyingImages: updatedImages
       });
     });
-    
+
     // Update transition references
     const mergedTransitions = [...existing.transitions];
     imported.transitions.forEach(transition => {
       const newId = `imported_${Date.now()}_${transition.id}`;
-      
+
       // Update process references
-      const updatedProcesses = transition.processes.map(pid => 
+      const updatedProcesses = transition.processes.map(pid =>
         idMap.get(pid) || pid
       );
-      
+
       const updatedTransition: Transition = {
         ...transition,
         id: newId,
         processes: updatedProcesses
       };
-      
+
       // Update state references
       if (transition.type === 'FromTransition') {
         if (transition.fromState) {
@@ -450,22 +456,22 @@ export class ConfigImporter {
           updatedTransition.toState = idMap.get(transition.toState) || transition.toState;
         }
         if (transition.activateStates) {
-          updatedTransition.activateStates = transition.activateStates.map(sid => 
+          updatedTransition.activateStates = transition.activateStates.map(sid =>
             idMap.get(sid) || sid
           );
         }
         if (transition.deactivateStates) {
-          updatedTransition.deactivateStates = transition.deactivateStates.map(sid => 
+          updatedTransition.deactivateStates = transition.deactivateStates.map(sid =>
             idMap.get(sid) || sid
           );
         }
       } else if (transition.type === 'ToTransition' && transition.toState) {
         updatedTransition.toState = idMap.get(transition.toState) || transition.toState;
       }
-      
+
       mergedTransitions.push(updatedTransition);
     });
-    
+
     return {
       success: true,
       images: mergedImages,

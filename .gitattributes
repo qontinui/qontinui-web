@@ -38,4 +38,3 @@
 # Keep lockfiles normalized but diffable
 package-lock.json text eol=lf
 poetry.lock       text eol=lf
-

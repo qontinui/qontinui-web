@@ -79,12 +79,12 @@ export function SpecialKeysSelector({ onInsertKey, textAreaRef }: SpecialKeysSel
       const start = textarea.selectionStart
       const end = textarea.selectionEnd
       const currentText = textarea.value
-      
+
       // Insert the special key at the cursor position
       const newText = currentText.substring(0, start) + keyValue + currentText.substring(end)
-      
+
       onInsertKey(newText)
-      
+
       // Set cursor position after the inserted key
       setTimeout(() => {
         textarea.focus()
@@ -114,7 +114,7 @@ export function SpecialKeysSelector({ onInsertKey, textAreaRef }: SpecialKeysSel
           Insert Special Keys
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-gray-700" />
-        
+
         {Object.entries(SPECIAL_KEYS).map(([category, keys]) => (
           <div key={category}>
             <DropdownMenuLabel className="text-xs font-medium text-gray-400 mt-2">
@@ -176,7 +176,7 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
   const parts: React.ReactNode[] = []
   let currentPart = ""
   let i = 0
-  
+
   while (i < text.length) {
     if (text[i] === "{" && text.indexOf("}", i) > i) {
       // Found a special key placeholder
@@ -184,12 +184,12 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
         parts.push(<span key={parts.length}>{currentPart}</span>)
         currentPart = ""
       }
-      
+
       const endIndex = text.indexOf("}", i)
       const keyPlaceholder = text.substring(i, endIndex + 1)
       const keyName = keyPlaceholder.substring(1, keyPlaceholder.length - 1)
       const displaySymbol = keySymbols[keyName] || keyName
-      
+
       parts.push(
         <Badge
           key={parts.length}
@@ -240,10 +240,10 @@ export function SpecialKeyDisplay({ text }: { text: string }) {
       i++
     }
   }
-  
+
   if (currentPart) {
     parts.push(<span key={parts.length}>{currentPart}</span>)
   }
-  
+
   return <>{parts}</>
 }

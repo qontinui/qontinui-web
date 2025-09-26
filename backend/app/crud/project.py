@@ -1,16 +1,16 @@
-from typing import List, Optional
 from sqlalchemy.orm import Session
+
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
 
 
-def get_project(db: Session, project_id: int) -> Optional[Project]:
+def get_project(db: Session, project_id: int) -> Project | None:
     return db.query(Project).filter(Project.id == project_id).first()
 
 
 def get_projects_by_owner(
     db: Session, owner_id: int, skip: int = 0, limit: int = 100
-) -> List[Project]:
+) -> list[Project]:
     return (
         db.query(Project)
         .filter(Project.owner_id == owner_id)
@@ -37,10 +37,10 @@ def update_project(
     db: Session, project: Project, project_update: ProjectUpdate
 ) -> Project:
     update_data = project_update.dict(exclude_unset=True)
-    
+
     for field, value in update_data.items():
         setattr(project, field, value)
-    
+
     db.add(project)
     db.commit()
     db.refresh(project)

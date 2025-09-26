@@ -726,11 +726,11 @@ export class ConfigTemplates {
   /**
    * Get all available templates
    */
-  static getAllTemplates(): Array<{ 
-    id: string; 
-    name: string; 
-    description: string; 
-    generator: () => Partial<QontinuiConfig> 
+  static getAllTemplates(): Array<{
+    id: string;
+    name: string;
+    description: string;
+    generator: () => Partial<QontinuiConfig>
   }> {
     return [
       {
