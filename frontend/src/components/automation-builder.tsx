@@ -1,26 +1,31 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ProcessBuilder } from "@/components/process-builder"
 import { StateMachine } from "@/components/state-machine"
 import { ImagesManager } from "@/components/images-manager"
+import ScreenshotUploadTab from "@/components/ScreenshotTab/ScreenshotUploadTab"
 import { AuthDialog } from "@/components/auth-dialog"
 import { ProjectManager } from "@/components/project-manager"
-import { Save, Download, Upload, User, LogOut, FileCode, Edit2, Check, X, Plus } from "lucide-react"
+import { Save, Download, Upload, User, LogOut, FileCode, Edit2, Check, X, Plus, Home } from "lucide-react"
 import { toast } from "sonner"
 import { AutomationProvider, useAutomation } from "@/contexts/automation-context"
 import { useAuth } from "@/contexts/auth-context"
 import { ConfigExporter } from "@/lib/config-exporter"
 import { ConfigImporter } from "@/lib/config-importer"
 
+import { Screenshot } from "../types/Screenshot"
+
 function AutomationBuilderContent() {
   const [activeTab, setActiveTab] = useState("processes")
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
   const [isEditingName, setIsEditingName] = useState(false)
   const [tempProjectName, setTempProjectName] = useState("")
+  const [screenshots, setScreenshots] = useState<Screenshot[]>([])
   const nameInputRef = useRef<HTMLInputElement>(null)
   const {
     projectName,
@@ -33,9 +38,11 @@ function AutomationBuilderContent() {
     images,
     processes,
     states,
-    transitions
+    transitions,
+    categories
   } = useAutomation()
   const { user, logout } = useAuth()
+  const router = useRouter()
   const exporter = new ConfigExporter()
   const importer = new ConfigImporter()
 
@@ -70,8 +77,45 @@ function AutomationBuilderContent() {
     setTempProjectName("")
   }
 
+  const handleLogout = () => {
+    const warningMessage =
+      "⚠️ WARNING: Make sure to Export or Save your current project first!\n\n" +
+      "Logging out will permanently delete ALL unsaved data:\n\n" +
+      "• All processes\n" +
+      "• All states\n" +
+      "• All transitions\n" +
+      "• All uploaded images\n\n" +
+      "This action cannot be undone!\n\n" +
+      "Do you want to continue?"
+
+    if (confirm(warningMessage)) {
+      logout()
+      router.push('/')
+      toast.success("Logged out successfully")
+    }
+  }
+
+  const handleGoToDashboard = () => {
+    const warningMessage =
+      "⚠️ WARNING: Make sure to Save your current project first!\n\n" +
+      "Leaving this page may result in losing unsaved changes.\n\n" +
+      "Do you want to continue?"
+
+    if (confirm(warningMessage)) {
+      router.push('/dashboard')
+    }
+  }
+
   const handleNewProject = () => {
-    const warningMessage = 
+    if (!user) {
+      setAuthDialogOpen(true)
+      toast.error("Authentication required", {
+        description: "Please log in to create a new project.",
+      })
+      return
+    }
+
+    const warningMessage =
       "⚠️ WARNING: Make sure to Export or Save your current project first!\n\n" +
       "Creating a new project will permanently delete ALL unsaved data:\n\n" +
       "• All processes\n" +
@@ -80,7 +124,7 @@ function AutomationBuilderContent() {
       "• All uploaded images\n\n" +
       "This action cannot be undone!\n\n" +
       "Do you want to continue?"
-    
+
     if (confirm(warningMessage)) {
       clearAllData()
       toast.success("New project created", {
@@ -90,6 +134,14 @@ function AutomationBuilderContent() {
   }
 
   const handleSave = () => {
+    if (!user) {
+      setAuthDialogOpen(true)
+      toast.error("Authentication required", {
+        description: "Please log in to save your project.",
+      })
+      return
+    }
+
     triggerSave()
     toast.success("Project saved", {
       description: "Your automation project has been saved successfully.",
@@ -97,19 +149,30 @@ function AutomationBuilderContent() {
   }
 
   const handleExport = async () => {
+    if (!user) {
+      setAuthDialogOpen(true)
+      toast.error("Authentication required", {
+        description: "Please log in to export your project.",
+      })
+      return
+    }
+
     try {
       const config = await exporter.exportConfiguration(
         images,
         processes,
         states,
         transitions,
+        categories,
         {
           name: projectName,
           description: 'Exported from Qontinui Web',
           author: user?.username
-        }
+        },
+        undefined, // settings
+        screenshots
       )
-      
+
       const validation = exporter.validateConfiguration(config)
       if (!validation.valid) {
         toast.error("Export validation failed", {
@@ -117,9 +180,9 @@ function AutomationBuilderContent() {
         })
         return
       }
-      
+
       exporter.downloadConfiguration(config, `${projectName.replace(/\s+/g, '_')}_config.json`)
-      
+
       toast.success("Export complete", {
         description: "Configuration downloaded successfully.",
       })
@@ -129,36 +192,44 @@ function AutomationBuilderContent() {
       })
     }
   }
-  
+
   const handleImport = async () => {
+    if (!user) {
+      setAuthDialogOpen(true)
+      toast.error("Authentication required", {
+        description: "Please log in to import a project.",
+      })
+      return
+    }
+
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.json'
-    
+
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
-      
+
       try {
         const result = await importer.loadFromFile(file)
-        
+
         if (result.errors.length > 0) {
           toast.error("Import failed", {
             description: result.errors.join(', ')
           })
           return
         }
-        
+
         if (result.warnings.length > 0) {
           result.warnings.forEach(warning => {
             toast.warning("Import warning", { description: warning })
           })
         }
-        
+
         // Update the automation context with imported data
         // This would need methods in the automation context to bulk update
         handleLoadConfiguration(result)
-        
+
         toast.success("Import successful", {
           description: `Loaded ${result.states.length} states, ${result.processes.length} processes`
         })
@@ -168,7 +239,7 @@ function AutomationBuilderContent() {
         })
       }
     }
-    
+
     input.click()
   }
 
@@ -237,13 +308,18 @@ function AutomationBuilderContent() {
               variant="outline"
               size="sm"
               onClick={handleNewProject}
-              className="text-gray-300 border-gray-700 hover:border-[#FFD700] hover:text-[#FFD700] bg-transparent"
+              className={`border-gray-700 bg-transparent ${
+                user
+                  ? "text-gray-300 hover:border-[#FFD700] hover:text-[#FFD700]"
+                  : "text-gray-500 hover:border-red-500 hover:text-red-500 cursor-pointer"
+              }`}
+              title={!user ? "Login required" : ""}
             >
               <Plus className="w-4 h-4 mr-2" />
               New Project
             </Button>
             {user && (
-              <ProjectManager 
+              <ProjectManager
                 currentConfiguration={getConfiguration()}
                 onLoadConfiguration={handleLoadConfiguration}
               />
@@ -252,7 +328,12 @@ function AutomationBuilderContent() {
               variant="outline"
               size="sm"
               onClick={handleSave}
-              className="text-gray-300 border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              className={`border-gray-700 bg-transparent ${
+                user
+                  ? "text-gray-300 hover:border-[#00D9FF] hover:text-[#00D9FF]"
+                  : "text-gray-500 hover:border-red-500 hover:text-red-500 cursor-pointer"
+              }`}
+              title={!user ? "Login required" : ""}
             >
               <Save className="w-4 h-4 mr-2" />
               Quick Save
@@ -261,7 +342,12 @@ function AutomationBuilderContent() {
               variant="outline"
               size="sm"
               onClick={handleImport}
-              className="text-gray-300 border-gray-700 hover:border-[#00FF88] hover:text-[#00FF88] bg-transparent"
+              className={`border-gray-700 bg-transparent ${
+                user
+                  ? "text-gray-300 hover:border-[#00FF88] hover:text-[#00FF88]"
+                  : "text-gray-500 hover:border-red-500 hover:text-red-500 cursor-pointer"
+              }`}
+              title={!user ? "Login required" : ""}
             >
               <Upload className="w-4 h-4 mr-2" />
               Import
@@ -270,25 +356,42 @@ function AutomationBuilderContent() {
               variant="outline"
               size="sm"
               onClick={handleExport}
-              className="text-gray-300 border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF] bg-transparent"
+              className={`border-gray-700 bg-transparent ${
+                user
+                  ? "text-gray-300 hover:border-[#BD00FF] hover:text-[#BD00FF]"
+                  : "text-gray-500 hover:border-red-500 hover:text-red-500 cursor-pointer"
+              }`}
+              title={!user ? "Login required" : ""}
             >
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
             {user ? (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={logout}
-                className="border-gray-700 hover:border-red-500 hover:text-red-500 bg-transparent"
-                title={`Signed in as ${user.username}`}
-              >
-                <LogOut className="w-4 h-4" />
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGoToDashboard}
+                  className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+                  title="Go to Dashboard"
+                >
+                  <Home className="w-4 h-4 mr-2" />
+                  Dashboard
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLogout}
+                  className="border-gray-700 hover:border-red-500 hover:text-red-500 bg-transparent"
+                  title={`Signed in as ${user.username}`}
+                >
+                  <LogOut className="w-4 h-4" />
+                </Button>
+              </>
             ) : (
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setAuthDialogOpen(true)}
                 className="border-gray-700 hover:border-gray-600 bg-transparent"
               >
@@ -320,6 +423,12 @@ function AutomationBuilderContent() {
             >
               Images
             </TabsTrigger>
+            <TabsTrigger
+              value="screenshots"
+              className="data-[state=active]:bg-[#FFA500] data-[state=active]:text-black data-[state=inactive]:text-gray-300 font-medium px-6 hover:text-white transition-colors"
+            >
+              Screenshots
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="processes" className="flex-1 min-h-0">
@@ -333,9 +442,16 @@ function AutomationBuilderContent() {
           <TabsContent value="images" className="flex-1 min-h-0 overflow-auto">
             <ImagesManager />
           </TabsContent>
+
+          <TabsContent value="screenshots" className="flex-1 min-h-0 overflow-hidden">
+            <ScreenshotUploadTab
+              states={states}
+              onExport={setScreenshots}
+            />
+          </TabsContent>
         </Tabs>
       </main>
-      
+
       <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
     </div>
   )

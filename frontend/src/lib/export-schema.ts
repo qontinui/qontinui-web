@@ -1,7 +1,7 @@
 /**
  * Qontinui Automation Configuration Schema
  * Version 1.0.0
- * 
+ *
  * This defines the structure for exported automation configurations
  * that can be consumed by the Qontinui runner.
  */
@@ -13,6 +13,7 @@ export interface QontinuiConfig {
   processes: Process[];
   states: State[];
   transitions: Transition[];
+  categories: string[]; // List of process categories
   settings?: ConfigSettings;
 }
 
@@ -44,6 +45,7 @@ export interface Process {
   id: string;
   name: string;
   description?: string;
+  category?: string; // Category for organizing processes
   type: 'sequence' | 'conditional' | 'loop';
   actions: Action[];
   variables?: ProcessVariable[];
@@ -60,7 +62,7 @@ export interface Action {
   continueOnError?: boolean;
 }
 
-export type ActionType = 
+export type ActionType =
   | 'FIND'
   | 'CLICK'
   | 'DOUBLE_CLICK'
@@ -87,7 +89,7 @@ export interface ActionConfig {
     coordinates?: Coordinates;
     threshold?: number;
   };
-  
+
   // Type-specific properties
   text?: string; // For TYPE action
   keys?: string[]; // For KEY_PRESS action
@@ -148,6 +150,9 @@ export interface State {
   name: string;
   description?: string;
   identifyingImages: StateImage[];
+  stateRegions?: StateRegion[]; // Regions associated with this state
+  stateLocations?: StateLocation[]; // Locations associated with this state
+  stateStrings?: StateString[]; // Strings associated with this state
   position: {
     x: number;
     y: number;
@@ -164,6 +169,43 @@ export interface StateImage {
   threshold: number;
   required: boolean;
   searchRegion?: Region;
+  searchRegions?: SearchRegions; // SearchRegions for this image
+  fixed?: boolean; // If true, always appears in same location
+  shared?: boolean; // If true, can appear in multiple states
+  probability?: number; // Probability this image appears in state
+}
+
+export interface StateRegion {
+  id: string;
+  name: string;
+  bounds: Region;
+  fixed?: boolean; // If true, region is fixed in position
+  isSearchRegion?: boolean; // If true, used as search region for state
+  isInteractionRegion?: boolean; // If true, used for interactions
+}
+
+export interface StateLocation {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  anchor?: boolean; // If true, used as anchor point
+  fixed?: boolean; // If true, location is fixed
+  clickTarget?: boolean; // If true, used as click target
+}
+
+export interface StateString {
+  id: string;
+  name: string;
+  value: string;
+  identifier?: boolean; // If true, used to identify state
+  inputText?: boolean; // If true, used as input text
+  expectedText?: boolean; // If true, expected to appear in state
+  regex?: boolean; // If true, value is a regex pattern
+}
+
+export interface SearchRegions {
+  regions: Region[]; // List of regions to search within
 }
 
 export interface Transition {
@@ -251,7 +293,7 @@ export const configJsonSchema = {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Qontinui Configuration",
   "type": "object",
-  "required": ["version", "metadata", "images", "processes", "states", "transitions"],
+  "required": ["version", "metadata", "images", "processes", "states", "transitions", "categories"],
   "properties": {
     "version": {
       "type": "string",
@@ -295,6 +337,7 @@ export const configJsonSchema = {
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
+          "category": { "type": "string" },
           "type": { "enum": ["sequence", "conditional", "loop"] },
           "actions": { "type": "array" }
         }
@@ -333,6 +376,10 @@ export const configJsonSchema = {
           "retryCount": { "type": "number", "minimum": 0 }
         }
       }
+    },
+    "categories": {
+      "type": "array",
+      "items": { "type": "string" }
     }
   }
 };

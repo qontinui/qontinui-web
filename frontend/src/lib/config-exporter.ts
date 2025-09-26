@@ -26,6 +26,7 @@ interface Process {
   id: string;
   name: string;
   description: string;
+  category?: string;
   actions: Action[];
 }
 
@@ -42,6 +43,9 @@ interface State {
   initial?: boolean;
   identifyingImages: Array<{ image: string; threshold: number }>;
   position: { x: number; y: number };
+  stateRegions?: any[]; // Will be populated from screenshots
+  stateLocations?: any[]; // Will be populated from screenshots
+  stateStrings?: any[]; // Will be populated from UI
 }
 
 interface Transition {
@@ -57,6 +61,8 @@ interface Transition {
   deactivateStates?: string[];
 }
 
+import { Screenshot } from '../types/Screenshot';
+
 export class ConfigExporter {
   private version = '1.0.0';
 
@@ -68,11 +74,13 @@ export class ConfigExporter {
     processes: Process[],
     states: State[],
     transitions: Transition[],
+    categories: string[],
     metadata?: Partial<ConfigMetadata>,
-    settings?: ConfigSettings
+    settings?: ConfigSettings,
+    screenshots?: Screenshot[]
   ): Promise<QontinuiConfig> {
     const now = new Date().toISOString();
-    
+
     const config: QontinuiConfig = {
       version: this.version,
       metadata: {
@@ -88,10 +96,11 @@ export class ConfigExporter {
           website: '1.0.0'
         }
       },
-      images: await this.exportImages(images),
-      processes: this.exportProcesses(processes),
-      states: this.exportStates(states),
-      transitions: this.exportTransitions(transitions),
+      images: await this.exportImages(images || [], screenshots),
+      processes: this.exportProcesses(processes || []),
+      states: this.exportStates(states || [], screenshots),
+      transitions: this.exportTransitions(transitions || []),
+      categories: categories || ['main'],
       settings: settings || this.getDefaultSettings()
     };
 
@@ -101,14 +110,18 @@ export class ConfigExporter {
   /**
    * Convert images to export format with base64 encoding
    */
-  private async exportImages(images: ImageAsset[]): Promise<ExportImageAsset[]> {
+  private async exportImages(images: ImageAsset[], screenshots?: Screenshot[]): Promise<ExportImageAsset[]> {
     const exportedImages: ExportImageAsset[] = [];
+
+    if (!images || !Array.isArray(images)) {
+      return exportedImages;
+    }
 
     for (const image of images) {
       try {
         const base64Data = await this.imageUrlToBase64(image.url);
         const dimensions = await this.getImageDimensions(image.url);
-        
+
         exportedImages.push({
           id: image.id,
           name: image.name,
@@ -123,6 +136,28 @@ export class ConfigExporter {
       }
     }
 
+    // Also export screenshot images
+    if (screenshots && Array.isArray(screenshots)) {
+      for (const screenshot of screenshots) {
+        try {
+          // Screenshots already have base64 data in imageData field
+          const base64Data = screenshot.imageData.split(',')[1] || screenshot.imageData;
+
+          exportedImages.push({
+            id: `screenshot_${screenshot.id}`,
+            name: screenshot.name,
+            data: base64Data,
+            format: 'png',
+            width: screenshot.width,
+            height: screenshot.height,
+            hash: await this.calculateHash(base64Data)
+          });
+        } catch (error) {
+          console.error(`Failed to export screenshot ${screenshot.name}:`, error);
+        }
+      }
+    }
+
     return exportedImages;
   }
 
@@ -130,10 +165,15 @@ export class ConfigExporter {
    * Convert processes to export format
    */
   private exportProcesses(processes: Process[]): ExportProcess[] {
+    if (!processes || !Array.isArray(processes)) {
+      return [];
+    }
+
     return processes.map(process => ({
       id: process.id,
       name: process.name,
       description: process.description,
+      category: process.category,
       type: 'sequence', // Default to sequence, can be enhanced
       actions: process.actions.map(action => ({
         id: action.id,
@@ -174,7 +214,15 @@ export class ConfigExporter {
     // Handle type-specific properties
     switch (type) {
       case 'TYPE':
-        actionConfig.text = config.text;
+        if (config.textSource === 'stateString') {
+          actionConfig.stateStringSource = {
+            stateId: config.selectedState,
+            stringIds: config.selectedStateStrings,
+            useAll: config.useAllStateStrings
+          };
+        } else {
+          actionConfig.text = config.text;
+        }
         break;
       case 'KEY_PRESS':
         actionConfig.keys = config.keys || [config.key];
@@ -203,11 +251,13 @@ export class ConfigExporter {
     }
 
     // Copy any other config properties that aren't handled above
-    Object.keys(config).forEach(key => {
-      if (!(key in actionConfig) && key !== 'timeout' && key !== 'retryCount' && key !== 'continueOnError') {
-        actionConfig[key] = config[key];
-      }
-    });
+    if (config && typeof config === 'object') {
+      Object.keys(config).forEach(key => {
+        if (!(key in actionConfig) && key !== 'timeout' && key !== 'retryCount' && key !== 'continueOnError') {
+          actionConfig[key] = config[key];
+        }
+      });
+    }
 
     return actionConfig;
   }
@@ -215,27 +265,78 @@ export class ConfigExporter {
   /**
    * Convert states to export format
    */
-  private exportStates(states: State[]): ExportState[] {
-    return states.map(state => ({
-      id: state.id,
-      name: state.name,
-      description: state.description,
-      identifyingImages: state.identifyingImages.map(img => ({
-        imageId: img.image,
-        threshold: img.threshold,
-        required: true,
-        tags: []
-      })),
-      position: state.position,
-      isInitial: state.initial || false, // Use the initial property from state
-      isFinal: false // Can be determined by transitions
-    }));
+  private exportStates(states: State[], screenshots?: Screenshot[]): ExportState[] {
+    if (!states || !Array.isArray(states)) {
+      return [];
+    }
+
+    return states.map(state => {
+      // Collect state objects from screenshots
+      const stateRegions: any[] = [];
+      const stateLocations: any[] = [];
+
+      if (screenshots) {
+        screenshots.forEach(screenshot => {
+          if (screenshot.associatedStates.includes(state.id)) {
+            // Add regions associated with this state
+            screenshot.regions.forEach(region => {
+              if (region.stateId === state.id) {
+                stateRegions.push({
+                  id: region.id,
+                  name: region.name,
+                  bounds: region.bounds,
+                  fixed: true,
+                  isSearchRegion: region.type === 'SearchRegion',
+                  isInteractionRegion: region.type === 'StateRegion'
+                });
+              }
+            });
+
+            // Add locations associated with this state
+            screenshot.locations.forEach(location => {
+              if (location.stateId === state.id) {
+                stateLocations.push({
+                  id: location.id,
+                  name: location.name,
+                  x: location.x,
+                  y: location.y,
+                  fixed: true,
+                  clickTarget: true
+                });
+              }
+            });
+          }
+        });
+      }
+
+      return {
+        id: state.id,
+        name: state.name,
+        description: state.description,
+        identifyingImages: state.identifyingImages.map(img => ({
+          imageId: img.image,
+          threshold: img.threshold,
+          required: true,
+          tags: []
+        })),
+        stateRegions: stateRegions.length > 0 ? stateRegions : undefined,
+        stateLocations: stateLocations.length > 0 ? stateLocations : undefined,
+        stateStrings: state.stateStrings,
+        position: state.position,
+        isInitial: state.initial || false,
+        isFinal: false
+      };
+    });
   }
 
   /**
    * Convert transitions to export format
    */
   private exportTransitions(transitions: Transition[]): ExportTransition[] {
+    if (!transitions || !Array.isArray(transitions)) {
+      return [];
+    }
+
     return transitions.map(transition => {
       if (transition.type === 'FromTransition') {
         const fromTransition: ExportFromTransition = {
@@ -306,23 +407,23 @@ export class ConfigExporter {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      
+
       img.onload = () => {
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
-        
+
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           reject(new Error('Failed to get canvas context'));
           return;
         }
-        
+
         ctx.drawImage(img, 0, 0);
         const base64 = canvas.toDataURL('image/png').split(',')[1];
         resolve(base64);
       };
-      
+
       img.onerror = () => reject(new Error('Failed to load image'));
       img.src = url;
     });
@@ -396,8 +497,8 @@ export class ConfigExporter {
     }
 
     // Validate state references in transitions
-    const stateIds = new Set(config.states.map(s => s.id));
-    config.transitions.forEach(transition => {
+    const stateIds = new Set((config.states || []).map(s => s.id));
+    (config.transitions || []).forEach(transition => {
       if (transition.type === 'FromTransition') {
         const ft = transition as ExportFromTransition;
         if (!stateIds.has(ft.fromState)) {
@@ -410,9 +511,9 @@ export class ConfigExporter {
     });
 
     // Validate process references
-    const processIds = new Set(config.processes.map(p => p.id));
-    config.transitions.forEach(transition => {
-      transition.processes.forEach(processId => {
+    const processIds = new Set((config.processes || []).map(p => p.id));
+    (config.transitions || []).forEach(transition => {
+      (transition.processes || []).forEach(processId => {
         if (!processIds.has(processId)) {
           errors.push(`Transition ${transition.id} references unknown process: ${processId}`);
         }
@@ -432,7 +533,7 @@ export class ConfigExporter {
     const json = JSON.stringify(config, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    
+
     const a = document.createElement('a');
     a.href = url;
     a.download = filename || `qontinui_config_${Date.now()}.json`;
