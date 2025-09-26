@@ -124,7 +124,32 @@ export function ImagesManager() {
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Image Library</h2>
+        <div className="flex items-center gap-6">
+          <h2 className="text-2xl font-bold">Image Library</h2>
+
+          {/* Stats - moved next to title */}
+          {images.length > 0 && (
+            <div className="flex gap-3">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
+                <span className="text-xs text-gray-400">Total Images:</span>
+                <span className="text-sm font-bold text-[#00FF88]">{images.length}</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
+                <span className="text-xs text-gray-400">Total Usage:</span>
+                <span className="text-sm font-bold text-[#00D9FF]">
+                  {images.reduce((acc, img) => acc + img.usageCount, 0)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#27272A]/50 border border-gray-700 rounded-lg">
+                <span className="text-xs text-gray-400">Total Size:</span>
+                <span className="text-sm font-bold text-[#BD00FF]">
+                  {formatFileSize(images.reduce((acc, img) => acc + img.size, 0))}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -183,40 +208,6 @@ export function ImagesManager() {
 
       <input ref={fileInputRef} type="file" multiple accept="image/*" onChange={handleFileInput} className="hidden" />
 
-      {/* Stats */}
-      {images.length > 0 && (
-        <div className="flex gap-4">
-          <Card className="border-gray-700 bg-[#27272A]/50">
-            <CardContent className="p-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-[#00FF88]">{images.length}</div>
-                <div className="text-sm text-gray-400">Total Images</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-gray-700 bg-[#27272A]/50">
-            <CardContent className="p-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-[#00D9FF]">
-                  {images.reduce((acc, img) => acc + img.usageCount, 0)}
-                </div>
-                <div className="text-sm text-gray-400">Total Usage</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-gray-700 bg-[#27272A]/50">
-            <CardContent className="p-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-[#BD00FF]">
-                  {formatFileSize(images.reduce((acc, img) => acc + img.size, 0))}
-                </div>
-                <div className="text-sm text-gray-400">Total Size</div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
       {/* Image Gallery */}
       {filteredImages.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
@@ -235,45 +226,45 @@ export function ImagesManager() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+        <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-12 xl:grid-cols-16 gap-2">
           {filteredImages.map((image) => (
             <Card key={image.id} className="border-gray-700 bg-[#27272A] hover:border-gray-600 transition-colors group">
-              <CardContent className="p-2">
-                <div className="space-y-2">
+              <CardContent className="p-1">
+                <div className="space-y-1">
                   {/* Image Preview - reduced by 50% */}
-                  <div className="aspect-square bg-gray-800 rounded overflow-hidden relative">
+                  <div className="aspect-square bg-gray-800 rounded overflow-hidden relative w-20 h-20">
                     <img
                       src={image.url || "/placeholder.svg"}
                       alt={image.name}
-                      className="w-full h-full object-contain p-1"
+                      className="w-full h-full object-contain p-0.5"
                     />
                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-red-400 hover:text-red-300 hover:bg-red-400/20"
+                        className="text-red-400 hover:text-red-300 hover:bg-red-400/20 h-6 w-6 p-0"
                         onClick={() => handleDeleteImage(image.id)}
                         disabled={image.usageCount > 0}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3 h-3" />
                       </Button>
                     </div>
                   </div>
 
                   {/* Image Info - adjusted for smaller size */}
-                  <div className="space-y-1">
-                    <h4 className="font-medium text-xs truncate" title={image.name}>
+                  <div className="space-y-0.5">
+                    <h4 className="font-medium text-[10px] truncate" title={image.name}>
                       {image.name}
                     </h4>
 
-                    <div className="flex items-center justify-between text-[10px] text-gray-400">
+                    <div className="flex items-center justify-between text-[8px] text-gray-400">
                       <span>{formatFileSize(image.size)}</span>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <Badge
                         variant={image.usageCount > 0 ? "default" : "secondary"}
-                        className={`text-[10px] px-1 py-0 ${
+                        className={`text-[8px] px-0.5 py-0 h-3 ${
                           image.usageCount > 0 ? "bg-[#00FF88] text-black" : "bg-gray-700 text-gray-300"
                         }`}
                       >

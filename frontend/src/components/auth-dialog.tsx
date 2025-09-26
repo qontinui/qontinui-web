@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,12 +24,13 @@ interface AuthDialogProps {
 
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const { login, register } = useAuth();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
-  
+
   // Login form state
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  
+
   // Register form state
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerUsername, setRegisterUsername] = useState('');
@@ -44,6 +47,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
       // Reset form
       setLoginUsername('');
       setLoginPassword('');
+      // Redirect to dashboard
+      router.push('/dashboard');
     } catch (error: any) {
       toast.error(error.message || 'Login failed');
     } finally {
@@ -63,6 +68,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
       setRegisterUsername('');
       setRegisterPassword('');
       setRegisterFullName('');
+      // Redirect to dashboard
+      router.push('/dashboard');
     } catch (error: any) {
       toast.error(error.message || 'Registration failed');
     } finally {
@@ -79,13 +86,13 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
             Sign in to save and manage your automation projects
           </DialogDescription>
         </DialogHeader>
-        
+
         <Tabs defaultValue="login" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="login">Login</TabsTrigger>
             <TabsTrigger value="register">Register</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="login">
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
@@ -113,9 +120,18 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Signing in...' : 'Sign In'}
               </Button>
+              <div className="text-center mt-4">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-muted-foreground hover:text-primary"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Forgot your password?
+                </Link>
+              </div>
             </form>
           </TabsContent>
-          
+
           <TabsContent value="register">
             <form onSubmit={handleRegister} className="space-y-4">
               <div className="space-y-2">

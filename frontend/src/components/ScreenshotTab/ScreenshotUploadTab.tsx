@@ -3,6 +3,7 @@ import { Upload, Image, MousePointer, Square, Eye, Download, Trash2 } from 'luci
 import { Screenshot, SelectionMode, ScreenshotRegion, ScreenshotLocation } from '../../types/Screenshot';
 import ScreenshotCanvas from './ScreenshotCanvas';
 import RegionPropertiesPanel from './RegionPropertiesPanel';
+import LocationPropertiesPanel from './LocationPropertiesPanel';
 import StateAssociationPanel from './StateAssociationPanel';
 import { generateId } from '../../lib/utils';
 
@@ -113,6 +114,38 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     ));
     setSelectedScreenshot(updatedScreenshot);
     setSelectedRegion(null);
+  };
+
+  const handleLocationUpdate = (updatedLocation: ScreenshotLocation) => {
+    if (!selectedScreenshot) return;
+
+    const updatedScreenshot = {
+      ...selectedScreenshot,
+      locations: selectedScreenshot.locations.map(l =>
+        l.id === updatedLocation.id ? updatedLocation : l
+      )
+    };
+
+    setScreenshots(prev => prev.map(s =>
+      s.id === selectedScreenshot.id ? updatedScreenshot : s
+    ));
+    setSelectedScreenshot(updatedScreenshot);
+    setSelectedLocation(updatedLocation);
+  };
+
+  const handleLocationDelete = (locationId: string) => {
+    if (!selectedScreenshot) return;
+
+    const updatedScreenshot = {
+      ...selectedScreenshot,
+      locations: selectedScreenshot.locations.filter(l => l.id !== locationId)
+    };
+
+    setScreenshots(prev => prev.map(s =>
+      s.id === selectedScreenshot.id ? updatedScreenshot : s
+    ));
+    setSelectedScreenshot(updatedScreenshot);
+    setSelectedLocation(null);
   };
 
   const handleStateAssociation = (stateIds: string[]) => {
@@ -277,6 +310,15 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
             screenshots={screenshots}
             onUpdate={handleRegionUpdate}
             onDelete={handleRegionDelete}
+          />
+        )}
+        {selectedLocation && !selectedRegion && (
+          <LocationPropertiesPanel
+            selectedLocation={selectedLocation}
+            states={states}
+            screenshots={screenshots}
+            onUpdate={handleLocationUpdate}
+            onDelete={handleLocationDelete}
           />
         )}
       </div>

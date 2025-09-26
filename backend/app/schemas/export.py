@@ -1,6 +1,7 @@
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class ImageData(BaseModel):
@@ -10,47 +11,48 @@ class ImageData(BaseModel):
     format: str
     width: int
     height: int
-    hash: Optional[str] = None
+    hash: str | None = None
 
 
 class ActionConfig(BaseModel):
-    target: Optional[Dict[str, Any]] = None
-    text: Optional[str] = None
-    key: Optional[str] = None
-    position: Optional[Dict[str, float]] = None
-    duration: Optional[int] = None
-    direction: Optional[str] = None
+    target: dict[str, Any] | None = None
+    text: str | None = None
+    key: str | None = None
+    position: dict[str, float] | None = None
+    duration: int | None = None
+    direction: str | None = None
 
 
 class Action(BaseModel):
     id: str
     type: str
     config: ActionConfig
-    timeout: Optional[int] = 5000
-    retryCount: Optional[int] = 3
+    timeout: int | None = 5000
+    retryCount: int | None = 3
 
 
 class Process(BaseModel):
     id: str
     name: str
-    description: Optional[str] = None
+    description: str | None = None
+    category: str | None = None  # Category for organizing processes
     type: str = "sequence"
-    actions: List[Action]
+    actions: list[Action]
 
 
 class StateImage(BaseModel):
     imageId: str
     threshold: float = 0.9
     required: bool = True
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 class State(BaseModel):
     id: str
     name: str
-    description: Optional[str] = None
-    identifyingImages: List[StateImage]
-    position: Dict[str, float]
+    description: str | None = None
+    identifyingImages: list[StateImage]
+    position: dict[str, float]
     isInitial: bool = False
     isFinal: bool = False
 
@@ -59,12 +61,12 @@ class Transition(BaseModel):
     id: str
     type: str
     name: str
-    processes: List[str]
-    fromState: Optional[str] = None
-    toState: Optional[str] = None
+    processes: list[str]
+    fromState: str | None = None
+    toState: str | None = None
     staysVisible: bool = False
-    activateStates: List[str] = Field(default_factory=list)
-    deactivateStates: List[str] = Field(default_factory=list)
+    activateStates: list[str] = Field(default_factory=list)
+    deactivateStates: list[str] = Field(default_factory=list)
     timeout: int = 10000
     retryCount: int = 3
 
@@ -104,25 +106,26 @@ class Settings(BaseModel):
 
 class Metadata(BaseModel):
     name: str
-    description: Optional[str] = None
-    author: Optional[str] = None
+    description: str | None = None
+    author: str | None = None
     created: datetime
     modified: datetime
-    tags: List[str] = Field(default_factory=list)
-    targetApplication: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    targetApplication: str | None = None
 
 
 class ConfigurationExport(BaseModel):
     version: str = "1.0.0"
     metadata: Metadata
-    images: List[ImageData]
-    processes: List[Process]
-    states: List[State]
-    transitions: List[Transition]
+    images: list[ImageData]
+    processes: list[Process]
+    states: list[State]
+    transitions: list[Transition]
+    categories: list[str] = Field(default_factory=list)  # List of process categories
     settings: Settings = Field(default_factory=Settings)
 
 
 class ValidationResult(BaseModel):
     valid: bool
-    errors: List[str] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

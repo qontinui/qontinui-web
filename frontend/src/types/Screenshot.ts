@@ -37,6 +37,9 @@ export interface ScreenshotLocation {
   name: string;
   x: number;
   y: number;
+  anchor?: boolean; // If true, used as anchor point
+  fixed?: boolean; // If true, location is fixed
+  clickTarget?: boolean; // If true, used as click target
 }
 
 export type SelectionMode = 'view' | 'region' | 'location';

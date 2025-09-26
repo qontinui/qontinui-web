@@ -2,15 +2,18 @@
 """
 Generate secure secrets for production deployment
 """
+
 import secrets
 import string
 import sys
 from pathlib import Path
 
+
 def generate_secret_key(length=64):
     """Generate a cryptographically secure secret key"""
     alphabet = string.ascii_letters + string.digits + string.punctuation
-    return ''.join(secrets.choice(alphabet) for _ in range(length))
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
 
 def generate_env_file():
     """Generate a production-ready .env file"""
@@ -56,21 +59,20 @@ FRONTEND_URL=https://app.qontinui.com
     admin_password = generate_secret_key(32)
 
     env_content = env_template.format(
-        secret_key=secret_key,
-        admin_password=admin_password
+        secret_key=secret_key, admin_password=admin_password
     )
 
     # Check if .env.production exists
     env_file = Path(".env.production")
     if env_file.exists():
         response = input(".env.production already exists. Overwrite? (y/n): ")
-        if response.lower() != 'y':
+        if response.lower() != "y":
             print("Aborted.")
             sys.exit(0)
 
     # Write the file
     env_file.write_text(env_content)
-    print(f"✅ Generated .env.production")
+    print("✅ Generated .env.production")
     print(f"📝 Secret Key: {secret_key[:20]}...")
     print(f"📝 Admin Password: {admin_password}")
     print("\n⚠️  IMPORTANT:")
@@ -83,11 +85,11 @@ FRONTEND_URL=https://app.qontinui.com
     example_file = Path(".env.example")
     if not example_file.exists():
         example_content = env_template.format(
-            secret_key="change-me-" + "x" * 32,
-            admin_password="change-me"
+            secret_key="change-me-" + "x" * 32, admin_password="change-me"
         )
         example_file.write_text(example_content)
-        print(f"\n✅ Generated .env.example for reference")
+        print("\n✅ Generated .env.example for reference")
+
 
 if __name__ == "__main__":
     generate_env_file()

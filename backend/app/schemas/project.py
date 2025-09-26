@@ -1,12 +1,13 @@
-from typing import Optional, Dict, Any
-from pydantic import BaseModel
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel
 
 
 class ProjectBase(BaseModel):
     name: str
-    description: Optional[str] = None
-    configuration: Dict[str, Any] = {}
+    description: str | None = None
+    configuration: dict[str, Any] = {}
 
 
 class ProjectCreate(ProjectBase):
@@ -14,9 +15,9 @@ class ProjectCreate(ProjectBase):
 
 
 class ProjectUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    configuration: Optional[Dict[str, Any]] = None
+    name: str | None = None
+    description: str | None = None
+    configuration: dict[str, Any] | None = None
 
 
 class ProjectInDBBase(ProjectBase):
@@ -24,7 +25,7 @@ class ProjectInDBBase(ProjectBase):
     owner_id: int
     created_at: datetime
     updated_at: datetime
-    
+
     class Config:
         from_attributes = True
 

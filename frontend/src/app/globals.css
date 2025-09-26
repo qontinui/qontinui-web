@@ -121,3 +121,57 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom Qontinui styles for gaming aesthetic */
+@layer utilities {
+  .dot-grid {
+    background-image: radial-gradient(circle, #00d9ff 1px, transparent 1px);
+    background-size: 20px 20px;
+    opacity: 0.1;
+  }
+
+  .glow-cyan {
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+  }
+
+  .glow-purple {
+    box-shadow: 0 0 20px rgba(189, 0, 255, 0.3);
+  }
+
+  .glow-green {
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+  }
+
+  .pulse-cyan {
+    animation: pulse-cyan 2s infinite;
+  }
+
+  @keyframes pulse-cyan {
+    0%,
+    100% {
+      box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+    }
+    50% {
+      box-shadow: 0 0 30px rgba(0, 217, 255, 0.6);
+    }
+  }
+
+  .gradient-border {
+    position: relative;
+    background: #27272a;
+    border-radius: 0.625rem;
+  }
+
+  .gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    background: linear-gradient(45deg, #00d9ff, #bd00ff, #00ff88);
+    border-radius: inherit;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+  }
+}

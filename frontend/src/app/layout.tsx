@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/auth-context";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { SessionTimeoutWarning } from "@/components/session-timeout-warning";
+import { OfflineIndicator } from "@/components/offline-indicator";
+import { BetaBanner } from "@/components/beta-banner";
+import { OnboardingTour } from "@/components/onboarding-tour";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -25,14 +30,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>
-          {children}
-        </AuthProvider>
-        <Toaster 
+        <ErrorBoundary>
+          <AuthProvider>
+            <BetaBanner />
+            {children}
+            <SessionTimeoutWarning />
+            <OfflineIndicator />
+            <OnboardingTour />
+          </AuthProvider>
+        </ErrorBoundary>
+        <Toaster
           theme="dark"
           position="bottom-right"
           toastOptions={{

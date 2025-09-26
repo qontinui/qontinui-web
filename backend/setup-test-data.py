@@ -3,11 +3,11 @@
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.db.base import Base
-from app.models.user import User
-from app.models.project import Project
+
 from app.core.security import get_password_hash
-import json
+from app.db.base import Base
+from app.models.project import Project
+from app.models.user import User
 
 # Create database connection
 engine = create_engine("sqlite:///qontinui.db")
@@ -29,7 +29,7 @@ if not test_user:
         full_name="Test User",
         hashed_password=get_password_hash("testpassword"),
         is_active=True,
-        is_superuser=False
+        is_superuser=False,
     )
     db.add(test_user)
     db.commit()
@@ -45,7 +45,7 @@ sample_config = {
         "name": "Sample Automation",
         "description": "Test configuration for export/import",
         "tags": ["test", "sample"],
-        "targetApplication": "Test App"
+        "targetApplication": "Test App",
     },
     "images": [],
     "processes": [],
@@ -56,23 +56,24 @@ sample_config = {
             "defaultTimeout": 10000,
             "defaultRetryCount": 3,
             "actionDelay": 100,
-            "failureStrategy": "stop"
+            "failureStrategy": "stop",
         }
-    }
+    },
 }
 
 # Check if project exists
-test_project = db.query(Project).filter(
-    Project.owner_id == test_user.id,
-    Project.name == "Test Project"
-).first()
+test_project = (
+    db.query(Project)
+    .filter(Project.owner_id == test_user.id, Project.name == "Test Project")
+    .first()
+)
 
 if not test_project:
     test_project = Project(
         name="Test Project",
         description="A test project for export/import",
         configuration=sample_config,
-        owner_id=test_user.id
+        owner_id=test_user.id,
     )
     db.add(test_project)
     db.commit()

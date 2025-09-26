@@ -3,10 +3,11 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { ImageIcon, Search, X } from "lucide-react"
+import { ImageIcon, Search, X, Filter } from "lucide-react"
 
 interface ImageAsset {
   id: string
@@ -17,23 +18,46 @@ interface ImageAsset {
   usageCount: number
 }
 
+interface State {
+  id: string
+  name: string
+  identifyingImages: Array<{ image: string }>
+}
+
 interface ImageSelectorProps {
   selectedImage: string | null
   onSelectImage: (imageId: string | null) => void
   images: ImageAsset[]
+  states?: State[]
   placeholder?: string
+  initialOpen?: boolean
+  showStateFilter?: boolean
 }
 
 export function ImageSelector({
   selectedImage,
   onSelectImage,
   images,
+  states = [],
   placeholder = "Select image",
+  initialOpen = false,
+  showStateFilter = false,
 }: ImageSelectorProps) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initialOpen)
   const [searchQuery, setSearchQuery] = useState("")
+  const [selectedStateFilter, setSelectedStateFilter] = useState<string>("all")
 
-  const filteredImages = images.filter((image) => image.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  // Get images filtered by state if a state is selected
+  let availableImages = images
+  if (showStateFilter && selectedStateFilter !== "all") {
+    const state = states.find(s => s.id === selectedStateFilter)
+    if (state) {
+      const stateImageIds = state.identifyingImages.map(img => img.image)
+      availableImages = images.filter(img => stateImageIds.includes(img.id))
+    }
+  }
+
+  const filteredImages = availableImages.filter((image) => image.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
   const selectedImageData = selectedImage ? images.find((img) => img.id === selectedImage) : null
 
@@ -67,9 +91,32 @@ export function ImageSelector({
       <DialogContent className="bg-[#27272A] border-gray-700 max-w-4xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle className="text-[#00D9FF]">Select Image</DialogTitle>
+          <DialogDescription className="text-gray-400 text-sm">
+            Choose an image from your library
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* State Filter */}
+          {showStateFilter && states.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-400" />
+              <Select value={selectedStateFilter} onValueChange={setSelectedStateFilter}>
+                <SelectTrigger className="w-48 bg-transparent border-gray-700">
+                  <SelectValue placeholder="Filter by state" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Images</SelectItem>
+                  {states.map((state) => (
+                    <SelectItem key={state.id} value={state.id}>
+                      {state.name} ({state.identifyingImages.length})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />

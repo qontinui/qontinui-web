@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, projects, export
+from app.api.v1.endpoints import auth, export, projects, users
 
 api_router = APIRouter()
 

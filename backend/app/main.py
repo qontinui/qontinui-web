@@ -1,43 +1,47 @@
-from fastapi import FastAPI, Request
+import logging
+import time
+
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from slowapi.errors import RateLimitExceeded
-import time
-import logging
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.db.session import SessionLocal
-from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.error_handler import (
+    AppError,
     app_exception_handler,
-    validation_exception_handler,
-    http_exception_handler,
     general_exception_handler,
-    AppException
+    http_exception_handler,
+    validation_exception_handler,
 )
+from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json" if settings.ENVIRONMENT == "development" else None,
+    openapi_url=(
+        f"{settings.API_V1_STR}/openapi.json"
+        if settings.ENVIRONMENT == "development"
+        else None
+    ),
     docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
-    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None
+    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
 )
 
 # Add exception handlers
-app.add_exception_handler(AppException, app_exception_handler)
+app.add_exception_handler(AppError, app_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 if settings.ENVIRONMENT == "development":
@@ -52,15 +56,24 @@ if settings.RATE_LIMIT_ENABLED:
 if settings.ENVIRONMENT == "production":
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["qontinui.com", "*.qontinui.com", "localhost"]
+        allowed_hosts=["qontinui.com", "*.qontinui.com", "localhost"],
     )
 
 # Set up CORS
-origins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002",
-           "http://localhost:3003", "http://localhost:3004"]
+origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:3004",
+]
 
 if settings.ENVIRONMENT == "production":
-    origins = ["https://qontinui.com", "https://app.qontinui.com", "https://www.qontinui.com"]
+    origins = [
+        "https://qontinui.com",
+        "https://app.qontinui.com",
+        "https://www.qontinui.com",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,7 +81,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["X-Total-Count", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"]
+    expose_headers=[
+        "X-Total-Count",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+    ],
 )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
@@ -94,12 +112,13 @@ async def health_check():
         "status": "healthy",
         "timestamp": time.time(),
         "version": settings.VERSION,
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
     }
 
     # Check database connectivity
     try:
         from sqlalchemy import text
+
         db = SessionLocal()
         db.execute(text("SELECT 1"))
         db.close()

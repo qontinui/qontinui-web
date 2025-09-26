@@ -1,9 +1,8 @@
-from typing import List, Optional
-from pydantic_settings import BaseSettings
-from pydantic import AnyHttpUrl, field_validator, Field, PostgresDsn
 import json
-import secrets
 import warnings
+
+from pydantic import AnyHttpUrl, Field, PostgresDsn, field_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -14,20 +13,24 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = Field("development", description="Current environment")
 
     # Database
-    DATABASE_URL: PostgresDsn | str = Field(..., description="PostgreSQL connection string")
+    DATABASE_URL: PostgresDsn | str = Field(
+        ..., description="PostgreSQL connection string"
+    )
 
     # Security
-    SECRET_KEY: str = Field(..., min_length=32, description="Secret key for JWT encoding")
+    SECRET_KEY: str = Field(
+        ..., min_length=32, description="Secret key for JWT encoding"
+    )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # Reduced from 60 for better security
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    
+
     # CORS
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
-    
+    BACKEND_CORS_ORIGINS: list[AnyHttpUrl] = []
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v: str | List[str]) -> List[str] | str:
+    def assemble_cors_origins(cls, v: str | list[str]) -> list[str] | str:
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, str) and v.startswith("["):
@@ -35,19 +38,27 @@ class Settings(BaseSettings):
         elif isinstance(v, list):
             return v
         raise ValueError(v)
-    
+
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     RELOAD: bool = True
     DEBUG: bool = True
-    
+
     # Frontend
     FRONTEND_URL: str = "http://localhost:3000"
-    
+
     # User settings
-    FIRST_SUPERUSER_EMAIL: Optional[str] = None
-    FIRST_SUPERUSER_PASSWORD: Optional[str] = None
+    FIRST_SUPERUSER_EMAIL: str | None = None
+    FIRST_SUPERUSER_PASSWORD: str | None = None
+
+    # Email settings
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_TLS: bool = True
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_FROM_EMAIL: str = "noreply@qontinui.com"
 
     # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
@@ -59,7 +70,9 @@ class Settings(BaseSettings):
     def validate_secret_key(cls, v: str) -> str:
         if v == "change-me" or len(v) < 32:
             if cls.model_fields.get("ENVIRONMENT") != "development":
-                raise ValueError("SECRET_KEY must be at least 32 characters in production")
+                raise ValueError(
+                    "SECRET_KEY must be at least 32 characters in production"
+                )
             warnings.warn("Using weak SECRET_KEY in development mode")
         return v
 
@@ -76,7 +89,10 @@ class Settings(BaseSettings):
     def validate_database_url(cls, v: str) -> str:
         if not v:
             raise ValueError("DATABASE_URL is required")
-        if "sqlite" in v.lower() and cls.model_fields.get("ENVIRONMENT") == "production":
+        if (
+            "sqlite" in v.lower()
+            and cls.model_fields.get("ENVIRONMENT") == "production"
+        ):
             raise ValueError("SQLite is not allowed in production")
         return v
 

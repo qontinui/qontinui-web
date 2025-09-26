@@ -27,12 +27,37 @@ interface Action {
   config: Record<string, any>
 }
 
+interface StateRegion {
+  id: string
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface StateLocation {
+  id: string
+  name: string
+  x: number
+  y: number
+}
+
+interface StateString {
+  id: string
+  name: string
+  value: string
+}
+
 interface State {
   id: string
   name: string
   description: string
   initial?: boolean  // Whether this state is expected to be active at start
-  identifyingImages: Array<{ image: string; threshold: number }>
+  identifyingImages: Array<{ image: string }>
+  regions: StateRegion[]
+  locations: StateLocation[]
+  strings: StateString[]
   position: { x: number; y: number }
 }
 
@@ -41,18 +66,15 @@ type TransitionType = "OutgoingTransition" | "IncomingTransition"
 interface BaseTransition {
   id: string
   type: TransitionType
-  processes: string[]  // Process IDs to execute
-  timeout: number
-  retryCount: number
+  process: string  // Process ID to execute
 }
 
 interface OutgoingTransition extends BaseTransition {
   type: "OutgoingTransition"
   fromState: string  // Origin state ID
-  toState: string    // Target state ID
+  activateStates: string[]  // States to activate on success
   staysVisible: boolean  // Whether origin state remains active
-  activateStates: string[]  // Additional states to activate on success
-  deactivateStates: string[]  // Additional states to deactivate on success
+  deactivateStates: string[]  // States to deactivate on success
 }
 
 interface IncomingTransition extends BaseTransition {
@@ -96,7 +118,7 @@ interface AutomationContextType {
   // Auto-save
   lastSaved: string | null
   triggerSave: () => void
-  
+
   // Configuration
   getConfiguration: () => any
   loadConfiguration: (config: any) => void
@@ -201,7 +223,7 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
     // Remove transitions that reference this state
     setTransitions((prev) => prev.filter((t) => {
       if (t.type === "OutgoingTransition") {
-        return t.fromState !== stateId && t.toState !== stateId && 
+        return t.fromState !== stateId &&
                !t.activateStates.includes(stateId) && !t.deactivateStates.includes(stateId)
       } else {
         return t.toState !== stateId

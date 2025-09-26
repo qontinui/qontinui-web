@@ -6,11 +6,15 @@ import { Badge } from "@/components/ui/badge"
 interface TransitionEdgeData {
   transition: {
     id: string
-    fromStates: string[]
-    toStates: string[]
-    processes: string[]
+    fromState: string
+    activateStates: string[]
+    deactivateStates: string[]
+    process: string
     staysVisible: boolean
   }
+  isMultiTarget?: boolean
+  targetIndex?: number
+  totalTargets?: number
 }
 
 export function TransitionEdge({
@@ -33,55 +37,41 @@ export function TransitionEdge({
     targetPosition,
   })
 
-  const { transition } = data || { transition: { processes: [], staysVisible: false } }
+  const { transition, isMultiTarget, targetIndex, totalTargets } = data || {
+    transition: { process: "", staysVisible: false },
+    isMultiTarget: false,
+    targetIndex: 0,
+    totalTargets: 1
+  }
 
   return (
     <>
+      {/* Invisible wider path for easier clicking */}
+      <path
+        style={{
+          stroke: "transparent",
+          strokeWidth: 20,
+          fill: "none",
+          pointerEvents: "stroke",
+          cursor: "pointer",
+        }}
+        d={edgePath}
+      />
       <path
         id={id}
         style={{
           stroke: selected ? "#00D9FF" : "#BD00FF",
           strokeWidth: selected ? 3 : 2,
           fill: "none",
+          pointerEvents: "stroke",
+          cursor: "pointer",
         }}
         className="react-flow__edge-path"
         d={edgePath}
         markerEnd="url(#react-flow__arrowclosed)"
       />
 
-      {transition.processes.length > 0 && (
-        <EdgeLabelRenderer>
-          <div
-            style={{
-              position: "absolute",
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-              fontSize: 10,
-              pointerEvents: "all",
-            }}
-            className="nodrag nopan"
-          >
-            <Badge className="bg-[#BD00FF] text-white text-xs px-2 py-1">
-              {transition.processes.length} process{transition.processes.length !== 1 ? "es" : ""}
-            </Badge>
-          </div>
-        </EdgeLabelRenderer>
-      )}
-
-      {transition.staysVisible && (
-        <EdgeLabelRenderer>
-          <div
-            style={{
-              position: "absolute",
-              transform: `translate(-50%, -50%) translate(${sourceX}px,${sourceY - 20}px)`,
-              fontSize: 10,
-              pointerEvents: "all",
-            }}
-            className="nodrag nopan"
-          >
-            <Badge className="bg-[#00FF88] text-black text-xs px-2 py-1">Stays Visible</Badge>
-          </div>
-        </EdgeLabelRenderer>
-      )}
+      {/* Don't show any badges on edges since we're using transition nodes for all transitions */}
     </>
   )
 }

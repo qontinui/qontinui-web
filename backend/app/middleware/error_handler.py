@@ -1,17 +1,20 @@
-from fastapi import Request, status
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
+import logging
 import time
 import traceback
-import logging
+
+from fastapi import Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class AppException(Exception):
+class AppError(Exception):
     """Base application exception"""
+
     def __init__(self, status_code: int, detail: str, error_code: str = None):
         self.status_code = status_code
         self.detail = detail
@@ -19,7 +22,7 @@ class AppException(Exception):
         super().__init__(self.detail)
 
 
-async def app_exception_handler(request: Request, exc: AppException):
+async def app_exception_handler(request: Request, exc: AppError):
     """Handle application exceptions"""
     return JSONResponse(
         status_code=exc.status_code,
@@ -27,8 +30,8 @@ async def app_exception_handler(request: Request, exc: AppException):
             "error": exc.error_code,
             "message": exc.detail,
             "timestamp": time.time(),
-            "path": str(request.url)
-        }
+            "path": str(request.url),
+        },
     )
 
 
@@ -36,11 +39,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     """Handle validation errors"""
     errors = []
     for error in exc.errors():
-        errors.append({
-            "field": ".".join(str(loc) for loc in error["loc"]),
-            "message": error["msg"],
-            "type": error["type"]
-        })
+        errors.append(
+            {
+                "field": ".".join(str(loc) for loc in error["loc"]),
+                "message": error["msg"],
+                "type": error["type"],
+            }
+        )
 
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -49,8 +54,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "message": "Invalid request data",
             "details": errors,
             "timestamp": time.time(),
-            "path": str(request.url)
-        }
+            "path": str(request.url),
+        },
     )
 
 
@@ -62,8 +67,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             "error": "HTTP_ERROR",
             "message": exc.detail,
             "timestamp": time.time(),
-            "path": str(request.url)
-        }
+            "path": str(request.url),
+        },
     )
 
 
@@ -81,8 +86,8 @@ async def general_exception_handler(request: Request, exc: Exception):
                 "message": str(exc),
                 "traceback": traceback.format_exc(),
                 "timestamp": time.time(),
-                "path": str(request.url)
-            }
+                "path": str(request.url),
+            },
         )
 
     # In production, return generic error
@@ -92,52 +97,48 @@ async def general_exception_handler(request: Request, exc: Exception):
             "error": "INTERNAL_SERVER_ERROR",
             "message": "An unexpected error occurred",
             "timestamp": time.time(),
-            "path": str(request.url)
-        }
+            "path": str(request.url),
+        },
     )
 
 
 # Business logic exceptions
-class NotFoundException(AppException):
+class NotFoundError(AppError):
     def __init__(self, resource: str):
         super().__init__(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{resource} not found",
-            error_code="NOT_FOUND"
+            error_code="NOT_FOUND",
         )
 
 
-class UnauthorizedException(AppException):
+class UnauthorizedError(AppError):
     def __init__(self, detail: str = "Unauthorized"):
         super().__init__(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=detail,
-            error_code="UNAUTHORIZED"
+            error_code="UNAUTHORIZED",
         )
 
 
-class ForbiddenException(AppException):
+class ForbiddenError(AppError):
     def __init__(self, detail: str = "Access forbidden"):
         super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=detail,
-            error_code="FORBIDDEN"
+            status_code=status.HTTP_403_FORBIDDEN, detail=detail, error_code="FORBIDDEN"
         )
 
 
-class ConflictException(AppException):
+class ConflictError(AppError):
     def __init__(self, detail: str):
         super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=detail,
-            error_code="CONFLICT"
+            status_code=status.HTTP_409_CONFLICT, detail=detail, error_code="CONFLICT"
         )
 
 
-class BadRequestException(AppException):
+class BadRequestError(AppError):
     def __init__(self, detail: str):
         super().__init__(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=detail,
-            error_code="BAD_REQUEST"
+            error_code="BAD_REQUEST",
         )
