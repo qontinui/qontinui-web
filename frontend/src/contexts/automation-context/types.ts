@@ -35,12 +35,30 @@ export interface StateString {
   value: string
 }
 
+export interface SearchRegion {
+  id: string
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface StateImage {
+  id: string
+  name: string
+  image: string // Image ID or base64
+  searchRegions?: SearchRegion[]
+  fixed?: boolean // If true, image position is fixed on screen
+}
+
 export interface State {
   id: string
   name: string
   description: string
   initial?: boolean
-  identifyingImages: Array<{ image: string }>
+  identifyingImages: Array<{ image: string }> // Legacy, to be migrated to stateImages
+  stateImages: StateImage[] // New: StateImage objects with SearchRegions
   regions: StateRegion[]
   locations: StateLocation[]
   strings: StateString[]

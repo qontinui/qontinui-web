@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Target, Anchor, MousePointer } from 'lucide-react';
-import { ScreenshotLocation, Screenshot } from '../../types/Screenshot';
+import { X, Target, Anchor, MousePointer, Image } from 'lucide-react';
+import { ScreenshotLocation, Screenshot, AnchorType } from '../../types/Screenshot';
+import { StateImage } from '../../contexts/automation-context/types';
 
 interface LocationPropertiesPanelProps {
   selectedLocation: ScreenshotLocation;
@@ -173,7 +174,15 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
               <input
                 type="checkbox"
                 checked={location.anchor || false}
-                onChange={() => handlePropertyToggle('anchor')}
+                onChange={() => {
+                  const updatedLocation = {
+                    ...location,
+                    anchor: !location.anchor,
+                    anchorType: !location.anchor ? 'CENTER' : undefined
+                  };
+                  setLocation(updatedLocation);
+                  onUpdate(updatedLocation);
+                }}
                 className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
               />
             </label>
@@ -193,6 +202,38 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
             </label>
           </div>
         </div>
+
+        {/* Anchor Type Selector - shown when anchor is enabled */}
+        {location.anchor && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Anchor Type (for region definition)
+            </label>
+            <select
+              value={location.anchorType || 'CENTER'}
+              onChange={(e) => {
+                const updatedLocation = { ...location, anchorType: e.target.value as AnchorType };
+                setLocation(updatedLocation);
+                onUpdate(updatedLocation);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="TOP_LEFT">Top Left</option>
+              <option value="TOP_CENTER">Top Center</option>
+              <option value="TOP_RIGHT">Top Right</option>
+              <option value="MIDDLE_LEFT">Middle Left</option>
+              <option value="CENTER">Center</option>
+              <option value="MIDDLE_RIGHT">Middle Right</option>
+              <option value="BOTTOM_LEFT">Bottom Left</option>
+              <option value="BOTTOM_CENTER">Bottom Center</option>
+              <option value="BOTTOM_RIGHT">Bottom Right</option>
+              <option value="CUSTOM">Custom Position</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Specifies which part of a region this anchor represents
+            </p>
+          </div>
+        )}
 
         {/* Property Descriptions */}
         <div className="text-xs text-gray-500 space-y-1 p-2 bg-blue-50 rounded">
@@ -238,6 +279,40 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
             ))}
           </select>
         </div>
+
+        {/* StateImage Reference (for relative positioning) */}
+        {!location.fixed && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              <div className="flex items-center gap-2">
+                <Image className="w-4 h-4" />
+                Reference Image (for relative positioning)
+              </div>
+            </label>
+            <select
+              value={location.referenceImageId || ''}
+              onChange={(e) => {
+                const updatedLocation = { ...location, referenceImageId: e.target.value || undefined };
+                setLocation(updatedLocation);
+                onUpdate(updatedLocation);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">No image reference (use state coordinates)</option>
+              {/* Get StateImages from selected state */}
+              {location.stateId && states.find(s => s.id === location.stateId)?.stateImages?.map((stateImage: StateImage) => (
+                <option key={stateImage.id} value={stateImage.id}>
+                  {stateImage.name}
+                </option>
+              )) || (
+                <option disabled>Select a state first</option>
+              )}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              When set, location will be relative to where this image is found at runtime
+            </p>
+          </div>
+        )}
 
         {/* Screenshot Info */}
         {getScreenshot() && (
