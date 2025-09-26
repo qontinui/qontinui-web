@@ -106,6 +106,44 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
           </div>
         </div>
 
+        {/* Offsets */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Position Offsets
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500">Offset X</label>
+              <input
+                type="number"
+                value={location.offsetX || 0}
+                onChange={(e) => {
+                  const updatedLocation = { ...location, offsetX: Number(e.target.value) };
+                  setLocation(updatedLocation);
+                  onUpdate(updatedLocation);
+                }}
+                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500">Offset Y</label>
+              <input
+                type="number"
+                value={location.offsetY || 0}
+                onChange={(e) => {
+                  const updatedLocation = { ...location, offsetY: Number(e.target.value) };
+                  setLocation(updatedLocation);
+                  onUpdate(updatedLocation);
+                }}
+                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Pixel offsets applied to the final position
+          </p>
+        </div>
+
         {/* Properties */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -158,9 +196,24 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
 
         {/* Property Descriptions */}
         <div className="text-xs text-gray-500 space-y-1 p-2 bg-blue-50 rounded">
-          <p><strong>Click Target:</strong> Location is used as a click target in actions</p>
-          <p><strong>Anchor Point:</strong> Location serves as reference point for relative positioning</p>
-          <p><strong>Fixed Position:</strong> Location doesn't change relative to state</p>
+          <p><strong>Click Target:</strong> Use this location as an action target (click, type, hover)</p>
+          <p><strong>Anchor Point:</strong> Use for defining region boundaries or spatial relationships</p>
+          <p><strong>Fixed Position:</strong> Always use absolute coordinates, ignore relative positioning</p>
+        </div>
+
+        {/* Positioning Mode Indicator */}
+        <div className="p-2 bg-gray-50 rounded">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${location.fixed ? 'bg-blue-500' : 'bg-green-500'}`} />
+            <span className="text-sm font-medium text-gray-700">
+              {location.fixed ? 'Absolute' : 'Relative'} Positioning
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {location.fixed
+              ? 'Using fixed coordinates (x, y)'
+              : 'Will adapt to image position at runtime'}
+          </p>
         </div>
 
         {/* State Association */}
@@ -232,6 +285,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
             Visual Preview
           </label>
           <div className="relative bg-gray-100 rounded p-4" style={{ minHeight: '100px' }}>
+            {/* Base position */}
             <div
               className="absolute w-4 h-4 transform -translate-x-1/2 -translate-y-1/2"
               style={{
@@ -247,8 +301,33 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
                 <div className="absolute w-2 h-2 bg-red-600 rounded-full -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2"></div>
               </div>
             </div>
+
+            {/* Offset position if offsets are non-zero */}
+            {(location.offsetX || location.offsetY) && (
+              <div
+                className="absolute w-4 h-4 transform -translate-x-1/2 -translate-y-1/2"
+                style={{
+                  left: `${((location.x + (location.offsetX || 0)) / (getScreenshot()?.width || 1920)) * 100}%`,
+                  top: `${((location.y + (location.offsetY || 0)) / (getScreenshot()?.height || 1080)) * 100}%`
+                }}
+              >
+                <div className="relative">
+                  {/* Crosshair with offset styling */}
+                  <div className="absolute w-4 h-0.5 bg-blue-500 -translate-y-1/2 top-1/2"></div>
+                  <div className="absolute h-4 w-0.5 bg-blue-500 -translate-x-1/2 left-1/2"></div>
+                  {/* Center dot */}
+                  <div className="absolute w-2 h-2 bg-blue-600 rounded-full -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2"></div>
+                </div>
+              </div>
+            )}
+
             <div className="text-center text-xs text-gray-500 mt-8">
-              Location at ({location.x}, {location.y})
+              <div>Base: ({location.x}, {location.y})</div>
+              {(location.offsetX || location.offsetY) && (
+                <div className="text-blue-600">
+                  Final: ({location.x + (location.offsetX || 0)}, {location.y + (location.offsetY || 0)})
+                </div>
+              )}
             </div>
           </div>
         </div>
