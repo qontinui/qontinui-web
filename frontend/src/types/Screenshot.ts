@@ -37,9 +37,12 @@ export interface ScreenshotLocation {
   name: string;
   x: number;
   y: number;
-  anchor?: boolean; // If true, used as anchor point
-  fixed?: boolean; // If true, location is fixed
-  clickTarget?: boolean; // If true, used as click target
+  anchor?: boolean; // If true, used as anchor point for region definition
+  fixed?: boolean; // If true, always use absolute coordinates
+  clickTarget?: boolean; // If true, used as action target (click, type, hover)
+  referenceImageId?: string; // ID of StateImage this location is relative to
+  offsetX?: number; // X offset in pixels added to final position
+  offsetY?: number; // Y offset in pixels added to final position
 }
 
 export type SelectionMode = 'view' | 'region' | 'location';
