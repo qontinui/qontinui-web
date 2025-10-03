@@ -20,7 +20,24 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Phase 1 Analytics fields
+    company = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    avatar_url = Column(String, nullable=True)
+    email_verified = Column(Boolean, default=False)
+    email_verification_token = Column(String, nullable=True)
+    subscription_tier = Column(String, default="free")
+
     # Relationships
     projects = relationship(
         "Project", back_populates="owner", cascade="all, delete-orphan"
+    )
+    usage_metrics = relationship(
+        "UsageMetric", back_populates="user", cascade="all, delete-orphan"
+    )
+    storage_usages = relationship(
+        "StorageUsage", back_populates="user", cascade="all, delete-orphan"
+    )
+    audit_logs = relationship(
+        "AuditLog", back_populates="user", cascade="all, delete-orphan"
     )

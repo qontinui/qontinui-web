@@ -3,7 +3,8 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ImageIcon, Target, Play } from "lucide-react"
+import { ImageIcon, Target, Play, MapPin, Square, Type } from "lucide-react"
+import { StateImageViewer } from "@/components/state-image-viewer"
 
 interface ImageAsset {
   id: string
@@ -14,13 +15,55 @@ interface ImageAsset {
   usageCount: number
 }
 
+interface Pattern {
+  id: string
+  name?: string
+  image: string
+  mask?: string
+  searchRegions: any[]
+  fixed: boolean
+  similarity?: number
+}
+
+interface StateImage {
+  id: string
+  name: string
+  patterns: Pattern[]
+  shared: boolean
+}
+
+interface StateRegion {
+  id: string
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface StateLocation {
+  id: string
+  name: string
+  x: number
+  y: number
+}
+
+interface StateString {
+  id: string
+  name: string
+  value: string
+}
+
 interface StateNodeData {
   state: {
     id: string
     name: string
     description: string
     initial?: boolean
-    identifyingImages: Array<{ image: string }>
+    stateImages: StateImage[]
+    regions?: StateRegion[]
+    locations?: StateLocation[]
+    strings?: StateString[]
   }
   images?: ImageAsset[]
   hasIncomingTransitions?: boolean
@@ -61,43 +104,73 @@ export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
               {state.description && <p className="text-xs text-gray-400 mt-2 text-center line-clamp-2">{state.description}</p>}
             </div>
 
-            {/* Identifying Images Thumbnail Grid */}
-            {state.identifyingImages.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-1">
-                  <ImageIcon className="w-3 h-3 text-gray-400" />
-                  <span className="text-xs text-gray-400">Identifying Images ({state.identifyingImages.length})</span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-1 max-w-[150px]">
-                  {state.identifyingImages.slice(0, 6).map((imgConfig, i) => {
-                    const imageData = images.find(img => img.id === imgConfig.image)
-                    return (
-                      <div
-                        key={i}
-                        className="w-12 h-12 bg-gray-700 rounded border border-gray-600 flex items-center justify-center relative overflow-hidden"
-                      >
-                        {imageData ? (
-                          <img
-                            src={imageData.url}
-                            alt={imageData.name}
-                            className="w-full h-full object-contain p-0.5"
-                          />
-                        ) : (
-                          <ImageIcon className="w-4 h-4 text-gray-400" />
-                        )}
-                      </div>
-                    )
-                  })}
-                  {/* Show +N indicator if more than 6 images */}
-                  {state.identifyingImages.length > 6 && (
-                    <div className="w-12 h-12 bg-gray-700 rounded border border-gray-600 flex items-center justify-center">
-                      <span className="text-xs text-gray-400">+{state.identifyingImages.length - 6}</span>
+            {/* State Images Thumbnail Grid */}
+            {state.stateImages && state.stateImages.length > 0 && (
+              <div className="grid grid-cols-3 gap-1 max-w-[150px] mx-auto">
+                {state.stateImages.slice(0, 6).map((stateImage) => {
+                  // Get first pattern's image
+                  const firstPattern = stateImage.patterns?.[0];
+                  return (
+                    <div
+                      key={stateImage.id}
+                      className="w-12 h-12 rounded flex items-center justify-center relative overflow-hidden"
+                      style={{
+                        background: 'linear-gradient(45deg, #374151 25%, transparent 25%), linear-gradient(-45deg, #374151 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #374151 75%), linear-gradient(-45deg, transparent 75%, #374151 75%)',
+                        backgroundSize: '6px 6px',
+                        backgroundPosition: '0 0, 0 3px, 3px -3px, -3px 0px',
+                        backgroundColor: '#4B5563'
+                      }}
+                    >
+                      {firstPattern?.image ? (
+                        <StateImageViewer
+                          image={firstPattern.image}
+                          mask={firstPattern.mask}
+                          mode={firstPattern.mask ? 'with-mask' : 'normal'}
+                          alt={stateImage.name}
+                          className="w-full h-full"
+                        />
+                      ) : (
+                        <ImageIcon className="w-4 h-4 text-gray-400" />
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })}
+                {/* Show +N indicator if more than 6 images */}
+                {state.stateImages.length > 6 && (
+                  <div className="w-12 h-12 bg-gray-700 rounded border border-gray-600 flex items-center justify-center">
+                    <span className="text-xs text-gray-400">+{state.stateImages.length - 6}</span>
+                  </div>
+                )}
               </div>
             )}
+
+            {/* Element Counts */}
+            <div className="flex items-center justify-center gap-3 flex-wrap">
+              {state.stateImages && state.stateImages.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <ImageIcon className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm text-gray-300">{state.stateImages.length}</span>
+                </div>
+              )}
+              {state.regions && state.regions.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <Square className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm text-gray-300">{state.regions.length}</span>
+                </div>
+              )}
+              {state.locations && state.locations.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <MapPin className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm text-gray-300">{state.locations.length}</span>
+                </div>
+              )}
+              {state.strings && state.strings.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <Type className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm text-gray-300">{state.strings.length}</span>
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>

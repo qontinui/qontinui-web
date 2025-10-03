@@ -186,5 +186,131 @@ The Qontinui Team
 
         return await EmailService.send_email(to_email, subject, body, html_body)
 
+    @staticmethod
+    async def send_verification_email(
+        to_email: str, username: str, verification_token: str
+    ) -> bool:
+        """Send email verification email"""
+
+        verify_url = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
+        subject = "Qontinui - Verify Your Email Address"
+
+        body = f"""Email Verification
+
+Hi {username},
+
+Thank you for registering with Qontinui! Please verify your email address by clicking the link below:
+
+{verify_url}
+
+This link will expire in 24 hours.
+
+If you didn't create an account, please ignore this email.
+
+Best regards,
+The Qontinui Team
+"""
+
+        html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; }}
+        .content {{ background: #f7f7f7; padding: 30px; border-radius: 0 0 10px 10px; }}
+        .button {{ display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
+        .icon {{ font-size: 48px; margin-bottom: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon">&#x2709;</div>
+            <h1>Verify Your Email Address</h1>
+        </div>
+        <div class="content">
+            <p>Hi {username},</p>
+            <p>Thank you for registering with Qontinui! We're excited to have you on board.</p>
+            <p>Please verify your email address by clicking the button below:</p>
+
+            <a href="{verify_url}" class="button">Verify Email Address</a>
+
+            <p style="margin-top: 30px; color: #666;">
+                This link will expire in 24 hours.<br><br>
+                If you didn't create an account, please ignore this email.<br><br>
+                Best regards,<br>
+                The Qontinui Team
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        return await EmailService.send_email(to_email, subject, body, html_body)
+
+    @staticmethod
+    async def send_resend_verification_email(
+        to_email: str, username: str, verification_token: str
+    ) -> bool:
+        """Send resend verification email"""
+
+        verify_url = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
+        subject = "Qontinui - Verify Your Email Address"
+
+        body = f"""Email Verification
+
+Hi {username},
+
+You requested a new verification link. Please verify your email address by clicking the link below:
+
+{verify_url}
+
+This link will expire in 24 hours.
+
+Best regards,
+The Qontinui Team
+"""
+
+        html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; }}
+        .content {{ background: #f7f7f7; padding: 30px; border-radius: 0 0 10px 10px; }}
+        .button {{ display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
+        .icon {{ font-size: 48px; margin-bottom: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon">&#x2709;</div>
+            <h1>Verify Your Email Address</h1>
+        </div>
+        <div class="content">
+            <p>Hi {username},</p>
+            <p>You requested a new verification link. Please verify your email address by clicking the button below:</p>
+
+            <a href="{verify_url}" class="button">Verify Email Address</a>
+
+            <p style="margin-top: 30px; color: #666;">
+                This link will expire in 24 hours.<br><br>
+                Best regards,<br>
+                The Qontinui Team
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        return await EmailService.send_email(to_email, subject, body, html_body)
+
 
 email_service = EmailService()

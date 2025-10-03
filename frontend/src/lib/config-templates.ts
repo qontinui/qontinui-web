@@ -23,7 +23,7 @@ export class ConfigTemplates {
           id: 'main-menu',
           name: 'Main Menu',
           description: 'Game main menu screen',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 100, y: 100 },
           isInitial: true
         },
@@ -31,21 +31,21 @@ export class ConfigTemplates {
           id: 'gameplay',
           name: 'Gameplay',
           description: 'Active gameplay state',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 400, y: 100 }
         },
         {
           id: 'inventory',
           name: 'Inventory',
           description: 'Inventory management screen',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 250, y: 300 }
         },
         {
           id: 'battle',
           name: 'Battle',
           description: 'Combat/battle state',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 550, y: 300 }
         }
       ],
@@ -174,7 +174,7 @@ export class ConfigTemplates {
           id: 'login-page',
           name: 'Login Page',
           description: 'Application login screen',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 100, y: 100 },
           isInitial: true
         },
@@ -182,14 +182,14 @@ export class ConfigTemplates {
           id: 'dashboard',
           name: 'Dashboard',
           description: 'Main dashboard after login',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 400, y: 100 }
         },
         {
           id: 'form-page',
           name: 'Form Page',
           description: 'Data entry form',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 400, y: 300 }
         }
       ],
@@ -361,7 +361,7 @@ export class ConfigTemplates {
           id: 'app-closed',
           name: 'Application Closed',
           description: 'Application is not running',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 100, y: 100 },
           isInitial: true
         },
@@ -369,21 +369,21 @@ export class ConfigTemplates {
           id: 'app-main',
           name: 'Main Window',
           description: 'Application main window',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 400, y: 100 }
         },
         {
           id: 'file-dialog',
           name: 'File Dialog',
           description: 'File open/save dialog',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 250, y: 300 }
         },
         {
           id: 'settings',
           name: 'Settings',
           description: 'Application settings window',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 550, y: 300 }
         }
       ],
@@ -538,7 +538,7 @@ export class ConfigTemplates {
           id: 'data-list',
           name: 'Data List',
           description: 'List view with data to extract',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 100, y: 100 },
           isInitial: true
         },
@@ -546,14 +546,14 @@ export class ConfigTemplates {
           id: 'detail-view',
           name: 'Detail View',
           description: 'Detailed view of single item',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 400, y: 100 }
         },
         {
           id: 'export-dialog',
           name: 'Export Dialog',
           description: 'Export/save dialog',
-          identifyingImages: [],
+          stateImages: [],
           position: { x: 250, y: 300 }
         }
       ],

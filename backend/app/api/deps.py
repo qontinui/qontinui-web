@@ -59,3 +59,13 @@ def get_current_superuser(current_user: User = Depends(get_current_user)) -> Use
             status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions"
         )
     return current_user
+
+
+def get_verified_user(current_user: User = Depends(get_current_active_user)) -> User:
+    """Dependency to check if user has verified their email"""
+    if not current_user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification required. Please check your email for verification link.",
+        )
+    return current_user

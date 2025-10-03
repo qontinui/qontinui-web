@@ -17,7 +17,7 @@ export interface Screenshot {
 export interface ScreenshotRegion {
   id: string;
   screenshotId: string;
-  stateId: string;
+  stateId: string; // State to save this region to
   name: string;
   type: 'StateRegion' | 'SearchRegion';
   bounds: {
@@ -26,8 +26,11 @@ export interface ScreenshotRegion {
     width: number;
     height: number;
   };
-  linkedStateObjectId?: string; // For SearchRegions linked to StateImages
+  linkedStateObjectId?: string; // For SearchRegions and StateRegions linked to StateImages
   linkedStateObjectType?: 'StateImage'; // Type of linked object
+  referenceStateId?: string; // State containing the reference image (for SearchRegions)
+  saveToStateImageId?: string; // For SearchRegions: the StateImage to save this SearchRegion to
+  saveToStateImageStateId?: string; // For SearchRegions: the state containing the StateImage to save to
 }
 
 export type AnchorType =
@@ -45,17 +48,19 @@ export type AnchorType =
 export interface ScreenshotLocation {
   id: string;
   screenshotId: string;
-  stateId: string;
+  stateId: string; // State to save this location to
   name: string;
   x: number;
   y: number;
   anchor?: boolean; // If true, used as anchor point for region definition
   anchorType?: AnchorType; // Type of anchor when used as anchor
   fixed?: boolean; // If true, always use absolute coordinates
-  clickTarget?: boolean; // If true, used as action target (click, type, hover)
   referenceImageId?: string; // ID of StateImage this location is relative to
+  referenceStateId?: string; // State containing the reference image
   offsetX?: number; // X offset in pixels added to final position
   offsetY?: number; // Y offset in pixels added to final position
+  percentW?: number; // Percent of width (0.0-1.0) for relative positioning
+  percentH?: number; // Percent of height (0.0-1.0) for relative positioning
 }
 
 export type SelectionMode = 'view' | 'region' | 'location';

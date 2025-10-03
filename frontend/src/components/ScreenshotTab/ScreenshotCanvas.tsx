@@ -1,10 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Screenshot, ScreenshotRegion, ScreenshotLocation, SelectionMode } from '../../types/Screenshot';
 import { generateId } from '../../lib/utils';
+import { ZoomIn, ZoomOut, Maximize2, Move } from 'lucide-react';
 
 interface ScreenshotCanvasProps {
   screenshot: Screenshot;
   selectionMode: SelectionMode;
+  zoomMode: 'fit' | 'original';
   onRegionCreate: (region: ScreenshotRegion) => void;
   onLocationCreate: (location: ScreenshotLocation) => void;
   onRegionSelect: (region: ScreenshotRegion | null) => void;
@@ -14,6 +16,7 @@ interface ScreenshotCanvasProps {
 const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   screenshot,
   selectionMode,
+  zoomMode,
   onRegionCreate,
   onLocationCreate,
   onRegionSelect,
@@ -25,32 +28,79 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [currentRect, setCurrentRect] = useState<DOMRect | null>(null);
   const [scale, setScale] = useState(1);
+  const [manualZoom, setManualZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hoveredRegion, setHoveredRegion] = useState<ScreenshotRegion | null>(null);
   const [hoveredLocation, setHoveredLocation] = useState<ScreenshotLocation | null>(null);
 
   useEffect(() => {
     drawCanvas();
-  }, [screenshot, scale, currentRect, hoveredRegion, hoveredLocation]);
+  }, [screenshot, scale, manualZoom, offset, currentRect, hoveredRegion, hoveredLocation]);
 
   useEffect(() => {
     const handleResize = () => {
       calculateScale();
     };
     window.addEventListener('resize', handleResize);
-    calculateScale();
+
+    // Use requestAnimationFrame to ensure container is measured after layout
+    requestAnimationFrame(() => {
+      calculateScale();
+    });
+
     return () => window.removeEventListener('resize', handleResize);
-  }, [screenshot]);
+  }, [screenshot, zoomMode]);
+
+  // Reset offset when changing zoom
+  useEffect(() => {
+    setOffset({ x: 0, y: 0 });
+  }, [manualZoom]);
 
   const calculateScale = () => {
-    if (!containerRef.current) return;
+    if (!containerRef.current) {
+      // Retry after a short delay if container not ready
+      setTimeout(() => calculateScale(), 100);
+      return;
+    }
+
+    if (zoomMode === 'original') {
+      setScale(1);
+      return;
+    }
 
     const containerWidth = containerRef.current.clientWidth - 40; // padding
     const containerHeight = containerRef.current.clientHeight - 40;
+
+    if (containerWidth <= 0 || containerHeight <= 0) {
+      // Container not sized yet, retry
+      setTimeout(() => calculateScale(), 100);
+      return;
+    }
+
     const scaleX = containerWidth / screenshot.width;
     const scaleY = containerHeight / screenshot.height;
     const newScale = Math.min(scaleX, scaleY, 1);
 
     setScale(newScale);
+  };
+
+  const handleZoomIn = () => {
+    setManualZoom(prev => Math.min(prev * 1.2, 5));
+  };
+
+  const handleZoomOut = () => {
+    setManualZoom(prev => Math.max(prev / 1.2, 0.1));
+  };
+
+  const handleResetZoom = () => {
+    setManualZoom(1);
+    setOffset({ x: 0, y: 0 });
+  };
+
+  const getEffectiveScale = () => {
+    return scale * manualZoom;
   };
 
   const drawCanvas = () => {
@@ -60,9 +110,11 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const effectiveScale = getEffectiveScale();
+
     // Set canvas size
-    canvas.width = screenshot.width * scale;
-    canvas.height = screenshot.height * scale;
+    canvas.width = screenshot.width * effectiveScale;
+    canvas.height = screenshot.height * effectiveScale;
 
     // Draw image
     const img = new window.Image();
@@ -78,10 +130,10 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
           : (isHovered ? '#eab308' : 'rgba(234, 179, 8, 0.7)');   // yellow for SearchRegion
         ctx.lineWidth = isHovered ? 3 : 2;
         ctx.strokeRect(
-          region.bounds.x * scale,
-          region.bounds.y * scale,
-          region.bounds.width * scale,
-          region.bounds.height * scale
+          region.bounds.x * effectiveScale,
+          region.bounds.y * effectiveScale,
+          region.bounds.width * effectiveScale,
+          region.bounds.height * effectiveScale
         );
 
         // Draw label background
@@ -94,8 +146,8 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
           ? 'rgba(16, 185, 129, 0.9)'
           : 'rgba(234, 179, 8, 0.9)';
         ctx.fillRect(
-          region.bounds.x * scale,
-          region.bounds.y * scale - textHeight - padding,
+          region.bounds.x * effectiveScale,
+          region.bounds.y * effectiveScale - textHeight - padding,
           textMetrics.width + padding * 2,
           textHeight
         );
@@ -104,16 +156,16 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
         ctx.fillStyle = 'white';
         ctx.fillText(
           region.name,
-          region.bounds.x * scale + padding,
-          region.bounds.y * scale - padding - 2
+          region.bounds.x * effectiveScale + padding,
+          region.bounds.y * effectiveScale - padding - 2
         );
       });
 
       // Draw existing locations
       screenshot.locations.forEach(location => {
         const isHovered = hoveredLocation?.id === location.id;
-        const x = location.x * scale;
-        const y = location.y * scale;
+        const x = location.x * effectiveScale;
+        const y = location.y * effectiveScale;
         const size = isHovered ? 15 : 10;
 
         // Draw crosshair
@@ -146,10 +198,10 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
         ctx.strokeRect(
-          currentRect.x * scale,
-          currentRect.y * scale,
-          currentRect.width * scale,
-          currentRect.height * scale
+          currentRect.x * effectiveScale,
+          currentRect.y * effectiveScale,
+          currentRect.width * effectiveScale,
+          currentRect.height * effectiveScale
         );
         ctx.setLineDash([]);
 
@@ -158,16 +210,16 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
         const dimText = `${Math.round(currentRect.width)} x ${Math.round(currentRect.height)}`;
         const textWidth = ctx.measureText(dimText).width;
         ctx.fillRect(
-          currentRect.x * scale + currentRect.width * scale - textWidth - 8,
-          currentRect.y * scale + currentRect.height * scale - 20,
+          currentRect.x * effectiveScale + currentRect.width * effectiveScale - textWidth - 8,
+          currentRect.y * effectiveScale + currentRect.height * effectiveScale - 20,
           textWidth + 8,
           16
         );
         ctx.fillStyle = 'white';
         ctx.fillText(
           dimText,
-          currentRect.x * scale + currentRect.width * scale - textWidth - 4,
-          currentRect.y * scale + currentRect.height * scale - 6
+          currentRect.x * effectiveScale + currentRect.width * effectiveScale - textWidth - 4,
+          currentRect.y * effectiveScale + currentRect.height * effectiveScale - 6
         );
       }
     };
@@ -179,13 +231,24 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
     if (!canvas) return { x: 0, y: 0 };
 
     const rect = canvas.getBoundingClientRect();
+    const effectiveScale = getEffectiveScale();
+
+    // Convert from canvas pixel coordinates to original screenshot coordinates
     return {
-      x: (e.clientX - rect.left) / scale,
-      y: (e.clientY - rect.top) / scale
+      x: (e.clientX - rect.left) / effectiveScale,
+      y: (e.clientY - rect.top) / effectiveScale
     };
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Handle pan/drag with middle mouse or space+click
+    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+      e.preventDefault();
+      return;
+    }
+
     if (selectionMode === 'view') {
       // Check if clicking on existing region or location
       const coords = getCanvasCoordinates(e);
@@ -239,6 +302,15 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Handle dragging
+    if (isDragging) {
+      setOffset({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
+      return;
+    }
+
     const coords = getCanvasCoordinates(e);
 
     // Check hover states
@@ -273,6 +345,12 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   };
 
   const handleMouseUp = () => {
+    // Stop dragging
+    if (isDragging) {
+      setIsDragging(false);
+      return;
+    }
+
     if (!isDrawing || !currentRect || !startPoint) return;
 
     // Only create region if it has meaningful size
@@ -298,9 +376,10 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   };
 
   const getCursor = () => {
+    if (isDragging) return 'grabbing';
     if (selectionMode === 'view') {
       if (hoveredRegion || hoveredLocation) return 'pointer';
-      return 'default';
+      return manualZoom > 1 ? 'grab' : 'default';
     }
     if (selectionMode === 'location') return 'crosshair';
     if (selectionMode === 'region') return 'crosshair';
@@ -308,29 +387,76 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="flex-1 flex items-center justify-center bg-gray-100 p-5 overflow-auto">
-      <div className="relative">
-        <canvas
-          ref={canvasRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={() => {
-            handleMouseUp();
-            setHoveredRegion(null);
-            setHoveredLocation(null);
-          }}
-          className="border border-gray-300 shadow-lg"
-          style={{ cursor: getCursor() }}
-        />
-        <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
-          {Math.round(scale * 100)}% | {screenshot.width} x {screenshot.height}px
+    <div className="flex-1 flex flex-col bg-gray-100 min-h-0 relative">
+      {/* Top Bar with Mode Indicator and Zoom Controls */}
+      <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          {selectionMode !== 'view' && (
+            <div className="bg-blue-600 text-white px-3 py-1 rounded text-sm">
+              {selectionMode === 'region' ? 'Click and drag to create region' : 'Click to place location'}
+              {manualZoom > 1 && ' • Shift+drag to pan'}
+            </div>
+          )}
+          {selectionMode === 'view' && manualZoom > 1 && (
+            <div className="bg-blue-600 text-white px-3 py-1 rounded text-sm">
+              Shift+drag to pan
+            </div>
+          )}
         </div>
-        {selectionMode !== 'view' && (
-          <div className="absolute top-2 left-2 bg-blue-600 text-white px-2 py-1 rounded text-xs">
-            {selectionMode === 'region' ? 'Click and drag to create region' : 'Click to place location'}
+
+        <div className="flex items-center gap-2">
+          <div className="bg-gray-800 text-white px-3 py-1 rounded text-sm">
+            {Math.round(getEffectiveScale() * 100)}% | {screenshot.width} x {screenshot.height}px
           </div>
-        )}
+          <div className="flex gap-1 bg-white rounded-lg shadow border border-gray-300 p-1">
+            <button
+              onClick={handleZoomIn}
+              className="p-2 hover:bg-gray-100 rounded transition-colors"
+              title="Zoom In"
+            >
+              <ZoomIn className="w-4 h-4 text-gray-700" />
+            </button>
+            <button
+              onClick={handleZoomOut}
+              className="p-2 hover:bg-gray-100 rounded transition-colors"
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-4 h-4 text-gray-700" />
+            </button>
+            <button
+              onClick={handleResetZoom}
+              className="p-2 hover:bg-gray-100 rounded transition-colors"
+              title="Reset Zoom"
+            >
+              <Maximize2 className="w-4 h-4 text-gray-700" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Canvas Container */}
+      <div ref={containerRef} className="flex-1 overflow-auto min-h-0">
+        <div className="p-5">
+          <div className="relative inline-block">
+            <canvas
+              ref={canvasRef}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={() => {
+                handleMouseUp();
+                setHoveredRegion(null);
+                setHoveredLocation(null);
+                setIsDragging(false);
+              }}
+              className="border border-gray-300 shadow-lg bg-white"
+              style={{
+                cursor: getCursor(),
+                transform: `translate(${offset.x}px, ${offset.y}px)`
+              }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

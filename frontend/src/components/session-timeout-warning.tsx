@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Clock, LogOut } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { authService } from '@/services/service-factory';
 
 export function SessionTimeoutWarning() {
   const [showWarning, setShowWarning] = useState(false);
@@ -21,13 +21,22 @@ export function SessionTimeoutWarning() {
   useEffect(() => {
     const handleSessionExpiring = (event: CustomEvent) => {
       const minutes = event.detail?.minutesRemaining || 3;
+      console.log('[SessionTimeoutWarning] Session expiring event received:', {
+        timestamp: new Date().toISOString(),
+        minutesRemaining: minutes,
+        secondsRemaining: minutes * 60,
+      });
+
       setTimeRemaining(minutes * 60);
       setShowWarning(true);
+      console.log('[SessionTimeoutWarning] Warning dialog displayed');
     };
 
+    console.log('[SessionTimeoutWarning] Registering session-expiring event listener');
     window.addEventListener('session-expiring', handleSessionExpiring as EventListener);
 
     return () => {
+      console.log('[SessionTimeoutWarning] Removing session-expiring event listener');
       window.removeEventListener('session-expiring', handleSessionExpiring as EventListener);
     };
   }, []);
@@ -49,22 +58,31 @@ export function SessionTimeoutWarning() {
   }, [showWarning, timeRemaining]);
 
   const handleExtendSession = async () => {
+    console.log('[SessionTimeoutWarning] User clicked "Continue Working"');
     setIsRefreshing(true);
     try {
-      const refreshed = await apiClient.refreshAccessToken();
+      console.log('[SessionTimeoutWarning] Attempting to refresh access token...');
+      const refreshed = await authService.refreshAccessToken();
+      console.log('[SessionTimeoutWarning] Token refresh result:', refreshed);
+
       if (refreshed) {
+        console.log('[SessionTimeoutWarning] Session extended successfully, hiding warning dialog');
         setShowWarning(false);
         setTimeRemaining(180);
+      } else {
+        console.error('[SessionTimeoutWarning] Token refresh returned false');
       }
     } catch (error) {
-      console.error('Failed to extend session:', error);
+      console.error('[SessionTimeoutWarning] Failed to extend session:', error);
     } finally {
       setIsRefreshing(false);
     }
   };
 
   const handleLogout = async () => {
-    await apiClient.logout();
+    console.log('[SessionTimeoutWarning] User clicked "Logout"');
+    await authService.logout();
+    console.log('[SessionTimeoutWarning] Redirecting to login page');
     window.location.href = '/login';
   };
 

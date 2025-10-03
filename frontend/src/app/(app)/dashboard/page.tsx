@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
-import { apiClient } from "@/lib/api-client"
+import { projectService } from "@/services/service-factory"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play } from "lucide-react"
+import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play, User as UserIcon, BarChart3 } from "lucide-react"
 import { toast } from "sonner"
 
 interface Project {
@@ -51,7 +51,7 @@ export default function Dashboard() {
     try {
       setLoading(true)
       // Fetch projects from API
-      const apiProjects = await apiClient.getProjects()
+      const apiProjects = await projectService.getProjects()
 
       // Transform API projects to match our interface
       const transformedProjects = apiProjects.map((p: any) => ({
@@ -94,10 +94,9 @@ export default function Dashboard() {
   const handleNewProject = async () => {
     try {
       console.log('Creating new project...')
-      console.log('Is authenticated?', apiClient.isAuthenticated())
 
       // Create a new project via API
-      const newProject = await apiClient.createProject({
+      const newProject = await projectService.createProject({
         name: `New Automation ${new Date().toLocaleDateString()}`,
         description: 'A new automation workflow',
         configuration: {}
@@ -121,7 +120,7 @@ export default function Dashboard() {
     if (!confirm('Are you sure you want to delete this project?')) return
 
     try {
-      await apiClient.deleteProject(parseInt(projectId))
+      await projectService.deleteProject(parseInt(projectId))
       setProjects(projects.filter(p => p.id !== projectId))
       toast.success('Project deleted successfully')
     } catch (error) {
@@ -201,6 +200,24 @@ export default function Dashboard() {
               <p className="text-xs text-gray-400">{user.email}</p>
             </div>
             {user.is_beta && <Badge className="bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30">Beta User</Badge>}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/analytics')}
+              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              title="View Analytics"
+            >
+              <BarChart3 className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/profile')}
+              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              title="View Profile"
+            >
+              <UserIcon className="w-4 h-4" />
+            </Button>
             <Button
               variant="outline"
               size="sm"

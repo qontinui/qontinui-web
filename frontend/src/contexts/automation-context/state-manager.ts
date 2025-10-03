@@ -9,6 +9,10 @@ export class StateManager {
     return states.map((s) => (s.id === updatedState.id ? updatedState : s))
   }
 
+  static updateStateWithIdChange(states: State[], oldId: string, updatedState: State): State[] {
+    return states.map((s) => (s.id === oldId ? updatedState : s))
+  }
+
   static deleteState(states: State[], stateId: string): State[] {
     return states.filter((s) => s.id !== stateId)
   }

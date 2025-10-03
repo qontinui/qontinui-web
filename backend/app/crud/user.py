@@ -1,8 +1,9 @@
 from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash, verify_password
+from app.models.audit_log import AuditLog
 from app.models.user import User
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
 
 
 def get_user(db: Session, user_id: int) -> User | None:
@@ -70,3 +71,41 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
     if not verify_password(password, user.hashed_password):
         return None
     return user
+
+
+def update_user_profile(
+    db: Session, user: User, profile_update: UserProfileUpdate
+) -> User:
+    """Update user profile with specific profile fields"""
+    update_data = profile_update.dict(exclude_unset=True)
+
+    for field, value in update_data.items():
+        setattr(user, field, value)
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_avatar(db: Session, user: User, avatar_url: str) -> User:
+    """Update user avatar URL"""
+    user.avatar_url = avatar_url
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def get_user_activity(
+    db: Session, user_id: int, skip: int = 0, limit: int = 20
+) -> list[AuditLog]:
+    """Get recent user activity from audit logs"""
+    return (
+        db.query(AuditLog)
+        .filter(AuditLog.user_id == user_id)
+        .order_by(AuditLog.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )

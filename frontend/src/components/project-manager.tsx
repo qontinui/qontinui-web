@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { apiClient, Project } from '@/lib/api-client';
+import { projectService } from '@/services/service-factory';
+import { Project } from '@/services/project-service';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import {
@@ -51,10 +52,14 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
 
   const loadProjects = async () => {
     try {
-      const userProjects = await apiClient.getProjects();
+      const userProjects = await projectService.getProjects();
       setProjects(userProjects);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load projects:', error);
+      // Don't show error toast for auth issues - user just needs to log in
+      if (!error.message?.includes('401') && !error.message?.includes('authenticated')) {
+        toast.error('Failed to load projects');
+      }
     }
   };
 
@@ -66,7 +71,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
 
     setLoading(true);
     try {
-      const project = await apiClient.createProject({
+      const project = await projectService.createProject({
         name: newProjectName,
         description: newProjectDescription,
         configuration: currentConfiguration,
@@ -89,7 +94,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
 
     setLoading(true);
     try {
-      const updated = await apiClient.updateProject(selectedProject.id, {
+      const updated = await projectService.updateProject(selectedProject.id, {
         configuration: currentConfiguration,
       });
       setProjects(projects.map(p => p.id === updated.id ? updated : p));
@@ -104,7 +109,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
 
   const handleLoad = async (project: Project) => {
     try {
-      const fullProject = await apiClient.getProject(project.id);
+      const fullProject = await projectService.getProject(project.id);
       onLoadConfiguration(fullProject.configuration);
       setSelectedProject(fullProject);
       setLoadDialogOpen(false);
@@ -118,7 +123,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
     if (!confirm(`Are you sure you want to delete "${project.name}"?`)) return;
 
     try {
-      await apiClient.deleteProject(project.id);
+      await projectService.deleteProject(project.id);
       setProjects(projects.filter(p => p.id !== project.id));
       if (selectedProject?.id === project.id) {
         setSelectedProject(null);

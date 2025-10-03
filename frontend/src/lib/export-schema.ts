@@ -149,10 +149,10 @@ export interface State {
   id: string;
   name: string;
   description?: string;
-  identifyingImages: StateImage[];
-  stateRegions?: StateRegion[]; // Regions associated with this state
-  stateLocations?: StateLocation[]; // Locations associated with this state
-  stateStrings?: StateString[]; // Strings associated with this state
+  stateImages: StateImage[];
+  regions?: StateRegion[]; // Regions associated with this state
+  locations?: StateLocation[]; // Locations associated with this state
+  strings?: StateString[]; // Strings associated with this state
   position: {
     x: number;
     y: number;
@@ -164,15 +164,31 @@ export interface State {
   isFinal?: boolean;
 }
 
+// Pattern represents a single image variation with search configuration
+export interface Pattern {
+  id: string;
+  name?: string;
+  image: string; // Base64 PNG with transparency
+  mask?: string; // Optional mask
+  searchRegions?: SearchRegion[]; // Pattern-level search regions (precedence level 2)
+  fixed: boolean; // If true, pattern position is fixed on screen
+  similarity?: number; // Similarity threshold (0.0-1.0)
+  targetPosition?: {
+    percentW: number;
+    percentH: number;
+  }; // Click position within pattern
+  offsetX?: number; // Pixel offset for click position
+  offsetY?: number; // Pixel offset for click position
+}
+
 export interface StateImage {
-  imageId: string;
-  threshold: number;
-  required: boolean;
-  searchRegion?: Region;
-  searchRegions?: SearchRegions; // SearchRegions for this image
-  fixed?: boolean; // If true, always appears in same location
-  shared?: boolean; // If true, can appear in multiple states
-  probability?: number; // Probability this image appears in state
+  id: string;
+  name: string;
+  patterns: Pattern[]; // Multiple patterns for visual variations (e.g., normal, hover, clicked)
+  shared: boolean; // If true, found in other states too
+  probability?: number; // Mock testing: probability image appears (0.0-1.0)
+  source?: string; // Track how the image was created
+  searchRegions?: SearchRegion[]; // StateImage-level search regions (precedence level 3)
 }
 
 export interface StateRegion {
@@ -182,6 +198,15 @@ export interface StateRegion {
   fixed?: boolean; // If true, region is fixed in position
   isSearchRegion?: boolean; // If true, used as search region for state
   isInteractionRegion?: boolean; // If true, used for interactions
+  // Relative positioning
+  referenceImageId?: string; // ID of StateImage for relative positioning
+  position?: {
+    percentW: number;
+    percentH: number;
+    positionName?: string;
+  };
+  offsetX?: number; // X offset in pixels
+  offsetY?: number; // Y offset in pixels
 }
 
 export interface StateLocation {
@@ -191,7 +216,6 @@ export interface StateLocation {
   y: number;
   anchor?: boolean; // If true, used as anchor point
   fixed?: boolean; // If true, location is fixed
-  clickTarget?: boolean; // If true, used as click target
 }
 
 export interface StateString {
@@ -202,6 +226,16 @@ export interface StateString {
   inputText?: boolean; // If true, used as input text
   expectedText?: boolean; // If true, expected to appear in state
   regex?: boolean; // If true, value is a regex pattern
+}
+
+export interface SearchRegion {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  referenceImageId?: string; // Link to StateImage for relative positioning
 }
 
 export interface SearchRegions {

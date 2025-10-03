@@ -7,7 +7,7 @@ import { Screenshot, ScreenshotRegion, ScreenshotLocation } from '../types/Scree
 import { State } from '../contexts/automation-context/types';
 
 // API Configuration
-const API_BASE_URL = process.env.REACT_APP_QONTINUI_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_QONTINUI_API_URL || 'http://localhost:8000';
 
 // Types for API requests/responses
 interface FindRequest {
@@ -72,6 +72,23 @@ interface StateDetectionResponse {
   screenshot_analyzed: boolean;
   detected_states: DetectedState[];
   total_states_found: number;
+  active_states?: string[];
+}
+
+interface StateGraphResponse {
+  graph: string;
+  active_states: string[];
+  total_states: number;
+}
+
+interface TransitionResponse {
+  transitions: Array<{
+    from_state: string;
+    to_state: string;
+    action_type: string;
+    conditions: string[];
+  }>;
+  count: number;
 }
 
 interface LocationValidationRequest {
@@ -121,6 +138,8 @@ export class QontinuiAPIClient {
     body?: any
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+    console.log(`[QontinuiAPI] Making request to: ${url}`);
+
     const options: RequestInit = {
       method,
       headers: {
@@ -132,14 +151,21 @@ export class QontinuiAPIClient {
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetch(url, options);
+    try {
+      const response = await fetch(url, options);
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`API Error: ${response.status} - ${error}`);
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`API Error: ${response.status} - ${error}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error(`[QontinuiAPI] Request failed:`, error);
+      console.error(`[QontinuiAPI] URL was: ${url}`);
+      console.error(`[QontinuiAPI] Base URL: ${this.baseUrl}`);
+      throw error;
     }
-
-    return response.json();
   }
 
   /**
@@ -235,6 +261,179 @@ export class QontinuiAPIClient {
   }
 
   /**
+   * Register states with Qontinui's state management
+   */
+  async registerStates(states: State[]): Promise<{
+    registered: string[];
+    total: number;
+  }> {
+    return this.request('/states/register', 'POST', states);
+  }
+
+  /**
+   * Get currently active states from Qontinui
+   */
+  async getActiveStates(): Promise<{
+    active_states: string[];
+    count: number;
+  }> {
+    return this.request('/states/active');
+  }
+
+  /**
+   * Set active states in Qontinui
+   */
+  async setActiveStates(stateIds: string[]): Promise<{
+    success: boolean;
+    active_states: string[];
+    count: number;
+  }> {
+    return this.request('/states/active', 'POST', { state_ids: stateIds });
+  }
+
+  /**
+   * Activate a single state with evidence
+   */
+  async activateState(stateId: string, evidenceScore: number = 1.0): Promise<{
+    state_id: string;
+    activated: boolean;
+    evidence_score: number;
+  }> {
+    return this.request(`/states/activate/${stateId}?evidence_score=${evidenceScore}`, 'POST');
+  }
+
+  /**
+   * Deactivate a single state
+   */
+  async deactivateState(stateId: string): Promise<{
+    state_id: string;
+    deactivated: boolean;
+  }> {
+    return this.request(`/states/deactivate/${stateId}`, 'POST');
+  }
+
+  /**
+   * Get possible transitions from current states
+   */
+  async getPossibleTransitions(): Promise<TransitionResponse> {
+    return this.request('/states/transitions');
+  }
+
+  /**
+   * Execute a state transition
+   */
+  async executeTransition(
+    fromState: string,
+    toState: string,
+    actionType?: string
+  ): Promise<{
+    success: boolean;
+    from_state: string;
+    to_state: string;
+    current_states: string[];
+    error?: string;
+  }> {
+    return this.request('/states/transition', 'POST', {
+      from_state: fromState,
+      to_state: toState,
+      action_type: actionType,
+    });
+  }
+
+  /**
+   * Get state graph visualization
+   */
+  async getStateGraph(): Promise<StateGraphResponse> {
+    return this.request('/states/graph');
+  }
+
+  /**
+   * Reset state manager to initial state
+   */
+  async resetStateManager(): Promise<{
+    success: boolean;
+    active_states: string[];
+  }> {
+    return this.request('/states/reset', 'POST');
+  }
+
+  /**
+   * Execute a process in hybrid mock mode
+   */
+  async executeProcess(
+    process: any,
+    screenshots: string[],
+    states: any[],
+    categories: any[] = [],
+    mode: 'hybrid' | 'full_mock' = 'hybrid',
+    similarity: number = 0.8
+  ): Promise<{
+    session_id: string;
+    process_id: string;
+    process_name: string;
+    category_name: string;
+    status: string;
+    current_action: number;
+    total_actions: number;
+    results: any[];
+  }> {
+    return this.request('/process/execute', 'POST', {
+      process,
+      screenshots,
+      states,
+      categories,
+      mode,
+      similarity
+    });
+  }
+
+  /**
+   * Execute a single step in a process
+   */
+  async executeProcessStep(
+    sessionId: string,
+    action: any
+  ): Promise<{
+    actionId: string;
+    actionType: string;
+    success: boolean;
+    message: string;
+    duration: number;
+    timestamp: string;
+  }> {
+    return this.request(`/process/execute_step/${sessionId}`, 'POST', action);
+  }
+
+  /**
+   * Get the status of a process execution
+   */
+  async getProcessStatus(sessionId: string): Promise<{
+    session_id: string;
+    total_actions: number;
+    successful_actions: number;
+    success_rate: number;
+    active_states: string[];
+    current_screenshot: number;
+    history: any[];
+  }> {
+    return this.request(`/process/status/${sessionId}`);
+  }
+
+  /**
+   * Complete a process execution
+   */
+  async completeProcess(sessionId: string): Promise<{
+    session_id: string;
+    status: string;
+    total_actions: number;
+    successful_actions: number;
+    success_rate: number;
+    execution_history: any[];
+  }> {
+    return this.request(`/process/complete/${sessionId}`, 'POST');
+  }
+
+  /**
    * Health check for the API service
    */
   async healthCheck(): Promise<{
@@ -242,6 +441,10 @@ export class QontinuiAPIClient {
     service: string;
     version: string;
     qontinui_available: boolean;
+    state_management?: {
+      active_states: number;
+      registered_states: number;
+    };
   }> {
     return this.request('/health');
   }
@@ -347,6 +550,10 @@ export async function runStateDetection(
   similarity: number = 0.8
 ): Promise<DetectedState[]> {
   try {
+    // First register states if needed
+    await qontinuiAPI.registerStates(states);
+
+    // Then detect states
     const result = await qontinuiAPI.detectStates(
       screenshot.imageData,
       states,
@@ -357,6 +564,35 @@ export async function runStateDetection(
   } catch (error) {
     console.error('Failed to detect states:', error);
     return [];
+  }
+}
+
+/**
+ * Get current active states from Qontinui
+ */
+export async function getCurrentActiveStates(): Promise<string[]> {
+  try {
+    const result = await qontinuiAPI.getActiveStates();
+    return result.active_states;
+  } catch (error) {
+    console.error('Failed to get active states:', error);
+    return [];
+  }
+}
+
+/**
+ * Execute a state transition
+ */
+export async function executeStateTransition(
+  fromState: string,
+  toState: string
+): Promise<boolean> {
+  try {
+    const result = await qontinuiAPI.executeTransition(fromState, toState);
+    return result.success;
+  } catch (error) {
+    console.error('Failed to execute transition:', error);
+    return false;
   }
 }
 
@@ -396,4 +632,63 @@ export async function validateAllLocations(
   }
 
   return results;
+}
+
+/**
+ * Test pattern matching for template in screenshot
+ * Returns detailed results for visualization
+ */
+export async function testPatternMatching(
+  template: string,
+  screenshot: string,
+  similarity: number = 0.8,
+  findAll: boolean = true
+): Promise<{
+  success: boolean;
+  matches: Array<{
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    score: number;
+    confidence: number;
+    rank: number;
+  }>;
+  templateSize?: {
+    width: number;
+    height: number;
+  };
+  threshold?: number;
+  totalMatches?: number;
+}> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/pattern_matching/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        template,
+        screenshot,
+        similarity,
+        find_all: findAll
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Pattern matching test failed:', error);
+    // Return empty results on error
+    return {
+      success: false,
+      matches: [],
+      totalMatches: 0
+    };
+  }
 }

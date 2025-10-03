@@ -59,16 +59,25 @@ interface QontinuiStateLocation {
   fixed: boolean;
   anchor: boolean;
   anchorType?: string;
-  clickTarget: boolean;
   referenceImageId?: string;
   offsetX: number;
   offsetY: number;
+  position?: {
+    percentW: number;
+    percentH: number;
+    positionName?: string;
+  };
 }
 
 interface QontinuiStateString {
   id: string;
   name: string;
   value: string;
+  // Type flags
+  identifier?: boolean;     // OCR verification
+  inputText?: boolean;      // To be typed (default: true)
+  expectedText?: boolean;   // Validation
+  regexPattern?: boolean;   // Regex pattern
 }
 
 /**
@@ -184,11 +193,12 @@ export function exportStatesToQontinui(
           name: location.name,
           x: location.x,
           y: location.y,
-          fixed: false,
-          anchor: false,
-          clickTarget: true,
-          offsetX: 0,
-          offsetY: 0
+          fixed: location.fixed ?? false,
+          anchor: location.anchor ?? false,
+          referenceImageId: location.referenceImageId,
+          offsetX: location.offsetX ?? 0,
+          offsetY: location.offsetY ?? 0,
+          position: location.position
         });
       });
     }
@@ -205,7 +215,6 @@ export function exportStatesToQontinui(
             fixed: location.fixed || false,
             anchor: location.anchor || false,
             anchorType: location.anchorType,
-            clickTarget: location.clickTarget || false,
             referenceImageId: location.referenceImageId,
             offsetX: location.offsetX || 0,
             offsetY: location.offsetY || 0
@@ -218,7 +227,11 @@ export function exportStatesToQontinui(
     const stateStrings: QontinuiStateString[] = (state.strings || []).map(str => ({
       id: str.id,
       name: str.name,
-      value: str.value
+      value: str.value,
+      identifier: str.identifier,
+      inputText: str.inputText,
+      expectedText: str.expectedText,
+      regexPattern: str.regexPattern
     }));
 
     return {
@@ -341,7 +354,17 @@ export function generatePythonStateCode(state: QontinuiState): string {
   if (state.stateStrings.length > 0) {
     lines.push('# StateStrings');
     state.stateStrings.forEach(str => {
-      lines.push(`state.add_state_string(StateString("${str.name}", "${str.value}"))`);
+      const params: string[] = [];
+      params.push(`name="${str.name}"`);
+      params.push(`value="${str.value}"`);
+
+      // Add type flags if set
+      if (str.identifier) params.push('identifier=True');
+      if (str.inputText !== undefined && str.inputText) params.push('input_text=True');
+      if (str.expectedText) params.push('expected_text=True');
+      if (str.regexPattern) params.push('regex_pattern=True');
+
+      lines.push(`state.add_state_string(StateString(${params.join(', ')}))`);
     });
     lines.push('');
   }

@@ -30,6 +30,7 @@ interface ProcessListProps {
   onSelectProcess: (process: Process) => void
   onDeleteProcess: (processId: string) => void
   onUpdateProcess?: (process: Process) => void
+  onCreateProcess?: (category: string) => void
 }
 
 export function ProcessList({
@@ -37,7 +38,8 @@ export function ProcessList({
   selectedProcess,
   onSelectProcess,
   onDeleteProcess,
-  onUpdateProcess
+  onUpdateProcess,
+  onCreateProcess
 }: ProcessListProps) {
   const { transitions, categories, addCategory, deleteCategory } = useAutomation()
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
@@ -321,16 +323,31 @@ export function ProcessList({
                       {category} ({categoryProcesses.length})
                     </span>
                   </Button>
-                  {isCustom && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
-                      onClick={() => handleDeleteCategory(category)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {onCreateProcess && (
+                      <Button
+                        size="sm"
+                        className="h-6 w-6 p-0 bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+                        onClick={() => onCreateProcess(category)}
+                        title={`Create new process in ${category}`}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </Button>
+                    )}
+                    <div className="w-5" />
+                    {isCustom ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
+                        onClick={() => handleDeleteCategory(category)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    ) : (
+                      <div className="h-6 w-6" />
+                    )}
+                  </div>
                 </div>
 
                 {!isCollapsed && (

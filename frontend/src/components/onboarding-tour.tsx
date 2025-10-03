@@ -89,6 +89,8 @@ export function OnboardingTour() {
   }, [isActive, currentStep]);
 
   const updatePosition = () => {
+    if (typeof window === 'undefined') return;
+
     const step = tourSteps[currentStep];
     const element = document.querySelector(step.target);
 
@@ -127,6 +129,8 @@ export function OnboardingTour() {
   };
 
   const highlightElement = (selector: string) => {
+    if (typeof window === 'undefined') return;
+
     removeHighlight();
     const element = document.querySelector(selector);
     if (element) {
@@ -139,6 +143,8 @@ export function OnboardingTour() {
   };
 
   const removeHighlight = () => {
+    if (typeof window === 'undefined') return;
+
     document.querySelectorAll('.tour-highlight').forEach((el) => {
       el.classList.remove('tour-highlight');
     });

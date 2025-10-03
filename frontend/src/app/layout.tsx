@@ -7,6 +7,7 @@ import { SessionTimeoutWarning } from "@/components/session-timeout-warning";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { BetaBanner } from "@/components/beta-banner";
 import { OnboardingTour } from "@/components/onboarding-tour";
+import { ActivityTracker } from "@/components/activity-tracker";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,6 +37,7 @@ export default function RootLayout({
       >
         <ErrorBoundary>
           <AuthProvider>
+            <ActivityTracker />
             <BetaBanner />
             {children}
             <SessionTimeoutWarning />
