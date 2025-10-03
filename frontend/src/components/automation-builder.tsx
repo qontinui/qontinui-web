@@ -1,32 +1,64 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ProcessBuilder } from "@/components/process-builder"
-import { StateMachine } from "@/components/state-machine"
+import { StateStructure } from "@/components/state-machine"
 import { ImagesManager } from "@/components/images-manager"
 import ScreenshotUploadTab from "@/components/ScreenshotTab/ScreenshotUploadTab"
+import ScreenshotAnnotationTab from "@/components/screenshot-annotation/ScreenshotAnnotationTab"
+import { PatternMatchingTest } from "@/components/PatternMatching/PatternMatchingTest"
+import { ProcessTestRunner } from "@/components/IntegrationTests/ProcessTestRunner"
+import { PatternOptimizationSimplified } from "@/components/pattern-optimization/PatternOptimizationSimplified"
+import { SemanticAnalysisTab } from "@/components/SemanticAnalysis/SemanticAnalysisTab"
+import StateDiscoveryTab from "@/components/state-discovery/StateDiscoveryTab"
+import { ImageExtractionTab } from "@/components/image-extraction/ImageExtractionTab"
 import { AuthDialog } from "@/components/auth-dialog"
 import { ProjectManager } from "@/components/project-manager"
-import { Save, Download, Upload, User, LogOut, FileCode, Edit2, Check, X, Plus, Home } from "lucide-react"
+import { SettingsTab } from "@/components/settings/SettingsTab"
+import { Save, Download, Upload, User, LogOut, FileCode, Edit2, Check, X, Plus, Home, ChevronDown } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { AutomationProvider, useAutomation } from "@/contexts/automation-context"
 import { useAuth } from "@/contexts/auth-context"
 import { ConfigExporter } from "@/lib/config-exporter"
 import { ConfigImporter } from "@/lib/config-importer"
+import { projectService } from "@/services/service-factory"
 
 import { Screenshot } from "../types/Screenshot"
 
 function AutomationBuilderContent() {
+  const [activeCategory, setActiveCategory] = useState("build")
   const [activeTab, setActiveTab] = useState("processes")
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
   const [isEditingName, setIsEditingName] = useState(false)
   const [tempProjectName, setTempProjectName] = useState("")
   const [screenshots, setScreenshots] = useState<Screenshot[]>([])
+  const [currentProjectId, setCurrentProjectId] = useState<number | null>(null)
+  const [createImagesDropdownOpen, setCreateImagesDropdownOpen] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const previousProjectName = useRef<string>('')
+
+  // Set default tab when category changes
+  useEffect(() => {
+    if (activeCategory === "build") {
+      setActiveTab("processes")
+    } else if (activeCategory === "develop") {
+      setActiveTab("state-machine")
+    } else if (activeCategory === "verify") {
+      setActiveTab("pattern-matching")
+    } else if (activeCategory === "settings") {
+      setActiveTab("settings")
+    }
+  }, [activeCategory])
   const {
     projectName,
     setProjectName,
@@ -43,8 +75,25 @@ function AutomationBuilderContent() {
   } = useAutomation()
   const { user, logout } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const exporter = new ConfigExporter()
   const importer = new ConfigImporter()
+
+  // Load project from URL parameter
+  useEffect(() => {
+    const projectId = searchParams.get('project')
+    if (projectId) {
+      loadProjectFromBackend(projectId)
+    }
+  }, [searchParams])
+
+  // Sync project name to backend when it changes
+  useEffect(() => {
+    if (currentProjectId && projectName && projectName !== previousProjectName.current) {
+      previousProjectName.current = projectName
+      updateProjectName()
+    }
+  }, [projectName, currentProjectId])
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -53,6 +102,57 @@ function AutomationBuilderContent() {
 
     return () => clearInterval(interval)
   }, [triggerSave])
+
+  // Auto-save configuration to backend every 10 seconds
+  useEffect(() => {
+    if (!currentProjectId) return
+
+    const interval = setInterval(() => {
+      saveConfigurationToBackend()
+    }, 10000) // Every 10 seconds
+
+    return () => clearInterval(interval)
+  }, [currentProjectId, processes, states, transitions, images, screenshots])
+
+  const loadProjectFromBackend = async (projectId: string) => {
+    try {
+      const project = await projectService.getProject(Number(projectId))
+
+      // Load configuration first
+      await loadConfiguration(project.configuration)
+
+      // Then set the project name and ID from the backend (not from config)
+      setProjectName(project.name)
+      setCurrentProjectId(project.id)
+      previousProjectName.current = project.name
+    } catch (error) {
+      console.error('Failed to load project:', error)
+      toast.error('Failed to load project')
+    }
+  }
+
+  const updateProjectName = async () => {
+    if (!currentProjectId) return
+    try {
+      await projectService.updateProject(currentProjectId, {
+        name: projectName,
+      })
+    } catch (error) {
+      console.error('Failed to update project name:', error)
+    }
+  }
+
+  const saveConfigurationToBackend = async () => {
+    if (!currentProjectId) return
+    try {
+      const config = getConfiguration()
+      await projectService.updateProject(currentProjectId, {
+        configuration: config,
+      })
+    } catch (error) {
+      console.error('Failed to auto-save configuration:', error)
+    }
+  }
 
   const startEditingName = () => {
     setTempProjectName(projectName)
@@ -77,33 +177,16 @@ function AutomationBuilderContent() {
     setTempProjectName("")
   }
 
-  const handleLogout = () => {
-    const warningMessage =
-      "⚠️ WARNING: Make sure to Export or Save your current project first!\n\n" +
-      "Logging out will permanently delete ALL unsaved data:\n\n" +
-      "• All processes\n" +
-      "• All states\n" +
-      "• All transitions\n" +
-      "• All uploaded images\n\n" +
-      "This action cannot be undone!\n\n" +
-      "Do you want to continue?"
-
-    if (confirm(warningMessage)) {
-      logout()
-      router.push('/')
-      toast.success("Logged out successfully")
-    }
+  const handleLogout = async () => {
+    await saveConfigurationToBackend()
+    logout()
+    router.push('/')
+    toast.success("Logged out successfully")
   }
 
-  const handleGoToDashboard = () => {
-    const warningMessage =
-      "⚠️ WARNING: Make sure to Save your current project first!\n\n" +
-      "Leaving this page may result in losing unsaved changes.\n\n" +
-      "Do you want to continue?"
-
-    if (confirm(warningMessage)) {
-      router.push('/dashboard')
-    }
+  const handleGoToDashboard = async () => {
+    await saveConfigurationToBackend()
+    router.push('/dashboard')
   }
 
   const handleNewProject = () => {
@@ -115,21 +198,8 @@ function AutomationBuilderContent() {
       return
     }
 
-    const warningMessage =
-      "⚠️ WARNING: Make sure to Export or Save your current project first!\n\n" +
-      "Creating a new project will permanently delete ALL unsaved data:\n\n" +
-      "• All processes\n" +
-      "• All states\n" +
-      "• All transitions\n" +
-      "• All uploaded images\n\n" +
-      "This action cannot be undone!\n\n" +
-      "Do you want to continue?"
-
-    if (confirm(warningMessage)) {
-      clearAllData()
-      toast.success("New project created", {
-        description: "All data has been cleared for your new project.",
-      })
+    if (confirm("Create a new project from the dashboard instead? This ensures proper project isolation.")) {
+      handleGoToDashboard()
     }
   }
 
@@ -158,6 +228,50 @@ function AutomationBuilderContent() {
     }
 
     try {
+      // Fetch current settings from backend
+      let exportSettings;
+      try {
+        const settingsResponse = await fetch("/api/v1/settings/", {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        });
+        if (settingsResponse.ok) {
+          const qontinuiSettings = await settingsResponse.json();
+          // Map QontinuiSettings to ConfigSettings format
+          exportSettings = {
+            execution: {
+              defaultTimeout: qontinuiSettings.core?.auto_wait_timeout || 10000,
+              defaultRetryCount: qontinuiSettings.testing?.max_retries || 3,
+              actionDelay: qontinuiSettings.mouse?.click_delay || 100,
+              failureStrategy: qontinuiSettings.testing?.retry_failed ? 'retry' : 'stop',
+              headless: qontinuiSettings.core?.headless || false
+            },
+            recognition: {
+              defaultThreshold: 0.9, // No direct mapping in QontinuiSettings
+              searchAlgorithm: 'template_matching' as const,
+              multiScaleSearch: true,
+              colorSpace: 'rgb' as const,
+              edgeDetection: false,
+              ocrEnabled: false
+            },
+            logging: {
+              level: qontinuiSettings.testing?.verbose_logging ? 'debug' : 'info',
+              screenshotOnError: qontinuiSettings.screenshot?.capture_on_error || true,
+              consoleOutput: true,
+              detailedMatching: false
+            },
+            performance: {
+              maxParallelActions: qontinuiSettings.testing?.parallel_execution ? 4 : 1,
+              cacheImages: qontinuiSettings.core?.image_cache_size > 0,
+              optimizeSearch: true
+            }
+          };
+        }
+      } catch (settingsError) {
+        console.warn("Failed to fetch settings, using defaults:", settingsError);
+      }
+
       const config = await exporter.exportConfiguration(
         images,
         processes,
@@ -169,7 +283,7 @@ function AutomationBuilderContent() {
           description: 'Exported from Qontinui Web',
           author: user?.username
         },
-        undefined, // settings
+        exportSettings, // settings
         screenshots
       )
 
@@ -403,51 +517,212 @@ function AutomationBuilderContent() {
       </header>
 
       <main className="flex-1 flex flex-col min-h-0">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="w-full justify-start bg-[#27272A] border-b border-gray-800 rounded-none h-12 flex-shrink-0">
+        {/* Main Category Tabs */}
+        <Tabs value={activeCategory} onValueChange={setActiveCategory} className="flex-1 flex flex-col min-h-0">
+          <TabsList className="w-full justify-start bg-[#1A1A1C] border-b border-gray-800 rounded-none h-14 flex-shrink-0">
             <TabsTrigger
-              value="processes"
-              className="data-[state=active]:bg-[#00D9FF] data-[state=active]:text-black data-[state=inactive]:text-gray-300 font-medium px-6 hover:text-white transition-colors"
+              value="build"
+              className="data-[state=active]:bg-[#00D9FF] data-[state=active]:text-black data-[state=inactive]:text-gray-300 font-semibold px-8 hover:text-white transition-colors h-10"
             >
-              Process Builder
+              Build Automation Processes
             </TabsTrigger>
             <TabsTrigger
-              value="state-machine"
-              className="data-[state=active]:bg-[#BD00FF] data-[state=active]:text-white data-[state=inactive]:text-gray-300 font-medium px-6 hover:text-white transition-colors"
+              value="develop"
+              className="data-[state=active]:bg-[#BD00FF] data-[state=active]:text-white data-[state=inactive]:text-gray-300 font-semibold px-8 hover:text-white transition-colors h-10"
             >
-              State Machine
+              Develop State Structure
             </TabsTrigger>
             <TabsTrigger
-              value="images"
-              className="data-[state=active]:bg-[#00FF88] data-[state=active]:text-black data-[state=inactive]:text-gray-300 font-medium px-6 hover:text-white transition-colors"
+              value="verify"
+              className="data-[state=active]:bg-[#FF6B6B] data-[state=active]:text-white data-[state=inactive]:text-gray-300 font-semibold px-8 hover:text-white transition-colors h-10"
             >
-              Images
+              Verify Automation
             </TabsTrigger>
             <TabsTrigger
-              value="screenshots"
-              className="data-[state=active]:bg-[#FFA500] data-[state=active]:text-black data-[state=inactive]:text-gray-300 font-medium px-6 hover:text-white transition-colors"
+              value="settings"
+              className="data-[state=active]:bg-[#FFD700] data-[state=active]:text-black data-[state=inactive]:text-gray-300 font-semibold px-8 hover:text-white transition-colors h-10"
             >
-              Screenshots
+              Settings
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="processes" className="flex-1 min-h-0">
+          {/* Build Category - Just Process Builder */}
+          <TabsContent value="build" className="flex-1 min-h-0 mt-0">
             <ProcessBuilder />
           </TabsContent>
 
-          <TabsContent value="state-machine" className="flex-1 min-h-0">
-            <StateMachine />
+          {/* Develop Category - State Structure with nested sub-tabs */}
+          <TabsContent value="develop" className="flex-1 min-h-0 mt-0 flex flex-col">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+              <div className="bg-[#27272A] border-b border-gray-700 h-11 flex items-center px-4 gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => setActiveTab("state-machine")}
+                  className={`h-9 px-6 font-medium transition-colors rounded-md ${
+                    activeTab === "state-machine"
+                      ? "bg-[#BD00FF] text-white"
+                      : "text-gray-400 hover:text-white hover:bg-transparent"
+                  }`}
+                >
+                  State Structure
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  onClick={() => setActiveTab("images")}
+                  className={`h-9 px-6 font-medium transition-colors rounded-md ${
+                    activeTab === "images"
+                      ? "bg-[#00FF88] text-black"
+                      : "text-gray-400 hover:text-white hover:bg-transparent"
+                  }`}
+                >
+                  Image Library
+                </Button>
+
+                {/* Create Images Dropdown */}
+                <DropdownMenu open={createImagesDropdownOpen} onOpenChange={setCreateImagesDropdownOpen} modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className={`h-9 px-6 font-medium transition-colors rounded-md ${
+                        ["screenshots", "image-extraction", "pattern-optimization", "state-discovery"].includes(activeTab)
+                          ? "bg-[#FFD700] text-black hover:bg-[#FFD700]/90"
+                          : "text-gray-400 hover:text-white hover:bg-transparent"
+                      }`}
+                      onMouseEnter={() => setCreateImagesDropdownOpen(true)}
+                      onMouseLeave={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const isMovingDown = e.clientY > rect.bottom
+                        if (!isMovingDown) {
+                          setCreateImagesDropdownOpen(false)
+                        }
+                      }}
+                    >
+                      Create Images
+                      <ChevronDown className="ml-1 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="w-56 bg-[#27272A] border-gray-700"
+                    onMouseEnter={() => setCreateImagesDropdownOpen(true)}
+                    onMouseLeave={() => setCreateImagesDropdownOpen(false)}
+                  >
+                    <DropdownMenuItem
+                      onClick={() => setActiveTab("screenshots")}
+                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FF8C42]/20 focus:bg-[#FF8C42]/20 focus:text-white"
+                    >
+                      <span className="w-3 h-3 rounded-full bg-[#FF8C42] mr-3" />
+                      Screenshots
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setActiveTab("image-extraction")}
+                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FFA500]/20 focus:bg-[#FFA500]/20 focus:text-white"
+                    >
+                      <span className="w-3 h-3 rounded-full bg-[#FFA500] mr-3" />
+                      Image Extraction
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setActiveTab("pattern-optimization")}
+                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FFD700]/20 focus:bg-[#FFD700]/20 focus:text-white"
+                    >
+                      <span className="w-3 h-3 rounded-full bg-[#FFD700] mr-3" />
+                      Pattern Optimization
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setActiveTab("state-discovery")}
+                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#4ECDC4]/20 focus:bg-[#4ECDC4]/20 focus:text-white"
+                    >
+                      <span className="w-3 h-3 rounded-full bg-[#4ECDC4] mr-3" />
+                      State Discovery
+                      <span className="ml-2 text-xs bg-amber-500 text-black px-1.5 py-0.5 rounded">Beta</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <Button
+                  variant="ghost"
+                  onClick={() => setActiveTab("screenshot-annotation")}
+                  className={`h-9 px-6 font-medium transition-colors rounded-md ${
+                    activeTab === "screenshot-annotation"
+                      ? "bg-[#FF6B35] text-white"
+                      : "text-gray-400 hover:text-white hover:bg-transparent"
+                  }`}
+                >
+                  Create Regions & Locations
+                </Button>
+              </div>
+
+              <TabsContent value="state-machine" className="flex-1 min-h-0 mt-0">
+                <StateStructure />
+              </TabsContent>
+              <TabsContent value="images" className="flex-1 min-h-0 overflow-auto mt-0">
+                <ImagesManager />
+              </TabsContent>
+              <TabsContent value="screenshot-annotation" className="flex-1 min-h-0 mt-0">
+                <ScreenshotAnnotationTab states={states} />
+              </TabsContent>
+              <TabsContent value="pattern-optimization" className="flex-1 min-h-0 overflow-hidden mt-0">
+                <PatternOptimizationSimplified />
+              </TabsContent>
+              <TabsContent value="image-extraction" className="flex-1 min-h-0 overflow-hidden mt-0">
+                <ImageExtractionTab />
+              </TabsContent>
+              <TabsContent value="screenshots" className="flex-1 min-h-0 overflow-auto mt-0">
+                <ScreenshotUploadTab
+                  states={states}
+                  onExport={setScreenshots}
+                />
+              </TabsContent>
+              <TabsContent value="state-discovery" className="flex-1 min-h-0 mt-0">
+                <StateDiscoveryTab />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
-          <TabsContent value="images" className="flex-1 min-h-0 overflow-auto">
-            <ImagesManager />
+          {/* Verify Category - Testing & Verification tabs */}
+          <TabsContent value="verify" className="flex-1 min-h-0 mt-0 flex flex-col">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+              <TabsList className="w-full justify-start bg-[#27272A] border-b border-gray-700 rounded-none h-11 flex-shrink-0">
+                <TabsTrigger
+                  value="pattern-matching"
+                  className="data-[state=active]:bg-[#FF6B6B] data-[state=active]:text-white data-[state=inactive]:text-gray-400 font-medium px-6 hover:text-white transition-colors"
+                >
+                  Pattern Matching
+                </TabsTrigger>
+                <TabsTrigger
+                  value="integration-tests"
+                  className="data-[state=active]:bg-[#9B59B6] data-[state=active]:text-white data-[state=inactive]:text-gray-400 font-medium px-6 hover:text-white transition-colors"
+                  title="⚠️ This feature is in active development"
+                >
+                  <span>Integration Tests</span>
+                  <span className="ml-1 text-xs bg-amber-500 text-black px-1.5 py-0.5 rounded">Beta</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="semantic-analysis"
+                  className="data-[state=active]:bg-[#E91E63] data-[state=active]:text-white data-[state=inactive]:text-gray-400 font-medium px-6 hover:text-white transition-colors"
+                  title="⚠️ This feature is in active development"
+                >
+                  <span>Semantic Analysis</span>
+                  <span className="ml-1 text-xs bg-amber-500 text-black px-1.5 py-0.5 rounded">Beta</span>
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="pattern-matching" className="flex-1 min-h-0 overflow-hidden mt-0">
+                <PatternMatchingTest screenshots={screenshots} />
+              </TabsContent>
+              <TabsContent value="integration-tests" className="flex-1 min-h-0 overflow-hidden mt-0">
+                <ProcessTestRunner />
+              </TabsContent>
+              <TabsContent value="semantic-analysis" className="flex-1 min-h-0 overflow-hidden mt-0">
+                <SemanticAnalysisTab />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
-          <TabsContent value="screenshots" className="flex-1 min-h-0 overflow-hidden">
-            <ScreenshotUploadTab
-              states={states}
-              onExport={setScreenshots}
-            />
+          {/* Settings Category */}
+          <TabsContent value="settings" className="flex-1 min-h-0 mt-0 overflow-auto p-6">
+            <SettingsTab />
           </TabsContent>
         </Tabs>
       </main>

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -19,6 +20,7 @@ from app.middleware.error_handler import (
     http_exception_handler,
     validation_exception_handler,
 )
+from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 
 # Configure logging
@@ -61,8 +63,8 @@ if settings.ENVIRONMENT == "production":
 
 # Set up CORS
 origins = [
-    "http://localhost:3000",
     "http://localhost:3001",
+    "http://localhost:3000",
     "http://localhost:3002",
     "http://localhost:3003",
     "http://localhost:3004",
@@ -89,7 +91,17 @@ app.add_middleware(
     ],
 )
 
+# Add metrics tracking middleware
+app.add_middleware(MetricsMiddleware)
+
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Mount static files for avatars
+from pathlib import Path
+
+uploads_dir = Path("uploads")
+uploads_dir.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 
 @app.on_event("startup")
@@ -98,6 +110,21 @@ def startup_event():
     db = SessionLocal()
     init_db(db)
     db.close()
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    # Flush any pending metrics before shutdown
+    from app.services.metrics_service import metrics_service
+
+    db = SessionLocal()
+    try:
+        metrics_service.force_flush(db)
+        logger.info("Flushed pending metrics on shutdown")
+    except Exception as e:
+        logger.error(f"Error flushing metrics on shutdown: {e}")
+    finally:
+        db.close()
 
 
 @app.get("/")
@@ -128,3 +155,11 @@ async def health_check():
         health_status["database"] = f"error: {str(e)}"
 
     return health_status
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Return 204 No Content for favicon requests"""
+    from fastapi.responses import Response
+
+    return Response(status_code=204)

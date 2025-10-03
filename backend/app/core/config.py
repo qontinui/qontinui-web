@@ -22,7 +22,7 @@ class Settings(BaseSettings):
         ..., min_length=32, description="Secret key for JWT encoding"
     )
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # Reduced from 60 for better security
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hour
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # CORS
@@ -41,12 +41,12 @@ class Settings(BaseSettings):
 
     # Server
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 8001
     RELOAD: bool = True
     DEBUG: bool = True
 
     # Frontend
-    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL: str = "http://localhost:3001"
 
     # User settings
     FIRST_SUPERUSER_EMAIL: str | None = None

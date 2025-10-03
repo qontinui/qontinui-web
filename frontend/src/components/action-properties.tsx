@@ -7,7 +7,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Settings } from "lucide-react"
+import { Settings, Plus, X } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Slider } from "@/components/ui/slider"
 import { ImageSelector } from "@/components/image-selector"
 import { SpecialKeysSelector, SpecialKeyDisplay } from "@/components/special-keys-selector"
 import { useAutomation } from "@/contexts/automation-context"
@@ -50,6 +52,16 @@ export function ActionProperties({ action, onUpdateAction }: ActionPropertiesPro
   }
 
   const updateConfig = (key: string, value: any, additionalUpdates: Record<string, any> = {}) => {
+    // Special case: reset entire config to new value
+    if (key === "__reset__") {
+      const updatedAction = {
+        ...action,
+        config: value
+      }
+      onUpdateAction(updatedAction)
+      return
+    }
+
     if (key === "image") {
       // Remove old image usage
       if (action.config.image) {
@@ -58,6 +70,10 @@ export function ActionProperties({ action, onUpdateAction }: ActionPropertiesPro
       // Add new image usage
       if (value) {
         updateImageUsage(value, { type: "process", id: action.id, name: `${action.type} Action` })
+      }
+      // Clear removedImage marker when selecting a new image
+      if (action.config.removedImage) {
+        additionalUpdates.removedImage = undefined
       }
     }
 
@@ -91,6 +107,14 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
         <>
           <div className="space-y-2">
             <Label className="text-xs text-gray-400">Image</Label>
+            {action.config.removedImage && (
+              <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
+                <span className="font-medium">Removed Image:</span> {action.config.removedImage}
+                <p className="text-xs text-red-400 mt-1">
+                  This image was deleted. Please select a new image.
+                </p>
+              </div>
+            )}
             <ImageSelector
               selectedImage={action.config.image || null}
               onSelectImage={(imageId) => updateConfig("image", imageId)}
@@ -102,31 +126,100 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
             />
           </div>
 
+          {/* Similarity Threshold Override */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Similarity Threshold</Label>
-            <Input
-              type="number"
-              min="0.7"
-              max="1.0"
-              step="0.1"
-              value={action.config.similarity}
-              onChange={(e) => updateConfig("similarity", Number.parseFloat(e.target.value))}
-              className="bg-transparent border-gray-700"
-            />
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-gray-400">Similarity Threshold Override</Label>
+              {action.config.similarity !== undefined ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+                  onClick={() => {
+                    const { similarity, ...rest } = action.config
+                    updateConfig("__reset__", rest)
+                  }}
+                  title="Remove override (use project default)"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              ) : (
+                <span className="text-xs text-gray-500">(using project default)</span>
+              )}
+            </div>
+            {action.config.similarity !== undefined && (
+              <>
+                <Slider
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={[action.config.similarity * 100]}
+                  onValueChange={(values) => updateConfig("similarity", values[0] / 100)}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>70%</span>
+                  <span className="text-gray-400">{(action.config.similarity * 100).toFixed(0)}%</span>
+                  <span>100%</span>
+                </div>
+              </>
+            )}
+            {action.config.similarity === undefined && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+                onClick={() => updateConfig("similarity", 0.85)}
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Set Override
+              </Button>
+            )}
           </div>
 
+          {/* Search Strategy Override */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Search Strategy</Label>
-            <Select value={action.config.strategy} onValueChange={(value) => updateConfig("strategy", value)}>
-              <SelectTrigger className="bg-transparent border-gray-700">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#27272A] border-gray-700">
-                <SelectItem value="First">First</SelectItem>
-                <SelectItem value="All">All</SelectItem>
-                <SelectItem value="Best">Best</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-gray-400">Search Strategy Override</Label>
+              {action.config.strategy !== undefined ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+                  onClick={() => {
+                    const { strategy, ...rest } = action.config
+                    updateConfig("__reset__", rest)
+                  }}
+                  title="Remove override (use project default)"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              ) : (
+                <span className="text-xs text-gray-500">(using project default)</span>
+              )}
+            </div>
+            {action.config.strategy !== undefined ? (
+              <Select value={action.config.strategy} onValueChange={(value) => updateConfig("strategy", value)}>
+                <SelectTrigger className="bg-transparent border-gray-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#27272A] border-gray-700">
+                  <SelectItem value="First">First</SelectItem>
+                  <SelectItem value="All">All</SelectItem>
+                  <SelectItem value="Best">Best</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+                onClick={() => updateConfig("strategy", "First")}
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Set Override
+              </Button>
+            )}
           </div>
 
           {renderTimingProperties(action, updateConfig)}
@@ -154,8 +247,8 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
               <div className="text-xs text-gray-400 mt-2">
                 {(() => {
                   const selectedState = states.find(s => s.id === action.config.state)
-                  if (selectedState && selectedState.identifyingImages?.length > 0) {
-                    return `Will find any of ${selectedState.identifyingImages.length} image${selectedState.identifyingImages.length > 1 ? 's' : ''} from ${selectedState.name}`
+                  if (selectedState && selectedState.stateImages?.length > 0) {
+                    return `Will find any of ${selectedState.stateImages.length} image${selectedState.stateImages.length > 1 ? 's' : ''} from ${selectedState.name}`
                   }
                   return selectedState ? `No images defined for ${selectedState.name}` : 'State not found'
                 })()}
@@ -163,31 +256,100 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
             )}
           </div>
 
+          {/* Similarity Threshold Override */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Similarity Threshold</Label>
-            <Input
-              type="number"
-              min="0.7"
-              max="1.0"
-              step="0.1"
-              value={action.config.similarity}
-              onChange={(e) => updateConfig("similarity", Number.parseFloat(e.target.value))}
-              className="bg-transparent border-gray-700"
-            />
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-gray-400">Similarity Threshold Override</Label>
+              {action.config.similarity !== undefined ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+                  onClick={() => {
+                    const { similarity, ...rest } = action.config
+                    updateConfig("__reset__", rest)
+                  }}
+                  title="Remove override (use project default)"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              ) : (
+                <span className="text-xs text-gray-500">(using project default)</span>
+              )}
+            </div>
+            {action.config.similarity !== undefined && (
+              <>
+                <Slider
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={[action.config.similarity * 100]}
+                  onValueChange={(values) => updateConfig("similarity", values[0] / 100)}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>70%</span>
+                  <span className="text-gray-400">{(action.config.similarity * 100).toFixed(0)}%</span>
+                  <span>100%</span>
+                </div>
+              </>
+            )}
+            {action.config.similarity === undefined && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+                onClick={() => updateConfig("similarity", 0.85)}
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Set Override
+              </Button>
+            )}
           </div>
 
+          {/* Search Strategy Override */}
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Search Strategy</Label>
-            <Select value={action.config.strategy} onValueChange={(value) => updateConfig("strategy", value)}>
-              <SelectTrigger className="bg-transparent border-gray-700">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#27272A] border-gray-700">
-                <SelectItem value="First">First Match</SelectItem>
-                <SelectItem value="All">All Matches</SelectItem>
-                <SelectItem value="Best">Best Match</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-gray-400">Search Strategy Override</Label>
+              {action.config.strategy !== undefined ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+                  onClick={() => {
+                    const { strategy, ...rest } = action.config
+                    updateConfig("__reset__", rest)
+                  }}
+                  title="Remove override (use project default)"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              ) : (
+                <span className="text-xs text-gray-500">(using project default)</span>
+              )}
+            </div>
+            {action.config.strategy !== undefined ? (
+              <Select value={action.config.strategy} onValueChange={(value) => updateConfig("strategy", value)}>
+                <SelectTrigger className="bg-transparent border-gray-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#27272A] border-gray-700">
+                  <SelectItem value="First">First</SelectItem>
+                  <SelectItem value="All">All</SelectItem>
+                  <SelectItem value="Best">Best</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+                onClick={() => updateConfig("strategy", "First")}
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Set Override
+              </Button>
+            )}
           </div>
 
           {renderTimingProperties(action, updateConfig)}
@@ -269,9 +431,31 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
 
           <div className="space-y-2">
             <Label className="text-xs text-gray-400">To (Image)</Label>
+            {action.config.removedImageTo && (
+              <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
+                <span className="font-medium">Removed Image:</span> {action.config.removedImageTo}
+                <p className="text-xs text-red-400 mt-1">
+                  This image was deleted. Please select a new target image.
+                </p>
+              </div>
+            )}
             <ImageSelector
               selectedImage={action.config.to || null}
-              onSelectImage={(imageId) => updateConfig("to", imageId)}
+              onSelectImage={(imageId) => {
+                updateConfig("to", imageId)
+                // Clear the removedImageTo marker when selecting a new image
+                if (action.config.removedImageTo) {
+                  const updatedAction = {
+                    ...action,
+                    config: {
+                      ...action.config,
+                      to: imageId,
+                      removedImageTo: undefined
+                    }
+                  }
+                  onUpdateAction(updatedAction)
+                }
+              }}
               images={images}
               placeholder="Select target image"
             />
@@ -308,6 +492,14 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
         <>
           <div className="space-y-2">
             <Label className="text-xs text-gray-400">Image to Wait For</Label>
+            {action.config.removedImage && (
+              <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
+                <span className="font-medium">Removed Image:</span> {action.config.removedImage}
+                <p className="text-xs text-red-400 mt-1">
+                  This image was deleted. Please select a new image.
+                </p>
+              </div>
+            )}
             <ImageSelector
               selectedImage={action.config.image || null}
               onSelectImage={(imageId) => updateConfig("image", imageId)}
@@ -631,26 +823,88 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
 function renderTimingProperties(action: Action, updateConfig: (key: string, value: any) => void) {
   return (
     <>
+      {/* Pause Before Begin Override */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Pause Before Begin (ms)</Label>
-        <Input
-          type="number"
-          min="0"
-          value={action.config.pause_before_begin}
-          onChange={(e) => updateConfig("pause_before_begin", Number.parseInt(e.target.value))}
-          className="bg-transparent border-gray-700"
-        />
+        <div className="flex items-center justify-between">
+          <Label className="text-xs text-gray-400">Pause Before Begin Override (ms)</Label>
+          {action.config.pause_before_begin !== undefined ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+              onClick={() => {
+                const { pause_before_begin, ...rest } = action.config
+                updateConfig("__reset__", rest)
+              }}
+              title="Remove override (use default 0ms)"
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          ) : (
+            <span className="text-xs text-gray-500">(default: 0ms)</span>
+          )}
+        </div>
+        {action.config.pause_before_begin !== undefined ? (
+          <Input
+            type="number"
+            min="0"
+            value={action.config.pause_before_begin}
+            onChange={(e) => updateConfig("pause_before_begin", Number.parseInt(e.target.value))}
+            className="bg-transparent border-gray-700"
+          />
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+            onClick={() => updateConfig("pause_before_begin", 0)}
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Set Override
+          </Button>
+        )}
       </div>
 
+      {/* Pause After End Override */}
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Pause After End (ms)</Label>
-        <Input
-          type="number"
-          min="0"
-          value={action.config.pause_after_end}
-          onChange={(e) => updateConfig("pause_after_end", Number.parseInt(e.target.value))}
-          className="bg-transparent border-gray-700"
-        />
+        <div className="flex items-center justify-between">
+          <Label className="text-xs text-gray-400">Pause After End Override (ms)</Label>
+          {action.config.pause_after_end !== undefined ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
+              onClick={() => {
+                const { pause_after_end, ...rest } = action.config
+                updateConfig("__reset__", rest)
+              }}
+              title="Remove override (use default 0ms)"
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          ) : (
+            <span className="text-xs text-gray-500">(default: 0ms)</span>
+          )}
+        </div>
+        {action.config.pause_after_end !== undefined ? (
+          <Input
+            type="number"
+            min="0"
+            value={action.config.pause_after_end}
+            onChange={(e) => updateConfig("pause_after_end", Number.parseInt(e.target.value))}
+            className="bg-transparent border-gray-700"
+          />
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
+            onClick={() => updateConfig("pause_after_end", 0)}
+          >
+            <Plus className="w-3 h-3 mr-1" />
+            Set Override
+          </Button>
+        )}
       </div>
     </>
   )

@@ -1,0 +1,22 @@
+from datetime import datetime
+
+from sqlalchemy import DECIMAL, JSON, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
+
+from app.db.base import Base
+
+
+class UsageMetric(Base):
+    __tablename__ = "usage_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    metric_type = Column(String, nullable=False)
+    value = Column(DECIMAL, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    metric_metadata = Column(JSON, nullable=True)
+
+    # Relationships
+    user = relationship("User", back_populates="usage_metrics")

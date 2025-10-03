@@ -1,7 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { apiClient, User } from '@/lib/api-client';
+import { authService } from '@/services/service-factory';
+import { User } from '@/types/auth-types';
 
 interface AuthContextType {
   user: User | null;
@@ -19,27 +20,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is logged in on mount
     checkAuth();
+
+    // Listen for session expiry (only in browser)
+    if (typeof window !== 'undefined') {
+      const handleSessionExpired = () => {
+        console.log('[AuthContext] Session expired event received:', {
+          timestamp: new Date().toISOString(),
+          currentUser: user?.username || 'none',
+        });
+
+        setUser(null);
+        console.log('[AuthContext] Redirecting to home page due to session expiry');
+        window.location.href = '/';
+      };
+
+      console.log('[AuthContext] Registering session-expired event listener');
+      window.addEventListener('session-expired', handleSessionExpired);
+      return () => {
+        console.log('[AuthContext] Removing session-expired event listener');
+        window.removeEventListener('session-expired', handleSessionExpired);
+      };
+    }
   }, []);
 
   const checkAuth = async () => {
+    console.log('[AuthContext] Checking authentication...');
     try {
-      if (apiClient.isAuthenticated()) {
-        const currentUser = await apiClient.getCurrentUser();
+      const isAuth = authService.isAuthenticated();
+      console.log('[AuthContext] Is authenticated:', isAuth);
+
+      if (isAuth) {
+        console.log('[AuthContext] Fetching current user...');
+        const currentUser = await authService.getCurrentUser();
+        console.log('[AuthContext] Current user:', currentUser);
         setUser(currentUser);
+      } else {
+        console.log('[AuthContext] No valid auth token found');
       }
     } catch (error) {
-      console.error('Auth check failed:', error);
-      apiClient.logout();
+      console.error('[AuthContext] Auth check failed:', error);
+      authService.logout();
     } finally {
+      console.log('[AuthContext] Setting loading to false');
       setLoading(false);
     }
   };
 
   const login = async (username: string, password: string) => {
     try {
-      const loggedInUser = await apiClient.login({ username, password });
+      const loggedInUser = await authService.login({ username, password });
       setUser(loggedInUser);
     } catch (error) {
       console.error('Login failed:', error);
@@ -49,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = async (email: string, username: string, password: string, fullName?: string) => {
     try {
-      const newUser = await apiClient.register({
+      const newUser = await authService.register({
         email,
         username,
         password,
@@ -64,14 +94,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    apiClient.logout();
+    authService.logout();
     setUser(null);
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    }
   };
 
   const updateUser = async (data: Partial<User>) => {
     try {
-      const updatedUser = await apiClient.updateCurrentUser(data);
-      setUser(updatedUser);
+      // This would need to be implemented in the auth service
+      // For now, just update the local state
+      setUser(currentUser => currentUser ? { ...currentUser, ...data } : null);
     } catch (error) {
       console.error('User update failed:', error);
       throw error;

@@ -7,78 +7,210 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Upload, ImageIcon, Trash2, Search, X } from "lucide-react"
+import { MaskEditor } from "@/components/mask-editor"
+import { Upload, ImageIcon, Trash2, Search, X, Edit } from "lucide-react"
 import { toast } from "sonner"
 import { useAutomation } from "@/contexts/automation-context"
+import { ImageDeletionDialog, type ImageUsageInfo } from "@/components/image-deletion-dialog"
 
 interface ImageAsset {
   id: string
   name: string
   url: string
   size: number
-  uploadedAt: Date
+  createdAt: Date
   usageCount: number
   usedIn: Array<{ type: "process" | "state"; id: string; name: string }>
+  source: 'uploaded' | 'pattern_optimization' | 'image_extraction' | 'state_discovery'
 }
 
 export function ImagesManager() {
-  const { images, addImages, deleteImage } = useAutomation()
+  const {
+    images,
+    addImage,
+    deleteImage,
+    updateImage,
+    getImageUsage,
+    removeImageFromStates,
+    markImageAsRemovedInProcesses
+  } = useAutomation()
   const [searchQuery, setSearchQuery] = useState("")
   const [dragActive, setDragActive] = useState(false)
+  const [activeFilter, setActiveFilter] = useState<string | null>(null)
+  const [showMaskEditor, setShowMaskEditor] = useState(false)
+  const [editingImage, setEditingImage] = useState<ImageAsset | null>(null)
+  const [showDeletionDialog, setShowDeletionDialog] = useState(false)
+  const [imageToDelete, setImageToDelete] = useState<ImageAsset | null>(null)
+  const [deletionUsageInfo, setDeletionUsageInfo] = useState<ImageUsageInfo>({ states: [], processes: [] })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const filteredImages = images.filter((image) => image.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  // Count images by source
+  const imageCounts = {
+    all: images.length,
+    uploaded: images.filter(img => img.source === 'uploaded').length,
+    pattern_optimization: images.filter(img => img.source === 'pattern_optimization').length,
+    image_extraction: images.filter(img => img.source === 'image_extraction').length,
+    state_discovery: images.filter(img => img.source === 'state_discovery').length,
+  }
+
+  // Filter images by search query and source
+  const filteredImages = images.filter((image) => {
+    const matchesSearch = image.name.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesSource = !activeFilter || image.source === activeFilter
+    return matchesSearch && matchesSource
+  })
 
   const handleFiles = useCallback(
     (files: FileList) => {
       const newImages: ImageAsset[] = []
+      let processedFiles = 0
+      const totalFiles = files.length
 
       Array.from(files).forEach((file) => {
         if (!file.type.startsWith("image/")) {
           toast.error("Invalid file type", {
             description: `${file.name} is not an image file.`,
           })
+          processedFiles++
+          if (processedFiles === totalFiles && newImages.length > 0) {
+            newImages.forEach(image => addImage(image))
+            toast.success("Images uploaded", {
+              description: `${newImages.length} image(s) added to your library.`,
+            })
+          }
           return
         }
 
         const reader = new FileReader()
         reader.onload = (e) => {
-          const newImage: ImageAsset = {
-            id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            name: file.name,
-            url: e.target?.result as string,
-            size: file.size,
-            uploadedAt: new Date(),
-            usageCount: 0,
-            usedIn: [],
+          const img = new Image()
+          img.onload = () => {
+            // Validate image dimensions
+            if (img.width < 10 || img.height < 10) {
+              toast.error("Image too small", {
+                description: `${file.name} is ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`,
+              })
+              processedFiles++
+              if (processedFiles === totalFiles && newImages.length > 0) {
+                newImages.forEach(image => addImage(image))
+                toast.success("Images uploaded", {
+                  description: `${newImages.length} image(s) added to your library.`,
+                })
+              }
+              return
+            }
+
+            const newImage: ImageAsset = {
+              id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: file.name,
+              url: e.target?.result as string,
+              size: file.size,
+              createdAt: new Date(),
+              usageCount: 0,
+              usedIn: [],
+              source: 'uploaded',
+            }
+
+            newImages.push(newImage)
+            processedFiles++
+
+            if (processedFiles === totalFiles && newImages.length > 0) {
+              newImages.forEach(image => addImage(image))
+              toast.success("Images uploaded", {
+                description: `${newImages.length} image(s) added to your library.`,
+              })
+            }
           }
-
-          newImages.push(newImage)
-
-          if (newImages.length === files.length) {
-            addImages(newImages)
-            toast.success("Images uploaded", {
-              description: `${newImages.length} image(s) added to your library.`,
+          img.onerror = () => {
+            toast.error("Failed to load image", {
+              description: `${file.name} could not be processed.`,
             })
+            processedFiles++
+            if (processedFiles === totalFiles && newImages.length > 0) {
+              newImages.forEach(image => addImage(image))
+              toast.success("Images uploaded", {
+                description: `${newImages.length} image(s) added to your library.`,
+              })
+            }
           }
+          img.src = e.target?.result as string
         }
         reader.readAsDataURL(file)
       })
     },
-    [addImages],
+    [addImage],
   )
 
   const handleDeleteImage = (imageId: string) => {
-    const success = deleteImage(imageId)
-    if (!success) {
-      toast.error("Cannot delete image", {
-        description: "This image is currently being used in processes or states.",
-      })
-    } else {
-      toast.success("Image deleted", {
-        description: "The image has been removed from your library.",
-      })
+    const image = images.find(img => img.id === imageId)
+    if (!image) {
+      toast.error("Image not found")
+      return
     }
+
+    // Get usage information
+    const usageInfo = getImageUsage(imageId)
+    setImageToDelete(image)
+    setDeletionUsageInfo(usageInfo)
+    setShowDeletionDialog(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!imageToDelete) return
+
+    try {
+      // Perform cascade deletion
+      const statesAffected = await removeImageFromStates(imageToDelete.url)
+      const processesAffected = await markImageAsRemovedInProcesses(imageToDelete.id, imageToDelete.name)
+
+      // Delete the image from the library
+      deleteImage(imageToDelete.id)
+
+      // Show success message
+      const details = []
+      if (statesAffected > 0) {
+        details.push(`Removed from ${statesAffected} state${statesAffected > 1 ? 's' : ''}`)
+      }
+      if (processesAffected > 0) {
+        details.push(`Marked as removed in ${processesAffected} process${processesAffected > 1 ? 'es' : ''}`)
+      }
+
+      toast.success("Image deleted", {
+        description: details.length > 0
+          ? details.join(' and ')
+          : "The image has been removed from your library.",
+      })
+
+      // Reset state
+      setImageToDelete(null)
+      setDeletionUsageInfo({ states: [], processes: [] })
+    } catch (error) {
+      toast.error("Failed to delete image", {
+        description: "An error occurred while deleting the image.",
+      })
+      console.error('Delete image error:', error)
+    }
+  }
+
+  const handleEditMask = (image: ImageAsset) => {
+    setEditingImage(image)
+    setShowMaskEditor(true)
+  }
+
+  const handleSaveMask = (maskedImage: string) => {
+    if (!editingImage) return
+
+    const updatedImage: ImageAsset = {
+      ...editingImage,
+      url: maskedImage,
+    }
+
+    updateImage(updatedImage)
+    setShowMaskEditor(false)
+    setEditingImage(null)
+    toast.success("Mask applied to image", {
+      description: "The image has been updated with the new mask.",
+    })
   }
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -119,6 +251,26 @@ export function ImagesManager() {
     const sizes = ["Bytes", "KB", "MB", "GB"]
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+  }
+
+  const getSourceLabel = (source: string) => {
+    switch(source) {
+      case 'uploaded': return 'Uploaded'
+      case 'pattern_optimization': return 'Pattern Opt'
+      case 'image_extraction': return 'Extraction'
+      case 'state_discovery': return 'Discovery'
+      default: return 'Unknown'
+    }
+  }
+
+  const getSourceColor = (source: string) => {
+    switch(source) {
+      case 'uploaded': return '#00FF88'
+      case 'pattern_optimization': return '#00D9FF'
+      case 'image_extraction': return '#BD00FF'
+      case 'state_discovery': return '#FFB800'
+      default: return '#6B7280'
+    }
   }
 
   return (
@@ -180,6 +332,67 @@ export function ImagesManager() {
         </div>
       </div>
 
+      {/* Source Filter Badges */}
+      {images.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          <Badge
+            variant={activeFilter === null ? "default" : "outline"}
+            className={`cursor-pointer transition-all ${
+              activeFilter === null
+                ? "bg-[#00FF88] text-black border-[#00FF88]"
+                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+            }`}
+            onClick={() => setActiveFilter(null)}
+          >
+            All ({imageCounts.all})
+          </Badge>
+          <Badge
+            variant={activeFilter === 'uploaded' ? "default" : "outline"}
+            className={`cursor-pointer transition-all ${
+              activeFilter === 'uploaded'
+                ? "bg-[#00FF88] text-black border-[#00FF88]"
+                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+            }`}
+            onClick={() => setActiveFilter('uploaded')}
+          >
+            Uploaded ({imageCounts.uploaded})
+          </Badge>
+          <Badge
+            variant={activeFilter === 'pattern_optimization' ? "default" : "outline"}
+            className={`cursor-pointer transition-all ${
+              activeFilter === 'pattern_optimization'
+                ? "bg-[#00D9FF] text-black border-[#00D9FF]"
+                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+            }`}
+            onClick={() => setActiveFilter('pattern_optimization')}
+          >
+            Pattern Opt ({imageCounts.pattern_optimization})
+          </Badge>
+          <Badge
+            variant={activeFilter === 'image_extraction' ? "default" : "outline"}
+            className={`cursor-pointer transition-all ${
+              activeFilter === 'image_extraction'
+                ? "bg-[#BD00FF] text-black border-[#BD00FF]"
+                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+            }`}
+            onClick={() => setActiveFilter('image_extraction')}
+          >
+            Extraction ({imageCounts.image_extraction})
+          </Badge>
+          <Badge
+            variant={activeFilter === 'state_discovery' ? "default" : "outline"}
+            className={`cursor-pointer transition-all ${
+              activeFilter === 'state_discovery'
+                ? "bg-[#FFB800] text-black border-[#FFB800]"
+                : "bg-transparent border-gray-700 text-gray-400 hover:border-gray-600"
+            }`}
+            onClick={() => setActiveFilter('state_discovery')}
+          >
+            Discovery ({imageCounts.state_discovery})
+          </Badge>
+        </div>
+      )}
+
       {/* Upload Area */}
       <Card
         className={`border-2 border-dashed transition-colors ${
@@ -238,13 +451,22 @@ export function ImagesManager() {
                       alt={image.name}
                       className="w-full h-full object-contain p-0.5"
                     />
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-purple-400 hover:text-purple-300 hover:bg-purple-400/20 h-6 w-6 p-0"
+                        onClick={() => handleEditMask(image)}
+                        title="Edit Mask"
+                      >
+                        <Edit className="w-3 h-3" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         className="text-red-400 hover:text-red-300 hover:bg-red-400/20 h-6 w-6 p-0"
                         onClick={() => handleDeleteImage(image.id)}
-                        disabled={image.usageCount > 0}
+                        title="Delete Image"
                       >
                         <Trash2 className="w-3 h-3" />
                       </Button>
@@ -261,7 +483,7 @@ export function ImagesManager() {
                       <span>{formatFileSize(image.size)}</span>
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-0.5">
                       <Badge
                         variant={image.usageCount > 0 ? "default" : "secondary"}
                         className={`text-[8px] px-0.5 py-0 h-3 ${
@@ -269,6 +491,15 @@ export function ImagesManager() {
                         }`}
                       >
                         {image.usageCount}x
+                      </Badge>
+                      <Badge
+                        className="text-[8px] px-0.5 py-0 h-3"
+                        style={{
+                          backgroundColor: getSourceColor(image.source),
+                          color: 'black'
+                        }}
+                      >
+                        {getSourceLabel(image.source)}
                       </Badge>
                     </div>
 
@@ -279,6 +510,30 @@ export function ImagesManager() {
           ))}
         </div>
       )}
+
+      {/* Mask Editor */}
+      {showMaskEditor && editingImage && (
+        <MaskEditor
+          imageUrl={editingImage.url}
+          imageName={editingImage.name}
+          initialMask={undefined}
+          onSave={handleSaveMask}
+          onCancel={() => {
+            setShowMaskEditor(false)
+            setEditingImage(null)
+          }}
+          open={showMaskEditor}
+        />
+      )}
+
+      {/* Image Deletion Dialog */}
+      <ImageDeletionDialog
+        open={showDeletionDialog}
+        onOpenChange={setShowDeletionDialog}
+        imageName={imageToDelete?.name || ""}
+        usageInfo={deletionUsageInfo}
+        onConfirmDelete={confirmDelete}
+      />
     </div>
   )
 }

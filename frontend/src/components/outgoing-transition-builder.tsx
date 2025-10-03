@@ -12,16 +12,21 @@ import { ArrowRightLeft, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { useAutomation } from "@/contexts/automation-context"
 
-export function OutgoingTransitionBuilder() {
+interface OutgoingTransitionBuilderProps {
+  preselectedProcess?: string
+  onClose?: () => void
+}
+
+export function OutgoingTransitionBuilder({ preselectedProcess, onClose }: OutgoingTransitionBuilderProps = {}) {
   const { states, processes, addTransition } = useAutomation()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!!preselectedProcess)
 
   // OutgoingTransition fields
   const [fromState, setFromState] = useState("")
   const [staysVisible, setStaysVisible] = useState(false)
   const [activateStates, setActivateStates] = useState<string[]>([])
   const [deactivateStates, setDeactivateStates] = useState<string[]>([])
-  const [selectedProcess, setSelectedProcess] = useState("")
+  const [selectedProcess, setSelectedProcess] = useState(preselectedProcess || "")
 
   // Handle from state selection
   const handleFromStateChange = (stateId: string) => {
@@ -93,6 +98,7 @@ export function OutgoingTransitionBuilder() {
     setDeactivateStates([])
     setSelectedProcess("")
     setOpen(false)
+    onClose?.()
   }
 
   // Get available states (not in activate or deactivate lists, and not the from state)
@@ -102,14 +108,23 @@ export function OutgoingTransitionBuilder() {
              !deactivateStates.includes(state.id)
   )
 
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen)
+    if (!newOpen) {
+      onClose?.()
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black">
-          <ArrowRightLeft className="w-4 h-4 mr-2" />
-          Create Outgoing Transition
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      {!preselectedProcess && (
+        <DialogTrigger asChild>
+          <Button className="w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black">
+            <ArrowRightLeft className="w-4 h-4 mr-2" />
+            Create Outgoing Transition
+          </Button>
+        </DialogTrigger>
+      )}
 
       <DialogContent
         className="bg-[#27272A] border-gray-700"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Target, Anchor, MousePointer, Image } from 'lucide-react';
+import { X, Anchor, MousePointer, Image, Check } from 'lucide-react';
 import { ScreenshotLocation, Screenshot, AnchorType } from '../../types/Screenshot';
 import { StateImage } from '../../contexts/automation-context/types';
 
@@ -19,15 +19,22 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
   onDelete
 }) => {
   const [location, setLocation] = useState<ScreenshotLocation>(selectedLocation);
+  const [showSaved, setShowSaved] = useState(false);
 
   useEffect(() => {
     setLocation(selectedLocation);
   }, [selectedLocation]);
 
+  const showSavedIndicator = () => {
+    setShowSaved(true);
+    setTimeout(() => setShowSaved(false), 2000);
+  };
+
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const updatedLocation = { ...location, name: e.target.value };
     setLocation(updatedLocation);
     onUpdate(updatedLocation);
+    showSavedIndicator();
   };
 
   const handleCoordinateChange = (axis: 'x' | 'y', value: number) => {
@@ -37,9 +44,10 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
     };
     setLocation(updatedLocation);
     onUpdate(updatedLocation);
+    showSavedIndicator();
   };
 
-  const handlePropertyToggle = (property: 'anchor' | 'fixed' | 'clickTarget') => {
+  const handlePropertyToggle = (property: 'anchor' | 'fixed') => {
     const updatedLocation = {
       ...location,
       [property]: !location[property]
@@ -53,15 +61,24 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
   };
 
   return (
-    <div className="w-80 border-l bg-white overflow-y-auto">
+    <>
       <div className="p-4 border-b bg-gray-50">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Location Properties</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-gray-900">Location Properties</h3>
+            {showSaved && (
+              <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                <Check className="w-3 h-3" />
+                Saved
+              </span>
+            )}
+          </div>
           <button
             onClick={() => onDelete(location.id)}
             className="p-1 hover:bg-gray-200 rounded"
+            title="Delete location"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4 text-gray-700" />
           </button>
         </div>
       </div>
@@ -76,7 +93,7 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
             type="text"
             value={location.name}
             onChange={handleNameChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
           />
         </div>
 
@@ -87,191 +104,333 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
           </label>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs text-gray-500">X</label>
+              <label className={`block text-xs ${location.referenceImageId && location.referenceImageId !== 'pending' ? 'text-gray-400' : 'text-gray-500'}`}>X</label>
               <input
                 type="number"
                 value={location.x}
                 onChange={(e) => handleCoordinateChange('x', Number(e.target.value))}
-                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                disabled={!!(location.referenceImageId && location.referenceImageId !== 'pending')}
+                className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
+                  location.referenceImageId && location.referenceImageId !== 'pending'
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'text-gray-900'
+                }`}
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500">Y</label>
+              <label className={`block text-xs ${location.referenceImageId && location.referenceImageId !== 'pending' ? 'text-gray-400' : 'text-gray-500'}`}>Y</label>
               <input
                 type="number"
                 value={location.y}
                 onChange={(e) => handleCoordinateChange('y', Number(e.target.value))}
-                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                disabled={!!(location.referenceImageId && location.referenceImageId !== 'pending')}
+                className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
+                  location.referenceImageId && location.referenceImageId !== 'pending'
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'text-gray-900'
+                }`}
               />
             </div>
           </div>
         </div>
 
-        {/* Offsets */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Position Offsets
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs text-gray-500">Offset X</label>
-              <input
-                type="number"
-                value={location.offsetX || 0}
-                onChange={(e) => {
-                  const updatedLocation = { ...location, offsetX: Number(e.target.value) };
-                  setLocation(updatedLocation);
-                  onUpdate(updatedLocation);
-                }}
-                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500">Offset Y</label>
-              <input
-                type="number"
-                value={location.offsetY || 0}
-                onChange={(e) => {
-                  const updatedLocation = { ...location, offsetY: Number(e.target.value) };
-                  setLocation(updatedLocation);
-                  onUpdate(updatedLocation);
-                }}
-                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-              />
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">
-            Pixel offsets applied to the final position
-          </p>
-        </div>
-
-        {/* Properties */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Properties
-          </label>
-          <div className="space-y-2">
-            {/* Click Target */}
-            <label className="flex items-center justify-between p-2 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer">
-              <div className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-gray-600" />
-                <span className="text-sm">Click Target</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={location.clickTarget || false}
-                onChange={() => handlePropertyToggle('clickTarget')}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-              />
-            </label>
-
-            {/* Anchor Point */}
-            <label className="flex items-center justify-between p-2 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer">
-              <div className="flex items-center gap-2">
-                <Anchor className="w-4 h-4 text-gray-600" />
-                <span className="text-sm">Anchor Point</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={location.anchor || false}
-                onChange={() => {
+        {/* Relative Positioning Checkbox - Always Visible */}
+        <div className="space-y-2">
+          <label className="flex items-center space-x-2 cursor-pointer p-2 bg-gray-50 rounded hover:bg-gray-100">
+            <input
+              type="checkbox"
+              checked={!!location.referenceImageId}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  // Just set fixed to false - user will select state and image
                   const updatedLocation = {
                     ...location,
-                    anchor: !location.anchor,
-                    anchorType: !location.anchor ? 'CENTER' : undefined
+                    referenceImageId: 'pending', // Placeholder to trigger the UI
+                    fixed: false
                   };
                   setLocation(updatedLocation);
                   onUpdate(updatedLocation);
-                }}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-              />
-            </label>
+                  showSavedIndicator();
+                } else {
+                  const updatedLocation = {
+                    ...location,
+                    referenceImageId: undefined,
+                    fixed: true
+                  };
+                  setLocation(updatedLocation);
+                  onUpdate(updatedLocation);
+                  showSavedIndicator();
+                }
+              }}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700 font-medium">Relative positioning</span>
+          </label>
 
-            {/* Fixed Position */}
-            <label className="flex items-center justify-between p-2 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer">
-              <div className="flex items-center gap-2">
-                <MousePointer className="w-4 h-4 text-gray-600" />
-                <span className="text-sm">Fixed Position</span>
+          {location.referenceImageId && (
+            <div className="pl-6 space-y-2">
+              {/* Associated State - Only when relative is checked */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Associated State</label>
+                <select
+                  value={location.referenceStateId || ""}
+                  onChange={(e) => {
+                    const referenceStateId = e.target.value;
+                    const selectedState = states.find(s => s.id === referenceStateId);
+                    const firstImage = selectedState?.stateImages?.[0];
+
+                    const updatedLocation = {
+                      ...location,
+                      referenceStateId: referenceStateId || undefined,
+                      // Auto-select first image if state has images
+                      referenceImageId: firstImage?.id || 'pending'
+                    };
+                    setLocation(updatedLocation);
+                    onUpdate(updatedLocation);
+                    showSavedIndicator();
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                >
+                  <option value="">Select a state</option>
+                  {states.map(state => (
+                    <option key={state.id} value={state.id}>
+                      {state.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <input
-                type="checkbox"
-                checked={location.fixed || false}
-                onChange={() => handlePropertyToggle('fixed')}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-              />
-            </label>
-          </div>
+
+              {/* Reference Image */}
+              {location.referenceStateId && states.find(s => s.id === location.referenceStateId)?.stateImages?.length > 0 && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Reference Image</label>
+                  <select
+                    value={location.referenceImageId === 'pending' ? '' : location.referenceImageId}
+                    onChange={(e) => {
+                      const updatedLocation = { ...location, referenceImageId: e.target.value };
+                      setLocation(updatedLocation);
+                      onUpdate(updatedLocation);
+                      showSavedIndicator();
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-gray-900"
+                  >
+                    <option value="">Select an image</option>
+                    {states.find(s => s.id === location.referenceStateId)?.stateImages?.map((stateImage: StateImage) => (
+                      <option key={stateImage.id} value={stateImage.id}>
+                        {stateImage.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Location in Region for Relative */}
+              <details className="group" open>
+                <summary className="flex items-center justify-between cursor-pointer text-sm text-gray-700 hover:text-gray-900 list-none py-1 px-2 bg-gray-50 rounded">
+                  <span className="font-medium">Location in Region</span>
+                  <span className="text-gray-400 group-open:rotate-90 transition-transform">▶</span>
+                </summary>
+                <div className="mt-2 pl-2 border-l-2 border-blue-300 space-y-3">
+                  {/* Position Enum */}
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Position</label>
+                    <select
+                      value={location.anchorType || 'CENTER'}
+                      onChange={(e) => {
+                        const anchorType = e.target.value as AnchorType;
+                        const percentages: Record<AnchorType, { percentW: number; percentH: number }> = {
+                          'TOP_LEFT': { percentW: 0.0, percentH: 0.0 },
+                          'TOP_CENTER': { percentW: 0.5, percentH: 0.0 },
+                          'TOP_RIGHT': { percentW: 1.0, percentH: 0.0 },
+                          'MIDDLE_LEFT': { percentW: 0.0, percentH: 0.5 },
+                          'CENTER': { percentW: 0.5, percentH: 0.5 },
+                          'MIDDLE_RIGHT': { percentW: 1.0, percentH: 0.5 },
+                          'BOTTOM_LEFT': { percentW: 0.0, percentH: 1.0 },
+                          'BOTTOM_CENTER': { percentW: 0.5, percentH: 1.0 },
+                          'BOTTOM_RIGHT': { percentW: 1.0, percentH: 1.0 },
+                          'CUSTOM': { percentW: 0.5, percentH: 0.5 }
+                        };
+                        const updatedLocation = {
+                          ...location,
+                          anchorType,
+                          percentW: percentages[anchorType].percentW,
+                          percentH: percentages[anchorType].percentH
+                        };
+                        setLocation(updatedLocation);
+                        onUpdate(updatedLocation);
+                        showSavedIndicator();
+                      }}
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                    >
+                      <option value="TOP_LEFT">Top Left</option>
+                      <option value="TOP_CENTER">Top Center</option>
+                      <option value="TOP_RIGHT">Top Right</option>
+                      <option value="MIDDLE_LEFT">Middle Left</option>
+                      <option value="CENTER">Center</option>
+                      <option value="MIDDLE_RIGHT">Middle Right</option>
+                      <option value="BOTTOM_LEFT">Bottom Left</option>
+                      <option value="BOTTOM_CENTER">Bottom Center</option>
+                      <option value="BOTTOM_RIGHT">Bottom Right</option>
+                    </select>
+                  </div>
+
+                  {/* Percent of Width/Height */}
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Percent of Width/Height</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-400">W%</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={location.percentW ?? 0.5}
+                          onChange={(e) => {
+                            const updatedLocation = {
+                              ...location,
+                              percentW: parseFloat(e.target.value)
+                            };
+                            setLocation(updatedLocation);
+                            onUpdate(updatedLocation);
+                            showSavedIndicator();
+                          }}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400">H%</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={location.percentH ?? 0.5}
+                          onChange={(e) => {
+                            const updatedLocation = {
+                              ...location,
+                              percentH: parseFloat(e.target.value)
+                            };
+                            setLocation(updatedLocation);
+                            onUpdate(updatedLocation);
+                            showSavedIndicator();
+                          }}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      0.0 = left/top, 0.5 = center, 1.0 = right/bottom
+                    </p>
+                  </div>
+
+                  {/* Pixel Offsets */}
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Offsets (pixels)</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-400">X</label>
+                        <input
+                          type="number"
+                          value={location.offsetX || 0}
+                          onChange={(e) => {
+                            const updatedLocation = { ...location, offsetX: Number(e.target.value) };
+                            setLocation(updatedLocation);
+                            onUpdate(updatedLocation);
+                            showSavedIndicator();
+                          }}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400">Y</label>
+                        <input
+                          type="number"
+                          value={location.offsetY || 0}
+                          onChange={(e) => {
+                            const updatedLocation = { ...location, offsetY: Number(e.target.value) };
+                            setLocation(updatedLocation);
+                            onUpdate(updatedLocation);
+                            showSavedIndicator();
+                          }}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          )}
         </div>
 
-        {/* Anchor Type Selector - shown when anchor is enabled */}
-        {location.anchor && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Anchor Type (for region definition)
-            </label>
-            <select
-              value={location.anchorType || 'CENTER'}
+        {/* Anchor Checkbox - Independent */}
+        <div className="space-y-2">
+          <label className="flex items-center space-x-2 cursor-pointer p-2 bg-gray-50 rounded hover:bg-gray-100">
+            <input
+              type="checkbox"
+              checked={location.anchor || false}
               onChange={(e) => {
-                const updatedLocation = { ...location, anchorType: e.target.value as AnchorType };
+                const updatedLocation = {
+                  ...location,
+                  anchor: e.target.checked,
+                  anchorType: e.target.checked ? (location.anchorType || 'CENTER') : undefined
+                };
                 setLocation(updatedLocation);
                 onUpdate(updatedLocation);
+                showSavedIndicator();
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="TOP_LEFT">Top Left</option>
-              <option value="TOP_CENTER">Top Center</option>
-              <option value="TOP_RIGHT">Top Right</option>
-              <option value="MIDDLE_LEFT">Middle Left</option>
-              <option value="CENTER">Center</option>
-              <option value="MIDDLE_RIGHT">Middle Right</option>
-              <option value="BOTTOM_LEFT">Bottom Left</option>
-              <option value="BOTTOM_CENTER">Bottom Center</option>
-              <option value="BOTTOM_RIGHT">Bottom Right</option>
-              <option value="CUSTOM">Custom Position</option>
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Specifies which part of a region this anchor represents
-            </p>
-          </div>
-        )}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700 font-medium">Anchor (for region definition)</span>
+          </label>
 
-        {/* Property Descriptions */}
-        <div className="text-xs text-gray-500 space-y-1 p-2 bg-blue-50 rounded">
-          <p><strong>Click Target:</strong> Use this location as an action target (click, type, hover)</p>
-          <p><strong>Anchor Point:</strong> Use for defining region boundaries or spatial relationships</p>
-          <p><strong>Fixed Position:</strong> Always use absolute coordinates, ignore relative positioning</p>
+          {location.anchor && (
+            <div className="pl-6">
+              <label className="block text-xs text-gray-500 mb-1">Anchor Position</label>
+              <select
+                value={location.anchorType || 'CENTER'}
+                onChange={(e) => {
+                  const updatedLocation = { ...location, anchorType: e.target.value as AnchorType };
+                  setLocation(updatedLocation);
+                  onUpdate(updatedLocation);
+                  showSavedIndicator();
+                }}
+                className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+              >
+                <option value="TOP_LEFT">Top Left</option>
+                <option value="TOP_CENTER">Top Center</option>
+                <option value="TOP_RIGHT">Top Right</option>
+                <option value="MIDDLE_LEFT">Middle Left</option>
+                <option value="CENTER">Center</option>
+                <option value="MIDDLE_RIGHT">Middle Right</option>
+                <option value="BOTTOM_LEFT">Bottom Left</option>
+                <option value="BOTTOM_CENTER">Bottom Center</option>
+                <option value="BOTTOM_RIGHT">Bottom Right</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Specifies which point of a region this location represents
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Positioning Mode Indicator */}
-        <div className="p-2 bg-gray-50 rounded">
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${location.fixed ? 'bg-blue-500' : 'bg-green-500'}`} />
-            <span className="text-sm font-medium text-gray-700">
-              {location.fixed ? 'Absolute' : 'Relative'} Positioning
-            </span>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">
-            {location.fixed
-              ? 'Using fixed coordinates (x, y)'
-              : 'Will adapt to image position at runtime'}
-          </p>
-        </div>
-
-        {/* State Association */}
+        {/* Save to State - Always Visible */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Associated State
+            Save to State
           </label>
           <select
-            value={location.stateId}
+            value={location.stateId || ''}
             onChange={(e) => {
               const updatedLocation = { ...location, stateId: e.target.value };
               setLocation(updatedLocation);
               onUpdate(updatedLocation);
+              showSavedIndicator();
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
           >
-            <option value="">No state selected</option>
+            <option value="">Select state</option>
             {states.map(state => (
               <option key={state.id} value={state.id}>
                 {state.name}
@@ -279,135 +438,8 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
             ))}
           </select>
         </div>
-
-        {/* StateImage Reference (for relative positioning) */}
-        {!location.fixed && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              <div className="flex items-center gap-2">
-                <Image className="w-4 h-4" />
-                Reference Image (for relative positioning)
-              </div>
-            </label>
-            <select
-              value={location.referenceImageId || ''}
-              onChange={(e) => {
-                const updatedLocation = { ...location, referenceImageId: e.target.value || undefined };
-                setLocation(updatedLocation);
-                onUpdate(updatedLocation);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">No image reference (use state coordinates)</option>
-              {/* Get StateImages from selected state */}
-              {location.stateId && states.find(s => s.id === location.stateId)?.stateImages?.map((stateImage: StateImage) => (
-                <option key={stateImage.id} value={stateImage.id}>
-                  {stateImage.name}
-                </option>
-              )) || (
-                <option disabled>Select a state first</option>
-              )}
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              When set, location will be relative to where this image is found at runtime
-            </p>
-          </div>
-        )}
-
-        {/* Screenshot Info */}
-        {getScreenshot() && (
-          <div className="border-t pt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Screenshot
-            </label>
-            <div className="p-2 bg-gray-50 rounded">
-              <p className="text-sm text-gray-600">{getScreenshot()?.name}</p>
-              <p className="text-xs text-gray-500 mt-1">
-                {getScreenshot()?.width} × {getScreenshot()?.height} px
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Advanced Properties */}
-        <details className="border-t pt-4">
-          <summary className="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
-            Advanced Properties
-          </summary>
-          <div className="mt-3 space-y-3">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">
-                Screenshot ID
-              </label>
-              <div className="px-2 py-1 bg-gray-50 rounded text-xs font-mono">
-                {location.screenshotId}
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">
-                Location ID
-              </label>
-              <div className="px-2 py-1 bg-gray-50 rounded text-xs font-mono">
-                {location.id}
-              </div>
-            </div>
-          </div>
-        </details>
-
-        {/* Visual Preview */}
-        <div className="border-t pt-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Visual Preview
-          </label>
-          <div className="relative bg-gray-100 rounded p-4" style={{ minHeight: '100px' }}>
-            {/* Base position */}
-            <div
-              className="absolute w-4 h-4 transform -translate-x-1/2 -translate-y-1/2"
-              style={{
-                left: `${(location.x / (getScreenshot()?.width || 1920)) * 100}%`,
-                top: `${(location.y / (getScreenshot()?.height || 1080)) * 100}%`
-              }}
-            >
-              <div className="relative">
-                {/* Crosshair */}
-                <div className="absolute w-4 h-0.5 bg-red-500 -translate-y-1/2 top-1/2"></div>
-                <div className="absolute h-4 w-0.5 bg-red-500 -translate-x-1/2 left-1/2"></div>
-                {/* Center dot */}
-                <div className="absolute w-2 h-2 bg-red-600 rounded-full -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2"></div>
-              </div>
-            </div>
-
-            {/* Offset position if offsets are non-zero */}
-            {(location.offsetX || location.offsetY) && (
-              <div
-                className="absolute w-4 h-4 transform -translate-x-1/2 -translate-y-1/2"
-                style={{
-                  left: `${((location.x + (location.offsetX || 0)) / (getScreenshot()?.width || 1920)) * 100}%`,
-                  top: `${((location.y + (location.offsetY || 0)) / (getScreenshot()?.height || 1080)) * 100}%`
-                }}
-              >
-                <div className="relative">
-                  {/* Crosshair with offset styling */}
-                  <div className="absolute w-4 h-0.5 bg-blue-500 -translate-y-1/2 top-1/2"></div>
-                  <div className="absolute h-4 w-0.5 bg-blue-500 -translate-x-1/2 left-1/2"></div>
-                  {/* Center dot */}
-                  <div className="absolute w-2 h-2 bg-blue-600 rounded-full -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2"></div>
-                </div>
-              </div>
-            )}
-
-            <div className="text-center text-xs text-gray-500 mt-8">
-              <div>Base: ({location.x}, {location.y})</div>
-              {(location.offsetX || location.offsetY) && (
-                <div className="text-blue-600">
-                  Final: ({location.x + (location.offsetX || 0)}, {location.y + (location.offsetY || 0)})
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
-    </div>
+    </>
   );
 };
 

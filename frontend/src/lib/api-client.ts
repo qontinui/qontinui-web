@@ -1,4 +1,6 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+import { authService } from '@/services/service-factory';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export interface User {
   id: number;
@@ -21,41 +23,14 @@ export interface Project {
   updated_at: string;
 }
 
-export interface LoginRequest {
-  username: string;
-  password: string;
-}
-
-export interface RegisterRequest {
-  email: string;
-  username: string;
-  password: string;
-  full_name?: string;
-}
-
-export interface TokenResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-}
-
 class ApiClient {
-  private accessToken: string | null = null;
-  private refreshToken: string | null = null;
   private csrfToken: string | null = null;
   private refreshPromise: Promise<boolean> | null = null;
-  private sessionTimeoutWarning: NodeJS.Timeout | null = null;
-  private sessionTimeout: NodeJS.Timeout | null = null;
   private retryAttempts = 3;
-  private onSessionExpired?: () => void;
 
   constructor() {
-    // Load tokens from localStorage if available
     if (typeof window !== 'undefined') {
-      this.accessToken = localStorage.getItem('access_token');
-      this.refreshToken = localStorage.getItem('refresh_token');
       this.initializeCSRF();
-      this.startSessionTimer();
     }
   }
 
@@ -77,74 +52,16 @@ class ApiClient {
     }
   }
 
-  private setTokens(tokens: TokenResponse) {
-    this.accessToken = tokens.access_token;
-    this.refreshToken = tokens.refresh_token;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('access_token', tokens.access_token);
-      localStorage.setItem('refresh_token', tokens.refresh_token);
-      this.startSessionTimer();
-    }
-  }
-
-  private clearTokens() {
-    this.accessToken = null;
-    this.refreshToken = null;
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      this.clearSessionTimers();
-    }
-  }
-
-  private startSessionTimer() {
-    this.clearSessionTimers();
-
-    // Warning after 12 minutes (3 minutes before expiry)
-    this.sessionTimeoutWarning = setTimeout(() => {
-      if (this.onSessionExpired) {
-        console.warn('Session will expire in 3 minutes');
-        // Trigger a warning UI notification
-        if (typeof window !== 'undefined' && window.dispatchEvent) {
-          window.dispatchEvent(new CustomEvent('session-expiring', {
-            detail: { minutesRemaining: 3 }
-          }));
-        }
-      }
-    }, 12 * 60 * 1000);
-
-    // Auto-refresh or logout after 14 minutes
-    this.sessionTimeout = setTimeout(async () => {
-      const refreshed = await this.refreshAccessToken();
-      if (!refreshed && this.onSessionExpired) {
-        this.onSessionExpired();
-      }
-    }, 14 * 60 * 1000);
-  }
-
-  private clearSessionTimers() {
-    if (this.sessionTimeoutWarning) {
-      clearTimeout(this.sessionTimeoutWarning);
-      this.sessionTimeoutWarning = null;
-    }
-    if (this.sessionTimeout) {
-      clearTimeout(this.sessionTimeout);
-      this.sessionTimeout = null;
-    }
-  }
-
-  public setSessionExpiredHandler(handler: () => void) {
-    this.onSessionExpired = handler;
-  }
-
   private async fetchWithAuth(url: string, options: RequestInit = {}, attempt = 1): Promise<Response> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...options.headers as Record<string, string>,
     };
 
-    if (this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    const accessToken = authService.isAuthenticated() ? authService.tokenManager.getAccessToken() : null;
+
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
     // Add CSRF token for state-changing requests
@@ -157,7 +74,7 @@ class ApiClient {
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     try {
-      const response = await fetch(`${API_BASE_URL}${url}`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1${url}`, {
         ...options,
         headers,
         credentials: 'include',
@@ -167,14 +84,12 @@ class ApiClient {
       clearTimeout(timeoutId);
 
       // Handle 401 Unauthorized
-      if (response.status === 401 && this.refreshToken && attempt === 1) {
-        // Try to refresh the token
+      if (response.status === 401 && attempt === 1) {
+        // Try to refresh the token via authService
         const refreshed = await this.refreshAccessToken();
         if (refreshed) {
           // Retry the original request with new token
           return this.fetchWithAuth(url, options, attempt + 1);
-        } else if (this.onSessionExpired) {
-          this.onSessionExpired();
         }
       }
 
@@ -223,105 +138,18 @@ class ApiClient {
       return this.refreshPromise;
     }
 
-    this.refreshPromise = this.doRefreshToken();
+    this.refreshPromise = authService.refreshAccessToken();
     const result = await this.refreshPromise;
     this.refreshPromise = null;
     return result;
   }
 
-  private async doRefreshToken(): Promise<boolean> {
-    if (!this.refreshToken) return false;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ refresh_token: this.refreshToken }),
-      });
-
-      if (response.ok) {
-        const tokens: TokenResponse = await response.json();
-        this.setTokens(tokens);
-        return true;
-      }
-    } catch (error) {
-      console.error('Failed to refresh token:', error);
-    }
-
-    this.clearTokens();
-    return false;
-  }
-
-  // Auth endpoints
-  async login(credentials: LoginRequest): Promise<User> {
-    const formData = new URLSearchParams();
-    formData.append('username', credentials.username);
-    formData.append('password', credentials.password);
-
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData,
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Login failed');
-    }
-
-    const tokens: TokenResponse = await response.json();
-    this.setTokens(tokens);
-
-    // Get user info after login
-    return this.getCurrentUser();
-  }
-
-  async register(data: RegisterRequest): Promise<User> {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Registration failed');
-    }
-
-    return response.json();
-  }
-
   async logout() {
-    try {
-      // Call logout endpoint to blacklist the token
-      if (this.accessToken) {
-        await this.fetchWithAuth('/auth/logout', {
-          method: 'POST',
-        });
-      }
-    } catch (error) {
-      console.error('Logout request failed:', error);
-    } finally {
-      this.clearTokens();
-    }
+    return authService.logout();
   }
 
-  // User endpoints
   async getCurrentUser(): Promise<User> {
-    const response = await this.fetchWithAuth('/users/me');
-    if (!response.ok) {
-      throw new Error('Failed to get user info');
-    }
-    return response.json();
+    return authService.getCurrentUser();
   }
 
   async updateCurrentUser(data: Partial<User>): Promise<User> {
@@ -339,7 +167,9 @@ class ApiClient {
   async getProjects(): Promise<Project[]> {
     const response = await this.fetchWithAuth('/projects/');
     if (!response.ok) {
-      throw new Error('Failed to get projects');
+      const errorText = await response.text();
+      console.error('[ApiClient] getProjects error:', response.status, errorText);
+      throw new Error(`Failed to get projects: ${response.status} - ${errorText}`);
     }
     return response.json();
   }
@@ -418,10 +248,11 @@ class ApiClient {
         reject(new Error('Upload timeout'));
       });
 
-      xhr.open('POST', `${API_BASE_URL}${url}`);
+      xhr.open('POST', `${API_BASE_URL}/api/v1${url}`);
 
-      if (this.accessToken) {
-        xhr.setRequestHeader('Authorization', `Bearer ${this.accessToken}`);
+      const accessToken = authService.isAuthenticated() ? authService.tokenManager.getAccessToken() : null;
+      if (accessToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
       }
 
       if (this.csrfToken) {
@@ -434,7 +265,7 @@ class ApiClient {
   }
 
   isAuthenticated(): boolean {
-    return !!this.accessToken;
+    return authService.isAuthenticated();
   }
 }
 

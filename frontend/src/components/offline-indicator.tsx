@@ -8,6 +8,9 @@ export function OfflineIndicator() {
   const [showReconnected, setShowReconnected] = useState(false);
 
   useEffect(() => {
+    // Only run in browser
+    if (typeof window === 'undefined') return;
+
     const updateOnlineStatus = () => {
       const wasOffline = !isOnline;
       setIsOnline(navigator.onLine);

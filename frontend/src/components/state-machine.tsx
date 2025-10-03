@@ -2,15 +2,11 @@
 
 import React from "react"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
+import { flushSync } from "react-dom"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Square, Trash2, Settings, ArrowRight, MapPin, Map, Type } from "lucide-react"
+import { Plus, Square, Trash2, Settings, ArrowRight, MapPin, Map, Type, Network } from "lucide-react"
 import {
   ReactFlow,
   type Node,
@@ -27,70 +23,25 @@ import "@xyflow/react/dist/style.css"
 import { StateNode } from "@/components/state-node"
 import { TransitionNode } from "@/components/transition-node"
 import { TransitionEdge } from "@/components/transition-edge"
-import { useAutomation } from "@/contexts/automation-context"
+import {
+  useAutomation,
+  type State,
+  type StateRegion,
+  type StateLocation,
+  type StateString,
+  type StateImage,
+  type Pattern,
+  type Transition,
+  type OutgoingTransition,
+  type IncomingTransition,
+} from "@/contexts/automation-context"
+import { StateUpdateCoordinator } from "@/contexts/automation-context/state-update-coordinator"
 import { ImageSelector } from "@/components/image-selector"
 import { OutgoingTransitionBuilder } from "@/components/outgoing-transition-builder"
 import { IncomingTransitionBuilder } from "@/components/incoming-transition-builder"
 import { StatePropertiesPanel } from "@/components/state-properties-panel"
 import { TransitionPropertiesPanel } from "@/components/transition-properties-panel"
-
-interface StateRegion {
-  id: string
-  name: string
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-interface StateLocation {
-  id: string
-  name: string
-  x: number
-  y: number
-}
-
-interface StateString {
-  id: string
-  name: string
-  value: string
-}
-
-interface State {
-  id: string
-  name: string
-  description: string
-  initial?: boolean  // Whether this state is expected to be active at start
-  identifyingImages: Array<{ image: string }>
-  regions: StateRegion[]
-  locations: StateLocation[]
-  strings: StateString[]
-  position: { x: number; y: number }
-}
-
-// Import transition types from context
-type TransitionType = "OutgoingTransition" | "IncomingTransition"
-
-interface BaseTransition {
-  id: string
-  type: TransitionType
-  process: string
-}
-
-interface OutgoingTransition extends BaseTransition {
-  type: "OutgoingTransition"
-  fromState: string
-  activateStates: string[]
-  staysVisible: boolean
-  deactivateStates: string[]
-}
-
-interface IncomingTransition extends BaseTransition {
-  type: "IncomingTransition"
-  toState: string
-}
-
-type Transition = OutgoingTransition | IncomingTransition
+import { getLayoutedElements } from "@/lib/layout-utils"
 
 const nodeTypes: NodeTypes = {
   stateNode: StateNode,
@@ -101,11 +52,12 @@ const edgeTypes = {
   transitionEdge: TransitionEdge,
 }
 
-export function StateMachine() {
+export function StateStructure() {
   const {
     states,
     addState,
     updateState,
+    updateStateWithIdChange,
     deleteState,
     transitions,
     addTransition,
@@ -119,6 +71,12 @@ export function StateMachine() {
 
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
+
+  // Track pending ID changes to prevent panel from disappearing
+  const pendingIdChangeRef = useRef<{ oldId: string; newId: string } | null>(null)
+
+  // Track counts to trigger auto-layout when items are added
+  const prevCountsRef = useRef({ stateCount: 0, transitionCount: 0 })
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -212,7 +170,7 @@ export function StateMachine() {
       type: "stateNode",
       position: state.position,
       data: {
-        state,
+        state: { ...state }, // Spread to create new reference for React to detect changes
         images,
         hasIncomingTransitions: statesWithIncomingTransitions.has(state.id),
       },
@@ -315,18 +273,9 @@ export function StateMachine() {
   }, [states, transitions, images, setNodes, setEdges])
 
   const handleAddState = () => {
-    const newState: State = {
-      id: `state-${Date.now()}`,
-      name: "New State",
-      description: "",
-      identifyingImages: [],
-      regions: [],
-      locations: [],
-      strings: [],
-      position: findEmptyPosition(),
-    }
-
+    const newState = StateUpdateCoordinator.createDefaultState(states, findEmptyPosition())
     addState(newState)
+    // Auto-layout is handled by useEffect watching states.length
   }
 
   const handleDeleteState = (stateId: string) => {
@@ -334,6 +283,57 @@ export function StateMachine() {
     if (selectedNode === stateId) setSelectedNode(null)
   }
 
+  const applyAutoLayout = useCallback(() => {
+    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+      nodes,
+      edges,
+      {
+        direction: 'TB',
+        nodeWidth: 200,
+        nodeHeight: 150,
+        nodeSep: 80,
+        rankSep: 120,
+      }
+    )
+
+    // Update positions in the state
+    layoutedNodes.forEach((node) => {
+      const state = states.find(s => s.id === node.id)
+      if (state) {
+        updateState({
+          ...state,
+          position: node.position
+        })
+      } else if (node.id.startsWith('transition-node-')) {
+        const transitionId = node.id.replace('transition-node-', '')
+        const transition = transitions.find(t => t.id === transitionId)
+        if (transition) {
+          updateTransition({
+            ...transition,
+            position: node.position
+          })
+        }
+      }
+    })
+  }, [nodes, edges, states, transitions, updateState, updateTransition])
+
+  // Auto-layout when states or transitions are added
+  React.useEffect(() => {
+    const currentCounts = {
+      stateCount: states.length,
+      transitionCount: transitions.length
+    }
+
+    if (currentCounts.stateCount > prevCountsRef.current.stateCount ||
+        currentCounts.transitionCount > prevCountsRef.current.transitionCount) {
+      // Delay to ensure nodes/edges are rendered
+      setTimeout(() => {
+        applyAutoLayout()
+      }, 150)
+    }
+
+    prevCountsRef.current = currentCounts
+  }, [states.length, transitions.length, applyAutoLayout])
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -360,8 +360,47 @@ export function StateMachine() {
     const currentState = states.find((s) => s.id === selectedNode)
     if (!currentState) return
 
-    const updatedState = { ...currentState, ...updates }
-    updateState(updatedState)
+    // Use coordinator to prepare the update
+    const updateResult = StateUpdateCoordinator.prepareStateUpdate(
+      currentState,
+      updates,
+      states,
+      transitions
+    )
+
+    if (updateResult.idChanged && updateResult.oldId && updateResult.newId) {
+      // Track the pending ID change
+      pendingIdChangeRef.current = {
+        oldId: updateResult.oldId,
+        newId: updateResult.newId
+      }
+
+      // Update selectedNode to the new ID
+      setSelectedNode(updateResult.newId)
+
+      // Update the state with the new ID
+      updateStateWithIdChange(updateResult.oldId, updateResult.updatedState)
+
+      // Update all affected transitions (can be async)
+      const updatedTransitions = StateUpdateCoordinator.calculateUpdatedTransitions(
+        transitions,
+        updateResult.oldId,
+        updateResult.newId
+      )
+
+      // Apply transition updates
+      updatedTransitions.forEach(transition => {
+        const originalTransition = transitions.find(t => t.id === transition.id)
+        if (originalTransition && JSON.stringify(originalTransition) !== JSON.stringify(transition)) {
+          updateTransition(transition)
+        }
+      })
+
+      return
+    }
+
+    // Simple update without ID change
+    updateState(updateResult.updatedState)
   }
 
   const updateSelectedTransition = (updates: Partial<Transition>) => {
@@ -375,52 +414,52 @@ export function StateMachine() {
     updateTransition(updatedTransition)
   }
 
-  const addIdentifyingImage = () => {
+  // StateImage management
+  const addStateImage = () => {
     if (!selectedNode) return
 
     const currentState = states.find((s) => s.id === selectedNode)
     if (!currentState) return
 
-    const updatedImages = [...currentState.identifyingImages, { image: "" }]
-    updateSelectedState({ identifyingImages: updatedImages })
-  }
-
-  const updateIdentifyingImage = (index: number, field: "image", value: any) => {
-    if (!selectedNode) return
-
-    const currentState = states.find((s) => s.id === selectedNode)
-    if (!currentState) return
-
-    const updatedImages = [...currentState.identifyingImages]
-
-    // Handle image usage tracking
-    if (field === "image") {
-      const oldImage = updatedImages[index].image
-      if (oldImage) {
-        removeImageUsage(oldImage, selectedNode)
-      }
-      if (value) {
-        updateImageUsage(value, { type: "state", id: selectedNode, name: currentState.name })
-      }
+    // Create a default pattern for the new StateImage
+    const newPattern: Pattern = {
+      id: `pattern_${Date.now()}`,
+      image: "",
+      searchRegions: [],
+      fixed: false
     }
 
-    updatedImages[index] = { ...updatedImages[index], [field]: value }
-    updateSelectedState({ identifyingImages: updatedImages })
+    const newStateImage: StateImage = {
+      id: `stateimage-${Date.now()}`,
+      name: `StateImage_${(currentState.stateImages?.length || 0) + 1}`,
+      patterns: [newPattern],
+      shared: false,
+      source: 'upload', // Mark this as an uploaded image
+      probability: 1.0 // Default: always appears in mock tests
+    }
+    const updatedStateImages = [...(currentState.stateImages || []), newStateImage]
+    updateSelectedState({ stateImages: updatedStateImages })
   }
 
-  const removeIdentifyingImage = (index: number) => {
+  const updateStateImage = (index: number, updates: Partial<StateImage>) => {
     if (!selectedNode) return
 
     const currentState = states.find((s) => s.id === selectedNode)
-    if (!currentState) return
+    if (!currentState || !currentState.stateImages) return
 
-    const imageToRemove = currentState.identifyingImages[index]
-    if (imageToRemove.image) {
-      removeImageUsage(imageToRemove.image, selectedNode)
-    }
+    const updatedStateImages = [...currentState.stateImages]
+    updatedStateImages[index] = { ...updatedStateImages[index], ...updates }
+    updateSelectedState({ stateImages: updatedStateImages })
+  }
 
-    const updatedImages = currentState.identifyingImages.filter((_, i) => i !== index)
-    updateSelectedState({ identifyingImages: updatedImages })
+  const removeStateImage = (index: number) => {
+    if (!selectedNode) return
+
+    const currentState = states.find((s) => s.id === selectedNode)
+    if (!currentState || !currentState.stateImages) return
+
+    const updatedStateImages = currentState.stateImages.filter((_, i) => i !== index)
+    updateSelectedState({ stateImages: updatedStateImages })
   }
 
   // Region management
@@ -473,7 +512,11 @@ export function StateMachine() {
       id: `location-${Date.now()}`,
       name: `Location ${locations.length + 1}`,
       x: 0,
-      y: 0
+      y: 0,
+      fixed: true,         // Default to absolute positioning
+      anchor: false,       // Not an anchor by default
+      offsetX: 0,
+      offsetY: 0
     }
     updateSelectedState({ locations: [...locations, newLocation] })
   }
@@ -509,7 +552,8 @@ export function StateMachine() {
     const newString: StateString = {
       id: `string-${Date.now()}`,
       name: `String ${strings.length + 1}`,
-      value: ""
+      value: "",
+      inputText: true  // DEFAULT: Input Text is checked
     }
     updateSelectedState({ strings: [...strings, newString] })
   }
@@ -535,7 +579,34 @@ export function StateMachine() {
     updateSelectedState({ strings: updatedStrings })
   }
 
-  const selectedState = selectedNode ? states.find((s) => s.id === selectedNode) : null
+  // Find selected state - use a fallback strategy to handle ID changes during typing
+  const selectedState = React.useMemo(() => {
+    if (!selectedNode) return null
+
+    // First try to find by exact ID match
+    const exactMatch = states.find((s) => s.id === selectedNode)
+    if (exactMatch) {
+      // Clear pending ID change if we found the state
+      pendingIdChangeRef.current = null
+      return exactMatch
+    }
+
+    // If not found and we have a pending ID change, look for the old ID
+    if (pendingIdChangeRef.current) {
+      const { oldId, newId } = pendingIdChangeRef.current
+
+      // If selectedNode matches the newId but we can't find it yet,
+      // try to find the oldId temporarily
+      if (selectedNode === newId) {
+        const oldState = states.find((s) => s.id === oldId)
+        if (oldState) {
+          return oldState
+        }
+      }
+    }
+
+    return null
+  }, [selectedNode, states])
 
   // Extract the transition ID from the edge ID or direct transition ID
   const selectedTransition = selectedEdge
@@ -555,6 +626,11 @@ export function StateMachine() {
           <Button onClick={handleAddState} className="w-full bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white">
             <Plus className="w-4 h-4 mr-2" />
             Add State
+          </Button>
+
+          <Button onClick={applyAutoLayout} className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black">
+            <Network className="w-4 h-4 mr-2" />
+            Auto Layout
           </Button>
 
           <div className="space-y-2">
@@ -641,11 +717,12 @@ export function StateMachine() {
         {selectedState ? (
           <StatePropertiesPanel
             state={selectedState}
+            allStates={states}
             images={images}
             updateState={updateSelectedState}
-            addIdentifyingImage={addIdentifyingImage}
-            updateIdentifyingImage={updateIdentifyingImage}
-            removeIdentifyingImage={removeIdentifyingImage}
+            addStateImage={addStateImage}
+            updateStateImage={updateStateImage}
+            removeStateImage={removeStateImage}
             addRegion={addRegion}
             updateRegion={updateRegion}
             removeRegion={removeRegion}

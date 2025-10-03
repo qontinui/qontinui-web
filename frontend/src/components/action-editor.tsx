@@ -146,7 +146,7 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-gray-400 mt-1">{getActionSummary(action, states, processes, images)}</p>
+                      {renderActionSummary(action, states, processes, images)}
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -189,27 +189,20 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
     case "FIND":
       return {
         image: null,
-        similarity: 0.8,
-        strategy: "First",
-        pause_before_begin: 0,
-        pause_after_end: 0,
+        // similarity, strategy, pause_before_begin, pause_after_end are optional overrides
       }
     case "FIND_STATE_IMAGE":
       return {
         state: null,
-        similarity: 0.8,
-        strategy: "First",
-        pause_before_begin: 0,
-        pause_after_end: 0,
+        // similarity, strategy, pause_before_begin, pause_after_end are optional overrides
       }
     case "CLICK":
       return {
         target: "Last Find Result",
         clickType: "left",
         clickCount: 1,
-        pause_before_begin: 0,
-        pause_after_end: 0,
         hold_duration: 0,
+        // pause_before_begin, pause_after_end are optional overrides
       }
     case "TYPE":
       return {
@@ -220,8 +213,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         typing_delay: 50,
         clear_before: false,
         press_enter: false,
-        pause_before_begin: 0,
-        pause_after_end: 0,
+        // pause_before_begin, pause_after_end are optional overrides
       }
     case "DRAG":
       return {
@@ -229,8 +221,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         to: null,
         drag_duration: 1000,
         smooth_movement: true,
-        pause_before_begin: 0,
-        pause_after_end: 0,
+        // pause_before_begin, pause_after_end are optional overrides
       }
     case "SCROLL":
       return {
@@ -238,38 +229,84 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         amount: 3,
         scroll_duration: 500,
         smooth_scroll: true,
-        pause_before_begin: 0,
-        pause_after_end: 0,
+        // pause_before_begin, pause_after_end are optional overrides
       }
     case "VANISH":
       return {
         image: null,
         timeout: 5000,
         check_interval: 500,
-        pause_before_begin: 0,
-        pause_after_end: 0,
+        // pause_before_begin, pause_after_end are optional overrides
       }
     case "GO_TO_STATE":
       return {
         state: null,
-        pause_before_begin: 0,
-        pause_after_end: 0,
+        // pause_before_begin, pause_after_end are optional overrides
       }
     case "RUN_PROCESS":
       return {
         process: null,
-        pause_before_begin: 0,
-        pause_after_end: 0,
+        // pause_before_begin, pause_after_end are optional overrides
       }
     default:
       return {}
   }
 }
 
+function renderActionSummary(action: Action, states: any[], processes: any[], images: any[]) {
+  const summary = getActionSummary(action, states, processes, images)
+  const hasRemovedImage = summary.includes('[REMOVED:')
+
+  if (hasRemovedImage) {
+    // Parse the summary to highlight removed image parts in red
+    const parts = summary.split(/(\[REMOVED:[^\]]+\])/)
+    return (
+      <p className="text-xs mt-1">
+        {parts.map((part, index) => {
+          if (part.startsWith('[REMOVED:')) {
+            return (
+              <span key={index} className="text-red-400 font-medium">
+                {part}
+              </span>
+            )
+          }
+          return (
+            <span key={index} className="text-gray-400">
+              {part}
+            </span>
+          )
+        })}
+      </p>
+    )
+  }
+
+  return <p className="text-xs text-gray-400 mt-1">{summary}</p>
+}
+
 function getActionSummary(action: Action, states: any[], processes: any[], images: any[]): string {
   switch (action.type) {
     case "FIND":
+      if (action.config.removedImage) {
+        return `[REMOVED: ${action.config.removedImage}]`
+      }
       if (action.config.image) {
+        // First look for StateImage across all states
+        let stateImageName = null
+        for (const state of states) {
+          const stateImage = state.stateImages?.find((si: any) => si.id === action.config.image)
+          if (stateImage) {
+            stateImageName = stateImage.name
+            break
+          }
+        }
+
+        if (stateImageName) {
+          // Remove file extension from StateImage name
+          const nameWithoutExtension = stateImageName.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, '')
+          return `Find ${nameWithoutExtension}`
+        }
+
+        // Fall back to image library
         const image = images.find(img => img.id === action.config.image)
         if (image) {
           // Remove file extension from image name
@@ -323,10 +360,16 @@ function getActionSummary(action: Action, states: any[], processes: any[], image
         return `Type "${displayText.replace(/\n/g, '↵').replace(/\t/g, '→')}"`
       }
     case "DRAG":
+      if (action.config.removedImageTo) {
+        return `Drag from ${action.config.from} to [REMOVED: ${action.config.removedImageTo}]`
+      }
       return `Drag from ${action.config.from} to ${action.config.to || "target"}`
     case "SCROLL":
       return `Scroll ${action.config.direction} ${action.config.amount} units`
     case "VANISH":
+      if (action.config.removedImage) {
+        return `Wait for [REMOVED: ${action.config.removedImage}] to vanish`
+      }
       return action.config.image ? `Wait for ${action.config.image} to vanish` : "No image selected"
     case "GO_TO_STATE":
       if (action.config.state) {

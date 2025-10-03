@@ -29,7 +29,7 @@ interface State {
   name: string;
   description: string;
   initial?: boolean;
-  identifyingImages: Array<{ image: string; threshold: number }>;
+  stateImages: Array<{ image: string; threshold: number }>;
   position: { x: number; y: number };
 }
 
@@ -48,6 +48,7 @@ export interface ImportResult {
   processes: Process[];
   states: State[];
   transitions: Transition[];
+  settings?: any; // QontinuiConfig.settings
   errors: string[];
   warnings: string[];
 }
@@ -88,6 +89,7 @@ export class ConfigImporter {
         processes,
         states,
         transitions,
+        settings: config.settings, // Pass through settings for backend to apply
         errors,
         warnings
       };
@@ -99,6 +101,7 @@ export class ConfigImporter {
         processes: [],
         states: [],
         transitions: [],
+        settings: undefined,
         errors,
         warnings
       };
@@ -208,17 +211,19 @@ export class ConfigImporter {
    */
   private importStates(exportStates: any[], images: ImageAsset[]): State[] {
     return exportStates.map(exportState => {
-      // Update image usage
-      exportState.identifyingImages?.forEach((stateImage: any) => {
-        const image = images.find(img => img.id === stateImage.imageId);
-        if (image) {
-          image.usageCount++;
-          image.usedIn.push({
-            type: 'state',
-            id: exportState.id,
-            name: exportState.name
-          });
-        }
+      // Update image usage for all patterns
+      exportState.stateImages?.forEach((stateImage: any) => {
+        stateImage.patterns?.forEach((pattern: any) => {
+          const image = images.find(img => img.id === pattern.image);
+          if (image) {
+            image.usageCount++;
+            image.usedIn.push({
+              type: 'state',
+              id: exportState.id,
+              name: exportState.name
+            });
+          }
+        });
       });
 
       return {
@@ -226,10 +231,29 @@ export class ConfigImporter {
         name: exportState.name,
         description: exportState.description || '',
         initial: exportState.isInitial || false,
-        identifyingImages: exportState.identifyingImages.map((img: any) => ({
-          image: img.imageId,
-          threshold: img.threshold
-        })),
+        stateImages: exportState.stateImages?.map((img: any) => ({
+          id: img.id,
+          name: img.name,
+          patterns: img.patterns?.map((pattern: any) => ({
+            id: pattern.id,
+            name: pattern.name,
+            image: pattern.image,
+            mask: pattern.mask,
+            searchRegions: pattern.searchRegions || [],
+            fixed: pattern.fixed || false,
+            similarity: pattern.similarity,
+            targetPosition: pattern.targetPosition,
+            offsetX: pattern.offsetX,
+            offsetY: pattern.offsetY
+          })) || [],
+          shared: img.shared || false,
+          source: img.source,
+          probability: img.probability,
+          searchRegions: img.searchRegions || []
+        })) || [],
+        regions: exportState.regions || [],
+        locations: exportState.locations || [],
+        strings: exportState.strings || [],
         position: exportState.position
       };
     });
@@ -419,7 +443,7 @@ export class ConfigImporter {
       idMap.set(state.id, newId);
 
       // Update image references
-      const updatedImages = state.identifyingImages.map(img => ({
+      const updatedImages = state.stateImages.map(img => ({
         ...img,
         image: idMap.get(img.image) || img.image
       }));
@@ -427,7 +451,7 @@ export class ConfigImporter {
       mergedStates.push({
         ...state,
         id: newId,
-        identifyingImages: updatedImages
+        stateImages: updatedImages
       });
     });
 

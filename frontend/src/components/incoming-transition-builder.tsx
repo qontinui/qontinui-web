@@ -10,13 +10,18 @@ import { ArrowDownToLine } from "lucide-react"
 import { toast } from "sonner"
 import { useAutomation } from "@/contexts/automation-context"
 
-export function IncomingTransitionBuilder() {
+interface IncomingTransitionBuilderProps {
+  preselectedProcess?: string
+  onClose?: () => void
+}
+
+export function IncomingTransitionBuilder({ preselectedProcess, onClose }: IncomingTransitionBuilderProps = {}) {
   const { states, processes, addTransition } = useAutomation()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!!preselectedProcess)
 
   // IncomingTransition fields
   const [toState, setToState] = useState("")
-  const [selectedProcess, setSelectedProcess] = useState("")
+  const [selectedProcess, setSelectedProcess] = useState(preselectedProcess || "")
 
   const handleCreate = () => {
     if (!toState) {
@@ -43,16 +48,26 @@ export function IncomingTransitionBuilder() {
     setToState("")
     setSelectedProcess("")
     setOpen(false)
+    onClose?.()
+  }
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen)
+    if (!newOpen) {
+      onClose?.()
+    }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black">
-          <ArrowDownToLine className="w-4 h-4 mr-2" />
-          Create Incoming Transition
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      {!preselectedProcess && (
+        <DialogTrigger asChild>
+          <Button className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black">
+            <ArrowDownToLine className="w-4 h-4 mr-2" />
+            Create Incoming Transition
+          </Button>
+        </DialogTrigger>
+      )}
 
       <DialogContent className="bg-[#27272A] border-gray-700 max-w-2xl">
         <DialogHeader>

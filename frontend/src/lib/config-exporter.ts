@@ -36,16 +36,49 @@ interface Action {
   config: Record<string, any>;
 }
 
+interface SearchRegion {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  referenceImageId?: string;
+}
+
+interface Pattern {
+  id: string;
+  name?: string;
+  image: string;
+  mask?: string;
+  searchRegions?: SearchRegion[];
+  fixed: boolean;
+  similarity?: number;
+  targetPosition?: any;
+  offsetX?: number;
+  offsetY?: number;
+}
+
+interface StateImage {
+  id: string;
+  name: string;
+  patterns: Pattern[];
+  shared: boolean;
+  source?: string;
+  probability?: number;
+  searchRegions?: SearchRegion[];
+}
+
 interface State {
   id: string;
   name: string;
   description: string;
   initial?: boolean;
-  identifyingImages: Array<{ image: string; threshold: number }>;
+  stateImages: StateImage[];
+  regions?: any[];
+  locations?: any[];
+  strings?: any[];
   position: { x: number; y: number };
-  stateRegions?: any[]; // Will be populated from screenshots
-  stateLocations?: any[]; // Will be populated from screenshots
-  stateStrings?: any[]; // Will be populated from UI
 }
 
 interface Transition {
@@ -300,8 +333,7 @@ export class ConfigExporter {
                   name: location.name,
                   x: location.x,
                   y: location.y,
-                  fixed: true,
-                  clickTarget: true
+                  fixed: true
                 });
               }
             });
@@ -313,15 +345,29 @@ export class ConfigExporter {
         id: state.id,
         name: state.name,
         description: state.description,
-        identifyingImages: state.identifyingImages.map(img => ({
-          imageId: img.image,
-          threshold: img.threshold,
-          required: true,
-          tags: []
+        stateImages: (state.stateImages || []).map(img => ({
+          id: img.id,
+          name: img.name,
+          patterns: img.patterns.map(pattern => ({
+            id: pattern.id,
+            name: pattern.name,
+            image: pattern.image,
+            mask: pattern.mask,
+            searchRegions: pattern.searchRegions || [],
+            fixed: pattern.fixed,
+            similarity: pattern.similarity,
+            targetPosition: pattern.targetPosition,
+            offsetX: pattern.offsetX,
+            offsetY: pattern.offsetY
+          })),
+          shared: img.shared,
+          source: img.source,
+          probability: img.probability,
+          searchRegions: img.searchRegions || []
         })),
-        stateRegions: stateRegions.length > 0 ? stateRegions : undefined,
-        stateLocations: stateLocations.length > 0 ? stateLocations : undefined,
-        stateStrings: state.stateStrings,
+        regions: state.regions || [],
+        locations: state.locations || [],
+        strings: state.strings || [],
         position: state.position,
         isInitial: state.initial || false,
         isFinal: false
@@ -338,30 +384,23 @@ export class ConfigExporter {
     }
 
     return transitions.map(transition => {
-      if (transition.type === 'FromTransition') {
-        const fromTransition: ExportFromTransition = {
+      if (transition.type === 'OutgoingTransition') {
+        return {
           id: transition.id,
-          type: 'FromTransition',
-          processes: transition.processes,
-          timeout: transition.timeout,
-          retryCount: transition.retryCount,
-          fromState: transition.fromState!,
-          toState: transition.toState!,
-          staysVisible: transition.staysVisible || false,
+          type: 'OutgoingTransition',
+          process: transition.process,
+          fromState: transition.fromState,
           activateStates: transition.activateStates || [],
+          staysVisible: transition.staysVisible || false,
           deactivateStates: transition.deactivateStates || []
         };
-        return fromTransition;
       } else {
-        const toTransition: ExportToTransition = {
+        return {
           id: transition.id,
-          type: 'ToTransition',
-          processes: transition.processes,
-          timeout: transition.timeout,
-          retryCount: transition.retryCount,
-          toState: transition.toState!
+          type: 'IncomingTransition',
+          process: transition.process,
+          toState: transition.toState
         };
-        return toTransition;
       }
     });
   }

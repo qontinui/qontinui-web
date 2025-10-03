@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Play, Pause, CheckCircle, XCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Screenshot } from '../../types/Screenshot';
 import { State } from '../../contexts/automation-context/types';
-import { qontinuiAPI, runStateDetection } from '../../lib/qontinui-api-client';
+import { qontinuiAPI, runStateDetection, getCurrentActiveStates } from '../../lib/qontinui-api-client';
 
 interface VisualTestRunnerProps {
   screenshots: Screenshot[];
@@ -13,10 +13,12 @@ interface VisualTestRunnerProps {
 interface TestCase {
   id: string;
   name: string;
-  type: 'state_detection' | 'location_validation' | 'transition';
+  type: 'state_detection' | 'location_validation' | 'transition' | 'mask_matching';
   screenshot: Screenshot;
   expectedStates?: string[];
   similarity?: number;
+  useMask?: boolean;
+  maskThreshold?: number;
 }
 
 interface TestResult {
@@ -55,6 +57,11 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
   const checkAPIConnection = async () => {
     const connected = await qontinuiAPI.testConnection();
     setApiConnected(connected);
+
+    // If connected, ensure state manager is initialized
+    if (connected) {
+      await qontinuiAPI.resetStateManager();
+    }
   };
 
   const generateTestCases = () => {
@@ -70,6 +77,18 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
           screenshot,
           expectedStates: screenshot.associatedStates,
           similarity: 0.8
+        });
+
+        // Add mask matching test if masks are available
+        cases.push({
+          id: `mask-match-${screenshot.id}`,
+          name: `Mask Matching: ${screenshot.name}`,
+          type: 'mask_matching',
+          screenshot,
+          expectedStates: screenshot.associatedStates,
+          similarity: 0.9,
+          useMask: true,
+          maskThreshold: 0.5
         });
       }
     });
@@ -135,26 +154,37 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
   }> => {
     switch (testCase.type) {
       case 'state_detection':
+        // First reset state manager
+        await qontinuiAPI.resetStateManager();
+
+        // Register all states
+        await qontinuiAPI.registerStates(states);
+
+        // Run state detection
         const detectedStates = await runStateDetection(
           testCase.screenshot,
           states.filter(s => testCase.expectedStates?.includes(s.id)),
           testCase.similarity || 0.8
         );
 
+        // Get active states from Qontinui
+        const activeStates = await getCurrentActiveStates();
+
         const detectedIds = detectedStates.map(ds => ds.state_id);
         const expectedIds = testCase.expectedStates || [];
 
-        const allExpectedFound = expectedIds.every(id => detectedIds.includes(id));
-        const noUnexpectedFound = detectedIds.every(id => expectedIds.includes(id));
+        const allExpectedFound = expectedIds.every(id => activeStates.includes(id));
+        const noUnexpectedFound = activeStates.every(id => expectedIds.includes(id));
 
         return {
           passed: allExpectedFound && noUnexpectedFound,
           message: allExpectedFound && noUnexpectedFound
             ? `All ${expectedIds.length} expected states detected`
-            : `Expected: ${expectedIds.length}, Found: ${detectedIds.length}`,
+            : `Expected: ${expectedIds.length}, Found: ${activeStates.length}`,
           details: {
             expected: expectedIds,
             detected: detectedIds,
+            activeStates,
             detectedStates
           }
         };

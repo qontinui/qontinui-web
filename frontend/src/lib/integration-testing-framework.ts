@@ -7,6 +7,7 @@
 
 import { Screenshot } from '../types/Screenshot';
 import { State } from '../contexts/automation-context/types';
+import { qontinuiAPI, getCurrentActiveStates } from './qontinui-api-client';
 
 /**
  * ActionSnapshot with screenshot reference
@@ -94,7 +95,6 @@ export interface TestScenario {
 export class IntegrationTestEngine {
   private actionHistory: ActionSnapshot[] = [];
   private currentScreenshotIndex: number = 0;
-  private activeStates: Set<string> = new Set();
   private scenario: TestScenario | null = null;
 
   constructor() {}
@@ -102,34 +102,34 @@ export class IntegrationTestEngine {
   /**
    * Initialize with a test scenario
    */
-  loadScenario(scenario: TestScenario) {
+  async loadScenario(scenario: TestScenario) {
     this.scenario = scenario;
     this.actionHistory = [];
     this.currentScreenshotIndex = 0;
-    this.activeStates = new Set();
+
+    // Register states with Qontinui
+    await qontinuiAPI.registerStates(scenario.states);
 
     // Activate initial states
-    this.activateInitialStates();
+    await this.activateInitialStates();
   }
 
   /**
    * Activate initial states based on rules
    */
-  private activateInitialStates() {
+  private async activateInitialStates() {
     if (!this.scenario) return;
 
-    // Activate states marked as initial
-    this.scenario.activationRules.initialStates.forEach(stateId => {
-      this.activeStates.add(stateId);
-    });
+    // Activate states marked as initial using Qontinui's state manager
+    await qontinuiAPI.setActiveStates(this.scenario.activationRules.initialStates);
 
     // Search for StateImages in first screenshot to activate states
-    this.detectStatesInCurrentScreenshot();
+    await this.detectStatesInCurrentScreenshot();
   }
 
   /**
    * Detect states in current screenshot by finding StateImages
-   * This is the core of Qontinui's state activation
+   * Uses Qontinui's state detection with real pattern matching
    */
   private async detectStatesInCurrentScreenshot(): Promise<void> {
     if (!this.scenario) return;
@@ -137,46 +137,50 @@ export class IntegrationTestEngine {
     const currentScreenshot = this.getCurrentScreenshot();
     if (!currentScreenshot) return;
 
-    // For each state, check if any StateImage is found
-    for (const state of this.scenario.states) {
-      if (state.stateImages && state.stateImages.length > 0) {
-        // In real implementation, would call qontinui API to find images
-        // For now, simulate based on screenshot associations
-        if (currentScreenshot.associatedStates.includes(state.id)) {
-          this.activateState(state.id);
-        }
-      }
-    }
+    // Use Qontinui API to detect states with real pattern matching
+    const detectedStates = await qontinuiAPI.detectStates(
+      currentScreenshot.imageData,
+      this.scenario.states,
+      0.8
+    );
+
+    // The detect_states endpoint already activates states in Qontinui's state manager
+    // No need to manually activate them here
   }
 
   /**
    * Activate a state with dependency checking
+   * Uses Qontinui's state manager for activation
    */
-  private activateState(stateId: string) {
+  private async activateState(stateId: string) {
     if (!this.scenario) return;
+
+    // Get current active states from Qontinui
+    const activeStates = await getCurrentActiveStates();
 
     // Check dependencies
     const dependencies = this.scenario.activationRules.dependencies.get(stateId);
     if (dependencies) {
-      const allDependenciesMet = dependencies.every(dep => this.activeStates.has(dep));
+      const allDependenciesMet = dependencies.every(dep => activeStates.includes(dep));
       if (!allDependenciesMet) {
         console.warn(`Cannot activate ${stateId}: dependencies not met`);
         return;
       }
     }
 
-    // Check exclusions
+    // Check exclusions - deactivate conflicting states
     const exclusions = this.scenario.activationRules.exclusions.get(stateId);
     if (exclusions) {
-      exclusions.forEach(excluded => {
-        if (this.activeStates.has(excluded)) {
+      for (const excluded of exclusions) {
+        if (activeStates.includes(excluded)) {
           console.log(`Deactivating ${excluded} due to exclusion with ${stateId}`);
-          this.activeStates.delete(excluded);
+          await qontinuiAPI.deactivateState(excluded);
         }
-      });
+      }
     }
 
-    this.activeStates.add(stateId);
+    // Activate the state using Qontinui's state manager
+    await qontinuiAPI.activateState(stateId, 1.0);
   }
 
   /**
@@ -197,8 +201,11 @@ export class IntegrationTestEngine {
     const currentScreenshot = this.getCurrentScreenshot();
     if (!currentScreenshot) throw new Error('No current screenshot');
 
+    // Get active states from Qontinui
+    const activeStates = await getCurrentActiveStates();
+
     // Find matching snapshot for this action in current state
-    const matchingSnapshot = this.findMatchingSnapshot(actionType, Array.from(this.activeStates));
+    const matchingSnapshot = await this.findMatchingSnapshot(actionType, activeStates);
 
     if (!matchingSnapshot) {
       // No snapshot found - action fails
@@ -208,9 +215,9 @@ export class IntegrationTestEngine {
         actionType: actionType as any,
         actionConfig: config,
         matches: [],
-        stateName: Array.from(this.activeStates)[0] || 'UNKNOWN',
-        stateId: Array.from(this.activeStates)[0] || 'UNKNOWN',
-        activeStates: Array.from(this.activeStates),
+        stateName: activeStates[0] || 'UNKNOWN',
+        stateId: activeStates[0] || 'UNKNOWN',
+        activeStates: activeStates,
         actionSuccess: false,
         resultSuccess: false,
         screenshotId: currentScreenshot.id,
@@ -227,14 +234,14 @@ export class IntegrationTestEngine {
       id: generateId(),
       timestamp: new Date(),
       duration: Date.now() - startTime,
-      activeStates: Array.from(this.activeStates)
+      activeStates: activeStates
     };
 
     this.actionHistory.push(executedSnapshot);
 
     // Handle screenshot transition
     if (matchingSnapshot.nextScreenshotId) {
-      this.transitionToScreenshot(matchingSnapshot.nextScreenshotId);
+      await this.transitionToScreenshot(matchingSnapshot.nextScreenshotId);
     }
 
     return executedSnapshot;
@@ -244,10 +251,10 @@ export class IntegrationTestEngine {
    * Find matching snapshot for current action and state
    * This implements Qontinui's get_random_snapshot logic
    */
-  private findMatchingSnapshot(
+  private async findMatchingSnapshot(
     actionType: string,
     activeStates: string[]
-  ): ActionSnapshot | undefined {
+  ): Promise<ActionSnapshot | undefined> {
     if (!this.scenario) return undefined;
 
     // Filter snapshots by action type
@@ -281,7 +288,7 @@ export class IntegrationTestEngine {
   /**
    * Transition to a new screenshot
    */
-  private transitionToScreenshot(screenshotId: string) {
+  private async transitionToScreenshot(screenshotId: string) {
     if (!this.scenario) return;
 
     const newIndex = this.scenario.screenshots.findIndex(s => s.id === screenshotId);
@@ -289,7 +296,7 @@ export class IntegrationTestEngine {
       this.currentScreenshotIndex = newIndex;
 
       // Re-detect states in new screenshot
-      this.detectStatesInCurrentScreenshot();
+      await this.detectStatesInCurrentScreenshot();
     }
   }
 
@@ -301,17 +308,18 @@ export class IntegrationTestEngine {
   }
 
   /**
-   * Get current active states
+   * Get current active states from Qontinui
    */
-  getActiveStates(): string[] {
-    return Array.from(this.activeStates);
+  async getActiveStates(): Promise<string[]> {
+    return getCurrentActiveStates();
   }
 
   /**
-   * Check if a state is active
+   * Check if a state is active in Qontinui
    */
-  isStateActive(stateId: string): boolean {
-    return this.activeStates.has(stateId);
+  async isStateActive(stateId: string): Promise<boolean> {
+    const activeStates = await getCurrentActiveStates();
+    return activeStates.includes(stateId);
   }
 
   /**
@@ -330,7 +338,7 @@ export class IntegrationTestEngine {
     }
 
     // Check final state
-    const finalStates = this.getActiveStates();
+    const finalStates = await this.getActiveStates();
     const success = this.scenario.expectedFinalStates.every(state =>
       finalStates.includes(state)
     );
@@ -383,20 +391,24 @@ export function createTestScenario(
 export class SnapshotRecorder {
   private snapshots: ActionSnapshot[] = [];
   private currentScreenshot: Screenshot | null = null;
-  private activeStates: Set<string> = new Set();
 
-  startRecording(screenshot: Screenshot, activeStates: string[]) {
+  async startRecording(screenshot: Screenshot) {
     this.currentScreenshot = screenshot;
-    this.activeStates = new Set(activeStates);
     this.snapshots = [];
+
+    // Get active states from Qontinui instead of managing locally
+    const activeStates = await getCurrentActiveStates();
   }
 
-  recordAction(
+  async recordAction(
     actionType: ActionSnapshot['actionType'],
     matches: any[],
     nextScreenshot?: Screenshot
-  ): ActionSnapshot {
+  ): Promise<ActionSnapshot> {
     if (!this.currentScreenshot) throw new Error('No current screenshot');
+
+    // Get current active states from Qontinui
+    const activeStates = await getCurrentActiveStates();
 
     const snapshot: ActionSnapshot = {
       id: generateId(),
@@ -404,9 +416,9 @@ export class SnapshotRecorder {
       actionType,
       actionConfig: {}, // Would include actual config
       matches,
-      stateName: Array.from(this.activeStates)[0] || 'UNKNOWN',
-      stateId: Array.from(this.activeStates)[0] || 'UNKNOWN',
-      activeStates: Array.from(this.activeStates),
+      stateName: activeStates[0] || 'UNKNOWN',
+      stateId: activeStates[0] || 'UNKNOWN',
+      activeStates: activeStates,
       actionSuccess: matches.length > 0,
       resultSuccess: matches.length > 0,
       screenshotId: this.currentScreenshot.id,
@@ -427,11 +439,14 @@ export class SnapshotRecorder {
     return this.snapshots;
   }
 
-  stopRecording(): ActionSnapshot[] {
+  async stopRecording(): Promise<ActionSnapshot[]> {
     const result = this.snapshots;
     this.snapshots = [];
     this.currentScreenshot = null;
-    this.activeStates.clear();
+
+    // Reset state manager in Qontinui
+    await qontinuiAPI.resetStateManager();
+
     return result;
   }
 }
