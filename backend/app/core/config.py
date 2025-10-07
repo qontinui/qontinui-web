@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_PER_HOUR: int = 600
 
+    # Stripe
+    STRIPE_SECRET_KEY: str = Field(..., description="Stripe secret key")
+    STRIPE_PUBLISHABLE_KEY: str = Field(..., description="Stripe publishable key")
+    STRIPE_WEBHOOK_SECRET: str | None = Field(None, description="Stripe webhook secret")
+    STRIPE_PRICE_HOBBY: str = Field(..., description="Stripe Price ID for Hobby tier")
+    STRIPE_PRICE_PRO: str = Field(..., description="Stripe Price ID for Pro tier")
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:

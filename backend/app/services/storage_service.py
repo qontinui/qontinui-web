@@ -26,9 +26,9 @@ class StorageService:
 
     # Storage quotas by subscription tier (in bytes)
     STORAGE_QUOTAS = {
-        "free": 100 * 1024 * 1024,  # 100MB
-        "pro": 1024 * 1024 * 1024,  # 1GB
-        "enterprise": 10 * 1024 * 1024 * 1024,  # 10GB
+        "free": 25 * 1024 * 1024,  # 25MB
+        "hobby": 200 * 1024 * 1024,  # 200MB
+        "pro": 2 * 1024 * 1024 * 1024,  # 2GB
     }
 
     @staticmethod

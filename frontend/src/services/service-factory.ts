@@ -8,6 +8,7 @@ import { ProjectService } from './project-service';
 import { FileUploadService } from './file-upload-service';
 import { ProfileService } from './profile-service';
 import { AnalyticsService } from './analytics-service';
+import { BillingService } from './billing-service';
 import { ApiConfig } from './api-config';
 
 /**
@@ -27,6 +28,7 @@ export class ServiceFactory {
   public readonly fileUploadService: FileUploadService;
   public readonly profileService: ProfileService;
   public readonly analyticsService: AnalyticsService;
+  public readonly billingService: BillingService;
 
   private constructor() {
     // Initialize auth services in dependency order
@@ -42,6 +44,7 @@ export class ServiceFactory {
     this.fileUploadService = new FileUploadService(this.tokenManager);
     this.profileService = new ProfileService(this.httpClient);
     this.analyticsService = new AnalyticsService(this.httpClient);
+    this.billingService = new BillingService(this.httpClient);
 
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
@@ -73,3 +76,4 @@ export const projectService = factory.projectService;
 export const fileUploadService = factory.fileUploadService;
 export const profileService = factory.profileService;
 export const analyticsService = factory.analyticsService;
+export const billingService = factory.billingService;

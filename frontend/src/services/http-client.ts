@@ -81,11 +81,21 @@ export class HttpClient {
 
       // Handle 401 Unauthorized
       if (response.status === 401 && !skipAuth && attempt === 1) {
+        console.warn('[HttpClient] Received 401, attempting token refresh...');
         const refreshed = await this.refreshAccessToken();
         if (refreshed) {
+          console.log('[HttpClient] Token refresh successful, retrying request');
           return this.fetchWithRetry(url, options, skipAuth, attempt + 1, maxRetries);
-        } else if (this.onSessionExpired) {
-          this.onSessionExpired();
+        } else {
+          // Only trigger session expired if we truly have no valid tokens
+          // (refresh failed because tokens are invalid, not network/server issues)
+          const hasRefreshToken = !!this.tokenManager.getRefreshToken();
+          if (!hasRefreshToken && this.onSessionExpired) {
+            console.error('[HttpClient] No refresh token available - session truly expired');
+            this.onSessionExpired();
+          } else {
+            console.warn('[HttpClient] Token refresh failed but still have refresh token - may be temporary issue');
+          }
         }
       }
 

@@ -13,6 +13,7 @@ from app.crud.project import (
 )
 from app.models.user import User
 from app.schemas.project import Project, ProjectCreate, ProjectUpdate
+from app.services.limit_checker import LimitChecker
 
 router = APIRouter()
 
@@ -37,7 +38,12 @@ def create_new_project(
     project_in: ProjectCreate,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
-    project = create_project(db, project_in, owner_id=current_user.id)
+    project = create_project(
+        db,
+        project_in,
+        owner_id=current_user.id,
+        subscription_tier=current_user.subscription_tier,
+    )
     return project
 
 
@@ -68,6 +74,16 @@ def update_existing_project(
     project_update: ProjectUpdate,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
+    # Check if user is in read-only mode
+    is_read_only, reason = LimitChecker.is_read_only(
+        db, current_user.id, current_user.subscription_tier
+    )
+    if is_read_only:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Account is in read-only mode. {reason}. Upgrade your plan to continue editing.",
+        )
+
     project = get_project(db, project_id=project_id)
     if not project:
         raise HTTPException(
@@ -88,6 +104,14 @@ def delete_existing_project(
     project_id: int,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
+    # Check if user is in read-only mode
+    is_read_only, reason = LimitChecker.is_read_only(
+        db, current_user.id, current_user.subscription_tier
+    )
+    if is_read_only:
+        # Allow deletion even in read-only mode (helps users get back under limits)
+        pass
+
     project = get_project(db, project_id=project_id)
     if not project:
         raise HTTPException(

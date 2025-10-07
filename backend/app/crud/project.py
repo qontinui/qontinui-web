@@ -1,7 +1,10 @@
+from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
+from app.services.stripe_service import StripeService
 
 
 def get_project(db: Session, project_id: int) -> Project | None:
@@ -20,7 +23,25 @@ def get_projects_by_owner(
     )
 
 
-def create_project(db: Session, project: ProjectCreate, owner_id: int) -> Project:
+def create_project(
+    db: Session, project: ProjectCreate, owner_id: int, subscription_tier: str
+) -> Project:
+    # Check if user has reached config limit
+    config_count = (
+        db.query(func.count(Project.id)).filter(Project.owner_id == owner_id).scalar()
+    )
+
+    # Get tier limits
+    limits = StripeService.get_tier_limits(subscription_tier)
+    max_configs = limits["max_configs"]
+
+    # Check limit (-1 = unlimited)
+    if max_configs != -1 and config_count >= max_configs:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Configuration limit reached. Your {subscription_tier} tier allows {max_configs} configurations. Upgrade to create more.",
+        )
+
     db_project = Project(
         name=project.name,
         description=project.description,

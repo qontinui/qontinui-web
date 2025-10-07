@@ -7,6 +7,7 @@ import { projectService } from "@/services/service-factory"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { SubscriptionBadge } from "@/components/subscription-badge"
 import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play, User as UserIcon, BarChart3 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -195,6 +196,7 @@ export default function Dashboard() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
+            <SubscriptionBadge />
             <div className="text-right mr-4">
               <p className="text-sm font-medium">{user.full_name || user.username}</p>
               <p className="text-xs text-gray-400">{user.email}</p>
