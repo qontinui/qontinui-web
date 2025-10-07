@@ -6,6 +6,8 @@ import { OfflineIndicator } from "@/components/offline-indicator";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import "../globals.css";
 
+export const dynamic = 'force-dynamic'
+
 export default function AppLayout({
   children,
 }: Readonly<{
