@@ -57,3 +57,6 @@ backend/fix_*.py
 
 # Testing scripts
 test_*.sh
+
+# AWS Elastic Beanstalk config (contains sensitive credentials)
+backend/eb-env-*.json

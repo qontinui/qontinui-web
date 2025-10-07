@@ -173,5 +173,11 @@
     mask-composite: exclude;
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
+    z-index: -1;
+  }
+
+  .gradient-border > * {
+    position: relative;
+    z-index: 1;
   }
 }
