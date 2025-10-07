@@ -10,6 +10,10 @@ import { OnboardingTour } from "@/components/onboarding-tour";
 import { ActivityTracker } from "@/components/activity-tracker";
 import "./globals.css";
 
+export const dynamic = 'force-dynamic'
+export const dynamicParams = true
+export const revalidate = 0
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
