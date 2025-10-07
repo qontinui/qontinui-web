@@ -1,4 +1,4 @@
-import { TokenManager } from './token-manager';
+import { TokenManager } from './auth/token-manager';
 import { ApiConfig } from './api-config';
 
 export class FileUploadService {

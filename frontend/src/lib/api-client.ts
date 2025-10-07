@@ -1,4 +1,5 @@
 import { authService } from '@/services/service-factory';
+import { TokenValidator } from '@/services/auth/token-validator';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
@@ -23,12 +24,17 @@ export interface Project {
   updated_at: string;
 }
 
+/**
+ * ApiClient - Single Responsibility: Handle HTTP requests with authentication
+ * Manages API communication, retry logic, CSRF tokens, and token refresh
+ */
 class ApiClient {
   private csrfToken: string | null = null;
-  private refreshPromise: Promise<boolean> | null = null;
+  private tokenValidator: TokenValidator;
   private retryAttempts = 3;
 
   constructor() {
+    this.tokenValidator = new TokenValidator();
     if (typeof window !== 'undefined') {
       this.initializeCSRF();
     }
@@ -57,6 +63,32 @@ class ApiClient {
       'Content-Type': 'application/json',
       ...options.headers as Record<string, string>,
     };
+
+    // Proactively check if token is expired and refresh if needed
+    // This prevents 401 errors and ensures smooth operation
+    if (authService.isAuthenticated() && attempt === 1) {
+      const expiry = authService.tokenManager.getTokenExpiry();
+      if (expiry) {
+        const timeUntilExpiry = this.tokenValidator.getTimeUntilExpiry(expiry);
+
+        console.log('[ApiClient] Token expiry check:', {
+          expiryTime: new Date(expiry).toISOString(),
+          now: new Date().toISOString(),
+          timeUntilExpiry: `${Math.floor(timeUntilExpiry / 1000)}s`,
+          willRefresh: this.tokenValidator.isTokenExpiringSoon(expiry, 60000),
+        });
+
+        // If token expires within 1 minute, refresh it proactively
+        if (this.tokenValidator.isTokenExpiringSoon(expiry, 60000)) {
+          console.warn('[ApiClient] ⏰ Access token expiring soon, refreshing proactively...');
+          const refreshed = await this.refreshAccessToken();
+          console.log('[ApiClient] Proactive refresh result:', refreshed);
+          if (!refreshed) {
+            console.error('[ApiClient] ❌ Proactive refresh FAILED - user will be logged out');
+          }
+        }
+      }
+    }
 
     const accessToken = authService.isAuthenticated() ? authService.tokenManager.getAccessToken() : null;
 
@@ -133,15 +165,7 @@ class ApiClient {
   }
 
   async refreshAccessToken(): Promise<boolean> {
-    // Prevent multiple simultaneous refresh attempts
-    if (this.refreshPromise) {
-      return this.refreshPromise;
-    }
-
-    this.refreshPromise = authService.refreshAccessToken();
-    const result = await this.refreshPromise;
-    this.refreshPromise = null;
-    return result;
+    return authService.refreshAccessToken();
   }
 
   async logout() {

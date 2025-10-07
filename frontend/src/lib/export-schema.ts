@@ -63,42 +63,218 @@ export interface Action {
 }
 
 export type ActionType =
+  // Find actions
   | 'FIND'
+  | 'FIND_STATE_IMAGE'
+  // Pure mouse actions
+  | 'MOUSE_MOVE'
+  | 'MOUSE_DOWN'
+  | 'MOUSE_UP'
+  | 'MOUSE_SCROLL'
+  // Combined mouse actions
   | 'CLICK'
   | 'DOUBLE_CLICK'
   | 'RIGHT_CLICK'
-  | 'TYPE'
-  | 'KEY_PRESS'
   | 'DRAG'
   | 'SCROLL'
+  // Pure keyboard actions
+  | 'KEY_PRESS'
+  | 'KEY_DOWN'
+  | 'KEY_UP'
+  // Combined keyboard actions
+  | 'TYPE'
+  // Other actions
   | 'WAIT'
   | 'VANISH'
+  | 'GO_TO_STATE'
+  | 'RUN_PROCESS'
   | 'EXISTS'
-  | 'MOVE'
   | 'SCREENSHOT'
   | 'CONDITION'
   | 'LOOP';
 
 export interface ActionConfig {
-  // Common properties
+  // === Base ActionConfig Properties (inherited by all actions) ===
+  // Timing control
+  pauseBeforeBegin?: number; // Pause before action starts (seconds)
+  pauseAfterEnd?: number; // Pause after action completes (seconds)
+
+  // Behavior control
+  illustrate?: 'YES' | 'NO' | 'USE_GLOBAL'; // Override global illustration setting
+  subsequentActions?: ActionConfig[]; // Chain actions to execute after
+  logType?: string; // Log event type for categorization
+
+  // Logging options
+  loggingOptions?: {
+    beforeActionMessage?: string;
+    afterActionMessage?: string;
+    successMessage?: string;
+    failureMessage?: string;
+    logBeforeAction?: boolean;
+    logAfterAction?: boolean;
+    logOnSuccess?: boolean;
+    logOnFailure?: boolean;
+    beforeActionLevel?: string;
+    afterActionLevel?: string;
+    successLevel?: string;
+    failureLevel?: string;
+  };
+
+  // === Target Configuration ===
   target?: {
     type: 'image' | 'region' | 'text' | 'coordinates';
     imageId?: string;
     region?: Region;
     text?: string;
     coordinates?: Coordinates;
-    threshold?: number;
+    threshold?: number; // Similarity threshold (deprecated - use similarity)
   };
 
-  // Type-specific properties
-  text?: string; // For TYPE action
-  keys?: string[]; // For KEY_PRESS action
-  direction?: 'up' | 'down' | 'left' | 'right'; // For SCROLL
-  distance?: number; // For DRAG, SCROLL
-  duration?: number; // For WAIT
-  condition?: ConditionConfig; // For CONDITION
-  loop?: LoopConfig; // For LOOP
-  destination?: Coordinates | Region; // For DRAG, MOVE
+  // === Find/Search Options (BaseFindOptions) ===
+  similarity?: number; // Minimum similarity threshold (0.0-1.0)
+  searchRegions?: Region[]; // Regions to search within
+  captureImage?: boolean; // Capture image of match for logging
+  useDefinedRegion?: boolean; // Use defined regions instead of searching
+  maxMatchesToActOn?: number; // Maximum matches to act on
+  searchDuration?: number; // Search duration in seconds
+  searchType?: 'FIRST' | 'ALL' | 'BEST' | 'EACH'; // Type of search
+  maxMatches?: number; // Maximum matches to return
+  minMatches?: number; // Minimum matches required for success
+  timeout?: number; // Maximum search time in seconds
+  pollInterval?: number; // Time between search attempts
+
+  // === Match Adjustment Options ===
+  matchAdjustment?: {
+    targetPosition?: string; // Override default position in match
+    targetOffset?: Coordinates; // Pixel offset from target position
+    addW?: number; // Pixels to add to width
+    addH?: number; // Pixels to add to height
+    absoluteW?: number; // Absolute width override
+    absoluteH?: number; // Absolute height override
+    addX?: number; // Pixels to add to X coordinate
+    addY?: number; // Pixels to add to Y coordinate
+  };
+
+  // === Pattern Find Options (template matching) ===
+  patternOptions?: {
+    matchMethod?: string; // CORRELATION, CORRELATION_NORMED, etc.
+    scaleInvariant?: boolean; // Search at multiple scales
+    rotationInvariant?: boolean; // Search at multiple rotations
+    minScale?: number;
+    maxScale?: number;
+    scaleStep?: number;
+    minRotation?: number;
+    maxRotation?: number;
+    rotationStep?: number;
+    useGrayscale?: boolean;
+    useColorReduction?: boolean;
+    colorTolerance?: number;
+    useEdges?: boolean;
+    edgeThreshold1?: number;
+    edgeThreshold2?: number;
+    nonMaxSuppression?: boolean;
+    nmsThreshold?: number;
+    minDistanceBetweenMatches?: number;
+  };
+
+  // === Text Find Options (OCR-based) ===
+  textOptions?: {
+    ocrEngine?: 'TESSERACT' | 'EASYOCR' | 'PADDLEOCR' | 'NATIVE';
+    language?: string;
+    whitelistChars?: string;
+    blacklistChars?: string;
+    matchType?: 'EXACT' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'REGEX' | 'FUZZY';
+    caseSensitive?: boolean;
+    ignoreWhitespace?: boolean;
+    normalizeUnicode?: boolean;
+    fuzzyThreshold?: number;
+    editDistance?: number;
+    preprocessing?: string[];
+    scaleFactor?: number;
+    psmMode?: number;
+    oemMode?: number;
+    confidenceThreshold?: number;
+  };
+
+  // === Click Options ===
+  numberOfClicks?: number; // Number of clicks (1 = single, 2 = double, etc.)
+  mouseButton?: 'LEFT' | 'RIGHT' | 'MIDDLE'; // Mouse button to use
+  pressDuration?: number; // How long to hold button (seconds)
+  pauseAfterPress?: number; // Pause after pressing
+  pauseAfterRelease?: number; // Pause after releasing
+
+  // === Type Options ===
+  text?: string; // Text to type
+  typeDelay?: number; // Delay between keystrokes (seconds)
+  modifiers?: string; // Modifier keys (e.g., "SHIFT", "CTRL+ALT")
+
+  // === Key Press Options ===
+  keys?: string[]; // Keys to press
+  pauseBetweenKeys?: number; // Pause between key presses
+  releaseModifiersFirst?: boolean; // For KEY_UP actions
+
+  // === Drag Options ===
+  destination?: Coordinates | Region; // Drag destination
+  dragDuration?: number; // Duration of drag movement
+  delayBetweenMouseDownAndMove?: number; // Delay before dragging
+  delayAfterDrag?: number; // Delay after drag completes
+
+  // === Scroll Options ===
+  direction?: 'up' | 'down' | 'left' | 'right'; // Scroll direction
+  distance?: number; // Scroll distance (deprecated - use clicks)
+  clicks?: number; // Number of scroll clicks
+  smooth?: boolean; // Enable smooth scrolling
+  delayBetweenScrolls?: number; // Delay between scroll actions
+
+  // === Move Options ===
+  moveInstantly?: boolean; // Instant vs animated movement
+  moveSpeed?: number; // Speed of animated movement (seconds)
+
+  // === Wait Options ===
+  duration?: number; // Wait duration (seconds)
+  waitFor?: 'time' | 'image' | 'state' | 'condition'; // What to wait for
+  conditionCheckInterval?: number; // Check interval for conditions
+  logProgress?: boolean; // Log wait progress
+
+  // === Vanish Options ===
+  maxWaitTime?: number; // Maximum time to wait for vanish
+  vanishPollInterval?: number; // Poll interval for vanish check
+
+  // === Repetition Options (for individual actions) ===
+  repetitionOptions?: {
+    timesToRepeat?: number; // Times to repeat individual action
+    pauseBetweenActions?: number; // Pause between repetitions
+    maxRepetitions?: number; // Maximum allowed repetitions
+  };
+
+  // === Process Repetition Options (for RUN_PROCESS action) ===
+  processRepetition?: {
+    enabled?: boolean; // Whether to repeat the process
+    maxRepeats?: number; // Maximum number of repeats (1 = run once more)
+    delay?: number; // Delay between repeats in milliseconds
+    untilSuccess?: boolean; // If true: stop early on success, otherwise run all maxRepeats
+  };
+
+  // === Verification Options ===
+  verificationOptions?: {
+    event?: 'TEXT_APPEARS' | 'TEXT_DISAPPEARS' | 'IMAGE_APPEARS' | 'IMAGE_DISAPPEARS' | 'STATE_CHANGE' | 'NONE';
+    text?: string; // Text to verify
+    images?: string[]; // Image IDs to verify
+    timeout?: number; // Verification timeout
+  };
+
+  // === Highlight Options (debugging) ===
+  highlightOptions?: {
+    duration?: number; // Highlight duration
+    color?: [number, number, number]; // RGB color
+    thickness?: number; // Border thickness
+    flash?: boolean; // Flash effect
+    flashTimes?: number; // Number of flashes
+  };
+
+  // === Condition/Loop (legacy - kept for compatibility) ===
+  condition?: ConditionConfig;
+  loop?: LoopConfig;
 }
 
 export interface Region {
@@ -277,11 +453,46 @@ export interface TransitionCondition {
   customScript?: string;
 }
 
+export interface MouseActionSettings {
+  click_hold_duration: number;
+  click_release_delay: number;
+  click_safety_release: boolean;
+  double_click_interval: number;
+  drag_start_delay: number;
+  drag_end_delay: number;
+  drag_default_duration: number;
+  move_default_duration: number;
+  safety_release_delay: number;
+}
+
+export interface KeyboardActionSettings {
+  key_hold_duration: number;
+  key_release_delay: number;
+  typing_interval: number;
+  hotkey_hold_duration: number;
+  hotkey_press_interval: number;
+}
+
+export interface FindActionSettings {
+  default_timeout: number;
+  default_retry_count: number;
+  search_interval: number;
+}
+
+export interface WaitActionSettings {
+  pause_before_action: number;
+  pause_after_action: number;
+}
+
 export interface ConfigSettings {
   execution: ExecutionSettings;
   recognition: RecognitionSettings;
-  logging: LoggingSettings;
-  performance: PerformanceSettings;
+  logging?: LoggingSettings;
+  performance?: PerformanceSettings;
+  mouse?: MouseActionSettings;
+  keyboard?: KeyboardActionSettings;
+  find?: FindActionSettings;
+  wait?: WaitActionSettings;
 }
 
 export interface ExecutionSettings {

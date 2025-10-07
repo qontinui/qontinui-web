@@ -17,8 +17,20 @@ const STORES = {
 
 class ProjectDB {
   private dbPromise: Promise<IDBDatabase> | null = null
+  private db: IDBDatabase | null = null
 
   private getDB(): Promise<IDBDatabase> {
+    // Check if existing connection is still valid
+    if (this.db && !this.isConnectionClosed(this.db)) {
+      return Promise.resolve(this.db)
+    }
+
+    // Reset if connection is closed
+    if (this.db && this.isConnectionClosed(this.db)) {
+      this.db = null
+      this.dbPromise = null
+    }
+
     if (this.dbPromise) return this.dbPromise
 
     this.dbPromise = new Promise((resolve, reject) => {
@@ -30,7 +42,17 @@ class ProjectDB {
       const request = indexedDB.open(DB_NAME, DB_VERSION)
 
       request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
+      request.onsuccess = () => {
+        this.db = request.result
+
+        // Handle connection close events
+        this.db.onclose = () => {
+          this.db = null
+          this.dbPromise = null
+        }
+
+        resolve(request.result)
+      }
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result
@@ -46,6 +68,16 @@ class ProjectDB {
     })
 
     return this.dbPromise
+  }
+
+  private isConnectionClosed(db: IDBDatabase): boolean {
+    try {
+      // Try to create a transaction - will throw if connection is closed
+      db.transaction(Object.values(STORES)[0], 'readonly')
+      return false
+    } catch {
+      return true
+    }
   }
 
   // Generic methods for any store

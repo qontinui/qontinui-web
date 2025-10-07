@@ -1,4 +1,4 @@
-import { TokenManager } from './token-manager';
+import { TokenManager } from './auth/token-manager';
 
 export interface HttpOptions extends RequestInit {
   skipAuth?: boolean;

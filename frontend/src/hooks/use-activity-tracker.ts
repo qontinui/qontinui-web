@@ -47,10 +47,11 @@ export function useActivityTracker() {
       refreshTimerRef.current = setInterval(async () => {
         const timeSinceLastActivity = Date.now() - lastActivityRef.current;
 
-        // Only refresh if user hasn't exceeded the inactivity timeout
-        // This prevents refreshing tokens for users who are truly inactive/away
-        if (timeSinceLastActivity < INACTIVITY_TIMEOUT) {
+        // Only refresh if user is authenticated and hasn't exceeded the inactivity timeout
+        // This prevents refreshing tokens for users who are truly inactive/away or logged out
+        if (apiClient.isAuthenticated() && timeSinceLastActivity < INACTIVITY_TIMEOUT) {
           try {
+            console.log('[ActivityTracker] Periodic token refresh (5min interval)');
             await apiClient.refreshAccessToken();
           } catch (error) {
             console.error('[ActivityTracker] Failed to refresh token:', error);

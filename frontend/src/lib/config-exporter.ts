@@ -98,6 +98,7 @@ import { Screenshot } from '../types/Screenshot';
 
 export class ConfigExporter {
   private version = '1.0.0';
+  private settings: any = null;
 
   /**
    * Export the current configuration to Qontinui format
@@ -109,10 +110,13 @@ export class ConfigExporter {
     transitions: Transition[],
     categories: string[],
     metadata?: Partial<ConfigMetadata>,
-    settings?: ConfigSettings,
+    settings?: any,
     screenshots?: Screenshot[]
   ): Promise<QontinuiConfig> {
     const now = new Date().toISOString();
+
+    // Store settings for use in other methods
+    this.settings = settings || this.getDefaultSettings();
 
     const config: QontinuiConfig = {
       version: this.version,
@@ -134,10 +138,75 @@ export class ConfigExporter {
       states: this.exportStates(states || [], screenshots),
       transitions: this.exportTransitions(transitions || []),
       categories: categories || ['main'],
-      settings: settings || this.getDefaultSettings()
+      settings: this.convertSettings(settings) || this.getDefaultSettings()
     };
 
     return config;
+  }
+
+  /**
+   * Convert ProjectSettings to ConfigSettings format
+   */
+  private convertSettings(projectSettings: any): ConfigSettings {
+    if (!projectSettings) {
+      return this.getDefaultSettings();
+    }
+
+    return {
+      execution: {
+        defaultTimeout: projectSettings.execution?.default_timeout || 10000,
+        defaultRetryCount: projectSettings.execution?.default_retry_count || 0,
+        actionDelay: projectSettings.execution?.action_delay || 100,
+        failureStrategy: projectSettings.execution?.failure_strategy || 'continue',
+        headless: false,
+      },
+      recognition: {
+        defaultThreshold: projectSettings.recognition?.default_threshold || 0.70,
+        searchAlgorithm: 'template_matching',
+        multiScaleSearch: projectSettings.recognition?.multi_scale_search ?? false,
+        colorSpace: projectSettings.recognition?.color_space || 'rgb',
+        edgeDetection: projectSettings.recognition?.edge_detection || false,
+        ocrEnabled: projectSettings.recognition?.ocr_enabled || false,
+      },
+      logging: {
+        level: 'info',
+        screenshotOnError: true,
+        consoleOutput: true,
+        detailedMatching: false,
+      },
+      performance: {
+        maxParallelActions: 1,
+        cacheImages: true,
+        optimizeSearch: true,
+      },
+      mouse: {
+        click_hold_duration: projectSettings.mouse?.click_hold_duration || 100,
+        click_release_delay: projectSettings.mouse?.click_release_delay || 50,
+        click_safety_release: projectSettings.mouse?.click_safety_release ?? true,
+        double_click_interval: projectSettings.mouse?.double_click_interval || 300,
+        drag_start_delay: projectSettings.mouse?.drag_start_delay || 100,
+        drag_end_delay: projectSettings.mouse?.drag_end_delay || 100,
+        drag_default_duration: projectSettings.mouse?.drag_default_duration || 500,
+        move_default_duration: projectSettings.mouse?.move_default_duration || 500,
+        safety_release_delay: projectSettings.mouse?.safety_release_delay || 50,
+      },
+      keyboard: {
+        key_hold_duration: projectSettings.keyboard?.key_hold_duration || 50,
+        key_release_delay: projectSettings.keyboard?.key_release_delay || 50,
+        typing_interval: projectSettings.keyboard?.typing_interval || 50,
+        hotkey_hold_duration: projectSettings.keyboard?.hotkey_hold_duration || 100,
+        hotkey_press_interval: projectSettings.keyboard?.hotkey_press_interval || 50,
+      },
+      find: {
+        default_timeout: projectSettings.find?.default_timeout || 30000,
+        default_retry_count: projectSettings.find?.default_retry_count || 0,
+        search_interval: projectSettings.find?.search_interval || 500,
+      },
+      wait: {
+        pause_before_action: projectSettings.wait?.pause_before_action || 0,
+        pause_after_action: projectSettings.wait?.pause_after_action || 0,
+      },
+    };
   }
 
   /**
@@ -212,25 +281,33 @@ export class ConfigExporter {
         id: action.id,
         type: action.type as any,
         config: this.transformActionConfig(action.config, action.type),
-        timeout: action.config.timeout || 5000,
-        retryCount: action.config.retryCount || 3,
-        continueOnError: action.config.continueOnError || false
+        timeout: action.config.timeout || this.settings?.execution?.default_timeout || 10000,
+        retryCount: action.config.retryCount || this.settings?.execution?.default_retry_count || 0,
+        continueOnError: action.config.continueOnError ?? (this.settings?.execution?.failure_strategy === 'continue')
       }))
     }));
   }
 
   /**
-   * Transform action config to standard format
+   * Transform action config to standard format with all options
    */
   private transformActionConfig(config: Record<string, any>, type: string): ActionConfig {
     const actionConfig: ActionConfig = {};
 
-    // Handle target configuration
+    // === Base ActionConfig Properties ===
+    actionConfig.pauseBeforeBegin = config.pauseBeforeBegin ?? this.settings?.wait?.pause_before_action ?? 0;
+    actionConfig.pauseAfterEnd = config.pauseAfterEnd ?? this.settings?.wait?.pause_after_action ?? 0;
+    if (config.illustrate !== undefined) actionConfig.illustrate = config.illustrate;
+    if (config.subsequentActions !== undefined) actionConfig.subsequentActions = config.subsequentActions;
+    if (config.logType !== undefined) actionConfig.logType = config.logType;
+    if (config.loggingOptions !== undefined) actionConfig.loggingOptions = config.loggingOptions;
+
+    // === Target Configuration ===
     if (config.imageId || config.image) {
       actionConfig.target = {
         type: 'image',
         imageId: config.imageId || config.image,
-        threshold: config.threshold || 0.9
+        threshold: config.threshold || config.similarity || this.settings?.recognition?.default_threshold || 0.70
       };
     } else if (config.region) {
       actionConfig.target = {
@@ -244,8 +321,80 @@ export class ConfigExporter {
       };
     }
 
-    // Handle type-specific properties
+    // === Find/Search Options ===
+    if (config.similarity !== undefined) {
+      actionConfig.similarity = config.similarity;
+    } else if (actionConfig.target?.type === 'image') {
+      // Use project default for image-based actions if not specified
+      actionConfig.similarity = this.settings?.recognition?.default_threshold || 0.70;
+    }
+    if (config.searchRegions !== undefined) actionConfig.searchRegions = config.searchRegions;
+    if (config.captureImage !== undefined) actionConfig.captureImage = config.captureImage;
+    if (config.useDefinedRegion !== undefined) actionConfig.useDefinedRegion = config.useDefinedRegion;
+    if (config.maxMatchesToActOn !== undefined) actionConfig.maxMatchesToActOn = config.maxMatchesToActOn;
+    if (config.searchDuration !== undefined) actionConfig.searchDuration = config.searchDuration;
+    if (config.searchType !== undefined) actionConfig.searchType = config.searchType;
+    if (config.maxMatches !== undefined) actionConfig.maxMatches = config.maxMatches;
+    if (config.minMatches !== undefined) actionConfig.minMatches = config.minMatches;
+    // Apply find timeout default if not specified
+    if (config.timeout !== undefined) {
+      actionConfig.timeout = config.timeout;
+    } else if (actionConfig.target?.type === 'image') {
+      actionConfig.timeout = this.settings?.find?.default_timeout ?? 30000;
+    }
+    // Apply search interval default
+    actionConfig.pollInterval = config.pollInterval ?? this.settings?.find?.search_interval ?? 500;
+
+    // === Match Adjustment Options ===
+    if (config.matchAdjustment !== undefined) actionConfig.matchAdjustment = config.matchAdjustment;
+
+    // === Pattern/Text Find Options ===
+    if (config.patternOptions !== undefined) actionConfig.patternOptions = config.patternOptions;
+    if (config.textOptions !== undefined) actionConfig.textOptions = config.textOptions;
+
+    // === Repetition Options ===
+    if (config.repetitionOptions !== undefined) actionConfig.repetitionOptions = config.repetitionOptions;
+
+    // === Verification Options ===
+    if (config.verificationOptions !== undefined) actionConfig.verificationOptions = config.verificationOptions;
+
+    // === Highlight Options ===
+    if (config.highlightOptions !== undefined) actionConfig.highlightOptions = config.highlightOptions;
+
+    // === Type-specific properties ===
     switch (type) {
+      case 'CLICK':
+      case 'DOUBLE_CLICK':
+      case 'RIGHT_CLICK':
+        if (config.numberOfClicks !== undefined) actionConfig.numberOfClicks = config.numberOfClicks;
+        if (config.mouseButton !== undefined) actionConfig.mouseButton = config.mouseButton;
+        actionConfig.pressDuration = config.pressDuration ?? this.settings?.mouse?.click_hold_duration ?? 100;
+        actionConfig.pauseAfterPress = config.pauseAfterPress ?? this.settings?.mouse?.click_release_delay ?? 50;
+        if (config.pauseAfterRelease !== undefined) actionConfig.pauseAfterRelease = config.pauseAfterRelease;
+        break;
+
+      case 'MOUSE_MOVE':
+        // Target is handled above in common target processing
+        actionConfig.duration = config.duration ?? this.settings?.mouse?.move_default_duration ?? 500;
+        if (config.x !== undefined) actionConfig.x = config.x;
+        if (config.y !== undefined) actionConfig.y = config.y;
+        break;
+
+      case 'MOUSE_DOWN':
+      case 'MOUSE_UP':
+        if (config.button !== undefined) actionConfig.button = config.button;
+        if (config.x !== undefined) actionConfig.x = config.x;
+        if (config.y !== undefined) actionConfig.y = config.y;
+        break;
+
+      case 'KEY_PRESS':
+      case 'KEY_DOWN':
+      case 'KEY_UP':
+        actionConfig.keys = config.keys || [config.key];
+        if (config.modifiers !== undefined) actionConfig.modifiers = config.modifiers;
+        actionConfig.holdDuration = config.holdDuration ?? this.settings?.keyboard?.key_hold_duration ?? 50;
+        break;
+
       case 'TYPE':
         if (config.textSource === 'stateString') {
           actionConfig.stateStringSource = {
@@ -256,37 +405,76 @@ export class ConfigExporter {
         } else {
           actionConfig.text = config.text;
         }
+        actionConfig.typeDelay = config.typeDelay ?? this.settings?.keyboard?.typing_interval ?? 50;
+        if (config.modifiers !== undefined) actionConfig.modifiers = config.modifiers;
         break;
-      case 'KEY_PRESS':
-        actionConfig.keys = config.keys || [config.key];
-        break;
+
       case 'SCROLL':
-        actionConfig.direction = config.direction;
-        actionConfig.distance = config.distance;
+        if (config.direction !== undefined) actionConfig.direction = config.direction;
+        if (config.distance !== undefined) actionConfig.distance = config.distance; // Legacy
+        if (config.clicks !== undefined) actionConfig.clicks = config.clicks;
+        if (config.smooth !== undefined) actionConfig.smooth = config.smooth;
+        if (config.delayBetweenScrolls !== undefined) actionConfig.delayBetweenScrolls = config.delayBetweenScrolls;
         break;
+
       case 'DRAG':
-        actionConfig.destination = config.destination;
-        actionConfig.duration = config.duration;
+        if (config.destination !== undefined) actionConfig.destination = config.destination;
+        actionConfig.dragDuration = config.dragDuration ?? config.duration ?? this.settings?.mouse?.drag_default_duration ?? 500;
+        actionConfig.delayBetweenMouseDownAndMove = config.delayBetweenMouseDownAndMove ?? this.settings?.mouse?.drag_start_delay ?? 100;
+        actionConfig.delayAfterDrag = config.delayAfterDrag ?? this.settings?.mouse?.drag_end_delay ?? 100;
         break;
+
       case 'WAIT':
-        actionConfig.duration = config.duration || config.delay;
+        if (config.duration !== undefined) actionConfig.duration = config.duration;
+        if (config.delay !== undefined) actionConfig.duration = config.delay; // Fallback
+        if (config.waitFor !== undefined) actionConfig.waitFor = config.waitFor;
+        if (config.conditionCheckInterval !== undefined) actionConfig.conditionCheckInterval = config.conditionCheckInterval;
+        if (config.logProgress !== undefined) actionConfig.logProgress = config.logProgress;
         break;
+
+      case 'VANISH':
+        if (config.maxWaitTime !== undefined) actionConfig.maxWaitTime = config.maxWaitTime;
+        if (config.vanishPollInterval !== undefined) actionConfig.vanishPollInterval = config.vanishPollInterval;
+        break;
+
       case 'GO_TO_STATE':
         if (config.state) {
           actionConfig.state = config.state;
         }
         break;
+
       case 'RUN_PROCESS':
         if (config.process) {
           actionConfig.process = config.process;
         }
+        // Process repetition options
+        if (config.enableRepeat) {
+          actionConfig.processRepetition = {
+            enabled: true,
+            maxRepeats: config.maxRepeats || 10,
+            delay: config.repeatDelay || 0,
+            untilSuccess: config.repeatUntilSuccess || false
+          };
+        }
         break;
     }
 
-    // Copy any other config properties that aren't handled above
+    // === Legacy compatibility ===
+    if (config.condition !== undefined) actionConfig.condition = config.condition;
+    if (config.loop !== undefined) actionConfig.loop = config.loop;
+
+    // Copy any other config properties that aren't explicitly handled
+    // This ensures forward compatibility with new options
     if (config && typeof config === 'object') {
       Object.keys(config).forEach(key => {
-        if (!(key in actionConfig) && key !== 'timeout' && key !== 'retryCount' && key !== 'continueOnError') {
+        if (!(key in actionConfig) &&
+            key !== 'timeout' &&
+            key !== 'retryCount' &&
+            key !== 'continueOnError' &&
+            key !== 'textSource' &&
+            key !== 'selectedState' &&
+            key !== 'selectedStateStrings' &&
+            key !== 'useAllStateStrings') {
           actionConfig[key] = config[key];
         }
       });
@@ -412,15 +600,15 @@ export class ConfigExporter {
     return {
       execution: {
         defaultTimeout: 10000,
-        defaultRetryCount: 3,
+        defaultRetryCount: 0,
         actionDelay: 100,
-        failureStrategy: 'stop',
+        failureStrategy: 'continue',
         headless: false
       },
       recognition: {
-        defaultThreshold: 0.9,
+        defaultThreshold: 0.70,
         searchAlgorithm: 'template_matching',
-        multiScaleSearch: true,
+        multiScaleSearch: false,
         colorSpace: 'rgb',
         edgeDetection: false,
         ocrEnabled: false
@@ -435,7 +623,34 @@ export class ConfigExporter {
         maxParallelActions: 1,
         cacheImages: true,
         optimizeSearch: true
-      }
+      },
+      mouse: {
+        click_hold_duration: 100,
+        click_release_delay: 50,
+        click_safety_release: true,
+        double_click_interval: 300,
+        drag_start_delay: 100,
+        drag_end_delay: 100,
+        drag_default_duration: 500,
+        move_default_duration: 500,
+        safety_release_delay: 50,
+      },
+      keyboard: {
+        key_hold_duration: 50,
+        key_release_delay: 50,
+        typing_interval: 50,
+        hotkey_hold_duration: 100,
+        hotkey_press_interval: 50,
+      },
+      find: {
+        default_timeout: 30000,
+        default_retry_count: 0,
+        search_interval: 500,
+      },
+      wait: {
+        pause_before_action: 0,
+        pause_after_action: 0,
+      },
     };
   }
 

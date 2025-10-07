@@ -29,7 +29,17 @@ interface Process {
 
 interface Action {
   id: string
-  type: "FIND" | "FIND_STATE_IMAGE" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
+  type:
+    // Pure mouse actions
+    | "MOUSE_MOVE" | "MOUSE_DOWN" | "MOUSE_UP" | "MOUSE_SCROLL"
+    // Pure keyboard actions
+    | "KEY_DOWN" | "KEY_UP" | "KEY_PRESS"
+    // Combined mouse actions
+    | "CLICK" | "DOUBLE_CLICK" | "RIGHT_CLICK" | "DRAG" | "SCROLL"
+    // Combined keyboard actions
+    | "TYPE"
+    // Other actions
+    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
   config: Record<string, any>
 }
 

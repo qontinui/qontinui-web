@@ -645,7 +645,15 @@ export function StateStructure() {
                 {states.map((state) => (
                   <div
                     key={state.id}
-                    className="flex items-center gap-2 p-2 rounded transition-colors hover:bg-gray-700"
+                    className={`flex items-center gap-2 p-2 rounded transition-colors cursor-pointer ${
+                      selectedNode === state.id
+                        ? "bg-[#BD00FF]/20 border border-[#BD00FF]"
+                        : "hover:bg-gray-700"
+                    }`}
+                    onClick={() => {
+                      setSelectedNode(state.id)
+                      setSelectedEdge(null)
+                    }}
                   >
                     <span className="text-sm flex-1 truncate">{state.name}</span>
                     <Button
