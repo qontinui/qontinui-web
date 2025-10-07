@@ -20,8 +20,20 @@ export interface StoredScreenshot {
 
 class ScreenshotDB {
   private dbPromise: Promise<IDBDatabase> | null = null;
+  private db: IDBDatabase | null = null;
 
   private getDB(): Promise<IDBDatabase> {
+    // Check if existing connection is still valid
+    if (this.db && !this.isConnectionClosed(this.db)) {
+      return Promise.resolve(this.db);
+    }
+
+    // Reset if connection is closed
+    if (this.db && this.isConnectionClosed(this.db)) {
+      this.db = null;
+      this.dbPromise = null;
+    }
+
     if (this.dbPromise) return this.dbPromise;
 
     this.dbPromise = new Promise((resolve, reject) => {
@@ -33,7 +45,17 @@ class ScreenshotDB {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        this.db = request.result;
+
+        // Handle connection close events
+        this.db.onclose = () => {
+          this.db = null;
+          this.dbPromise = null;
+        };
+
+        resolve(request.result);
+      };
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
@@ -59,6 +81,16 @@ class ScreenshotDB {
     });
 
     return this.dbPromise;
+  }
+
+  private isConnectionClosed(db: IDBDatabase): boolean {
+    try {
+      // Try to create a transaction - will throw if connection is closed
+      db.transaction(STORE_NAME, 'readonly');
+      return false;
+    } catch {
+      return true;
+    }
   }
 
   async getAll(): Promise<StoredScreenshot[]> {

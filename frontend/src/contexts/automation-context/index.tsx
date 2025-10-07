@@ -10,6 +10,7 @@ import { ActionHistoryManager } from "./action-history-manager"
 import { ScreenshotManager } from "./screenshot-manager"
 import { screenshotDB } from "@/lib/screenshot-db"
 import { projectDB } from "@/lib/project-db"
+import { DEFAULT_PROJECT_SETTINGS } from "@/types/project-settings"
 import type {
   AutomationContextType,
   Process,
@@ -20,6 +21,7 @@ import type {
   ActionHistory,
   Screenshot,
 } from "./types"
+import type { ProjectSettings } from "@/types/project-settings"
 
 // Export types for external use
 export type {
@@ -64,10 +66,69 @@ interface AutomationProviderProps {
 }
 
 export function AutomationProvider({ children }: AutomationProviderProps) {
+  // Clean up old settings on mount
+  useEffect(() => {
+    const oldSettings = localStorage.getItem('qontinui-settings')
+    if (oldSettings) {
+      console.log('Removing old settings, applying new defaults')
+      localStorage.removeItem('qontinui-settings')
+    }
+  }, [])
+
   // State for project metadata - using localStorage for persistence
   const [projectName, setProjectName] = useLocalStorage<string>('qontinui-project-name', 'Untitled Project')
   const [categories, setCategories] = useLocalStorage<string[]>('qontinui-categories', [])
   const [lastSaved, setLastSaved] = useLocalStorage<string | null>('qontinui-lastSaved', null)
+
+  // Settings are now per-project using the project name in the key
+  const settingsKey = `qontinui-settings-v2-${projectName.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase()}`
+
+  // Force correct defaults - hardcoded to ensure they're applied
+  const CORRECT_DEFAULTS: ProjectSettings = {
+    mouse: {
+      click_hold_duration: 100,
+      click_release_delay: 50,
+      click_safety_release: true,
+      double_click_interval: 300,
+      drag_start_delay: 100,
+      drag_end_delay: 100,
+      drag_default_duration: 500,
+      move_default_duration: 500,
+      safety_release_delay: 50,
+    },
+    keyboard: {
+      key_hold_duration: 50,
+      key_release_delay: 50,
+      typing_interval: 50,
+      hotkey_hold_duration: 100,
+      hotkey_press_interval: 50,
+    },
+    find: {
+      default_timeout: 30000,
+      default_retry_count: 0,
+      search_interval: 500,
+    },
+    wait: {
+      pause_before_action: 0,
+      pause_after_action: 0,
+    },
+    execution: {
+      default_timeout: 10000,
+      default_retry_count: 0,
+      action_delay: 100,
+      failure_strategy: 'continue',
+    },
+    recognition: {
+      default_threshold: 0.70,
+      multi_scale_search: false,
+      color_space: 'rgb',
+      edge_detection: false,
+      ocr_enabled: false,
+    },
+  }
+
+  const [settings, setSettings] = useLocalStorage<ProjectSettings>(settingsKey, CORRECT_DEFAULTS)
+
 
   // All project data now uses IndexedDB for persistence and project isolation
   const [processes, setProcesses] = useState<Process[]>([])
@@ -550,6 +611,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     setCategories((prev) => prev.filter(c => c !== category))
   }, [])
 
+  // Settings management functions
+  const updateSettings = useCallback((newSettings: ProjectSettings) => {
+    setSettings(newSettings)
+    triggerSave()
+  }, [setSettings, triggerSave])
+
   // Get full configuration for export/save
   const getConfiguration = useCallback(() => {
     return {
@@ -560,12 +627,13 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       states,
       transitions,
       categories,
+      settings,
       metadata: {
         lastSaved: lastSaved,
         version: "1.0.0"
       }
     }
-  }, [projectName, images, processes, states, transitions, categories, lastSaved])
+  }, [projectName, images, processes, states, transitions, categories, settings, lastSaved])
 
   // Load a complete configuration
   const loadConfiguration = useCallback(async (config: any) => {
@@ -584,7 +652,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     }
 
     // Load processes to IndexedDB
-    if (config.processes) {
+    if (config.processes && Array.isArray(config.processes)) {
       const processesWithProject = config.processes.map((p: Process) => ({
         ...p,
         projectName: newProjectName
@@ -596,7 +664,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     }
 
     // Load states to IndexedDB
-    if (config.states) {
+    if (config.states && Array.isArray(config.states)) {
       const statesWithProject = config.states.map((s: State) => ({
         ...s,
         projectName: newProjectName
@@ -608,7 +676,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     }
 
     // Load transitions to IndexedDB
-    if (config.transitions) {
+    if (config.transitions && Array.isArray(config.transitions)) {
       const transitionsWithProject = config.transitions.map((t: Transition) => ({
         ...t,
         projectName: newProjectName
@@ -620,7 +688,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     }
 
     // Load images to IndexedDB
-    if (config.images) {
+    if (config.images && Array.isArray(config.images)) {
       const imagesWithProject = config.images.map((img: ImageAsset) => ({
         ...img,
         projectName: newProjectName
@@ -632,7 +700,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     }
 
     // Load screenshots to IndexedDB
-    if (config.screenshots) {
+    if (config.screenshots && Array.isArray(config.screenshots)) {
       const screenshotsWithProject = config.screenshots.map((s: Screenshot) => ({
         ...s,
         projectName: newProjectName
@@ -643,9 +711,13 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setScreenshots(screenshotsWithProject)
     }
 
-    if (config.categories) {
+    if (config.categories && Array.isArray(config.categories)) {
       setCategories(config.categories)
     }
+
+    // Don't load settings from config - they should be local defaults
+    // Settings are now per-project in localStorage, not saved in config
+
     triggerSave()
   }, [projectName, setProjectName, setCategories, triggerSave])
 
@@ -719,6 +791,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     categories,
     addCategory,
     deleteCategory,
+
+    // Settings management
+    settings,
+    updateSettings,
 
     // Auto-save
     lastSaved,

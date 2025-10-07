@@ -1,16 +1,26 @@
 import { TokenResponse, LoginRequest, RegisterRequest, User } from '@/types/auth-types';
 import { TokenManager } from './token-manager';
-import { ApiConfig } from './api-config';
+import { TokenRefreshService } from './token-refresh-service';
 
+/**
+ * AuthService - Single Responsibility: Handle authentication operations
+ * Manages login, logout, registration, and user information
+ * Delegates token management and refresh to specialized services
+ */
 export class AuthService {
   public tokenManager: TokenManager;
+  private refreshService: TokenRefreshService;
   private apiUrl: string;
 
-  constructor(tokenManager: TokenManager, apiUrl: string) {
+  constructor(tokenManager: TokenManager, refreshService: TokenRefreshService, apiUrl: string) {
     this.tokenManager = tokenManager;
+    this.refreshService = refreshService;
     this.apiUrl = apiUrl;
   }
 
+  /**
+   * Login user with credentials
+   */
   async login(credentials: LoginRequest): Promise<User> {
     const formData = new URLSearchParams();
     formData.append('username', credentials.username);
@@ -40,6 +50,9 @@ export class AuthService {
     return this.getCurrentUser();
   }
 
+  /**
+   * Register new user
+   */
   async register(data: RegisterRequest): Promise<User> {
     const response = await fetch(`${this.apiUrl}/api/v1/auth/register`, {
       method: 'POST',
@@ -58,6 +71,9 @@ export class AuthService {
     return response.json();
   }
 
+  /**
+   * Logout user
+   */
   async logout(): Promise<void> {
     try {
       const accessToken = this.tokenManager.getAccessToken();
@@ -72,12 +88,15 @@ export class AuthService {
         });
       }
     } catch (error) {
-      console.error('Logout request failed:', error);
+      console.error('[AuthService] Logout request failed:', error);
     } finally {
       this.tokenManager.clearTokens();
     }
   }
 
+  /**
+   * Get current authenticated user
+   */
   async getCurrentUser(): Promise<User> {
     const accessToken = this.tokenManager.getAccessToken();
     console.log('[AuthService] Getting current user from:', `${this.apiUrl}/api/v1/users/me`);
@@ -105,55 +124,31 @@ export class AuthService {
     return user;
   }
 
+  /**
+   * Refresh access token
+   */
   async refreshAccessToken(): Promise<boolean> {
-    console.log('[AuthService] refreshAccessToken called:', {
-      timestamp: new Date().toISOString(),
-      stackTrace: new Error().stack?.split('\n').slice(1, 4).join('\n'),
-    });
-
-    const refreshToken = this.tokenManager.getRefreshToken();
-    if (!refreshToken) {
-      console.warn('[AuthService] No refresh token available - cannot refresh');
-      return false;
-    }
-
-    try {
-      console.log('[AuthService] Attempting to refresh token at:', `${this.apiUrl}/api/v1/auth/refresh`);
-
-      const response = await fetch(`${this.apiUrl}/api/v1/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-
-      console.log('[AuthService] Token refresh response status:', response.status);
-
-      if (response.ok) {
-        const tokens: TokenResponse = await response.json();
-        console.log('[AuthService] Token refresh successful, setting new tokens');
-        this.tokenManager.setTokens(tokens);
-        return true;
-      } else {
-        const errorText = await response.text();
-        console.error('[AuthService] Token refresh failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText,
-        });
-      }
-    } catch (error) {
-      console.error('[AuthService] Token refresh error (network/exception):', error);
-    }
-
-    console.warn('[AuthService] Token refresh failed - clearing tokens');
-    this.tokenManager.clearTokens();
-    return false;
+    return this.refreshService.refreshAccessToken();
   }
 
+  /**
+   * Check if user is authenticated
+   */
   isAuthenticated(): boolean {
     return this.tokenManager.hasValidToken();
+  }
+
+  /**
+   * Check if access token is expired
+   */
+  isAccessTokenExpired(): boolean {
+    return this.tokenManager.isAccessTokenExpired();
+  }
+
+  /**
+   * Check if access token will expire soon
+   */
+  isAccessTokenExpiringSoon(thresholdMs?: number): boolean {
+    return this.tokenManager.isAccessTokenExpiringSoon(thresholdMs);
   }
 }

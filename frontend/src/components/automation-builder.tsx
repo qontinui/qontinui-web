@@ -19,6 +19,7 @@ import { ImageExtractionTab } from "@/components/image-extraction/ImageExtractio
 import { AuthDialog } from "@/components/auth-dialog"
 import { ProjectManager } from "@/components/project-manager"
 import { SettingsTab } from "@/components/settings/SettingsTab"
+import { ProjectSettingsComponent } from "@/components/project-settings"
 import { Save, Download, Upload, User, LogOut, FileCode, Edit2, Check, X, Plus, Home, ChevronDown } from "lucide-react"
 import {
   DropdownMenu,
@@ -71,7 +72,9 @@ function AutomationBuilderContent() {
     processes,
     states,
     transitions,
-    categories
+    categories,
+    settings,
+    updateSettings
   } = useAutomation()
   const { user, logout } = useAuth()
   const router = useRouter()
@@ -228,50 +231,7 @@ function AutomationBuilderContent() {
     }
 
     try {
-      // Fetch current settings from backend
-      let exportSettings;
-      try {
-        const settingsResponse = await fetch("/api/v1/settings/", {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        });
-        if (settingsResponse.ok) {
-          const qontinuiSettings = await settingsResponse.json();
-          // Map QontinuiSettings to ConfigSettings format
-          exportSettings = {
-            execution: {
-              defaultTimeout: qontinuiSettings.core?.auto_wait_timeout || 10000,
-              defaultRetryCount: qontinuiSettings.testing?.max_retries || 3,
-              actionDelay: qontinuiSettings.mouse?.click_delay || 100,
-              failureStrategy: qontinuiSettings.testing?.retry_failed ? 'retry' : 'stop',
-              headless: qontinuiSettings.core?.headless || false
-            },
-            recognition: {
-              defaultThreshold: 0.9, // No direct mapping in QontinuiSettings
-              searchAlgorithm: 'template_matching' as const,
-              multiScaleSearch: true,
-              colorSpace: 'rgb' as const,
-              edgeDetection: false,
-              ocrEnabled: false
-            },
-            logging: {
-              level: qontinuiSettings.testing?.verbose_logging ? 'debug' : 'info',
-              screenshotOnError: qontinuiSettings.screenshot?.capture_on_error || true,
-              consoleOutput: true,
-              detailedMatching: false
-            },
-            performance: {
-              maxParallelActions: qontinuiSettings.testing?.parallel_execution ? 4 : 1,
-              cacheImages: qontinuiSettings.core?.image_cache_size > 0,
-              optimizeSearch: true
-            }
-          };
-        }
-      } catch (settingsError) {
-        console.warn("Failed to fetch settings, using defaults:", settingsError);
-      }
-
+      // Use project settings from context
       const config = await exporter.exportConfiguration(
         images,
         processes,
@@ -283,7 +243,7 @@ function AutomationBuilderContent() {
           description: 'Exported from Qontinui Web',
           author: user?.username
         },
-        exportSettings, // settings
+        settings, // Use project settings from context
         screenshots
       )
 
@@ -722,7 +682,18 @@ function AutomationBuilderContent() {
 
           {/* Settings Category */}
           <TabsContent value="settings" className="flex-1 min-h-0 mt-0 overflow-auto p-6">
-            <SettingsTab />
+            <Tabs defaultValue="action-params" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 bg-gray-800">
+                <TabsTrigger value="action-params">Action Parameters</TabsTrigger>
+                <TabsTrigger value="app-settings">Application Settings</TabsTrigger>
+              </TabsList>
+              <TabsContent value="action-params" className="mt-6">
+                <ProjectSettingsComponent settings={settings} onUpdateSettings={updateSettings} />
+              </TabsContent>
+              <TabsContent value="app-settings" className="mt-6">
+                <SettingsTab />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
         </Tabs>
       </main>

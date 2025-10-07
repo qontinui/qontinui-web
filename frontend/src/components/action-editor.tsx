@@ -1,7 +1,8 @@
 "use client"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu"
 import { Plus, GripVertical, Trash2, Copy } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useAutomation } from "@/contexts/automation-context"
@@ -15,7 +16,17 @@ interface Process {
 
 interface Action {
   id: string
-  type: "FIND" | "FIND_STATE_IMAGE" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
+  type:
+    // Pure mouse actions
+    | "MOUSE_MOVE" | "MOUSE_DOWN" | "MOUSE_UP" | "MOUSE_SCROLL"
+    // Pure keyboard actions
+    | "KEY_DOWN" | "KEY_UP" | "KEY_PRESS"
+    // Combined mouse actions
+    | "CLICK" | "DOUBLE_CLICK" | "RIGHT_CLICK" | "DRAG" | "SCROLL"
+    // Combined keyboard actions
+    | "TYPE"
+    // Other actions
+    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
   config: Record<string, any>
 }
 
@@ -26,20 +37,42 @@ interface ActionEditorProps {
   onUpdateProcess: (process: Process) => void
 }
 
-const ACTION_TYPES = [
-  { type: "FIND", label: "Find Element", color: "bg-blue-500" },
-  { type: "FIND_STATE_IMAGE", label: "Find any State Image", color: "bg-cyan-500" },
-  { type: "CLICK", label: "Click", color: "bg-green-500" },
-  { type: "TYPE", label: "Type Text", color: "bg-yellow-500" },
-  { type: "DRAG", label: "Drag & Drop", color: "bg-purple-500" },
-  { type: "SCROLL", label: "Scroll", color: "bg-orange-500" },
-  { type: "VANISH", label: "Wait for Vanish", color: "bg-red-500" },
-  { type: "GO_TO_STATE", label: "Go to State", color: "bg-indigo-500" },
-  { type: "RUN_PROCESS", label: "Run Process", color: "bg-pink-500" },
-] as const
+const ACTION_GROUPS = {
+  Find: [
+    { type: "FIND", label: "Find Element", color: "bg-blue-500" },
+    { type: "FIND_STATE_IMAGE", label: "Find State Image", color: "bg-cyan-500" },
+  ],
+  Mouse: [
+    { type: "CLICK", label: "Click", color: "bg-green-500" },
+    { type: "DOUBLE_CLICK", label: "Double Click", color: "bg-green-600" },
+    { type: "RIGHT_CLICK", label: "Right Click", color: "bg-green-700" },
+    { type: "DRAG", label: "Drag & Drop", color: "bg-purple-500" },
+    { type: "SCROLL", label: "Scroll", color: "bg-orange-500" },
+    { type: "MOUSE_MOVE", label: "Mouse Move", color: "bg-teal-500" },
+    { type: "MOUSE_DOWN", label: "Mouse Down", color: "bg-teal-600" },
+    { type: "MOUSE_UP", label: "Mouse Up", color: "bg-teal-700" },
+  ],
+  Keyboard: [
+    { type: "TYPE", label: "Type Text", color: "bg-yellow-500" },
+    { type: "KEY_PRESS", label: "Key Press", color: "bg-amber-500" },
+    { type: "KEY_DOWN", label: "Key Down", color: "bg-amber-600" },
+    { type: "KEY_UP", label: "Key Up", color: "bg-amber-700" },
+  ],
+  "Control Flow": [
+    { type: "GO_TO_STATE", label: "Go to State", color: "bg-indigo-500" },
+    { type: "RUN_PROCESS", label: "Run Process", color: "bg-pink-500" },
+  ],
+  Verification: [
+    { type: "VANISH", label: "Wait for Vanish", color: "bg-red-500" },
+  ],
+} as const
+
+// Flat list for finding action types by type
+const ACTION_TYPES = Object.values(ACTION_GROUPS).flat()
 
 export function ActionEditor({ process, selectedAction, onSelectAction, onUpdateProcess }: ActionEditorProps) {
   const { states, processes, images } = useAutomation()
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
 
   const addAction = (type: Action["type"]) => {
     const newAction: Action = {
@@ -86,6 +119,35 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
     onUpdateProcess(updatedProcess)
   }
 
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index)
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+
+    if (draggedIndex === null || draggedIndex === index) return
+
+    const updatedActions = [...process.actions]
+    const draggedAction = updatedActions[draggedIndex]
+
+    // Remove from old position
+    updatedActions.splice(draggedIndex, 1)
+    // Insert at new position
+    updatedActions.splice(index, 0, draggedAction)
+
+    onUpdateProcess({
+      ...process,
+      actions: updatedActions,
+    })
+
+    setDraggedIndex(index)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -99,14 +161,23 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="bg-[#27272A] border-gray-700">
-            {ACTION_TYPES.map(({ type, label }) => (
-              <DropdownMenuItem
-                key={type}
-                onClick={() => addAction(type)}
-                className="hover:bg-gray-700 focus:bg-gray-700"
-              >
-                {label}
-              </DropdownMenuItem>
+            {Object.entries(ACTION_GROUPS).map(([groupName, actions]) => (
+              <DropdownMenuSub key={groupName}>
+                <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
+                  {groupName}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
+                  {actions.map(({ type, label }) => (
+                    <DropdownMenuItem
+                      key={type}
+                      onClick={() => addAction(type)}
+                      className="hover:bg-gray-700 focus:bg-gray-700"
+                    >
+                      {label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -125,15 +196,19 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
             return (
               <Card
                 key={action.id}
-                className={`cursor-pointer transition-all hover:border-[#BD00FF]/50 ${
+                draggable
+                onDragStart={() => handleDragStart(index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDragEnd={handleDragEnd}
+                className={`cursor-move transition-all hover:border-[#BD00FF]/50 ${
                   selectedAction?.id === action.id ? "border-[#BD00FF] bg-[#BD00FF]/10" : "border-gray-700 bg-[#27272A]"
-                }`}
+                } ${draggedIndex === index ? "opacity-50" : ""}`}
                 onClick={() => onSelectAction(action)}
               >
                 <CardContent className="p-3">
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2">
-                      <GripVertical className="w-4 h-4 text-gray-500" />
+                      <GripVertical className="w-4 h-4 text-gray-400 cursor-grab active:cursor-grabbing" />
                       <Badge className={`${actionType?.color} text-white text-xs`}>{index + 1}</Badge>
                     </div>
 
@@ -248,6 +323,59 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         process: null,
         // pause_before_begin, pause_after_end are optional overrides
       }
+
+    // Pure mouse actions
+    case "MOUSE_MOVE":
+      return {
+        target: "Last Find Result",
+        x: 0,
+        y: 0,
+        duration: 0,
+        // Optional timing overrides: move_default_duration
+      }
+    case "MOUSE_DOWN":
+      return {
+        button: "left",
+        target: null,  // Optional - can press at current position
+        // No timing overrides needed (instantaneous)
+      }
+    case "MOUSE_UP":
+      return {
+        button: "left",
+        target: null,  // Optional - can release at current position
+        // No timing overrides needed (instantaneous)
+      }
+
+    // Combined actions with timing overrides
+    case "DOUBLE_CLICK":
+      return {
+        target: "Last Find Result",
+        clickType: "left",
+        // Optional timing overrides: click_hold_duration, double_click_interval, etc.
+      }
+    case "RIGHT_CLICK":
+      return {
+        target: "Last Find Result",
+        // Optional timing overrides: click_hold_duration, click_release_delay, etc.
+      }
+
+    // Pure keyboard actions
+    case "KEY_PRESS":
+      return {
+        key: "",
+        // Optional timing overrides: key_hold_duration, key_release_delay
+      }
+    case "KEY_DOWN":
+      return {
+        key: "",
+        // No timing overrides needed (instantaneous press)
+      }
+    case "KEY_UP":
+      return {
+        key: "",
+        // No timing overrides needed (instantaneous release)
+      }
+
     default:
       return {}
   }
@@ -324,6 +452,31 @@ function getActionSummary(action: Action, states: any[], processes: any[], image
       return "No state selected"
     case "CLICK":
       return `${action.config.clickType} click on ${action.config.target}`
+    case "DOUBLE_CLICK":
+      return `Double click on ${action.config.target || "Last Find Result"}`
+    case "RIGHT_CLICK":
+      return `Right click on ${action.config.target || "Last Find Result"}`
+    case "MOUSE_MOVE":
+      if (action.config.target === "Coordinates") {
+        return `Move mouse to (${action.config.x}, ${action.config.y})`
+      }
+      return `Move mouse to ${action.config.target}`
+    case "MOUSE_DOWN":
+      if (action.config.target === "Coordinates") {
+        return `Press ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`
+      }
+      return `Press ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`
+    case "MOUSE_UP":
+      if (action.config.target === "Coordinates") {
+        return `Release ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`
+      }
+      return `Release ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`
+    case "KEY_PRESS":
+      return action.config.key ? `Press key: ${action.config.key}` : "No key selected"
+    case "KEY_DOWN":
+      return action.config.key ? `Hold key down: ${action.config.key}` : "No key selected"
+    case "KEY_UP":
+      return action.config.key ? `Release key: ${action.config.key}` : "No key selected"
     case "TYPE":
       if (action.config.textSource === "stateString") {
         if (!action.config.selectedState) return "No state selected"

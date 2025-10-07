@@ -16,7 +16,17 @@ import { useAutomation } from "@/contexts/automation-context"
 
 interface Action {
   id: string
-  type: "FIND" | "FIND_STATE_IMAGE" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
+  type:
+    // Pure mouse actions
+    | "MOUSE_MOVE" | "MOUSE_DOWN" | "MOUSE_UP" | "MOUSE_SCROLL"
+    // Pure keyboard actions
+    | "KEY_DOWN" | "KEY_UP" | "KEY_PRESS"
+    // Combined mouse actions
+    | "CLICK" | "DOUBLE_CLICK" | "RIGHT_CLICK" | "DRAG" | "SCROLL"
+    // Combined keyboard actions
+    | "TYPE"
+    // Other actions
+    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
   config: Record<string, any>
 }
 
@@ -408,6 +418,194 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
               className="bg-transparent border-gray-700"
             />
           </div>
+
+          {renderTimingProperties(action, updateConfig)}
+        </>
+      )
+
+    case "MOUSE_MOVE":
+      return (
+        <>
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-400">Target</Label>
+            <Select value={action.config.target} onValueChange={(value) => updateConfig("target", value)}>
+              <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectItem value="Last Find Result">Last Find Result</SelectItem>
+                <SelectItem value="Coordinates">Coordinates</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {action.config.target === "Coordinates" && (
+            <>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">X Coordinate</Label>
+                <Input
+                  type="number"
+                  value={action.config.x || 0}
+                  onChange={(e) => updateConfig("x", Number.parseInt(e.target.value))}
+                  className="bg-transparent border-gray-700"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">Y Coordinate</Label>
+                <Input
+                  type="number"
+                  value={action.config.y || 0}
+                  onChange={(e) => updateConfig("y", Number.parseInt(e.target.value))}
+                  className="bg-transparent border-gray-700"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-400">Movement Duration (ms)</Label>
+            <Input
+              type="number"
+              min="0"
+              value={action.config.duration || 0}
+              onChange={(e) => updateConfig("duration", Number.parseInt(e.target.value))}
+              className="bg-transparent border-gray-700"
+            />
+            <p className="text-xs text-gray-500">0 = instant movement, &gt;0 = smooth animation</p>
+          </div>
+
+          {renderTimingProperties(action, updateConfig)}
+        </>
+      )
+
+    case "MOUSE_DOWN":
+    case "MOUSE_UP":
+      return (
+        <>
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-400">Button</Label>
+            <Select value={action.config.button || "left"} onValueChange={(value) => updateConfig("button", value)}>
+              <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectItem value="left">Left</SelectItem>
+                <SelectItem value="right">Right</SelectItem>
+                <SelectItem value="middle">Middle</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-400">Target (Optional)</Label>
+            <Select value={action.config.target || "Current Position"} onValueChange={(value) => updateConfig("target", value)}>
+              <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectItem value="Current Position">Current Position</SelectItem>
+                <SelectItem value="Last Find Result">Last Find Result</SelectItem>
+                <SelectItem value="Coordinates">Coordinates</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {action.config.target === "Coordinates" && (
+            <>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">X Coordinate</Label>
+                <Input
+                  type="number"
+                  value={action.config.x || 0}
+                  onChange={(e) => updateConfig("x", Number.parseInt(e.target.value))}
+                  className="bg-transparent border-gray-700"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">Y Coordinate</Label>
+                <Input
+                  type="number"
+                  value={action.config.y || 0}
+                  onChange={(e) => updateConfig("y", Number.parseInt(e.target.value))}
+                  className="bg-transparent border-gray-700"
+                />
+              </div>
+            </>
+          )}
+
+          {renderTimingProperties(action, updateConfig)}
+        </>
+      )
+
+    case "KEY_PRESS":
+    case "KEY_DOWN":
+    case "KEY_UP":
+      return (
+        <>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-gray-400">Key</Label>
+              <SpecialKeysSelector
+                onInsertKey={(key) => updateConfig("key", key)}
+                textAreaRef={null}
+              />
+            </div>
+            {action.config.key && (
+              <div className="p-2 bg-gray-800/50 rounded-md border border-gray-700">
+                <div className="text-xs text-gray-500 mb-1">Selected key:</div>
+                <div className="text-sm font-mono text-gray-300">
+                  <SpecialKeyDisplay text={action.config.key} />
+                </div>
+              </div>
+            )}
+            {!action.config.key && (
+              <p className="text-xs text-gray-500">Select a key from the dropdown above</p>
+            )}
+          </div>
+
+          {renderTimingProperties(action, updateConfig)}
+        </>
+      )
+
+    case "DOUBLE_CLICK":
+    case "RIGHT_CLICK":
+      return (
+        <>
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-400">Target</Label>
+            <Select value={action.config.target} onValueChange={(value) => updateConfig("target", value)}>
+              <SelectTrigger className="bg-transparent border-gray-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#27272A] border-gray-700">
+                <SelectItem value="Last Find Result">Last Find Result</SelectItem>
+                <SelectItem value="Coordinates">Coordinates</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {action.config.target === "Coordinates" && (
+            <>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">X Coordinate</Label>
+                <Input
+                  type="number"
+                  value={action.config.x || 0}
+                  onChange={(e) => updateConfig("x", Number.parseInt(e.target.value))}
+                  className="bg-transparent border-gray-700"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">Y Coordinate</Label>
+                <Input
+                  type="number"
+                  value={action.config.y || 0}
+                  onChange={(e) => updateConfig("y", Number.parseInt(e.target.value))}
+                  className="bg-transparent border-gray-700"
+                />
+              </div>
+            </>
+          )}
 
           {renderTimingProperties(action, updateConfig)}
         </>
@@ -809,6 +1007,87 @@ function renderActionProperties(action: Action, updateConfig: (key: string, valu
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Repeat Configuration */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-gray-400">Repeat Process</Label>
+              <Checkbox
+                id="enableRepeat"
+                checked={action.config.enableRepeat || false}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    updateConfig("enableRepeat", true)
+                    // Set default values when enabling repeat
+                    if (action.config.maxRepeats === undefined) {
+                      updateConfig("maxRepeats", 10)
+                    }
+                  } else {
+                    // Clear repeat configuration when disabling
+                    const { enableRepeat, maxRepeats, repeatDelay, repeatUntilSuccess, ...rest } = action.config
+                    updateConfig("__reset__", rest)
+                  }
+                }}
+              />
+            </div>
+
+            {action.config.enableRepeat && (
+              <>
+                <div className="space-y-2 pl-4 border-l-2 border-[#BD00FF]/30">
+                  {/* Max Repeats */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-400">Max Repeats</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="1000"
+                      value={action.config.maxRepeats || 10}
+                      onChange={(e) => updateConfig("maxRepeats", Number.parseInt(e.target.value) || 10)}
+                      className="bg-transparent border-gray-700"
+                      placeholder="10"
+                    />
+                    <p className="text-xs text-gray-500">
+                      {action.config.repeatUntilSuccess
+                        ? "Maximum attempts before giving up"
+                        : "How many times to repeat (1 = run once more)"
+                      }
+                    </p>
+                  </div>
+
+                  {/* Delay Between Repeats */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-400">Delay Between Repeats (ms)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={action.config.repeatDelay || 0}
+                      onChange={(e) => updateConfig("repeatDelay", Number.parseInt(e.target.value) || 0)}
+                      className="bg-transparent border-gray-700"
+                      placeholder="0"
+                    />
+                    <p className="text-xs text-gray-500">Pause between each repeat execution</p>
+                  </div>
+
+                  {/* Repeat Until Success or Max Repeats */}
+                  <div className="flex items-start space-x-2">
+                    <Checkbox
+                      id="repeatUntilSuccess"
+                      checked={action.config.repeatUntilSuccess || false}
+                      onCheckedChange={(checked) => updateConfig("repeatUntilSuccess", checked)}
+                    />
+                    <div className="space-y-1">
+                      <Label htmlFor="repeatUntilSuccess" className="text-xs text-gray-400 cursor-pointer">
+                        Repeat Until Success or Max Repeats
+                      </Label>
+                      <p className="text-xs text-gray-500">
+                        Stop early if process succeeds, otherwise continue until Max Repeats
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {renderTimingProperties(action, updateConfig)}

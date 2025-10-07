@@ -1,5 +1,6 @@
 // Import ActionSnapshot type
 import { ActionSnapshot } from '../../lib/integration-testing-framework';
+import type { ProjectSettings } from '@/types/project-settings';
 
 // ActionHistory type for state objects
 export interface ActionHistory {
@@ -297,6 +298,10 @@ export interface AutomationContextType {
   categories: string[]
   addCategory: (category: string) => void
   deleteCategory: (category: string) => void
+
+  // Settings management
+  settings: ProjectSettings
+  updateSettings: (settings: ProjectSettings) => void
 
   // Configuration
   getConfiguration: () => any
