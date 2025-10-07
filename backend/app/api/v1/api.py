@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     analytics,
     auth,
+    billing,
     export,
     pattern_optimization,
     projects,
@@ -19,3 +20,4 @@ api_router.include_router(export.router, prefix="/projects", tags=["export"])
 api_router.include_router(pattern_optimization.router, tags=["pattern-optimization"])
 api_router.include_router(analytics.router, tags=["analytics"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
+api_router.include_router(billing.router, prefix="/billing", tags=["billing"])

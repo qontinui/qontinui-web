@@ -69,22 +69,38 @@ export class TokenRefreshService {
         return true;
       } else {
         const errorText = await response.text();
-        console.error('[TokenRefreshService] ❌ Token refresh FAILED - will clear tokens:', {
+        console.error('[TokenRefreshService] ❌ Token refresh FAILED:', {
           status: response.status,
           statusText: response.statusText,
           error: errorText,
           timestamp: new Date().toISOString(),
+          url: `${this.apiUrl}/api/v1/auth/refresh`,
         });
+
+        // DON'T clear tokens on refresh failure - the activity tracker will retry
+        // Only clear if this was a 401/403 indicating truly invalid tokens
+        if (response.status === 401 || response.status === 403) {
+          console.error('[TokenRefreshService] ⚠️ Tokens are invalid (401/403) - CLEARING TOKENS NOW');
+          this.tokenManager.clearTokens();
+        } else {
+          console.warn('[TokenRefreshService] ⚠️ Refresh failed but keeping tokens - may be temporary server issue');
+        }
+        return false;
       }
     } catch (error) {
-      console.error('[TokenRefreshService] ❌ Token refresh error (network/exception) - will clear tokens:', {
+      console.error('[TokenRefreshService] ❌ Token refresh error (network/exception):', {
         error,
+        errorMessage: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
+        url: `${this.apiUrl}/api/v1/auth/refresh`,
       });
+
+      // DON'T clear tokens on network errors - keep tokens for retry
+      console.warn('[TokenRefreshService] ⚠️ Network error during refresh - keeping tokens for retry');
+      return false;
     }
 
-    console.error('[TokenRefreshService] ⚠️ Token refresh failed - CLEARING TOKENS NOW');
-    this.tokenManager.clearTokens();
+    // This line should never be reached now
     return false;
   }
 
