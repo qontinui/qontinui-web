@@ -4,6 +4,8 @@ import { useAutomation } from "@/contexts/automation-context"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
+export const dynamic = 'force-dynamic'
+
 export default function TestPersistence() {
   const { images, addImages, processes, states, transitions } = useAutomation()
 
