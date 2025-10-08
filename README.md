@@ -10,7 +10,26 @@ Qontinui Web Builder is a web-based configuration interface for creating and man
 - Element annotation and training
 - Transition configuration
 - Test scenario creation
-- Project deployment
+- **Mock execution** for testing automation logic
+- Project export for real execution in qontinui-runner
+
+## Mock Execution
+
+Qontinui Web includes built-in mock execution for testing your automation configurations:
+
+**Purpose**: Validate state machines and automation logic without requiring a GUI environment
+
+**Benefits**:
+- ✅ Test configurations directly in browser
+- ✅ No desktop environment needed
+- ✅ Fast iteration during development
+- ✅ Safe testing without real system interactions
+- ✅ Verify state machine flow and transition logic
+- ✅ Debug process sequences before deployment
+
+**Usage**: Use the "Test Run" feature in the web interface to simulate automation execution
+
+**For real automation**: Export your configuration and run it in [qontinui-runner](https://github.com/jspinak/qontinui-runner), which performs actual GUI interactions.
 
 ## Architecture
 
