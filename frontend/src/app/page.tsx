@@ -49,7 +49,10 @@ function LandingContent() {
           ) : (
             <Button
               variant="outline"
-              onClick={() => setAuthDialogOpen(true)}
+              onClick={() => {
+                setSignupMode(false)
+                setAuthDialogOpen(true)
+              }}
               className="border-primary/50 hover:border-primary hover:bg-primary/10"
             >
               <LogIn className="mr-2 h-4 w-4" />
