@@ -16,8 +16,9 @@ export default function SetupAdmin() {
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const response = await fetch(`${apiUrl}/api/v1/admin/bootstrap-first-admin?email=${encodeURIComponent(email)}`, {
+      const response = await fetch(`${apiUrl}/api/v1/users/me/claim-admin`, {
         method: 'POST',
+        credentials: 'include',
       })
 
       const data = await response.json()
@@ -38,29 +39,18 @@ export default function SetupAdmin() {
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Setup First Admin</CardTitle>
+          <CardTitle>Claim Admin Access</CardTitle>
           <CardDescription>
-            This page creates the first admin user. It will only work if no admin exists yet.
+            Log in first, then click the button to make yourself admin. Only works if no admin exists yet.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <label className="text-sm font-medium">Email</label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
-              className="mt-1"
-            />
-          </div>
-
           <Button
             onClick={handleSetupAdmin}
-            disabled={loading || !email}
+            disabled={loading}
             className="w-full"
           >
-            {loading ? 'Setting up...' : 'Make Admin'}
+            {loading ? 'Claiming admin...' : 'Claim Admin'}
           </Button>
 
           {result && (
