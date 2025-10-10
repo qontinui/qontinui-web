@@ -20,9 +20,10 @@ import { toast } from 'sonner';
 interface AuthDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultTab?: 'signin' | 'signup';
 }
 
-export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
+export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDialogProps) {
   const { login, register } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -87,7 +88,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="login" className="w-full">
+        <Tabs defaultValue={defaultTab === 'signup' ? 'register' : 'login'} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="login">Login</TabsTrigger>
             <TabsTrigger value="register">Register</TabsTrigger>

@@ -14,59 +14,19 @@ import { AuthProvider, useAuth } from "@/contexts/auth-context"
 import { toast } from "sonner"
 
 function LandingContent() {
-  const [email, setEmail] = useState("")
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
+  const [signupMode, setSignupMode] = useState(true) // Start in signup mode
   const { user } = useAuth()
   const router = useRouter()
 
   // Remove auto-redirect - let users stay on landing page even if logged in
   // They can click their dashboard link in the header if they want
 
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [signupComplete, setSignupComplete] = useState(false)
-
-  const handleBetaSignup = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
-
-    try {
-      // Call the backend beta signup endpoint
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const response = await fetch(`${apiUrl}/api/v1/auth/beta-signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.detail || 'Signup failed')
-      }
-
-      setSignupComplete(true)
-      setEmail('')
-
-      // Show success message with credentials (temporary for testing)
-      // In production, this should just say "Check your email"
-      toast.success('🎉 Welcome to the Qontinui beta!', {
-        description: data.message || 'Check your email for login instructions.'
-      })
-    } catch {
-      toast.error('Failed to join beta', {
-        description: 'Please try again or contact support.'
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
+  const handleGetStarted = () => {
+    setSignupMode(true)
+    setAuthDialogOpen(true)
   }
 
-  const scrollToSignup = () => {
-    const element = document.getElementById('beta-signup')
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' })
-    }
-  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -103,7 +63,7 @@ function LandingContent() {
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
         <div className="absolute inset-0 dot-grid animate-pulse" />
         <div className="container mx-auto px-4 text-center relative z-10">
-          <Badge className="mb-6 bg-accent/20 text-accent border-accent/30 glow-green">Beta - Free for Everyone</Badge>
+          <Badge className="mb-6 bg-accent/20 text-accent border-accent/30 glow-green">Free to Get Started</Badge>
 
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 text-balance">
             GUI Automation That <span className="text-primary">Thinks Like You Do</span>
@@ -115,10 +75,10 @@ function LandingContent() {
 
           <Button
             size="lg"
-            onClick={scrollToSignup}
+            onClick={handleGetStarted}
             className="bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan pulse-cyan text-lg px-8 py-4"
           >
-            Start Free Beta Access
+            Get Started Free
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
         </div>
@@ -254,63 +214,30 @@ function LandingContent() {
         </div>
       </section>
 
-      {/* Beta Access Section */}
-      <section id="beta-signup" className="py-20 px-4">
-        <div className="container mx-auto max-w-2xl">
-          <Card className="p-8 gradient-border">
-            <div className="text-center mb-8">
-              <h2 className="text-3xl font-bold mb-4">Get Early Access</h2>
-              <p className="text-muted-foreground">
-                Join the beta and experience the future of GUI automation. Free for all beta users.
-              </p>
-            </div>
-
-            {signupComplete ? (
-              <div className="text-center p-8 space-y-4">
-                <div className="w-16 h-16 bg-accent/20 rounded-full flex items-center justify-center mx-auto">
-                  <Check className="h-8 w-8 text-accent" />
-                </div>
-                <h3 className="text-xl font-semibold">You&apos;re on the list!</h3>
-                <p className="text-muted-foreground">
-                  We&apos;ll email you as soon as your beta access is ready.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleBetaSignup} className="space-y-4">
-                <Input
-                  type="email"
-                  placeholder="Enter your email address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="bg-input border-border focus:border-primary focus:ring-primary placeholder:text-muted-foreground/60"
-                  disabled={isSubmitting}
-                  required
-                />
-                <Button
-                  type="submit"
-                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90 pulse-cyan"
-                  size="lg"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? (
-                    <>Processing...</>
-                  ) : (
-                    <>
-                      Request Beta Access
-                      <ArrowRight className="ml-2 h-5 w-5" />
-                    </>
-                  )}
-                </Button>
-              </form>
-            )}
-
-            <p className="text-xs text-muted-foreground text-center mt-4">No spam, ever. Unsubscribe at any time.</p>
-          </Card>
+      {/* CTA Section */}
+      <section className="py-20 px-4 bg-muted/20">
+        <div className="container mx-auto max-w-2xl text-center">
+          <h2 className="text-3xl font-bold mb-4">Ready to Transform Your Automation?</h2>
+          <p className="text-muted-foreground mb-8">
+            Start building intelligent, adaptive GUI automation in minutes
+          </p>
+          <Button
+            size="lg"
+            onClick={handleGetStarted}
+            className="bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan pulse-cyan text-lg px-8 py-4"
+          >
+            Get Started Free
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
         </div>
       </section>
 
       {/* Auth Dialog */}
-      <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
+      <AuthDialog
+        open={authDialogOpen}
+        onOpenChange={setAuthDialogOpen}
+        defaultTab={signupMode ? "signup" : "signin"}
+      />
     </div>
   )
 }
