@@ -11,10 +11,6 @@ const nextConfig = {
     // your project has type errors.
     ignoreBuildErrors: true,
   },
-  experimental: {
-    // Disable static page generation for all pages
-    isrMemoryCacheSize: 0,
-  },
   async rewrites() {
     return [
       {
