@@ -37,6 +37,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [activities, setActivities] = useState<Activity[]>([])
 
+  const isNewUser = () => {
+    if (!user?.created_at) return false
+    const createdAt = new Date(user.created_at)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
+    return createdAt > fiveMinutesAgo
+  }
+
   useEffect(() => {
     // Wait for auth to finish loading before redirecting
     if (!authLoading && !user) {
@@ -240,7 +247,9 @@ export default function Dashboard() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-3xl font-bold mb-2">Welcome back, {user.full_name || user.username}</h2>
+              <h2 className="text-3xl font-bold mb-2">
+                {isNewUser() ? 'Welcome' : 'Welcome back'}, {user.full_name || user.username}
+              </h2>
               <p className="text-gray-400">Manage your automation configurations and projects</p>
             </div>
 
