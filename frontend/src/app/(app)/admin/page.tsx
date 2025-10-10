@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, FolderOpen, TrendingUp, Activity } from "lucide-react"
 import { toast } from "sonner"
+import { authService } from "@/services/auth/auth-service"
 
 interface AdminStats {
   total_users: number
@@ -48,10 +49,20 @@ export default function AdminDashboard() {
   const loadAdminData = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const accessToken = authService.tokenManager.getAccessToken()
+
+      if (!accessToken) {
+        toast.error('Not authenticated')
+        router.push('/')
+        return
+      }
 
       // Load stats
       const statsRes = await fetch(`${apiUrl}/api/v1/admin/stats`, {
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
       })
 
       if (!statsRes.ok) {
@@ -68,7 +79,10 @@ export default function AdminDashboard() {
 
       // Load users
       const usersRes = await fetch(`${apiUrl}/api/v1/admin/users?limit=10`, {
-        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
       })
 
       if (usersRes.ok) {
