@@ -26,7 +26,18 @@ This project is in active development. Prioritize clean, simple code over backwa
 
 **Joshua Spinak is the sole contributor to this project.**
 
-- DO NOT add "Co-Authored-By: Claude" or similar lines
-- DO NOT add "Generated with Claude Code" or similar attribution
+- DO NOT add "Co-Authored-By: Claude" or similar attribution lines
+- DO NOT add "🤖 Generated with [Claude Code]" or similar marketing text
+- DO NOT add any Claude/Anthropic attribution or advertising
 - Keep commit messages professional and focused on the changes
 - Use conventional commit format (e.g., "feat:", "fix:", "docs:", "refactor:")
+
+**Rationale:** Claude is a for-profit company and should not be advertised on this open-source repository. All code contributions should be attributed solely to the human maintainer.
+
+## Important: Do Not Commit CLAUDE.md
+
+**This file (CLAUDE.md) contains personal instructions for Claude and should NEVER be committed to the repository.**
+
+- CLAUDE.md is for local development guidance only
+- It should be listed in .gitignore
+- Do not add, commit, or push this file to version control
