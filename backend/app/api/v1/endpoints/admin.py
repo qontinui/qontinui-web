@@ -16,6 +16,37 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+# One-time bootstrap endpoint - remove after first use
+@router.post("/bootstrap-first-admin")
+async def bootstrap_first_admin(
+    email: str,
+    db: Session = Depends(get_db),
+) -> Any:
+    """One-time endpoint to create the first admin. Remove after use!"""
+    # Check if any admin exists
+    existing_admin = db.query(User).filter(User.is_superuser).first()
+    if existing_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Admin already exists: {existing_admin.email}",
+        )
+
+    # Find user by email
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with email {email} not found",
+        )
+
+    # Make them admin
+    user.is_superuser = True
+    db.commit()
+
+    logger.info(f"Bootstrapped first admin: {user.email}")
+    return {"success": True, "message": f"{user.email} is now an admin"}
+
+
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
     """Dependency to require admin/superuser access."""
     if not current_user.is_superuser:
