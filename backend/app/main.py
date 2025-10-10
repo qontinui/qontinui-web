@@ -58,7 +58,12 @@ if settings.RATE_LIMIT_ENABLED:
 if settings.ENVIRONMENT == "production":
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["qontinui.com", "*.qontinui.com", "localhost"],
+        allowed_hosts=[
+            "qontinui.com",
+            "*.qontinui.com",
+            "localhost",
+            "*.elasticbeanstalk.com",
+        ],
     )
 
 # Set up CORS
