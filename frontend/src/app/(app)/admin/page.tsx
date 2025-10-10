@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, FolderOpen, TrendingUp, Activity } from "lucide-react"
 import { toast } from "sonner"
-import { authService } from "@/services/auth/auth-service"
+import { authService } from "@/services/service-factory"
 
 interface AdminStats {
   total_users: number
