@@ -33,6 +33,29 @@ def read_user_me(current_user: UserModel = Depends(get_current_active_user)) -> 
     return current_user
 
 
+@router.post("/me/claim-admin")
+def claim_admin(
+    *,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_active_user),
+) -> Any:
+    """Allow user to claim admin if no admin exists. Remove after first use!"""
+    # Check if any admin exists
+    existing_admin = db.query(UserModel).filter(UserModel.is_superuser).first()
+    if existing_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Admin already exists: {existing_admin.email}",
+        )
+
+    # Make current user admin
+    current_user.is_superuser = True
+    db.commit()
+    db.refresh(current_user)
+
+    return {"success": True, "message": f"{current_user.email} is now an admin"}
+
+
 @router.put("/me", response_model=User)
 def update_user_me(
     *,
