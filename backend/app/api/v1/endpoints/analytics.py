@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,37 @@ from app.models.user import User
 from app.services.metrics_service import metrics_service
 
 router = APIRouter()
+
+
+@router.post("/analytics/download")
+async def track_download(request: Request, db: Session = Depends(get_db)):
+    """
+    Track runner download events (public endpoint, no auth required)
+
+    Privacy-friendly: No PII collected, only platform and version info
+    """
+    try:
+        data = await request.json()
+
+        # Record download event using metrics service
+        metrics_service.record_metric(
+            db=db,
+            user_id=None,  # Public event, no user
+            metric_type="runner_download",
+            value=1.0,
+            metadata={
+                "platform": data.get("platform"),
+                "version": data.get("version"),
+                "timestamp": data.get("timestamp"),
+                # No IP, user agent, or other PII
+            },
+        )
+
+        return {"success": True}
+    except Exception as e:
+        # Silent fail - don't block download
+        print(f"Download tracking error: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @router.get("/analytics/usage")

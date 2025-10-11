@@ -349,8 +349,6 @@ async def get_system_health(
 ) -> Any:
     """Get system health metrics."""
 
-    import psutil
-
     # API and database status
     try:
         db.execute("SELECT 1")
@@ -365,10 +363,45 @@ async def get_system_health(
         "max": 20,
     }
 
-    # System resources
-    disk = psutil.disk_usage("/")
-    memory = psutil.virtual_memory()
-    cpu_percent = psutil.cpu_percent(interval=1)
+    # Try to get system resources, but don't fail if psutil is unavailable
+    try:
+        import psutil
+
+        disk = psutil.disk_usage("/")
+        memory = psutil.virtual_memory()
+        cpu_percent = psutil.cpu_percent(
+            interval=0.1
+        )  # Short interval to avoid blocking
+
+        storage = {
+            "total_gb": disk.total / (1024**3),
+            "used_gb": disk.used / (1024**3),
+            "available_gb": disk.free / (1024**3),
+            "usage_percent": disk.percent,
+        }
+        memory_info = {
+            "total_mb": memory.total / (1024**2),
+            "used_mb": memory.used / (1024**2),
+            "available_mb": memory.available / (1024**2),
+            "usage_percent": memory.percent,
+        }
+        cpu_usage = cpu_percent
+    except Exception as e:
+        logger.warning(f"Failed to get system metrics: {e}")
+        # Return placeholder values if psutil is unavailable
+        storage = {
+            "total_gb": 0.0,
+            "used_gb": 0.0,
+            "available_gb": 0.0,
+            "usage_percent": 0.0,
+        }
+        memory_info = {
+            "total_mb": 0.0,
+            "used_mb": 0.0,
+            "available_mb": 0.0,
+            "usage_percent": 0.0,
+        }
+        cpu_usage = 0.0
 
     # Uptime (placeholder - would need to track app start time)
     uptime_hours = 24.0
@@ -377,19 +410,9 @@ async def get_system_health(
         "api_status": "healthy",
         "database_status": db_status,
         "database_connections": db_connections,
-        "storage": {
-            "total_gb": disk.total / (1024**3),
-            "used_gb": disk.used / (1024**3),
-            "available_gb": disk.free / (1024**3),
-            "usage_percent": disk.percent,
-        },
-        "memory": {
-            "total_mb": memory.total / (1024**2),
-            "used_mb": memory.used / (1024**2),
-            "available_mb": memory.available / (1024**2),
-            "usage_percent": memory.percent,
-        },
-        "cpu_usage": cpu_percent,
+        "storage": storage,
+        "memory": memory_info,
+        "cpu_usage": cpu_usage,
         "uptime_hours": uptime_hours,
         "last_backup": None,
         "recent_errors": [],

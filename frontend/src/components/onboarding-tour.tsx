@@ -66,7 +66,13 @@ export function OnboardingTour() {
 
   useEffect(() => {
     // Only show tour if user is logged in and hasn't completed it
+    // Don't show tour on admin page
     if (user && typeof window !== 'undefined') {
+      const isAdminPage = window.location.pathname.startsWith('/admin');
+      if (isAdminPage || user.is_superuser) {
+        return; // Don't show tour for admin users or on admin page
+      }
+
       const tourCompleted = localStorage.getItem('onboarding-tour-completed');
       if (!tourCompleted) {
         // Auto-start tour for new users after a short delay
@@ -188,6 +194,14 @@ export function OnboardingTour() {
   // Don't render anything if user is not logged in
   if (!user) {
     return null;
+  }
+
+  // Don't show tour button on admin page or for admin users
+  if (typeof window !== 'undefined') {
+    const isAdminPage = window.location.pathname.startsWith('/admin');
+    if (isAdminPage || user.is_superuser) {
+      return null;
+    }
   }
 
   if (!isActive) {
