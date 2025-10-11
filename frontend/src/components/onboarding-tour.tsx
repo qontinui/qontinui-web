@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, X, PlayCircle } from 'lucide-react';
@@ -60,15 +61,16 @@ const tourSteps: TourStep[] = [
 
 export function OnboardingTour() {
   const { user } = useAuth();
+  const pathname = usePathname();
   const [isActive, setIsActive] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [position, setPosition] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     // Only show tour if user is logged in and hasn't completed it
-    // Don't show tour on admin page
+    // Don't show tour on admin page or for admin users
     if (user && typeof window !== 'undefined') {
-      const isAdminPage = window.location.pathname.startsWith('/admin');
+      const isAdminPage = pathname?.startsWith('/admin');
       if (isAdminPage || user.is_superuser) {
         return; // Don't show tour for admin users or on admin page
       }
@@ -81,7 +83,7 @@ export function OnboardingTour() {
         }, 2000);
       }
     }
-  }, [user]);
+  }, [user, pathname]);
 
   useEffect(() => {
     if (isActive && tourSteps[currentStep]) {
@@ -197,11 +199,9 @@ export function OnboardingTour() {
   }
 
   // Don't show tour button on admin page or for admin users
-  if (typeof window !== 'undefined') {
-    const isAdminPage = window.location.pathname.startsWith('/admin');
-    if (isAdminPage || user.is_superuser) {
-      return null;
-    }
+  const isAdminPage = pathname?.startsWith('/admin');
+  if (isAdminPage || user.is_superuser) {
+    return null;
   }
 
   if (!isActive) {
