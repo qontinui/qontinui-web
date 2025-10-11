@@ -42,14 +42,18 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
     e.preventDefault();
     setLoading(true);
     try {
-      await login(loginUsername, loginPassword);
+      const user = await login(loginUsername, loginPassword);
       toast.success('Logged in successfully');
       onOpenChange(false);
       // Reset form
       setLoginUsername('');
       setLoginPassword('');
-      // Redirect to dashboard
-      router.push('/dashboard');
+      // Redirect to admin page if superuser, otherwise dashboard
+      if (user?.is_superuser) {
+        router.push('/admin');
+      } else {
+        router.push('/dashboard');
+      }
     } catch (error: any) {
       toast.error(error.message || 'Login failed');
     } finally {
