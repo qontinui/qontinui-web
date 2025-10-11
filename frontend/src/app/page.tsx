@@ -34,31 +34,47 @@ function LandingContent() {
       <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <h2 className="text-2xl font-bold text-primary">Qontinui</h2>
-          {user ? (
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-muted-foreground">{user.email}</span>
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/runner/download')}
+              className="hover:bg-primary/10"
+            >
+              Download
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/docs')}
+              className="hover:bg-primary/10"
+            >
+              Docs
+            </Button>
+            {user ? (
+              <div className="flex items-center space-x-4">
+                <span className="text-sm text-muted-foreground">{user.email}</span>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push(user.is_superuser ? '/admin' : '/dashboard')}
+                  className="border-primary/50 hover:border-primary hover:bg-primary/10"
+                >
+                  {user.is_superuser ? 'Go to Admin' : 'Go to Dashboard'}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
               <Button
                 variant="outline"
-                onClick={() => router.push(user.is_superuser ? '/admin' : '/dashboard')}
+                onClick={() => {
+                  setSignupMode(false)
+                  setAuthDialogOpen(true)
+                }}
                 className="border-primary/50 hover:border-primary hover:bg-primary/10"
               >
-                {user.is_superuser ? 'Go to Admin' : 'Go to Dashboard'}
-                <ArrowRight className="ml-2 h-4 w-4" />
+                <LogIn className="mr-2 h-4 w-4" />
+                Sign In
               </Button>
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSignupMode(false)
-                setAuthDialogOpen(true)
-              }}
-              className="border-primary/50 hover:border-primary hover:bg-primary/10"
-            >
-              <LogIn className="mr-2 h-4 w-4" />
-              Sign In
-            </Button>
-          )}
+            )}
+          </div>
         </div>
       </header>
 
