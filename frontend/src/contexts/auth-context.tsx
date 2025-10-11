@@ -7,7 +7,7 @@ import { User } from '@/types/auth-types';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<User>;
   register: (email: string, username: string, password: string, fullName?: string) => Promise<void>;
   logout: () => void;
   updateUser: (data: Partial<User>) => Promise<void>;
@@ -71,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const loggedInUser = await authService.login({ username, password });
       setUser(loggedInUser);
+      return loggedInUser;
     } catch (error) {
       console.error('Login failed:', error);
       throw error;
