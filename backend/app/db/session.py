@@ -65,6 +65,19 @@ else:
     )
 
 
+def get_sync_db():
+    """Dependency for getting sync database sessions (for SQLite compatibility)."""
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency for getting async database sessions."""
     if AsyncSessionLocal is None:

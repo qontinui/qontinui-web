@@ -8,6 +8,8 @@ import logging
 
 from redis import asyncio as aioredis
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,13 +27,12 @@ class RedisConfig:
             Redis client instance
         """
         if cls._client is None:
-            # TODO: Get Redis URL from settings
-            redis_url = "redis://localhost:6379/0"
+            redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
 
             cls._client = await aioredis.from_url(
                 redis_url, encoding="utf-8", decode_responses=True, max_connections=10
             )
-            logger.info("Redis client initialized")
+            logger.info("Redis client initialized", redis_url=redis_url)
 
         return cls._client
 

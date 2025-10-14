@@ -57,9 +57,17 @@ async def enqueue_task(
     Returns:
         Job ID if enqueued successfully, None otherwise
     """
+    global _arq_pool
+
+    # If pool was never initialized (Redis unavailable), skip silently
+    if _arq_pool is None:
+        logger.warning(
+            f"Task {task_name} not enqueued: ARQ pool unavailable (Redis not connected)"
+        )
+        return None
+
     try:
-        pool = await get_arq_pool()
-        job = await pool.enqueue_job(task_name, *args, **kwargs)
+        job = await _arq_pool.enqueue_job(task_name, *args, **kwargs)
         logger.info(f"Task {task_name} enqueued with job ID: {job.job_id}")
         return job.job_id
     except Exception as e:
