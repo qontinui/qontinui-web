@@ -115,16 +115,16 @@ async def startup_event():
         project=settings.PROJECT_NAME,
     )
 
-    # Initialize Redis connection
-    try:
-        from app.config.redis_config import RedisConfig
+    # Initialize Redis connection - TEMPORARILY DISABLED
+    # try:
+    #     from app.config.redis_config import RedisConfig
 
-        await RedisConfig.get_client()
-        logger.info("redis_initialized", status="connected")
-    except Exception as e:
-        logger.warning(
-            "redis_initialization_failed", error=str(e), note="Continuing without Redis"
-        )
+    #     await RedisConfig.get_client()
+    #     logger.info("redis_initialized", status="connected")
+    # except Exception as e:
+    #     logger.warning(
+    #         "redis_initialization_failed", error=str(e), note="Continuing without Redis"
+    #     )
 
     # Initialize database
     db = SessionLocal()
@@ -132,18 +132,18 @@ async def startup_event():
     db.close()
     logger.info("database_initialized")
 
-    # Initialize ARQ connection pool
-    try:
-        from app.worker.arq_pool import get_arq_pool
+    # Initialize ARQ connection pool - TEMPORARILY DISABLED
+    # try:
+    #     from app.worker.arq_pool import get_arq_pool
 
-        await get_arq_pool()
-        logger.info("arq_pool_initialized", status="connected")
-    except Exception as e:
-        logger.warning(
-            "arq_initialization_failed",
-            error=str(e),
-            note="Continuing without task queue",
-        )
+    #     await get_arq_pool()
+    #     logger.info("arq_pool_initialized", status="connected")
+    # except Exception as e:
+    #     logger.warning(
+    #         "arq_initialization_failed",
+    #         error=str(e),
+    #         note="Continuing without task queue",
+    #     )
 
 
 @app.on_event("shutdown")
