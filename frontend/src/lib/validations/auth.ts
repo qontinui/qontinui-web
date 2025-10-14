@@ -30,10 +30,26 @@
 import { z } from 'zod'
 
 /**
- * Login form validation schema
+ * Login form validation schema - supports both username and email
  */
 export const loginSchema = z.object({
-  email: z
+  identifier: z
+    .string()
+    .min(1, 'Username or email is required'),
+  password: z
+    .string()
+    .min(1, 'Password is required')
+    .min(8, 'Password must be at least 8 characters'),
+  useEmail: z.boolean().optional(),
+})
+
+export type LoginFormData = z.infer<typeof loginSchema>
+
+/**
+ * Login form validation schema - email mode
+ */
+export const loginWithEmailSchema = z.object({
+  identifier: z
     .string()
     .min(1, 'Email is required')
     .email('Invalid email address'),
@@ -41,9 +57,23 @@ export const loginSchema = z.object({
     .string()
     .min(1, 'Password is required')
     .min(8, 'Password must be at least 8 characters'),
+  useEmail: z.boolean().optional(),
 })
 
-export type LoginFormData = z.infer<typeof loginSchema>
+/**
+ * Login form validation schema - username mode
+ */
+export const loginWithUsernameSchema = z.object({
+  identifier: z
+    .string()
+    .min(1, 'Username is required')
+    .min(3, 'Username must be at least 3 characters'),
+  password: z
+    .string()
+    .min(1, 'Password is required')
+    .min(8, 'Password must be at least 8 characters'),
+  useEmail: z.boolean().optional(),
+})
 
 /**
  * Registration form validation schema
