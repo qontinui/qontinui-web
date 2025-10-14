@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { loginSchema, registerSchema, type LoginFormData, type RegisterFormData } from '@/lib/validations/auth';
+import { loginWithEmailSchema, loginWithUsernameSchema, registerSchema, type LoginFormData, type RegisterFormData } from '@/lib/validations/auth';
 
 interface AuthDialogProps {
   open: boolean;
@@ -30,13 +30,15 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
   const { login, register: registerUser } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [useEmail, setUseEmail] = useState(false);
 
-  // Login form with Zod validation
+  // Login form with dynamic Zod validation based on toggle
   const loginForm = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
+    resolver: zodResolver(useEmail ? loginWithEmailSchema : loginWithUsernameSchema),
     defaultValues: {
-      email: '',
+      identifier: '',
       password: '',
+      useEmail: false,
     }
   });
 
@@ -55,7 +57,7 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
   const handleLogin = async (data: LoginFormData) => {
     setLoading(true);
     try {
-      const user = await login(data.email, data.password);
+      const user = await login(data.identifier, data.password);
       toast.success('Logged in successfully');
       onOpenChange(false);
       loginForm.reset();
@@ -109,16 +111,38 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
 
           <TabsContent value="login">
             <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-sm text-muted-foreground">
+                  Login with {useEmail ? 'email' : 'username'}
+                </Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setUseEmail(!useEmail);
+                    loginForm.setValue('identifier', '');
+                    loginForm.clearErrors('identifier');
+                  }}
+                  className="text-xs h-7"
+                  disabled={loading}
+                >
+                  Use {useEmail ? 'username' : 'email'} instead
+                </Button>
+              </div>
               <div className="space-y-2">
-                <Label htmlFor="login-email">Email</Label>
+                <Label htmlFor="login-identifier">
+                  {useEmail ? 'Email' : 'Username'}
+                </Label>
                 <Input
-                  id="login-email"
-                  type="email"
-                  {...loginForm.register('email')}
+                  id="login-identifier"
+                  type={useEmail ? 'email' : 'text'}
+                  placeholder={useEmail ? 'you@example.com' : 'your_username'}
+                  {...loginForm.register('identifier')}
                   disabled={loading}
                 />
-                {loginForm.formState.errors.email && (
-                  <p className="text-sm text-red-500">{loginForm.formState.errors.email.message}</p>
+                {loginForm.formState.errors.identifier && (
+                  <p className="text-sm text-red-500">{loginForm.formState.errors.identifier.message}</p>
                 )}
               </div>
               <div className="space-y-2">
