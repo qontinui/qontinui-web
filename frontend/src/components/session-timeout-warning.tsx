@@ -93,8 +93,8 @@ export function SessionTimeoutWarning() {
   };
 
   return (
-    <Dialog open={showWarning} onOpenChange={setShowWarning}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={showWarning} onOpenChange={setShowWarning} modal={true}>
+      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-warning" />

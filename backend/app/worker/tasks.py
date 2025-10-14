@@ -145,84 +145,90 @@ async def send_password_reset_email_task(
         return {"status": "error", "error": str(e), "to_email": to_email}
 
 
-async def process_image_task(
-    ctx: dict[str, Any],
-    image_path: str,
-    operation: str,
-    **kwargs: Any,
+# Image processing is now handled by the qontinui library via the
+# /api/v1/background-removal endpoint. No background task needed.
+
+
+async def cleanup_old_data_task(
+    ctx: dict[str, Any], days_to_keep: int = 90
 ) -> dict[str, Any]:
     """
-    Process an image in the background.
+    Clean up old audit logs and usage metrics (periodic task).
+
+    This task should be run daily via cron or scheduled job.
+    Keeps audit logs and detailed metrics for the specified number of days.
 
     Args:
         ctx: ARQ context
-        image_path: Path to the image file
-        operation: Operation to perform (e.g., 'remove_background', 'resize')
-        **kwargs: Additional operation-specific parameters
-
-    Returns:
-        Dict with status and result path
-    """
-    logger.info(f"Processing image: {image_path}, operation: {operation}")
-
-    try:
-        if operation == "remove_background":
-            # This would be the actual processing
-            # from app.services.background_removal_service import (
-            #     BackgroundRemovalService,
-            # )
-            # service = BackgroundRemovalService()
-            # result_path = await service.remove_background(image_path, **kwargs)
-
-            logger.info(f"Image processed successfully: {image_path}")
-            return {
-                "status": "success",
-                "image_path": image_path,
-                "operation": operation,
-            }
-
-        return {"status": "error", "error": f"Unknown operation: {operation}"}
-
-    except Exception as e:
-        logger.error(f"Failed to process image {image_path}: {e}")
-        return {"status": "error", "error": str(e), "image_path": image_path}
-
-
-async def cleanup_old_data_task(ctx: dict[str, Any]) -> dict[str, Any]:
-    """
-    Clean up old data (periodic task).
-
-    Args:
-        ctx: ARQ context
+        days_to_keep: Number of days to keep detailed data (default 90)
 
     Returns:
         Dict with cleanup statistics
     """
-    logger.info("Running cleanup task")
+    logger.info(f"Running cleanup task (keeping last {days_to_keep} days)")
 
     try:
-        # Example: Clean up old temp files, expired sessions, etc.
-        # This would be implemented based on your needs
+        from datetime import datetime, timedelta
 
-        logger.info("Cleanup completed successfully")
-        return {"status": "success", "cleaned": 0}
+        from sqlalchemy import delete
+
+        from app.db.session import AsyncSessionLocal
+        from app.models.audit_log import AuditLog
+        from app.models.usage_metric import UsageMetric
+
+        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+        audit_logs_deleted = 0
+        metrics_deleted = 0
+
+        async with AsyncSessionLocal() as db:
+            # Clean up old audit logs
+            audit_delete_stmt = delete(AuditLog).where(
+                AuditLog.created_at < cutoff_date
+            )
+            result = await db.execute(audit_delete_stmt)
+            audit_logs_deleted = result.rowcount
+
+            # Clean up old usage metrics
+            # Note: Keep aggregated monthly summaries, only delete detailed metrics
+            metrics_delete_stmt = delete(UsageMetric).where(
+                UsageMetric.timestamp < cutoff_date
+            )
+            result = await db.execute(metrics_delete_stmt)
+            metrics_deleted = result.rowcount
+
+            await db.commit()
+
+        logger.info(
+            f"Cleanup completed: {audit_logs_deleted} audit logs, "
+            f"{metrics_deleted} metrics deleted"
+        )
+
+        return {
+            "status": "success",
+            "audit_logs_deleted": audit_logs_deleted,
+            "metrics_deleted": metrics_deleted,
+            "cutoff_date": cutoff_date.isoformat(),
+        }
 
     except Exception as e:
-        logger.error(f"Cleanup failed: {e}")
+        logger.error(f"Cleanup failed: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
 
 
 async def send_analytics_report_task(
     ctx: dict[str, Any],
     user_id: int,
-    report_type: str,
+    report_type: str = "weekly",
 ) -> dict[str, Any]:
     """
-    Generate and send analytics report.
+    Generate and send analytics report to admin users.
+
+    This task generates a comprehensive usage report and emails it to admin users.
+    Should be scheduled to run weekly for admins.
 
     Args:
         ctx: ARQ context
-        user_id: User ID to generate report for
+        user_id: User ID to generate report for (must be admin)
         report_type: Type of report (daily, weekly, monthly)
 
     Returns:
@@ -231,14 +237,154 @@ async def send_analytics_report_task(
     logger.info(f"Generating {report_type} report for user {user_id}")
 
     try:
-        # This would generate the report and email it
-        # Implementation depends on your analytics requirements
+        from datetime import datetime
 
-        logger.info(f"Report generated and sent for user {user_id}")
-        return {"status": "success", "user_id": user_id, "report_type": report_type}
+        from sqlalchemy import select
+
+        from app.core.config import settings
+        from app.db.session import AsyncSessionLocal
+        from app.models.user import User
+        from app.services.analytics_service import analytics_service
+        from app.services.email.email_transport_service import EmailTransportService
+
+        # Determine days based on report type
+        days_map = {"daily": 1, "weekly": 7, "monthly": 30}
+        days = days_map.get(report_type, 7)
+
+        async with AsyncSessionLocal() as db:
+            # Get user
+            result = await db.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+
+            if not user:
+                return {
+                    "status": "error",
+                    "error": f"User {user_id} not found",
+                    "user_id": user_id,
+                }
+
+            if not user.is_superuser:
+                return {
+                    "status": "error",
+                    "error": f"User {user_id} is not an admin",
+                    "user_id": user_id,
+                }
+
+            # Generate analytics summary
+            summary = await analytics_service.get_analytics_summary(user_id, days, db)
+
+            # Format email content
+            period_start = summary.period_start.strftime("%Y-%m-%d")
+            period_end = summary.period_end.strftime("%Y-%m-%d")
+
+            html_content = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
+                    .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; }}
+                    .content {{ padding: 20px; }}
+                    .metric {{ background-color: #f4f4f4; padding: 15px; margin: 10px 0; border-left: 4px solid #4CAF50; }}
+                    .metric-label {{ font-weight: bold; color: #333; }}
+                    .metric-value {{ font-size: 24px; color: #4CAF50; }}
+                    .footer {{ background-color: #f4f4f4; padding: 20px; text-align: center; color: #666; }}
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>Qontinui {report_type.capitalize()} Analytics Report</h1>
+                    <p>{period_start} to {period_end}</p>
+                </div>
+
+                <div class="content">
+                    <h2>Usage Summary</h2>
+
+                    <div class="metric">
+                        <div class="metric-label">API Calls</div>
+                        <div class="metric-value">{summary.api_calls:,}</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-label">Projects Created</div>
+                        <div class="metric-value">{summary.projects_created}</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-label">States Created</div>
+                        <div class="metric-value">{summary.states_created}</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-label">Images Uploaded</div>
+                        <div class="metric-value">{summary.images_uploaded}</div>
+                    </div>
+
+                    <h2>Overall Statistics</h2>
+
+                    <div class="metric">
+                        <div class="metric-label">Total Projects</div>
+                        <div class="metric-value">{summary.total_projects}</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-label">Storage Used</div>
+                        <div class="metric-value">{summary.total_storage_bytes / (1024**2):.2f} MB</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-label">Avg Response Time</div>
+                        <div class="metric-value">{summary.avg_response_time_seconds:.3f}s</div>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    <p>Generated on {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")} UTC</p>
+                    <p><a href="{settings.FRONTEND_URL}/admin/analytics">View Detailed Analytics</a></p>
+                </div>
+            </body>
+            </html>
+            """
+
+            text_content = f"""
+            Qontinui {report_type.capitalize()} Analytics Report
+            {period_start} to {period_end}
+
+            Usage Summary:
+            - API Calls: {summary.api_calls:,}
+            - Projects Created: {summary.projects_created}
+            - States Created: {summary.states_created}
+            - Images Uploaded: {summary.images_uploaded}
+
+            Overall Statistics:
+            - Total Projects: {summary.total_projects}
+            - Storage Used: {summary.total_storage_bytes / (1024**2):.2f} MB
+            - Avg Response Time: {summary.avg_response_time_seconds:.3f}s
+
+            Generated on {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")} UTC
+            View details: {settings.FRONTEND_URL}/admin/analytics
+            """
+
+            # Send email
+            transport = EmailTransportService()
+            await transport.send_email(
+                to_email=user.email,
+                subject=f"Qontinui {report_type.capitalize()} Analytics Report - {period_start} to {period_end}",
+                html_body=html_content,
+                text_body=text_content,
+            )
+
+        logger.info(f"Analytics report sent successfully to {user.email}")
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "report_type": report_type,
+            "to_email": user.email,
+        }
 
     except Exception as e:
-        logger.error(f"Failed to generate report for user {user_id}: {e}")
+        logger.error(
+            f"Failed to generate report for user {user_id}: {e}", exc_info=True
+        )
         return {"status": "error", "error": str(e), "user_id": user_id}
 
 
@@ -247,7 +393,6 @@ __all__ = [
     "send_email_task",
     "send_verification_email_task",
     "send_password_reset_email_task",
-    "process_image_task",
     "cleanup_old_data_task",
     "send_analytics_report_task",
 ]
