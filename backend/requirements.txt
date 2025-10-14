@@ -38,3 +38,20 @@ mypy==1.7.0
 # Date handling
 python-dateutil==2.8.2
 psutil
+
+# Redis & Task Queue
+redis==5.0.1
+arq==0.25.0
+
+# Stripe
+stripe==7.8.0
+
+# Email
+aiosmtplib==3.0.1
+
+# Logging
+structlog==23.2.0
+
+# Image Processing
+opencv-python-headless==4.8.1.78
+Pillow==10.1.0
