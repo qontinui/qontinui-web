@@ -71,11 +71,17 @@ class Settings(BaseSettings):
     REDIS_DB: int = Field(default=0)
 
     # Stripe
-    STRIPE_SECRET_KEY: str = Field(..., description="Stripe secret key")
-    STRIPE_PUBLISHABLE_KEY: str = Field(..., description="Stripe publishable key")
+    STRIPE_SECRET_KEY: str | None = Field(None, description="Stripe secret key")
+    STRIPE_PUBLISHABLE_KEY: str | None = Field(
+        None, description="Stripe publishable key"
+    )
     STRIPE_WEBHOOK_SECRET: str | None = Field(None, description="Stripe webhook secret")
-    STRIPE_PRICE_HOBBY: str = Field(..., description="Stripe Price ID for Hobby tier")
-    STRIPE_PRICE_PRO: str = Field(..., description="Stripe Price ID for Pro tier")
+    STRIPE_PRICE_HOBBY: str | None = Field(
+        None, description="Stripe Price ID for Hobby tier"
+    )
+    STRIPE_PRICE_PRO: str | None = Field(
+        None, description="Stripe Price ID for Pro tier"
+    )
 
     @field_validator("SECRET_KEY")
     @classmethod
