@@ -1,4 +1,7 @@
+import sys
 import time
+
+print("STARTUP LOG: Importing FastAPI modules...", file=sys.stderr, flush=True)
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -8,11 +11,23 @@ from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+print("STARTUP LOG: Importing app modules...", file=sys.stderr, flush=True)
+
 from app.api.v1.api import api_router
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
+
+print(
+    f"STARTUP LOG: Settings loaded, environment={settings.ENVIRONMENT}",
+    file=sys.stderr,
+    flush=True,
+)
+
 from app.db.init_db import init_db
 from app.db.session import SessionLocal
+
+print("STARTUP LOG: Database modules imported", file=sys.stderr, flush=True)
+
 from app.middleware.error_handler import (
     AppError,
     app_exception_handler,
@@ -23,9 +38,15 @@ from app.middleware.error_handler import (
 from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 
+print("STARTUP LOG: Middleware modules imported", file=sys.stderr, flush=True)
+
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
 logger = get_logger(__name__)
+
+print("STARTUP LOG: Logging configured", file=sys.stderr, flush=True)
+
+print("STARTUP LOG: Creating FastAPI app...", file=sys.stderr, flush=True)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -38,6 +59,8 @@ app = FastAPI(
     docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
     redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
 )
+
+print("STARTUP LOG: FastAPI app created", file=sys.stderr, flush=True)
 
 # Add exception handlers
 app.add_exception_handler(AppError, app_exception_handler)
@@ -115,35 +138,28 @@ async def startup_event():
         project=settings.PROJECT_NAME,
     )
 
-    # Initialize Redis connection - TEMPORARILY DISABLED
-    # try:
-    #     from app.config.redis_config import RedisConfig
-
-    #     await RedisConfig.get_client()
-    #     logger.info("redis_initialized", status="connected")
-    # except Exception as e:
-    #     logger.warning(
-    #         "redis_initialization_failed", error=str(e), note="Continuing without Redis"
-    #     )
+    logger.info("startup_step_1", note="Starting database initialization")
 
     # Initialize database
-    db = SessionLocal()
-    init_db(db)
-    db.close()
-    logger.info("database_initialized")
+    try:
+        logger.info("startup_step_2", note="Creating SessionLocal")
+        db = SessionLocal()
+        logger.info("startup_step_3", note="SessionLocal created, calling init_db")
+        init_db(db)
+        logger.info("startup_step_4", note="init_db completed, closing session")
+        db.close()
+        logger.info("database_initialized", status="success")
+    except Exception as e:
+        logger.error(
+            "database_initialization_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True,
+        )
+        # Re-raise to prevent app from starting with broken DB
+        raise
 
-    # Initialize ARQ connection pool - TEMPORARILY DISABLED
-    # try:
-    #     from app.worker.arq_pool import get_arq_pool
-
-    #     await get_arq_pool()
-    #     logger.info("arq_pool_initialized", status="connected")
-    # except Exception as e:
-    #     logger.warning(
-    #         "arq_initialization_failed",
-    #         error=str(e),
-    #         note="Continuing without task queue",
-    #     )
+    logger.info("startup_step_5", note="Startup event completed successfully")
 
 
 @app.on_event("shutdown")
@@ -242,3 +258,6 @@ async def favicon():
     from fastapi.responses import Response
 
     return Response(status_code=204)
+
+
+print("STARTUP LOG: main.py module loaded successfully", file=sys.stderr, flush=True)
