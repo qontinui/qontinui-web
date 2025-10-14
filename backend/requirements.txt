@@ -51,7 +51,3 @@ aiosmtplib==3.0.1
 
 # Logging
 structlog==23.2.0
-
-# Image Processing
-opencv-python-headless==4.8.1.78
-Pillow==10.1.0

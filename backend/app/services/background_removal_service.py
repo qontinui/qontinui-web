@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 logger = logging.getLogger(__name__)
 
 # Add qontinui directory to Python path
@@ -23,7 +21,7 @@ else:
 
 
 class BackgroundRemovalService:
-    """Service for removing backgrounds from screenshots."""
+    """Service for removing backgrounds from screenshots using base64 strings."""
 
     def __init__(self, config_dict: dict[str, Any] | None = None):
         """
@@ -35,11 +33,14 @@ class BackgroundRemovalService:
         try:
             # Import qontinui background removal module
             from discovery.background_removal import (
-                BackgroundRemovalAnalyzer,
                 BackgroundRemovalConfig,
+                remove_backgrounds_from_base64,
             )
 
-            # Convert snake_case to camelCase for config
+            # Store the function for use in remove_backgrounds
+            self._remove_backgrounds_from_base64 = remove_backgrounds_from_base64
+
+            # Convert config dict to BackgroundRemovalConfig
             if config_dict:
                 # Map snake_case keys to what the Python module expects
                 python_config = {
@@ -73,11 +74,10 @@ class BackgroundRemovalService:
                     "background_alpha": config_dict.get("background_alpha", 0),
                 }
 
-                config = BackgroundRemovalConfig(**python_config)
+                self.config = BackgroundRemovalConfig(**python_config)
             else:
-                config = BackgroundRemovalConfig()
+                self.config = None
 
-            self.analyzer = BackgroundRemovalAnalyzer(config)
             logger.info("BackgroundRemovalService initialized successfully")
 
         except ImportError as e:
@@ -89,26 +89,26 @@ class BackgroundRemovalService:
                 f"Failed to import qontinui background removal module: {e}"
             ) from e
 
-    def remove_backgrounds(
-        self, screenshots: list[np.ndarray], debug: bool = False
-    ) -> tuple[list[np.ndarray], dict[str, Any]]:
+    def remove_backgrounds_base64(
+        self, base64_screenshots: list[str], debug: bool = False
+    ) -> tuple[list[str], dict[str, Any]]:
         """
-        Remove backgrounds from screenshots.
+        Remove backgrounds from base64-encoded screenshots.
 
         Args:
-            screenshots: List of BGR screenshot images
+            base64_screenshots: List of base64 encoded screenshot strings
             debug: If True, include debug information
 
         Returns:
-            Tuple of (masked_screenshots, statistics)
+            Tuple of (base64_masked_screenshots, statistics)
         """
         try:
-            masked_screenshots, stats = self.analyzer.remove_backgrounds(
-                screenshots, debug=debug
+            masked_screenshots, stats = self._remove_backgrounds_from_base64(
+                base64_screenshots, config=self.config, debug=debug
             )
 
             logger.info(
-                f"Processed {len(screenshots)} screenshots: "
+                f"Processed {len(base64_screenshots)} screenshots: "
                 f"{stats['foreground_percentage']:.1f}% foreground"
             )
 
@@ -117,22 +117,3 @@ class BackgroundRemovalService:
         except Exception as e:
             logger.error(f"Background removal failed: {e}", exc_info=True)
             raise RuntimeError(f"Background removal processing failed: {e}") from e
-
-    def visualize_mask(
-        self, screenshot: np.ndarray, background_mask: np.ndarray
-    ) -> np.ndarray:
-        """
-        Create visualization of background mask overlay.
-
-        Args:
-            screenshot: Original screenshot
-            background_mask: Background mask
-
-        Returns:
-            Visualization image
-        """
-        try:
-            return self.analyzer.visualize_mask(screenshot, background_mask)
-        except Exception as e:
-            logger.error(f"Visualization failed: {e}")
-            raise RuntimeError(f"Mask visualization failed: {e}") from e
