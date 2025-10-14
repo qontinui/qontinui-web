@@ -1,0 +1,36 @@
+# Ignore docker-compose for single-container deployments
+docker-compose.yml
+
+# Ignore local development files
+.env
+.env.local
+*.pyc
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Ignore documentation and non-deployment files
+docs/
+*.md
+!README.md
+
+# Ignore test files
+tests/
+pytest.ini
+
+# Ignore Git files
+.git/
+.gitignore
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore logs
+*.log
+
+# Ignore EB logs directory
+.elasticbeanstalk/logs/
