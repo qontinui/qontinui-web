@@ -5,7 +5,7 @@ from typing import BinaryIO
 
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.storage_service import StorageService
 
@@ -96,7 +96,7 @@ class AvatarService:
         self,
         file: UploadFile,
         user_id: int,
-        db: Session | None = None,
+        db: AsyncSession | None = None,
         subscription_tier: str = "free",
     ) -> str:
         """
@@ -129,7 +129,7 @@ class AvatarService:
         if db:
             # Get approximate final file size (after JPEG compression, usually smaller)
             estimated_size = len(content) // 2  # Rough estimate
-            StorageService.check_quota(
+            await StorageService.check_quota(
                 db=db,
                 user_id=user_id,
                 subscription_tier=subscription_tier,
@@ -159,7 +159,7 @@ class AvatarService:
             # Track storage usage if db session provided
             if db:
                 file_size = os.path.getsize(file_path)
-                StorageService.track_upload(
+                await StorageService.track_upload(
                     db=db,
                     user_id=user_id,
                     file_path=str(file_path),
@@ -176,8 +176,11 @@ class AvatarService:
                 detail=f"Invalid image file: {str(e)}",
             )
 
-    def delete_avatar(
-        self, avatar_url: str, db: Session | None = None, user_id: int | None = None
+    async def delete_avatar(
+        self,
+        avatar_url: str,
+        db: AsyncSession | None = None,
+        user_id: int | None = None,
     ) -> bool:
         """
         Delete avatar file from storage
@@ -204,7 +207,7 @@ class AvatarService:
 
                 # Remove from storage tracking if db session provided
                 if db and user_id:
-                    StorageService.delete_file_record(
+                    await StorageService.delete_file_record(
                         db=db, file_path=str(file_path), user_id=user_id
                     )
 

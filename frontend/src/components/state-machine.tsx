@@ -92,7 +92,11 @@ export function StateStructure() {
     const occupiedPositions = [
       ...states.map(s => s.position),
       ...transitions
-        .filter((t): t is OutgoingTransition => t.type === "OutgoingTransition" && t.activateStates.length > 1)
+        .filter((t): t is OutgoingTransition =>
+          t.type === "OutgoingTransition" &&
+          Array.isArray(t.activateStates) &&
+          t.activateStates.length > 1
+        )
         .map(t => t.position)
         .filter(Boolean)
     ]
@@ -183,11 +187,13 @@ export function StateStructure() {
     transitions
       .filter((t): t is OutgoingTransition => t.type === "OutgoingTransition")
       .forEach((transition) => {
-        const isMultiTarget = transition.activateStates.length > 1
+        // Ensure activateStates is an array before accessing it
+        const activateStates = Array.isArray(transition.activateStates) ? transition.activateStates : []
+        const isMultiTarget = activateStates.length > 1
         const transitionNodeId = `transition-node-${transition.id}`
         const sourceState = states.find(s => s.id === transition.fromState)
 
-        if (sourceState && transition.activateStates.length > 0) {
+        if (sourceState && activateStates.length > 0) {
           // Create a transition node for all transitions (both single and multi-target)
             // Use saved position or try to position below the source state
             let position = transition.position
@@ -231,7 +237,7 @@ export function StateStructure() {
               position: position,
               data: {
                 transition,
-                label: isMultiTarget ? `→ ${transition.activateStates.length} states` : `→`,
+                label: isMultiTarget ? `→ ${activateStates.length} states` : `→`,
                 isSingleTarget: !isMultiTarget
               },
             }
@@ -248,7 +254,7 @@ export function StateStructure() {
             })
 
             // Create edges from transition node to each target state
-            transition.activateStates.forEach((targetState, index) => {
+            activateStates.forEach((targetState, index) => {
               newEdges.push({
                 id: `${transition.id}-target-${index}`,
                 source: transitionNodeId,

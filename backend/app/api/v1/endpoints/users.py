@@ -1,9 +1,13 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_active_user, get_current_superuser, get_db
+from app.api.deps import (
+    get_async_db,
+    get_current_active_user_async,
+    get_current_superuser_async,
+)
 from app.crud.user import (
     delete_user,
     get_user,
@@ -29,19 +33,24 @@ router = APIRouter()
 
 
 @router.get("/me", response_model=User)
-def read_user_me(current_user: UserModel = Depends(get_current_active_user)) -> Any:
+async def read_user_me(
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
     return current_user
 
 
 @router.post("/me/claim-admin")
-def claim_admin(
+async def claim_admin(
     *,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Allow user to claim admin if no admin exists. Remove after first use!"""
+    from sqlalchemy import select
+
     # Check if any admin exists
-    existing_admin = db.query(UserModel).filter(UserModel.is_superuser).first()
+    result = await db.execute(select(UserModel).filter(UserModel.is_superuser))
+    existing_admin = result.scalar_one_or_none()
     if existing_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -50,41 +59,41 @@ def claim_admin(
 
     # Make current user admin
     current_user.is_superuser = True
-    db.commit()
-    db.refresh(current_user)
+    await db.commit()
+    await db.refresh(current_user)
 
     return {"success": True, "message": f"{current_user.email} is now an admin"}
 
 
 @router.put("/me", response_model=User)
-def update_user_me(
+async def update_user_me(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user_update: UserUpdate,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    user = update_user(db, current_user, user_update)
+    user = await update_user(db, current_user, user_update)
     return user
 
 
 @router.get("/", response_model=list[User])
-def read_users(
-    db: Session = Depends(get_db),
+async def read_users(
+    db: AsyncSession = Depends(get_async_db),
     skip: int = 0,
     limit: int = 100,
-    current_user: UserModel = Depends(get_current_superuser),
+    current_user: UserModel = Depends(get_current_superuser_async),
 ) -> Any:
-    users = get_users(db, skip=skip, limit=limit)
+    users = await get_users(db, skip=skip, limit=limit)
     return users
 
 
 @router.get("/{user_id}", response_model=User)
-def read_user(
+async def read_user(
     user_id: int,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_superuser),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_superuser_async),
 ) -> Any:
-    user = get_user(db, user_id=user_id)
+    user = await get_user(db, user_id=user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
@@ -93,30 +102,30 @@ def read_user(
 
 
 @router.put("/{user_id}", response_model=User)
-def update_user_by_id(
+async def update_user_by_id(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user_id: int,
     user_update: UserUpdate,
-    current_user: UserModel = Depends(get_current_superuser),
+    current_user: UserModel = Depends(get_current_superuser_async),
 ) -> Any:
-    user = get_user(db, user_id=user_id)
+    user = await get_user(db, user_id=user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    user = update_user(db, user, user_update)
+    user = await update_user(db, user, user_update)
     return user
 
 
 @router.delete("/{user_id}")
-def delete_user_by_id(
+async def delete_user_by_id(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     user_id: int,
-    current_user: UserModel = Depends(get_current_superuser),
+    current_user: UserModel = Depends(get_current_superuser_async),
 ) -> Any:
-    success = delete_user(db, user_id=user_id)
+    success = await delete_user(db, user_id=user_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
@@ -125,9 +134,9 @@ def delete_user_by_id(
 
 
 @router.get("/me/storage", response_model=StorageQuotaResponse)
-def get_user_storage(
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user),
+async def get_user_storage(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """
     Get current user's storage usage and quota information.
@@ -138,7 +147,7 @@ def get_user_storage(
         - percentage_used: Percentage of quota used
         - files_count: Total number of files stored
     """
-    storage_info = StorageService.check_quota(
+    storage_info = await StorageService.check_quota(
         db=db,
         user_id=current_user.id,
         subscription_tier=current_user.subscription_tier,
@@ -149,31 +158,31 @@ def get_user_storage(
 
 # Profile management endpoints
 @router.get("/me/profile", response_model=UserProfileResponse)
-def get_user_profile(
-    current_user: UserModel = Depends(get_current_active_user),
+async def get_user_profile(
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Get full user profile with all fields"""
     return current_user
 
 
 @router.put("/me/profile", response_model=UserProfileResponse)
-def update_profile(
+async def update_profile(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     profile_update: UserProfileUpdate,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Update user profile (company, phone, full_name)"""
-    user = update_user_profile(db, current_user, profile_update)
+    user = await update_user_profile(db, current_user, profile_update)
     return user
 
 
 @router.post("/me/avatar", response_model=UserProfileResponse)
 async def upload_avatar(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     file: UploadFile = File(...),
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """
     Upload user avatar image
@@ -186,7 +195,7 @@ async def upload_avatar(
     """
     # Delete old avatar if exists
     if current_user.avatar_url:
-        avatar_service.delete_avatar(
+        await avatar_service.delete_avatar(
             current_user.avatar_url, db=db, user_id=current_user.id
         )
 
@@ -196,36 +205,36 @@ async def upload_avatar(
     )
 
     # Update user avatar URL
-    user = update_user_avatar(db, current_user, avatar_url)
+    user = await update_user_avatar(db, current_user, avatar_url)
 
     return user
 
 
 @router.delete("/me/avatar", response_model=UserProfileResponse)
-def remove_avatar(
+async def remove_avatar(
     *,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Remove user avatar and free up storage"""
     if current_user.avatar_url:
-        avatar_service.delete_avatar(
+        await avatar_service.delete_avatar(
             current_user.avatar_url, db=db, user_id=current_user.id
         )
-        user = update_user_avatar(db, current_user, None)
+        user = await update_user_avatar(db, current_user, None)
         return user
 
     return current_user
 
 
 @router.get("/me/activity", response_model=list[ActivityLogResponse])
-def get_activity(
+async def get_activity(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     skip: int = 0,
     limit: int = 20,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Get recent user activity from audit logs"""
-    activities = get_user_activity(db, current_user.id, skip=skip, limit=limit)
+    activities = await get_user_activity(db, current_user.id, skip=skip, limit=limit)
     return activities

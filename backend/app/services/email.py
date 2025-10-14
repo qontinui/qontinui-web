@@ -1,316 +1,145 @@
+"""
+Email service - facade for email operations.
+
+This module provides backwards-compatible email service using the new
+refactored architecture with separated concerns:
+- EmailTransportService: SMTP sending
+- EmailTemplateService: Template rendering
+- Email Composers: Type-specific email composition
+"""
+
 import logging
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
-import aiosmtplib
-
-from app.core.config import settings
+from app.models.user import User
+from app.services.email.email_composers import (
+    BetaWelcomeEmailComposer,
+    EmailVerificationComposer,
+    PasswordResetEmailComposer,
+    ResendVerificationEmailComposer,
+)
+from app.services.email.email_template_service import EmailTemplateService
+from app.services.email.email_transport_service import EmailTransportService
 
 logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    @staticmethod
+    """
+    Email service facade providing backwards-compatible interface.
+
+    Uses composition with separated services for transport, templates, and composers.
+    """
+
+    def __init__(self):
+        """Initialize email service with its dependencies."""
+        self.transport = EmailTransportService()
+        self.templates = EmailTemplateService()
+
+        # Initialize composers with dependencies
+        self.beta_welcome_composer = BetaWelcomeEmailComposer(
+            self.templates, self.transport
+        )
+        self.password_reset_composer = PasswordResetEmailComposer(
+            self.templates, self.transport
+        )
+        self.email_verification_composer = EmailVerificationComposer(
+            self.templates, self.transport
+        )
+        self.resend_verification_composer = ResendVerificationEmailComposer(
+            self.templates, self.transport
+        )
+
     async def send_email(
-        to_email: str, subject: str, body: str, html_body: str | None = None
+        self, to_email: str, subject: str, body: str, html_body: str | None = None
     ) -> bool:
-        """Send an email using SMTP"""
+        """
+        Send an email using SMTP (backwards-compatible method).
 
-        # Check if email is configured
-        if not settings.SMTP_HOST:
-            logger.warning("SMTP not configured, skipping email send")
-            logger.info(f"Would send email to {to_email}: {subject}")
-            return False
+        Args:
+            to_email: Recipient email address
+            subject: Email subject
+            body: Plain text body
+            html_body: HTML body (optional)
 
-        try:
-            message = MIMEMultipart("alternative")
-            message["Subject"] = subject
-            message["From"] = settings.SMTP_FROM_EMAIL
-            message["To"] = to_email
+        Returns:
+            True if email sent successfully
+        """
+        return await self.transport.send_email(
+            to_email=to_email,
+            subject=subject,
+            text_body=body,
+            html_body=html_body,
+        )
 
-            # Add plain text part
-            text_part = MIMEText(body, "plain")
-            message.attach(text_part)
-
-            # Add HTML part if provided
-            if html_body:
-                html_part = MIMEText(html_body, "html")
-                message.attach(html_part)
-
-            # Send email
-            await aiosmtplib.send(
-                message,
-                hostname=settings.SMTP_HOST,
-                port=settings.SMTP_PORT,
-                start_tls=settings.SMTP_TLS,
-                username=settings.SMTP_USER if settings.SMTP_USER else None,
-                password=settings.SMTP_PASSWORD if settings.SMTP_PASSWORD else None,
-            )
-
-            logger.info(f"Email sent successfully to {to_email}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {str(e)}")
-            return False
-
-    @staticmethod
     async def send_beta_welcome_email(
-        to_email: str, username: str, temp_password: str
+        self, to_email: str, username: str, temp_password: str
     ) -> bool:
-        """Send welcome email to beta users"""
+        """
+        Send welcome email to beta users.
 
-        subject = "🎉 Welcome to Qontinui Beta!"
+        Args:
+            to_email: Recipient email
+            username: User's username
+            temp_password: Temporary password
 
-        body = f"""Welcome to Qontinui Beta!
+        Returns:
+            True if email sent successfully
+        """
+        # Create a minimal User object for the composer
+        user = User(email=to_email, username=username)
+        return await self.beta_welcome_composer.send(user, temp_password)
 
-Thank you for joining our beta program. Your account has been created with the following credentials:
-
-Username: {username}
-Temporary Password: {temp_password}
-
-Please log in at: {settings.FRONTEND_URL}/login
-
-For security reasons, we recommend changing your password after your first login.
-
-If you have any questions or feedback, please don't hesitate to reach out.
-
-Best regards,
-The Qontinui Team
-"""
-
-        html_body = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; }}
-        .content {{ background: #f7f7f7; padding: 30px; border-radius: 0 0 10px 10px; }}
-        .credentials {{ background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-        .button {{ display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
-        code {{ background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: monospace; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🎉 Welcome to Qontinui Beta!</h1>
-        </div>
-        <div class="content">
-            <p>Thank you for joining our beta program! We're excited to have you on board.</p>
-
-            <div class="credentials">
-                <h3>Your Login Credentials</h3>
-                <p><strong>Username:</strong> <code>{username}</code></p>
-                <p><strong>Temporary Password:</strong> <code>{temp_password}</code></p>
-            </div>
-
-            <p>For security reasons, we recommend changing your password after your first login.</p>
-
-            <a href="{settings.FRONTEND_URL}/login" class="button">Login to Qontinui</a>
-
-            <p style="margin-top: 30px; color: #666;">
-                If you have any questions or feedback, please don't hesitate to reach out.<br><br>
-                Best regards,<br>
-                The Qontinui Team
-            </p>
-        </div>
-    </div>
-</body>
-</html>
-"""
-
-        return await EmailService.send_email(to_email, subject, body, html_body)
-
-    @staticmethod
     async def send_password_reset_email(
-        to_email: str, username: str, reset_token: str
+        self, to_email: str, username: str, reset_token: str
     ) -> bool:
-        """Send password reset email"""
+        """
+        Send password reset email.
 
-        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
-        subject = "Qontinui - Password Reset Request"
+        Args:
+            to_email: Recipient email
+            username: User's username
+            reset_token: Password reset token
 
-        body = f"""Password Reset Request
+        Returns:
+            True if email sent successfully
+        """
+        user = User(email=to_email, username=username)
+        return await self.password_reset_composer.send(user, reset_token)
 
-Hi {username},
-
-We received a request to reset your password. Click the link below to reset it:
-
-{reset_url}
-
-This link will expire in 1 hour.
-
-If you didn't request this, please ignore this email.
-
-Best regards,
-The Qontinui Team
-"""
-
-        html_body = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; }}
-        .content {{ background: #f7f7f7; padding: 30px; border-radius: 0 0 10px 10px; }}
-        .button {{ display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Password Reset Request</h1>
-        </div>
-        <div class="content">
-            <p>Hi {username},</p>
-            <p>We received a request to reset your password. Click the button below to reset it:</p>
-
-            <a href="{reset_url}" class="button">Reset Password</a>
-
-            <p style="margin-top: 30px; color: #666;">
-                This link will expire in 1 hour.<br><br>
-                If you didn't request this, please ignore this email.<br><br>
-                Best regards,<br>
-                The Qontinui Team
-            </p>
-        </div>
-    </div>
-</body>
-</html>
-"""
-
-        return await EmailService.send_email(to_email, subject, body, html_body)
-
-    @staticmethod
     async def send_verification_email(
-        to_email: str, username: str, verification_token: str
+        self, to_email: str, username: str, verification_token: str
     ) -> bool:
-        """Send email verification email"""
+        """
+        Send email verification email.
 
-        verify_url = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
-        subject = "Qontinui - Verify Your Email Address"
+        Args:
+            to_email: Recipient email
+            username: User's username
+            verification_token: Verification token
 
-        body = f"""Email Verification
+        Returns:
+            True if email sent successfully
+        """
+        user = User(email=to_email, username=username)
+        return await self.email_verification_composer.send(user, verification_token)
 
-Hi {username},
-
-Thank you for registering with Qontinui! Please verify your email address by clicking the link below:
-
-{verify_url}
-
-This link will expire in 24 hours.
-
-If you didn't create an account, please ignore this email.
-
-Best regards,
-The Qontinui Team
-"""
-
-        html_body = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; }}
-        .content {{ background: #f7f7f7; padding: 30px; border-radius: 0 0 10px 10px; }}
-        .button {{ display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
-        .icon {{ font-size: 48px; margin-bottom: 20px; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="icon">&#x2709;</div>
-            <h1>Verify Your Email Address</h1>
-        </div>
-        <div class="content">
-            <p>Hi {username},</p>
-            <p>Thank you for registering with Qontinui! We're excited to have you on board.</p>
-            <p>Please verify your email address by clicking the button below:</p>
-
-            <a href="{verify_url}" class="button">Verify Email Address</a>
-
-            <p style="margin-top: 30px; color: #666;">
-                This link will expire in 24 hours.<br><br>
-                If you didn't create an account, please ignore this email.<br><br>
-                Best regards,<br>
-                The Qontinui Team
-            </p>
-        </div>
-    </div>
-</body>
-</html>
-"""
-
-        return await EmailService.send_email(to_email, subject, body, html_body)
-
-    @staticmethod
     async def send_resend_verification_email(
-        to_email: str, username: str, verification_token: str
+        self, to_email: str, username: str, verification_token: str
     ) -> bool:
-        """Send resend verification email"""
+        """
+        Send resend verification email.
 
-        verify_url = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
-        subject = "Qontinui - Verify Your Email Address"
+        Args:
+            to_email: Recipient email
+            username: User's username
+            verification_token: Verification token
 
-        body = f"""Email Verification
-
-Hi {username},
-
-You requested a new verification link. Please verify your email address by clicking the link below:
-
-{verify_url}
-
-This link will expire in 24 hours.
-
-Best regards,
-The Qontinui Team
-"""
-
-        html_body = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; }}
-        .content {{ background: #f7f7f7; padding: 30px; border-radius: 0 0 10px 10px; }}
-        .button {{ display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
-        .icon {{ font-size: 48px; margin-bottom: 20px; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="icon">&#x2709;</div>
-            <h1>Verify Your Email Address</h1>
-        </div>
-        <div class="content">
-            <p>Hi {username},</p>
-            <p>You requested a new verification link. Please verify your email address by clicking the button below:</p>
-
-            <a href="{verify_url}" class="button">Verify Email Address</a>
-
-            <p style="margin-top: 30px; color: #666;">
-                This link will expire in 24 hours.<br><br>
-                Best regards,<br>
-                The Qontinui Team
-            </p>
-        </div>
-    </div>
-</body>
-</html>
-"""
-
-        return await EmailService.send_email(to_email, subject, body, html_body)
+        Returns:
+            True if email sent successfully
+        """
+        user = User(email=to_email, username=username)
+        return await self.resend_verification_composer.send(user, verification_token)
 
 
+# Create singleton instance (backwards compatibility)
 email_service = EmailService()

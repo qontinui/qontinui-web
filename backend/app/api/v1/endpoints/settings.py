@@ -3,9 +3,9 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_active_user, get_db
+from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.user import User
 from app.schemas.settings import (
     QontinuiSettings,
@@ -16,9 +16,9 @@ router = APIRouter()
 
 
 @router.get("/", response_model=QontinuiSettings)
-def get_settings(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+async def get_settings(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Get current Qontinui settings.
 
@@ -33,11 +33,11 @@ def get_settings(
 
 
 @router.put("/", response_model=QontinuiSettings)
-def update_settings(
+async def update_settings(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     settings_in: QontinuiSettingsUpdate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Update Qontinui settings.
 
@@ -61,9 +61,9 @@ def update_settings(
 
 
 @router.post("/reset", response_model=QontinuiSettings)
-def reset_settings(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+async def reset_settings(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Reset settings to default values."""
     from qontinui.config.qontinui_properties import QontinuiProperties
@@ -76,9 +76,9 @@ def reset_settings(
 
 
 @router.get("/export")
-def export_settings(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+async def export_settings(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
     format: str = "yaml",
 ) -> Any:
     """Export settings to YAML or JSON format."""
@@ -99,12 +99,12 @@ def export_settings(
 
 
 @router.post("/import")
-def import_settings(
+async def import_settings(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     content: str,
     format: str = "yaml",
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Import settings from YAML or JSON format."""
     import tempfile

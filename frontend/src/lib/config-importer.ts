@@ -15,6 +15,7 @@ interface Process {
   id: string;
   name: string;
   description: string;
+  category?: string;
   actions: Action[];
 }
 
@@ -35,7 +36,7 @@ interface State {
 
 interface Transition {
   id: string;
-  type: "FromTransition" | "ToTransition";
+  type: "OutgoingTransition" | "IncomingTransition";
   processes: string[];
   timeout: number;
   retryCount: number;
@@ -158,11 +159,14 @@ export class ConfigImporter {
       id: exportProcess.id,
       name: exportProcess.name,
       description: exportProcess.description || '',
-      actions: exportProcess.actions.map((action: any) => ({
-        id: action.id,
-        type: action.type,
-        config: this.importActionConfig(action.config, action)
-      }))
+      category: exportProcess.category, // Preserve category for folder organization
+      actions: Array.isArray(exportProcess.actions)
+        ? exportProcess.actions.map((action: any) => ({
+            id: action.id,
+            type: action.type,
+            config: this.importActionConfig(action.config, action)
+          }))
+        : []
     }));
   }
 
@@ -213,17 +217,20 @@ export class ConfigImporter {
     return exportStates.map(exportState => {
       // Update image usage for all patterns
       exportState.stateImages?.forEach((stateImage: any) => {
-        stateImage.patterns?.forEach((pattern: any) => {
-          const image = images.find(img => img.id === pattern.image);
-          if (image) {
-            image.usageCount++;
-            image.usedIn.push({
-              type: 'state',
-              id: exportState.id,
-              name: exportState.name
-            });
-          }
-        });
+        // Check if patterns exists and is an array before calling forEach
+        if (Array.isArray(stateImage.patterns)) {
+          stateImage.patterns.forEach((pattern: any) => {
+            const image = images.find(img => img.id === pattern.image);
+            if (image) {
+              image.usageCount++;
+              image.usedIn.push({
+                type: 'state',
+                id: exportState.id,
+                name: exportState.name
+              });
+            }
+          });
+        }
       });
 
       return {
@@ -264,22 +271,35 @@ export class ConfigImporter {
    */
   private importTransitions(exportTransitions: any[]): Transition[] {
     return exportTransitions.map(exportTransition => {
+      // Map export type names to internal type names
+      let type: "OutgoingTransition" | "IncomingTransition";
+      if (exportTransition.type === 'OutgoingTransition' || exportTransition.type === 'FromTransition') {
+        type = 'OutgoingTransition';
+      } else if (exportTransition.type === 'IncomingTransition' || exportTransition.type === 'ToTransition') {
+        type = 'IncomingTransition';
+      } else {
+        // Default fallback
+        type = exportTransition.type;
+      }
+
       const transition: Transition = {
         id: exportTransition.id,
-        type: exportTransition.type,
-        processes: exportTransition.processes,
+        type: type,
+        processes: Array.isArray(exportTransition.processes) ? exportTransition.processes : [],
         timeout: exportTransition.timeout,
         retryCount: exportTransition.retryCount
       };
 
-      if (exportTransition.type === 'FromTransition') {
+      if (type === 'OutgoingTransition') {
         transition.fromState = exportTransition.fromState;
         transition.toState = exportTransition.toState;
         transition.staysVisible = exportTransition.staysVisible;
-        transition.activateStates = exportTransition.activateStates;
-        transition.deactivateStates = exportTransition.deactivateStates;
-      } else if (exportTransition.type === 'ToTransition') {
+        transition.activateStates = Array.isArray(exportTransition.activateStates) ? exportTransition.activateStates : [];
+        transition.deactivateStates = Array.isArray(exportTransition.deactivateStates) ? exportTransition.deactivateStates : [];
+        transition.process = exportTransition.process || '';
+      } else if (type === 'IncomingTransition') {
         transition.toState = exportTransition.toState;
+        transition.process = exportTransition.process || '';
       }
 
       return transition;
@@ -300,22 +320,24 @@ export class ConfigImporter {
 
     // Check transition references
     transitions.forEach(transition => {
-      // Check process references
-      transition.processes.forEach(processId => {
-        if (!processIds.has(processId)) {
-          errors.push(`Transition ${transition.id} references unknown process: ${processId}`);
-        }
-      });
+      // Check process references - only if processes array exists
+      if (Array.isArray(transition.processes)) {
+        transition.processes.forEach(processId => {
+          if (!processIds.has(processId)) {
+            errors.push(`Transition ${transition.id} references unknown process: ${processId}`);
+          }
+        });
+      }
 
       // Check state references
-      if (transition.type === 'FromTransition') {
+      if (transition.type === 'OutgoingTransition') {
         if (transition.fromState && !stateIds.has(transition.fromState)) {
           errors.push(`Transition ${transition.id} references unknown fromState: ${transition.fromState}`);
         }
         if (transition.toState && !stateIds.has(transition.toState)) {
           errors.push(`Transition ${transition.id} references unknown toState: ${transition.toState}`);
         }
-      } else if (transition.type === 'ToTransition') {
+      } else if (transition.type === 'IncomingTransition') {
         if (transition.toState && !stateIds.has(transition.toState)) {
           errors.push(`Transition ${transition.id} references unknown toState: ${transition.toState}`);
         }
@@ -472,7 +494,7 @@ export class ConfigImporter {
       };
 
       // Update state references
-      if (transition.type === 'FromTransition') {
+      if (transition.type === 'OutgoingTransition') {
         if (transition.fromState) {
           updatedTransition.fromState = idMap.get(transition.fromState) || transition.fromState;
         }
@@ -489,7 +511,7 @@ export class ConfigImporter {
             idMap.get(sid) || sid
           );
         }
-      } else if (transition.type === 'ToTransition' && transition.toState) {
+      } else if (transition.type === 'IncomingTransition' && transition.toState) {
         updatedTransition.toState = idMap.get(transition.toState) || transition.toState;
       }
 

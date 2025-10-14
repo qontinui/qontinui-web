@@ -71,7 +71,7 @@ export function TransitionPropertiesPanel({
     if (transition.type !== "OutgoingTransition") return
 
     const key = type === "activate" ? "activateStates" : "deactivateStates"
-    const currentStates = transition[key]
+    const currentStates = Array.isArray(transition[key]) ? transition[key] : []
 
     if (!currentStates.includes(stateId)) {
       updateTransition({
@@ -85,8 +85,9 @@ export function TransitionPropertiesPanel({
     if (transition.type !== "OutgoingTransition") return
 
     const key = type === "activate" ? "activateStates" : "deactivateStates"
+    const currentStates = Array.isArray(transition[key]) ? transition[key] : []
     updateTransition({
-      [key]: transition[key].filter((id) => id !== stateId),
+      [key]: currentStates.filter((id) => id !== stateId),
     } as Partial<OutgoingTransition>)
   }
 
@@ -96,14 +97,17 @@ export function TransitionPropertiesPanel({
     })
   }
 
-  const availableStates = states.filter(
-    (state) =>
-      transition.type === "OutgoingTransition" &&
-      state.id !== transition.fromState &&
-      (selectedStateType === "activate"
-        ? !transition.activateStates.includes(state.id) && !transition.deactivateStates.includes(state.id)
-        : !transition.deactivateStates.includes(state.id) && !transition.activateStates.includes(state.id))
-  )
+  const availableStates = states.filter((state) => {
+    if (transition.type !== "OutgoingTransition") return false
+    if (state.id === transition.fromState) return false
+
+    const activateStates = Array.isArray(transition.activateStates) ? transition.activateStates : []
+    const deactivateStates = Array.isArray(transition.deactivateStates) ? transition.deactivateStates : []
+
+    return selectedStateType === "activate"
+      ? !activateStates.includes(state.id) && !deactivateStates.includes(state.id)
+      : !deactivateStates.includes(state.id) && !activateStates.includes(state.id)
+  })
 
   return (
     <Card className="border-gray-700 bg-[#27272A] h-full flex flex-col">
@@ -187,7 +191,7 @@ export function TransitionPropertiesPanel({
                   </DialogContent>
                 </Dialog>
               </div>
-              {transition.activateStates.length === 0 ? (
+              {(!Array.isArray(transition.activateStates) || transition.activateStates.length === 0) ? (
                 <div className="p-2 bg-gray-800 rounded text-sm text-gray-500 text-center">
                   No states to activate
                 </div>
@@ -273,7 +277,7 @@ export function TransitionPropertiesPanel({
                   </DialogContent>
                 </Dialog>
               </div>
-              {transition.deactivateStates.length === 0 ? (
+              {(!Array.isArray(transition.deactivateStates) || transition.deactivateStates.length === 0) ? (
                 <div className="p-2 bg-gray-800 rounded text-sm text-gray-500 text-center">
                   No states to deactivate
                 </div>

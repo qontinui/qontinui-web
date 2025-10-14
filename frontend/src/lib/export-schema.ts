@@ -15,6 +15,8 @@ export interface QontinuiConfig {
   transitions: Transition[];
   categories: string[]; // List of process categories
   settings?: ConfigSettings;
+  schedules?: Schedule[]; // Automated process schedules
+  executionRecords?: ExecutionRecord[]; // Schedule execution history
 }
 
 export interface ConfigMetadata {
@@ -531,6 +533,44 @@ export interface PerformanceSettings {
   memoryLimit?: number; // MB
   cacheImages: boolean;
   optimizeSearch: boolean;
+}
+
+// Scheduler interfaces
+export type TriggerType = 'TIME' | 'INTERVAL' | 'STATE' | 'MANUAL';
+export type CheckMode = 'CHECK_ALL' | 'CHECK_INACTIVE_ONLY';
+export type ScheduleType = 'FIXED_RATE' | 'FIXED_DELAY';
+
+export interface Schedule {
+  id: string;
+  name: string;
+  processId: string;
+  description?: string;
+  triggerType: TriggerType;
+  checkMode: CheckMode;
+  scheduleType: ScheduleType;
+  cronExpression?: string;
+  intervalSeconds?: number;
+  triggerState?: string;
+  maxIterations?: number;
+  stateCheckDelaySeconds: number;
+  stateRebuildDelaySeconds: number;
+  failureThreshold: number;
+  enabled: boolean;
+  createdAt?: string; // ISO 8601 date string
+  lastExecutedAt?: string; // ISO 8601 date string
+  projectName?: string;
+}
+
+export interface ExecutionRecord {
+  id: string;
+  scheduleId: string;
+  processId: string;
+  startTime: string; // ISO 8601 date string
+  endTime?: string; // ISO 8601 date string
+  success: boolean;
+  iterationCount: number;
+  errors: string[];
+  metadata: Record<string, any>;
 }
 
 // Validation schema using JSON Schema format

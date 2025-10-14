@@ -243,11 +243,84 @@ export interface Screenshot {
   associatedStates?: string[]
 }
 
+// Scheduler types
+export type TriggerType = "TIME" | "INTERVAL" | "STATE" | "MANUAL"
+export type CheckMode = "CHECK_ALL" | "CHECK_INACTIVE_ONLY"
+export type ScheduleType = "FIXED_RATE" | "FIXED_DELAY"
+
+export interface Schedule {
+  id: string
+  name: string
+  processId: string
+  description?: string
+  triggerType: TriggerType
+  checkMode: CheckMode
+  scheduleType: ScheduleType
+
+  // Time-based triggers
+  cronExpression?: string
+
+  // Interval-based triggers
+  intervalSeconds?: number
+
+  // State-based triggers
+  triggerState?: string
+
+  // Execution limits
+  maxIterations?: number
+
+  // State checking configuration
+  stateCheckDelaySeconds: number
+  stateRebuildDelaySeconds: number
+  failureThreshold: number
+
+  // Execution control
+  enabled: boolean
+
+  // Metadata
+  createdAt?: Date
+  lastExecutedAt?: Date
+  projectName?: string
+}
+
+export interface ExecutionRecord {
+  id: string
+  scheduleId: string
+  processId: string
+  startTime: Date
+  endTime?: Date
+  success: boolean
+  iterationCount: number
+  errors: string[]
+  metadata: Record<string, any>
+}
+
+export interface StateCheckResult {
+  scheduleId: string
+  scheduleName: string
+  checkTime: Date
+  allStatesPresent: boolean
+  missingStates: string[]
+  failureStreak: number
+  exceededThreshold: boolean
+  action: "NONE" | "WAIT" | "REBUILD"
+}
+
+export interface SchedulerStatistics {
+  totalSchedules: number
+  activeSchedules: number
+  totalExecutions: number
+  successfulExecutions: number
+  failedExecutions: number
+  averageIterationCount: number
+}
+
 // Context type
 export interface AutomationContextType {
   // Project
   projectName: string
   setProjectName: (name: string) => void
+  renameProject: (newName: string) => Promise<void>
 
   // Process management
   processes: Process[]
@@ -302,6 +375,17 @@ export interface AutomationContextType {
   // Settings management
   settings: ProjectSettings
   updateSettings: (settings: ProjectSettings) => void
+
+  // Scheduler management
+  schedules: Schedule[]
+  addSchedule: (schedule: Schedule) => void
+  updateSchedule: (schedule: Schedule) => void
+  deleteSchedule: (scheduleId: string) => void
+  getSchedulerStatistics: () => SchedulerStatistics
+
+  // Execution history
+  executionRecords: ExecutionRecord[]
+  getScheduleExecutions: (scheduleId: string) => ExecutionRecord[]
 
   // Configuration
   getConfiguration: () => any

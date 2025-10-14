@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowRight, Zap, Brain, Target, X, Check, LogIn } from "lucide-react"
 import { AuthDialog } from "@/components/auth-dialog"
 import { AuthProvider, useAuth } from "@/contexts/auth-context"
+import { Footer } from "@/components/marketing/footer"
 import { toast } from "sonner"
 
 function LandingContent() {
@@ -257,6 +258,9 @@ function LandingContent() {
         onOpenChange={setAuthDialogOpen}
         defaultTab={signupMode ? "signup" : "signin"}
       />
+
+      {/* Footer */}
+      <Footer />
     </div>
   )
 }

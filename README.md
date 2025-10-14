@@ -123,6 +123,18 @@ cd frontend
 npm test
 ```
 
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+Please note that this project is released with a [Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
+
 ## License
 
-This is proprietary software. All rights reserved.
+This is proprietary software. Copyright (c) 2025 Joshua Spinak. All rights reserved.
+
+See [LICENSE](LICENSE) file for details.
+
+## Contact
+
+For questions or licensing inquiries, please contact jspinak@hotmail.com

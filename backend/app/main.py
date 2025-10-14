@@ -1,4 +1,3 @@
-import logging
 import time
 
 from fastapi import FastAPI
@@ -10,6 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.api import api_router
+from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.db.session import SessionLocal
@@ -23,12 +23,9 @@ from app.middleware.error_handler import (
 from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Configure structured logging
+configure_logging(environment=settings.ENVIRONMENT)
+logger = get_logger(__name__)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -110,26 +107,78 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 
 @app.on_event("startup")
-def startup_event():
+async def startup_event():
+    logger.info(
+        "application_starting",
+        version=settings.VERSION,
+        environment=settings.ENVIRONMENT,
+        project=settings.PROJECT_NAME,
+    )
+
+    # Initialize Redis connection
+    try:
+        from app.config.redis_config import RedisConfig
+
+        await RedisConfig.get_client()
+        logger.info("redis_initialized", status="connected")
+    except Exception as e:
+        logger.warning(
+            "redis_initialization_failed", error=str(e), note="Continuing without Redis"
+        )
+
     # Initialize database
     db = SessionLocal()
     init_db(db)
     db.close()
+    logger.info("database_initialized")
+
+    # Initialize ARQ connection pool
+    try:
+        from app.worker.arq_pool import get_arq_pool
+
+        await get_arq_pool()
+        logger.info("arq_pool_initialized", status="connected")
+    except Exception as e:
+        logger.warning(
+            "arq_initialization_failed",
+            error=str(e),
+            note="Continuing without task queue",
+        )
 
 
 @app.on_event("shutdown")
-def shutdown_event():
+async def shutdown_event():
+    logger.info("application_shutting_down")
+
+    # Close Redis connection
+    try:
+        from app.config.redis_config import RedisConfig
+
+        await RedisConfig.close()
+        logger.info("redis_closed")
+    except Exception as e:
+        logger.warning("redis_close_error", error=str(e))
+
+    # Close ARQ connection pool
+    try:
+        from app.worker.arq_pool import close_arq_pool
+
+        await close_arq_pool()
+        logger.info("arq_pool_closed")
+    except Exception as e:
+        logger.warning("arq_close_error", error=str(e))
+
     # Flush any pending metrics before shutdown
+    from app.db.session import AsyncSessionLocal
     from app.services.metrics_service import metrics_service
 
-    db = SessionLocal()
-    try:
-        metrics_service.force_flush(db)
-        logger.info("Flushed pending metrics on shutdown")
-    except Exception as e:
-        logger.error(f"Error flushing metrics on shutdown: {e}")
-    finally:
-        db.close()
+    if AsyncSessionLocal is not None:
+        async with AsyncSessionLocal() as db:
+            try:
+                await metrics_service.force_flush(db)
+                logger.info("metrics_flushed")
+            except Exception as e:
+                logger.error("error_flushing_metrics", error=str(e))
 
 
 @app.get("/")
@@ -147,17 +196,42 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
     }
 
-    # Check database connectivity
+    # Check async database connectivity
     try:
         from sqlalchemy import text
 
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
-        health_status["database"] = "connected"
+        from app.db.session import AsyncSessionLocal
+
+        if AsyncSessionLocal is not None:
+            async with AsyncSessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+            health_status["database"] = "connected"
+            health_status["database_driver"] = "asyncpg"
+            logger.debug("health_check_success", database="connected", driver="asyncpg")
+        else:
+            # Fall back to sync engine for SQLite
+            db = SessionLocal()
+            db.execute(text("SELECT 1"))
+            db.close()
+            health_status["database"] = "connected"
+            health_status["database_driver"] = "sync (SQLite)"
+            logger.debug("health_check_success", database="connected", driver="sync")
     except Exception as e:
         health_status["status"] = "degraded"
         health_status["database"] = f"error: {str(e)}"
+        logger.error("health_check_database_error", error=str(e))
+
+    # Check Redis connectivity
+    try:
+        from app.config.redis_config import RedisConfig
+
+        redis_client = await RedisConfig.get_client()
+        await redis_client.ping()
+        health_status["redis"] = "connected"
+        logger.debug("health_check_redis_success")
+    except Exception as e:
+        health_status["redis"] = f"error: {str(e)}"
+        logger.warning("health_check_redis_error", error=str(e))
 
     return health_status
 

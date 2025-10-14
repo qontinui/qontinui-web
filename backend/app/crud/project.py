@@ -1,35 +1,34 @@
 from fastapi import HTTPException, status
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.stripe_service import StripeService
 
 
-def get_project(db: Session, project_id: int) -> Project | None:
-    return db.query(Project).filter(Project.id == project_id).first()
+async def get_project(db: AsyncSession, project_id: int) -> Project | None:
+    result = await db.execute(select(Project).filter(Project.id == project_id))
+    return result.scalar_one_or_none()
 
 
-def get_projects_by_owner(
-    db: Session, owner_id: int, skip: int = 0, limit: int = 100
+async def get_projects_by_owner(
+    db: AsyncSession, owner_id: int, skip: int = 0, limit: int = 100
 ) -> list[Project]:
-    return (
-        db.query(Project)
-        .filter(Project.owner_id == owner_id)
-        .offset(skip)
-        .limit(limit)
-        .all()
+    result = await db.execute(
+        select(Project).filter(Project.owner_id == owner_id).offset(skip).limit(limit)
     )
+    return list(result.scalars().all())
 
 
-def create_project(
-    db: Session, project: ProjectCreate, owner_id: int, subscription_tier: str
+async def create_project(
+    db: AsyncSession, project: ProjectCreate, owner_id: int, subscription_tier: str
 ) -> Project:
     # Check if user has reached config limit
-    config_count = (
-        db.query(func.count(Project.id)).filter(Project.owner_id == owner_id).scalar()
+    count_result = await db.execute(
+        select(func.count(Project.id)).filter(Project.owner_id == owner_id)
     )
+    config_count = count_result.scalar()
 
     # Get tier limits
     limits = StripeService.get_tier_limits(subscription_tier)
@@ -49,13 +48,13 @@ def create_project(
         owner_id=owner_id,
     )
     db.add(db_project)
-    db.commit()
-    db.refresh(db_project)
+    await db.commit()
+    await db.refresh(db_project)
     return db_project
 
 
-def update_project(
-    db: Session, project: Project, project_update: ProjectUpdate
+async def update_project(
+    db: AsyncSession, project: Project, project_update: ProjectUpdate
 ) -> Project:
     update_data = project_update.dict(exclude_unset=True)
 
@@ -63,15 +62,15 @@ def update_project(
         setattr(project, field, value)
 
     db.add(project)
-    db.commit()
-    db.refresh(project)
+    await db.commit()
+    await db.refresh(project)
     return project
 
 
-def delete_project(db: Session, project_id: int) -> bool:
-    project = get_project(db, project_id)
+async def delete_project(db: AsyncSession, project_id: int) -> bool:
+    project = await get_project(db, project_id)
     if project:
-        db.delete(project)
-        db.commit()
+        await db.delete(project)
+        await db.commit()
         return True
     return False

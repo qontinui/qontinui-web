@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react"
 import { useLocalStorage } from "@/hooks/use-local-storage"
 import { ProcessManager } from "./process-manager"
 import { StateManager } from "./state-manager"
@@ -20,6 +20,9 @@ import type {
   ImageUsage,
   ActionHistory,
   Screenshot,
+  Schedule,
+  ExecutionRecord,
+  SchedulerStatistics,
 } from "./types"
 import type { ProjectSettings } from "@/types/project-settings"
 
@@ -44,6 +47,13 @@ export type {
   ImageUsage,
   ActionHistory,
   Screenshot,
+  Schedule,
+  ExecutionRecord,
+  TriggerType,
+  CheckMode,
+  ScheduleType,
+  StateCheckResult,
+  SchedulerStatistics,
 } from "./types"
 
 // Export utility classes
@@ -66,19 +76,31 @@ interface AutomationProviderProps {
 }
 
 export function AutomationProvider({ children }: AutomationProviderProps) {
-  // Clean up old settings on mount
+  // Track if we're in the middle of renaming to prevent premature reload
+  const isRenamingRef = useRef(false)
+
+  // Clean up old settings and categories on mount
   useEffect(() => {
     const oldSettings = localStorage.getItem('qontinui-settings')
     if (oldSettings) {
       console.log('Removing old settings, applying new defaults')
       localStorage.removeItem('qontinui-settings')
     }
+
+    // Remove old global categories key - categories are now per-project
+    const oldCategories = localStorage.getItem('qontinui-categories')
+    if (oldCategories) {
+      console.log('Removing old global categories - categories are now per-project')
+      localStorage.removeItem('qontinui-categories')
+    }
   }, [])
 
   // State for project metadata - using localStorage for persistence
   const [projectName, setProjectName] = useLocalStorage<string>('qontinui-project-name', 'Untitled Project')
-  const [categories, setCategories] = useLocalStorage<string[]>('qontinui-categories', [])
   const [lastSaved, setLastSaved] = useLocalStorage<string | null>('qontinui-lastSaved', null)
+
+  // Categories are now stored per-project in the database, not in global localStorage
+  const [categories, setCategories] = useState<string[]>([])
 
   // Settings are now per-project using the project name in the key
   const settingsKey = `qontinui-settings-v2-${projectName.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase()}`
@@ -136,10 +158,19 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   const [transitions, setTransitions] = useState<Transition[]>([])
   const [images, setImages] = useState<ImageAsset[]>([])
   const [screenshots, setScreenshots] = useState<Screenshot[]>([])
+  const [schedules, setSchedules] = useState<Schedule[]>([])
+  const [executionRecords, setExecutionRecords] = useState<ExecutionRecord[]>([])
 
   // Load all data from IndexedDB on mount and when project changes
   useEffect(() => {
     const loadProjectData = async () => {
+      // Skip loading if we're in the middle of a rename operation
+      if (isRenamingRef.current) {
+        console.log(`Skipping reload during rename operation for project: ${projectName}`)
+        isRenamingRef.current = false // Reset the flag
+        return
+      }
+
       console.log(`Loading data for project: ${projectName}`)
 
       // One-time migration: rename "bdo-mask" to "bdo" (only if not already migrated)
@@ -271,7 +302,17 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setImages(loadedImages)
       setScreenshots(loadedScreenshots)
 
-      console.log(`Loaded project data - Processes: ${loadedProcesses.length}, States: ${loadedStates.length}, Transitions: ${loadedTransitions.length}, Images: ${loadedImages.length}, Screenshots: ${loadedScreenshots.length}`)
+      // Extract unique categories from loaded processes
+      const uniqueCategories = Array.from(
+        new Set(
+          loadedProcesses
+            .map(p => p.category)
+            .filter((cat): cat is string => cat != null && cat !== '')
+        )
+      )
+      setCategories(uniqueCategories)
+
+      console.log(`Loaded project data - Processes: ${loadedProcesses.length}, States: ${loadedStates.length}, Transitions: ${loadedTransitions.length}, Images: ${loadedImages.length}, Screenshots: ${loadedScreenshots.length}, Categories: ${uniqueCategories.length}`)
     }
 
     loadProjectData()
@@ -611,6 +652,49 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     setCategories((prev) => prev.filter(c => c !== category))
   }, [])
 
+  // Scheduler management functions
+  const addSchedule = useCallback((schedule: Schedule) => {
+    const scheduleWithProject = { ...schedule, projectName }
+    setSchedules((prev) => [...prev, scheduleWithProject])
+    triggerSave()
+  }, [projectName, triggerSave])
+
+  const updateSchedule = useCallback((schedule: Schedule) => {
+    setSchedules((prev) => prev.map(s => s.id === schedule.id ? schedule : s))
+    triggerSave()
+  }, [triggerSave])
+
+  const deleteSchedule = useCallback((scheduleId: string) => {
+    setSchedules((prev) => prev.filter(s => s.id !== scheduleId))
+    // Also remove associated execution records
+    setExecutionRecords((prev) => prev.filter(r => r.scheduleId !== scheduleId))
+    triggerSave()
+  }, [triggerSave])
+
+  const getSchedulerStatistics = useCallback((): SchedulerStatistics => {
+    const totalSchedules = schedules.length
+    const activeSchedules = schedules.filter(s => s.enabled).length
+    const totalExecutions = executionRecords.length
+    const successfulExecutions = executionRecords.filter(r => r.success).length
+    const failedExecutions = executionRecords.filter(r => !r.success).length
+    const averageIterationCount = executionRecords.length > 0
+      ? executionRecords.reduce((sum, r) => sum + r.iterationCount, 0) / executionRecords.length
+      : 0
+
+    return {
+      totalSchedules,
+      activeSchedules,
+      totalExecutions,
+      successfulExecutions,
+      failedExecutions,
+      averageIterationCount,
+    }
+  }, [schedules, executionRecords])
+
+  const getScheduleExecutions = useCallback((scheduleId: string): ExecutionRecord[] => {
+    return executionRecords.filter(r => r.scheduleId === scheduleId)
+  }, [executionRecords])
+
   // Settings management functions
   const updateSettings = useCallback((newSettings: ProjectSettings) => {
     setSettings(newSettings)
@@ -628,12 +712,14 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       transitions,
       categories,
       settings,
+      schedules,
+      executionRecords,
       metadata: {
         lastSaved: lastSaved,
         version: "1.0.0"
       }
     }
-  }, [projectName, images, processes, states, transitions, categories, settings, lastSaved])
+  }, [projectName, images, processes, states, transitions, categories, settings, schedules, executionRecords, lastSaved])
 
   // Load a complete configuration
   const loadConfiguration = useCallback(async (config: any) => {
@@ -715,6 +801,28 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setCategories(config.categories)
     }
 
+    // Load schedules
+    if (config.schedules && Array.isArray(config.schedules)) {
+      const schedulesWithProject = config.schedules.map((s: Schedule) => ({
+        ...s,
+        projectName: newProjectName,
+        // Convert date strings back to Date objects if needed
+        createdAt: s.createdAt ? new Date(s.createdAt) : undefined,
+        lastExecutedAt: s.lastExecutedAt ? new Date(s.lastExecutedAt) : undefined,
+      }))
+      setSchedules(schedulesWithProject)
+    }
+
+    // Load execution records
+    if (config.executionRecords && Array.isArray(config.executionRecords)) {
+      const recordsWithDates = config.executionRecords.map((r: ExecutionRecord) => ({
+        ...r,
+        startTime: new Date(r.startTime),
+        endTime: r.endTime ? new Date(r.endTime) : undefined,
+      }))
+      setExecutionRecords(recordsWithDates)
+    }
+
     // Don't load settings from config - they should be local defaults
     // Settings are now per-project in localStorage, not saved in config
 
@@ -738,13 +846,48 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     setStates([])
     setTransitions([])
     setCategories([])
+    setSchedules([])
+    setExecutionRecords([])
     setLastSaved(null)
   }, [projectName, setProjectName, setCategories, setLastSaved])
+
+  // Rename project - updates both localStorage and IndexedDB
+  const renameProject = useCallback(async (newName: string) => {
+    const trimmedName = newName.trim()
+    if (!trimmedName || trimmedName === projectName) {
+      return
+    }
+
+    console.log(`Renaming project from "${projectName}" to "${trimmedName}"`)
+
+    // Rename all data in IndexedDB first
+    await projectDB.renameProject(projectName, trimmedName)
+    await screenshotDB.renameProject(projectName, trimmedName)
+
+    // Update in-memory state with new project names (without triggering reload)
+    setProcesses(prev => prev.map(p => ({ ...p, projectName: trimmedName })))
+    setStates(prev => prev.map(s => ({ ...s, projectName: trimmedName })))
+    setTransitions(prev => prev.map(t => ({ ...t, projectName: trimmedName })))
+    setImages(prev => prev.map(i => ({ ...i, projectName: trimmedName })))
+    setScreenshots(prev => prev.map(s => ({ ...s, projectName: trimmedName })))
+
+    // Set flag to prevent useEffect from reloading when projectName changes
+    isRenamingRef.current = true
+
+    // Update the project name in localStorage (this will trigger useEffect, but we'll skip the reload)
+    setProjectName(trimmedName)
+
+    console.log(`Project renamed successfully to "${trimmedName}"`)
+
+    // Trigger save
+    triggerSave()
+  }, [projectName, setProjectName, triggerSave])
 
   const contextValue: AutomationContextType = {
     // Project
     projectName,
     setProjectName,
+    renameProject,
 
     // Process management
     processes,
@@ -791,6 +934,17 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     categories,
     addCategory,
     deleteCategory,
+
+    // Scheduler management
+    schedules,
+    addSchedule,
+    updateSchedule,
+    deleteSchedule,
+    getSchedulerStatistics,
+
+    // Execution history
+    executionRecords,
+    getScheduleExecutions,
 
     // Settings management
     settings,

@@ -1,4 +1,7 @@
 import { TokenManager } from './auth/token-manager';
+import { ApiConfig } from './api-config';
+import { csrfService } from './csrf-service';
+import { RetryStrategy } from './retry-strategy';
 
 export interface HttpOptions extends RequestInit {
   skipAuth?: boolean;
@@ -7,31 +10,13 @@ export interface HttpOptions extends RequestInit {
 
 export class HttpClient {
   private tokenManager: TokenManager;
-  private csrfToken: string | null = null;
+  private retryStrategy: RetryStrategy;
   private refreshPromise: Promise<boolean> | null = null;
   private onSessionExpired?: () => void;
 
-  constructor(tokenManager: TokenManager) {
+  constructor(tokenManager: TokenManager, retryStrategy?: RetryStrategy) {
     this.tokenManager = tokenManager;
-    this.initializeCSRF();
-  }
-
-  private initializeCSRF(): void {
-    if (typeof window === 'undefined') return;
-
-    try {
-      const metaTag = document.querySelector('meta[name="csrf-token"]');
-      if (metaTag) {
-        this.csrfToken = metaTag.getAttribute('content');
-      } else {
-        const match = document.cookie.match(/csrf_token=([^;]+)/);
-        if (match) {
-          this.csrfToken = match[1];
-        }
-      }
-    } catch (error) {
-      console.warn('CSRF token not found');
-    }
+    this.retryStrategy = retryStrategy || new RetryStrategy();
   }
 
   setSessionExpiredHandler(handler: () => void): void {
@@ -40,15 +25,59 @@ export class HttpClient {
 
   async fetch(url: string, options: HttpOptions = {}): Promise<Response> {
     const { skipAuth = false, maxRetries = 3, ...fetchOptions } = options;
-    return this.fetchWithRetry(url, fetchOptions, skipAuth, 1, maxRetries);
+
+    // Override retry strategy max retries if specified
+    if (maxRetries !== 3) {
+      this.retryStrategy = new RetryStrategy({ maxRetries });
+    }
+
+    return this.executeRequestWithRetry(url, fetchOptions, skipAuth);
   }
 
-  private async fetchWithRetry(
+  private async executeRequestWithRetry(
     url: string,
     options: RequestInit,
     skipAuth: boolean,
-    attempt: number,
-    maxRetries: number
+    attempt: number = 1
+  ): Promise<Response> {
+    // Execute single request
+    const response = await this.executeSingleRequest(url, options, skipAuth);
+
+    // Handle 401 Unauthorized with token refresh
+    if (response.status === 401 && !skipAuth && attempt === 1) {
+      console.warn('[HttpClient] Received 401, attempting token refresh...');
+      const refreshed = await this.refreshAccessToken();
+      if (refreshed) {
+        console.log('[HttpClient] Token refresh successful, retrying request');
+        return this.executeSingleRequest(url, options, skipAuth);
+      } else {
+        // Only trigger session expired if we truly have no valid tokens
+        const hasRefreshToken = !!this.tokenManager.getRefreshToken();
+        if (!hasRefreshToken && this.onSessionExpired) {
+          console.error('[HttpClient] No refresh token available - session truly expired');
+          this.onSessionExpired();
+        } else {
+          console.warn('[HttpClient] Token refresh failed but still have refresh token - may be temporary issue');
+        }
+        return response;
+      }
+    }
+
+    // Use RetryStrategy for rate limiting and server errors
+    if (response.status === 429 || response.status >= 500) {
+      return this.retryStrategy.executeWithRetry(
+        () => this.executeSingleRequest(url, options, skipAuth),
+        attempt
+      );
+    }
+
+    return response;
+  }
+
+  private async executeSingleRequest(
+    url: string,
+    options: RequestInit,
+    skipAuth: boolean
   ): Promise<Response> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -62,8 +91,10 @@ export class HttpClient {
       }
     }
 
-    if (this.csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method || 'GET')) {
-      headers['X-CSRF-Token'] = this.csrfToken;
+    // Add CSRF token for state-changing requests
+    const csrfToken = csrfService.getToken();
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method || 'GET')) {
+      headers['X-CSRF-Token'] = csrfToken;
     }
 
     const controller = new AbortController();
@@ -78,45 +109,6 @@ export class HttpClient {
       });
 
       clearTimeout(timeoutId);
-
-      // Handle 401 Unauthorized
-      if (response.status === 401 && !skipAuth && attempt === 1) {
-        console.warn('[HttpClient] Received 401, attempting token refresh...');
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed) {
-          console.log('[HttpClient] Token refresh successful, retrying request');
-          return this.fetchWithRetry(url, options, skipAuth, attempt + 1, maxRetries);
-        } else {
-          // Only trigger session expired if we truly have no valid tokens
-          // (refresh failed because tokens are invalid, not network/server issues)
-          const hasRefreshToken = !!this.tokenManager.getRefreshToken();
-          if (!hasRefreshToken && this.onSessionExpired) {
-            console.error('[HttpClient] No refresh token available - session truly expired');
-            this.onSessionExpired();
-          } else {
-            console.warn('[HttpClient] Token refresh failed but still have refresh token - may be temporary issue');
-          }
-        }
-      }
-
-      // Handle rate limiting
-      if (response.status === 429 && attempt <= maxRetries) {
-        const retryAfter = response.headers.get('Retry-After');
-        const retryAfterSeconds = retryAfter ? parseInt(retryAfter) : 60;
-
-        console.warn(`Rate limited. Retrying after ${retryAfterSeconds} seconds...`);
-        await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
-        return this.fetchWithRetry(url, options, skipAuth, attempt + 1, maxRetries);
-      }
-
-      // Handle server errors with retry
-      if (response.status >= 500 && attempt <= maxRetries) {
-        const backoffTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-        console.warn(`Server error. Retrying in ${backoffTime}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, backoffTime));
-        return this.fetchWithRetry(url, options, skipAuth, attempt + 1, maxRetries);
-      }
-
       return response;
     } catch (error: any) {
       clearTimeout(timeoutId);
@@ -149,7 +141,9 @@ export class HttpClient {
     if (!refreshToken) return false;
 
     try {
-      const response = await fetch('/auth/refresh', {
+      console.log('[HttpClient] Refreshing token at:', ApiConfig.AUTH_REFRESH);
+
+      const response = await fetch(ApiConfig.AUTH_REFRESH, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -160,11 +154,14 @@ export class HttpClient {
 
       if (response.ok) {
         const tokens = await response.json();
+        console.log('[HttpClient] Token refresh successful');
         this.tokenManager.setTokens(tokens);
         return true;
+      } else {
+        console.error('[HttpClient] Token refresh failed with status:', response.status);
       }
     } catch (error) {
-      console.error('Failed to refresh token:', error);
+      console.error('[HttpClient] Failed to refresh token:', error);
     }
 
     this.tokenManager.clearTokens();

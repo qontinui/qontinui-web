@@ -1,8 +1,8 @@
 from datetime import datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.storage_usage import StorageUsage
 
@@ -39,8 +39,8 @@ class StorageService:
         )
 
     @staticmethod
-    def track_upload(
-        db: Session,
+    async def track_upload(
+        db: AsyncSession,
         user_id: int,
         file_path: str,
         file_size_bytes: int,
@@ -70,12 +70,12 @@ class StorageService:
             created_at=datetime.utcnow(),
         )
         db.add(storage_record)
-        db.commit()
-        db.refresh(storage_record)
+        await db.commit()
+        await db.refresh(storage_record)
         return storage_record
 
     @staticmethod
-    def get_user_storage(db: Session, user_id: int) -> dict:
+    async def get_user_storage(db: AsyncSession, user_id: int) -> dict:
         """
         Calculate total storage usage for a user.
 
@@ -88,23 +88,25 @@ class StorageService:
             - used_bytes: Total bytes used
             - files_count: Number of files
         """
-        result = (
-            db.query(
+        result = await db.execute(
+            select(
                 func.sum(StorageUsage.file_size).label("total_bytes"),
                 func.count(StorageUsage.id).label("files_count"),
-            )
-            .filter(StorageUsage.user_id == user_id)
-            .first()
+            ).filter(StorageUsage.user_id == user_id)
         )
+        row = result.one_or_none()
 
         return {
-            "used_bytes": int(result.total_bytes or 0),
-            "files_count": int(result.files_count or 0),
+            "used_bytes": int(row.total_bytes or 0) if row else 0,
+            "files_count": int(row.files_count or 0) if row else 0,
         }
 
     @staticmethod
-    def check_quota(
-        db: Session, user_id: int, subscription_tier: str, additional_bytes: int = 0
+    async def check_quota(
+        db: AsyncSession,
+        user_id: int,
+        subscription_tier: str,
+        additional_bytes: int = 0,
     ) -> dict:
         """
         Check if user is within storage quota.
@@ -126,7 +128,7 @@ class StorageService:
         Raises:
             StorageQuotaExceeded: If the additional bytes would exceed quota
         """
-        storage_info = StorageService.get_user_storage(db, user_id)
+        storage_info = await StorageService.get_user_storage(db, user_id)
         quota_bytes = StorageService.get_quota_for_tier(subscription_tier)
         used_bytes = storage_info["used_bytes"]
         total_with_new = used_bytes + additional_bytes
@@ -148,7 +150,9 @@ class StorageService:
         }
 
     @staticmethod
-    def delete_file_record(db: Session, file_path: str, user_id: int) -> bool:
+    async def delete_file_record(
+        db: AsyncSession, file_path: str, user_id: int
+    ) -> bool:
         """
         Delete a storage usage record when a file is removed.
 
@@ -160,22 +164,21 @@ class StorageService:
         Returns:
             True if deleted, False if not found
         """
-        record = (
-            db.query(StorageUsage)
-            .filter(
+        result = await db.execute(
+            select(StorageUsage).filter(
                 StorageUsage.file_path == file_path, StorageUsage.user_id == user_id
             )
-            .first()
         )
+        record = result.scalar_one_or_none()
 
         if record:
-            db.delete(record)
-            db.commit()
+            await db.delete(record)
+            await db.commit()
             return True
         return False
 
     @staticmethod
-    def get_storage_by_type(db: Session, user_id: int) -> dict:
+    async def get_storage_by_type(db: AsyncSession, user_id: int) -> dict:
         """
         Get storage breakdown by file type.
 
@@ -186,14 +189,14 @@ class StorageService:
         Returns:
             Dictionary mapping file types to bytes used
         """
-        results = (
-            db.query(
+        result = await db.execute(
+            select(
                 StorageUsage.file_type,
                 func.sum(StorageUsage.file_size).label("total_bytes"),
             )
             .filter(StorageUsage.user_id == user_id)
             .group_by(StorageUsage.file_type)
-            .all()
         )
+        rows = result.all()
 
-        return {row.file_type: int(row.total_bytes) for row in results}
+        return {row.file_type: int(row.total_bytes) for row in rows}

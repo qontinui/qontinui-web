@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { GoogleAnalytics } from '@next/third-parties/google';
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/auth-context";
+import { QueryProvider } from "@/lib/providers/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { SessionTimeoutWarning } from "@/components/session-timeout-warning";
 import { OfflineIndicator } from "@/components/offline-indicator";
@@ -41,14 +42,16 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ErrorBoundary>
-          <AuthProvider>
-            <ActivityTracker />
-            <BetaBanner />
-            {children}
-            <SessionTimeoutWarning />
-            <OfflineIndicator />
-            <OnboardingTour />
-          </AuthProvider>
+          <QueryProvider>
+            <AuthProvider>
+              <ActivityTracker />
+              <BetaBanner />
+              {children}
+              <SessionTimeoutWarning />
+              <OfflineIndicator />
+              <OnboardingTour />
+            </AuthProvider>
+          </QueryProvider>
         </ErrorBoundary>
         <Toaster
           theme="dark"

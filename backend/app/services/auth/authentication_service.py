@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.services.auth.password_service import password_service
@@ -12,14 +12,14 @@ class AuthenticationService:
         self.token_service = token_service
         self.blacklist_service = token_blacklist_service
 
-    def authenticate_user(
-        self, db: Session, username: str, password: str
+    async def authenticate_user(
+        self, db: AsyncSession, username: str, password: str
     ) -> User | None:
         from app.crud.user import get_user_by_email, get_user_by_username
 
-        user = get_user_by_username(db, username)
+        user = await get_user_by_username(db, username)
         if not user:
-            user = get_user_by_email(db, username)
+            user = await get_user_by_email(db, username)
 
         if not user:
             return None

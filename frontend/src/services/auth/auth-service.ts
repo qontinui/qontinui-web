@@ -1,6 +1,7 @@
 import { TokenResponse, LoginRequest, RegisterRequest, User } from '@/types/auth-types';
 import { TokenManager } from './token-manager';
 import { TokenRefreshService } from './token-refresh-service';
+import { ApiConfig } from '../api-config';
 
 /**
  * AuthService - Single Responsibility: Handle authentication operations
@@ -10,12 +11,10 @@ import { TokenRefreshService } from './token-refresh-service';
 export class AuthService {
   public tokenManager: TokenManager;
   private refreshService: TokenRefreshService;
-  private apiUrl: string;
 
-  constructor(tokenManager: TokenManager, refreshService: TokenRefreshService, apiUrl: string) {
+  constructor(tokenManager: TokenManager, refreshService: TokenRefreshService) {
     this.tokenManager = tokenManager;
     this.refreshService = refreshService;
-    this.apiUrl = apiUrl;
   }
 
   /**
@@ -26,9 +25,9 @@ export class AuthService {
     formData.append('username', credentials.username);
     formData.append('password', credentials.password);
 
-    console.log('[AuthService] Attempting login to:', `${this.apiUrl}/api/v1/auth/login`);
+    console.log('[AuthService] Attempting login to:', ApiConfig.AUTH_LOGIN);
 
-    const response = await fetch(`${this.apiUrl}/api/v1/auth/login`, {
+    const response = await fetch(ApiConfig.AUTH_LOGIN, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -54,7 +53,7 @@ export class AuthService {
    * Register new user
    */
   async register(data: RegisterRequest): Promise<User> {
-    const response = await fetch(`${this.apiUrl}/api/v1/auth/register`, {
+    const response = await fetch(ApiConfig.AUTH_REGISTER, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -78,7 +77,7 @@ export class AuthService {
     try {
       const accessToken = this.tokenManager.getAccessToken();
       if (accessToken) {
-        await fetch(`${this.apiUrl}/api/v1/auth/logout`, {
+        await fetch(ApiConfig.AUTH_LOGOUT, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -99,10 +98,10 @@ export class AuthService {
    */
   async getCurrentUser(): Promise<User> {
     const accessToken = this.tokenManager.getAccessToken();
-    console.log('[AuthService] Getting current user from:', `${this.apiUrl}/api/v1/users/me`);
+    console.log('[AuthService] Getting current user from:', ApiConfig.USERS_ME);
     console.log('[AuthService] Access token:', accessToken?.substring(0, 20) + '...');
 
-    const response = await fetch(`${this.apiUrl}/api/v1/users/me`, {
+    const response = await fetch(ApiConfig.USERS_ME, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
