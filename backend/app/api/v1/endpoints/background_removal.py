@@ -5,7 +5,6 @@ Background Removal API endpoint
 import base64
 import logging
 
-import cv2
 import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -15,6 +14,17 @@ from app.services.background_removal_service import BackgroundRemovalService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Try to import cv2, but make it optional
+try:
+    import cv2
+
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    logger.warning(
+        "opencv-python not installed - background removal endpoint will be disabled"
+    )
 
 
 class BackgroundRemovalConfig(BaseModel):
@@ -95,6 +105,12 @@ async def remove_background(request: RemoveBackgroundRequest):
     Raises:
         HTTPException: If processing fails or invalid data provided
     """
+    if not CV2_AVAILABLE:
+        raise HTTPException(
+            status_code=501,
+            detail="Background removal is not available. OpenCV (opencv-python) is not installed.",
+        )
+
     try:
         if not request.screenshots:
             raise HTTPException(status_code=400, detail="No screenshots provided")
