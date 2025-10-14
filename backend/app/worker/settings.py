@@ -31,7 +31,6 @@ class WorkerSettings:
     # Task functions
     from app.worker.tasks import (
         cleanup_old_data_task,
-        process_image_task,
         send_analytics_report_task,
         send_email_task,
         send_password_reset_email_task,
@@ -42,12 +41,27 @@ class WorkerSettings:
         send_email_task,
         send_verification_email_task,
         send_password_reset_email_task,
-        process_image_task,
         send_analytics_report_task,
         cleanup_old_data_task,
     ]
 
-    # Cron jobs (optional) - runs cleanup daily at 2 AM
+    # Cron jobs - Enable these when Redis is deployed
+    # Runs cleanup daily at 2 AM UTC
+    # Runs weekly admin report on Monday at 9 AM UTC
     cron_jobs = [
-        # ("cleanup_old_data_task", cleanup_old_data_task, hour=2, minute=0),
+        # Daily cleanup of old audit logs and metrics (keeps last 90 days)
+        # {
+        #     "function": cleanup_old_data_task,
+        #     "hour": 2,
+        #     "minute": 0,
+        #     "keep_result_forever": True,
+        # },
+        # Weekly analytics report for admin (user_id=1)
+        # {
+        #     "function": send_analytics_report_task,
+        #     "kwargs": {"user_id": 1, "report_type": "weekly"},
+        #     "weekday": 1,  # Monday
+        #     "hour": 9,
+        #     "minute": 0,
+        # },
     ]
