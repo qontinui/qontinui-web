@@ -4,6 +4,7 @@ from app.api.v1.endpoints import (
     admin,
     analytics,
     auth,
+    background_removal,
     billing,
     export,
     pattern_optimization,
@@ -19,6 +20,7 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(export.router, prefix="/projects", tags=["export"])
 api_router.include_router(pattern_optimization.router, tags=["pattern-optimization"])
+api_router.include_router(background_removal.router, tags=["background-removal"])
 api_router.include_router(analytics.router, tags=["analytics"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
 api_router.include_router(billing.router, prefix="/billing", tags=["billing"])

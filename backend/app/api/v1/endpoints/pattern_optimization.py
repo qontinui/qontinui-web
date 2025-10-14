@@ -1,13 +1,15 @@
-import base64
-import io
 import logging
-import uuid
 from typing import Any
 
-import numpy as np
 from fastapi import APIRouter, HTTPException
-from PIL import Image
 from pydantic import BaseModel
+
+from app.services.pattern_optimization_service import (
+    PatternOptimizationService,
+)
+from app.services.pattern_optimization_service import (
+    Region as ServiceRegion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,13 +17,21 @@ router = APIRouter()
 
 
 class Region(BaseModel):
+    """Region coordinates for pattern extraction."""
+
     x: int
     y: int
     width: int
     height: int
 
+    def to_service_region(self) -> ServiceRegion:
+        """Convert to service Region dataclass."""
+        return ServiceRegion(x=self.x, y=self.y, width=self.width, height=self.height)
+
 
 class OptimizePatternRequest(BaseModel):
+    """Request model for pattern optimization."""
+
     screenshots: list[str]  # Base64 encoded images
     negative_screenshots: list[str] | None = []
     regions: list[Region]
@@ -34,6 +44,8 @@ class OptimizePatternRequest(BaseModel):
 
 
 class ExtractedPattern(BaseModel):
+    """Extracted pattern data."""
+
     id: str
     screenshot_index: int
     region: Region
@@ -41,197 +53,71 @@ class ExtractedPattern(BaseModel):
 
 
 class OptimizePatternResponse(BaseModel):
+    """Response model for pattern optimization."""
+
     extractedPatterns: list[dict[str, Any]]
     similarityMatrix: dict[str, Any]
     statistics: dict[str, Any]
     evaluations: list[dict[str, Any]]
 
 
-def decode_base64_image(base64_string: str) -> np.ndarray:
-    """Decode base64 image to numpy array."""
-    try:
-        image_data = base64.b64decode(base64_string)
-        image = Image.open(io.BytesIO(image_data))
-        return np.array(image)
-    except Exception as e:
-        logger.error(f"Failed to decode image: {e}")
-        raise HTTPException(status_code=400, detail="Invalid image data")
-
-
-def extract_pattern_from_image(image: np.ndarray, region: Region) -> np.ndarray:
-    """Extract pattern from image using region coordinates."""
-    x, y, w, h = region.x, region.y, region.width, region.height
-    pattern = image[y : y + h, x : x + w]
-    return pattern
-
-
-def encode_image_to_base64(image_array: np.ndarray) -> str:
-    """Encode numpy array to base64 string."""
-    image = Image.fromarray(image_array.astype("uint8"))
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
-
-
-def calculate_similarity(pattern1: np.ndarray, pattern2: np.ndarray) -> float:
-    """Calculate similarity between two patterns."""
-    # Simple similarity calculation using normalized correlation
-    # In production, this would use more sophisticated methods
-    try:
-        # Resize patterns to same size if needed
-        if pattern1.shape != pattern2.shape:
-            h = min(pattern1.shape[0], pattern2.shape[0])
-            w = min(pattern1.shape[1], pattern2.shape[1])
-            pattern1 = Image.fromarray(pattern1).resize((w, h))
-            pattern2 = Image.fromarray(pattern2).resize((w, h))
-            pattern1 = np.array(pattern1)
-            pattern2 = np.array(pattern2)
-
-        # Calculate normalized correlation
-        pattern1_flat = pattern1.flatten().astype(float)
-        pattern2_flat = pattern2.flatten().astype(float)
-
-        # Normalize
-        pattern1_flat = (pattern1_flat - np.mean(pattern1_flat)) / (
-            np.std(pattern1_flat) + 1e-10
-        )
-        pattern2_flat = (pattern2_flat - np.mean(pattern2_flat)) / (
-            np.std(pattern2_flat) + 1e-10
-        )
-
-        # Calculate correlation
-        correlation = np.corrcoef(pattern1_flat, pattern2_flat)[0, 1]
-
-        # Convert to similarity score (0-1)
-        similarity = (correlation + 1) / 2
-        return float(similarity)
-    except Exception as e:
-        logger.error(f"Error calculating similarity: {e}")
-        return 0.5
-
-
 @router.post("/optimize-pattern", response_model=OptimizePatternResponse)
 async def optimize_pattern(request: OptimizePatternRequest):
     """
     Analyze patterns from screenshots and return optimization results.
+
+    This endpoint:
+    1. Extracts patterns from screenshots at specified regions
+    2. Calculates similarity between all pattern pairs
+    3. Computes statistics (mean, variance, outliers)
+    4. Evaluates different matching strategies
+
+    Args:
+        request: Pattern optimization request with screenshots and regions
+
+    Returns:
+        Optimization results including patterns, similarity matrix, and evaluations
+
+    Raises:
+        HTTPException: If image processing fails or invalid data provided
     """
     try:
-        # Decode images
-        images = []
-        for screenshot_b64 in request.screenshots:
-            image = decode_base64_image(screenshot_b64)
-            images.append(image)
+        # Initialize service
+        service = PatternOptimizationService()
 
-        # Extract patterns from positive screenshots
-        patterns = []
-        for i, (image, region) in enumerate(zip(images, request.regions)):
-            pattern = extract_pattern_from_image(image, region)
-            pattern_id = f"pattern_{uuid.uuid4().hex[:8]}"
+        # Convert request regions to service regions
+        service_regions = [region.to_service_region() for region in request.regions]
 
-            patterns.append(
-                {
-                    "id": pattern_id,
-                    "screenshot_index": i,
-                    "region": region.dict(),
-                    "image_data": encode_image_to_base64(pattern),
-                    "array": pattern,  # Keep for similarity calculation
-                }
-            )
+        # Extract patterns from screenshots
+        patterns = service.extract_patterns(request.screenshots, service_regions)
 
         # Calculate similarity matrix
-        n_patterns = len(patterns)
-        similarity_scores = [[0.0] * n_patterns for _ in range(n_patterns)]
-
-        for i in range(n_patterns):
-            for j in range(n_patterns):
-                if i == j:
-                    similarity_scores[i][j] = 1.0
-                else:
-                    similarity = calculate_similarity(
-                        patterns[i]["array"], patterns[j]["array"]
-                    )
-                    similarity_scores[i][j] = similarity
-                    similarity_scores[j][i] = similarity
+        similarity_matrix = service.calculate_similarity_matrix(patterns)
 
         # Calculate statistics
-        all_similarities = []
-        for i in range(n_patterns):
-            for j in range(i + 1, n_patterns):
-                all_similarities.append(similarity_scores[i][j])
+        pattern_ids = [p.id for p in patterns]
+        stats = service.calculate_statistics(similarity_matrix, pattern_ids)
 
-        if all_similarities:
-            mean_similarity = float(np.mean(all_similarities))
-            variance = float(np.var(all_similarities))
-            min_similarity = float(np.min(all_similarities))
-            max_similarity = float(np.max(all_similarities))
+        # Evaluate strategies
+        evaluations = service.evaluate_strategies(patterns, request.strategies)
 
-            # Find outliers (similarities < mean - 2*std)
-            std = np.sqrt(variance)
-            threshold = mean_similarity - 2 * std
-            outliers = []
-            for i in range(n_patterns):
-                avg_sim = np.mean(
-                    [similarity_scores[i][j] for j in range(n_patterns) if i != j]
-                )
-                if avg_sim < threshold:
-                    outliers.append(patterns[i]["id"])
-        else:
-            mean_similarity = 1.0
-            variance = 0.0
-            min_similarity = 1.0
-            max_similarity = 1.0
-            outliers = []
+        # Prepare response data (remove numpy arrays)
+        extracted_patterns = service.prepare_response_data(patterns)
 
-        statistics = {
-            "meanSimilarity": mean_similarity,
-            "variance": variance,
-            "minSimilarity": min_similarity,
-            "maxSimilarity": max_similarity,
-            "outliers": outliers,
-        }
-
-        # Prepare extracted patterns (without the array field)
-        extracted_patterns = []
-        for pattern in patterns:
-            extracted = pattern.copy()
-            extracted.pop("array", None)
-            extracted_patterns.append(extracted)
-
-        # Generate strategy evaluations
-        evaluations = []
-        for strategy_type in request.strategies:
-            # Simulate evaluation results
-            # In production, this would actually evaluate each strategy
-            evaluation = {
-                "strategy": {"type": strategy_type, "parameters": {}},
-                "performance": {
-                    "truePositiveRate": 0.85 + np.random.random() * 0.1,
-                    "falsePositiveRate": 0.05 + np.random.random() * 0.05,
-                    "averageConfidence": 0.75 + np.random.random() * 0.15,
-                    "processingTime": 50 + np.random.random() * 100,
-                },
-                "recommendations": {
-                    "optimalThreshold": 0.7 + np.random.random() * 0.2,
-                    "suggestedStrategy": strategy_type,
-                    "confidenceLevel": np.random.choice(["high", "medium", "low"]),
-                },
-            }
-            evaluations.append(evaluation)
-
-        # Sort evaluations by performance score
-        evaluations.sort(
-            key=lambda e: e["performance"]["truePositiveRate"]
-            - e["performance"]["falsePositiveRate"],
-            reverse=True,
-        )
-
+        # Build response
         response = OptimizePatternResponse(
             extractedPatterns=extracted_patterns,
             similarityMatrix={
                 "patterns": extracted_patterns,
-                "scores": similarity_scores,
+                "scores": similarity_matrix,
             },
-            statistics=statistics,
+            statistics={
+                "meanSimilarity": stats.mean_similarity,
+                "variance": stats.variance,
+                "minSimilarity": stats.min_similarity,
+                "maxSimilarity": stats.max_similarity,
+                "outliers": stats.outliers,
+            },
             evaluations=evaluations,
         )
 
@@ -239,6 +125,9 @@ async def optimize_pattern(request: OptimizePatternRequest):
 
     except HTTPException:
         raise
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Pattern optimization failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

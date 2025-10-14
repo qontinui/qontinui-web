@@ -55,12 +55,6 @@ function getPlatformName(platform: Platform): string {
   }
 }
 
-export const metadata = {
-  title: "Download Qontinui Runner",
-  description:
-    "Download Qontinui Runner for Windows, macOS, and Linux. Free and open source GUI automation desktop application.",
-};
-
 export default function DownloadPage() {
   const [platform, setPlatform] = useState<Platform>('unknown');
   const [downloading, setDownloading] = useState<string | null>(null);

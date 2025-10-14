@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
@@ -9,7 +9,7 @@ class UserManagementService:
     def __init__(self):
         self.password_service = password_service
 
-    def create_user(self, db: Session, user_data: UserCreate) -> User:
+    async def create_user(self, db: AsyncSession, user_data: UserCreate) -> User:
         hashed_password = self.password_service.hash_password(user_data.password)
 
         db_user = User(
@@ -19,12 +19,12 @@ class UserManagementService:
             hashed_password=hashed_password,
         )
         db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
+        await db.commit()
+        await db.refresh(db_user)
         return db_user
 
-    def create_beta_user(
-        self, db: Session, email: str, username: str, temporary_password: str
+    async def create_beta_user(
+        self, db: AsyncSession, email: str, username: str, temporary_password: str
     ) -> User:
         hashed_password = self.password_service.hash_password(temporary_password)
 
@@ -37,18 +37,20 @@ class UserManagementService:
             is_active=True,
         )
         db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
+        await db.commit()
+        await db.refresh(db_user)
         return db_user
 
-    def update_user_password(self, db: Session, user: User, new_password: str) -> User:
+    async def update_user_password(
+        self, db: AsyncSession, user: User, new_password: str
+    ) -> User:
         user.hashed_password = self.password_service.hash_password(new_password)
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
         return user
 
-    def update_user_profile(
-        self, db: Session, user: User, user_update: UserUpdate
+    async def update_user_profile(
+        self, db: AsyncSession, user: User, user_update: UserUpdate
     ) -> User:
         update_data = user_update.dict(exclude_unset=True)
 
@@ -62,34 +64,36 @@ class UserManagementService:
         for field, value in update_data.items():
             setattr(user, field, value)
 
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
         return user
 
-    def activate_user(self, db: Session, user: User) -> User:
+    async def activate_user(self, db: AsyncSession, user: User) -> User:
         user.is_active = True
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
         return user
 
-    def deactivate_user(self, db: Session, user: User) -> User:
+    async def deactivate_user(self, db: AsyncSession, user: User) -> User:
         user.is_active = False
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
         return user
 
-    def delete_user(self, db: Session, user: User) -> bool:
-        db.delete(user)
-        db.commit()
+    async def delete_user(self, db: AsyncSession, user: User) -> bool:
+        await db.delete(user)
+        await db.commit()
         return True
 
-    def generate_unique_username(self, db: Session, base_username: str) -> str:
+    async def generate_unique_username(
+        self, db: AsyncSession, base_username: str
+    ) -> str:
         from app.crud.user import get_user_by_username
 
         username = base_username
         counter = 1
 
-        while get_user_by_username(db, username):
+        while await get_user_by_username(db, username):
             username = f"{base_username}{counter}"
             counter += 1
 

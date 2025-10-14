@@ -2,8 +2,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.usage_metric import UsageMetric
 
@@ -19,9 +19,9 @@ class MetricsService:
         self._last_flush = datetime.utcnow()
         self._flush_interval = timedelta(seconds=30)
 
-    def track_api_call(
+    async def track_api_call(
         self,
-        db: Session,
+        db: AsyncSession,
         user_id: int,
         endpoint: str,
         method: str,
@@ -55,11 +55,11 @@ class MetricsService:
             len(self._batch_buffer) >= self._batch_size
             or datetime.utcnow() - self._last_flush >= self._flush_interval
         ):
-            self._flush_batch(db)
+            await self._flush_batch(db)
 
-    def track_event(
+    async def track_event(
         self,
-        db: Session,
+        db: AsyncSession,
         user_id: int,
         event_type: str,
         value: float = 1,
@@ -90,31 +90,31 @@ class MetricsService:
             len(self._batch_buffer) >= self._batch_size
             or datetime.utcnow() - self._last_flush >= self._flush_interval
         ):
-            self._flush_batch(db)
+            await self._flush_batch(db)
 
-    def _flush_batch(self, db: Session) -> None:
+    async def _flush_batch(self, db: AsyncSession) -> None:
         """Flush the batch buffer to the database"""
         if not self._batch_buffer:
             return
 
         try:
             metrics = [UsageMetric(**data) for data in self._batch_buffer]
-            db.bulk_save_objects(metrics)
-            db.commit()
+            db.add_all(metrics)
+            await db.commit()
             logger.info(f"Flushed {len(self._batch_buffer)} metrics to database")
             self._batch_buffer.clear()
             self._last_flush = datetime.utcnow()
         except Exception as e:
             logger.error(f"Error flushing metrics batch: {e}")
-            db.rollback()
+            await db.rollback()
 
-    def force_flush(self, db: Session) -> None:
+    async def force_flush(self, db: AsyncSession) -> None:
         """Force flush the batch buffer (useful for shutdown)"""
-        self._flush_batch(db)
+        await self._flush_batch(db)
 
-    def get_user_metrics(
+    async def get_user_metrics(
         self,
-        db: Session,
+        db: AsyncSession,
         user_id: int,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
@@ -133,7 +133,7 @@ class MetricsService:
         Returns:
             List of UsageMetric objects
         """
-        query = db.query(UsageMetric).filter(UsageMetric.user_id == user_id)
+        query = select(UsageMetric).filter(UsageMetric.user_id == user_id)
 
         if start_date:
             query = query.filter(UsageMetric.timestamp >= start_date)
@@ -144,17 +144,18 @@ class MetricsService:
         if metric_type:
             query = query.filter(UsageMetric.metric_type == metric_type)
 
-        return query.order_by(UsageMetric.timestamp.desc()).all()
+        result = await db.execute(query.order_by(UsageMetric.timestamp.desc()))
+        return result.scalars().all()
 
-    def get_api_calls_count(
+    async def get_api_calls_count(
         self,
-        db: Session,
+        db: AsyncSession,
         user_id: int,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
     ) -> int:
         """Get count of API calls for a user in a time period"""
-        query = db.query(func.count(UsageMetric.id)).filter(
+        query = select(func.count(UsageMetric.id)).filter(
             UsageMetric.user_id == user_id, UsageMetric.metric_type == "api_call"
         )
 
@@ -164,37 +165,38 @@ class MetricsService:
         if end_date:
             query = query.filter(UsageMetric.timestamp <= end_date)
 
-        return query.scalar() or 0
+        result = await db.execute(query)
+        return result.scalar() or 0
 
-    def get_event_count(
+    async def get_event_count(
         self,
-        db: Session,
+        db: AsyncSession,
         user_id: int,
         event_type: str,
         start_date: datetime | None = None,
     ) -> int:
         """Get count of specific events for a user"""
-        query = db.query(func.count(UsageMetric.id)).filter(
+        query = select(func.count(UsageMetric.id)).filter(
             UsageMetric.user_id == user_id, UsageMetric.metric_type == event_type
         )
 
         if start_date:
             query = query.filter(UsageMetric.timestamp >= start_date)
 
-        return query.scalar() or 0
+        result = await db.execute(query)
+        return result.scalar() or 0
 
-    def get_average_response_time(
-        self, db: Session, user_id: int, endpoint: str | None = None
+    async def get_average_response_time(
+        self, db: AsyncSession, user_id: int, endpoint: str | None = None
     ) -> float:
         """Get average API response time for a user or specific endpoint"""
         # Query metrics and calculate average from metadata
-        metrics = (
-            db.query(UsageMetric)
-            .filter(
+        result = await db.execute(
+            select(UsageMetric).filter(
                 UsageMetric.user_id == user_id, UsageMetric.metric_type == "api_call"
             )
-            .all()
         )
+        metrics = result.scalars().all()
 
         response_times = []
         for metric in metrics:
@@ -211,14 +213,16 @@ class MetricsService:
             return sum(response_times) / len(response_times)
         return 0.0
 
-    def get_last_activity(self, db: Session, user_id: int) -> datetime | None:
+    async def get_last_activity(
+        self, db: AsyncSession, user_id: int
+    ) -> datetime | None:
         """Get timestamp of user's last activity"""
-        result = (
-            db.query(func.max(UsageMetric.timestamp))
-            .filter(UsageMetric.user_id == user_id)
-            .scalar()
+        result = await db.execute(
+            select(func.max(UsageMetric.timestamp)).filter(
+                UsageMetric.user_id == user_id
+            )
         )
-        return result
+        return result.scalar()
 
 
 # Global instance for batching across requests

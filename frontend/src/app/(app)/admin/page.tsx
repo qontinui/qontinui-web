@@ -4,9 +4,10 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { authService } from "@/services/service-factory"
-import { LayoutDashboard, Users, FolderOpen, TrendingUp, Server } from "lucide-react"
+import { LayoutDashboard, Users, FolderOpen, TrendingUp, Server, Home } from "lucide-react"
 import OverviewTab from "@/components/admin/OverviewTab"
 import UsersTab from "@/components/admin/UsersTab"
 import ProjectsTab from "@/components/admin/ProjectsTab"
@@ -47,8 +48,20 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
-          <p className="text-muted-foreground">Manage users, projects, and monitor system health</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
+              <p className="text-muted-foreground">Manage users, projects, and monitor system health</p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => router.push('/dashboard')}
+              className="flex items-center gap-2"
+            >
+              <Home className="h-4 w-4" />
+              Go to Dashboard
+            </Button>
+          </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">

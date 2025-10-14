@@ -247,6 +247,22 @@ class ScreenshotDB {
       return 0;
     }
   }
+
+  async renameProject(oldProjectName: string, newProjectName: string): Promise<void> {
+    try {
+      const screenshots = await this.getByProject(oldProjectName);
+
+      for (const screenshot of screenshots) {
+        await this.update({
+          ...screenshot,
+          projectName: newProjectName
+        });
+      }
+    } catch (error) {
+      console.error(`Error renaming project from ${oldProjectName} to ${newProjectName}:`, error);
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance

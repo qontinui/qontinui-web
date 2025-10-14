@@ -16,6 +16,7 @@ import { PatternOptimizationSimplified } from "@/components/pattern-optimization
 import { SemanticAnalysisTab } from "@/components/SemanticAnalysis/SemanticAnalysisTab"
 import StateDiscoveryTab from "@/components/state-discovery/StateDiscoveryTab"
 import { ImageExtractionTab } from "@/components/image-extraction/ImageExtractionTab"
+import { BackgroundRemovalTab } from "@/components/background-removal/BackgroundRemovalTab"
 import { AuthDialog } from "@/components/auth-dialog"
 import { ProjectManager } from "@/components/project-manager"
 import { SettingsTab } from "@/components/settings/SettingsTab"
@@ -63,6 +64,7 @@ function AutomationBuilderContent() {
   const {
     projectName,
     setProjectName,
+    renameProject,
     lastSaved,
     triggerSave,
     getConfiguration,
@@ -165,11 +167,10 @@ function AutomationBuilderContent() {
     }, 0)
   }
 
-  const saveProjectName = () => {
+  const saveProjectName = async () => {
     if (tempProjectName.trim()) {
-      setProjectName(tempProjectName.trim())
+      await renameProject(tempProjectName.trim())
       setIsEditingName(false)
-      triggerSave()
     } else {
       cancelEditingName()
     }
@@ -545,7 +546,7 @@ function AutomationBuilderContent() {
                     <Button
                       variant="ghost"
                       className={`h-9 px-6 font-medium transition-colors rounded-md ${
-                        ["screenshots", "image-extraction", "pattern-optimization", "state-discovery"].includes(activeTab)
+                        ["screenshots", "image-extraction", "pattern-optimization", "state-discovery", "background-removal"].includes(activeTab)
                           ? "bg-[#FFD700] text-black hover:bg-[#FFD700]/90"
                           : "text-gray-400 hover:text-white hover:bg-transparent"
                       }`}
@@ -597,6 +598,14 @@ function AutomationBuilderContent() {
                       State Discovery
                       <span className="ml-2 text-xs bg-amber-500 text-black px-1.5 py-0.5 rounded">Beta</span>
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setActiveTab("background-removal")}
+                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#9B59B6]/20 focus:bg-[#9B59B6]/20 focus:text-white"
+                    >
+                      <span className="w-3 h-3 rounded-full bg-[#9B59B6] mr-3" />
+                      Background Removal
+                      <span className="ml-2 text-xs bg-purple-500 text-white px-1.5 py-0.5 rounded">Experimental</span>
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -636,6 +645,9 @@ function AutomationBuilderContent() {
               </TabsContent>
               <TabsContent value="state-discovery" className="flex-1 min-h-0 mt-0">
                 <StateDiscoveryTab />
+              </TabsContent>
+              <TabsContent value="background-removal" className="flex-1 min-h-0 mt-0">
+                <BackgroundRemovalTab />
               </TabsContent>
             </Tabs>
           </TabsContent>

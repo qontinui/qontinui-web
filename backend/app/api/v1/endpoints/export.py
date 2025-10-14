@@ -2,9 +2,9 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_active_user, get_db
+from app.api.deps import get_async_db, get_current_active_user_async
 from app.crud.project import get_project, update_project
 from app.models.user import User
 from app.schemas.export import ValidationResult
@@ -16,18 +16,18 @@ router = APIRouter()
 
 
 @router.get("/{project_id}/export")
-def export_project_configuration(
+async def export_project_configuration(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     project_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """
     Export a project configuration as JSON.
     Returns the configuration in the response with appropriate headers for file download.
     """
     # Get project
-    project = get_project(db, project_id=project_id)
+    project = await get_project(db, project_id=project_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
@@ -69,13 +69,13 @@ def export_project_configuration(
 
 
 @router.post("/{project_id}/import")
-def import_project_configuration(
+async def import_project_configuration(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     project_id: int,
     configuration: dict,
     merge: bool = False,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """
     Import a JSON configuration into a project.
@@ -85,7 +85,7 @@ def import_project_configuration(
         merge: If true, merge with existing configuration. If false, replace.
     """
     # Get project
-    project = get_project(db, project_id=project_id)
+    project = await get_project(db, project_id=project_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
@@ -104,7 +104,7 @@ def import_project_configuration(
 
         # Update project configuration
         project_update = ProjectUpdate(configuration=imported_config)
-        updated_project = update_project(db, project, project_update)
+        updated_project = await update_project(db, project, project_update)
 
         return {
             "success": True,
@@ -123,8 +123,8 @@ def import_project_configuration(
 
 
 @router.post("/{project_id}/validate")
-def validate_configuration(
-    *, configuration: dict, current_user: User = Depends(get_current_active_user)
+async def validate_configuration(
+    *, configuration: dict, current_user: User = Depends(get_current_active_user_async)
 ) -> ValidationResult:
     """
     Validate a JSON configuration without importing it.
@@ -135,18 +135,18 @@ def validate_configuration(
 
 
 @router.get("/{project_id}/configuration")
-def get_project_configuration(
+async def get_project_configuration(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     project_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """
     Get the raw configuration JSON for a project.
     This is useful for the runner to fetch configurations.
     """
     # Get project
-    project = get_project(db, project_id=project_id)
+    project = await get_project(db, project_id=project_id)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"

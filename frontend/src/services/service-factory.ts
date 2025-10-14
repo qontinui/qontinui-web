@@ -36,7 +36,7 @@ export class ServiceFactory {
     this.tokenValidator = new TokenValidator();
     this.tokenManager = new TokenManager(this.tokenStorage, this.tokenValidator);
     this.tokenRefreshService = new TokenRefreshService(this.tokenManager, ApiConfig.API_BASE_URL);
-    this.authService = new AuthService(this.tokenManager, this.tokenRefreshService, ApiConfig.API_BASE_URL);
+    this.authService = new AuthService(this.tokenManager, this.tokenRefreshService);
 
     // Initialize other services
     this.httpClient = new HttpClient(this.tokenManager);

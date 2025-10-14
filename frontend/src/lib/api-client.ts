@@ -1,5 +1,6 @@
 import { authService } from '@/services/service-factory';
 import { TokenValidator } from '@/services/auth/token-validator';
+import { csrfService } from '@/services/csrf-service';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
@@ -26,36 +27,14 @@ export interface Project {
 
 /**
  * ApiClient - Single Responsibility: Handle HTTP requests with authentication
- * Manages API communication, retry logic, CSRF tokens, and token refresh
+ * Manages API communication, retry logic, and token refresh
  */
 class ApiClient {
-  private csrfToken: string | null = null;
   private tokenValidator: TokenValidator;
   private retryAttempts = 3;
 
   constructor() {
     this.tokenValidator = new TokenValidator();
-    if (typeof window !== 'undefined') {
-      this.initializeCSRF();
-    }
-  }
-
-  private async initializeCSRF() {
-    try {
-      // Get CSRF token from meta tag or cookie
-      const metaTag = document.querySelector('meta[name="csrf-token"]');
-      if (metaTag) {
-        this.csrfToken = metaTag.getAttribute('content');
-      } else {
-        // Try to get from cookie
-        const match = document.cookie.match(/csrf_token=([^;]+)/);
-        if (match) {
-          this.csrfToken = match[1];
-        }
-      }
-    } catch (error) {
-      console.warn('CSRF token not found');
-    }
   }
 
   private async fetchWithAuth(url: string, options: RequestInit = {}, attempt = 1): Promise<Response> {
@@ -97,8 +76,9 @@ class ApiClient {
     }
 
     // Add CSRF token for state-changing requests
-    if (this.csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method || 'GET')) {
-      headers['X-CSRF-Token'] = this.csrfToken;
+    const csrfToken = csrfService.getToken();
+    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method || 'GET')) {
+      headers['X-CSRF-Token'] = csrfToken;
     }
 
     // Add timeout
@@ -279,8 +259,9 @@ class ApiClient {
         xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
       }
 
-      if (this.csrfToken) {
-        xhr.setRequestHeader('X-CSRF-Token', this.csrfToken);
+      const csrfToken = csrfService.getToken();
+      if (csrfToken) {
+        xhr.setRequestHeader('X-CSRF-Token', csrfToken);
       }
 
       xhr.timeout = 60000; // 60 seconds for file uploads

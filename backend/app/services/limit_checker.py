@@ -1,7 +1,7 @@
 """Service to check subscription limits and enforce read-only mode"""
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
 from app.models.storage_usage import StorageUsage
@@ -13,7 +13,7 @@ class LimitChecker:
     """Check if user has exceeded their subscription limits"""
 
     @staticmethod
-    def get_user_usage(db: Session, user_id: int) -> dict:
+    async def get_user_usage(db: AsyncSession, user_id: int) -> dict:
         """
         Get current usage for a user.
 
@@ -21,33 +21,35 @@ class LimitChecker:
             Dict with current usage stats
         """
         # Count projects
-        project_count = (
-            db.query(func.count(Project.id))
-            .filter(Project.owner_id == user_id)
-            .scalar()
+        result = await db.execute(
+            select(func.count(Project.id)).filter(Project.owner_id == user_id)
         )
+        project_count = result.scalar()
 
         # Count images (assuming images are stored in configuration JSON)
         # For now, we'll just count storage files
-        storage_result = (
-            db.query(
+        result = await db.execute(
+            select(
                 func.count(StorageUsage.id).label("file_count"),
                 func.sum(StorageUsage.file_size).label("total_bytes"),
-            )
-            .filter(StorageUsage.user_id == user_id)
-            .first()
+            ).filter(StorageUsage.user_id == user_id)
         )
+        storage_result = result.one_or_none()
 
         return {
             "project_count": project_count or 0,
-            "file_count": storage_result.file_count or 0,
-            "storage_bytes": int(storage_result.total_bytes or 0),
-            "storage_mb": round((storage_result.total_bytes or 0) / (1024 * 1024), 2),
+            "file_count": storage_result.file_count if storage_result else 0,
+            "storage_bytes": int(storage_result.total_bytes or 0)
+            if storage_result
+            else 0,
+            "storage_mb": round((storage_result.total_bytes or 0) / (1024 * 1024), 2)
+            if storage_result
+            else 0.0,
         }
 
     @staticmethod
-    def check_can_create_project(
-        db: Session, user_id: int, subscription_tier: str
+    async def check_can_create_project(
+        db: AsyncSession, user_id: int, subscription_tier: str
     ) -> tuple[bool, str]:
         """
         Check if user can create a new project.
@@ -55,7 +57,7 @@ class LimitChecker:
         Returns:
             Tuple of (can_create: bool, reason: str)
         """
-        usage = LimitChecker.get_user_usage(db, user_id)
+        usage = await LimitChecker.get_user_usage(db, user_id)
         limits = StripeService.get_tier_limits(subscription_tier)
 
         max_configs = limits["max_configs"]
@@ -74,8 +76,8 @@ class LimitChecker:
         return True, ""
 
     @staticmethod
-    def check_can_upload_file(
-        db: Session, user_id: int, subscription_tier: str, file_size_bytes: int
+    async def check_can_upload_file(
+        db: AsyncSession, user_id: int, subscription_tier: str, file_size_bytes: int
     ) -> tuple[bool, str]:
         """
         Check if user can upload a file.
@@ -83,7 +85,7 @@ class LimitChecker:
         Returns:
             Tuple of (can_upload: bool, reason: str)
         """
-        usage = LimitChecker.get_user_usage(db, user_id)
+        usage = await LimitChecker.get_user_usage(db, user_id)
         limits = StripeService.get_tier_limits(subscription_tier)
 
         max_storage_bytes = limits["max_storage_mb"] * 1024 * 1024
@@ -99,8 +101,8 @@ class LimitChecker:
         return True, ""
 
     @staticmethod
-    def is_read_only(
-        db: Session, user_id: int, subscription_tier: str
+    async def is_read_only(
+        db: AsyncSession, user_id: int, subscription_tier: str
     ) -> tuple[bool, str]:
         """
         Check if user should be in read-only mode.
@@ -111,7 +113,8 @@ class LimitChecker:
         User is read-only if they've downgraded/canceled and are over limits.
         """
         # If user is on a paid plan and active, they're not read-only
-        subscription = db.query(Subscription).filter_by(user_id=user_id).first()
+        result = await db.execute(select(Subscription).filter_by(user_id=user_id))
+        subscription = result.scalar_one_or_none()
 
         if (
             subscription
@@ -122,7 +125,7 @@ class LimitChecker:
             return False, ""
 
         # Free tier or inactive subscription - check if over limits
-        usage = LimitChecker.get_user_usage(db, user_id)
+        usage = await LimitChecker.get_user_usage(db, user_id)
         limits = StripeService.get_tier_limits(subscription_tier)
 
         over_project_limit = (
@@ -151,14 +154,16 @@ class LimitChecker:
         return False, ""
 
     @staticmethod
-    def get_usage_summary(db: Session, user_id: int, subscription_tier: str) -> dict:
+    async def get_usage_summary(
+        db: AsyncSession, user_id: int, subscription_tier: str
+    ) -> dict:
         """
         Get a complete usage summary with limits.
 
         Returns:
             Dict with usage, limits, and percentages
         """
-        usage = LimitChecker.get_user_usage(db, user_id)
+        usage = await LimitChecker.get_user_usage(db, user_id)
         limits = StripeService.get_tier_limits(subscription_tier)
 
         max_configs = limits["max_configs"]

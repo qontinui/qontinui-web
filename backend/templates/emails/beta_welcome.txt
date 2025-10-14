@@ -1,0 +1,15 @@
+Welcome to Qontinui Beta!
+
+Thank you for joining our beta program. Your account has been created with the following credentials:
+
+Username: {{ username }}
+Temporary Password: {{ temp_password }}
+
+Please log in at: {{ login_url }}
+
+For security reasons, we recommend changing your password after your first login.
+
+If you have any questions or feedback, please don't hesitate to reach out.
+
+Best regards,
+The Qontinui Team

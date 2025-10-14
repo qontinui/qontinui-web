@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_async_db, get_current_user_async
 from app.models.project import Project
 from app.models.user import User
 
@@ -20,11 +20,12 @@ logger = logging.getLogger(__name__)
 @router.post("/bootstrap-first-admin")
 async def bootstrap_first_admin(
     email: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """One-time endpoint to create the first admin. Remove after use!"""
     # Check if any admin exists
-    existing_admin = db.query(User).filter(User.is_superuser).first()
+    result = await db.execute(select(User).filter(User.is_superuser))
+    existing_admin = result.scalar_one_or_none()
     if existing_admin:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -32,7 +33,8 @@ async def bootstrap_first_admin(
         )
 
     # Find user by email
-    user = db.query(User).filter(User.email == email).first()
+    result = await db.execute(select(User).filter(User.email == email))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -41,13 +43,13 @@ async def bootstrap_first_admin(
 
     # Make them admin
     user.is_superuser = True
-    db.commit()
+    await db.commit()
 
     logger.info(f"Bootstrapped first admin: {user.email}")
     return {"success": True, "message": f"{user.email} is now an admin"}
 
 
-def require_admin(current_user: User = Depends(get_current_user)) -> User:
+async def require_admin(current_user: User = Depends(get_current_user_async)) -> User:
     """Dependency to require admin/superuser access."""
     if not current_user.is_superuser:
         raise HTTPException(
@@ -59,40 +61,46 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 
 @router.get("/stats")
 async def get_admin_stats(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_admin),
 ) -> Any:
     """Get overall platform statistics."""
 
     # Total users
-    total_users = db.query(func.count(User.id)).scalar()
+    result = await db.execute(select(func.count(User.id)))
+    total_users = result.scalar()
 
     # Users registered in last 7 days
     week_ago = datetime.utcnow() - timedelta(days=7)
-    new_users_week = (
-        db.query(func.count(User.id)).filter(User.created_at >= week_ago).scalar()
+    result = await db.execute(
+        select(func.count(User.id)).filter(User.created_at >= week_ago)
     )
+    new_users_week = result.scalar()
 
     # Users registered in last 30 days
     month_ago = datetime.utcnow() - timedelta(days=30)
-    new_users_month = (
-        db.query(func.count(User.id)).filter(User.created_at >= month_ago).scalar()
+    result = await db.execute(
+        select(func.count(User.id)).filter(User.created_at >= month_ago)
     )
+    new_users_month = result.scalar()
 
     # Total projects
-    total_projects = db.query(func.count(Project.id)).scalar()
+    result = await db.execute(select(func.count(Project.id)))
+    total_projects = result.scalar()
 
     # Projects created in last 7 days
-    projects_week = (
-        db.query(func.count(Project.id)).filter(Project.created_at >= week_ago).scalar()
+    result = await db.execute(
+        select(func.count(Project.id)).filter(Project.created_at >= week_ago)
     )
+    projects_week = result.scalar()
 
     # Active users (created project in last 30 days)
-    active_users = (
-        db.query(func.count(func.distinct(Project.owner_id)))
-        .filter(Project.created_at >= month_ago)
-        .scalar()
+    result = await db.execute(
+        select(func.count(func.distinct(Project.owner_id))).filter(
+            Project.created_at >= month_ago
+        )
     )
+    active_users = result.scalar()
 
     return {
         "total_users": total_users or 0,
@@ -108,23 +116,23 @@ async def get_admin_stats(
 async def get_users_list(
     skip: int = 0,
     limit: int = 50,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_admin),
 ) -> Any:
     """Get list of users with basic info."""
 
-    users = (
-        db.query(User).order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+    result = await db.execute(
+        select(User).order_by(User.created_at.desc()).offset(skip).limit(limit)
     )
+    users = result.scalars().all()
 
     # Get project counts for each user
     user_data = []
     for user in users:
-        project_count = (
-            db.query(func.count(Project.id))
-            .filter(Project.owner_id == user.id)
-            .scalar()
+        result = await db.execute(
+            select(func.count(Project.id)).filter(Project.owner_id == user.id)
         )
+        project_count = result.scalar()
 
         user_data.append(
             {
@@ -147,12 +155,13 @@ async def get_users_list(
 @router.get("/users/{user_id}")
 async def get_user_details(
     user_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_admin),
 ) -> Any:
     """Get detailed info about a specific user."""
 
-    user = db.query(User).filter(User.id == user_id).first()
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -160,12 +169,12 @@ async def get_user_details(
         )
 
     # Get user's projects
-    projects = (
-        db.query(Project)
+    result = await db.execute(
+        select(Project)
         .filter(Project.owner_id == user_id)
         .order_by(Project.created_at.desc())
-        .all()
     )
+    projects = result.scalars().all()
 
     return {
         "id": user.id,
@@ -194,19 +203,19 @@ async def get_user_details(
 async def get_all_projects(
     skip: int = 0,
     limit: int = 1000,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_admin),
 ) -> Any:
     """Get all projects across all users."""
 
-    projects = (
-        db.query(Project)
+    result = await db.execute(
+        select(Project)
         .join(User, Project.owner_id == User.id)
         .order_by(Project.updated_at.desc())
         .offset(skip)
         .limit(limit)
-        .all()
     )
+    projects = result.scalars().all()
 
     project_data = []
     for project in projects:
@@ -237,7 +246,7 @@ async def get_all_projects(
 
 @router.get("/analytics")
 async def get_analytics(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_admin),
 ) -> Any:
     """Get analytics metrics."""
@@ -248,75 +257,86 @@ async def get_analytics(
     month_ago = now - timedelta(days=30)
 
     # Active users (users with at least one project update)
-    dau = (
-        db.query(func.count(func.distinct(Project.owner_id)))
-        .filter(Project.updated_at >= day_ago)
-        .scalar()
-        or 0
+    result = await db.execute(
+        select(func.count(func.distinct(Project.owner_id))).filter(
+            Project.updated_at >= day_ago
+        )
     )
-    wau = (
-        db.query(func.count(func.distinct(Project.owner_id)))
-        .filter(Project.updated_at >= week_ago)
-        .scalar()
-        or 0
+    dau = result.scalar() or 0
+
+    result = await db.execute(
+        select(func.count(func.distinct(Project.owner_id))).filter(
+            Project.updated_at >= week_ago
+        )
     )
-    mau = (
-        db.query(func.count(func.distinct(Project.owner_id)))
-        .filter(Project.updated_at >= month_ago)
-        .scalar()
-        or 0
+    wau = result.scalar() or 0
+
+    result = await db.execute(
+        select(func.count(func.distinct(Project.owner_id))).filter(
+            Project.updated_at >= month_ago
+        )
     )
+    mau = result.scalar() or 0
 
     # New users
-    new_users_today = (
-        db.query(func.count(User.id)).filter(User.created_at >= day_ago).scalar() or 0
+    result = await db.execute(
+        select(func.count(User.id)).filter(User.created_at >= day_ago)
     )
-    new_users_week = (
-        db.query(func.count(User.id)).filter(User.created_at >= week_ago).scalar() or 0
+    new_users_today = result.scalar() or 0
+
+    result = await db.execute(
+        select(func.count(User.id)).filter(User.created_at >= week_ago)
     )
-    new_users_month = (
-        db.query(func.count(User.id)).filter(User.created_at >= month_ago).scalar() or 0
+    new_users_week = result.scalar() or 0
+
+    result = await db.execute(
+        select(func.count(User.id)).filter(User.created_at >= month_ago)
     )
+    new_users_month = result.scalar() or 0
 
     # Active projects
-    active_projects_week = (
-        db.query(func.count(Project.id)).filter(Project.updated_at >= week_ago).scalar()
-        or 0
+    result = await db.execute(
+        select(func.count(Project.id)).filter(Project.updated_at >= week_ago)
     )
+    active_projects_week = result.scalar() or 0
 
     # Simple retention calculation (users who created project in first week and are still active)
-    total_users = db.query(func.count(User.id)).scalar() or 1
-    users_7days_old = (
-        db.query(func.count(User.id))
+    result = await db.execute(select(func.count(User.id)))
+    total_users = result.scalar() or 1
+
+    result = await db.execute(
+        select(func.count(User.id))
         .filter(User.created_at <= week_ago)
         .filter(User.created_at >= month_ago)
-        .scalar()
-        or 1
     )
-    retained_7day_users = (
-        db.query(func.count(func.distinct(User.id)))
+    users_7days_old = result.scalar() or 1
+
+    result = await db.execute(
+        select(func.count(func.distinct(User.id)))
         .join(Project, User.id == Project.owner_id)
         .filter(User.created_at <= week_ago)
         .filter(User.created_at >= month_ago)
         .filter(Project.updated_at >= day_ago)
-        .scalar()
-        or 0
     )
+    retained_7day_users = result.scalar() or 0
+
     retention_7day = (
         (retained_7day_users / users_7days_old * 100) if users_7days_old > 0 else 0
     )
 
-    users_30days_old = (
-        db.query(func.count(User.id)).filter(User.created_at <= month_ago).scalar() or 1
+    result = await db.execute(
+        select(func.count(User.id)).filter(User.created_at <= month_ago)
     )
-    retained_30day_users = (
-        db.query(func.count(func.distinct(User.id)))
+    users_30days_old = result.scalar() or 1
+
+    result = await db.execute(
+        select(func.count(func.distinct(User.id)))
         .join(Project, User.id == Project.owner_id)
         .filter(User.created_at <= month_ago)
         .filter(Project.updated_at >= day_ago)
-        .scalar()
-        or 0
     )
+    retained_30day_users = result.scalar() or 0
+
     retention_30day = (
         (retained_30day_users / users_30days_old * 100) if users_30days_old > 0 else 0
     )
@@ -344,7 +364,7 @@ async def get_analytics(
 
 @router.get("/system/health")
 async def get_system_health(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_admin),
 ) -> Any:
     """Get system health metrics."""
@@ -353,7 +373,7 @@ async def get_system_health(
     try:
         from sqlalchemy import text
 
-        db.execute(text("SELECT 1"))
+        await db.execute(text("SELECT 1"))
         db_status = "healthy"
     except Exception as e:
         logger.warning(f"Database health check failed: {e}")

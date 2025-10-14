@@ -1,0 +1,12 @@
+Email Verification
+
+Hi {{ username }},
+
+You requested a new verification link. Please verify your email address by clicking the link below:
+
+{{ verify_url }}
+
+This link will expire in 24 hours.
+
+Best regards,
+The Qontinui Team

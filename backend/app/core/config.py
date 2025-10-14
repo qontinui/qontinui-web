@@ -40,13 +40,13 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     # Server
-    HOST: str = "0.0.0.0"
-    PORT: int = 8001
-    RELOAD: bool = True
-    DEBUG: bool = True
+    HOST: str = Field(default="0.0.0.0")
+    PORT: int = Field(default=8000)
+    RELOAD: bool = Field(default=True)
+    DEBUG: bool = Field(default=True)
 
     # Frontend
-    FRONTEND_URL: str = "http://localhost:3001"
+    FRONTEND_URL: str = Field(default="http://localhost:3001")
 
     # User settings
     FIRST_SUPERUSER_EMAIL: str | None = None
@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_PER_HOUR: int = 600
+
+    # Redis (for task queue)
+    REDIS_HOST: str = Field(default="localhost")
+    REDIS_PORT: int = Field(default=6379)
+    REDIS_DB: int = Field(default=0)
 
     # Stripe
     STRIPE_SECRET_KEY: str = Field(..., description="Stripe secret key")
