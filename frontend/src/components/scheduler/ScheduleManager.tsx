@@ -12,11 +12,12 @@ import { Play, Pause, Trash2, Edit, Plus, Calendar, Clock, RefreshCw } from "luc
 import { ScheduleEditor } from "./ScheduleEditor"
 import { ExecutionHistory } from "./ExecutionHistory"
 import type { Schedule } from "@/contexts/automation-context"
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog"
 
 export function ScheduleManager() {
   const {
     schedules,
-    processes,
+    workflows,
     updateSchedule,
     deleteSchedule,
     getSchedulerStatistics,
@@ -25,6 +26,8 @@ export function ScheduleManager() {
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null)
   const [isEditorOpen, setIsEditorOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("schedules")
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(null)
 
   const stats = getSchedulerStatistics()
 
@@ -37,10 +40,16 @@ export function ScheduleManager() {
     setIsEditorOpen(true)
   }
 
-  const handleDelete = (scheduleId: string) => {
-    if (confirm("Are you sure you want to delete this schedule?")) {
-      deleteSchedule(scheduleId)
-    }
+  const handleDelete = (schedule: Schedule) => {
+    setScheduleToDelete(schedule)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = () => {
+    if (!scheduleToDelete) return
+    deleteSchedule(scheduleToDelete.id)
+    setDeleteDialogOpen(false)
+    setScheduleToDelete(null)
   }
 
   const handleCreateNew = () => {
@@ -69,8 +78,8 @@ export function ScheduleManager() {
   }
 
   const getProcessName = (processId: string): string => {
-    const process = processes.find(p => p.id === processId)
-    return process?.name || processId
+    const workflow = workflows.find(w => w.id === processId)
+    return workflow?.name || processId
   }
 
   return (
@@ -233,7 +242,7 @@ export function ScheduleManager() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleDelete(schedule.id)}
+                            onClick={() => handleDelete(schedule)}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Delete
@@ -261,6 +270,19 @@ export function ScheduleManager() {
           onClose={handleCloseEditor}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={deleteDialogOpen}
+        title="Delete Schedule"
+        itemName={scheduleToDelete?.name || ''}
+        description={`Are you sure you want to delete the schedule "${scheduleToDelete?.name}"? This will also remove all execution history for this schedule. This action cannot be undone.`}
+        onClose={() => {
+          setDeleteDialogOpen(false)
+          setScheduleToDelete(null)
+        }}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   )
 }

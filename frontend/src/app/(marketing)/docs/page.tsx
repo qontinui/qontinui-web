@@ -9,7 +9,7 @@ export const metadata = {
 
 export default function DocsHomePage() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+    <div className="min-h-screen bg-white">
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="max-w-4xl mx-auto text-center">
@@ -109,7 +109,7 @@ export default function DocsHomePage() {
       </section>
 
       {/* Additional Resources */}
-      <section className="bg-slate-50 border-t border-slate-200">
+      <section className="border-t border-slate-200">
         <div className="container mx-auto px-4 py-16">
           <div className="max-w-4xl mx-auto">
             <h2 className="text-2xl font-bold text-slate-900 mb-8 text-center">

@@ -1,9 +1,11 @@
 """Background task definitions for ARQ worker."""
 
-import logging
 from typing import Any
+from uuid import UUID
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 async def send_email_task(
@@ -26,7 +28,7 @@ async def send_email_task(
     Returns:
         Dict with status and message
     """
-    logger.info(f"Sending email to {to_email}: {subject}")
+    logger.info("sending_email", to_email=to_email, subject=subject)
 
     try:
         from app.services.email.email_transport_service import EmailTransportService
@@ -39,11 +41,16 @@ async def send_email_task(
             text_body=text_content,
         )
 
-        logger.info(f"Email sent successfully to {to_email}")
+        logger.info("email_sent_successfully", to_email=to_email)
         return {"status": "success", "to_email": to_email, "subject": subject}
 
     except Exception as e:
-        logger.error(f"Failed to send email to {to_email}: {e}")
+        logger.error(
+            "email_send_failed",
+            to_email=to_email,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return {"status": "error", "error": str(e), "to_email": to_email}
 
 
@@ -65,7 +72,7 @@ async def send_verification_email_task(
     Returns:
         Dict with status
     """
-    logger.info(f"Sending verification email to {to_email}")
+    logger.info("sending_verification_email", to_email=to_email)
 
     try:
         from app.core.config import settings
@@ -88,11 +95,16 @@ async def send_verification_email_task(
             text_body=text_body,
         )
 
-        logger.info(f"Verification email sent successfully to {to_email}")
+        logger.info("verification_email_sent_successfully", to_email=to_email)
         return {"status": "success", "to_email": to_email}
 
     except Exception as e:
-        logger.error(f"Failed to send verification email to {to_email}: {e}")
+        logger.error(
+            "verification_email_send_failed",
+            to_email=to_email,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return {"status": "error", "error": str(e), "to_email": to_email}
 
 
@@ -114,7 +126,7 @@ async def send_password_reset_email_task(
     Returns:
         Dict with status
     """
-    logger.info(f"Sending password reset email to {to_email}")
+    logger.info("sending_password_reset_email", to_email=to_email)
 
     try:
         from app.core.config import settings
@@ -137,11 +149,16 @@ async def send_password_reset_email_task(
             text_body=text_body,
         )
 
-        logger.info(f"Password reset email sent successfully to {to_email}")
+        logger.info("password_reset_email_sent_successfully", to_email=to_email)
         return {"status": "success", "to_email": to_email}
 
     except Exception as e:
-        logger.error(f"Failed to send password reset email to {to_email}: {e}")
+        logger.error(
+            "password_reset_email_send_failed",
+            to_email=to_email,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return {"status": "error", "error": str(e), "to_email": to_email}
 
 
@@ -165,7 +182,7 @@ async def cleanup_old_data_task(
     Returns:
         Dict with cleanup statistics
     """
-    logger.info(f"Running cleanup task (keeping last {days_to_keep} days)")
+    logger.info("running_cleanup_task", days_to_keep=days_to_keep)
 
     try:
         from datetime import datetime, timedelta
@@ -199,8 +216,9 @@ async def cleanup_old_data_task(
             await db.commit()
 
         logger.info(
-            f"Cleanup completed: {audit_logs_deleted} audit logs, "
-            f"{metrics_deleted} metrics deleted"
+            "cleanup_completed",
+            audit_logs_deleted=audit_logs_deleted,
+            metrics_deleted=metrics_deleted,
         )
 
         return {
@@ -211,13 +229,13 @@ async def cleanup_old_data_task(
         }
 
     except Exception as e:
-        logger.error(f"Cleanup failed: {e}", exc_info=True)
+        logger.exception("cleanup_failed", error=str(e), error_type=type(e).__name__)
         return {"status": "error", "error": str(e)}
 
 
 async def send_analytics_report_task(
     ctx: dict[str, Any],
-    user_id: int,
+    user_id: UUID,
     report_type: str = "weekly",
 ) -> dict[str, Any]:
     """
@@ -234,7 +252,7 @@ async def send_analytics_report_task(
     Returns:
         Dict with status
     """
-    logger.info(f"Generating {report_type} report for user {user_id}")
+    logger.info("generating_analytics_report", report_type=report_type, user_id=user_id)
 
     try:
         from datetime import datetime
@@ -373,7 +391,12 @@ async def send_analytics_report_task(
                 text_body=text_content,
             )
 
-        logger.info(f"Analytics report sent successfully to {user.email}")
+        logger.info(
+            "analytics_report_sent_successfully",
+            to_email=user.email,
+            user_id=user_id,
+            report_type=report_type,
+        )
         return {
             "status": "success",
             "user_id": user_id,
@@ -382,8 +405,11 @@ async def send_analytics_report_task(
         }
 
     except Exception as e:
-        logger.error(
-            f"Failed to generate report for user {user_id}: {e}", exc_info=True
+        logger.exception(
+            "analytics_report_generation_failed",
+            user_id=user_id,
+            error=str(e),
+            error_type=type(e).__name__,
         )
         return {"status": "error", "error": str(e), "user_id": user_id}
 

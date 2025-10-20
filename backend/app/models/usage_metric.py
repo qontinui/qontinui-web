@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import DECIMAL, JSON, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -11,7 +12,7 @@ class UsageMetric(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     metric_type = Column(String, nullable=False)
     value = Column(DECIMAL, nullable=False)

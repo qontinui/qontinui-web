@@ -10,7 +10,7 @@ import { CheckCircle2, XCircle, Clock, AlertCircle } from "lucide-react"
 import type { ExecutionRecord } from "@/contexts/automation-context"
 
 export function ExecutionHistory() {
-  const { executionRecords, schedules, processes } = useAutomation()
+  const { executionRecords, schedules, workflows } = useAutomation()
   const [selectedScheduleFilter, setSelectedScheduleFilter] = useState<string>("all")
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>("all")
 
@@ -20,8 +20,8 @@ export function ExecutionHistory() {
   }
 
   const getProcessName = (processId: string): string => {
-    const process = processes.find(p => p.id === processId)
-    return process?.name || processId
+    const workflow = workflows.find(w => w.id === processId)
+    return workflow?.name || processId
   }
 
   const formatDuration = (record: ExecutionRecord): string => {

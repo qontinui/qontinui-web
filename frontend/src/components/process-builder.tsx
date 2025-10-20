@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, Play, Camera, Layers, ArrowRight, Target, ChevronRight } from "lucide-react"
-import { ProcessList } from "@/components/process-list"
+import { UnifiedProcessLibrary } from "@/components/unified-process-library"
 import { ActionEditor } from "@/components/action-editor"
 import { ActionProperties } from "@/components/action-properties"
 import { useAutomation } from "@/contexts/automation-context"
@@ -16,6 +16,8 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { OutgoingTransitionBuilder } from "@/components/outgoing-transition-builder"
 import { IncomingTransitionBuilder } from "@/components/incoming-transition-builder"
+import { FormatConversionDialog } from "@/components/format-conversion-dialog"
+import { toast } from "sonner"
 
 interface Process {
   id: string
@@ -38,28 +40,47 @@ interface Action {
     | "CLICK" | "DOUBLE_CLICK" | "RIGHT_CLICK" | "DRAG" | "SCROLL"
     // Combined keyboard actions
     | "TYPE"
+    // Control flow actions
+    | "IF" | "LOOP"
     // Other actions
     | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
   config: Record<string, any>
 }
 
+type LibraryItem =
+  | { type: 'process'; data: Process }
+  | { type: 'workflow'; data: any }
+
 export function ProcessBuilder() {
-  const [selectedProcess, setSelectedProcess] = useState<Process | null>(null)
+  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
   const [selectedAction, setSelectedAction] = useState<Action | null>(null)
   const [showTransitionDialog, setShowTransitionDialog] = useState(false)
   const [transitionType, setTransitionType] = useState<"incoming" | "outgoing" | null>(null)
   const [optionsExpanded, setOptionsExpanded] = useState(false)
-  const { processes, addProcess, updateProcess, deleteProcess, categories, screenshots, states } = useAutomation()
+  const [conversionItem, setConversionItem] = useState<LibraryItem | null>(null)
+  const [conversionDialogOpen, setConversionDialogOpen] = useState(false)
+  const {
+    workflows,
+    addWorkflow,
+    updateWorkflow,
+    deleteWorkflow,
+    categories,
+    screenshots,
+    states
+  } = useAutomation()
 
-  // Get all unique categories from processes and context
-  const allCategories = [...new Set(["Main", "Transitions", ...categories, ...processes.map(p => p.category || "Main")])]
+  // Get selected process from selected item
+  const selectedProcess = selectedItem?.type === 'process' ? selectedItem.data : null
 
-  // Keep selectedProcess in sync with the processes from context
+  // Get all unique categories from workflows and context
+  const allCategories = [...new Set(["Main", "Transitions", ...categories, ...workflows.map(w => w.category || "Main")])]
+
+  // Keep selectedProcess in sync with the workflows from context
   useEffect(() => {
     if (selectedProcess) {
-      const updatedProcess = processes.find(p => p.id === selectedProcess.id)
+      const updatedProcess = workflows.find(w => w.id === selectedProcess.id)
       if (updatedProcess && updatedProcess !== selectedProcess) {
-        setSelectedProcess(updatedProcess)
+        setSelectedItem({ type: 'process', data: updatedProcess })
         // Also update selectedAction if it exists
         if (selectedAction) {
           const updatedAction = updatedProcess.actions.find(a => a.id === selectedAction.id)
@@ -69,53 +90,85 @@ export function ProcessBuilder() {
         }
       }
     }
-  }, [processes, selectedProcess?.id, selectedAction?.id])
+  }, [workflows, selectedProcess?.id, selectedAction?.id])
 
   const createNewProcess = (category: string = "Main") => {
     const newProcess: Process = {
-      id: `process-${Date.now()}`,
+      id: `workflow-${Date.now()}`,
       name: "New Process",
       description: "",
       category,
       actions: [],
     }
-    addProcess(newProcess)
-    setSelectedProcess(newProcess)
+    addWorkflow(newProcess)
+    setSelectedItem({ type: 'process', data: newProcess })
   }
 
   const handleUpdateProcess = (updatedProcess: Process) => {
-    updateProcess(updatedProcess)
-    // Don't set selectedProcess here - let useEffect handle it
+    updateWorkflow(updatedProcess)
+    // Don't set selectedItem here - let useEffect handle it
   }
 
-  const handleDeleteProcess = (processId: string) => {
-    deleteProcess(processId)
-    if (selectedProcess?.id === processId) {
-      setSelectedProcess(null)
+  const handleSelectItem = (item: LibraryItem) => {
+    if (item.type === 'workflow') {
+      // Workflows can't be edited in the sequential builder
+      toast.info("Graph workflows can only be edited in the Graph Builder", {
+        description: "Switch to the Graph Builder tab to edit this workflow."
+      })
+      return
+    }
+    setSelectedItem(item)
+    setSelectedAction(null)
+  }
+
+  const handleDeleteItem = (item: LibraryItem) => {
+    // Both 'process' and 'workflow' types are stored as workflows
+    deleteWorkflow(item.data.id)
+    if (selectedItem && selectedItem.data.id === item.data.id) {
+      setSelectedItem(null)
       setSelectedAction(null)
+    }
+  }
+
+  const handleConvertItem = (item: LibraryItem) => {
+    setConversionItem(item)
+    setConversionDialogOpen(true)
+  }
+
+  const handleConversionComplete = (converted: Process | any, originalType: 'process' | 'workflow') => {
+    // Both types are stored as workflows, just update the existing one
+    addWorkflow(converted)
+    if (originalType === 'process') {
+      toast.success("Converted to graph workflow", {
+        description: `"${converted.name}" can now be edited in graph mode.`
+      })
+    } else {
+      toast.success("Converted to sequential workflow", {
+        description: `"${converted.name}" can now be edited in sequential mode.`
+      })
     }
   }
 
   return (
     <div className="flex h-full">
-      {/* Left Panel - Process Library */}
+      {/* Left Panel - Unified Library */}
       <div className="flex-[2] min-w-[300px] max-w-[600px] border-r border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
         <div className="space-y-4">
           <Button
-            onClick={createNewProcess}
+            onClick={() => createNewProcess()}
             className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
           >
             <Plus className="w-4 h-4 mr-2" />
             New Process
           </Button>
 
-          <ProcessList
-            processes={processes}
-            selectedProcess={selectedProcess}
-            onSelectProcess={setSelectedProcess}
-            onDeleteProcess={handleDeleteProcess}
+          <UnifiedProcessLibrary
+            selectedItem={selectedItem}
+            onSelectItem={handleSelectItem}
+            onDeleteItem={handleDeleteItem}
             onUpdateProcess={handleUpdateProcess}
             onCreateProcess={createNewProcess}
+            onConvertItem={handleConvertItem}
           />
         </div>
       </div>
@@ -351,6 +404,14 @@ export function ProcessBuilder() {
           }}
         />
       )}
+
+      {/* Format Conversion Dialog */}
+      <FormatConversionDialog
+        open={conversionDialogOpen}
+        onOpenChange={setConversionDialogOpen}
+        item={conversionItem}
+        onConvert={handleConversionComplete}
+      />
     </div>
   )
 }

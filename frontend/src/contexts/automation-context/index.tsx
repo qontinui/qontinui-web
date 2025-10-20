@@ -1,8 +1,7 @@
 "use client"
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react"
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from "react"
 import { useLocalStorage } from "@/hooks/use-local-storage"
-import { ProcessManager } from "./process-manager"
 import { StateManager } from "./state-manager"
 import { TransitionManager } from "./transition-manager"
 import { ImageManager } from "./image-manager"
@@ -13,7 +12,6 @@ import { projectDB } from "@/lib/project-db"
 import { DEFAULT_PROJECT_SETTINGS } from "@/types/project-settings"
 import type {
   AutomationContextType,
-  Process,
   State,
   Transition,
   ImageAsset,
@@ -25,11 +23,10 @@ import type {
   SchedulerStatistics,
 } from "./types"
 import type { ProjectSettings } from "@/types/project-settings"
+import type { Workflow } from "@/lib/action-schema/action-types"
 
 // Export types for external use
 export type {
-  Process,
-  Action,
   State,
   StateRegion,
   StateLocation,
@@ -153,7 +150,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
 
   // All project data now uses IndexedDB for persistence and project isolation
-  const [processes, setProcesses] = useState<Process[]>([])
+  const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [states, setStates] = useState<State[]>([])
   const [transitions, setTransitions] = useState<Transition[]>([])
   const [images, setImages] = useState<ImageAsset[]>([])
@@ -191,23 +188,6 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
       // Migrate data from localStorage to IndexedDB if needed
       try {
-        // Migrate processes
-        const localStorageProcesses = window.localStorage.getItem('qontinui-processes')
-        if (localStorageProcesses) {
-          const parsed = JSON.parse(localStorageProcesses) as Process[]
-          if (parsed.length > 0) {
-            console.log(`Migrating ${parsed.length} processes from localStorage to IndexedDB...`)
-            for (const process of parsed) {
-              try {
-                await projectDB.updateProcess({ ...process, projectName })
-              } catch (error) {
-                console.error(`Failed to migrate process ${process.id}:`, error)
-              }
-            }
-            window.localStorage.removeItem('qontinui-processes')
-          }
-        }
-
         // Migrate states
         const localStorageStates = window.localStorage.getItem('qontinui-states')
         if (localStorageStates) {
@@ -283,67 +263,66 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
       // Load all data from IndexedDB for current project
       const [
-        loadedProcesses,
+        loadedWorkflows,
         loadedStates,
         loadedTransitions,
         loadedImages,
         loadedScreenshots
       ] = await Promise.all([
-        projectDB.getProcessesByProject(projectName),
+        projectDB.getWorkflowsByProject(projectName),
         projectDB.getStatesByProject(projectName),
         projectDB.getTransitionsByProject(projectName),
         projectDB.getImagesByProject(projectName),
         screenshotDB.getByProject(projectName),
       ])
 
-      setProcesses(loadedProcesses)
+      setWorkflows(loadedWorkflows)
       setStates(loadedStates)
       setTransitions(loadedTransitions)
       setImages(loadedImages)
       setScreenshots(loadedScreenshots)
 
-      // Extract unique categories from loaded processes
+      // Extract unique categories from loaded workflows, always including Main and Transitions
+      const workflowCategories = loadedWorkflows
+        .map(w => w.category)
+        .filter((cat): cat is string => cat != null && cat !== '')
+
       const uniqueCategories = Array.from(
-        new Set(
-          loadedProcesses
-            .map(p => p.category)
-            .filter((cat): cat is string => cat != null && cat !== '')
-        )
+        new Set(['Main', 'Transitions', ...workflowCategories])
       )
       setCategories(uniqueCategories)
 
-      console.log(`Loaded project data - Processes: ${loadedProcesses.length}, States: ${loadedStates.length}, Transitions: ${loadedTransitions.length}, Images: ${loadedImages.length}, Screenshots: ${loadedScreenshots.length}, Categories: ${uniqueCategories.length}`)
+      console.log(`Loaded project data - Workflows: ${loadedWorkflows.length}, States: ${loadedStates.length}, Transitions: ${loadedTransitions.length}, Images: ${loadedImages.length}, Screenshots: ${loadedScreenshots.length}, Categories: ${uniqueCategories.length}`)
     }
 
     loadProjectData()
   }, [projectName])
 
-  // Process management functions
-  const addProcess = useCallback(async (process: Process) => {
-    const processWithProject = { ...process, projectName }
+  // Workflow management functions
+  const addWorkflow = useCallback(async (workflow: Workflow) => {
+    const workflowWithProject = { ...workflow, projectName } as Workflow & { projectName: string }
     try {
-      await projectDB.addProcess(processWithProject)
+      await projectDB.addWorkflow(workflowWithProject)
     } catch (error: any) {
       // If key already exists, update instead
       if (error.name === 'ConstraintError') {
-        await projectDB.updateProcess(processWithProject)
+        await projectDB.updateWorkflow(workflowWithProject)
       } else {
         throw error
       }
     }
-    setProcesses((prev) => ProcessManager.addProcess(prev, processWithProject))
+    setWorkflows((prev) => [...prev, workflow])
   }, [projectName])
 
-  const updateProcess = useCallback(async (process: Process) => {
-    await projectDB.updateProcess(process)
-    setProcesses((prev) => ProcessManager.updateProcess(prev, process))
-  }, [])
+  const updateWorkflow = useCallback(async (workflow: Workflow) => {
+    const workflowWithProject = { ...workflow, projectName } as Workflow & { projectName: string }
+    await projectDB.updateWorkflow(workflowWithProject)
+    setWorkflows((prev) => prev.map(w => w.id === workflow.id ? workflow : w))
+  }, [projectName])
 
-  const deleteProcess = useCallback(async (processId: string) => {
-    await projectDB.deleteProcess(processId)
-    setProcesses((prev) => ProcessManager.deleteProcess(prev, processId))
-    // Clean up transitions that reference this process
-    setTransitions((prev) => TransitionManager.removeProcessFromTransitions(prev, processId))
+  const deleteWorkflow = useCallback(async (workflowId: string) => {
+    await projectDB.deleteWorkflow(workflowId)
+    setWorkflows((prev) => prev.filter(w => w.id !== workflowId))
   }, [])
 
   // State management functions
@@ -469,11 +448,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         name: state.name || state.id
       }))
 
-    // Find processes that use this image in actions
+    // Find workflows that use this image in actions
     const usedInProcesses: Array<{ id: string; name: string; actionCount: number }> = []
 
-    processes.forEach(process => {
-      const actionsWithImage = process.actions.filter(action => {
+    workflows.forEach(workflow => {
+      const actionsWithImage = workflow.actions.filter(action => {
         // Check if action uses this image directly
         if (action.config.image === imageId) return true
         // Check DRAG actions (to field)
@@ -485,8 +464,8 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
       if (actionsWithImage.length > 0) {
         usedInProcesses.push({
-          id: process.id,
-          name: process.name || process.id,
+          id: workflow.id,
+          name: workflow.name || workflow.id,
           actionCount: actionsWithImage.length
         })
       }
@@ -496,7 +475,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       states: usedInStates,
       processes: usedInProcesses
     }
-  }, [images, states, processes])
+  }, [images, states, workflows])
 
   // Remove image from all states
   const removeImageFromStates = useCallback(async (imageUrl: string) => {
@@ -516,13 +495,13 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     return affectedStates.length
   }, [states])
 
-  // Mark image as removed in processes
+  // Mark image as removed in workflows
   const markImageAsRemovedInProcesses = useCallback(async (imageId: string, imageName: string) => {
-    const affectedProcesses: Process[] = []
+    const affectedWorkflows: Workflow[] = []
 
-    for (const process of processes) {
+    for (const workflow of workflows) {
       let hasChanges = false
-      const updatedActions = process.actions.map(action => {
+      const updatedActions = workflow.actions.map(action => {
         // Check if action uses this image
         if (action.config.image === imageId) {
           hasChanges = true
@@ -563,18 +542,19 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       })
 
       if (hasChanges) {
-        const updatedProcess = {
-          ...process,
+        const updatedWorkflow = {
+          ...workflow,
           actions: updatedActions
         }
-        await projectDB.updateProcess(updatedProcess)
-        setProcesses(prev => prev.map(p => p.id === process.id ? updatedProcess : p))
-        affectedProcesses.push(updatedProcess)
+        const workflowWithProject = { ...updatedWorkflow, projectName } as Workflow & { projectName: string }
+        await projectDB.updateWorkflow(workflowWithProject)
+        setWorkflows(prev => prev.map(w => w.id === workflow.id ? updatedWorkflow : w))
+        affectedWorkflows.push(updatedWorkflow)
       }
     }
 
-    return affectedProcesses.length
-  }, [processes])
+    return affectedWorkflows.length
+  }, [workflows, projectName])
 
   // Screenshot management functions (using IndexedDB)
   const addScreenshot = useCallback(async (screenshot: Screenshot) => {
@@ -649,6 +629,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   }, [])
 
   const deleteCategory = useCallback((category: string) => {
+    // Protect Main and Transitions categories from deletion
+    if (category === 'Main' || category === 'Transitions') {
+      console.warn(`Cannot delete protected category: ${category}`)
+      return
+    }
     setCategories((prev) => prev.filter(c => c !== category))
   }, [])
 
@@ -707,7 +692,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       name: projectName,
       images,
       screenshots,
-      processes,
+      workflows,
       states,
       transitions,
       categories,
@@ -719,7 +704,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         version: "1.0.0"
       }
     }
-  }, [projectName, images, processes, states, transitions, categories, settings, schedules, executionRecords, lastSaved])
+  }, [projectName, images, workflows, states, transitions, categories, settings, schedules, executionRecords, lastSaved])
 
   // Load a complete configuration
   const loadConfiguration = useCallback(async (config: any) => {
@@ -737,16 +722,19 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setProjectName(config.name)
     }
 
-    // Load processes to IndexedDB
-    if (config.processes && Array.isArray(config.processes)) {
-      const processesWithProject = config.processes.map((p: Process) => ({
-        ...p,
+    // Load workflows to IndexedDB
+    if (config.workflows && Array.isArray(config.workflows)) {
+      const workflowsWithProject = config.workflows.map((w: Workflow) => ({
+        ...w,
         projectName: newProjectName
-      }))
-      for (const process of processesWithProject) {
-        await projectDB.updateProcess(process) // Use update (put) instead of add to handle duplicates
+      })) as Array<Workflow & { projectName: string }>
+      for (const workflow of workflowsWithProject) {
+        await projectDB.updateWorkflow(workflow) // Use update (put) instead of add to handle duplicates
       }
-      setProcesses(processesWithProject)
+      setWorkflows(config.workflows)
+    } else {
+      // If no workflows in config, explicitly set to empty array
+      setWorkflows([])
     }
 
     // Load states to IndexedDB
@@ -759,6 +747,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.updateState(state) // Use update (put) instead of add to handle duplicates
       }
       setStates(statesWithProject)
+    } else {
+      // If no states in config, explicitly set to empty array
+      setStates([])
     }
 
     // Load transitions to IndexedDB
@@ -771,6 +762,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.updateTransition(transition) // Use update (put) instead of add to handle duplicates
       }
       setTransitions(transitionsWithProject)
+    } else {
+      // If no transitions in config, explicitly set to empty array
+      setTransitions([])
     }
 
     // Load images to IndexedDB
@@ -783,6 +777,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await projectDB.updateImage(image) // Use update (put) instead of add to handle duplicates
       }
       setImages(imagesWithProject)
+    } else {
+      // If no images in config, explicitly set to empty array
+      setImages([])
     }
 
     // Load screenshots to IndexedDB
@@ -795,10 +792,20 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         await screenshotDB.update(screenshot) // Use update (put) instead of add to handle duplicates
       }
       setScreenshots(screenshotsWithProject)
+    } else {
+      // If no screenshots in config, explicitly set to empty array
+      setScreenshots([])
     }
 
     if (config.categories && Array.isArray(config.categories)) {
-      setCategories(config.categories)
+      // Always include Main and Transitions, even if not in the saved config
+      const uniqueCategories = Array.from(
+        new Set(['Main', 'Transitions', ...config.categories])
+      )
+      setCategories(uniqueCategories)
+    } else {
+      // If no categories in config, set defaults
+      setCategories(['Main', 'Transitions'])
     }
 
     // Load schedules
@@ -842,10 +849,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     setProjectName('Untitled Project')
     setImages([])
     setScreenshots([])
-    setProcesses([])
+    setWorkflows([])
     setStates([])
     setTransitions([])
-    setCategories([])
+    setCategories(['Main', 'Transitions'])
     setSchedules([])
     setExecutionRecords([])
     setLastSaved(null)
@@ -865,7 +872,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     await screenshotDB.renameProject(projectName, trimmedName)
 
     // Update in-memory state with new project names (without triggering reload)
-    setProcesses(prev => prev.map(p => ({ ...p, projectName: trimmedName })))
+    setWorkflows(prev => prev.map(w => ({ ...w, projectName: trimmedName })))
     setStates(prev => prev.map(s => ({ ...s, projectName: trimmedName })))
     setTransitions(prev => prev.map(t => ({ ...t, projectName: trimmedName })))
     setImages(prev => prev.map(i => ({ ...i, projectName: trimmedName })))
@@ -883,17 +890,17 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     triggerSave()
   }, [projectName, setProjectName, triggerSave])
 
-  const contextValue: AutomationContextType = {
+  const contextValue: AutomationContextType = useMemo(() => ({
     // Project
     projectName,
     setProjectName,
     renameProject,
 
-    // Process management
-    processes,
-    addProcess,
-    updateProcess,
-    deleteProcess,
+    // Workflow management (unified - replaces both processes and workflows)
+    workflows,
+    addWorkflow,
+    updateWorkflow,
+    deleteWorkflow,
 
     // State management
     states,
@@ -958,7 +965,57 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     getConfiguration,
     loadConfiguration,
     clearAllData,
-  }
+  }), [
+    projectName,
+    setProjectName,
+    renameProject,
+    workflows,
+    addWorkflow,
+    updateWorkflow,
+    deleteWorkflow,
+    states,
+    addState,
+    updateState,
+    updateStateWithIdChange,
+    deleteState,
+    transitions,
+    addTransition,
+    updateTransition,
+    deleteTransition,
+    images,
+    addImage,
+    deleteImage,
+    updateImage,
+    updateImageUsage,
+    removeImageUsage,
+    getImageUsage,
+    removeImageFromStates,
+    markImageAsRemovedInProcesses,
+    screenshots,
+    addScreenshot,
+    updateScreenshot,
+    deleteScreenshot,
+    updateStateImageActionHistory,
+    updateStateLocationActionHistory,
+    updateStateRegionActionHistory,
+    categories,
+    addCategory,
+    deleteCategory,
+    schedules,
+    addSchedule,
+    updateSchedule,
+    deleteSchedule,
+    getSchedulerStatistics,
+    executionRecords,
+    getScheduleExecutions,
+    settings,
+    updateSettings,
+    lastSaved,
+    triggerSave,
+    getConfiguration,
+    loadConfiguration,
+    clearAllData,
+  ])
 
   return (
     <AutomationContext.Provider value={contextValue}>

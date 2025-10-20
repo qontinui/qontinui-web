@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hour
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # fastapi-users secrets (should be different from SECRET_KEY)
+    ACCESS_SECRET_KEY: str | None = Field(
+        None, min_length=32, description="Secret key for access tokens (fastapi-users)"
+    )
+    RESET_PASSWORD_SECRET_KEY: str | None = Field(
+        None, min_length=32, description="Secret key for password reset tokens"
+    )
+    VERIFICATION_SECRET_KEY: str | None = Field(
+        None, min_length=32, description="Secret key for email verification tokens"
+    )
+    ACCESS_TOKEN_EXPIRE_SECONDS: int = 3600  # 1 hour
+
     # CORS
     BACKEND_CORS_ORIGINS: list[AnyHttpUrl] = []
 
@@ -65,7 +77,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_PER_HOUR: int = 600
 
-    # Redis (for task queue)
+    # Redis (for task queue) - Optional, will fall back to synchronous operations
+    REDIS_ENABLED: bool = Field(
+        default=True, description="Enable Redis for task queue and caching"
+    )
     REDIS_HOST: str = Field(default="localhost")
     REDIS_PORT: int = Field(default=6379)
     REDIS_DB: int = Field(default=0)
@@ -83,6 +98,25 @@ class Settings(BaseSettings):
         None, description="Stripe Price ID for Pro tier"
     )
 
+    # Object Storage (S3/MinIO)
+    STORAGE_BACKEND: str = Field(
+        default="local", description="Storage backend: local, s3, minio"
+    )
+    STORAGE_BUCKET_NAME: str = Field(
+        default="qontinui", description="S3/MinIO bucket name"
+    )
+    STORAGE_REGION: str = Field(
+        default="us-east-1", description="AWS region or MinIO region"
+    )
+    STORAGE_ACCESS_KEY: str | None = Field(None, description="S3/MinIO access key")
+    STORAGE_SECRET_KEY: str | None = Field(None, description="S3/MinIO secret key")
+    STORAGE_ENDPOINT_URL: str | None = Field(
+        None, description="MinIO endpoint URL (e.g., http://localhost:9000)"
+    )
+    STORAGE_USE_SSL: bool = Field(
+        default=True, description="Use SSL for storage connections"
+    )
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
@@ -92,6 +126,24 @@ class Settings(BaseSettings):
                     "SECRET_KEY must be at least 32 characters in production"
                 )
             warnings.warn("Using weak SECRET_KEY in development mode")
+        return v
+
+    @field_validator(
+        "ACCESS_SECRET_KEY", "RESET_PASSWORD_SECRET_KEY", "VERIFICATION_SECRET_KEY"
+    )
+    @classmethod
+    def validate_fastapi_users_secrets(cls, v: str | None, info) -> str:
+        """Default fastapi-users secrets to SECRET_KEY if not provided."""
+        if v is None:
+            # Get SECRET_KEY from values (already validated)
+            secret_key = info.data.get("SECRET_KEY")
+            if secret_key:
+                warnings.warn(
+                    f"{info.field_name} not set, using SECRET_KEY as fallback. "
+                    "Consider setting unique secrets for production."
+                )
+                return secret_key
+            raise ValueError(f"{info.field_name} or SECRET_KEY must be set")
         return v
 
     @field_validator("ENVIRONMENT")
@@ -107,11 +159,9 @@ class Settings(BaseSettings):
     def validate_database_url(cls, v: str) -> str:
         if not v:
             raise ValueError("DATABASE_URL is required")
-        if (
-            "sqlite" in v.lower()
-            and cls.model_fields.get("ENVIRONMENT") == "production"
-        ):
-            raise ValueError("SQLite is not allowed in production")
+        # Only PostgreSQL is supported
+        if "postgresql" not in v.lower():
+            raise ValueError("Only PostgreSQL is supported for DATABASE_URL")
         return v
 
     class Config:

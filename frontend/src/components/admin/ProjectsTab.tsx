@@ -1,73 +1,19 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Search, FolderOpen, User, Calendar, FileText, ChevronRight } from "lucide-react"
-import { toast } from "sonner"
-import { authService } from "@/services/service-factory"
-
-interface ProjectData {
-  id: number
-  name: string
-  description: string | null
-  owner_id: number
-  owner_username: string
-  owner_email: string
-  created_at: string
-  updated_at: string
-  state_count: number
-  transition_count: number
-}
+import { useAdminProjects } from "@/hooks/use-admin"
 
 export default function ProjectsTab() {
-  const [projects, setProjects] = useState<ProjectData[]>([])
-  const [filteredProjects, setFilteredProjects] = useState<ProjectData[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data: projects = [], isLoading: loading } = useAdminProjects()
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState("recent")
 
-  useEffect(() => {
-    loadProjects()
-  }, [])
-
-  useEffect(() => {
-    applyFilters()
-  }, [searchTerm, sortBy, projects])
-
-  const loadProjects = async () => {
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const accessToken = authService.tokenManager.getAccessToken()
-
-      if (!accessToken) {
-        toast.error('Not authenticated')
-        return
-      }
-
-      const response = await fetch(`${apiUrl}/api/v1/admin/projects`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setProjects(data)
-        setFilteredProjects(data)
-      } else {
-        toast.error('Failed to load projects')
-      }
-    } catch (error) {
-      console.error('Failed to load projects:', error)
-      toast.error('Failed to load projects')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const filteredProjects = useMemo(() => applyFilters(), [searchTerm, sortBy, projects])
 
   const applyFilters = () => {
     let filtered = [...projects]
@@ -103,7 +49,7 @@ export default function ProjectsTab() {
         break
     }
 
-    setFilteredProjects(filtered)
+    return filtered
   }
 
   const getComplexityBadge = (stateCount: number, transitionCount: number) => {

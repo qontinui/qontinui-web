@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { AuthProvider } from "@/contexts/auth-context";
+import { AutomationProvider } from "@/contexts/automation-context";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import "../globals.css";
@@ -15,11 +16,13 @@ export default function AppLayout({
 }>) {
   return (
     <AuthProvider>
-      <div className="min-h-screen bg-background">
-        {children}
-        <OfflineIndicator />
-        <OnboardingTour />
-      </div>
+      <AutomationProvider>
+        <div className="min-h-screen bg-background">
+          {children}
+          <OfflineIndicator />
+          <OnboardingTour />
+        </div>
+      </AutomationProvider>
     </AuthProvider>
   );
 }

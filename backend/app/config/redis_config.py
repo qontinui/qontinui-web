@@ -4,13 +4,12 @@ Redis configuration for caching and Celery.
 This module provides Redis client setup and connection management.
 """
 
-import logging
-
+import structlog
 from redis import asyncio as aioredis
 
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class RedisConfig:
@@ -32,7 +31,7 @@ class RedisConfig:
             cls._client = await aioredis.from_url(
                 redis_url, encoding="utf-8", decode_responses=True, max_connections=10
             )
-            logger.info("Redis client initialized", redis_url=redis_url)
+            logger.info("redis_client_initialized", redis_url=redis_url)
 
         return cls._client
 
@@ -42,7 +41,7 @@ class RedisConfig:
         if cls._client:
             await cls._client.close()
             cls._client = None
-            logger.info("Redis client closed")
+            logger.info("redis_client_closed")
 
 
 async def get_redis() -> aioredis.Redis:

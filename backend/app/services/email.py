@@ -8,7 +8,7 @@ refactored architecture with separated concerns:
 - Email Composers: Type-specific email composition
 """
 
-import logging
+import structlog
 
 from app.models.user import User
 from app.services.email.email_composers import (
@@ -20,7 +20,7 @@ from app.services.email.email_composers import (
 from app.services.email.email_template_service import EmailTemplateService
 from app.services.email.email_transport_service import EmailTransportService
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class EmailService:

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ProcessBuilder } from "@/components/process-builder"
+import { AutomationBuilder as UnifiedAutomationBuilder } from "@/components/automation-builder/AutomationBuilder"
 import { StateStructure } from "@/components/state-machine"
 import { ImagesManager } from "@/components/images-manager"
 import ScreenshotUploadTab from "@/components/ScreenshotTab/ScreenshotUploadTab"
@@ -34,6 +34,8 @@ import { useAuth } from "@/contexts/auth-context"
 import { ConfigExporter } from "@/lib/config-exporter"
 import { ConfigImporter } from "@/lib/config-importer"
 import { projectService } from "@/services/service-factory"
+import { useQueryClient } from "@tanstack/react-query"
+import { projectKeys } from "@/hooks/use-projects"
 
 import { Screenshot } from "../types/Screenshot"
 
@@ -71,7 +73,7 @@ function AutomationBuilderContent() {
     loadConfiguration,
     clearAllData,
     images,
-    processes,
+    workflows,
     states,
     transitions,
     categories,
@@ -81,6 +83,7 @@ function AutomationBuilderContent() {
   const { user, logout } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const exporter = new ConfigExporter()
   const importer = new ConfigImporter()
 
@@ -117,7 +120,7 @@ function AutomationBuilderContent() {
     }, 10000) // Every 10 seconds
 
     return () => clearInterval(interval)
-  }, [currentProjectId, processes, states, transitions, images, screenshots])
+  }, [currentProjectId, workflows, states, transitions, images, screenshots])
 
   const loadProjectFromBackend = async (projectId: string) => {
     try {
@@ -142,6 +145,9 @@ function AutomationBuilderContent() {
       await projectService.updateProject(currentProjectId, {
         name: projectName,
       })
+      // Invalidate the projects list cache so dashboard shows updated name
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: projectKeys.detail(currentProjectId) })
     } catch (error) {
       console.error('Failed to update project name:', error)
     }
@@ -235,7 +241,7 @@ function AutomationBuilderContent() {
       // Use project settings from context
       const config = await exporter.exportConfiguration(
         images,
-        processes,
+        workflows,
         states,
         transitions,
         categories,
@@ -306,7 +312,7 @@ function AutomationBuilderContent() {
         handleLoadConfiguration(result)
 
         toast.success("Import successful", {
-          description: `Loaded ${result.states.length} states, ${result.processes.length} processes`
+          description: `Loaded ${result.states.length} states, ${result.workflows?.length || 0} workflows`
         })
       } catch (error) {
         toast.error("Import failed", {
@@ -507,9 +513,9 @@ function AutomationBuilderContent() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Build Category - Just Process Builder */}
+          {/* Build Category - Unified Automation Builder */}
           <TabsContent value="build" className="flex-1 min-h-0 mt-0">
-            <ProcessBuilder />
+            <UnifiedAutomationBuilder />
           </TabsContent>
 
           {/* Develop Category - State Structure with nested sub-tabs */}

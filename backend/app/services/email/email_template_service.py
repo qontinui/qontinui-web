@@ -1,11 +1,11 @@
 """Email template service - handles template rendering."""
 
-import logging
 from pathlib import Path
 
+import structlog
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class EmailTemplateService:

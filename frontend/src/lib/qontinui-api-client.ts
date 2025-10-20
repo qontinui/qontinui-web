@@ -1,6 +1,10 @@
 /**
  * Qontinui API Client
  * Connects to the qontinui-api service for real pattern matching
+ *
+ * Note: This API client uses custom types specific to the Qontinui domain.
+ * While OpenAPI types are available in @/lib/api-client/qontinui-generated-types,
+ * these custom types provide better developer experience for the pattern matching use case.
  */
 
 import { Screenshot, ScreenshotRegion, ScreenshotLocation } from '../types/Screenshot';
@@ -10,6 +14,8 @@ import { State } from '../contexts/automation-context/types';
 const API_BASE_URL = process.env.NEXT_PUBLIC_QONTINUI_API_URL || 'http://localhost:8000';
 
 // Types for API requests/responses
+// Note: These could potentially be replaced with generated types from OpenAPI schema
+// For now, keeping custom types for better control over the domain model
 interface FindRequest {
   screenshot: string; // base64
   template: string; // base64

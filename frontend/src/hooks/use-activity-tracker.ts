@@ -15,6 +15,17 @@ export function useActivityTracker() {
   const activityEventCountRef = useRef<number>(0);
 
   useEffect(() => {
+    // Clear all timers when session expires
+    const handleSessionExpired = () => {
+      console.log('[ActivityTracker] Session expired, clearing all timers');
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    };
+
+    // Listen for session-expired event
+    window.addEventListener('session-expired', handleSessionExpired);
+
     // Update last activity time on user interaction
     const updateActivity = (event: Event) => {
       const previousActivity = lastActivityRef.current;
@@ -52,10 +63,28 @@ export function useActivityTracker() {
         if (apiClient.isAuthenticated() && timeSinceLastActivity < INACTIVITY_TIMEOUT) {
           try {
             console.log('[ActivityTracker] Periodic token refresh (5min interval)');
-            await apiClient.refreshAccessToken();
+            const success = await apiClient.refreshAccessToken();
+
+            // If refresh failed, stop all timers to prevent further attempts
+            if (!success) {
+              console.log('[ActivityTracker] Token refresh failed, clearing all timers');
+              if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+              if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+              if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+            }
           } catch (error) {
             console.error('[ActivityTracker] Failed to refresh token:', error);
+            // On error, also stop timers to prevent spam
+            if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+            if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+            if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
           }
+        } else if (!apiClient.isAuthenticated()) {
+          // If not authenticated, stop all timers immediately
+          console.log('[ActivityTracker] User not authenticated, clearing all timers');
+          if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+          if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+          if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
         }
       }, REFRESH_INTERVAL);
 
@@ -106,6 +135,8 @@ export function useActivityTracker() {
 
     // Cleanup
     return () => {
+      window.removeEventListener('session-expired', handleSessionExpired);
+
       events.forEach(event => {
         window.removeEventListener(event, updateActivity);
       });

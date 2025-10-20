@@ -8,12 +8,7 @@ from app.core.config import settings
 
 # Sync engine only for Alembic migrations and init_db
 database_url_str = str(settings.DATABASE_URL)
-if database_url_str.startswith("sqlite"):
-    sync_engine = create_engine(
-        database_url_str, connect_args={"check_same_thread": False}
-    )
-else:
-    sync_engine = create_engine(database_url_str)
+sync_engine = create_engine(database_url_str)
 
 # Export as 'engine' for Alembic
 engine = sync_engine
@@ -26,47 +21,29 @@ if database_url_str.startswith("postgresql://"):
     async_database_url = database_url_str.replace(
         "postgresql://", "postgresql+asyncpg://"
     )
-    async_engine = create_async_engine(
-        async_database_url,
-        echo=settings.DEBUG if hasattr(settings, "DEBUG") else False,
-        future=True,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
-    )
-    AsyncSessionLocal = async_sessionmaker(
-        async_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autocommit=False,
-        autoflush=False,
-    )
-elif database_url_str.startswith("sqlite"):
-    # SQLite doesn't support true async - skip async engine
-    async_engine = None
-    AsyncSessionLocal = None
 else:
-    # Other databases
     async_database_url = database_url_str
-    async_engine = create_async_engine(
-        async_database_url,
-        echo=settings.DEBUG if hasattr(settings, "DEBUG") else False,
-        future=True,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10,
-    )
-    AsyncSessionLocal = async_sessionmaker(
-        async_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autocommit=False,
-        autoflush=False,
-    )
+
+async_engine = create_async_engine(
+    async_database_url,
+    echo=settings.DEBUG if hasattr(settings, "DEBUG") else False,
+    future=True,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
 
 
 def get_sync_db():
-    """Dependency for getting sync database sessions (for SQLite compatibility)."""
+    """Dependency for getting sync database sessions (for Alembic migrations and init_db)."""
     db = SessionLocal()
     try:
         yield db
@@ -80,13 +57,6 @@ def get_sync_db():
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency for getting async database sessions."""
-    if AsyncSessionLocal is None:
-        raise RuntimeError(
-            "Async database session not configured. "
-            "PostgreSQL with asyncpg is required for async operations. "
-            "Current database URL uses SQLite which doesn't support async."
-        )
-
     async with AsyncSessionLocal() as session:
         try:
             yield session

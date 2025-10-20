@@ -22,6 +22,7 @@ from app.middleware.error_handler import (
 )
 from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from app.middleware.request_id import RequestIDMiddleware
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -90,8 +91,12 @@ app.add_middleware(
         "X-RateLimit-Limit",
         "X-RateLimit-Remaining",
         "X-RateLimit-Reset",
+        "X-Request-ID",
     ],
 )
+
+# Add request ID tracking middleware (should be first for proper context binding)
+app.add_middleware(RequestIDMiddleware)
 
 # Add metrics tracking middleware
 app.add_middleware(MetricsMiddleware)
@@ -115,16 +120,21 @@ async def startup_event():
         project=settings.PROJECT_NAME,
     )
 
-    # Initialize Redis connection
-    try:
-        from app.config.redis_config import RedisConfig
+    # Initialize Redis connection (optional)
+    if settings.REDIS_ENABLED:
+        try:
+            from app.config.redis_config import RedisConfig
 
-        await RedisConfig.get_client()
-        logger.info("redis_initialized", status="connected")
-    except Exception as e:
-        logger.warning(
-            "redis_initialization_failed", error=str(e), note="Continuing without Redis"
-        )
+            await RedisConfig.get_client()
+            logger.info("redis_initialized", status="connected")
+        except Exception as e:
+            logger.warning(
+                "redis_initialization_failed",
+                error=str(e),
+                note="Continuing without Redis",
+            )
+    else:
+        logger.info("redis_disabled", note="Redis is disabled via configuration")
 
     # Initialize database
     try:
@@ -142,18 +152,21 @@ async def startup_event():
         # Re-raise to prevent app from starting with broken DB
         raise
 
-    # Initialize ARQ connection pool
-    try:
-        from app.worker.arq_pool import get_arq_pool
+    # Initialize ARQ connection pool (optional, requires Redis)
+    if settings.REDIS_ENABLED:
+        try:
+            from app.worker.arq_pool import get_arq_pool
 
-        await get_arq_pool()
-        logger.info("arq_pool_initialized", status="connected")
-    except Exception as e:
-        logger.warning(
-            "arq_initialization_failed",
-            error=str(e),
-            note="Continuing without task queue",
-        )
+            await get_arq_pool()
+            logger.info("arq_pool_initialized", status="connected")
+        except Exception as e:
+            logger.warning(
+                "arq_initialization_failed",
+                error=str(e),
+                note="Continuing without task queue",
+            )
+    else:
+        logger.info("arq_pool_disabled", note="Task queue disabled (Redis not enabled)")
 
 
 @app.on_event("shutdown")
@@ -161,22 +174,23 @@ async def shutdown_event():
     logger.info("application_shutting_down")
 
     # Close Redis connection
-    try:
-        from app.config.redis_config import RedisConfig
+    if settings.REDIS_ENABLED:
+        try:
+            from app.config.redis_config import RedisConfig
 
-        await RedisConfig.close()
-        logger.info("redis_closed")
-    except Exception as e:
-        logger.warning("redis_close_error", error=str(e))
+            await RedisConfig.close()
+            logger.info("redis_closed")
+        except Exception as e:
+            logger.warning("redis_close_error", error=str(e))
 
-    # Close ARQ connection pool
-    try:
-        from app.worker.arq_pool import close_arq_pool
+        # Close ARQ connection pool
+        try:
+            from app.worker.arq_pool import close_arq_pool
 
-        await close_arq_pool()
-        logger.info("arq_pool_closed")
-    except Exception as e:
-        logger.warning("arq_close_error", error=str(e))
+            await close_arq_pool()
+            logger.info("arq_pool_closed")
+        except Exception as e:
+            logger.warning("arq_close_error", error=str(e))
 
     # Flush any pending metrics before shutdown
     from app.db.session import AsyncSessionLocal
@@ -212,36 +226,30 @@ async def health_check():
 
         from app.db.session import AsyncSessionLocal
 
-        if AsyncSessionLocal is not None:
-            async with AsyncSessionLocal() as session:
-                await session.execute(text("SELECT 1"))
-            health_status["database"] = "connected"
-            health_status["database_driver"] = "asyncpg"
-            logger.debug("health_check_success", database="connected", driver="asyncpg")
-        else:
-            # Fall back to sync engine for SQLite
-            db = SessionLocal()
-            db.execute(text("SELECT 1"))
-            db.close()
-            health_status["database"] = "connected"
-            health_status["database_driver"] = "sync (SQLite)"
-            logger.debug("health_check_success", database="connected", driver="sync")
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        health_status["database"] = "connected"
+        health_status["database_driver"] = "asyncpg"
+        logger.debug("health_check_success", database="connected", driver="asyncpg")
     except Exception as e:
         health_status["status"] = "degraded"
         health_status["database"] = f"error: {str(e)}"
         logger.error("health_check_database_error", error=str(e))
 
-    # Check Redis connectivity
-    try:
-        from app.config.redis_config import RedisConfig
+    # Check Redis connectivity (if enabled)
+    if settings.REDIS_ENABLED:
+        try:
+            from app.config.redis_config import RedisConfig
 
-        redis_client = await RedisConfig.get_client()
-        await redis_client.ping()
-        health_status["redis"] = "connected"
-        logger.debug("health_check_redis_success")
-    except Exception as e:
-        health_status["redis"] = f"error: {str(e)}"
-        logger.warning("health_check_redis_error", error=str(e))
+            redis_client = await RedisConfig.get_client()
+            await redis_client.ping()
+            health_status["redis"] = "connected"
+            logger.debug("health_check_redis_success")
+        except Exception as e:
+            health_status["redis"] = f"error: {str(e)}"
+            logger.warning("health_check_redis_error", error=str(e))
+    else:
+        health_status["redis"] = "disabled"
 
     return health_status
 

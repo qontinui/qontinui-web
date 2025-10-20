@@ -1,5 +1,6 @@
 import { TokenResponse } from '@/types/auth-types';
 import { TokenManager } from './token-manager';
+import { ApiConfig } from '../api-config';
 
 /**
  * TokenRefreshService - Single Responsibility: Handle token refresh logic
@@ -7,12 +8,10 @@ import { TokenManager } from './token-manager';
  */
 export class TokenRefreshService {
   private tokenManager: TokenManager;
-  private apiUrl: string;
   private refreshPromise: Promise<boolean> | null = null;
 
-  constructor(tokenManager: TokenManager, apiUrl: string) {
+  constructor(tokenManager: TokenManager) {
     this.tokenManager = tokenManager;
-    this.apiUrl = apiUrl;
   }
 
   /**
@@ -49,9 +48,9 @@ export class TokenRefreshService {
     }
 
     try {
-      console.log('[TokenRefreshService] Attempting to refresh token at:', `${this.apiUrl}/api/v1/auth/refresh`);
+      console.log('[TokenRefreshService] Attempting to refresh token at:', ApiConfig.AUTH_REFRESH);
 
-      const response = await fetch(`${this.apiUrl}/api/v1/auth/refresh`, {
+      const response = await fetch(ApiConfig.AUTH_REFRESH, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -74,7 +73,7 @@ export class TokenRefreshService {
           statusText: response.statusText,
           error: errorText,
           timestamp: new Date().toISOString(),
-          url: `${this.apiUrl}/api/v1/auth/refresh`,
+          url: ApiConfig.AUTH_REFRESH,
         });
 
         // DON'T clear tokens on refresh failure - the activity tracker will retry
@@ -92,7 +91,7 @@ export class TokenRefreshService {
         error,
         errorMessage: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString(),
-        url: `${this.apiUrl}/api/v1/auth/refresh`,
+        url: ApiConfig.AUTH_REFRESH,
       });
 
       // DON'T clear tokens on network errors - keep tokens for retry

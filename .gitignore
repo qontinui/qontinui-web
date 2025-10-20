@@ -60,3 +60,28 @@ test_*.sh
 
 # AWS Elastic Beanstalk config (contains sensitive credentials)
 backend/eb-env-*.json
+
+# Migration reports
+migration_report_*.json
+uploads_backup_*.tar.gz
+
+# MinIO/S3 local data
+minio_data/
+*.aws-credentials.txt
+.aws-credentials.txt
+
+# Backup files
+*.backup
+*.bak
+*.db.backup
+*recovery_backup*.json
+
+# Development scripts (temporary/local use only)
+create_dev_user*.py
+
+# Example/demo files
+examples/
+src/examples/
+
+# Claude development guidelines (local only)
+CLAUDE.md

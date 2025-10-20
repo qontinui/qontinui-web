@@ -1,18 +1,21 @@
 /**
  * IndexedDB wrapper for storing project data
- * Stores processes, states, transitions, and images with project isolation
+ * Stores workflows, states, transitions, and images with project isolation
  */
 
-import type { Process, State, Transition, ImageAsset } from '@/contexts/automation-context/types'
+import type { State, Transition, ImageAsset } from '@/contexts/automation-context/types'
+import type { Workflow } from '@/lib/action-schema/action-types'
 
 const DB_NAME = 'qontinui-project-db'
-const DB_VERSION = 1
+const DB_VERSION = 3 // Increment version to remove processes store
 
 const STORES = {
-  PROCESSES: 'processes',
+  WORKFLOWS: 'workflows',
   STATES: 'states',
   TRANSITIONS: 'transitions',
   IMAGES: 'images',
+  // Legacy store - will be deleted during upgrade
+  PROCESSES: 'processes',
 } as const
 
 class ProjectDB {
@@ -56,9 +59,16 @@ class ProjectDB {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result
+        const oldVersion = event.oldVersion
 
-        // Create stores if they don't exist
-        Object.values(STORES).forEach((storeName) => {
+        // Delete legacy processes store on upgrade
+        if (oldVersion < 3 && db.objectStoreNames.contains(STORES.PROCESSES)) {
+          db.deleteObjectStore(STORES.PROCESSES)
+        }
+
+        // Create stores if they don't exist (excluding PROCESSES)
+        const activeStores = [STORES.WORKFLOWS, STORES.STATES, STORES.TRANSITIONS, STORES.IMAGES]
+        activeStores.forEach((storeName) => {
           if (!db.objectStoreNames.contains(storeName)) {
             const store = db.createObjectStore(storeName, { keyPath: 'id' })
             store.createIndex('projectName', 'projectName', { unique: false })
@@ -184,29 +194,29 @@ class ProjectDB {
     }
   }
 
-  // Process methods
-  async getAllProcesses(): Promise<Process[]> {
-    return this.getAll<Process>(STORES.PROCESSES)
+  // Workflow methods
+  async getAllWorkflows(): Promise<Workflow[]> {
+    return this.getAll<Workflow>(STORES.WORKFLOWS)
   }
 
-  async getProcessesByProject(projectName: string): Promise<Process[]> {
-    return this.getByProject<Process>(STORES.PROCESSES, projectName)
+  async getWorkflowsByProject(projectName: string): Promise<Workflow[]> {
+    return this.getByProject<Workflow>(STORES.WORKFLOWS, projectName)
   }
 
-  async addProcess(process: Process): Promise<void> {
-    return this.add(STORES.PROCESSES, process)
+  async addWorkflow(workflow: Workflow & { projectName: string }): Promise<void> {
+    return this.add(STORES.WORKFLOWS, workflow)
   }
 
-  async updateProcess(process: Process): Promise<void> {
-    return this.update(STORES.PROCESSES, process)
+  async updateWorkflow(workflow: Workflow & { projectName: string }): Promise<void> {
+    return this.update(STORES.WORKFLOWS, workflow)
   }
 
-  async deleteProcess(id: string): Promise<void> {
-    return this.delete(STORES.PROCESSES, id)
+  async deleteWorkflow(id: string): Promise<void> {
+    return this.delete(STORES.WORKFLOWS, id)
   }
 
-  async clearProcesses(): Promise<void> {
-    return this.clear(STORES.PROCESSES)
+  async clearWorkflows(): Promise<void> {
+    return this.clear(STORES.WORKFLOWS)
   }
 
   // State methods
@@ -292,15 +302,15 @@ class ProjectDB {
 
   // Bulk operations for clearing project data
   async clearProjectData(projectName: string): Promise<void> {
-    const [processes, states, transitions, images] = await Promise.all([
-      this.getProcessesByProject(projectName),
+    const [workflows, states, transitions, images] = await Promise.all([
+      this.getWorkflowsByProject(projectName),
       this.getStatesByProject(projectName),
       this.getTransitionsByProject(projectName),
       this.getImagesByProject(projectName),
     ])
 
     await Promise.all([
-      ...processes.map((p) => this.deleteProcess(p.id)),
+      ...workflows.map((w) => this.deleteWorkflow(w.id)),
       ...states.map((s) => this.deleteState(s.id)),
       ...transitions.map((t) => this.deleteTransition(t.id)),
       ...images.map((i) => this.deleteImage(i.id)),
@@ -310,7 +320,7 @@ class ProjectDB {
   // Clear all data (for testing or reset)
   async clearAll(): Promise<void> {
     await Promise.all([
-      this.clearProcesses(),
+      this.clearWorkflows(),
       this.clearStates(),
       this.clearTransitions(),
       this.clearImages(),
@@ -319,8 +329,8 @@ class ProjectDB {
 
   // Rename project data
   async renameProject(oldProjectName: string, newProjectName: string): Promise<void> {
-    const [processes, states, transitions, images] = await Promise.all([
-      this.getProcessesByProject(oldProjectName),
+    const [workflows, states, transitions, images] = await Promise.all([
+      this.getWorkflowsByProject(oldProjectName),
       this.getStatesByProject(oldProjectName),
       this.getTransitionsByProject(oldProjectName),
       this.getImagesByProject(oldProjectName),
@@ -328,7 +338,7 @@ class ProjectDB {
 
     // Update all items with new project name
     await Promise.all([
-      ...processes.map((p) => this.updateProcess({ ...p, projectName: newProjectName })),
+      ...workflows.map((w) => this.updateWorkflow({ ...w, projectName: newProjectName } as Workflow & { projectName: string })),
       ...states.map((s) => this.updateState({ ...s, projectName: newProjectName })),
       ...transitions.map((t) => this.updateTransition({ ...t, projectName: newProjectName })),
       ...images.map((i) => this.updateImage({ ...i, projectName: newProjectName })),

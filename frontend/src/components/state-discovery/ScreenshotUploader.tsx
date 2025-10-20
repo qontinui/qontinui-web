@@ -7,11 +7,23 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { Upload, X, Image as ImageIcon, Save, FolderOpen, AlertCircle } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, Save, FolderOpen, AlertCircle, Database, Plus, Lightbulb } from 'lucide-react';
 import { calculateImageHashes, filterDuplicateImages } from '@/utils/imageUtils';
+import { useAvailableStates } from '@/hooks/useAvailableStates';
 import ProjectScreenshotSelector from './ProjectScreenshotSelector';
+import SnapshotScreenshotSelector from './SnapshotScreenshotSelector';
+import { DirectPatternCreation } from './DirectPatternCreation';
+import { AutoPatternExtraction } from './AutoPatternExtraction';
 
 interface ScreenshotUploaderProps {
   onUpload: (files: File[]) => void;
@@ -27,13 +39,17 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
   onSelectScreenshot
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState('upload');
   const [thumbnails, setThumbnails] = useState<{ [key: string]: string }>({});
   const [screenshotHashes, setScreenshotHashes] = useState<Map<string, string>>(new Map());
   const [projectHashes, setProjectHashes] = useState<string[]>([]);
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [showProjectSelector, setShowProjectSelector] = useState(false);
+  const [showSnapshotSelector, setShowSnapshotSelector] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
+  const [stateFilter, setStateFilter] = useState<string[]>([]);
+  const { availableStates, loading: statesLoading } = useAvailableStates();
 
   // Load project screenshot hashes on mount
   useEffect(() => {
@@ -283,30 +299,189 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
     }
   };
 
+  // Handle selecting snapshot screenshots
+  const handleSelectSnapshotScreenshots = async (selected: Array<{ url: string; name: string; snapshotId: string }>) => {
+    try {
+      const newFiles: File[] = [];
+
+      for (const screenshot of selected) {
+        // Fetch the screenshot image from the API
+        const response = await fetch(screenshot.url);
+
+        if (!response.ok) {
+          console.error(`Failed to load screenshot ${screenshot.name}`);
+          continue;
+        }
+
+        // Get the image as a blob
+        const blob = await response.blob();
+
+        // Create a File object
+        const file = new File([blob], screenshot.name, { type: blob.type || 'image/png' });
+
+        newFiles.push(file);
+      }
+
+      // Add to existing screenshots
+      if (newFiles.length > 0) {
+        onUpload([...screenshots, ...newFiles]);
+        setSaveMessage({
+          type: 'success',
+          text: `Added ${newFiles.length} screenshot(s) from snapshot runs`
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load snapshot screenshots:', error);
+      setSaveMessage({
+        type: 'error',
+        text: 'Failed to load screenshots from snapshots'
+      });
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <h3 className="font-semibold text-sm">Screenshots</h3>
+        <h3 className="font-semibold text-sm">Image Sources</h3>
 
-        {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="mr-1 h-4 w-4" />
-            Upload
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowProjectSelector(true)}
-          >
-            <FolderOpen className="mr-1 h-4 w-4" />
-            From Project
-          </Button>
-        </div>
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid grid-cols-5 w-full">
+            <TabsTrigger value="upload">Upload</TabsTrigger>
+            <TabsTrigger value="project">Project</TabsTrigger>
+            <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
+            <TabsTrigger value="direct" className="relative">
+              Direct
+              <Badge variant="secondary" className="ml-1 text-xs">beta</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="auto" className="relative">
+              Auto
+              <Badge variant="secondary" className="ml-1 text-xs">beta</Badge>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Upload Tab */}
+          <TabsContent value="upload" className="space-y-2 mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="mr-1 h-4 w-4" />
+              Upload Files
+            </Button>
+          </TabsContent>
+
+          {/* Project Tab */}
+          <TabsContent value="project" className="space-y-2 mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setShowProjectSelector(true)}
+            >
+              <FolderOpen className="mr-1 h-4 w-4" />
+              Select from Project
+            </Button>
+          </TabsContent>
+
+          {/* Snapshots Tab */}
+          <TabsContent value="snapshots" className="space-y-2 mt-4">
+            {/* State Filter Section */}
+            <div className="state-filter-section">
+              <Label className="text-xs">Filter by state (optional):</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {stateFilter.map(state => (
+                  <Badge key={state} variant="secondary" className="text-xs">
+                    {state}
+                    <X
+                      className="ml-1 h-3 w-3 cursor-pointer"
+                      onClick={() => setStateFilter(prev => prev.filter(s => s !== state))}
+                    />
+                  </Badge>
+                ))}
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs"
+                      disabled={statesLoading || availableStates.length === 0}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add Filter
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {availableStates
+                      .filter(s => !stateFilter.includes(s))
+                      .map(state => (
+                        <DropdownMenuItem
+                          key={state}
+                          onClick={() => setStateFilter(prev => [...prev, state])}
+                        >
+                          {state}
+                        </DropdownMenuItem>
+                      ))
+                    }
+                    {availableStates.filter(s => !stateFilter.includes(s)).length === 0 && (
+                      <DropdownMenuItem disabled>
+                        No more states available
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {stateFilter.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={() => setStateFilter([])}
+                  >
+                    Clear All
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setShowSnapshotSelector(true)}
+            >
+              <Database className="mr-1 h-4 w-4" />
+              Select from Snapshots
+            </Button>
+          </TabsContent>
+
+          {/* Direct Creation Tab */}
+          <TabsContent value="direct" className="space-y-2 mt-4">
+            <Alert className="mb-4">
+              <Lightbulb className="h-4 w-4" />
+              <AlertTitle>Experimental Feature</AlertTitle>
+              <AlertDescription>
+                Direct pattern creation from snapshots. This feature is in beta.
+              </AlertDescription>
+            </Alert>
+            <DirectPatternCreation />
+          </TabsContent>
+
+          {/* Auto-Extract Tab */}
+          <TabsContent value="auto" className="space-y-2 mt-4">
+            <Alert className="mb-4">
+              <Lightbulb className="h-4 w-4" />
+              <AlertTitle>Experimental Feature</AlertTitle>
+              <AlertDescription>
+                AI-powered pattern extraction. Results may vary.
+              </AlertDescription>
+            </Alert>
+            <AutoPatternExtraction />
+          </TabsContent>
+        </Tabs>
 
         {/* Save to Project Button */}
         {screenshots.length > 0 && (
@@ -449,6 +624,14 @@ const ScreenshotUploader: React.FC<ScreenshotUploaderProps> = ({
         onClose={() => setShowProjectSelector(false)}
         onSelect={handleSelectProjectScreenshots}
         currentHashes={Array.from(screenshotHashes.values())}
+      />
+
+      {/* Snapshot Screenshot Selector Dialog */}
+      <SnapshotScreenshotSelector
+        isOpen={showSnapshotSelector}
+        onClose={() => setShowSnapshotSelector(false)}
+        onSelect={handleSelectSnapshotScreenshots}
+        stateFilter={stateFilter}
       />
     </div>
   );

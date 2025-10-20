@@ -63,7 +63,7 @@ export function StateStructure() {
     addTransition,
     updateTransition,
     deleteTransition,
-    processes,
+    workflows,
     images,
     updateImageUsage,
     removeImageUsage,
@@ -751,7 +751,7 @@ export function StateStructure() {
           <TransitionPropertiesPanel
             transition={selectedTransition}
             states={states}
-            processes={processes}
+            processes={workflows}
             updateTransition={updateSelectedTransition}
             deleteTransition={(transitionId) => {
               deleteTransition(transitionId)

@@ -2,17 +2,16 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_password_hash
-from app.db.base import Base
 
 # Import models to register them with Base
 from app.db.base_class import *  # noqa
-from app.db.session import engine
 from app.models.user import User
 
 
 def init_db(db: Session) -> None:
-    # Create all tables
-    Base.metadata.create_all(bind=engine)
+    # Tables are created via Alembic migrations, not here
+    # Base.metadata.create_all(bind=engine) is incompatible with async engines
+    pass
 
     # Create first superuser if it doesn't exist
     if settings.FIRST_SUPERUSER_EMAIL:
@@ -29,7 +28,7 @@ def init_db(db: Session) -> None:
                 hashed_password=hashed_password,
                 full_name="Admin User",
                 is_superuser=True,
-                email_verified=True,
+                is_verified=True,  # Changed from email_verified
                 is_active=True,
             )
             db.add(user)

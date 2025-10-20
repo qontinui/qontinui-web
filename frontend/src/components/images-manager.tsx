@@ -172,7 +172,7 @@ export function ImagesManager() {
         details.push(`Removed from ${statesAffected} state${statesAffected > 1 ? 's' : ''}`)
       }
       if (processesAffected > 0) {
-        details.push(`Marked as removed in ${processesAffected} process${processesAffected > 1 ? 'es' : ''}`)
+        details.push(`Marked as removed in ${processesAffected} workflow${processesAffected > 1 ? 's' : ''}`)
       }
 
       toast.success("Image deleted", {
@@ -434,7 +434,7 @@ export function ImagesManager() {
             <>
               <ImageIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p className="text-lg">No images uploaded</p>
-              <p className="text-sm">Upload images to use in your automation processes</p>
+              <p className="text-sm">Upload images to use in your automation workflows</p>
             </>
           )}
         </div>

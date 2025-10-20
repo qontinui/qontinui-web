@@ -18,7 +18,7 @@ interface OutgoingTransitionBuilderProps {
 }
 
 export function OutgoingTransitionBuilder({ preselectedProcess, onClose }: OutgoingTransitionBuilderProps = {}) {
-  const { states, processes, addTransition } = useAutomation()
+  const { states, workflows, addTransition } = useAutomation()
   const [open, setOpen] = useState(!!preselectedProcess)
 
   // OutgoingTransition fields
@@ -277,9 +277,9 @@ export function OutgoingTransitionBuilder({ preselectedProcess, onClose }: Outgo
                 </SelectTrigger>
                 <SelectContent className="max-h-[300px]">
                   <SelectItem value="none">None</SelectItem>
-                  {processes.map((process) => (
-                    <SelectItem key={process.id} value={process.id}>
-                      {process.name} ({process.actions.length} actions)
+                  {workflows.map((workflow) => (
+                    <SelectItem key={workflow.id} value={workflow.id}>
+                      {workflow.name} ({workflow.actions.length} actions)
                     </SelectItem>
                   ))}
                 </SelectContent>

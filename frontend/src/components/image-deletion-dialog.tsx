@@ -63,8 +63,8 @@ export function ImageDeletionDialog({
                   )}
                   {totalProcesses > 0 && (
                     <li>
-                      Mark it as [REMOVED] in {totalProcesses} process
-                      {totalProcesses > 1 ? "es" : ""}
+                      Mark it as [REMOVED] in {totalProcesses} workflow
+                      {totalProcesses > 1 ? "s" : ""}
                     </li>
                   )}
                 </ul>
@@ -89,7 +89,7 @@ export function ImageDeletionDialog({
               {totalProcesses > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-medium text-gray-300">
-                    Used in Processes ({totalProcesses}):
+                    Used in Workflows ({totalProcesses}):
                   </h4>
                   <div className="max-h-32 overflow-y-auto bg-gray-800/50 rounded-lg p-3 space-y-1">
                     {usageInfo.processes.map((process) => (
@@ -107,9 +107,9 @@ export function ImageDeletionDialog({
 
               <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
                 <p className="text-sm text-red-200">
-                  Images removed from processes will be displayed as{" "}
+                  Images removed from workflows will be displayed as{" "}
                   <span className="font-mono text-red-400">[REMOVED: {imageName}]</span> in red text.
-                  The process structure will be preserved but the image will be unavailable.
+                  The workflow structure will be preserved but the image will be unavailable.
                 </p>
               </div>
             </>

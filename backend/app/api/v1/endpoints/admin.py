@@ -1,9 +1,10 @@
 """Admin endpoints for analytics and user management."""
 
-import logging
+import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,7 @@ from app.models.project import Project
 from app.models.user import User
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 # One-time bootstrap endpoint - remove after first use
@@ -136,13 +137,13 @@ async def get_users_list(
 
         user_data.append(
             {
-                "id": user.id,
+                "id": str(user.id),
                 "email": user.email,
                 "username": user.username,
                 "full_name": user.full_name,
                 "is_active": user.is_active,
-                "email_verified": user.email_verified,
-                "created_at": user.created_at,
+                "is_verified": user.is_verified,  # Changed from email_verified
+                "created_at": user.created_at.isoformat() if user.created_at else None,
                 "project_count": project_count or 0,
                 "subscription_tier": user.subscription_tier,
                 "last_login": None,  # Add last_login tracking in future
@@ -154,7 +155,7 @@ async def get_users_list(
 
 @router.get("/users/{user_id}")
 async def get_user_details(
-    user_id: int,
+    user_id: uuid.UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_admin),
 ) -> Any:
@@ -183,7 +184,7 @@ async def get_user_details(
         "full_name": user.full_name,
         "is_active": user.is_active,
         "is_superuser": user.is_superuser,
-        "email_verified": user.email_verified,
+        "is_verified": user.is_verified,  # Changed from email_verified
         "created_at": user.created_at,
         "updated_at": user.updated_at,
         "projects": [
@@ -231,11 +232,15 @@ async def get_all_projects(
                 "id": project.id,
                 "name": project.name,
                 "description": project.description,
-                "owner_id": project.owner_id,
+                "owner_id": str(project.owner_id),
                 "owner_username": project.owner.username,
                 "owner_email": project.owner.email,
-                "created_at": project.created_at,
-                "updated_at": project.updated_at,
+                "created_at": project.created_at.isoformat()
+                if project.created_at
+                else None,
+                "updated_at": project.updated_at.isoformat()
+                if project.updated_at
+                else None,
                 "state_count": state_count,
                 "transition_count": transition_count,
             }

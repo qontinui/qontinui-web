@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { loginWithEmailSchema, loginWithUsernameSchema, registerSchema, type LoginFormData, type RegisterFormData } from '@/lib/validations/auth';
+import { loginFormSchema, registerFormSchema, type LoginFormData, type RegisterFormData } from '@/lib/schemas';
 
 interface AuthDialogProps {
   open: boolean;
@@ -30,34 +30,32 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
   const { login, register: registerUser } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [useEmail, setUseEmail] = useState(false);
 
-  // Login form with dynamic Zod validation based on toggle
+  // Login form with Zod validation
   const loginForm = useForm<LoginFormData>({
-    resolver: zodResolver(useEmail ? loginWithEmailSchema : loginWithUsernameSchema),
+    resolver: zodResolver(loginFormSchema),
     defaultValues: {
-      identifier: '',
+      username: '',
       password: '',
-      useEmail: false,
     }
   });
 
   // Register form with Zod validation
   const registerForm = useForm<RegisterFormData>({
-    resolver: zodResolver(registerSchema),
+    resolver: zodResolver(registerFormSchema),
     defaultValues: {
       email: '',
+      username: '',
       password: '',
       confirmPassword: '',
-      firstName: '',
-      lastName: '',
+      full_name: '',
     }
   });
 
   const handleLogin = async (data: LoginFormData) => {
     setLoading(true);
     try {
-      const user = await login(data.identifier, data.password);
+      const user = await login(data.username, data.password);
       toast.success('Logged in successfully');
       onOpenChange(false);
       loginForm.reset();
@@ -77,10 +75,7 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
   const handleRegister = async (data: RegisterFormData) => {
     setLoading(true);
     try {
-      // Combine firstName and lastName for fullName
-      const fullName = `${data.firstName} ${data.lastName}`.trim();
-      // Use email as username for now
-      await registerUser(data.email, data.email, data.password, fullName);
+      await registerUser(data.email, data.username, data.password, data.full_name);
       toast.success('Account created successfully');
       onOpenChange(false);
       registerForm.reset();
@@ -111,38 +106,17 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
 
           <TabsContent value="login">
             <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-sm text-muted-foreground">
-                  Login with {useEmail ? 'email' : 'username'}
-                </Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setUseEmail(!useEmail);
-                    loginForm.setValue('identifier', '');
-                    loginForm.clearErrors('identifier');
-                  }}
-                  className="text-xs h-7"
-                  disabled={loading}
-                >
-                  Use {useEmail ? 'username' : 'email'} instead
-                </Button>
-              </div>
               <div className="space-y-2">
-                <Label htmlFor="login-identifier">
-                  {useEmail ? 'Email' : 'Username'}
-                </Label>
+                <Label htmlFor="login-username">Username</Label>
                 <Input
-                  id="login-identifier"
-                  type={useEmail ? 'email' : 'text'}
-                  placeholder={useEmail ? 'you@example.com' : 'your_username'}
-                  {...loginForm.register('identifier')}
+                  id="login-username"
+                  type="text"
+                  placeholder="your_username"
+                  {...loginForm.register('username')}
                   disabled={loading}
                 />
-                {loginForm.formState.errors.identifier && (
-                  <p className="text-sm text-red-500">{loginForm.formState.errors.identifier.message}</p>
+                {loginForm.formState.errors.username && (
+                  <p className="text-sm text-red-500">{loginForm.formState.errors.username.message}</p>
                 )}
               </div>
               <div className="space-y-2">
@@ -179,6 +153,7 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
                 <Input
                   id="register-email"
                   type="email"
+                  placeholder="you@example.com"
                   {...registerForm.register('email')}
                   disabled={loading}
                 />
@@ -186,31 +161,31 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
                   <p className="text-sm text-red-500">{registerForm.formState.errors.email.message}</p>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="register-firstname">First Name</Label>
-                  <Input
-                    id="register-firstname"
-                    type="text"
-                    {...registerForm.register('firstName')}
-                    disabled={loading}
-                  />
-                  {registerForm.formState.errors.firstName && (
-                    <p className="text-sm text-red-500">{registerForm.formState.errors.firstName.message}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="register-lastname">Last Name</Label>
-                  <Input
-                    id="register-lastname"
-                    type="text"
-                    {...registerForm.register('lastName')}
-                    disabled={loading}
-                  />
-                  {registerForm.formState.errors.lastName && (
-                    <p className="text-sm text-red-500">{registerForm.formState.errors.lastName.message}</p>
-                  )}
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="register-username">Username</Label>
+                <Input
+                  id="register-username"
+                  type="text"
+                  placeholder="your_username"
+                  {...registerForm.register('username')}
+                  disabled={loading}
+                />
+                {registerForm.formState.errors.username && (
+                  <p className="text-sm text-red-500">{registerForm.formState.errors.username.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="register-fullname">Full Name (optional)</Label>
+                <Input
+                  id="register-fullname"
+                  type="text"
+                  placeholder="John Doe"
+                  {...registerForm.register('full_name')}
+                  disabled={loading}
+                />
+                {registerForm.formState.errors.full_name && (
+                  <p className="text-sm text-red-500">{registerForm.formState.errors.full_name.message}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="register-password">Password</Label>

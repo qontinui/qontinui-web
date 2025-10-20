@@ -17,6 +17,7 @@ export function SessionTimeoutWarning() {
   const [showWarning, setShowWarning] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(180); // 3 minutes in seconds
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoggedOut, setIsLoggedOut] = useState(false);
 
   useEffect(() => {
     const handleSessionExpiring = (event: CustomEvent) => {
@@ -28,6 +29,7 @@ export function SessionTimeoutWarning() {
       });
 
       setTimeRemaining(minutes * 60);
+      setIsLoggedOut(false); // Reset logged out state when showing new warning
       setShowWarning(true);
       console.log('[SessionTimeoutWarning] Warning dialog displayed');
     };
@@ -42,11 +44,12 @@ export function SessionTimeoutWarning() {
   }, []);
 
   useEffect(() => {
-    if (showWarning && timeRemaining > 0) {
+    if (showWarning && timeRemaining > 0 && !isLoggedOut) {
       const timer = setInterval(() => {
         setTimeRemaining((prev) => {
           if (prev <= 1) {
-            setShowWarning(false);
+            // When time expires, mark as logged out instead of just hiding
+            setIsLoggedOut(true);
             return 0;
           }
           return prev - 1;
@@ -55,7 +58,7 @@ export function SessionTimeoutWarning() {
 
       return () => clearInterval(timer);
     }
-  }, [showWarning, timeRemaining]);
+  }, [showWarning, timeRemaining, isLoggedOut]);
 
   const handleExtendSession = async () => {
     console.log('[SessionTimeoutWarning] User clicked "Continue Working"');
@@ -69,11 +72,14 @@ export function SessionTimeoutWarning() {
         console.log('[SessionTimeoutWarning] Session extended successfully, hiding warning dialog');
         setShowWarning(false);
         setTimeRemaining(180);
+        setIsLoggedOut(false);
       } else {
-        console.error('[SessionTimeoutWarning] Token refresh returned false');
+        console.error('[SessionTimeoutWarning] Token refresh returned false - user is logged out');
+        setIsLoggedOut(true);
       }
     } catch (error) {
       console.error('[SessionTimeoutWarning] Failed to extend session:', error);
+      setIsLoggedOut(true);
     } finally {
       setIsRefreshing(false);
     }
@@ -82,8 +88,8 @@ export function SessionTimeoutWarning() {
   const handleLogout = async () => {
     console.log('[SessionTimeoutWarning] User clicked "Logout"');
     await authService.logout();
-    console.log('[SessionTimeoutWarning] Redirecting to login page');
-    window.location.href = '/login';
+    console.log('[SessionTimeoutWarning] Redirecting to landing page');
+    window.location.href = '/';
   };
 
   const formatTime = (seconds: number) => {
@@ -97,34 +103,54 @@ export function SessionTimeoutWarning() {
       <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-warning" />
-            <DialogTitle>Session Expiring Soon</DialogTitle>
+            {isLoggedOut ? (
+              <LogOut className="h-5 w-5 text-destructive" />
+            ) : (
+              <Clock className="h-5 w-5 text-warning" />
+            )}
+            <DialogTitle>{isLoggedOut ? 'Session Expired' : 'Session Expiring Soon'}</DialogTitle>
           </div>
           <DialogDescription>
-            Your session will expire in {formatTime(timeRemaining)}. Would you like to continue working?
+            {isLoggedOut ? (
+              'Your session has expired. Please log in again to continue working.'
+            ) : (
+              `Your session will expire in ${formatTime(timeRemaining)}. Would you like to continue working?`
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2">
-          <Button
-            variant="outline"
-            onClick={handleLogout}
-            disabled={isRefreshing}
-            className="flex items-center gap-2"
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </Button>
-          <Button
-            onClick={handleExtendSession}
-            disabled={isRefreshing}
-            className="flex items-center gap-2"
-          >
-            {isRefreshing ? (
-              <>Extending...</>
-            ) : (
-              <>Continue Working</>
-            )}
-          </Button>
+          {isLoggedOut ? (
+            <Button
+              onClick={handleLogout}
+              className="flex items-center gap-2"
+            >
+              <LogOut className="h-4 w-4" />
+              Go to Login
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleLogout}
+                disabled={isRefreshing}
+                className="flex items-center gap-2"
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
+              <Button
+                onClick={handleExtendSession}
+                disabled={isRefreshing}
+                className="flex items-center gap-2"
+              >
+                {isRefreshing ? (
+                  <>Extending...</>
+                ) : (
+                  <>Continue Working</>
+                )}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

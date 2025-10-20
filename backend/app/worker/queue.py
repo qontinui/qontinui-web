@@ -1,11 +1,13 @@
 """Convenient wrapper for enqueuing background tasks."""
 
-import logging
 from typing import Any
+from uuid import UUID
+
+import structlog
 
 from app.worker.arq_pool import enqueue_task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class TaskQueue:
@@ -46,7 +48,9 @@ class TaskQueue:
                 )
 
                 logger.info(
-                    f"Sending email synchronously (queue unavailable): {to_email}"
+                    "email_sent_synchronously",
+                    to_email=to_email,
+                    reason="queue_unavailable",
                 )
                 transport = EmailTransportService()
                 await transport.send_email(
@@ -57,7 +61,12 @@ class TaskQueue:
                 )
                 return "sync"
             except Exception as e:
-                logger.error(f"Failed to send email synchronously to {to_email}: {e}")
+                logger.error(
+                    "email_send_failed",
+                    to_email=to_email,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
                 return None
 
         return job_id
@@ -98,7 +107,9 @@ class TaskQueue:
                 )
 
                 logger.info(
-                    f"Sending verification email synchronously (queue unavailable): {to_email}"
+                    "verification_email_sent_synchronously",
+                    to_email=to_email,
+                    reason="queue_unavailable",
                 )
 
                 verify_url = (
@@ -121,7 +132,10 @@ class TaskQueue:
                 return "sync"
             except Exception as e:
                 logger.error(
-                    f"Failed to send verification email synchronously to {to_email}: {e}"
+                    "verification_email_failed",
+                    to_email=to_email,
+                    error=str(e),
+                    error_type=type(e).__name__,
                 )
                 return None
 
@@ -163,7 +177,9 @@ class TaskQueue:
                 )
 
                 logger.info(
-                    f"Sending password reset email synchronously (queue unavailable): {to_email}"
+                    "password_reset_email_sent_synchronously",
+                    to_email=to_email,
+                    reason="queue_unavailable",
                 )
 
                 reset_url = (
@@ -186,7 +202,10 @@ class TaskQueue:
                 return "sync"
             except Exception as e:
                 logger.error(
-                    f"Failed to send password reset email synchronously to {to_email}: {e}"
+                    "password_reset_email_failed",
+                    to_email=to_email,
+                    error=str(e),
+                    error_type=type(e).__name__,
                 )
                 return None
 
@@ -218,7 +237,7 @@ class TaskQueue:
 
     @staticmethod
     async def send_analytics_report(
-        user_id: int,
+        user_id: UUID,
         report_type: str,
     ) -> str | None:
         """

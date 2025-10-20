@@ -51,3 +51,11 @@ aiosmtplib==3.0.1
 
 # Logging
 structlog==23.2.0
+
+# Video Processing
+opencv-python==4.9.0.80
+numpy==1.26.4
+Pillow==10.2.0
+
+# PDF Generation
+reportlab==4.0.7

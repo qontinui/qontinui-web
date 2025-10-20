@@ -1,7 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { User } from "@/types/auth-types"
+import { updateProfileFormSchema, type UpdateProfileFormData } from "@/lib/schemas"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,48 +19,51 @@ interface ProfileFormProps {
 
 export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
   const [isEditing, setIsEditing] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [formData, setFormData] = useState({
-    full_name: user.full_name || '',
-    email: user.email || '',
-    username: user.username || '',
-    company: '',
-    phone: '',
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<UpdateProfileFormData>({
+    resolver: zodResolver(updateProfileFormSchema),
+    defaultValues: {
+      email: user.email || '',
+      username: user.username || '',
+      full_name: user.full_name || '',
+      company: user.company || '',
+      phone: user.phone || '',
+    },
   })
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Reset form when user data changes
+  useEffect(() => {
+    reset({
+      email: user.email || '',
+      username: user.username || '',
+      full_name: user.full_name || '',
+      company: user.company || '',
+      phone: user.phone || '',
+    })
+  }, [user, reset])
 
-    if (!formData.email || !formData.full_name) {
-      toast.error('Name and email are required')
-      return
-    }
-
-    setIsSaving(true)
+  const onSubmit = async (data: UpdateProfileFormData) => {
     try {
       await onUpdate({
-        full_name: formData.full_name,
-        email: formData.email,
-        company: formData.company,
-        phone: formData.phone,
+        full_name: data.full_name,
+        email: data.email,
+        company: data.company,
+        phone: data.phone,
       })
       toast.success('Profile updated successfully')
       setIsEditing(false)
     } catch (error: any) {
       toast.error(error.message || 'Failed to update profile')
-    } finally {
-      setIsSaving(false)
     }
   }
 
   const handleCancel = () => {
-    setFormData({
-      full_name: user.full_name || '',
-      email: user.email || '',
-      username: user.username || '',
-      company: '',
-      phone: '',
-    })
+    reset()
     setIsEditing(false)
   }
 
@@ -80,25 +86,26 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
         </div>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="full_name" className="text-gray-300">Full Name *</Label>
               <Input
                 id="full_name"
-                value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                {...register('full_name')}
                 disabled={!isEditing}
                 className="bg-[#0A0A0B] border-gray-700 text-white disabled:opacity-70"
-                required
               />
+              {errors.full_name && (
+                <p className="text-sm text-red-500">{errors.full_name.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="username" className="text-gray-300">Username</Label>
               <Input
                 id="username"
-                value={formData.username}
+                {...register('username')}
                 disabled
                 className="bg-[#0A0A0B] border-gray-700 text-gray-500 cursor-not-allowed"
                 title="Username cannot be changed"
@@ -110,24 +117,27 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
               <Input
                 id="email"
                 type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                {...register('email')}
                 disabled={!isEditing}
                 className="bg-[#0A0A0B] border-gray-700 text-white disabled:opacity-70"
-                required
               />
+              {errors.email && (
+                <p className="text-sm text-red-500">{errors.email.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="company" className="text-gray-300">Company</Label>
               <Input
                 id="company"
-                value={formData.company}
-                onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                {...register('company')}
                 disabled={!isEditing}
                 className="bg-[#0A0A0B] border-gray-700 text-white disabled:opacity-70"
                 placeholder="Your company name"
               />
+              {errors.company && (
+                <p className="text-sm text-red-500">{errors.company.message}</p>
+              )}
             </div>
 
             <div className="space-y-2 md:col-span-2">
@@ -135,12 +145,14 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
               <Input
                 id="phone"
                 type="tel"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                {...register('phone')}
                 disabled={!isEditing}
                 className="bg-[#0A0A0B] border-gray-700 text-white disabled:opacity-70"
                 placeholder="+1 (555) 123-4567"
               />
+              {errors.phone && (
+                <p className="text-sm text-red-500">{errors.phone.message}</p>
+              )}
             </div>
           </div>
 
@@ -148,10 +160,10 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
             <div className="flex items-center gap-3 pt-4">
               <Button
                 type="submit"
-                disabled={isSaving}
+                disabled={isSubmitting}
                 className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
               >
-                {isSaving ? (
+                {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Saving...
@@ -166,7 +178,7 @@ export function ProfileForm({ user, onUpdate }: ProfileFormProps) {
               <Button
                 type="button"
                 onClick={handleCancel}
-                disabled={isSaving}
+                disabled={isSubmitting}
                 variant="outline"
                 className="border-gray-700 hover:border-gray-600 bg-transparent"
               >

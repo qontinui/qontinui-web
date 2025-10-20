@@ -3,7 +3,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu"
-import { Plus, GripVertical, Trash2, Copy } from "lucide-react"
+import { Plus, GripVertical, Trash2, Copy, GitBranch, RotateCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useAutomation } from "@/contexts/automation-context"
 
@@ -25,6 +25,8 @@ interface Action {
     | "CLICK" | "DOUBLE_CLICK" | "RIGHT_CLICK" | "DRAG" | "SCROLL"
     // Combined keyboard actions
     | "TYPE"
+    // Control flow actions
+    | "IF" | "LOOP"
     // Other actions
     | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
   config: Record<string, any>
@@ -59,6 +61,8 @@ const ACTION_GROUPS = {
     { type: "KEY_UP", label: "Key Up", color: "bg-amber-700" },
   ],
   "Control Flow": [
+    { type: "IF", label: "If/Else", color: "bg-blue-500" },
+    { type: "LOOP", label: "Loop", color: "bg-purple-500" },
     { type: "GO_TO_STATE", label: "Go to State", color: "bg-indigo-500" },
     { type: "RUN_PROCESS", label: "Run Process", color: "bg-pink-500" },
   ],
@@ -323,6 +327,25 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         process: null,
         // pause_before_begin, pause_after_end are optional overrides
       }
+    case "IF":
+      return {
+        condition: {
+          type: "variable",
+          variableName: "",
+          operator: "==",
+          expectedValue: "",
+        },
+        thenActions: [],
+        // elseActions is optional
+      }
+    case "LOOP":
+      return {
+        loopType: "FOR",
+        iterations: 10,
+        actions: [],
+        maxIterations: 1000,
+        breakOnError: false,
+      }
 
     // Pure mouse actions
     case "MOUSE_MOVE":
@@ -536,6 +559,26 @@ function getActionSummary(action: Action, states: any[], processes: any[], image
         return proc ? proc.name : action.config.process
       }
       return "No process selected"
+    case "IF":
+      const thenCount = action.config.thenActions?.length || 0
+      const elseCount = action.config.elseActions?.length || 0
+      const conditionType = action.config.condition?.type || "not configured"
+      if (elseCount > 0) {
+        return `${conditionType} condition: ${thenCount} then-actions, ${elseCount} else-actions`
+      } else {
+        return `${conditionType} condition: ${thenCount} then-actions`
+      }
+    case "LOOP":
+      const loopType = action.config.loopType || "FOR"
+      const actionCount = action.config.actions?.length || 0
+      if (loopType === "FOR") {
+        const iterations = action.config.iterations || 0
+        return `FOR loop: ${iterations} iterations, ${actionCount} actions`
+      } else if (loopType === "WHILE") {
+        return `WHILE loop: ${actionCount} actions`
+      } else {
+        return `FOREACH loop: ${actionCount} actions`
+      }
     default:
       return "Configure action"
   }

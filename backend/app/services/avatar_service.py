@@ -1,12 +1,16 @@
+import io
 import os
 import uuid
 from pathlib import Path
 from typing import BinaryIO
+from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.services.object_storage import object_storage
 from app.services.storage_service import StorageService
 
 
@@ -95,7 +99,7 @@ class AvatarService:
     async def save_avatar(
         self,
         file: UploadFile,
-        user_id: int,
+        user_id: UUID,
         db: AsyncSession | None = None,
         subscription_tier: str = "free",
     ) -> str:
@@ -144,6 +148,7 @@ class AvatarService:
             image.verify()
 
             # Reopen for processing (verify closes the file)
+            await file.seek(0)
             image = Image.open(file.file)
 
             # Resize image
@@ -151,24 +156,62 @@ class AvatarService:
 
             # Generate filename
             filename = self._generate_filename(file.filename or "avatar.jpg")
-            file_path = self.UPLOAD_DIR / filename
 
-            # Save processed image
-            processed_image.save(file_path, format="JPEG", quality=85, optimize=True)
+            # Save to object storage or local filesystem
+            if settings.STORAGE_BACKEND in ["s3", "minio"]:
+                # Upload to S3/MinIO
+                img_byte_arr = io.BytesIO()
+                processed_image.save(
+                    img_byte_arr, format="JPEG", quality=85, optimize=True
+                )
+                img_byte_arr.seek(0)
+                file_size = len(img_byte_arr.getvalue())
 
-            # Track storage usage if db session provided
-            if db:
-                file_size = os.path.getsize(file_path)
-                await StorageService.track_upload(
-                    db=db,
-                    user_id=user_id,
-                    file_path=str(file_path),
-                    file_size_bytes=file_size,
-                    file_type="avatar",
+                storage_key, url = object_storage.upload_file(
+                    file_obj=img_byte_arr,
+                    prefix="avatars",
+                    filename=filename,
+                    content_type="image/jpeg",
+                    metadata={
+                        "user_id": str(user_id),
+                        "original_filename": file.filename or "avatar.jpg",
+                    },
+                    generate_unique_name=False,
                 )
 
-            # Return URL path
-            return f"/uploads/avatars/{filename}"
+                # Track storage usage if db session provided
+                if db:
+                    await StorageService.track_upload(
+                        db=db,
+                        user_id=user_id,
+                        file_path=storage_key,
+                        file_size_bytes=file_size,
+                        file_type="avatar",
+                    )
+
+                return url
+            else:
+                # Local filesystem storage (backward compatibility)
+                file_path = self.UPLOAD_DIR / filename
+
+                # Save processed image
+                processed_image.save(
+                    file_path, format="JPEG", quality=85, optimize=True
+                )
+
+                # Track storage usage if db session provided
+                if db:
+                    file_size = os.path.getsize(file_path)
+                    await StorageService.track_upload(
+                        db=db,
+                        user_id=user_id,
+                        file_path=str(file_path),
+                        file_size_bytes=file_size,
+                        file_type="avatar",
+                    )
+
+                # Return URL path
+                return f"/uploads/avatars/{filename}"
 
         except Exception as e:
             raise HTTPException(
@@ -180,7 +223,7 @@ class AvatarService:
         self,
         avatar_url: str,
         db: AsyncSession | None = None,
-        user_id: int | None = None,
+        user_id: UUID | None = None,
     ) -> bool:
         """
         Delete avatar file from storage
@@ -197,21 +240,42 @@ class AvatarService:
             return False
 
         try:
-            # Extract filename from URL
-            filename = avatar_url.split("/")[-1]
-            file_path = self.UPLOAD_DIR / filename
+            if settings.STORAGE_BACKEND in ["s3", "minio"]:
+                # Extract key from URL
+                # URL format: https://bucket.s3.region.amazonaws.com/avatars/filename.jpg
+                # or for MinIO: http://localhost:9000/bucket/avatars/filename.jpg
+                parts = avatar_url.split("/")
+                if len(parts) >= 2:
+                    # Last two parts are prefix/filename
+                    storage_key = f"{parts[-2]}/{parts[-1]}"
 
-            # Delete file if it exists
-            if file_path.exists():
-                file_path.unlink()
+                    # Delete from object storage
+                    success = object_storage.delete_file(storage_key)
 
-                # Remove from storage tracking if db session provided
-                if db and user_id:
-                    await StorageService.delete_file_record(
-                        db=db, file_path=str(file_path), user_id=user_id
-                    )
+                    # Remove from storage tracking if db session provided
+                    if db and user_id and success:
+                        await StorageService.delete_file_record(
+                            db=db, file_path=storage_key, user_id=user_id
+                        )
 
-                return True
+                    return success
+            else:
+                # Local filesystem storage
+                # Extract filename from URL
+                filename = avatar_url.split("/")[-1]
+                file_path = self.UPLOAD_DIR / filename
+
+                # Delete file if it exists
+                if file_path.exists():
+                    file_path.unlink()
+
+                    # Remove from storage tracking if db session provided
+                    if db and user_id:
+                        await StorageService.delete_file_record(
+                            db=db, file_path=str(file_path), user_id=user_id
+                        )
+
+                    return True
 
         except Exception:
             # Log error but don't raise - file might already be deleted
