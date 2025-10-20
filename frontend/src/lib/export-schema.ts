@@ -440,7 +440,7 @@ export interface Transition {
   type: 'FromTransition' | 'ToTransition';
   name?: string;
   description?: string;
-  processes: string[]; // Workflow IDs to execute (kept as 'processes' for backward compat with runner)
+  workflows: string[]; // Workflow IDs to execute
   timeout: number;
   retryCount: number;
   priority?: number; // For handling multiple valid transitions
@@ -558,7 +558,7 @@ export type ScheduleType = 'FIXED_RATE' | 'FIXED_DELAY';
 export interface Schedule {
   id: string;
   name: string;
-  processId: string; // Workflow ID (kept as 'processId' for backward compat with runner)
+  workflowId: string; // Workflow ID
   description?: string;
   triggerType: TriggerType;
   checkMode: CheckMode;
@@ -579,7 +579,7 @@ export interface Schedule {
 export interface ExecutionRecord {
   id: string;
   scheduleId: string;
-  processId: string; // Workflow ID (kept as 'processId' for backward compat with runner)
+  workflowId: string; // Workflow ID
   startTime: string; // ISO 8601 date string
   endTime?: string; // ISO 8601 date string
   success: boolean;
@@ -714,11 +714,11 @@ export const configJsonSchema = {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "type", "processes", "timeout", "retryCount"],
+        "required": ["id", "type", "workflows", "timeout", "retryCount"],
         "properties": {
           "id": { "type": "string" },
           "type": { "enum": ["FromTransition", "ToTransition"] },
-          "processes": { "type": "array", "items": { "type": "string" } },
+          "workflows": { "type": "array", "items": { "type": "string" } },
           "timeout": { "type": "number", "minimum": 0 },
           "retryCount": { "type": "number", "minimum": 0 }
         }

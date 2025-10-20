@@ -75,7 +75,7 @@ interface State {
 interface Transition {
   id: string;
   type: "FromTransition" | "ToTransition";
-  processes: string[];
+  workflows: string[];
   timeout: number;
   retryCount: number;
   fromState?: string;
@@ -424,7 +424,7 @@ export class ConfigExporter {
       const baseTransition: any = {
         id: transition.id,
         type: transition.type,
-        processes: transition.processes || [],
+        workflows: transition.workflows || [],
         timeout: transition.timeout,
         retryCount: transition.retryCount
       };
@@ -660,7 +660,7 @@ export class ConfigExporter {
     // Validate workflow references
     const workflowIds = new Set((config.workflows || []).map(w => w.id));
     (config.transitions || []).forEach(transition => {
-      (transition.processes || []).forEach(workflowId => {
+      (transition.workflows || []).forEach(workflowId => {
         if (!workflowIds.has(workflowId)) {
           errors.push(`Transition ${transition.id} references unknown workflow: ${workflowId}`);
         }
