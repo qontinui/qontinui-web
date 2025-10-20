@@ -1,13 +1,14 @@
-import logging
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class AuditService:
@@ -16,7 +17,7 @@ class AuditService:
     async def log_action(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         action: str,
         resource_type: str | None = None,
         resource_id: int | None = None,
@@ -54,19 +55,24 @@ class AuditService:
             await db.refresh(audit_log)
 
             logger.info(
-                f"Audit log created: user_id={user_id}, action={action}, "
-                f"resource_type={resource_type}, resource_id={resource_id}"
+                "audit_log_created",
+                user_id=user_id,
+                action=action,
+                resource_type=resource_type,
+                resource_id=resource_id,
             )
 
             return audit_log
 
         except Exception as e:
-            logger.error(f"Error creating audit log: {e}")
+            logger.error(
+                "audit_log_creation_failed", error=str(e), error_type=type(e).__name__
+            )
             await db.rollback()
             raise
 
     async def log_login(
-        self, db: AsyncSession, user_id: int, ip_address: str | None = None
+        self, db: AsyncSession, user_id: UUID, ip_address: str | None = None
     ) -> AuditLog:
         """Log a successful login"""
         return await self.log_action(
@@ -78,7 +84,7 @@ class AuditService:
         )
 
     async def log_logout(
-        self, db: AsyncSession, user_id: int, ip_address: str | None = None
+        self, db: AsyncSession, user_id: UUID, ip_address: str | None = None
     ) -> AuditLog:
         """Log a logout"""
         return await self.log_action(
@@ -92,7 +98,7 @@ class AuditService:
     async def log_project_created(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         project_id: int,
         project_name: str,
         ip_address: str | None = None,
@@ -111,7 +117,7 @@ class AuditService:
     async def log_project_deleted(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         project_id: int,
         project_name: str,
         ip_address: str | None = None,
@@ -130,7 +136,7 @@ class AuditService:
     async def log_settings_changed(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         changed_fields: list[str],
         ip_address: str | None = None,
     ) -> AuditLog:
@@ -146,7 +152,7 @@ class AuditService:
         )
 
     async def log_password_changed(
-        self, db: AsyncSession, user_id: int, ip_address: str | None = None
+        self, db: AsyncSession, user_id: UUID, ip_address: str | None = None
     ) -> AuditLog:
         """Log password change"""
         return await self.log_action(
@@ -161,7 +167,7 @@ class AuditService:
     async def get_user_audit_logs(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         action: str | None = None,
         limit: int = 100,
     ) -> list[AuditLog]:

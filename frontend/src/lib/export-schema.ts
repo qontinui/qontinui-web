@@ -1,22 +1,60 @@
 /**
  * Qontinui Automation Configuration Schema
- * Version 1.0.0
+ * Version 2.0.0
  *
  * This defines the structure for exported automation configurations
  * that can be consumed by the Qontinui runner.
+ *
+ * BREAKING CHANGE: Replaced 'processes' with 'workflows' in graph format.
+ * All workflows are now in unified graph format, with viewMode metadata
+ * to indicate sequential vs graph visualization preference.
  */
 
 export interface QontinuiConfig {
   version: string;
   metadata: ConfigMetadata;
   images: ImageAsset[];
-  processes: Process[];
+  workflows: Workflow[]; // Unified graph-format workflows (replaces processes)
   states: State[];
   transitions: Transition[];
-  categories: string[]; // List of process categories
+  categories: string[]; // List of workflow categories
   settings?: ConfigSettings;
-  schedules?: Schedule[]; // Automated process schedules
+  schedules?: Schedule[]; // Automated workflow schedules
   executionRecords?: ExecutionRecord[]; // Schedule execution history
+}
+
+/**
+ * Workflow in graph format - the unified type for all automation
+ * Sequential workflows are linear graphs with no branching
+ */
+export interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  format: 'graph'; // Always 'graph' in export format
+  version: string;
+  actions: Action[];
+  connections: WorkflowConnections;
+  metadata?: WorkflowMetadata;
+}
+
+export interface WorkflowConnections {
+  [actionId: string]: ActionOutputs;
+}
+
+export interface ActionOutputs {
+  main?: number[][]; // Main output connections
+  success?: number[][]; // Success path connections
+  error?: number[][]; // Error path connections
+  parallel?: number[][]; // Parallel execution connections
+}
+
+export interface WorkflowMetadata {
+  created?: string;
+  updated?: string;
+  viewMode?: 'sequential' | 'graph'; // Preferred visualization mode
+  [key: string]: any; // Allow additional metadata
 }
 
 export interface ConfigMetadata {
@@ -43,22 +81,12 @@ export interface ImageAsset {
   hash?: string; // SHA256 hash for integrity
 }
 
-export interface Process {
-  id: string;
-  name: string;
-  description?: string;
-  category?: string; // Category for organizing processes
-  type: 'sequence' | 'conditional' | 'loop';
-  actions: Action[];
-  variables?: ProcessVariable[];
-  errorHandling?: ErrorHandler;
-}
-
 export interface Action {
   id: string;
   type: ActionType;
   name?: string;
   config: ActionConfig;
+  position?: [number, number]; // [x, y] coordinates for graph visualization
   timeout?: number;
   retryCount?: number;
   continueOnError?: boolean;
@@ -308,20 +336,7 @@ export interface LoopConfig {
   maxIterations?: number;
 }
 
-export interface ProcessVariable {
-  name: string;
-  type: 'string' | 'number' | 'boolean' | 'image';
-  value?: any;
-  scope: 'local' | 'global';
-}
-
-export interface ErrorHandler {
-  strategy: 'stop' | 'continue' | 'retry' | 'fallback';
-  maxRetries?: number;
-  retryDelay?: number;
-  fallbackProcess?: string; // Process ID
-  notifyOnError?: boolean;
-}
+// Legacy types removed - workflows use built-in error handling via action config
 
 export interface State {
   id: string;
@@ -335,8 +350,8 @@ export interface State {
     x: number;
     y: number;
   };
-  entryActions?: string[]; // Process IDs to run on entry
-  exitActions?: string[]; // Process IDs to run on exit
+  entryActions?: string[]; // Workflow IDs to run on entry
+  exitActions?: string[]; // Workflow IDs to run on exit
   timeout?: number;
   isInitial?: boolean;
   isFinal?: boolean;
@@ -425,7 +440,7 @@ export interface Transition {
   type: 'FromTransition' | 'ToTransition';
   name?: string;
   description?: string;
-  processes: string[]; // Process IDs to execute
+  processes: string[]; // Workflow IDs to execute (kept as 'processes' for backward compat with runner)
   timeout: number;
   retryCount: number;
   priority?: number; // For handling multiple valid transitions
@@ -543,7 +558,7 @@ export type ScheduleType = 'FIXED_RATE' | 'FIXED_DELAY';
 export interface Schedule {
   id: string;
   name: string;
-  processId: string;
+  processId: string; // Workflow ID (kept as 'processId' for backward compat with runner)
   description?: string;
   triggerType: TriggerType;
   checkMode: CheckMode;
@@ -564,7 +579,7 @@ export interface Schedule {
 export interface ExecutionRecord {
   id: string;
   scheduleId: string;
-  processId: string;
+  processId: string; // Workflow ID (kept as 'processId' for backward compat with runner)
   startTime: string; // ISO 8601 date string
   endTime?: string; // ISO 8601 date string
   success: boolean;
@@ -578,7 +593,7 @@ export const configJsonSchema = {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Qontinui Configuration",
   "type": "object",
-  "required": ["version", "metadata", "images", "processes", "states", "transitions", "categories"],
+  "required": ["version", "metadata", "images", "workflows", "states", "transitions", "categories"],
   "properties": {
     "version": {
       "type": "string",
@@ -614,17 +629,64 @@ export const configJsonSchema = {
         }
       }
     },
-    "processes": {
+    "workflows": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "name", "type", "actions"],
+        "required": ["id", "name", "format", "version", "actions", "connections"],
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
+          "description": { "type": "string" },
           "category": { "type": "string" },
-          "type": { "enum": ["sequence", "conditional", "loop"] },
-          "actions": { "type": "array" }
+          "format": { "const": "graph" },
+          "version": { "type": "string" },
+          "actions": { "type": "array" },
+          "connections": {
+            "type": "object",
+            "description": "Graph connections defining workflow execution flow",
+            "patternProperties": {
+              "^[a-zA-Z0-9_-]+$": {
+                "type": "object",
+                "properties": {
+                  "main": {
+                    "type": "array",
+                    "description": "Main execution path (default)",
+                    "items": {
+                      "type": "array",
+                      "items": { "type": "number", "minimum": 0 }
+                    }
+                  },
+                  "success": {
+                    "type": "array",
+                    "description": "Path taken when action succeeds",
+                    "items": {
+                      "type": "array",
+                      "items": { "type": "number", "minimum": 0 }
+                    }
+                  },
+                  "error": {
+                    "type": "array",
+                    "description": "Path taken when action fails",
+                    "items": {
+                      "type": "array",
+                      "items": { "type": "number", "minimum": 0 }
+                    }
+                  },
+                  "parallel": {
+                    "type": "array",
+                    "description": "Parallel execution paths (read-only actions only)",
+                    "items": {
+                      "type": "array",
+                      "items": { "type": "number", "minimum": 0 }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "metadata": { "type": "object" }
         }
       }
     },

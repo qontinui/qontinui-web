@@ -5,10 +5,17 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Play, Trash2, Folder, FolderOpen, ChevronRight, ChevronDown, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { useAutomation } from "@/contexts/automation-context"
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog"
+import { DeleteProcessDialog } from "@/components/delete-process-dialog"
 
 interface Process {
   id: string
@@ -52,6 +59,11 @@ export function ProcessList({
     category: string
     processes: Process[]
   }>({ open: false, category: "", processes: [] })
+  const [deleteProcessDialog, setDeleteProcessDialog] = useState<{
+    open: boolean
+    processId: string
+    processName: string
+  }>({ open: false, processId: "", processName: "" })
 
   // Default categories
   const defaultCategories = ["Main", "Transitions"]
@@ -77,12 +89,20 @@ export function ProcessList({
   }
 
   const handleDelete = (processId: string, processName: string) => {
-    if (confirm(`Are you sure you want to delete "${processName}"?`)) {
-      onDeleteProcess(processId)
-      toast.success("Process deleted", {
-        description: `"${processName}" has been removed.`
-      })
-    }
+    setDeleteProcessDialog({
+      open: true,
+      processId,
+      processName
+    })
+  }
+
+  const handleConfirmDelete = () => {
+    const { processId, processName } = deleteProcessDialog
+    onDeleteProcess(processId)
+    toast.success("Process deleted", {
+      description: `"${processName}" has been removed.`
+    })
+    setDeleteProcessDialog({ open: false, processId: "", processName: "" })
   }
 
   const toggleCategory = (category: string) => {
@@ -215,7 +235,14 @@ export function ProcessList({
         <CardContent className="py-1 px-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex-1 min-w-0">
-              <h4 className="font-medium text-xs truncate">{process.name}</h4>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <h4 className="font-medium text-xs truncate">{process.name}</h4>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{process.name}</p>
+                </TooltipContent>
+              </Tooltip>
             </div>
             <div className="flex items-center gap-1 ml-2">
               <Badge variant="secondary" className="text-[10px] h-4 px-1">
@@ -240,11 +267,12 @@ export function ProcessList({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
-          Process Library
-        </h3>
+    <TooltipProvider>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
+            Process Library
+          </h3>
         <Button
           variant="ghost"
           size="sm"
@@ -387,6 +415,14 @@ export function ProcessList({
         onDeleteAll={handleDeleteAllProcesses}
         onMoveToMain={handleMoveToMain}
       />
-    </div>
+
+      <DeleteProcessDialog
+        open={deleteProcessDialog.open}
+        processName={deleteProcessDialog.processName}
+        onClose={() => setDeleteProcessDialog({ open: false, processId: "", processName: "" })}
+        onConfirm={handleConfirmDelete}
+      />
+      </div>
+    </TooltipProvider>
   )
 }

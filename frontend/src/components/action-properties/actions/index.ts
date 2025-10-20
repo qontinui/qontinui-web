@@ -17,6 +17,13 @@ export { VanishActionProperties } from "./VanishActionProperties"
 export { GoToStateActionProperties } from "./GoToStateActionProperties"
 export { RunProcessActionProperties } from "./RunProcessActionProperties"
 
+// Import Phase 1 components
+export { GetVariableActionProperties } from "./data-operations/GetVariableActionProperties"
+export { BreakActionProperties } from "./control-flow/BreakActionProperties"
+export { ContinueActionProperties } from "./control-flow/ContinueActionProperties"
+export { IfActionProperties } from "./control-flow/IfActionProperties"
+export { LoopActionProperties } from "./control-flow/LoopActionProperties"
+
 // Register components with the registry
 import { FindActionProperties } from "./FindActionProperties"
 import { FindStateImageProperties } from "./FindStateImageProperties"
@@ -29,6 +36,13 @@ import { ScrollActionProperties } from "./ScrollActionProperties"
 import { VanishActionProperties } from "./VanishActionProperties"
 import { GoToStateActionProperties } from "./GoToStateActionProperties"
 import { RunProcessActionProperties } from "./RunProcessActionProperties"
+
+// Import Phase 1 components
+import { GetVariableActionProperties } from "./data-operations/GetVariableActionProperties"
+import { BreakActionProperties } from "./control-flow/BreakActionProperties"
+import { ContinueActionProperties } from "./control-flow/ContinueActionProperties"
+import { IfActionProperties } from "./control-flow/IfActionProperties"
+import { LoopActionProperties } from "./control-flow/LoopActionProperties"
 
 // Register all action types with their components
 actionConfigRegistry.register("FIND", FindActionProperties, "FIND")
@@ -44,3 +58,10 @@ actionConfigRegistry.register("SCROLL", ScrollActionProperties, "SCROLL")
 actionConfigRegistry.register("VANISH", VanishActionProperties, "VANISH")
 actionConfigRegistry.register("GO_TO_STATE", GoToStateActionProperties, "GO_TO_STATE")
 actionConfigRegistry.register("RUN_PROCESS", RunProcessActionProperties, "RUN_PROCESS")
+
+// Register Phase 1 components
+actionConfigRegistry.register("GET_VARIABLE", GetVariableActionProperties, "GET_VARIABLE")
+actionConfigRegistry.register("BREAK", BreakActionProperties, "BREAK")
+actionConfigRegistry.register("CONTINUE", ContinueActionProperties, "CONTINUE")
+actionConfigRegistry.register("IF", IfActionProperties, "IF")
+actionConfigRegistry.register("LOOP", LoopActionProperties, "LOOP")

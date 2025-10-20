@@ -11,10 +11,13 @@ import {
   Terminal,
   ChevronRight,
   Clock,
-  Activity
+  Activity,
+  Bug
 } from 'lucide-react';
 import { Process, Action, State } from '../../contexts/automation-context';
 import { qontinuiAPI } from '../../lib/qontinui-api-client';
+import { ExecutionDebugger } from '../ExecutionDebugger';
+import { useExecutionDebugger } from '../../stores/execution-debugger-store';
 
 interface ProcessExecutorProps {
   process: Process;
@@ -58,10 +61,35 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
   const [apiConnected, setApiConnected] = useState(false);
   const [executionLog, setExecutionLog] = useState<string[]>([]);
   const [showDetails, setShowDetails] = useState(false);
+  const [debuggerOpen, setDebuggerOpen] = useState(false);
+
+  // Debugger store
+  const {
+    debugEnabled,
+    initialize: initializeDebugger,
+    startAction,
+    completeAction,
+    failAction,
+    setVariable,
+    play: playDebugger,
+    pause: pauseDebugger,
+    stop: stopDebugger,
+    step: stepDebugger,
+    state: debuggerState,
+    speed: debuggerSpeed,
+    shouldBreakAt,
+  } = useExecutionDebugger();
 
   useEffect(() => {
     checkAPIConnection();
   }, []);
+
+  // Initialize debugger when process changes
+  useEffect(() => {
+    if (debugEnabled) {
+      initializeDebugger(process.actions.length);
+    }
+  }, [process.actions.length, debugEnabled, initializeDebugger]);
 
   const checkAPIConnection = async () => {
     const connected = await qontinuiAPI.testConnection();
@@ -82,6 +110,11 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
   const executeAction = async (action: Action, index: number): Promise<ExecutionResult> => {
     const startTime = Date.now();
+
+    // Notify debugger of action start
+    if (debugEnabled) {
+      startAction(index, action);
+    }
 
     try {
       addLog(`Executing action ${index + 1}: ${action.type}`, 'info');
@@ -154,6 +187,16 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
       const duration = Date.now() - startTime;
 
+      // Notify debugger of action completion
+      if (debugEnabled) {
+        completeAction(index, matches, error);
+      }
+
+      // Handle SET_VARIABLE action for debugger
+      if (debugEnabled && action.type === 'SET_VARIABLE' && action.config.variableName) {
+        setVariable(action.config.variableName, action.config.value, index);
+      }
+
       return {
         actionIndex: index,
         action,
@@ -166,6 +209,11 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       const duration = Date.now() - startTime;
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       addLog(`Action failed: ${errorMsg}`, 'error');
+
+      // Notify debugger of action failure
+      if (debugEnabled) {
+        failAction(index, errorMsg, err instanceof Error ? err.stack : undefined);
+      }
 
       return {
         actionIndex: index,
@@ -192,6 +240,11 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       results: []
     }));
 
+    // Notify debugger
+    if (debugEnabled) {
+      playDebugger();
+    }
+
     addLog(`Starting execution of process: ${process.name}`, 'info');
     addLog(`Total actions to execute: ${process.actions.length}`, 'info');
 
@@ -199,6 +252,14 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
     for (let i = 0; i < process.actions.length; i++) {
       if (!status.isRunning || status.isPaused) break;
+
+      // Check for breakpoints
+      if (debugEnabled && shouldBreakAt(i)) {
+        pauseDebugger();
+        setStatus(prev => ({ ...prev, isPaused: true }));
+        addLog(`Execution paused at breakpoint (action ${i})`, 'warning');
+        break;
+      }
 
       setStatus(prev => ({ ...prev, currentAction: i }));
 
@@ -213,6 +274,12 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       if (!result.success) {
         addLog(`Process stopped due to failed action at step ${i + 1}`, 'error');
         break;
+      }
+
+      // Apply speed delay based on debugger settings
+      if (debugEnabled) {
+        const delayMap = { slow: 2000, normal: 500, fast: 100 };
+        await new Promise(resolve => setTimeout(resolve, delayMap[debuggerSpeed]));
       }
     }
 
@@ -238,11 +305,17 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
   const pauseExecution = () => {
     setStatus(prev => ({ ...prev, isPaused: true }));
+    if (debugEnabled) {
+      pauseDebugger();
+    }
     addLog('Execution paused', 'warning');
   };
 
   const resumeExecution = () => {
     setStatus(prev => ({ ...prev, isPaused: false }));
+    if (debugEnabled) {
+      playDebugger();
+    }
     addLog('Execution resumed', 'info');
   };
 
@@ -253,7 +326,46 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       isPaused: false,
       currentAction: -1
     }));
+    if (debugEnabled) {
+      stopDebugger();
+    }
     addLog('Execution stopped by user', 'warning');
+  };
+
+  const stepForward = async () => {
+    if (!apiConnected) {
+      addLog('API not connected. Please ensure qontinui-api is running.', 'error');
+      return;
+    }
+
+    const currentIndex = status.currentAction === -1 ? 0 : status.currentAction + 1;
+
+    if (currentIndex >= process.actions.length) {
+      addLog('No more actions to execute', 'info');
+      return;
+    }
+
+    if (debugEnabled) {
+      stepDebugger();
+    }
+
+    setStatus(prev => ({
+      ...prev,
+      isRunning: true,
+      isPaused: false,
+      currentAction: currentIndex,
+      startTime: prev.startTime || Date.now(),
+    }));
+
+    const result = await executeAction(process.actions[currentIndex], currentIndex);
+
+    setStatus(prev => ({
+      ...prev,
+      results: [...prev.results, result],
+      isPaused: true,
+    }));
+
+    addLog(`Step completed: ${result.success ? 'SUCCESS' : 'FAILED'}`, result.success ? 'success' : 'error');
   };
 
   const resetExecution = () => {
@@ -283,7 +395,19 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border">
+    <div className="bg-white rounded-lg shadow-sm border relative">
+      {/* Execution Debugger */}
+      {debugEnabled && (
+        <ExecutionDebugger
+          actions={process.actions}
+          onExecute={startExecution}
+          onStop={stopExecution}
+          onStep={stepForward}
+          isOpen={debuggerOpen}
+          onToggle={() => setDebuggerOpen(!debuggerOpen)}
+        />
+      )}
+
       {/* Header */}
       <div className="p-4 border-b">
         <div className="flex items-center justify-between">
@@ -307,6 +431,19 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
           {/* Control Buttons */}
           <div className="flex items-center gap-2">
+            {/* Debugger Toggle */}
+            <button
+              onClick={() => setDebuggerOpen(!debuggerOpen)}
+              className={`p-2 rounded-lg transition-colors ${
+                debuggerOpen
+                  ? 'bg-blue-600 text-white'
+                  : 'hover:bg-gray-100 text-gray-600'
+              }`}
+              title="Toggle debugger"
+            >
+              <Bug className="w-4 h-4" />
+            </button>
+
             {!status.isRunning ? (
               <button
                 onClick={startExecution}

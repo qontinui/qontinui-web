@@ -9,7 +9,7 @@ export const metadata = {
 
 export default function RunnerPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+    <div className="min-h-screen bg-white">
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="max-w-4xl mx-auto text-center">
@@ -69,7 +69,7 @@ export default function RunnerPage() {
       </section>
 
       {/* How It Works */}
-      <section className="bg-slate-50 py-16">
+      <section className="py-16">
         <div className="container mx-auto px-4">
           <div className="max-w-4xl mx-auto">
             <h2 className="text-3xl font-bold text-center mb-12">

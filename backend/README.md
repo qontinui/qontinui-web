@@ -7,7 +7,7 @@ FastAPI backend for the Qontinui visual automation configuration builder.
 - User authentication with JWT tokens
 - Project persistence and management
 - RESTful API endpoints
-- SQLite database for development
+- PostgreSQL database (same for development and production)
 - Auto-generated API documentation
 
 ## Setup

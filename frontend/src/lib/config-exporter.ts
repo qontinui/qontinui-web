@@ -2,7 +2,7 @@ import {
   QontinuiConfig,
   ConfigMetadata,
   ImageAsset as ExportImageAsset,
-  Process as ExportProcess,
+  Workflow as ExportWorkflow,
   State as ExportState,
   Transition as ExportTransition,
   FromTransition as ExportFromTransition,
@@ -10,6 +10,11 @@ import {
   ConfigSettings,
   ActionConfig
 } from './export-schema';
+
+import { validateWorkflowConnections } from './workflow-validator';
+
+// Import types from new action schema
+import { Action, ActionType, BaseActionSettings, ExecutionSettings, Workflow } from './action-schema';
 
 // Import types from automation context
 interface ImageAsset {
@@ -19,21 +24,7 @@ interface ImageAsset {
   size: number;
   uploadedAt: Date;
   usageCount: number;
-  usedIn: Array<{ type: "process" | "state"; id: string; name: string }>;
-}
-
-interface Process {
-  id: string;
-  name: string;
-  description: string;
-  category?: string;
-  actions: Action[];
-}
-
-interface Action {
-  id: string;
-  type: string;
-  config: Record<string, any>;
+  usedIn: Array<{ type: "workflow" | "state"; id: string; name: string }>;
 }
 
 interface SearchRegion {
@@ -97,7 +88,7 @@ interface Transition {
 import { Screenshot } from '../types/Screenshot';
 
 export class ConfigExporter {
-  private version = '1.0.0';
+  private version = '2.0.0'; // Updated to 2.0.0 for workflows
   private settings: any = null;
 
   /**
@@ -105,7 +96,7 @@ export class ConfigExporter {
    */
   async exportConfiguration(
     images: ImageAsset[],
-    processes: Process[],
+    workflows: Workflow[],
     states: State[],
     transitions: Transition[],
     categories: string[],
@@ -129,15 +120,15 @@ export class ConfigExporter {
         tags: metadata?.tags || [],
         targetApplication: metadata?.targetApplication,
         compatibleVersions: {
-          runner: '1.0.0',
-          website: '1.0.0'
+          runner: '2.0.0',
+          website: '2.0.0'
         }
       },
       images: await this.exportImages(images || [], screenshots),
-      processes: this.exportProcesses(processes || []),
+      workflows: this.exportWorkflows(workflows || []),
       states: this.exportStates(states || [], screenshots),
       transitions: this.exportTransitions(transitions || []),
-      categories: categories || ['main'],
+      categories: categories || ['Main'],
       settings: this.convertSettings(settings) || this.getDefaultSettings()
     };
 
@@ -264,224 +255,82 @@ export class ConfigExporter {
   }
 
   /**
-   * Convert processes to export format
+   * Convert workflows to export format
    */
-  private exportProcesses(processes: Process[]): ExportProcess[] {
-    if (!processes || !Array.isArray(processes)) {
+  private exportWorkflows(workflows: Workflow[]): ExportWorkflow[] {
+    if (!workflows || !Array.isArray(workflows)) {
       return [];
     }
 
-    return processes.map(process => ({
-      id: process.id,
-      name: process.name,
-      description: process.description,
-      category: process.category,
-      type: 'sequence', // Default to sequence, can be enhanced
-      actions: process.actions.map(action => ({
-        id: action.id,
-        type: action.type as any,
-        config: this.transformActionConfig(action.config, action.type),
-        timeout: action.config.timeout || this.settings?.execution?.default_timeout || 10000,
-        retryCount: action.config.retryCount || this.settings?.execution?.default_retry_count || 0,
-        continueOnError: action.config.continueOnError ?? (this.settings?.execution?.failure_strategy === 'continue')
-      }))
+    return workflows.map(workflow => ({
+      id: workflow.id,
+      name: workflow.name,
+      description: workflow.description,
+      category: workflow.category,
+      format: 'graph' as const,
+      version: workflow.version || '1.0.0',
+      actions: this.exportActions(workflow.actions),
+      connections: workflow.connections || {},
+      metadata: workflow.metadata || {}
     }));
   }
 
   /**
-   * Transform action config to standard format with all options
+   * Export actions to the correct format
+   * Actions already have the correct structure from the new schema
    */
-  private transformActionConfig(config: Record<string, any>, type: string): ActionConfig {
-    const actionConfig: ActionConfig = {};
-
-    // === Base ActionConfig Properties ===
-    actionConfig.pauseBeforeBegin = config.pauseBeforeBegin ?? this.settings?.wait?.pause_before_action ?? 0;
-    actionConfig.pauseAfterEnd = config.pauseAfterEnd ?? this.settings?.wait?.pause_after_action ?? 0;
-    if (config.illustrate !== undefined) actionConfig.illustrate = config.illustrate;
-    if (config.subsequentActions !== undefined) actionConfig.subsequentActions = config.subsequentActions;
-    if (config.logType !== undefined) actionConfig.logType = config.logType;
-    if (config.loggingOptions !== undefined) actionConfig.loggingOptions = config.loggingOptions;
-
-    // === Target Configuration ===
-    if (config.imageId || config.image) {
-      actionConfig.target = {
-        type: 'image',
-        imageId: config.imageId || config.image,
-        threshold: config.threshold || config.similarity || this.settings?.recognition?.default_threshold || 0.70
-      };
-    } else if (config.region) {
-      actionConfig.target = {
-        type: 'region',
-        region: config.region
-      };
-    } else if (config.coordinates) {
-      actionConfig.target = {
-        type: 'coordinates',
-        coordinates: config.coordinates
-      };
+  private exportActions(actions: Action[]): any[] {
+    if (!actions || !Array.isArray(actions)) {
+      return [];
     }
 
-    // === Find/Search Options ===
-    if (config.similarity !== undefined) {
-      actionConfig.similarity = config.similarity;
-    } else if (actionConfig.target?.type === 'image') {
-      // Use project default for image-based actions if not specified
-      actionConfig.similarity = this.settings?.recognition?.default_threshold || 0.70;
-    }
-    if (config.searchRegions !== undefined) actionConfig.searchRegions = config.searchRegions;
-    if (config.captureImage !== undefined) actionConfig.captureImage = config.captureImage;
-    if (config.useDefinedRegion !== undefined) actionConfig.useDefinedRegion = config.useDefinedRegion;
-    if (config.maxMatchesToActOn !== undefined) actionConfig.maxMatchesToActOn = config.maxMatchesToActOn;
-    if (config.searchDuration !== undefined) actionConfig.searchDuration = config.searchDuration;
-    if (config.searchType !== undefined) actionConfig.searchType = config.searchType;
-    if (config.maxMatches !== undefined) actionConfig.maxMatches = config.maxMatches;
-    if (config.minMatches !== undefined) actionConfig.minMatches = config.minMatches;
-    // Apply find timeout default if not specified
-    if (config.timeout !== undefined) {
-      actionConfig.timeout = config.timeout;
-    } else if (actionConfig.target?.type === 'image') {
-      actionConfig.timeout = this.settings?.find?.default_timeout ?? 30000;
-    }
-    // Apply search interval default
-    actionConfig.pollInterval = config.pollInterval ?? this.settings?.find?.search_interval ?? 500;
+    // Filter out any null/undefined actions
+    return actions
+      .filter(action => action != null)
+      .map(action => {
+        const exported: any = {
+          id: action.id,
+          type: action.type,
+        };
 
-    // === Match Adjustment Options ===
-    if (config.matchAdjustment !== undefined) actionConfig.matchAdjustment = config.matchAdjustment;
-
-    // === Pattern/Text Find Options ===
-    if (config.patternOptions !== undefined) actionConfig.patternOptions = config.patternOptions;
-    if (config.textOptions !== undefined) actionConfig.textOptions = config.textOptions;
-
-    // === Repetition Options ===
-    if (config.repetitionOptions !== undefined) actionConfig.repetitionOptions = config.repetitionOptions;
-
-    // === Verification Options ===
-    if (config.verificationOptions !== undefined) actionConfig.verificationOptions = config.verificationOptions;
-
-    // === Highlight Options ===
-    if (config.highlightOptions !== undefined) actionConfig.highlightOptions = config.highlightOptions;
-
-    // === Type-specific properties ===
-    switch (type) {
-      case 'CLICK':
-      case 'DOUBLE_CLICK':
-      case 'RIGHT_CLICK':
-        if (config.numberOfClicks !== undefined) actionConfig.numberOfClicks = config.numberOfClicks;
-        if (config.mouseButton !== undefined) actionConfig.mouseButton = config.mouseButton;
-        actionConfig.pressDuration = config.pressDuration ?? this.settings?.mouse?.click_hold_duration ?? 100;
-        actionConfig.pauseAfterPress = config.pauseAfterPress ?? this.settings?.mouse?.click_release_delay ?? 50;
-        if (config.pauseAfterRelease !== undefined) actionConfig.pauseAfterRelease = config.pauseAfterRelease;
-        break;
-
-      case 'MOUSE_MOVE':
-        // Target is handled above in common target processing
-        actionConfig.duration = config.duration ?? this.settings?.mouse?.move_default_duration ?? 500;
-        if (config.x !== undefined) actionConfig.x = config.x;
-        if (config.y !== undefined) actionConfig.y = config.y;
-        break;
-
-      case 'MOUSE_DOWN':
-      case 'MOUSE_UP':
-        if (config.button !== undefined) actionConfig.button = config.button;
-        if (config.x !== undefined) actionConfig.x = config.x;
-        if (config.y !== undefined) actionConfig.y = config.y;
-        break;
-
-      case 'KEY_PRESS':
-      case 'KEY_DOWN':
-      case 'KEY_UP':
-        actionConfig.keys = config.keys || [config.key];
-        if (config.modifiers !== undefined) actionConfig.modifiers = config.modifiers;
-        actionConfig.holdDuration = config.holdDuration ?? this.settings?.keyboard?.key_hold_duration ?? 50;
-        break;
-
-      case 'TYPE':
-        if (config.textSource === 'stateString') {
-          actionConfig.stateStringSource = {
-            stateId: config.selectedState,
-            stringIds: config.selectedStateStrings,
-            useAll: config.useAllStateStrings
-          };
-        } else {
-          actionConfig.text = config.text;
+        // Add optional name if present
+        if (action.name) {
+          exported.name = action.name;
         }
-        actionConfig.typeDelay = config.typeDelay ?? this.settings?.keyboard?.typing_interval ?? 50;
-        if (config.modifiers !== undefined) actionConfig.modifiers = config.modifiers;
-        break;
 
-      case 'SCROLL':
-        if (config.direction !== undefined) actionConfig.direction = config.direction;
-        if (config.distance !== undefined) actionConfig.distance = config.distance; // Legacy
-        if (config.clicks !== undefined) actionConfig.clicks = config.clicks;
-        if (config.smooth !== undefined) actionConfig.smooth = config.smooth;
-        if (config.delayBetweenScrolls !== undefined) actionConfig.delayBetweenScrolls = config.delayBetweenScrolls;
-        break;
+        // Export config directly - it's already type-safe
+        exported.config = action.config;
 
-      case 'DRAG':
-        if (config.destination !== undefined) actionConfig.destination = config.destination;
-        actionConfig.dragDuration = config.dragDuration ?? config.duration ?? this.settings?.mouse?.drag_default_duration ?? 500;
-        actionConfig.delayBetweenMouseDownAndMove = config.delayBetweenMouseDownAndMove ?? this.settings?.mouse?.drag_start_delay ?? 100;
-        actionConfig.delayAfterDrag = config.delayAfterDrag ?? this.settings?.mouse?.drag_end_delay ?? 100;
-        break;
-
-      case 'WAIT':
-        if (config.duration !== undefined) actionConfig.duration = config.duration;
-        if (config.delay !== undefined) actionConfig.duration = config.delay; // Fallback
-        if (config.waitFor !== undefined) actionConfig.waitFor = config.waitFor;
-        if (config.conditionCheckInterval !== undefined) actionConfig.conditionCheckInterval = config.conditionCheckInterval;
-        if (config.logProgress !== undefined) actionConfig.logProgress = config.logProgress;
-        break;
-
-      case 'VANISH':
-        if (config.maxWaitTime !== undefined) actionConfig.maxWaitTime = config.maxWaitTime;
-        if (config.vanishPollInterval !== undefined) actionConfig.vanishPollInterval = config.vanishPollInterval;
-        break;
-
-      case 'GO_TO_STATE':
-        if (config.state) {
-          actionConfig.state = config.state;
+        // Export position for graph visualization
+        if (action.position) {
+          exported.position = action.position;
         }
-        break;
 
-      case 'RUN_PROCESS':
-        if (config.process) {
-          actionConfig.process = config.process;
+        // Export base settings if present
+        if ((action as any).base) {
+          exported.base = (action as any).base;
         }
-        // Process repetition options
-        if (config.enableRepeat) {
-          actionConfig.processRepetition = {
-            enabled: true,
-            maxRepeats: config.maxRepeats || 10,
-            delay: config.repeatDelay || 0,
-            untilSuccess: config.repeatUntilSuccess || false
-          };
-        }
-        break;
-    }
 
-    // === Legacy compatibility ===
-    if (config.condition !== undefined) actionConfig.condition = config.condition;
-    if (config.loop !== undefined) actionConfig.loop = config.loop;
-
-    // Copy any other config properties that aren't explicitly handled
-    // This ensures forward compatibility with new options
-    if (config && typeof config === 'object') {
-      Object.keys(config).forEach(key => {
-        if (!(key in actionConfig) &&
-            key !== 'timeout' &&
-            key !== 'retryCount' &&
-            key !== 'continueOnError' &&
-            key !== 'textSource' &&
-            key !== 'selectedState' &&
-            key !== 'selectedStateStrings' &&
-            key !== 'useAllStateStrings') {
-          actionConfig[key] = config[key];
+        // Export execution settings if present
+        if ((action as any).execution) {
+          exported.execution = (action as any).execution;
         }
+
+        // Export timeout and retry settings
+        if (action.timeout !== undefined) {
+          exported.timeout = action.timeout;
+        }
+        if (action.retryCount !== undefined) {
+          exported.retryCount = action.retryCount;
+        }
+        if (action.continueOnError !== undefined) {
+          exported.continueOnError = action.continueOnError;
+        }
+
+        return exported;
       });
-    }
-
-    return actionConfig;
   }
+
 
   /**
    * Convert states to export format
@@ -572,23 +421,28 @@ export class ConfigExporter {
     }
 
     return transitions.map(transition => {
-      if (transition.type === 'OutgoingTransition') {
+      const baseTransition: any = {
+        id: transition.id,
+        type: transition.type,
+        processes: transition.processes || [],
+        timeout: transition.timeout,
+        retryCount: transition.retryCount
+      };
+
+      if (transition.type === 'FromTransition') {
         return {
-          id: transition.id,
-          type: 'OutgoingTransition',
-          process: transition.process,
-          fromState: transition.fromState,
-          activateStates: transition.activateStates || [],
+          ...baseTransition,
+          fromState: transition.fromState || '',
+          toState: transition.toState || '',
           staysVisible: transition.staysVisible || false,
+          activateStates: transition.activateStates || [],
           deactivateStates: transition.deactivateStates || []
-        };
+        } as ExportFromTransition;
       } else {
         return {
-          id: transition.id,
-          type: 'IncomingTransition',
-          process: transition.process,
-          toState: transition.toState
-        };
+          ...baseTransition,
+          toState: transition.toState || ''
+        } as ExportToTransition;
       }
     });
   }
@@ -735,10 +589,49 @@ export class ConfigExporter {
       errors.push('Images must be an array');
     }
 
-    // Check processes
-    if (!Array.isArray(config.processes)) {
-      errors.push('Processes must be an array');
+    // Check workflows
+    if (!Array.isArray(config.workflows)) {
+      errors.push('Workflows must be an array');
     }
+
+    // Validate workflow structure
+    (config.workflows || []).forEach(workflow => {
+      if (!workflow.id || !workflow.name) {
+        errors.push(`Workflow missing required fields: ${workflow.id || 'unknown'}`);
+      }
+      if (workflow.format !== 'graph') {
+        errors.push(`Workflow ${workflow.id} has invalid format: ${workflow.format}`);
+      }
+      if (!workflow.connections || typeof workflow.connections !== 'object') {
+        errors.push(`Workflow ${workflow.id} missing connections object`);
+      }
+    });
+
+    // Validate workflow connections
+    (config.workflows || []).forEach(workflow => {
+      // Skip validation if workflow is invalid
+      if (!workflow || !workflow.id) {
+        errors.push('Workflow missing required ID');
+        return;
+      }
+
+      try {
+        const validationResult = validateWorkflowConnections(workflow);
+
+        // Add errors to the main errors array
+        errors.push(...validationResult.errors.map(e =>
+          `Workflow ${workflow.id}: ${e.message}`
+        ));
+
+        // Log warnings (don't fail export)
+        validationResult.warnings.forEach(w => {
+          console.warn(`Workflow ${workflow.id}: ${w.message}`);
+        });
+      } catch (error) {
+        console.error(`Error validating workflow ${workflow.id}:`, error);
+        errors.push(`Workflow ${workflow.id}: Validation failed - ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
 
     // Check states
     if (!Array.isArray(config.states) || config.states.length === 0) {
@@ -764,12 +657,12 @@ export class ConfigExporter {
       }
     });
 
-    // Validate process references
-    const processIds = new Set((config.processes || []).map(p => p.id));
+    // Validate workflow references
+    const workflowIds = new Set((config.workflows || []).map(w => w.id));
     (config.transitions || []).forEach(transition => {
-      (transition.processes || []).forEach(processId => {
-        if (!processIds.has(processId)) {
-          errors.push(`Transition ${transition.id} references unknown process: ${processId}`);
+      (transition.processes || []).forEach(workflowId => {
+        if (!workflowIds.has(workflowId)) {
+          errors.push(`Transition ${transition.id} references unknown workflow: ${workflowId}`);
         }
       });
     });

@@ -4,12 +4,13 @@ Background Removal Service
 Wraps the qontinui background removal functionality for use in the API.
 """
 
-import logging
 import sys
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 # Add qontinui directory to Python path
 QONTINUI_PATH = Path(__file__).parent.parent.parent.parent.parent / "qontinui"

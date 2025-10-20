@@ -26,8 +26,17 @@ async def read_projects(
     limit: int = 100,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
+    import structlog
+
+    logger = structlog.get_logger(__name__)
+    logger.info("get_projects_request", user_id=current_user.id, skip=skip, limit=limit)
+
     projects = await get_projects_by_owner(
         db, owner_id=current_user.id, skip=skip, limit=limit
+    )
+
+    logger.info(
+        "get_projects_response", user_id=current_user.id, project_count=len(projects)
     )
     return projects
 

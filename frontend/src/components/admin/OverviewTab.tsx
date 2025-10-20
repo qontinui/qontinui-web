@@ -1,84 +1,14 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, FolderOpen, TrendingUp, Activity, DollarSign, Zap } from "lucide-react"
-import { toast } from "sonner"
-import { authService } from "@/services/service-factory"
-
-interface AdminStats {
-  total_users: number
-  new_users_week: number
-  new_users_month: number
-  total_projects: number
-  projects_week: number
-  active_users: number
-}
-
-interface UserData {
-  id: number
-  email: string
-  username: string
-  full_name: string | null
-  is_active: boolean
-  email_verified: boolean
-  created_at: string
-  project_count: number
-  subscription_tier: string
-  last_login: string | null
-}
+import { useAdminStats, useAdminUsers } from "@/hooks/use-admin"
 
 export default function OverviewTab() {
-  const [stats, setStats] = useState<AdminStats | null>(null)
-  const [users, setUsers] = useState<UserData[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data: stats, isLoading: statsLoading } = useAdminStats()
+  const { data: users = [], isLoading: usersLoading } = useAdminUsers({ limit: 10 })
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const accessToken = authService.tokenManager.getAccessToken()
-
-      if (!accessToken) {
-        toast.error('Not authenticated')
-        return
-      }
-
-      // Load stats
-      const statsRes = await fetch(`${apiUrl}/api/v1/admin/stats`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (statsRes.ok) {
-        const statsData = await statsRes.json()
-        setStats(statsData)
-      }
-
-      // Load recent users
-      const usersRes = await fetch(`${apiUrl}/api/v1/admin/users?limit=10`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (usersRes.ok) {
-        const usersData = await usersRes.json()
-        setUsers(usersData)
-      }
-    } catch (error) {
-      console.error('Failed to load admin data:', error)
-      toast.error('Failed to load admin data')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loading = statsLoading || usersLoading
 
   if (loading) {
     return <div className="text-center text-muted-foreground">Loading overview...</div>

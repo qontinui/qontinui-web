@@ -1,6 +1,7 @@
 export default function PrivacyPolicy() {
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
+    <div className="min-h-screen bg-white">
+      <div className="max-w-4xl mx-auto px-4 py-12">
       <h1 className="text-4xl font-bold mb-8">Privacy Policy</h1>
       <p className="text-sm text-gray-600 mb-8">Last updated: October 12, 2025</p>
 
@@ -162,6 +163,7 @@ export default function PrivacyPolicy() {
             You also have the right to lodge a complaint with a supervisory authority, particularly in the EU member state where you reside or work, if you believe our processing of your personal data violates GDPR.
           </p>
         </section>
+      </div>
       </div>
     </div>
   );

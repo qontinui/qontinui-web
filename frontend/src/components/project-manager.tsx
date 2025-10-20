@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { projectService } from '@/services/service-factory';
+import { useState } from 'react';
+import { useProjects, useCreateProject, useUpdateProject, useDeleteProject, useProject } from '@/hooks/use-projects';
 import { Project } from '@/services/project-service';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { Save, FolderOpen, Plus, Trash2, FileText, ChevronDown } from 'lucide-react';
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
 
 interface ProjectManagerProps {
   currentConfiguration: any;
@@ -34,34 +35,22 @@ interface ProjectManagerProps {
 
 export function ProjectManager({ currentConfiguration, onLoadConfiguration }: ProjectManagerProps) {
   const { user } = useAuth();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const { data: projects = [] } = useProjects();
+  const createProject = useCreateProject();
+  const updateProject = useUpdateProject();
+  const deleteProject = useDeleteProject();
+
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(false);
 
   // Dialog states
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDescription, setNewProjectDescription] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
-  useEffect(() => {
-    if (user) {
-      loadProjects();
-    }
-  }, [user]);
-
-  const loadProjects = async () => {
-    try {
-      const userProjects = await projectService.getProjects();
-      setProjects(userProjects);
-    } catch (error: any) {
-      console.error('Failed to load projects:', error);
-      // Don't show error toast for auth issues - user just needs to log in
-      if (!error.message?.includes('401') && !error.message?.includes('authenticated')) {
-        toast.error('Failed to load projects');
-      }
-    }
-  };
+  const loading = createProject.isPending || updateProject.isPending || deleteProject.isPending;
 
   const handleSaveNew = async () => {
     if (!newProjectName.trim()) {
@@ -69,14 +58,12 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
       return;
     }
 
-    setLoading(true);
     try {
-      const project = await projectService.createProject({
+      const project = await createProject.mutateAsync({
         name: newProjectName,
         description: newProjectDescription,
         configuration: currentConfiguration,
       });
-      setProjects([...projects, project]);
       setSelectedProject(project);
       setSaveDialogOpen(false);
       setNewProjectName('');
@@ -84,51 +71,52 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
       toast.success('Project saved successfully');
     } catch (error: any) {
       toast.error(error.message || 'Failed to save project');
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleSaveExisting = async () => {
     if (!selectedProject) return;
 
-    setLoading(true);
     try {
-      const updated = await projectService.updateProject(selectedProject.id, {
-        configuration: currentConfiguration,
+      const updated = await updateProject.mutateAsync({
+        id: selectedProject.id,
+        data: { configuration: currentConfiguration },
       });
-      setProjects(projects.map(p => p.id === updated.id ? updated : p));
       setSelectedProject(updated);
       toast.success('Project updated successfully');
     } catch (error: any) {
       toast.error(error.message || 'Failed to update project');
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleLoad = async (project: Project) => {
     try {
-      const fullProject = await projectService.getProject(project.id);
-      onLoadConfiguration(fullProject.configuration);
-      setSelectedProject(fullProject);
+      // Query is cached, so this will be fast
+      onLoadConfiguration(project.configuration);
+      setSelectedProject(project);
       setLoadDialogOpen(false);
-      toast.success(`Loaded project: ${fullProject.name}`);
+      toast.success(`Loaded project: ${project.name}`);
     } catch (error: any) {
       toast.error(error.message || 'Failed to load project');
     }
   };
 
-  const handleDelete = async (project: Project) => {
-    if (!confirm(`Are you sure you want to delete "${project.name}"?`)) return;
+  const handleDelete = (project: Project) => {
+    setProjectToDelete(project);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!projectToDelete) return;
 
     try {
-      await projectService.deleteProject(project.id);
-      setProjects(projects.filter(p => p.id !== project.id));
-      if (selectedProject?.id === project.id) {
+      await deleteProject.mutateAsync(projectToDelete.id);
+      if (selectedProject?.id === projectToDelete.id) {
         setSelectedProject(null);
       }
       toast.success('Project deleted successfully');
+      setDeleteDialogOpen(false);
+      setProjectToDelete(null);
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete project');
     }
@@ -306,6 +294,19 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={deleteDialogOpen}
+        title="Delete Project"
+        itemName={projectToDelete?.name || ''}
+        description={`Are you sure you want to delete "${projectToDelete?.name}"? This will permanently delete the project and all its configuration. This action cannot be undone.`}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setProjectToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+      />
     </>
   );
 }

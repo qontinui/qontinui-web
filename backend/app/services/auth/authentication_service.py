@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -29,7 +31,7 @@ class AuthenticationService:
 
         return user
 
-    def create_user_tokens(self, user_id: int) -> dict:
+    def create_user_tokens(self, user_id: UUID) -> dict:
         access_token = self.token_service.create_access_token(user_id)
         refresh_token = self.token_service.create_refresh_token(user_id)
 

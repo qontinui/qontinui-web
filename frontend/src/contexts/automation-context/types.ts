@@ -8,24 +8,10 @@ export interface ActionHistory {
   lastUpdated?: Date;
 }
 
-// Core domain types
-export interface Process {
-  id: string
-  name: string
-  description: string
-  category?: string  // Category for organizing processes
-  actions: Action[]
-  // Integration test configuration
-  initialScreenshotId?: string  // Screenshot to start the test with
-  initialStateIds?: string[]    // States that should be active at start
-  projectName?: string
-}
-
-export interface Action {
-  id: string
-  type: "FIND" | "FIND_STATE_IMAGE" | "CLICK" | "TYPE" | "DRAG" | "SCROLL" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
-  config: Record<string, any>
-}
+// ============================================================================
+// NOTE: Process type has been removed - use Workflow from action-schema instead
+// All processes are now Workflows (graph format with linear connections)
+// ============================================================================
 
 export interface StateRegion {
   id: string
@@ -315,6 +301,9 @@ export interface SchedulerStatistics {
   averageIterationCount: number
 }
 
+// Import Workflow type for context
+import type { Workflow } from '@/lib/action-schema/action-types';
+
 // Context type
 export interface AutomationContextType {
   // Project
@@ -322,11 +311,11 @@ export interface AutomationContextType {
   setProjectName: (name: string) => void
   renameProject: (newName: string) => Promise<void>
 
-  // Process management
-  processes: Process[]
-  addProcess: (process: Process) => void
-  updateProcess: (process: Process) => void
-  deleteProcess: (processId: string) => void
+  // Workflow management (unified - replaces both processes and workflows)
+  workflows: Workflow[]
+  addWorkflow: (workflow: Workflow) => void
+  updateWorkflow: (workflow: Workflow) => void
+  deleteWorkflow: (workflowId: string) => void
 
   // State management
   states: State[]

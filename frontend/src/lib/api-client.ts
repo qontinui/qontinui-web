@@ -1,29 +1,18 @@
 import { authService } from '@/services/service-factory';
 import { TokenValidator } from '@/services/auth/token-validator';
 import { csrfService } from '@/services/csrf-service';
+import type {
+  User,
+  Project,
+  UserUpdate,
+  ProjectCreate,
+  ProjectUpdate
+} from '@/lib/api-client/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
-export interface User {
-  id: number;
-  email: string;
-  username: string;
-  full_name?: string;
-  is_active: boolean;
-  is_superuser: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Project {
-  id: number;
-  name: string;
-  description?: string;
-  configuration: any;
-  owner_id: number;
-  created_at: string;
-  updated_at: string;
-}
+// Re-export types for backwards compatibility
+export type { User, Project, UserUpdate, ProjectCreate, ProjectUpdate };
 
 /**
  * ApiClient - Single Responsibility: Handle HTTP requests with authentication
@@ -156,7 +145,7 @@ class ApiClient {
     return authService.getCurrentUser();
   }
 
-  async updateCurrentUser(data: Partial<User>): Promise<User> {
+  async updateCurrentUser(data: UserUpdate): Promise<User> {
     const response = await this.fetchWithAuth('/users/me', {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -186,7 +175,7 @@ class ApiClient {
     return response.json();
   }
 
-  async createProject(data: { name: string; description?: string; configuration: any }): Promise<Project> {
+  async createProject(data: ProjectCreate): Promise<Project> {
     const response = await this.fetchWithAuth('/projects/', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -197,7 +186,7 @@ class ApiClient {
     return response.json();
   }
 
-  async updateProject(id: number, data: Partial<Project>): Promise<Project> {
+  async updateProject(id: number, data: ProjectUpdate): Promise<Project> {
     const response = await this.fetchWithAuth(`/projects/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),

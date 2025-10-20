@@ -1,14 +1,14 @@
 """ARQ connection pool for FastAPI integration."""
 
-import logging
 from typing import Any
 
+import structlog
 from arq import create_pool
 from arq.connections import ArqRedis
 
 from app.worker.settings import get_arq_redis_settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Global connection pool
 _arq_pool: ArqRedis | None = None
@@ -26,7 +26,7 @@ async def get_arq_pool() -> ArqRedis:
     if _arq_pool is None:
         redis_settings = get_arq_redis_settings()
         _arq_pool = await create_pool(redis_settings)
-        logger.info("ARQ Redis pool created")
+        logger.info("arq_redis_pool_created")
 
     return _arq_pool
 
@@ -38,7 +38,7 @@ async def close_arq_pool() -> None:
     if _arq_pool is not None:
         await _arq_pool.close()
         _arq_pool = None
-        logger.info("ARQ Redis pool closed")
+        logger.info("arq_redis_pool_closed")
 
 
 async def enqueue_task(
@@ -62,16 +62,21 @@ async def enqueue_task(
     # If pool was never initialized (Redis unavailable), skip silently
     if _arq_pool is None:
         logger.warning(
-            f"Task {task_name} not enqueued: ARQ pool unavailable (Redis not connected)"
+            "task_not_enqueued", task_name=task_name, reason="arq_pool_unavailable"
         )
         return None
 
     try:
         job = await _arq_pool.enqueue_job(task_name, *args, **kwargs)
-        logger.info(f"Task {task_name} enqueued with job ID: {job.job_id}")
+        logger.info("task_enqueued", task_name=task_name, job_id=job.job_id)
         return job.job_id
     except Exception as e:
-        logger.error(f"Failed to enqueue task {task_name}: {e}")
+        logger.error(
+            "task_enqueue_failed",
+            task_name=task_name,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return None
 
 
@@ -92,5 +97,10 @@ async def get_job_result(job_id: str) -> Any:
             return None
         return await job.result()
     except Exception as e:
-        logger.error(f"Failed to get job result for {job_id}: {e}")
+        logger.error(
+            "job_result_fetch_failed",
+            job_id=job_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return None

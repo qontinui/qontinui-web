@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -22,7 +23,7 @@ class StorageUsageResponse(StorageUsageBase):
     """Schema for storage usage response."""
 
     id: int
-    user_id: int
+    user_id: UUID
     created_at: datetime
 
     class Config:

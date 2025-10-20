@@ -1,25 +1,179 @@
-import logging
-from typing import Any
+"""
+Authentication endpoints using fastapi-users.
 
+This replaces the custom authentication implementation with fastapi-users,
+while maintaining custom endpoints like beta signup.
+"""
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
-from app.crud.user import get_user_by_email, get_user_by_username
-from app.schemas.token import Token
-from app.schemas.user import User, UserCreate
-from app.services.auth import (
-    authentication_service,
-    password_service,
-    token_service,
-    user_management_service,
-)
+from app.auth.config import auth_backend, fastapi_users
+from app.core.security import verify_password
+from app.crud.user import get_user_by_email
+from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.services.auth.password_service import password_service
+from app.services.auth.user_management_service import user_management_service
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+# ===== FASTAPI-USERS ROUTERS =====
+
+# Register auth routes (login, logout)
+# NOTE: We include the full auth router but will override /jwt/login below
+router.include_router(
+    fastapi_users.get_auth_router(auth_backend),
+    prefix="/jwt",
+    tags=["auth"],
+)
+
+# Register user registration route
+router.include_router(
+    fastapi_users.get_register_router(UserRead, UserCreate),
+    tags=["auth"],
+)
+
+# Register password reset routes
+router.include_router(
+    fastapi_users.get_reset_password_router(),
+    tags=["auth"],
+)
+
+# Register email verification routes
+router.include_router(
+    fastapi_users.get_verify_router(UserRead),
+    tags=["auth"],
+)
+
+# Register user management routes (me, update, etc.)
+router.include_router(
+    fastapi_users.get_users_router(UserRead, UserUpdate),
+    prefix="/users",
+    tags=["users"],
+)
+
+
+# ===== CUSTOM ENDPOINTS (NOT PROVIDED BY FASTAPI-USERS) =====
+
+from fastapi.security import OAuth2PasswordRequestForm
+
+from app.core.security import create_access_token, create_refresh_token
+
+
+class TokenResponse(BaseModel):
+    """Response model for login and refresh endpoints."""
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+@router.post("/jwt/login", response_model=TokenResponse, tags=["auth"])
+async def login(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    form_data: OAuth2PasswordRequestForm = Depends(),
+):
+    """
+    Custom login endpoint that returns both access and refresh tokens.
+
+    Uses the same authentication as fastapi-users but returns refresh token.
+    """
+    # Get user by email
+    user = await get_user_by_email(db, email=form_data.username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="LOGIN_BAD_CREDENTIALS",
+        )
+
+    # Verify password using core.security (same as fastapi-users uses)
+    if not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="LOGIN_BAD_CREDENTIALS",
+        )
+
+    # Check if user is active
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="LOGIN_USER_NOT_VERIFIED",
+        )
+
+    # Generate tokens using existing security functions
+    access_token = create_access_token(subject=str(user.id))
+    refresh_token = create_refresh_token(subject=str(user.id))
+
+    logger.info("user_logged_in", user_id=str(user.id), email=user.email)
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+    )
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/jwt/refresh", response_model=TokenResponse)
+async def refresh_token(
+    *, db: AsyncSession = Depends(get_async_db), request: RefreshTokenRequest
+):
+    """
+    Refresh access token using refresh token.
+
+    Returns new access and refresh tokens (token rotation).
+    """
+    import uuid
+
+    from app.core.security import decode_token
+    from app.crud.user import get_user
+
+    # Decode and validate the refresh token
+    payload = decode_token(request.refresh_token)
+
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    user_id: str = payload.get("sub")
+    token_type = payload.get("type")
+
+    if not user_id or token_type != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    # Get user from database to ensure they still exist and are active
+    user = await get_user(db, user_id=uuid.UUID(user_id))
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+
+    # Generate new tokens using existing security functions
+    access_token = create_access_token(subject=str(user.id))
+    new_refresh_token = create_refresh_token(subject=str(user.id))
+
+    logger.info("token_refreshed", user_id=str(user.id))
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=new_refresh_token,
+        token_type="bearer",
+    )
 
 
 class BetaSignupRequest(BaseModel):
@@ -32,136 +186,18 @@ class BetaSignupResponse(BaseModel):
     temp_password: str | None = None
 
 
-class PasswordResetRequest(BaseModel):
-    email: EmailStr
-
-
-class PasswordResetConfirm(BaseModel):
-    token: str
-    new_password: str
-
-
-class EmailVerificationRequest(BaseModel):
-    email: EmailStr
-
-
-class EmailVerificationConfirm(BaseModel):
-    token: str
-
-
-@router.post("/login", response_model=Token)
-async def login(
-    db: AsyncSession = Depends(get_async_db),
-    form_data: OAuth2PasswordRequestForm = Depends(),
-) -> Any:
-    user = await authentication_service.authenticate_user(
-        db, form_data.username, form_data.password
-    )
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return authentication_service.create_user_tokens(user.id)
-
-
-@router.post("/register", response_model=User)
-async def register(
-    *, db: AsyncSession = Depends(get_async_db), user_in: UserCreate
-) -> Any:
-    from app.worker.queue import task_queue
-
-    if await get_user_by_email(db, email=user_in.email):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with this email already exists",
-        )
-
-    if await get_user_by_username(db, username=user_in.username):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with this username already exists",
-        )
-
-    user = await user_management_service.create_user(db, user_in)
-
-    # Generate verification token and send email
-    verification_token = token_service.create_email_verification_token(user.email)
-    user.email_verification_token = verification_token
-    await db.commit()
-
-    # Send verification email in background (don't block registration if it fails)
-    job_id = await task_queue.send_verification_email(
-        to_email=user.email,
-        username=user.username,
-        verification_token=verification_token,
-    )
-    if job_id:
-        logger.info(f"Verification email enqueued for {user.email}, job_id: {job_id}")
-    else:
-        logger.error(f"Failed to enqueue verification email for {user.email}")
-
-    return user
-
-
-@router.post("/refresh", response_model=Token)
-async def refresh_token(
-    *, db: AsyncSession = Depends(get_async_db), refresh_token: str
-) -> Any:
-    tokens = authentication_service.refresh_user_tokens(refresh_token)
-
-    if not tokens:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return tokens
-
-
-@router.get("/me", response_model=User)
-async def get_current_user(
-    *,
-    db: AsyncSession = Depends(get_async_db),
-    authorization: str = Depends(OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")),
-) -> Any:
-    user_id = token_service.verify_token(authorization)
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    from app.crud.user import get_user
-
-    user = await get_user(db, user_id=user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    return user
-
-
-@router.post("/logout")
-async def logout(
-    *,
-    authorization: str = Depends(OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")),
-    refresh_token: str | None = None,
-) -> Any:
-    authentication_service.logout_user(authorization, refresh_token)
-    return {"message": "Successfully logged out"}
-
-
 @router.post("/beta-signup", response_model=BetaSignupResponse)
 async def beta_signup(
     *, db: AsyncSession = Depends(get_async_db), signup_request: BetaSignupRequest
-) -> Any:
+):
+    """
+    Custom beta signup endpoint for creating beta users with temporary passwords.
+
+    This endpoint:
+    1. Creates a user with a temporary password
+    2. Auto-verifies their email
+    3. Sends welcome email with credentials
+    """
     from app.worker.queue import task_queue
 
     existing_user = await get_user_by_email(db, email=signup_request.email)
@@ -182,11 +218,10 @@ async def beta_signup(
         )
 
         # Beta users get auto-verified for easier onboarding
-        user.email_verified = True
+        user.is_verified = True  # Changed from email_verified
         await db.commit()
 
         # Send welcome email with credentials in background
-        # Note: Beta welcome email needs to be added as a background task
         job_id = await task_queue.send_email(
             to_email=user.email,
             subject="Welcome to Qontinui Beta!",
@@ -195,13 +230,13 @@ async def beta_signup(
         )
         if job_id:
             logger.info(
-                f"Beta welcome email enqueued for {user.email}, job_id: {job_id}"
+                "beta_welcome_email_enqueued", user_email=user.email, job_id=job_id
             )
         else:
-            logger.error(f"Failed to enqueue beta welcome email for {user.email}")
+            logger.error("beta_welcome_email_enqueue_failed", user_email=user.email)
 
         logger.info(
-            f"New beta signup: {signup_request.email} with username: {username}"
+            "beta_signup_success", email=signup_request.email, username=username
         )
 
         return BetaSignupResponse(
@@ -211,157 +246,10 @@ async def beta_signup(
         )
 
     except Exception as e:
-        logger.error(f"Error creating beta user: {str(e)}")
+        logger.error(
+            "beta_user_creation_failed", error=str(e), error_type=type(e).__name__
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create beta account. Please try again.",
         )
-
-
-@router.post("/password-reset")
-async def request_password_reset(
-    *, db: AsyncSession = Depends(get_async_db), reset_request: PasswordResetRequest
-) -> Any:
-    from app.worker.queue import task_queue
-
-    user = await get_user_by_email(db, email=reset_request.email)
-    if user:
-        reset_token = token_service.create_password_reset_token(reset_request.email)
-        logger.info(
-            f"Password reset token generated for {reset_request.email}: {reset_token}"
-        )
-
-        # Send password reset email in background
-        job_id = await task_queue.send_password_reset_email(
-            to_email=user.email,
-            username=user.username,
-            reset_token=reset_token,
-        )
-        if job_id:
-            logger.info(
-                f"Password reset email enqueued for {reset_request.email}, job_id: {job_id}"
-            )
-        else:
-            logger.error(
-                f"Failed to enqueue password reset email for {reset_request.email}"
-            )
-
-    return {
-        "success": True,
-        "message": "If that email exists in our system, you will receive a password reset link.",
-    }
-
-
-@router.post("/password-reset-confirm")
-async def confirm_password_reset(
-    *, db: AsyncSession = Depends(get_async_db), reset_confirm: PasswordResetConfirm
-) -> Any:
-    email = token_service.verify_password_reset_token(reset_confirm.token)
-    if not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token",
-        )
-
-    user = await get_user_by_email(db, email=email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token",
-        )
-
-    await user_management_service.update_user_password(
-        db, user, reset_confirm.new_password
-    )
-
-    return {
-        "success": True,
-        "message": "Password has been reset successfully. You can now log in with your new password.",
-    }
-
-
-@router.post("/send-verification")
-async def send_verification_email_route(
-    *, db: AsyncSession = Depends(get_async_db), request: EmailVerificationRequest
-) -> Any:
-    """Send or resend email verification link"""
-    from app.worker.queue import task_queue
-
-    user = await get_user_by_email(db, email=request.email)
-    if not user:
-        # Don't reveal if user exists or not
-        return {
-            "success": True,
-            "message": "If that email exists in our system, you will receive a verification link.",
-        }
-
-    if user.email_verified:
-        return {
-            "success": True,
-            "message": "Your email is already verified.",
-        }
-
-    # Generate verification token
-    verification_token = token_service.create_email_verification_token(request.email)
-
-    # Store token in database (optional, for tracking)
-    user.email_verification_token = verification_token
-    await db.commit()
-
-    # Send verification email in background
-    job_id = await task_queue.send_verification_email(
-        to_email=user.email,
-        username=user.username,
-        verification_token=verification_token,
-    )
-    if job_id:
-        logger.info(
-            f"Verification email enqueued for {request.email}, job_id: {job_id}"
-        )
-    else:
-        logger.error(f"Failed to enqueue verification email for {request.email}")
-
-    return {
-        "success": True,
-        "message": "Verification email sent. Please check your inbox.",
-    }
-
-
-@router.post("/verify-email")
-async def verify_email(
-    *,
-    db: AsyncSession = Depends(get_async_db),
-    verify_request: EmailVerificationConfirm,
-) -> Any:
-    """Verify email address with token"""
-    email = token_service.verify_email_verification_token(verify_request.token)
-    if not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification token",
-        )
-
-    user = await get_user_by_email(db, email=email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification token",
-        )
-
-    if user.email_verified:
-        return {
-            "success": True,
-            "message": "Your email is already verified.",
-        }
-
-    # Update user as verified
-    user.email_verified = True
-    user.email_verification_token = None
-    await db.commit()
-
-    logger.info(f"Email verified for user: {user.username}")
-
-    return {
-        "success": True,
-        "message": "Email verified successfully! You can now access all features.",
-    }

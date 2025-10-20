@@ -392,7 +392,7 @@ const StateDiscoveryTab: React.FC = () => {
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-medium">Similarity Threshold</Label>
-              <span className="text-sm text-gray-600">{similarityThreshold.toFixed(2)}</span>
+              <span className="text-sm text-gray-400">{similarityThreshold.toFixed(2)}</span>
             </div>
             <Slider
               value={[similarityThreshold]}
@@ -406,7 +406,7 @@ const StateDiscoveryTab: React.FC = () => {
               <span>Loose (0.00)</span>
               <span>Strict (1.00)</span>
             </div>
-            <p className="text-xs text-gray-600 mt-1">
+            <p className="text-xs text-gray-400 mt-1">
               Lower values find more variations, higher values require exact matches
             </p>
           </div>
@@ -426,10 +426,10 @@ const StateDiscoveryTab: React.FC = () => {
               {selectedRegion && (
                 <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
                   <div className="font-medium">Selected Region:</div>
-                  <div className="text-gray-600">
+                  <div className="text-gray-400">
                     Position: ({selectedRegion.x}, {selectedRegion.y})
                   </div>
-                  <div className="text-gray-600">
+                  <div className="text-gray-400">
                     Size: {selectedRegion.width} × {selectedRegion.height}px
                   </div>
                   <Button
@@ -470,7 +470,7 @@ const StateDiscoveryTab: React.FC = () => {
           {isAnalyzing && (
             <div className="mt-4">
               <Progress value={analysisProgress} className="mb-2" />
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-400">
                 Analyzing... {analysisProgress}%
               </p>
             </div>
@@ -523,7 +523,7 @@ const StateDiscoveryTab: React.FC = () => {
                     <button
                       key={state?.id || index}
                       className={cn(
-                        "w-full text-left px-2 py-1 rounded text-sm hover:bg-gray-100",
+                        "w-full text-left px-2 py-1 rounded text-sm hover:bg-[#27272A]",
                         selectedState?.id === state?.id && "bg-blue-100"
                       )}
                       onClick={() => {
@@ -634,22 +634,22 @@ const StateDiscoveryTab: React.FC = () => {
               </Tabs>
 
               {/* Zoom controls */}
-              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1">
+              <div className="flex items-center gap-2 bg-[#0A0A0B] border border-gray-800 border-gray-700 rounded-lg px-2 py-1">
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 hover:bg-gray-200 text-gray-700"
+                  className="h-7 px-2 hover:bg-gray-700 text-gray-300"
                   onClick={() => setCanvasScale(s => Math.max(s * 0.8, 0.1))}
                 >
                   <span className="text-lg">−</span>
                 </Button>
-                <span className="text-sm font-medium px-2 text-gray-700">
+                <span className="text-sm font-medium px-2 text-gray-300">
                   {Math.round(canvasScale * 100)}%
                 </span>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 hover:bg-gray-200 text-gray-700"
+                  className="h-7 px-2 hover:bg-gray-700 text-gray-300"
                   onClick={() => setCanvasScale(s => Math.min(s * 1.2, 3))}
                 >
                   <span className="text-lg">+</span>
@@ -657,7 +657,7 @@ const StateDiscoveryTab: React.FC = () => {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 hover:bg-gray-200 text-gray-700"
+                  className="h-7 px-2 hover:bg-gray-700 text-gray-300"
                   onClick={() => setCanvasScale(1)}
                 >
                   Fit
@@ -666,7 +666,7 @@ const StateDiscoveryTab: React.FC = () => {
 
               {selectedStateImages.size > 0 && (
                 <div className="flex items-center gap-2 ml-auto">
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-gray-400">
                     {selectedStateImages.size} selected
                   </span>
                   <Button
@@ -700,7 +700,7 @@ const StateDiscoveryTab: React.FC = () => {
               </div>
             ) : (
               <div
-                className="border rounded-lg overflow-auto bg-gray-50"
+                className="border border-gray-800 rounded-lg overflow-auto bg-[#0A0A0B]"
                 style={{
                   flex: canvasScale < 0.8 ? '0 0 auto' : '1',
                   width: canvasScale < 0.8 ? `${canvasImageSize.width * canvasScale + 40}px` : undefined,

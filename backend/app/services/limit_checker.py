@@ -1,5 +1,7 @@
 """Service to check subscription limits and enforce read-only mode"""
 
+from uuid import UUID
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +15,7 @@ class LimitChecker:
     """Check if user has exceeded their subscription limits"""
 
     @staticmethod
-    async def get_user_usage(db: AsyncSession, user_id: int) -> dict:
+    async def get_user_usage(db: AsyncSession, user_id: UUID) -> dict:
         """
         Get current usage for a user.
 
@@ -49,7 +51,7 @@ class LimitChecker:
 
     @staticmethod
     async def check_can_create_project(
-        db: AsyncSession, user_id: int, subscription_tier: str
+        db: AsyncSession, user_id: UUID, subscription_tier: str
     ) -> tuple[bool, str]:
         """
         Check if user can create a new project.
@@ -77,7 +79,7 @@ class LimitChecker:
 
     @staticmethod
     async def check_can_upload_file(
-        db: AsyncSession, user_id: int, subscription_tier: str, file_size_bytes: int
+        db: AsyncSession, user_id: UUID, subscription_tier: str, file_size_bytes: int
     ) -> tuple[bool, str]:
         """
         Check if user can upload a file.
@@ -102,7 +104,7 @@ class LimitChecker:
 
     @staticmethod
     async def is_read_only(
-        db: AsyncSession, user_id: int, subscription_tier: str
+        db: AsyncSession, user_id: UUID, subscription_tier: str
     ) -> tuple[bool, str]:
         """
         Check if user should be in read-only mode.
@@ -155,7 +157,7 @@ class LimitChecker:
 
     @staticmethod
     async def get_usage_summary(
-        db: AsyncSession, user_id: int, subscription_tier: str
+        db: AsyncSession, user_id: UUID, subscription_tier: str
     ) -> dict:
         """
         Get a complete usage summary with limits.

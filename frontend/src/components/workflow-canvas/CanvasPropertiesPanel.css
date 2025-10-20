@@ -1,0 +1,401 @@
+/**
+ * Canvas Properties Panel Styles
+ *
+ * Styling for the properties panel and related components
+ */
+
+/* Panel Container */
+.properties-panel {
+  background-color: #1e1e1e;
+  border-color: rgb(55, 65, 81);
+  transition: width 0.2s ease, height 0.2s ease;
+}
+
+.properties-panel.position-right {
+  border-left: 1px solid rgb(55, 65, 81);
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
+}
+
+.properties-panel.position-bottom {
+  border-top: 1px solid rgb(55, 65, 81);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.properties-panel.position-floating {
+  border: 1px solid rgb(55, 65, 81);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+}
+
+/* Resize Handles */
+.resize-handle {
+  position: absolute;
+  background-color: transparent;
+  transition: background-color 0.2s ease;
+  z-index: 10;
+}
+
+.resize-handle:hover {
+  background-color: rgba(59, 130, 246, 0.5);
+}
+
+.resize-handle.resizing {
+  background-color: rgb(59, 130, 246);
+}
+
+.resize-handle-horizontal {
+  cursor: ew-resize;
+  width: 4px;
+  height: 100%;
+  left: 0;
+  top: 0;
+}
+
+.resize-handle-vertical {
+  cursor: ns-resize;
+  height: 4px;
+  width: 100%;
+  top: 0;
+  left: 0;
+}
+
+/* Collapsible Sections */
+.collapsible-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.collapsible-section-header:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.collapsible-section-header.collapsed {
+  border-bottom: 1px solid rgb(55, 65, 81);
+}
+
+.collapsible-section-content {
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+}
+
+.collapsible-section-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* Property Form Elements */
+.property-input {
+  background-color: transparent;
+  border: 1px solid rgb(55, 65, 81);
+  color: rgb(229, 231, 235);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.property-input:focus {
+  outline: none;
+  border-color: rgb(59, 130, 246);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.property-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.property-input.error {
+  border-color: rgb(239, 68, 68);
+}
+
+.property-input.error:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+/* Property Label */
+.property-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgb(156, 163, 175);
+  margin-bottom: 0.5rem;
+}
+
+.property-label.required::after {
+  content: ' *';
+  color: rgb(239, 68, 68);
+}
+
+/* Validation Messages */
+.validation-error {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  color: rgb(252, 165, 165);
+}
+
+.validation-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  background-color: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  color: rgb(252, 211, 77);
+}
+
+.validation-info {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  color: rgb(147, 197, 253);
+}
+
+/* Unsaved Changes Indicator */
+.unsaved-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  background-color: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  color: rgb(251, 191, 36);
+}
+
+.unsaved-indicator-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: rgb(251, 191, 36);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Mixed Value Indicator */
+.mixed-value-indicator {
+  font-size: 0.75rem;
+  color: rgb(251, 191, 36);
+  font-style: italic;
+}
+
+/* Panel Header */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgb(55, 65, 81);
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.panel-header-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgb(229, 231, 235);
+}
+
+/* Panel Section */
+.panel-section {
+  padding: 1rem;
+  border-bottom: 1px solid rgb(55, 65, 81);
+}
+
+.panel-section:last-child {
+  border-bottom: none;
+}
+
+.panel-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgb(229, 231, 235);
+  margin-bottom: 1rem;
+}
+
+.panel-section-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Property Grid */
+.property-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.property-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
+/* Property Group */
+.property-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Property Row */
+.property-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.property-row-label {
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+
+.property-row-value {
+  flex: 1 1 auto;
+}
+
+/* Statistics Card */
+.stat-card {
+  padding: 0.75rem;
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgb(55, 65, 81);
+  border-radius: 0.375rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: rgb(156, 163, 175);
+  margin-top: 0.25rem;
+}
+
+/* Quick Edit Popover */
+.quick-edit-popover {
+  width: 20rem;
+  padding: 1rem;
+  background-color: #1e1e1e;
+  border: 1px solid rgb(55, 65, 81);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+/* History Timeline */
+.history-item {
+  position: relative;
+  padding-left: 1.5rem;
+  padding-bottom: 1rem;
+}
+
+.history-item::before {
+  content: '';
+  position: absolute;
+  left: 0.375rem;
+  top: 0.5rem;
+  bottom: -0.5rem;
+  width: 2px;
+  background-color: rgb(55, 65, 81);
+}
+
+.history-item:last-child::before {
+  display: none;
+}
+
+.history-item-marker {
+  position: absolute;
+  left: 0;
+  top: 0.5rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background-color: rgb(59, 130, 246);
+  border: 2px solid #1e1e1e;
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 768px) {
+  .properties-panel.position-right {
+    width: 100% !important;
+  }
+
+  .properties-panel.position-bottom {
+    height: 50vh !important;
+  }
+
+  .property-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dark Mode Overrides */
+@media (prefers-color-scheme: light) {
+  .properties-panel {
+    background-color: #ffffff;
+    border-color: rgb(229, 231, 235);
+  }
+
+  .property-input {
+    background-color: #ffffff;
+    border-color: rgb(229, 231, 235);
+    color: rgb(17, 24, 39);
+  }
+}
+
+/* Accessibility */
+.properties-panel:focus-within {
+  outline: 2px solid rgb(59, 130, 246);
+  outline-offset: -2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}

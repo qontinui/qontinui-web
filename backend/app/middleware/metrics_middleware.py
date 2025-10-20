@@ -1,14 +1,14 @@
-import logging
 import time
 from collections.abc import Callable
 
+import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.db.session import SessionLocal
+from app.db.session import AsyncSessionLocal
 from app.services.metrics_service import metrics_service
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
@@ -53,14 +53,13 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                     if payload:
                         user_id = int(payload.get("sub"))
                 except Exception as e:
-                    logger.debug(f"Could not extract user_id from token: {e}")
+                    logger.debug("token_extraction_failed", error=str(e))
 
         # Only track metrics for authenticated users
         if user_id:
             try:
-                db = SessionLocal()
-                try:
-                    metrics_service.track_api_call(
+                async with AsyncSessionLocal() as db:
+                    await metrics_service.track_api_call(
                         db=db,
                         user_id=user_id,
                         endpoint=request.url.path,
@@ -72,9 +71,9 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                             "user_agent": request.headers.get("user-agent"),
                         },
                     )
-                finally:
-                    db.close()
             except Exception as e:
-                logger.error(f"Error tracking API call metric: {e}")
+                logger.error(
+                    "metrics_tracking_failed", error=str(e), error_type=type(e).__name__
+                )
 
         return response

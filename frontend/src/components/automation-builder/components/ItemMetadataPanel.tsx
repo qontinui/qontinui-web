@@ -1,0 +1,294 @@
+/**
+ * ItemMetadataPanel Component
+ *
+ * Displays and allows editing of workflow metadata (name, description, category, view mode)
+ * All items are now Workflows - sequential workflows are just linear graphs.
+ */
+
+import React, { useState, useEffect, useCallback } from 'react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
+import { Check, X } from 'lucide-react'
+import type { LibraryItem } from '../types'
+import { isLinearWorkflow, getSuggestedMode } from '../types'
+import type { BuilderMode } from '../types'
+
+export interface ItemMetadataPanelProps {
+  item: LibraryItem
+  onUpdate: (item: LibraryItem) => void
+  className?: string
+}
+
+// Workflow categories (unified for all workflows)
+const WORKFLOW_CATEGORIES = [
+  'Main',
+  'UI Automation',
+  'Data Processing',
+  'System Integration',
+  'Testing',
+  'Maintenance',
+  'Utilities',
+  'Custom',
+] as const
+
+export function ItemMetadataPanel({ item, onUpdate, className }: ItemMetadataPanelProps) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [tempName, setTempName] = useState(item.name)
+  const [tempDescription, setTempDescription] = useState(item.description || '')
+  const [tempCategory, setTempCategory] = useState(item.category || 'Main')
+  const [tempViewMode, setTempViewMode] = useState<BuilderMode>(
+    item.metadata?.viewMode || getSuggestedMode(item)
+  )
+
+  // Reset temp values when item changes
+  useEffect(() => {
+    setTempName(item.name)
+    setTempDescription(item.description || '')
+    setTempCategory(item.category || 'Main')
+    setTempViewMode(item.metadata?.viewMode || getSuggestedMode(item))
+    setIsEditing(false)
+  }, [item.id])
+
+  /**
+   * Save changes
+   */
+  const handleSave = useCallback(() => {
+    if (!tempName.trim()) {
+      // Don't allow empty names
+      return
+    }
+
+    // Update workflow with all fields
+    onUpdate({
+      ...item,
+      name: tempName.trim(),
+      description: tempDescription.trim(),
+      category: tempCategory,
+      metadata: {
+        ...item.metadata,
+        viewMode: tempViewMode,
+        updated: new Date().toISOString(),
+      },
+    })
+
+    setIsEditing(false)
+  }, [item, tempName, tempDescription, tempCategory, tempViewMode, onUpdate])
+
+  /**
+   * Cancel editing
+   */
+  const handleCancel = useCallback(() => {
+    setTempName(item.name)
+    setTempDescription(item.description || '')
+    setTempCategory(item.category || 'Main')
+    setTempViewMode(item.metadata?.viewMode || getSuggestedMode(item))
+    setIsEditing(false)
+  }, [item])
+
+  /**
+   * Handle Enter key to save
+   */
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        handleSave()
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        handleCancel()
+      }
+    },
+    [handleSave, handleCancel]
+  )
+
+  const isLinear = isLinearWorkflow(item)
+  const currentViewMode = item.metadata?.viewMode || getSuggestedMode(item)
+
+  return (
+    <div className={className}>
+      {/* Type Badge */}
+      <div className="mb-4">
+        <span
+          className={
+            currentViewMode === 'sequential'
+              ? 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/30'
+              : 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/30'
+          }
+        >
+          {isLinear ? 'Sequential Workflow' : 'Graph Workflow'}
+        </span>
+      </div>
+
+      {/* Name Field */}
+      <div className="mb-4">
+        <Label htmlFor="item-name" className="text-sm font-medium text-gray-300 mb-1.5">
+          Name
+        </Label>
+        {isEditing ? (
+          <Input
+            id="item-name"
+            value={tempName}
+            onChange={(e) => setTempName(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="bg-gray-900 border-gray-700 text-white"
+            placeholder="Enter name..."
+            autoFocus
+          />
+        ) : (
+          <div
+            onClick={() => setIsEditing(true)}
+            className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors"
+          >
+            <span className="text-white">{item.name}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Description Field */}
+      <div className="mb-4">
+        <Label htmlFor="item-description" className="text-sm font-medium text-gray-300 mb-1.5">
+          Description
+        </Label>
+        {isEditing ? (
+          <Textarea
+            id="item-description"
+            value={tempDescription}
+            onChange={(e) => setTempDescription(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="bg-gray-900 border-gray-700 text-white min-h-[80px]"
+            placeholder="Enter description..."
+          />
+        ) : (
+          <div
+            onClick={() => setIsEditing(true)}
+            className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors min-h-[80px]"
+          >
+            <span className="text-gray-400 text-sm">
+              {item.description || 'No description'}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Category Field */}
+      <div className="mb-4">
+        <Label htmlFor="item-category" className="text-sm font-medium text-gray-300 mb-1.5">
+          Category
+        </Label>
+        {isEditing ? (
+          <Select value={tempCategory} onValueChange={setTempCategory}>
+            <SelectTrigger className="bg-gray-900 border-gray-700 text-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WORKFLOW_CATEGORIES.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <div
+            onClick={() => setIsEditing(true)}
+            className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors"
+          >
+            <span className="text-white">{item.category || 'Main'}</span>
+          </div>
+        )}
+      </div>
+
+      {/* View Mode Field */}
+      <div className="mb-4">
+        <Label htmlFor="item-viewMode" className="text-sm font-medium text-gray-300 mb-1.5">
+          Preferred Editor
+        </Label>
+        {isEditing ? (
+          <Select value={tempViewMode} onValueChange={(v) => setTempViewMode(v as BuilderMode)}>
+            <SelectTrigger className="bg-gray-900 border-gray-700 text-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sequential">Sequential (Timeline)</SelectItem>
+              <SelectItem value="graph">Graph (Visual)</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <div
+            onClick={() => setIsEditing(true)}
+            className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors"
+          >
+            <span className="text-white">
+              {currentViewMode === 'sequential' ? 'Sequential (Timeline)' : 'Graph (Visual)'}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Edit Actions */}
+      {isEditing && (
+        <div className="flex gap-2 mt-6">
+          <Button
+            onClick={handleSave}
+            disabled={!tempName.trim()}
+            className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+          >
+            <Check className="w-4 h-4 mr-2" />
+            Save
+          </Button>
+          <Button
+            onClick={handleCancel}
+            variant="outline"
+            className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+          >
+            <X className="w-4 h-4 mr-2" />
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {/* Metadata Info */}
+      <div className="mt-6 pt-6 border-t border-gray-800">
+        <div className="text-xs text-gray-500 space-y-1">
+          <div>
+            <span className="font-medium">ID:</span> {item.id}
+          </div>
+          <div>
+            <span className="font-medium">Format:</span> {item.format}
+          </div>
+          <div>
+            <span className="font-medium">Version:</span> {item.version}
+          </div>
+          {item.metadata?.created && (
+            <div>
+              <span className="font-medium">Created:</span>{' '}
+              {new Date(item.metadata.created).toLocaleDateString()}
+            </div>
+          )}
+          {item.metadata?.updated && (
+            <div>
+              <span className="font-medium">Updated:</span>{' '}
+              {new Date(item.metadata.updated).toLocaleDateString()}
+            </div>
+          )}
+          <div>
+            <span className="font-medium">Actions:</span> {item.actions.length}
+          </div>
+          <div>
+            <span className="font-medium">Type:</span>{' '}
+            {isLinear ? 'Linear (no branching)' : 'Graph (branching)'}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

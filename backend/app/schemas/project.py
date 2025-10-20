@@ -1,10 +1,10 @@
-from datetime import datetime
 from typing import Any
+from uuid import UUID
 
-from pydantic import BaseModel
+from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 
 
-class ProjectBase(BaseModel):
+class ProjectBase(BaseSchema):
     name: str
     description: str | None = None
     configuration: dict[str, Any] = {}
@@ -14,20 +14,17 @@ class ProjectCreate(ProjectBase):
     pass
 
 
-class ProjectUpdate(BaseModel):
+class ProjectUpdate(BaseSchema):
     name: str | None = None
     description: str | None = None
     configuration: dict[str, Any] | None = None
 
 
-class ProjectInDBBase(ProjectBase):
+class ProjectInDBBase(ProjectBase, BaseORMSchema):
     id: int
-    owner_id: int
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
+    owner_id: UUID  # Changed from int to UUID to match fastapi-users User model
+    created_at: IsoDatetime  # Serializes to ISO 8601 format
+    updated_at: IsoDatetime  # Serializes to ISO 8601 format
 
 
 class Project(ProjectInDBBase):

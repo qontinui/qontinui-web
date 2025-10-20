@@ -42,6 +42,16 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* Qontinui Theme Colors */
+  --color-qontinui-canvas: rgb(var(--qontinui-canvas));
+  --color-qontinui-panel: rgb(var(--qontinui-panel));
+  --color-qontinui-cyan: rgb(var(--qontinui-cyan));
+  --color-qontinui-green: rgb(var(--qontinui-green));
+  --color-qontinui-purple: rgb(var(--qontinui-purple));
+  --color-qontinui-border-dark: rgb(var(--qontinui-border-dark));
+  --color-qontinui-border-medium: rgb(var(--qontinui-border-medium));
+  --color-qontinui-dot-pattern: rgb(var(--qontinui-dot-pattern));
 }
 
 :root {
@@ -77,6 +87,16 @@
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.705 0.015 286.067);
+
+  /* Qontinui Theme Tokens */
+  --qontinui-canvas: 10 10 11;           /* #0A0A0B */
+  --qontinui-panel: 39 39 42;            /* #27272A */
+  --qontinui-cyan: 0 217 255;            /* #00D9FF */
+  --qontinui-green: 0 255 136;           /* #00FF88 */
+  --qontinui-purple: 189 0 255;          /* #BD00FF */
+  --qontinui-border-dark: 31 31 35;      /* #1F1F23 gray-800 */
+  --qontinui-border-medium: 63 63 70;    /* #3F3F46 gray-700 */
+  --qontinui-dot-pattern: 51 51 51;      /* #333333 */
 }
 
 .dark {
@@ -111,6 +131,16 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.552 0.016 285.938);
+
+  /* Qontinui Theme Tokens - same in dark mode */
+  --qontinui-canvas: 10 10 11;           /* #0A0A0B */
+  --qontinui-panel: 39 39 42;            /* #27272A */
+  --qontinui-cyan: 0 217 255;            /* #00D9FF */
+  --qontinui-green: 0 255 136;           /* #00FF88 */
+  --qontinui-purple: 189 0 255;          /* #BD00FF */
+  --qontinui-border-dark: 31 31 35;      /* #1F1F23 gray-800 */
+  --qontinui-border-medium: 63 63 70;    /* #3F3F46 gray-700 */
+  --qontinui-dot-pattern: 51 51 51;      /* #333333 */
 }
 
 @layer base {
@@ -179,5 +209,21 @@
   .gradient-border > * {
     position: relative;
     z-index: 1;
+  }
+
+  /* Blink animation for typing cursor */
+  .animate-blink {
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    51%,
+    100% {
+      opacity: 0;
+    }
   }
 }

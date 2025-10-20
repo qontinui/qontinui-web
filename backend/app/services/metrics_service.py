@@ -1,13 +1,14 @@
-import logging
 from datetime import datetime, timedelta
 from typing import Any
+from uuid import UUID
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.usage_metric import UsageMetric
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class MetricsService:
@@ -22,7 +23,7 @@ class MetricsService:
     async def track_api_call(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         endpoint: str,
         method: str,
         response_time: float,
@@ -60,7 +61,7 @@ class MetricsService:
     async def track_event(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         event_type: str,
         value: float = 1,
         metadata: dict[str, Any] | None = None,
@@ -115,7 +116,7 @@ class MetricsService:
     async def get_user_metrics(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         metric_type: str | None = None,
@@ -150,7 +151,7 @@ class MetricsService:
     async def get_api_calls_count(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
     ) -> int:
@@ -171,7 +172,7 @@ class MetricsService:
     async def get_event_count(
         self,
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         event_type: str,
         start_date: datetime | None = None,
     ) -> int:
@@ -187,7 +188,7 @@ class MetricsService:
         return result.scalar() or 0
 
     async def get_average_response_time(
-        self, db: AsyncSession, user_id: int, endpoint: str | None = None
+        self, db: AsyncSession, user_id: UUID, endpoint: str | None = None
     ) -> float:
         """Get average API response time for a user or specific endpoint"""
         # Query metrics and calculate average from metadata
@@ -214,7 +215,7 @@ class MetricsService:
         return 0.0
 
     async def get_last_activity(
-        self, db: AsyncSession, user_id: int
+        self, db: AsyncSession, user_id: UUID
     ) -> datetime | None:
         """Get timestamp of user's last activity"""
         result = await db.execute(

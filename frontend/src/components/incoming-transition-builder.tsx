@@ -16,7 +16,7 @@ interface IncomingTransitionBuilderProps {
 }
 
 export function IncomingTransitionBuilder({ preselectedProcess, onClose }: IncomingTransitionBuilderProps = {}) {
-  const { states, processes, addTransition } = useAutomation()
+  const { states, workflows, addTransition } = useAutomation()
   const [open, setOpen] = useState(!!preselectedProcess)
 
   // IncomingTransition fields
@@ -109,22 +109,22 @@ export function IncomingTransitionBuilder({ preselectedProcess, onClose }: Incom
                 <SelectValue placeholder="Select a process to execute" />
               </SelectTrigger>
               <SelectContent className="max-h-[300px]">
-                {processes.length === 0 ? (
+                {workflows.length === 0 ? (
                   <SelectItem value="_none" disabled>
-                    No processes available
+                    No workflows available
                   </SelectItem>
                 ) : (
-                  processes.map((process) => (
-                    <SelectItem key={process.id} value={process.id}>
-                      {process.name} ({process.actions.length} actions)
+                  workflows.map((workflow) => (
+                    <SelectItem key={workflow.id} value={workflow.id}>
+                      {workflow.name} ({workflow.actions.length} actions)
                     </SelectItem>
                   ))
                 )}
               </SelectContent>
             </Select>
-            {selectedProcess && processes.find(p => p.id === selectedProcess)?.description && (
+            {selectedProcess && workflows.find(w => w.id === selectedProcess)?.description && (
               <p className="text-xs text-gray-400 mt-2">
-                {processes.find(p => p.id === selectedProcess)?.description}
+                {workflows.find(w => w.id === selectedProcess)?.description}
               </p>
             )}
           </div>

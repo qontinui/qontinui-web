@@ -2,14 +2,13 @@
 Background Removal API endpoint
 """
 
-import logging
-
+import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.background_removal_service import BackgroundRemovalService
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -96,6 +95,10 @@ async def remove_background(request: RemoveBackgroundRequest):
         if not request.screenshots:
             raise HTTPException(status_code=400, detail="No screenshots provided")
 
+        logger.info(
+            f"Received {len(request.screenshots)} screenshots for background removal"
+        )
+
         if len(request.screenshots) < request.config.min_screenshots_for_variance:
             logger.warning(
                 f"Only {len(request.screenshots)} screenshots provided, "
@@ -103,11 +106,16 @@ async def remove_background(request: RemoveBackgroundRequest):
             )
 
         # Initialize service
+        logger.info("Initializing BackgroundRemovalService")
         service = BackgroundRemovalService(request.config.model_dump())
 
         # Process screenshots (all encoding/decoding handled by qontinui library)
+        logger.info("Processing screenshots...")
         masked_screenshots, stats = service.remove_backgrounds_base64(
             request.screenshots, debug=request.debug
+        )
+        logger.info(
+            f"Processing complete: {len(masked_screenshots)} masked screenshots"
         )
 
         # Extract debug mask if present
@@ -138,10 +146,15 @@ async def remove_background(request: RemoveBackgroundRequest):
     except HTTPException:
         raise
     except ValueError as e:
-        logger.error(f"Validation error: {e}")
+        logger.error(f"Validation error: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Background removal failed: {e}", exc_info=True)
+        # Include more detailed error information
+        import traceback
+
+        error_detail = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+        logger.error(f"Full traceback:\n{error_detail}")
         raise HTTPException(
             status_code=500, detail=f"Background removal failed: {str(e)}"
         )

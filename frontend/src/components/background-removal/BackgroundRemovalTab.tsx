@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { Upload, Play, Download, Settings, Eye, AlertCircle, Loader2 } from 'lucide-react';
+import { Play, Download, Settings, Eye, AlertCircle, Loader2, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
+import { ScreenshotSelector } from '@/components/screenshot-selector';
 import {
   BackgroundRemovalConfig,
   BackgroundRemovalResult,
@@ -23,15 +24,8 @@ import {
 } from '@/types/backgroundRemoval';
 import { useAutomation } from '@/contexts/automation-context';
 
-interface UploadedScreenshot {
-  id: string;
-  name: string;
-  file: File;
-  dataUrl: string;
-}
-
 export const BackgroundRemovalTab: React.FC = () => {
-  const [screenshots, setScreenshots] = useState<UploadedScreenshot[]>([]);
+  const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<string[]>([]);
   const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState(0);
   const [config, setConfig] = useState<BackgroundRemovalConfig>(DEFAULT_BACKGROUND_REMOVAL_CONFIG);
   const [result, setResult] = useState<BackgroundRemovalResult | null>(null);
@@ -42,30 +36,15 @@ export const BackgroundRemovalTab: React.FC = () => {
 
   const { screenshots: projectScreenshots } = useAutomation();
 
-  // Handle file upload
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+  // Get selected screenshots from project screenshots
+  const selectedScreenshots = projectScreenshots.filter(s => selectedScreenshotIds.includes(s.id));
 
-    const newScreenshots: UploadedScreenshot[] = [];
-
-    for (const file of files) {
-      const dataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-
-      newScreenshots.push({
-        id: `screenshot-${Date.now()}-${Math.random()}`,
-        name: file.name,
-        file,
-        dataUrl,
-      });
-    }
-
-    setScreenshots(prev => [...prev, ...newScreenshots]);
-    toast.success(`Uploaded ${files.length} screenshot(s)`);
+  // Handle screenshot selection
+  const handleScreenshotsSelected = useCallback((screenshotIds: string[]) => {
+    setSelectedScreenshotIds(screenshotIds);
+    setSelectedScreenshotIndex(0);
+    setResult(null); // Clear previous results when selection changes
+    toast.success(`Selected ${screenshotIds.length} screenshot(s)`);
   }, []);
 
   // Handle preset selection
@@ -77,8 +56,8 @@ export const BackgroundRemovalTab: React.FC = () => {
 
   // Handle background removal
   const handleRemoveBackground = useCallback(async () => {
-    if (screenshots.length < 2) {
-      toast.error('Please upload at least 2 screenshots');
+    if (selectedScreenshots.length < 2) {
+      toast.error('Please select at least 2 screenshots');
       return;
     }
 
@@ -86,9 +65,12 @@ export const BackgroundRemovalTab: React.FC = () => {
     setError(null);
 
     try {
+      console.log('[BackgroundRemoval] Selected screenshots:', selectedScreenshots.length);
+      console.log('[BackgroundRemoval] First screenshot URL preview:', selectedScreenshots[0].url.substring(0, 100));
+
       // Prepare request
       const requestBody = {
-        screenshots: screenshots.map(s => s.dataUrl),
+        screenshots: selectedScreenshots.map(s => s.url),
         config: {
           use_temporal_variance: config.useTemporalVariance,
           use_edge_density: config.useEdgeDensity,
@@ -148,7 +130,7 @@ export const BackgroundRemovalTab: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [screenshots, config]);
+  }, [selectedScreenshots, config]);
 
   // Handle download results
   const handleDownloadResults = useCallback(() => {
@@ -157,27 +139,27 @@ export const BackgroundRemovalTab: React.FC = () => {
     result.maskedScreenshots.forEach((dataUrl, index) => {
       const link = document.createElement('a');
       link.href = dataUrl;
-      link.download = `masked_${screenshots[index].name}`;
+      link.download = `masked_${selectedScreenshots[index].name}`;
       link.click();
     });
 
     toast.success('Downloaded processed screenshots');
-  }, [result, screenshots]);
+  }, [result, selectedScreenshots]);
 
-  const selectedScreenshot = screenshots[selectedScreenshotIndex];
+  const selectedScreenshot = selectedScreenshots[selectedScreenshotIndex];
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-[#18181B]">
       {/* Header */}
-      <div className="bg-white border-b px-6 py-4">
+      <div className="bg-[#1A1A1C] border-b border-gray-700 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Background Removal</h1>
-            <p className="text-gray-600 mt-1">
+            <h1 className="text-2xl font-bold text-white">Background Removal</h1>
+            <p className="text-gray-400 mt-1">
               Remove dynamic backgrounds from screenshots for robust State Discovery
             </p>
           </div>
-          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300">
+          <Badge variant="outline" className="bg-amber-900/20 text-amber-400 border-amber-600">
             Experimental
           </Badge>
         </div>
@@ -186,44 +168,46 @@ export const BackgroundRemovalTab: React.FC = () => {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Configuration */}
-        <div className="w-80 bg-white border-r flex flex-col overflow-hidden">
-          {/* Upload Section */}
-          <div className="p-4 border-b">
-            <h2 className="font-semibold text-gray-900 mb-3">Screenshots</h2>
-            <input
-              type="file"
-              id="screenshot-upload"
-              multiple
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="hidden"
+        <div className="w-80 bg-[#1A1A1C] border-r border-gray-700 flex flex-col overflow-hidden">
+          {/* Screenshot Selection Section */}
+          <div className="p-4 border-b border-gray-700">
+            <h2 className="font-semibold text-white mb-3">Screenshots</h2>
+            <ScreenshotSelector
+              selectedScreenshot=""
+              onSelectScreenshot={() => {}}
+              multiSelect={true}
+              selectedScreenshots={selectedScreenshotIds}
+              onSelectScreenshots={handleScreenshotsSelected}
+              allowUpload={true}
+              trigger={
+                <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white border-blue-500">
+                  <Camera className="w-4 h-4 mr-2" />
+                  Select Screenshots
+                </Button>
+              }
             />
-            <label htmlFor="screenshot-upload">
-              <Button asChild className="w-full" variant="outline">
-                <span>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Screenshots
-                </span>
-              </Button>
-            </label>
-            <p className="text-xs text-gray-500 mt-2">
-              {screenshots.length} screenshot(s) uploaded
+            <p className="text-xs text-gray-400 mt-2">
+              {selectedScreenshots.length} screenshot(s) selected
             </p>
           </div>
 
           {/* Configuration Section */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {/* Presets */}
-            <Card>
+            <Card className="bg-[#27272A] border-gray-700">
               <CardHeader className="py-3">
-                <CardTitle className="text-sm">Presets</CardTitle>
+                <CardTitle className="text-sm text-white">Presets</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {(Object.keys(BACKGROUND_REMOVAL_PRESETS) as PresetName[]).map((preset) => (
                   <Button
                     key={preset}
                     variant={activePreset === preset ? 'default' : 'outline'}
-                    className="w-full justify-start"
+                    className={`w-full justify-start ${
+                      activePreset === preset
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-[#18181B] text-gray-300 border-gray-600 hover:bg-[#27272A] hover:text-white'
+                    }`}
                     size="sm"
                     onClick={() => handlePresetChange(preset)}
                   >
@@ -234,14 +218,14 @@ export const BackgroundRemovalTab: React.FC = () => {
             </Card>
 
             {/* Detection Strategies */}
-            <Card>
+            <Card className="bg-[#27272A] border-gray-700">
               <CardHeader className="py-3 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm">Detection Strategies</CardTitle>
+                <CardTitle className="text-sm text-white">Detection Strategies</CardTitle>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="h-6 text-xs"
+                  className="h-6 text-xs text-gray-300 hover:text-white hover:bg-[#18181B]"
                 >
                   <Settings className="w-3 h-3 mr-1" />
                   {showAdvanced ? 'Simple' : 'Advanced'}
@@ -250,7 +234,7 @@ export const BackgroundRemovalTab: React.FC = () => {
               <CardContent className="space-y-3">
                 {/* Temporal Variance */}
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm">Temporal Variance</Label>
+                  <Label className="text-sm text-gray-300">Temporal Variance</Label>
                   <Switch
                     checked={config.useTemporalVariance}
                     onCheckedChange={(checked) =>
@@ -261,7 +245,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 {showAdvanced && config.useTemporalVariance && (
                   <div className="ml-4 space-y-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-gray-600">
+                      <Label className="text-xs text-gray-400">
                         Threshold: {config.varianceThreshold.toFixed(1)}
                       </Label>
                       <Slider
@@ -280,7 +264,7 @@ export const BackgroundRemovalTab: React.FC = () => {
 
                 {/* Edge Density */}
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm">Edge Density</Label>
+                  <Label className="text-sm text-gray-300">Edge Density</Label>
                   <Switch
                     checked={config.useEdgeDensity}
                     onCheckedChange={(checked) => setConfig({ ...config, useEdgeDensity: checked })}
@@ -289,7 +273,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 {showAdvanced && config.useEdgeDensity && (
                   <div className="ml-4 space-y-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-gray-600">
+                      <Label className="text-xs text-gray-400">
                         Threshold: {config.edgeDensityThreshold.toFixed(2)}
                       </Label>
                       <Slider
@@ -308,7 +292,7 @@ export const BackgroundRemovalTab: React.FC = () => {
 
                 {/* Uniformity */}
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm">Uniformity</Label>
+                  <Label className="text-sm text-gray-300">Uniformity</Label>
                   <Switch
                     checked={config.useUniformity}
                     onCheckedChange={(checked) => setConfig({ ...config, useUniformity: checked })}
@@ -317,7 +301,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 {showAdvanced && config.useUniformity && (
                   <div className="ml-4 space-y-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-gray-600">
+                      <Label className="text-xs text-gray-400">
                         Threshold: {config.uniformityThreshold.toFixed(1)}
                       </Label>
                       <Slider
@@ -338,13 +322,13 @@ export const BackgroundRemovalTab: React.FC = () => {
 
             {/* Post-Processing */}
             {showAdvanced && (
-              <Card>
+              <Card className="bg-[#27272A] border-gray-700">
                 <CardHeader className="py-3">
-                  <CardTitle className="text-sm">Post-Processing</CardTitle>
+                  <CardTitle className="text-sm text-white">Post-Processing</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">Morphology</Label>
+                    <Label className="text-sm text-gray-300">Morphology</Label>
                     <Switch
                       checked={config.applyMorphology}
                       onCheckedChange={(checked) =>
@@ -354,7 +338,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                   </div>
                   {config.applyMorphology && (
                     <div className="space-y-2">
-                      <Label className="text-xs text-gray-600">
+                      <Label className="text-xs text-gray-400">
                         Min Region Size: {config.minForegroundRegionSize}px
                       </Label>
                       <Slider
@@ -375,9 +359,9 @@ export const BackgroundRemovalTab: React.FC = () => {
 
             {/* Process Button */}
             <Button
-              className="w-full"
+              className="w-full bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleRemoveBackground}
-              disabled={screenshots.length < 2 || isProcessing}
+              disabled={selectedScreenshots.length < 2 || isProcessing}
             >
               {isProcessing ? (
                 <>
@@ -391,18 +375,23 @@ export const BackgroundRemovalTab: React.FC = () => {
                 </>
               )}
             </Button>
+            {selectedScreenshots.length < 2 && (
+              <p className="text-xs text-amber-400 mt-2">
+                Select at least 2 screenshots to remove backgrounds
+              </p>
+            )}
           </div>
         </div>
 
         {/* Center Panel - Preview */}
-        <div className="flex-1 flex flex-col p-4 overflow-hidden">
+        <div className="flex-1 flex flex-col p-4 overflow-hidden bg-[#18181B]">
           <Tabs defaultValue="original" className="flex-1 flex flex-col">
-            <TabsList>
-              <TabsTrigger value="original">Original</TabsTrigger>
-              <TabsTrigger value="processed" disabled={!result}>
+            <TabsList className="bg-[#27272A] border-gray-700">
+              <TabsTrigger value="original" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-300">Original</TabsTrigger>
+              <TabsTrigger value="processed" disabled={!result} className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-300">
                 Processed
               </TabsTrigger>
-              <TabsTrigger value="comparison" disabled={!result}>
+              <TabsTrigger value="comparison" disabled={!result} className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-300">
                 Comparison
               </TabsTrigger>
             </TabsList>
@@ -411,33 +400,33 @@ export const BackgroundRemovalTab: React.FC = () => {
               {selectedScreenshot ? (
                 <div className="h-full flex flex-col">
                   <div className="flex gap-2 mb-2 overflow-x-auto">
-                    {screenshots.map((screenshot, index) => (
+                    {selectedScreenshots.map((screenshot, index) => (
                       <button
                         key={screenshot.id}
                         onClick={() => setSelectedScreenshotIndex(index)}
                         className={`px-3 py-1 rounded text-sm ${
                           index === selectedScreenshotIndex
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-[#27272A] text-gray-300 hover:bg-[#3A3A3D] border border-gray-600'
                         }`}
                       >
                         {screenshot.name}
                       </button>
                     ))}
                   </div>
-                  <div className="flex-1 border rounded bg-white overflow-auto">
+                  <div className="flex-1 border border-gray-700 rounded bg-[#27272A] overflow-auto">
                     <img
-                      src={selectedScreenshot.dataUrl}
+                      src={selectedScreenshot.url}
                       alt={selectedScreenshot.name}
                       className="max-w-full h-auto"
                     />
                   </div>
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-400">
+                <div className="h-full flex items-center justify-center text-gray-500">
                   <div className="text-center">
-                    <Upload className="w-12 h-12 mx-auto mb-2" />
-                    <p>Upload screenshots to preview</p>
+                    <Camera className="w-12 h-12 mx-auto mb-2" />
+                    <p>Select screenshots to preview</p>
                   </div>
                 </div>
               )}
@@ -446,16 +435,17 @@ export const BackgroundRemovalTab: React.FC = () => {
             <TabsContent value="processed" className="flex-1 mt-4">
               {result ? (
                 <div className="h-full flex flex-col">
-                  <div className="flex-1 border rounded bg-gray-100 overflow-auto p-4"
+                  <div className="flex-1 border border-gray-700 rounded overflow-auto p-4"
                     style={{
                       backgroundImage: `
-                        linear-gradient(45deg, #f0f0f0 25%, transparent 25%),
-                        linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
-                        linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
-                        linear-gradient(-45deg, transparent 75%, #f0f0f0 75%)
+                        linear-gradient(45deg, #3A3A3D 25%, transparent 25%),
+                        linear-gradient(-45deg, #3A3A3D 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, #3A3A3D 75%),
+                        linear-gradient(-45deg, transparent 75%, #3A3A3D 75%)
                       `,
                       backgroundSize: '20px 20px',
                       backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                      backgroundColor: '#27272A',
                     }}
                   >
                     <img
@@ -466,7 +456,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-400">
+                <div className="h-full flex items-center justify-center text-gray-500">
                   <p>Process screenshots to see results</p>
                 </div>
               )}
@@ -475,27 +465,28 @@ export const BackgroundRemovalTab: React.FC = () => {
             <TabsContent value="comparison" className="flex-1 mt-4">
               {result ? (
                 <div className="h-full grid grid-cols-2 gap-4">
-                  <div className="border rounded bg-white overflow-auto">
-                    <div className="p-2 bg-gray-100 font-semibold text-sm">Original</div>
+                  <div className="border border-gray-700 rounded bg-[#27272A] overflow-auto">
+                    <div className="p-2 bg-[#1A1A1C] font-semibold text-sm text-white border-b border-gray-700">Original</div>
                     <img
-                      src={selectedScreenshot?.dataUrl}
+                      src={selectedScreenshot?.url}
                       alt="Original"
                       className="max-w-full h-auto"
                     />
                   </div>
-                  <div className="border rounded overflow-auto"
+                  <div className="border border-gray-700 rounded overflow-auto"
                     style={{
                       backgroundImage: `
-                        linear-gradient(45deg, #f0f0f0 25%, transparent 25%),
-                        linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
-                        linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
-                        linear-gradient(-45deg, transparent 75%, #f0f0f0 75%)
+                        linear-gradient(45deg, #3A3A3D 25%, transparent 25%),
+                        linear-gradient(-45deg, #3A3A3D 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, #3A3A3D 75%),
+                        linear-gradient(-45deg, transparent 75%, #3A3A3D 75%)
                       `,
                       backgroundSize: '20px 20px',
                       backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                      backgroundColor: '#27272A',
                     }}
                   >
-                    <div className="p-2 bg-gray-100 font-semibold text-sm">Processed</div>
+                    <div className="p-2 bg-[#1A1A1C] font-semibold text-sm text-white border-b border-gray-700">Processed</div>
                     <img
                       src={result.maskedScreenshots[selectedScreenshotIndex]}
                       alt="Processed"
@@ -504,7 +495,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-400">
+                <div className="h-full flex items-center justify-center text-gray-500">
                   <p>Process screenshots to compare</p>
                 </div>
               )}
@@ -513,39 +504,39 @@ export const BackgroundRemovalTab: React.FC = () => {
         </div>
 
         {/* Right Panel - Statistics & Actions */}
-        <div className="w-80 bg-white border-l flex flex-col overflow-hidden">
-          <div className="p-4 border-b">
-            <h2 className="font-semibold text-gray-900">Results</h2>
+        <div className="w-80 bg-[#1A1A1C] border-l border-gray-700 flex flex-col overflow-hidden">
+          <div className="p-4 border-b border-gray-700">
+            <h2 className="font-semibold text-white">Results</h2>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {result ? (
               <>
                 {/* Statistics */}
-                <Card>
+                <Card className="bg-[#27272A] border-gray-700">
                   <CardHeader className="py-3">
-                    <CardTitle className="text-sm">Statistics</CardTitle>
+                    <CardTitle className="text-sm text-white">Statistics</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Screenshots:</span>
-                      <span className="font-medium">{result.statistics.numScreenshots}</span>
+                      <span className="text-gray-400">Screenshots:</span>
+                      <span className="font-medium text-white">{result.statistics.numScreenshots}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Image Size:</span>
-                      <span className="font-medium">
+                      <span className="text-gray-400">Image Size:</span>
+                      <span className="font-medium text-white">
                         {result.statistics.imageSize[0]}×{result.statistics.imageSize[1]}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Foreground:</span>
-                      <span className="font-medium text-green-600">
+                      <span className="text-gray-400">Foreground:</span>
+                      <span className="font-medium text-green-400">
                         {result.statistics.foregroundPercentage.toFixed(1)}%
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Background:</span>
-                      <span className="font-medium text-red-600">
+                      <span className="text-gray-400">Background:</span>
+                      <span className="font-medium text-red-400">
                         {result.statistics.backgroundPercentage.toFixed(1)}%
                       </span>
                     </div>
@@ -553,16 +544,24 @@ export const BackgroundRemovalTab: React.FC = () => {
                 </Card>
 
                 {/* Actions */}
-                <Card>
+                <Card className="bg-[#27272A] border-gray-700">
                   <CardHeader className="py-3">
-                    <CardTitle className="text-sm">Actions</CardTitle>
+                    <CardTitle className="text-sm text-white">Actions</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    <Button variant="outline" className="w-full" onClick={handleDownloadResults}>
+                    <Button
+                      variant="outline"
+                      className="w-full bg-[#18181B] text-gray-300 border-gray-600 hover:bg-[#3A3A3D] hover:text-white"
+                      onClick={handleDownloadResults}
+                    >
                       <Download className="w-4 h-4 mr-2" />
                       Download Results
                     </Button>
-                    <Button variant="outline" className="w-full" disabled>
+                    <Button
+                      variant="outline"
+                      className="w-full bg-[#18181B] text-gray-300 border-gray-600 opacity-50"
+                      disabled
+                    >
                       <Eye className="w-4 h-4 mr-2" />
                       Use in State Discovery
                     </Button>
@@ -570,7 +569,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                 </Card>
 
                 {/* Info */}
-                <Alert>
+                <Alert className="bg-blue-900/20 border-blue-600 text-blue-300">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-xs">
                     Use the processed screenshots with State Discovery for more accurate detection of UI
@@ -579,14 +578,14 @@ export const BackgroundRemovalTab: React.FC = () => {
                 </Alert>
               </>
             ) : (
-              <div className="text-center text-gray-400 py-12">
+              <div className="text-center text-gray-500 py-12">
                 <p className="text-sm">No results yet</p>
                 <p className="text-xs mt-2">Process screenshots to see statistics</p>
               </div>
             )}
 
             {error && (
-              <Alert variant="destructive">
+              <Alert variant="destructive" className="bg-red-900/20 border-red-600 text-red-300">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription className="text-xs">{error}</AlertDescription>
               </Alert>

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,7 +43,7 @@ class AnalyticsService:
     """Handles analytics queries and aggregations."""
 
     async def get_user_usage_summary(
-        self, user_id: int, db: AsyncSession
+        self, user_id: UUID, db: AsyncSession
     ) -> UsageAnalytics:
         """
         Get comprehensive usage analytics for a user.
@@ -89,7 +90,7 @@ class AnalyticsService:
         )
 
     async def get_analytics_summary(
-        self, user_id: int, days: int, db: AsyncSession
+        self, user_id: UUID, days: int, db: AsyncSession
     ) -> AnalyticsSummary:
         """
         Get a comprehensive analytics summary for a user.

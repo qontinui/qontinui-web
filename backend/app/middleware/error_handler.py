@@ -1,7 +1,7 @@
-import logging
 import time
 import traceback
 
+import structlog
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -9,7 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class AppError(Exception):
@@ -75,7 +75,9 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle unexpected exceptions"""
     # Log the full traceback
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    logger.exception(
+        "unhandled_exception", error=str(exc), error_type=type(exc).__name__
+    )
 
     # In development, return detailed error
     if settings.ENVIRONMENT == "development":

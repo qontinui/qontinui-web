@@ -219,31 +219,31 @@ export const ImageExtractionTab: React.FC = () => {
   const canExtract = currentScreenshot?.region && currentScreenshot.region.width > 0 && currentScreenshot.region.height > 0;
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-[#0A0A0B]">
       {/* Header */}
-      <div className="bg-white border-b px-6 py-4">
-        <h1 className="text-2xl font-bold text-gray-900">Image Extraction</h1>
-        <p className="text-gray-600 mt-1">
+      <div className="bg-[#27272A] border-b border-gray-800 px-6 py-4">
+        <h1 className="text-2xl font-bold text-white">Image Extraction</h1>
+        <p className="text-gray-400 mt-1">
           Extract images from screenshots with optional border and background removal
         </p>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Screenshot Info */}
-        <div className="w-64 bg-white border-r flex flex-col">
-          <div className="p-4 border-b">
-            <h2 className="font-semibold text-gray-900 mb-3">Screenshot</h2>
+        <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 flex flex-col">
+          <div className="p-4 border-b border-gray-800">
+            <h2 className="font-semibold text-white mb-3">Screenshot</h2>
             <div className="space-y-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm flex items-center justify-center gap-2"
+                className="w-full px-3 py-2 bg-[#00D9FF] text-black rounded-md hover:bg-[#00D9FF]/90 text-sm flex items-center justify-center gap-2 font-medium"
               >
                 <Upload className="w-4 h-4" />
                 Upload Image
               </button>
               <button
                 onClick={() => screenshotSelectorTriggerRef.current?.click()}
-                className="w-full px-3 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 text-sm flex items-center justify-center gap-2"
+                className="w-full px-3 py-2 bg-[#00FF88] text-black rounded-md hover:bg-[#00FF88]/90 text-sm flex items-center justify-center gap-2 font-medium"
               >
                 <FolderOpen className="w-4 h-4" />
                 From Project
@@ -263,35 +263,35 @@ export const ImageExtractionTab: React.FC = () => {
           <div className="flex-1 overflow-y-auto p-4">
             {currentScreenshot ? (
               <div className="space-y-4">
-                <div className="p-3 border border-blue-500 bg-blue-50 rounded-lg">
+                <div className="p-3 border border-[#00D9FF] bg-[#00D9FF]/10 rounded-lg">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-gray-900 truncate" title={currentScreenshot.name}>
+                      <div className="font-medium text-sm text-white truncate" title={currentScreenshot.name}>
                         {currentScreenshot.name}
                       </div>
                     </div>
                     <button
                       onClick={handleClearScreenshot}
-                      className="ml-2 p-1 hover:bg-blue-200 rounded transition-colors flex-shrink-0"
+                      className="ml-2 p-1 hover:bg-[#00D9FF]/20 rounded transition-colors flex-shrink-0"
                       title="Clear screenshot"
                     >
-                      <X className="w-4 h-4 text-gray-600" />
+                      <X className="w-4 h-4 text-gray-400" />
                     </button>
                   </div>
                   {currentScreenshot.region ? (
-                    <div className="text-xs text-green-600 mt-1">
+                    <div className="text-xs text-[#00FF88] mt-1">
                       Region: {Math.round(currentScreenshot.region.width)}×{Math.round(currentScreenshot.region.height)}
                     </div>
                   ) : (
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-gray-400 mt-1">
                       Select a region on the image
                     </div>
                   )}
                 </div>
 
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <h3 className="text-xs font-medium text-gray-700 mb-2">Instructions</h3>
-                  <ol className="text-xs text-gray-600 space-y-1 list-decimal list-inside">
+                <div className="bg-[#27272A] rounded-lg p-3 border border-gray-700">
+                  <h3 className="text-xs font-medium text-gray-300 mb-2">Instructions</h3>
+                  <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
                     <li>Draw a selection box on the image</li>
                     <li>Choose processing mode</li>
                     <li>Click "Extract Image"</li>
@@ -301,8 +301,8 @@ export const ImageExtractionTab: React.FC = () => {
               </div>
             ) : (
               <div className="text-center py-8">
-                <ImageIcon className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm text-gray-600">No screenshot loaded</p>
+                <ImageIcon className="w-12 h-12 mx-auto mb-2 text-gray-600" />
+                <p className="text-sm text-gray-400">No screenshot loaded</p>
                 <p className="text-xs text-gray-500 mt-1">Upload or select from project</p>
               </div>
             )}
@@ -312,8 +312,8 @@ export const ImageExtractionTab: React.FC = () => {
         {/* Middle Panel - Configuration and Viewer */}
         <div className="flex-1 flex">
           {/* Configuration Panel */}
-          <div className="w-64 bg-white border-r p-4">
-            <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 p-4">
+            <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
               <Scissors className="w-4 h-4" />
               Extraction Settings
             </h2>
@@ -321,7 +321,7 @@ export const ImageExtractionTab: React.FC = () => {
             <div className="space-y-4">
               {/* Processing Mode */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
                   Processing Mode
                 </label>
                 <div className="space-y-2">
@@ -332,7 +332,7 @@ export const ImageExtractionTab: React.FC = () => {
                       onChange={() => setProcessingMode('none')}
                       className="mr-2"
                     />
-                    <span className="text-sm text-gray-900">None (Full Region)</span>
+                    <span className="text-sm text-gray-300">None (Full Region)</span>
                   </label>
                   <label className="flex items-center">
                     <input
@@ -341,7 +341,7 @@ export const ImageExtractionTab: React.FC = () => {
                       onChange={() => setProcessingMode('border')}
                       className="mr-2"
                     />
-                    <span className="text-sm text-gray-900">Remove Border</span>
+                    <span className="text-sm text-gray-300">Remove Border</span>
                   </label>
                   <label className="flex items-center">
                     <input
@@ -350,10 +350,10 @@ export const ImageExtractionTab: React.FC = () => {
                       onChange={() => setProcessingMode('background')}
                       className="mr-2"
                     />
-                    <span className="text-sm text-gray-900">Remove Background</span>
+                    <span className="text-sm text-gray-300">Remove Background</span>
                   </label>
                 </div>
-                <p className="text-xs text-gray-600 mt-2">
+                <p className="text-xs text-gray-400 mt-2">
                   {processingMode === 'none' && 'Extract the entire selected region'}
                   {processingMode === 'border' && 'Crop out border pixels matching edge color'}
                   {processingMode === 'background' && 'Create mask for background pixels and crop'}
@@ -364,8 +364,8 @@ export const ImageExtractionTab: React.FC = () => {
               {processingMode !== 'none' && (
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <label className="text-sm font-medium text-gray-700">Color Tolerance</label>
-                    <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded text-gray-900">
+                    <label className="text-sm font-medium text-gray-300">Color Tolerance</label>
+                    <span className="text-sm font-mono bg-[#0A0A0B] px-2 py-1 rounded text-gray-300">
                       {tolerance}
                     </span>
                   </div>
@@ -381,7 +381,7 @@ export const ImageExtractionTab: React.FC = () => {
                     <span>Strict</span>
                     <span>Loose</span>
                   </div>
-                  <p className="text-xs text-gray-600 mt-2">
+                  <p className="text-xs text-gray-400 mt-2">
                     How similar colors must be to be considered border/background
                   </p>
                 </div>
@@ -394,15 +394,15 @@ export const ImageExtractionTab: React.FC = () => {
                   disabled={!canExtract}
                   className={`w-full py-2.5 rounded-md font-medium transition-colors ${
                     canExtract
-                      ? 'bg-green-500 hover:bg-green-600 text-white'
-                      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      ? 'bg-[#00FF88] hover:bg-[#00FF88]/90 text-black'
+                      : 'bg-gray-700 text-gray-500 cursor-not-allowed'
                   }`}
                 >
                   Extract Image
                 </button>
 
                 {!canExtract && currentScreenshot && (
-                  <p className="text-xs text-amber-600 flex items-start gap-1 mt-2">
+                  <p className="text-xs text-amber-500 flex items-start gap-1 mt-2">
                     <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
                     Select a region on the screenshot first
                   </p>
@@ -412,7 +412,7 @@ export const ImageExtractionTab: React.FC = () => {
           </div>
 
           {/* Screenshot Viewer */}
-          <div className="flex-1 bg-gray-50">
+          <div className="flex-1 bg-[#0A0A0B]">
             {currentScreenshot ? (
               <AdvancedRegionSelector
                 screenshotId={currentScreenshot.id}
@@ -421,7 +421,7 @@ export const ImageExtractionTab: React.FC = () => {
                 onRegionChange={handleRegionChange}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-400">
+              <div className="flex items-center justify-center h-full text-gray-500">
                 <div className="text-center">
                   <ImageIcon className="w-12 h-12 mx-auto mb-2" />
                   <p className="text-sm">Upload or select a screenshot to begin</p>
@@ -432,9 +432,9 @@ export const ImageExtractionTab: React.FC = () => {
         </div>
 
         {/* Right Panel - Results */}
-        <div className="w-80 bg-white border-l flex flex-col">
-          <div className="p-4 border-b flex-shrink-0">
-            <h2 className="font-semibold text-gray-900">Extracted Image</h2>
+        <div className="w-80 bg-[#27272A]/50 border-l border-gray-800 flex flex-col">
+          <div className="p-4 border-b border-gray-800 flex-shrink-0">
+            <h2 className="font-semibold text-white">Extracted Image</h2>
           </div>
 
           <div className="p-4 flex-1 overflow-y-auto">
@@ -442,9 +442,9 @@ export const ImageExtractionTab: React.FC = () => {
               <div className="space-y-4">
                 {/* Extracted Image */}
                 <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Image</h3>
+                  <h3 className="text-sm font-medium text-gray-300 mb-2">Image</h3>
                   <div
-                    className="border rounded p-2"
+                    className="border border-gray-700 rounded p-2"
                     style={{
                       background: `
                         linear-gradient(45deg, #f3f4f6 25%, transparent 25%),
@@ -464,7 +464,7 @@ export const ImageExtractionTab: React.FC = () => {
                       style={{ maxHeight: '300px', objectFit: 'contain' }}
                     />
                   </div>
-                  <p className="text-xs text-gray-600 mt-1">
+                  <p className="text-xs text-gray-400 mt-1">
                     {extractedResult.bounds.width}×{extractedResult.bounds.height} pixels
                   </p>
                 </div>
@@ -472,8 +472,8 @@ export const ImageExtractionTab: React.FC = () => {
                 {/* Mask (if available) */}
                 {extractedResult.mask && (
                   <div>
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Mask</h3>
-                    <div className="border rounded bg-gray-50 p-2">
+                    <h3 className="text-sm font-medium text-gray-300 mb-2">Mask</h3>
+                    <div className="border border-gray-700 rounded bg-[#0A0A0B] p-2">
                       <img
                         src={extractedResult.mask}
                         alt="Mask"
@@ -481,16 +481,16 @@ export const ImageExtractionTab: React.FC = () => {
                         style={{ maxHeight: '200px', objectFit: 'contain' }}
                       />
                     </div>
-                    <p className="text-xs text-gray-600 mt-1">
+                    <p className="text-xs text-gray-400 mt-1">
                       White = included, Black = masked
                     </p>
                   </div>
                 )}
 
                 {/* Info */}
-                <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-                  <h4 className="text-sm font-medium text-gray-900 mb-1">Processing Info</h4>
-                  <ul className="text-xs text-gray-700 space-y-1">
+                <div className="bg-[#00D9FF]/10 border border-[#00D9FF] rounded-md p-3">
+                  <h4 className="text-sm font-medium text-white mb-1">Processing Info</h4>
+                  <ul className="text-xs text-gray-300 space-y-1">
                     <li>Mode: {processingMode === 'none' ? 'Full Region' : processingMode === 'border' ? 'Border Removed' : 'Background Removed'}</li>
                     {processingMode !== 'none' && <li>Tolerance: {tolerance}</li>}
                     {currentScreenshot?.region && (
@@ -504,14 +504,14 @@ export const ImageExtractionTab: React.FC = () => {
                 <div className="space-y-2">
                   <button
                     onClick={handleEditMask}
-                    className="w-full px-4 py-2.5 bg-purple-500 text-white rounded-md hover:bg-purple-600 font-medium flex items-center justify-center gap-2"
+                    className="w-full px-4 py-2.5 bg-[#BD00FF] text-white rounded-md hover:bg-[#BD00FF]/90 font-medium flex items-center justify-center gap-2"
                   >
                     <Edit className="w-4 h-4" />
                     Edit Mask
                   </button>
                   <button
                     onClick={() => setShowStateImageDialog(true)}
-                    className="w-full px-4 py-2.5 bg-green-500 text-white rounded-md hover:bg-green-600 font-medium flex items-center justify-center gap-2"
+                    className="w-full px-4 py-2.5 bg-[#00FF88] text-black rounded-md hover:bg-[#00FF88]/90 font-medium flex items-center justify-center gap-2"
                   >
                     <Plus className="w-4 h-4" />
                     Create StateImage
@@ -521,12 +521,12 @@ export const ImageExtractionTab: React.FC = () => {
             ) : (
               <div className="text-center py-12">
                 <div className="mb-3">
-                  <div className="w-16 h-16 mx-auto bg-gray-100 rounded-full flex items-center justify-center">
-                    <Scissors className="w-8 h-8 text-gray-400" />
+                  <div className="w-16 h-16 mx-auto bg-[#27272A] rounded-full flex items-center justify-center">
+                    <Scissors className="w-8 h-8 text-gray-600" />
                   </div>
                 </div>
-                <p className="font-medium text-gray-900">No Image Extracted</p>
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="font-medium text-white">No Image Extracted</p>
+                <p className="text-sm text-gray-400 mt-1">
                   Select a region and click Extract
                 </p>
               </div>
@@ -537,13 +537,13 @@ export const ImageExtractionTab: React.FC = () => {
 
       {/* StateImage Creation Dialog */}
       {showStateImageDialog && extractedResult && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-full">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Create StateImage</h3>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-[#27272A] border border-gray-700 rounded-lg p-6 w-96 max-w-full">
+            <h3 className="text-lg font-semibold text-white mb-4">Create StateImage</h3>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-300 mb-1">
                   StateImage Name
                 </label>
                 <input
@@ -551,18 +551,18 @@ export const ImageExtractionTab: React.FC = () => {
                   value={stateImageName}
                   onChange={(e) => setStateImageName(e.target.value)}
                   placeholder="Enter name for the StateImage"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
+                  className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-300 mb-1">
                   Add to State
                 </label>
                 <select
                   value={selectedStateId}
                   onChange={(e) => setSelectedStateId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
+                  className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
                 >
                   <option value="">Select a state...</option>
                   <option value="new">Create New State</option>
@@ -580,15 +580,15 @@ export const ImageExtractionTab: React.FC = () => {
                   id="fixed-location"
                   checked={fixedLocation}
                   onChange={(e) => setFixedLocation(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-[#00D9FF] focus:ring-[#00D9FF] border-gray-700 rounded"
                 />
-                <label htmlFor="fixed-location" className="ml-2 block text-sm text-gray-700">
+                <label htmlFor="fixed-location" className="ml-2 block text-sm text-gray-300">
                   Fixed location pattern (saves extraction region as search region)
                 </label>
               </div>
 
               {extractedResult.mask && (
-                <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded">
+                <div className="text-sm text-[#00D9FF] bg-[#00D9FF]/10 border border-[#00D9FF] p-2 rounded">
                   Mask will be applied to hide background pixels
                 </div>
               )}
@@ -601,14 +601,14 @@ export const ImageExtractionTab: React.FC = () => {
                   setStateImageName('');
                   setSelectedStateId('');
                 }}
-                className="px-4 py-2 text-sm text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+                className="px-4 py-2 text-sm text-gray-300 bg-gray-700 rounded-md hover:bg-gray-600"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateStateImage}
                 disabled={!stateImageName || !selectedStateId}
-                className="px-4 py-2 text-sm text-white bg-green-500 rounded-md hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm text-black bg-[#00FF88] rounded-md hover:bg-[#00FF88]/90 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
               >
                 Create StateImage
               </button>

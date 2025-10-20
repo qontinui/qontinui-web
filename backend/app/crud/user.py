@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,7 +9,7 @@ from app.models.user import User
 from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
 
 
-async def get_user(db: AsyncSession, user_id: int) -> User | None:
+async def get_user(db: AsyncSession, user_id: UUID) -> User | None:
     result = await db.execute(select(User).filter(User.id == user_id))
     return result.scalar_one_or_none()
 
@@ -58,7 +60,7 @@ async def update_user(db: AsyncSession, user: User, user_update: UserUpdate) -> 
     return user
 
 
-async def delete_user(db: AsyncSession, user_id: int) -> bool:
+async def delete_user(db: AsyncSession, user_id: UUID) -> bool:
     user = await get_user(db, user_id)
     if user:
         await db.delete(user)
@@ -105,7 +107,7 @@ async def update_user_avatar(db: AsyncSession, user: User, avatar_url: str) -> U
 
 
 async def get_user_activity(
-    db: AsyncSession, user_id: int, skip: int = 0, limit: int = 20
+    db: AsyncSession, user_id: UUID, skip: int = 0, limit: int = 20
 ) -> list[AuditLog]:
     """Get recent user activity from audit logs"""
     result = await db.execute(

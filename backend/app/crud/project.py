@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +15,7 @@ async def get_project(db: AsyncSession, project_id: int) -> Project | None:
 
 
 async def get_projects_by_owner(
-    db: AsyncSession, owner_id: int, skip: int = 0, limit: int = 100
+    db: AsyncSession, owner_id: UUID, skip: int = 0, limit: int = 100
 ) -> list[Project]:
     result = await db.execute(
         select(Project).filter(Project.owner_id == owner_id).offset(skip).limit(limit)
@@ -22,7 +24,7 @@ async def get_projects_by_owner(
 
 
 async def create_project(
-    db: AsyncSession, project: ProjectCreate, owner_id: int, subscription_tier: str
+    db: AsyncSession, project: ProjectCreate, owner_id: UUID, subscription_tier: str
 ) -> Project:
     # Check if user has reached config limit
     count_result = await db.execute(

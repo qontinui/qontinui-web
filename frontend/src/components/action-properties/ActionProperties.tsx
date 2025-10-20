@@ -21,7 +21,7 @@ interface ActionPropertiesProps {
  * maintainability.
  */
 export function ActionProperties({ action, onUpdateAction }: ActionPropertiesProps) {
-  const { images, updateImageUsage, removeImageUsage, states, processes } = useAutomation()
+  const { images, updateImageUsage, removeImageUsage, states, workflows } = useAutomation()
   const textAreaRef = useRef<HTMLTextAreaElement>(null)
   const [shouldOpenImageSelector, setShouldOpenImageSelector] = useState(false)
 
@@ -114,7 +114,7 @@ export function ActionProperties({ action, onUpdateAction }: ActionPropertiesPro
             updateConfig={updateConfig}
             images={images}
             states={states}
-            processes={processes}
+            processes={workflows}
             textAreaRef={textAreaRef}
             shouldOpenImageSelector={shouldOpenImageSelector}
             onUpdateAction={onUpdateAction}

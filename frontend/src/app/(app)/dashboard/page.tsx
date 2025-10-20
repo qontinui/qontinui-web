@@ -2,16 +2,17 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
-import { projectService } from "@/services/service-factory"
+import { useProjects, useCreateProject, useDeleteProject } from "@/hooks/use-projects"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { SubscriptionBadge } from "@/components/subscription-badge"
 import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play, User as UserIcon, BarChart3 } from "lucide-react"
 import { toast } from "sonner"
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog"
 
 interface Project {
   id: string
@@ -33,9 +34,12 @@ interface Activity {
 export default function Dashboard() {
   const { user, logout, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [projects, setProjects] = useState<Project[]>([])
-  const [loading, setLoading] = useState(true)
-  const [activities, setActivities] = useState<Activity[]>([])
+  const { data: apiProjects = [], isLoading: projectsLoading } = useProjects()
+  const createProject = useCreateProject()
+  const deleteProject = useDeleteProject()
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
 
   const isNewUser = () => {
     if (!user?.created_at) return false
@@ -50,47 +54,32 @@ export default function Dashboard() {
       router.push('/')
       return
     }
-
-    // Load user projects if user exists
-    if (user) {
-      loadProjects()
-    }
   }, [user, authLoading, router])
 
-  const loadProjects = async () => {
-    try {
-      setLoading(true)
-      // Fetch projects from API
-      const apiProjects = await projectService.getProjects()
+  // Transform API projects to match our interface
+  const projects = useMemo(() =>
+    apiProjects.map((p: any) => ({
+      id: p.id.toString(),
+      name: p.name,
+      description: p.description || 'No description',
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+      status: 'draft' as const  // Default status since API doesn't have this field yet
+    }))
+  , [apiProjects])
 
-      // Transform API projects to match our interface
-      const transformedProjects = apiProjects.map((p: any) => ({
-        id: p.id.toString(),
-        name: p.name,
-        description: p.description || 'No description',
-        created_at: p.created_at,
-        updated_at: p.updated_at,
-        status: 'draft' as const  // Default status since API doesn't have this field yet
-      }))
+  // Generate activities from projects
+  const activities = useMemo(() =>
+    projects.slice(0, 5).map((p: any, idx: number) => ({
+      id: `activity-${idx}`,
+      type: idx === 0 ? 'created' as const : 'modified' as const,
+      projectName: p.name,
+      timestamp: new Date(p.updated_at),
+      projectId: p.id
+    }))
+  , [projects])
 
-      // Generate activities from projects
-      const generatedActivities = transformedProjects.slice(0, 5).map((p: any, idx: number) => ({
-        id: `activity-${idx}`,
-        type: idx === 0 ? 'created' as const : 'modified' as const,
-        projectName: p.name,
-        timestamp: new Date(p.updated_at),
-        projectId: p.id
-      }))
-      setActivities(generatedActivities)
-
-      setProjects(transformedProjects)
-    } catch (error) {
-      console.error('Failed to load projects:', error)
-      toast.error('Failed to load projects')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loading = projectsLoading
 
   const handleLogout = () => {
     const warningMessage = "⚠️ WARNING: Make sure to Export or Save any unsaved work before logging out.\n\nDo you want to continue?"
@@ -106,16 +95,13 @@ export default function Dashboard() {
       console.log('Creating new project...')
 
       // Create a new project via API
-      const newProject = await projectService.createProject({
+      const newProject = await createProject.mutateAsync({
         name: `New Automation ${new Date().toLocaleDateString()}`,
         description: 'A new automation workflow',
         configuration: {}
       })
 
       console.log('Project created:', newProject)
-
-      // Reload projects list to show the new one
-      await loadProjects()
 
       // Navigate to automation builder with the new project ID
       router.push(`/automation-builder?project=${newProject.id}`)
@@ -126,13 +112,19 @@ export default function Dashboard() {
     }
   }
 
-  const handleDeleteProject = async (projectId: string) => {
-    if (!confirm('Are you sure you want to delete this project?')) return
+  const handleDeleteProject = (project: Project) => {
+    setProjectToDelete(project)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!projectToDelete) return
 
     try {
-      await projectService.deleteProject(parseInt(projectId))
-      setProjects(projects.filter(p => p.id !== projectId))
+      await deleteProject.mutateAsync(parseInt(projectToDelete.id))
       toast.success('Project deleted successfully')
+      setDeleteDialogOpen(false)
+      setProjectToDelete(null)
     } catch (error) {
       console.error('Failed to delete project:', error)
       toast.error('Failed to delete project')
@@ -387,7 +379,7 @@ export default function Dashboard() {
                           variant="outline"
                           onClick={(e) => {
                             e.stopPropagation()
-                            handleDeleteProject(project.id)
+                            handleDeleteProject(project)
                           }}
                           className="border-gray-700 hover:border-red-500 hover:text-red-400 bg-transparent"
                         >
@@ -431,6 +423,19 @@ export default function Dashboard() {
           )}
         </div>
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={deleteDialogOpen}
+        title="Delete Project"
+        itemName={projectToDelete?.name || ''}
+        description={`Are you sure you want to delete "${projectToDelete?.name}"? This will permanently delete the project and all its configuration. This action cannot be undone.`}
+        onClose={() => {
+          setDeleteDialogOpen(false)
+          setProjectToDelete(null)
+        }}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   )
 }

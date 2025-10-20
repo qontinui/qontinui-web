@@ -1,76 +1,22 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Search, Filter, ChevronRight, Mail, Calendar, Activity, FolderOpen } from "lucide-react"
-import { toast } from "sonner"
-import { authService } from "@/services/service-factory"
-
-interface UserData {
-  id: number
-  email: string
-  username: string
-  full_name: string | null
-  is_active: boolean
-  email_verified: boolean
-  created_at: string
-  project_count: number
-  subscription_tier: string
-  last_login: string | null
-}
+import { useAdminUsers, type AdminUserData } from "@/hooks/use-admin"
 
 export default function UsersTab() {
-  const [users, setUsers] = useState<UserData[]>([])
-  const [filteredUsers, setFilteredUsers] = useState<UserData[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data: users = [], isLoading: loading } = useAdminUsers({ limit: 1000 })
   const [searchTerm, setSearchTerm] = useState("")
   const [tierFilter, setTierFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [selectedUser, setSelectedUser] = useState<UserData | null>(null)
+  const [selectedUser, setSelectedUser] = useState<AdminUserData | null>(null)
 
-  useEffect(() => {
-    loadUsers()
-  }, [])
-
-  useEffect(() => {
-    applyFilters()
-  }, [searchTerm, tierFilter, statusFilter, users])
-
-  const loadUsers = async () => {
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const accessToken = authService.tokenManager.getAccessToken()
-
-      if (!accessToken) {
-        toast.error('Not authenticated')
-        return
-      }
-
-      const response = await fetch(`${apiUrl}/api/v1/admin/users?limit=1000`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setUsers(data)
-        setFilteredUsers(data)
-      } else {
-        toast.error('Failed to load users')
-      }
-    } catch (error) {
-      console.error('Failed to load users:', error)
-      toast.error('Failed to load users')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const filteredUsers = useMemo(() => applyFilters(), [searchTerm, tierFilter, statusFilter, users])
 
   const applyFilters = () => {
     let filtered = [...users]
@@ -82,7 +28,7 @@ export default function UsersTab() {
         user =>
           user.email.toLowerCase().includes(term) ||
           user.username.toLowerCase().includes(term) ||
-          user.id.toString().includes(term) ||
+          user.id.toLowerCase().includes(term) || // UUID is already a string
           (user.full_name && user.full_name.toLowerCase().includes(term))
       )
     }
@@ -103,7 +49,7 @@ export default function UsersTab() {
       filtered = filtered.filter(user => !user.email_verified)
     }
 
-    setFilteredUsers(filtered)
+    return filtered
   }
 
   const getTierColor = (tier: string) => {

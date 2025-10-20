@@ -1,6 +1,6 @@
-import logging
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -11,7 +11,7 @@ from app.services.pattern_optimization_service import (
     Region as ServiceRegion,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 

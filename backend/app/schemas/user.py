@@ -1,67 +1,69 @@
-from datetime import datetime
+import uuid
 
-from pydantic import BaseModel, EmailStr
+from fastapi_users import schemas
+from pydantic import BaseModel, ConfigDict, EmailStr
+
+from app.schemas.base import IsoDatetime
 
 
-class UserBase(BaseModel):
-    email: EmailStr
+class UserRead(schemas.BaseUser[uuid.UUID]):
+    """Schema for reading user data (fastapi-users compatible with UUID)."""
+
     username: str
     full_name: str | None = None
-    is_active: bool = True
-    is_superuser: bool = False
-    email_verified: bool = False
+    company: str | None = None
+    phone: str | None = None
+    avatar_url: str | None = None
+    subscription_tier: str
+    is_beta: bool = False
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
 
-class UserCreate(BaseModel):
-    email: EmailStr
+class UserCreate(schemas.BaseUserCreate):
+    """Schema for creating users (fastapi-users compatible)."""
+
     username: str
-    password: str
     full_name: str | None = None
+    company: str | None = None
 
 
-class UserUpdate(BaseModel):
-    email: EmailStr | None = None
+class UserUpdate(schemas.BaseUserUpdate):
+    """Schema for updating users (fastapi-users compatible)."""
+
     username: str | None = None
     full_name: str | None = None
-    password: str | None = None
+    company: str | None = None
+    phone: str | None = None
 
 
-class UserInDBBase(UserBase):
-    id: int
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class User(UserInDBBase):
-    pass
-
-
-class UserInDB(UserInDBBase):
-    hashed_password: str
+# Backward compatibility aliases
+User = UserRead
+UserBase = UserRead
+UserInDB = UserRead
+UserInDBBase = UserRead
 
 
 # Profile management schemas
 class UserProfileResponse(BaseModel):
     """Full user profile with all fields"""
 
-    id: int
+    id: uuid.UUID  # Changed from int to UUID
     email: EmailStr
     username: str
     full_name: str | None = None
     company: str | None = None
     phone: str | None = None
     avatar_url: str | None = None
-    email_verified: bool = False
+    is_verified: bool = False  # Changed from email_verified to match fastapi-users
     subscription_tier: str = "free"
     is_active: bool = True
-    created_at: datetime
-    updated_at: datetime
+    created_at: IsoDatetime
+    updated_at: IsoDatetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 class UserProfileUpdate(BaseModel):
@@ -81,7 +83,8 @@ class ActivityLogResponse(BaseModel):
     resource_id: str | None = None
     ip_address: str | None = None
     log_metadata: dict | None = None
-    created_at: datetime
+    created_at: IsoDatetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+    )

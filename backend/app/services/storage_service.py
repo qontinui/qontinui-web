@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -41,7 +42,7 @@ class StorageService:
     @staticmethod
     async def track_upload(
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         file_path: str,
         file_size_bytes: int,
         file_type: str,
@@ -75,7 +76,7 @@ class StorageService:
         return storage_record
 
     @staticmethod
-    async def get_user_storage(db: AsyncSession, user_id: int) -> dict:
+    async def get_user_storage(db: AsyncSession, user_id: UUID) -> dict:
         """
         Calculate total storage usage for a user.
 
@@ -104,7 +105,7 @@ class StorageService:
     @staticmethod
     async def check_quota(
         db: AsyncSession,
-        user_id: int,
+        user_id: UUID,
         subscription_tier: str,
         additional_bytes: int = 0,
     ) -> dict:
@@ -151,7 +152,7 @@ class StorageService:
 
     @staticmethod
     async def delete_file_record(
-        db: AsyncSession, file_path: str, user_id: int
+        db: AsyncSession, file_path: str, user_id: UUID
     ) -> bool:
         """
         Delete a storage usage record when a file is removed.
@@ -178,7 +179,7 @@ class StorageService:
         return False
 
     @staticmethod
-    async def get_storage_by_type(db: AsyncSession, user_id: int) -> dict:
+    async def get_storage_by_type(db: AsyncSession, user_id: UUID) -> dict:
         """
         Get storage breakdown by file type.
 

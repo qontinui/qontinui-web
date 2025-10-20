@@ -689,17 +689,17 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
         {/* Properties Panel */}
         {showRegionPanel && openRegions.length > 0 ? (
-          <div className="w-[384px] border-l border-gray-800 bg-white overflow-hidden flex-shrink-0 flex flex-col">
+          <div className="w-[384px] border-l border-gray-800 bg-[#27272A]/50 overflow-hidden flex-shrink-0 flex flex-col">
             {/* Tabs */}
-            <div className="bg-gray-100 border-b border-gray-300 overflow-x-auto">
+            <div className="bg-[#27272A] border-b border-gray-700 overflow-x-auto">
               <div className="flex">
                 {openRegions.map((region) => (
                   <div
                     key={region.id}
                     className={`flex items-center gap-2 px-4 py-2 cursor-pointer border-b-2 transition-colors ${
                       activeRegionTab === region.id
-                        ? 'bg-white border-[#00D9FF] text-black'
-                        : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-200'
+                        ? 'bg-[#27272A]/50 border-[#00D9FF] text-black'
+                        : 'bg-[#27272A] border-transparent text-gray-400 hover:bg-gray-200'
                     }`}
                     onClick={() => {
                       setActiveRegionTab(region.id);
@@ -737,17 +737,17 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
             </ScrollArea>
           </div>
         ) : showLocationPanel && openLocations.length > 0 ? (
-          <div className="w-[384px] border-l border-gray-800 bg-white overflow-hidden flex-shrink-0 flex flex-col">
+          <div className="w-[384px] border-l border-gray-800 bg-[#27272A]/50 overflow-hidden flex-shrink-0 flex flex-col">
             {/* Tabs */}
-            <div className="bg-gray-100 border-b border-gray-300 overflow-x-auto">
+            <div className="bg-[#27272A] border-b border-gray-700 overflow-x-auto">
               <div className="flex">
                 {openLocations.map((location) => (
                   <div
                     key={location.id}
                     className={`flex items-center gap-2 px-4 py-2 cursor-pointer border-b-2 transition-colors ${
                       activeLocationTab === location.id
-                        ? 'bg-white border-[#00D9FF] text-black'
-                        : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-200'
+                        ? 'bg-[#27272A]/50 border-[#00D9FF] text-black'
+                        : 'bg-[#27272A] border-transparent text-gray-400 hover:bg-gray-200'
                     }`}
                     onClick={() => {
                       setActiveLocationTab(location.id);

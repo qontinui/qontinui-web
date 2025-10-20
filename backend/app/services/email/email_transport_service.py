@@ -1,14 +1,14 @@
 """Email transport service - handles SMTP email sending."""
 
-import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import aiosmtplib
+import structlog
 
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class EmailTransportService:

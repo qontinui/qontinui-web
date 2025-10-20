@@ -19,7 +19,7 @@ interface ScheduleEditorProps {
 }
 
 export function ScheduleEditor({ schedule, isOpen, onClose }: ScheduleEditorProps) {
-  const { processes, addSchedule, updateSchedule } = useAutomation()
+  const { workflows, addSchedule, updateSchedule } = useAutomation()
 
   const [formData, setFormData] = useState<Partial<Schedule>>({
     id: "",
@@ -146,9 +146,9 @@ export function ScheduleEditor({ schedule, isOpen, onClose }: ScheduleEditorProp
                   <SelectValue placeholder="Select a process" />
                 </SelectTrigger>
                 <SelectContent>
-                  {processes.map((process) => (
-                    <SelectItem key={process.id} value={process.id}>
-                      {process.name}
+                  {workflows.map((workflow) => (
+                    <SelectItem key={workflow.id} value={workflow.id}>
+                      {workflow.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

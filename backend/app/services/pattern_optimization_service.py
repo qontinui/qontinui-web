@@ -1,15 +1,15 @@
 """Service for pattern optimization and similarity analysis."""
 
-import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import structlog
 
 from app.utils.image_utils import ImageProcessor
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @dataclass

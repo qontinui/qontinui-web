@@ -1,4 +1,5 @@
-import { QontinuiConfig, ImageAsset as ExportImageAsset } from './export-schema';
+import { QontinuiConfig, ImageAsset as ExportImageAsset, Workflow as ExportWorkflow } from './export-schema';
+import { Action as NewFormatAction, Workflow } from './action-schema';
 
 // Types that match the automation context
 interface ImageAsset {
@@ -8,15 +9,7 @@ interface ImageAsset {
   size: number;
   uploadedAt: Date;
   usageCount: number;
-  usedIn: Array<{ type: "process" | "state"; id: string; name: string }>;
-}
-
-interface Process {
-  id: string;
-  name: string;
-  description: string;
-  category?: string;
-  actions: Action[];
+  usedIn: Array<{ type: "workflow" | "state"; id: string; name: string }>;
 }
 
 interface Action {
@@ -46,7 +39,7 @@ interface Transition {
 export interface ImportResult {
   success: boolean;
   images: ImageAsset[];
-  processes: Process[];
+  workflows: Workflow[];
   states: State[];
   transitions: Transition[];
   settings?: any; // QontinuiConfig.settings
@@ -55,18 +48,18 @@ export interface ImportResult {
 }
 
 export class ConfigImporter {
-  private supportedVersions = ['1.0.0', '1.0.1', '1.1.0'];
+  private supportedVersions = ['1.0.0', '1.0.1', '1.1.0', '2.0.0'];
 
   /**
    * Import a Qontinui configuration from JSON
    */
-  async importConfiguration(configJson: string | QontinuiConfig): Promise<ImportResult> {
+  async importConfiguration(configJson: string | QontinuiConfig | any): Promise<ImportResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
 
     try {
       // Parse JSON if string
-      const config: QontinuiConfig = typeof configJson === 'string'
+      const config: any = typeof configJson === 'string'
         ? JSON.parse(configJson)
         : configJson;
 
@@ -77,17 +70,30 @@ export class ConfigImporter {
 
       // Import each component
       const images = await this.importImages(config.images);
-      const processes = this.importProcesses(config.processes);
+
+      // Handle both v2.0.0 (workflows) and v1.0.0 (processes) formats
+      let workflows: Workflow[];
+      if (config.workflows) {
+        // v2.0.0 format with workflows
+        workflows = this.importWorkflows(config.workflows);
+      } else if (config.processes) {
+        // v1.0.0 format with processes - convert to workflows
+        warnings.push('Detected v1.0.0 format with "processes" array - converting to workflows');
+        workflows = this.convertProcessesToWorkflows(config.processes);
+      } else {
+        workflows = [];
+      }
+
       const states = this.importStates(config.states, images);
       const transitions = this.importTransitions(config.transitions);
 
       // Validate references
-      this.validateReferences(states, processes, transitions, errors);
+      this.validateReferences(states, workflows, transitions, errors);
 
       return {
         success: errors.length === 0,
         images,
-        processes,
+        workflows,
         states,
         transitions,
         settings: config.settings, // Pass through settings for backend to apply
@@ -99,7 +105,7 @@ export class ConfigImporter {
       return {
         success: false,
         images: [],
-        processes: [],
+        workflows: [],
         states: [],
         transitions: [],
         settings: undefined,
@@ -113,14 +119,10 @@ export class ConfigImporter {
    * Check if the configuration version is compatible
    */
   private isVersionCompatible(version: string): boolean {
-    const [major, minor] = version.split('.').map(Number);
-    const [currentMajor] = '1.0.0'.split('.').map(Number);
+    const [major] = version.split('.').map(Number);
 
-    // Major version must match
-    if (major !== currentMajor) return false;
-
-    // Minor version differences are acceptable with warnings
-    return true;
+    // Support major versions 1 and 2
+    return major === 1 || major === 2;
   }
 
   /**
@@ -152,26 +154,200 @@ export class ConfigImporter {
   }
 
   /**
-   * Import processes from configuration
+   * Import workflows from v2.0.0 configuration
    */
-  private importProcesses(exportProcesses: any[]): Process[] {
-    return exportProcesses.map(exportProcess => ({
-      id: exportProcess.id,
-      name: exportProcess.name,
-      description: exportProcess.description || '',
-      category: exportProcess.category, // Preserve category for folder organization
-      actions: Array.isArray(exportProcess.actions)
-        ? exportProcess.actions.map((action: any) => ({
-            id: action.id,
-            type: action.type,
-            config: this.importActionConfig(action.config, action)
-          }))
-        : []
+  private importWorkflows(exportWorkflows: ExportWorkflow[]): Workflow[] {
+    return exportWorkflows.map(exportWorkflow => ({
+      id: exportWorkflow.id,
+      name: exportWorkflow.name,
+      description: exportWorkflow.description || '',
+      category: exportWorkflow.category,
+      format: 'graph' as const,
+      version: exportWorkflow.version || '1.0.0',
+      actions: Array.isArray(exportWorkflow.actions)
+        ? exportWorkflow.actions.map((action: any) => {
+            const format = this.detectActionFormat(action);
+            console.log(`[ConfigImporter] Detected ${format} format for action ${action.id} (type: ${action.type})`);
+
+            const importedAction: any = {
+              id: action.id,
+              type: action.type,
+              config: format === 'new'
+                ? this.importNewFormatAction(action)
+                : this.importActionConfig(action.config, action)
+            };
+
+            // Import position if present
+            if (action.position) {
+              importedAction.position = action.position;
+            }
+
+            // Import timeout/retryCount/continueOnError if present
+            if (action.timeout !== undefined) importedAction.timeout = action.timeout;
+            if (action.retryCount !== undefined) importedAction.retryCount = action.retryCount;
+            if (action.continueOnError !== undefined) importedAction.continueOnError = action.continueOnError;
+
+            return importedAction;
+          })
+        : [],
+      connections: exportWorkflow.connections || {},
+      metadata: exportWorkflow.metadata || {}
     }));
   }
 
   /**
-   * Transform imported action config to internal format
+   * Convert v1.0.0 processes to v2.0.0 workflows
+   */
+  private convertProcessesToWorkflows(exportProcesses: any[]): Workflow[] {
+    return exportProcesses.map(exportProcess => {
+      // Build sequential connections (linear graph)
+      const connections: any = {};
+      const actions = Array.isArray(exportProcess.actions) ? exportProcess.actions : [];
+
+      actions.forEach((action: any, index: number) => {
+        if (index < actions.length - 1) {
+          // Connect to next action in sequence
+          connections[action.id] = {
+            main: [[index + 1]]
+          };
+        }
+      });
+
+      return {
+        id: exportProcess.id,
+        name: exportProcess.name,
+        description: exportProcess.description || '',
+        category: exportProcess.category,
+        format: 'graph' as const,
+        version: '1.0.0',
+        actions: actions.map((action: any, index: number) => {
+          const format = this.detectActionFormat(action);
+          console.log(`[ConfigImporter] Converting process to workflow - detected ${format} format for action ${action.id} (type: ${action.type})`);
+
+          const importedAction: any = {
+            id: action.id,
+            type: action.type,
+            config: format === 'new'
+              ? this.importNewFormatAction(action)
+              : this.importActionConfig(action.config, action),
+            // Add sequential position for converted workflows
+            position: [100 + index * 200, 100] as [number, number]
+          };
+
+          if (action.timeout !== undefined) importedAction.timeout = action.timeout;
+          if (action.retryCount !== undefined) importedAction.retryCount = action.retryCount;
+          if (action.continueOnError !== undefined) importedAction.continueOnError = action.continueOnError;
+
+          return importedAction;
+        }),
+        connections,
+        metadata: {
+          viewMode: 'sequential' as const,
+          converted: true,
+          originalFormat: 'process'
+        }
+      };
+    });
+  }
+
+  /**
+   * Detect whether an action is in old or new format
+   */
+  private detectActionFormat(action: any): 'old' | 'new' {
+    // New format has 'base' or 'execution' properties at the top level
+    if (action.base !== undefined || action.execution !== undefined) {
+      return 'new';
+    }
+
+    // New format has 'config' as a structured object with specific properties
+    // Old format has flat config with timeout/retryCount/continueOnError mixed in
+    if (action.config) {
+      // Check if execution settings are in the action root (old format)
+      if (action.timeout !== undefined ||
+          action.retryCount !== undefined ||
+          action.continueOnError !== undefined) {
+        return 'old';
+      }
+    }
+
+    // Default to old format for backward compatibility
+    return 'old';
+  }
+
+  /**
+   * Import new format action (with base and execution properties)
+   */
+  private importNewFormatAction(action: any): Record<string, any> {
+    const internalConfig: Record<string, any> = {};
+
+    // Start with the config object directly
+    if (action.config) {
+      // Handle target if present
+      if (action.config.target) {
+        if (action.config.target.type === 'image') {
+          internalConfig.imageId = action.config.target.imageId;
+          internalConfig.threshold = action.config.target.threshold;
+        } else if (action.config.target.type === 'region') {
+          internalConfig.region = action.config.target.region;
+        } else if (action.config.target.type === 'coordinates') {
+          internalConfig.coordinates = action.config.target.coordinates;
+        }
+      }
+
+      // Copy other config properties
+      const configKeys = Object.keys(action.config);
+      for (const key of configKeys) {
+        if (key !== 'target') {
+          internalConfig[key] = action.config[key];
+        }
+      }
+    }
+
+    // Map base settings
+    if (action.base) {
+      if (action.base.pauseBeforeBegin !== undefined) {
+        internalConfig.pauseBeforeBegin = action.base.pauseBeforeBegin;
+      }
+      if (action.base.pauseAfterEnd !== undefined) {
+        internalConfig.pauseAfterEnd = action.base.pauseAfterEnd;
+      }
+      if (action.base.illustrate !== undefined) {
+        internalConfig.illustrate = action.base.illustrate;
+      }
+      if (action.base.loggingOptions !== undefined) {
+        internalConfig.loggingOptions = action.base.loggingOptions;
+      }
+    }
+
+    // Map execution settings
+    if (action.execution) {
+      if (action.execution.timeout !== undefined) {
+        internalConfig.timeout = action.execution.timeout;
+      }
+      if (action.execution.retryCount !== undefined) {
+        internalConfig.retryCount = action.execution.retryCount;
+      }
+      if (action.execution.continueOnError !== undefined) {
+        internalConfig.continueOnError = action.execution.continueOnError;
+      }
+      if (action.execution.repetition !== undefined) {
+        internalConfig.repetition = action.execution.repetition;
+      }
+    }
+
+    console.log(`[ConfigImporter] Imported new format action:`, {
+      id: action.id,
+      type: action.type,
+      hasBase: !!action.base,
+      hasExecution: !!action.execution,
+      configKeys: Object.keys(internalConfig)
+    });
+
+    return internalConfig;
+  }
+
+  /**
+   * Transform imported action config to internal format (OLD FORMAT)
    */
   private importActionConfig(config: any, action: any): Record<string, any> {
     const internalConfig: Record<string, any> = {};
@@ -311,20 +487,20 @@ export class ConfigImporter {
    */
   private validateReferences(
     states: State[],
-    processes: Process[],
+    workflows: Workflow[],
     transitions: Transition[],
     errors: string[]
   ): void {
     const stateIds = new Set(states.map(s => s.id));
-    const processIds = new Set(processes.map(p => p.id));
+    const workflowIds = new Set(workflows.map(w => w.id));
 
     // Check transition references
     transitions.forEach(transition => {
-      // Check process references - only if processes array exists
+      // Check workflow references - only if processes array exists
       if (Array.isArray(transition.processes)) {
-        transition.processes.forEach(processId => {
-          if (!processIds.has(processId)) {
-            errors.push(`Transition ${transition.id} references unknown process: ${processId}`);
+        transition.processes.forEach(workflowId => {
+          if (!workflowIds.has(workflowId)) {
+            errors.push(`Transition ${transition.id} references unknown workflow: ${workflowId}`);
           }
         });
       }
@@ -388,14 +564,19 @@ export class ConfigImporter {
   /**
    * Validate configuration before import
    */
-  validateBeforeImport(config: QontinuiConfig): { valid: boolean; errors: string[] } {
+  validateBeforeImport(config: any): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
 
     // Check required fields
     if (!config.version) errors.push('Version is required');
     if (!config.metadata?.name) errors.push('Configuration name is required');
     if (!Array.isArray(config.images)) errors.push('Images must be an array');
-    if (!Array.isArray(config.processes)) errors.push('Processes must be an array');
+
+    // Check for workflows (v2.0.0) or processes (v1.0.0)
+    if (!Array.isArray(config.workflows) && !Array.isArray(config.processes)) {
+      errors.push('Either workflows or processes array is required');
+    }
+
     if (!Array.isArray(config.states)) errors.push('States must be an array');
     if (!Array.isArray(config.transitions)) errors.push('Transitions must be an array');
 
@@ -417,7 +598,7 @@ export class ConfigImporter {
     imported: ImportResult,
     existing: {
       images: ImageAsset[];
-      processes: Process[];
+      workflows: Workflow[];
       states: State[];
       transitions: Transition[];
     }
@@ -436,14 +617,14 @@ export class ConfigImporter {
       });
     });
 
-    // Update process references
-    const mergedProcesses = [...existing.processes];
-    imported.processes.forEach(process => {
-      const newId = `imported_${Date.now()}_${process.id}`;
-      idMap.set(process.id, newId);
+    // Update workflow references
+    const mergedWorkflows = [...existing.workflows];
+    imported.workflows.forEach(workflow => {
+      const newId = `imported_${Date.now()}_${workflow.id}`;
+      idMap.set(workflow.id, newId);
 
       // Update image references in actions
-      const updatedActions = process.actions.map(action => ({
+      const updatedActions = workflow.actions.map(action => ({
         ...action,
         config: {
           ...action.config,
@@ -451,8 +632,8 @@ export class ConfigImporter {
         }
       }));
 
-      mergedProcesses.push({
-        ...process,
+      mergedWorkflows.push({
+        ...workflow,
         id: newId,
         actions: updatedActions
       });
@@ -482,15 +663,15 @@ export class ConfigImporter {
     imported.transitions.forEach(transition => {
       const newId = `imported_${Date.now()}_${transition.id}`;
 
-      // Update process references
-      const updatedProcesses = transition.processes.map(pid =>
-        idMap.get(pid) || pid
+      // Update workflow references (processes field for backward compat)
+      const updatedWorkflows = transition.processes.map(wid =>
+        idMap.get(wid) || wid
       );
 
       const updatedTransition: Transition = {
         ...transition,
         id: newId,
-        processes: updatedProcesses
+        processes: updatedWorkflows
       };
 
       // Update state references
@@ -521,7 +702,7 @@ export class ConfigImporter {
     return {
       success: true,
       images: mergedImages,
-      processes: mergedProcesses,
+      workflows: mergedWorkflows,
       states: mergedStates,
       transitions: mergedTransitions,
       errors: [],
