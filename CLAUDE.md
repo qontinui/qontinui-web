@@ -104,6 +104,21 @@ This is an open-source project maintained by Joshua Spinak.
 - Keep the component tree shallow when possible
 - Use composition over inheritance
 
+## Terminology Standards
+
+**IMPORTANT: Use "workflows" everywhere, NOT "processes"**
+
+- The term "processes" was renamed to "workflows" across the entire codebase
+- Do NOT add backward compatibility for the old "processes" terminology
+- All code, interfaces, schemas, and exports should use "workflows"
+- This applies to:
+  - TypeScript interfaces and types
+  - JSON export schemas
+  - API endpoints and responses
+  - Variable and function names
+  - Comments and documentation
+- The runner (qontinui library) should also be updated to use "workflows" terminology
+
 ## Questions to Ask
 
 Before writing code:
