@@ -254,42 +254,13 @@ function AutomationBuilderContent() {
         screenshots
       )
 
+      // Validation for informational purposes only - don't block export
       const validation = exporter.validateConfiguration(config)
       if (!validation.valid) {
-        // Try comprehensive auto-fix (images, connections, etc.)
-        const autoFixResult = exporter.comprehensiveAutoFix(config)
-
-        if (autoFixResult.totalFixed > 0) {
-          // Re-validate after auto-fix
-          const revalidation = exporter.validateConfiguration(config)
-
-          if (revalidation.valid) {
-            // Auto-fix succeeded, proceed with export
-            exporter.downloadConfiguration(config, `${projectName.replace(/\s+/g, '_')}_config.json`)
-
-            toast.success("Export complete with auto-fix", {
-              description: `Automatically fixed ${autoFixResult.totalFixed} issue${autoFixResult.totalFixed !== 1 ? 's' : ''} (broken image references, invalid connections, etc.)`
-            })
-            return
-          } else {
-            // Still have errors after auto-fix
-            toast.error("Export validation failed", {
-              description: `Auto-fixed ${autoFixResult.totalFixed} issues, but ${revalidation.errors.length} error${revalidation.errors.length !== 1 ? 's' : ''} remain: ${revalidation.errors.slice(0, 3).join(', ')}${revalidation.errors.length > 3 ? '...' : ''}`
-            })
-            console.error('Auto-fix details:', autoFixResult.details)
-            console.error('Remaining errors:', revalidation.errors)
-            return
-          }
-        } else {
-          // Could not auto-fix any issues
-          toast.error("Export validation failed", {
-            description: `${validation.errors.length} error${validation.errors.length !== 1 ? 's' : ''} found: ${validation.errors.slice(0, 3).join(', ')}${validation.errors.length > 3 ? '...' : ''}`
-          })
-          console.error('Validation errors:', validation.errors)
-          return
-        }
+        console.warn('Validation warnings (not blocking export):', validation.errors)
       }
 
+      // Download without auto-fix - export code should generate correct data
       exporter.downloadConfiguration(config, `${projectName.replace(/\s+/g, '_')}_config.json`)
 
       toast.success("Export complete", {

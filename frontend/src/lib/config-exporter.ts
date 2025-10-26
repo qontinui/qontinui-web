@@ -226,17 +226,76 @@ export class ConfigExporter {
       return [];
     }
 
-    return workflows.map(workflow => ({
-      id: workflow.id,
-      name: workflow.name,
-      description: workflow.description,
-      category: workflow.category,
-      format: 'graph' as const,
-      version: workflow.version || '1.0.0',
-      actions: this.exportActions(workflow.actions, states),
-      connections: workflow.connections || {},
-      metadata: workflow.metadata || {}
-    }));
+    return workflows.map(workflow => {
+      // Start with the workflow's existing connections or empty object
+      let connections = workflow.connections || {};
+
+      // Ensure all actions have connection entries
+      const actionIds = new Set(workflow.actions.map(a => a.id));
+      workflow.actions.forEach(action => {
+        if (!connections[action.id]) {
+          connections[action.id] = { main: [] };
+        }
+      });
+
+      // Auto-generate sequential connections for workflows in sequential view mode
+      if (workflow.metadata?.viewMode === 'sequential' && workflow.actions.length > 1) {
+        console.log(`🔍 [Export] Workflow "${workflow.name}" - viewMode: ${workflow.metadata?.viewMode}, ${workflow.actions.length} actions`);
+        console.log(`🔍 [Export] Connections before check:`, connections);
+
+        // Check if connections have actual chains (not just empty arrays)
+        const hasActualConnections = Object.values(connections).some(outputs => {
+          if (!outputs || typeof outputs !== 'object') return false;
+          // Check if any output has non-empty connection arrays
+          return Object.values(outputs).some(conns =>
+            Array.isArray(conns) && conns.length > 0 && conns[0]?.length > 0
+          );
+        });
+
+        console.log(`🔍 [Export] hasActualConnections:`, hasActualConnections);
+
+        if (!hasActualConnections) {
+          console.log(`✅ [Export] Generating sequential connections for "${workflow.name}"`);
+
+          // Generate sequential chain: action1 -> action2 -> action3 -> ...
+          const generatedConnections: any = {};
+          for (let i = 0; i < workflow.actions.length - 1; i++) {
+            const currentAction = workflow.actions[i];
+            const nextAction = workflow.actions[i + 1];
+            generatedConnections[currentAction.id] = {
+              main: [[{
+                action: nextAction.id,
+                type: 'main',
+                index: 0
+              }]]
+            };
+          }
+          // Last action has empty connections
+          if (workflow.actions.length > 0) {
+            generatedConnections[workflow.actions[workflow.actions.length - 1].id] = {
+              main: []
+            };
+          }
+
+          console.log(`✅ [Export] Generated connections:`, generatedConnections);
+          connections = generatedConnections;
+        } else {
+          console.log(`⏭️ [Export] Skipping generation - connections already exist`);
+        }
+      }
+
+      return {
+        id: workflow.id,
+        name: workflow.name,
+        description: workflow.description,
+        category: workflow.category,
+        format: 'graph' as const,
+        version: workflow.version || '1.0.0',
+        actions: this.exportActions(workflow.actions, states),
+        connections: connections,
+        metadata: workflow.metadata || {}
+      };
+    });
   }
 
   /**
@@ -349,8 +408,26 @@ export class ConfigExporter {
         delete (config as any).selectedStateStrings;
         delete (config as any).useAllStateStrings;
       } else if ((config as any).textSource === 'manual') {
-        // Manual text mode - remove textSource field, keep text field
+        // Manual text mode - remove textSource field, keep text field only if non-empty
         delete (config as any).textSource;
+
+        // Remove empty text field
+        if ((config as any).text !== undefined) {
+          const textValue = (config as any).text;
+          if (!textValue || (typeof textValue === 'string' && !textValue.trim())) {
+            delete (config as any).text;
+          }
+        }
+      }
+
+      // If textSource is an object (already converted), remove empty text field
+      if (typeof (config as any).textSource === 'object' && (config as any).textSource !== null) {
+        if ((config as any).text !== undefined) {
+          const textValue = (config as any).text;
+          if (!textValue || (typeof textValue === 'string' && !textValue.trim())) {
+            delete (config as any).text;
+          }
+        }
       }
     }
 
@@ -897,315 +974,6 @@ export class ConfigExporter {
     }
 
     return null;
-  }
-
-  /**
-   * Auto-fix broken image references by matching names
-   */
-  autoFixImageReferences(config: QontinuiConfig): {
-    fixed: number;
-    unfixed: number;
-    details: string[];
-  } {
-    const details: string[] = [];
-    let fixed = 0;
-    let unfixed = 0;
-
-    // Build name-to-ID mapping for available images
-    const nameToImageId = new Map<string, string>();
-    const base64ToImageId = new Map<string, string>();
-
-    (config.images || []).forEach(img => {
-      const normalizedName = img.name.toLowerCase().trim();
-      nameToImageId.set(normalizedName, img.id);
-
-      // Also map base64 data to image ID for legacy data
-      // Image data is stored WITHOUT the data:image prefix, but we need to match both formats
-      if (img.data) {
-        // Store the bare base64 string
-        base64ToImageId.set(img.data, img.id);
-
-        // Also store with common data URL prefixes for matching
-        base64ToImageId.set(`data:image/png;base64,${img.data}`, img.id);
-        base64ToImageId.set(`data:image/jpeg;base64,${img.data}`, img.id);
-        base64ToImageId.set(`data:image/jpg;base64,${img.data}`, img.id);
-      }
-    });
-
-    // Fix workflow actions
-    (config.workflows || []).forEach(workflow => {
-      (workflow.actions || []).forEach(action => {
-        const oldImageId = this.extractImageIdFromAction(action);
-        if (oldImageId) {
-          // Try to find a matching image by checking if any image ID matches
-          const imageExists = (config.images || []).some(img => img.id === oldImageId);
-
-          if (!imageExists) {
-            // Try to find by name (if we have one)
-            const actionImageName = this.extractImageNameFromAction(action);
-            if (actionImageName) {
-              const normalizedName = actionImageName.toLowerCase().trim();
-              const newImageId = nameToImageId.get(normalizedName);
-
-              if (newImageId) {
-                // Fix the reference
-                this.replaceImageIdInAction(action, oldImageId, newImageId);
-                details.push(`Fixed ${workflow.name}: ${action.type} - matched "${actionImageName}"`);
-                fixed++;
-              } else {
-                details.push(`Could not fix ${workflow.name}: ${action.type} - no image named "${actionImageName}"`);
-                unfixed++;
-              }
-            } else {
-              details.push(`Could not fix ${workflow.name}: ${action.type} - no name available to match`);
-              unfixed++;
-            }
-          }
-        }
-      });
-    });
-
-    // Fix state image patterns
-    (config.states || []).forEach(state => {
-      (state.stateImages || []).forEach(stateImage => {
-        (stateImage.patterns || []).forEach((pattern: any) => {
-          // Support both imageId (new) and image (legacy) fields
-          const imageRef = pattern.imageId || pattern.image;
-
-          if (imageRef) {
-            // Check if this is base64 data instead of an ID (legacy format)
-            if (imageRef.startsWith('data:image/')) {
-              // Try to find image by base64 data
-              const matchedImageId = base64ToImageId.get(imageRef);
-
-              if (matchedImageId) {
-                // Update to use imageId field (remove old image field if present)
-                pattern.imageId = matchedImageId;
-                delete pattern.image;
-                details.push(`Fixed ${state.name}: ${stateImage.name} - converted base64 to image ID`);
-                fixed++;
-              } else {
-                // Base64 data but no matching image asset - try by name
-                const imageName = pattern.name || stateImage.name;
-                const normalizedName = imageName.toLowerCase().trim();
-                const newImageId = nameToImageId.get(normalizedName);
-
-                if (newImageId) {
-                  pattern.imageId = newImageId;
-                  delete pattern.image;
-                  details.push(`Fixed ${state.name}: ${stateImage.name} - matched by name "${imageName}"`);
-                  fixed++;
-                } else {
-                  details.push(`Could not fix ${state.name}: ${stateImage.name} - base64 data with no matching image asset`);
-                  unfixed++;
-                }
-              }
-            } else {
-              // Regular image ID reference
-              const imageExists = (config.images || []).some(img => img.id === imageRef);
-
-              if (!imageExists) {
-                // Try to match by pattern name or state image name
-                const imageName = pattern.name || stateImage.name;
-                const normalizedName = imageName.toLowerCase().trim();
-                const newImageId = nameToImageId.get(normalizedName);
-
-                if (newImageId) {
-                  pattern.imageId = newImageId;
-                  delete pattern.image;
-                  details.push(`Fixed ${state.name}: ${stateImage.name} - matched "${imageName}"`);
-                  fixed++;
-                } else {
-                  details.push(`Could not fix ${state.name}: ${stateImage.name} - no image named "${imageName}"`);
-                  unfixed++;
-                }
-              }
-            }
-          }
-        });
-      });
-    });
-
-    return { fixed, unfixed, details };
-  }
-
-  /**
-   * Extract image name from action for matching
-   */
-  private extractImageNameFromAction(action: any): string | null {
-    // Some actions store the image name
-    if (action.config && action.config.imageName) {
-      return action.config.imageName;
-    }
-    return null;
-  }
-
-  /**
-   * Replace image ID in action config
-   */
-  private replaceImageIdInAction(action: any, oldId: string, newId: string): void {
-    if (!action || !action.config) return;
-
-    if (action.config.imageId === oldId) {
-      action.config.imageId = newId;
-    }
-
-    if (action.config.target && action.config.target.imageId === oldId) {
-      action.config.target.imageId = newId;
-    }
-  }
-
-  /**
-   * Auto-fix broken workflow connections
-   */
-  autoFixBrokenConnections(config: QontinuiConfig): {
-    fixed: number;
-    details: string[];
-  } {
-    const details: string[] = [];
-    let fixed = 0;
-
-    (config.workflows || []).forEach(workflow => {
-      if (!workflow.connections) return;
-
-      // Build set of valid action IDs
-      const validActionIds = new Set((workflow.actions || []).map(a => a.id));
-
-      // Track which connection keys to delete
-      const keysToDelete: string[] = [];
-
-      Object.entries(workflow.connections).forEach(([actionId, outputs]) => {
-        // If the source action doesn't exist, mark for deletion
-        if (!validActionIds.has(actionId)) {
-          keysToDelete.push(actionId);
-          details.push(`Removed broken connection from non-existent action ${actionId} in workflow "${workflow.name || workflow.id}"`);
-          fixed++;
-          return;
-        }
-
-        // Check each output type and clean up broken target references
-        ['main', 'success', 'error', 'parallel'].forEach((outputType) => {
-          const connections = outputs[outputType as keyof typeof outputs];
-          if (!connections || !Array.isArray(connections)) return;
-
-          const validConnections = connections.filter((targetRef: any) => {
-            // Handle non-string references
-            if (typeof targetRef !== 'string') {
-              details.push(`Removed invalid connection (not a string) in workflow "${workflow.name || workflow.id}"`);
-              fixed++;
-              return false;
-            }
-
-            // Parse target reference (format: "actionId" or "actionId:branch")
-            const targetId = targetRef.split(':')[0];
-
-            if (!validActionIds.has(targetId)) {
-              details.push(`Removed broken connection to non-existent action ${targetId} in workflow "${workflow.name || workflow.id}"`);
-              fixed++;
-              return false;
-            }
-            return true;
-          });
-
-          // Update with cleaned connections
-          if (validConnections.length !== connections.length) {
-            (outputs as any)[outputType] = validConnections;
-          }
-        });
-      });
-
-      // Remove connections from non-existent actions
-      keysToDelete.forEach(key => {
-        delete workflow.connections[key];
-      });
-    });
-
-    return { fixed, details };
-  }
-
-  /**
-   * Remove actions with broken image references (aggressive cleanup)
-   */
-  removeActionsWithBrokenImages(config: QontinuiConfig): {
-    removed: number;
-    details: string[];
-  } {
-    const details: string[] = [];
-    let removed = 0;
-
-    // Build set of valid image IDs
-    const validImageIds = new Set((config.images || []).map(img => img.id));
-
-    (config.workflows || []).forEach(workflow => {
-      const originalCount = workflow.actions?.length || 0;
-
-      // Filter out actions with broken image references
-      workflow.actions = (workflow.actions || []).filter(action => {
-        const imageId = this.extractImageIdFromAction(action);
-
-        if (imageId && !validImageIds.has(imageId)) {
-          details.push(`Removed action ${action.type} with broken image reference in workflow "${workflow.name || workflow.id}"`);
-          removed++;
-          return false;
-        }
-        return true;
-      });
-
-      // If we removed actions, we need to clean up connections too
-      if (workflow.actions.length !== originalCount) {
-        const validActionIds = new Set(workflow.actions.map(a => a.id));
-
-        // Clean up connections
-        Object.keys(workflow.connections || {}).forEach(actionId => {
-          if (!validActionIds.has(actionId)) {
-            delete workflow.connections[actionId];
-          } else {
-            const outputs = workflow.connections[actionId];
-            ['main', 'success', 'error', 'parallel'].forEach(outputType => {
-              const connections = outputs[outputType as keyof typeof outputs];
-              if (Array.isArray(connections)) {
-                (outputs as any)[outputType] = connections.filter((ref: any) => {
-                  if (typeof ref !== 'string') return false;
-                  const targetId = ref.split(':')[0];
-                  return validActionIds.has(targetId);
-                });
-              }
-            });
-          }
-        });
-      }
-    });
-
-    return { removed, details };
-  }
-
-  /**
-   * Comprehensive auto-fix that runs all cleanup methods
-   */
-  comprehensiveAutoFix(config: QontinuiConfig): {
-    totalFixed: number;
-    details: string[];
-  } {
-    const allDetails: string[] = [];
-
-    // Step 1: Fix image references
-    const imageFixResult = this.autoFixImageReferences(config);
-    allDetails.push(`Image references: ${imageFixResult.fixed} fixed, ${imageFixResult.unfixed} could not be auto-fixed`);
-    allDetails.push(...imageFixResult.details);
-
-    // Step 2: Remove actions with broken images that couldn't be fixed
-    const removeResult = this.removeActionsWithBrokenImages(config);
-    allDetails.push(`Removed ${removeResult.removed} actions with broken image references`);
-    allDetails.push(...removeResult.details);
-
-    // Step 3: Fix broken connections
-    const connectionFixResult = this.autoFixBrokenConnections(config);
-    allDetails.push(`Cleaned up ${connectionFixResult.fixed} broken connections`);
-    allDetails.push(...connectionFixResult.details);
-
-    const totalFixed = imageFixResult.fixed + removeResult.removed + connectionFixResult.fixed;
-
-    return { totalFixed, details: allDetails };
   }
 
   /**
