@@ -43,7 +43,7 @@ interface Action {
     // Control flow actions
     | "IF" | "LOOP"
     // Other actions
-    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
+    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_WORKFLOW"
   config: Record<string, any>
 }
 
@@ -95,7 +95,7 @@ export function ProcessBuilder() {
   const createNewProcess = (category: string = "Main") => {
     const newProcess: Process = {
       id: `workflow-${Date.now()}`,
-      name: "New Process",
+      name: "New Workflow",
       description: "",
       category,
       actions: [],
@@ -159,7 +159,7 @@ export function ProcessBuilder() {
             className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
           >
             <Plus className="w-4 h-4 mr-2" />
-            New Process
+            New Workflow
           </Button>
 
           <UnifiedProcessLibrary

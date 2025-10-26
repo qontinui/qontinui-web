@@ -26,12 +26,10 @@ export function EmptyState({ mode, onCreateNew }: EmptyStateProps) {
         {/* Message */}
         <div className="space-y-2">
           <h3 className="text-xl font-semibold text-gray-300">
-            {isSequential ? 'No Process Selected' : 'No Workflow Selected'}
+            No Workflow Selected
           </h3>
           <p className="text-sm text-gray-400">
-            {isSequential
-              ? 'Select a process from the library to edit, or create a new one to get started.'
-              : 'Select a workflow from the library to edit, or create a new one to get started.'}
+            Select a workflow from the library to edit, or create a new one to get started.
           </p>
         </div>
 
@@ -47,12 +45,11 @@ export function EmptyState({ mode, onCreateNew }: EmptyStateProps) {
               }
             >
               <Play className="w-4 h-4 mr-2" />
-              {isSequential ? 'Create New Process' : 'Create New Workflow'}
+              Create New Workflow
             </Button>
 
             <p className="text-xs text-gray-500">
-              Or browse the library on the left to open an existing{' '}
-              {isSequential ? 'process' : 'workflow'}
+              Or browse the library on the left to open an existing workflow
             </p>
           </div>
         )}
@@ -65,7 +62,7 @@ export function EmptyState({ mode, onCreateNew }: EmptyStateProps) {
               <span className="text-gray-600">•</span>
               <span>
                 {isSequential
-                  ? 'Sequential mode is for linear, step-by-step processes'
+                  ? 'Sequential mode is for linear, step-by-step workflows'
                   : 'Graph mode is for visual workflows with branching and loops'}
               </span>
             </li>

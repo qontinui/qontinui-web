@@ -321,7 +321,7 @@ export function AutomationBuilder() {
         />
 
         {/* Editor Content */}
-        <div className="flex-1 overflow-hidden">{renderEditor()}</div>
+        <div className="flex-1 overflow-y-auto">{renderEditor()}</div>
       </div>
 
       {/* Right Panel - Properties */}

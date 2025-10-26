@@ -28,12 +28,20 @@ export class TokenManager {
   setTokens(tokens: TokenResponse): void {
     const expiry = this.validator.extractExpiry(tokens.access_token);
 
+    // Calculate refresh token expiry from expires_in and refresh_expires_in
+    const refreshExpiry = tokens.refresh_expires_in
+      ? Date.now() + tokens.refresh_expires_in * 1000
+      : null;
+
     console.log('[TokenManager] Setting new tokens:', {
       timestamp: new Date().toISOString(),
       hasAccessToken: !!tokens.access_token,
       hasRefreshToken: !!tokens.refresh_token,
       accessTokenPreview: tokens.access_token ? tokens.access_token.substring(0, 20) + '...' : 'none',
       expiry: expiry ? new Date(expiry).toISOString() : 'unknown',
+      refreshExpiry: refreshExpiry ? new Date(refreshExpiry).toISOString() : 'unknown',
+      expiresIn: tokens.expires_in,
+      refreshExpiresIn: tokens.refresh_expires_in,
       stackTrace: new Error().stack?.split('\n').slice(1, 4).join('\n'),
     });
 
@@ -41,6 +49,9 @@ export class TokenManager {
     this.storage.saveRefreshToken(tokens.refresh_token);
     if (expiry) {
       this.storage.saveTokenExpiry(expiry);
+    }
+    if (refreshExpiry) {
+      this.storage.saveRefreshTokenExpiry(refreshExpiry);
     }
   }
 
@@ -144,6 +155,40 @@ export class TokenManager {
    */
   getTimeUntilExpiry(): number {
     const expiry = this.storage.getTokenExpiry();
+    if (!expiry) return 0;
+    return this.validator.getTimeUntilExpiry(expiry);
+  }
+
+  /**
+   * Get refresh token expiry timestamp
+   */
+  getRefreshTokenExpiry(): number | null {
+    return this.storage.getRefreshTokenExpiry();
+  }
+
+  /**
+   * Check if refresh token is expired
+   */
+  isRefreshTokenExpired(): boolean {
+    const expiry = this.storage.getRefreshTokenExpiry();
+    if (!expiry) return true;
+    return this.validator.isTokenExpired(expiry);
+  }
+
+  /**
+   * Check if refresh token will expire soon
+   */
+  isRefreshTokenExpiringSoon(thresholdMs: number = 7 * 24 * 60 * 60 * 1000): boolean {
+    const expiry = this.storage.getRefreshTokenExpiry();
+    if (!expiry) return false;
+    return this.validator.isTokenExpiringSoon(expiry, thresholdMs);
+  }
+
+  /**
+   * Get time until refresh token expires
+   */
+  getTimeUntilRefreshExpiry(): number {
+    const expiry = this.storage.getRefreshTokenExpiry();
     if (!expiry) return 0;
     return this.validator.getTimeUntilExpiry(expiry);
   }

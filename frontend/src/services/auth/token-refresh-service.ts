@@ -76,14 +76,22 @@ export class TokenRefreshService {
           url: ApiConfig.AUTH_REFRESH,
         });
 
-        // DON'T clear tokens on refresh failure - the activity tracker will retry
-        // Only clear if this was a 401/403 indicating truly invalid tokens
+        // If refresh token is invalid (401/403), clear tokens and trigger session expiry
+        // This means the session has truly expired and user needs to log in again
         if (response.status === 401 || response.status === 403) {
-          console.error('[TokenRefreshService] ⚠️ Tokens are invalid (401/403) - CLEARING TOKENS NOW');
+          console.error('[TokenRefreshService] ⚠️ Refresh token is invalid (401/403) - session expired');
           this.tokenManager.clearTokens();
+
+          // Dispatch session-expired event to trigger redirect to landing page
+          if (typeof window !== 'undefined') {
+            console.log('[TokenRefreshService] Dispatching session-expired event');
+            window.dispatchEvent(new CustomEvent('session-expired'));
+          }
         } else {
+          // For other errors (server issues, network), keep tokens and allow retry
           console.warn('[TokenRefreshService] ⚠️ Refresh failed but keeping tokens - may be temporary server issue');
         }
+
         return false;
       }
     } catch (error) {

@@ -6,6 +6,7 @@ Uses OpenCV for video generation with configurable quality and features.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -409,7 +410,7 @@ class VideoExporter:
         actions: list[dict[str, Any]],
         screenshot_base_path: str,
         output_path: str,
-        progress_callback: callable | None = None,
+        progress_callback: Callable | None = None,
     ) -> dict[str, Any]:
         """
         Export execution to video file
@@ -570,7 +571,7 @@ async def create_execution_video(
     screenshot_base_path: str,
     output_path: str,
     options: VideoExportOptions | None = None,
-    progress_callback: callable | None = None,
+    progress_callback: Callable | None = None,
 ) -> dict[str, Any]:
     """
     Convenience function to create video from execution data

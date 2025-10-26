@@ -173,10 +173,10 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
           }
           break;
 
-        case 'RUN_PROCESS':
+        case 'RUN_WORKFLOW':
           await new Promise(resolve => setTimeout(resolve, 1000));
           success = true;
-          addLog(`Running sub-process: ${action.config.processId}`, 'info');
+          addLog(`Running sub-workflow: ${action.config.workflowId}`, 'info');
           break;
 
         default:

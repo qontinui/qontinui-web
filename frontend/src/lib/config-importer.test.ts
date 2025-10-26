@@ -257,7 +257,7 @@ describe('ConfigImporter', () => {
         transitions: [
           {
             id: 'trans1',
-            type: 'ToTransition',
+            type: 'IncomingTransition',
             toState: 'state1',
             timeout: 1000,
             retryCount: 0,

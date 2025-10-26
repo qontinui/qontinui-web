@@ -260,7 +260,7 @@ export function custom(
  */
 const ACTION_VALIDATORS: Partial<Record<ActionType, ValidatorFunction[]>> = {
   CLICK: [
-    required('target', 'Click target is required'),
+    // Target is optional - defaults to current position (pure action)
     enumValue('clickType', ['left', 'right', 'middle', 'double'], 'Invalid click type'),
     minValue('clickCount', 1, 'Click count must be at least 1'),
     minValue('hold_duration', 0, 'Hold duration cannot be negative'),
@@ -362,8 +362,8 @@ const ACTION_VALIDATORS: Partial<Record<ActionType, ValidatorFunction[]>> = {
     ),
   ],
 
-  RUN_PROCESS: [
-    required('processId', 'Process ID is required'),
+  RUN_WORKFLOW: [
+    required('workflowId', 'Workflow ID is required'),
   ],
 
   GO_TO_STATE: [

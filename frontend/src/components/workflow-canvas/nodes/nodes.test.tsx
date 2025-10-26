@@ -289,17 +289,17 @@ describe('Node Utilities', () => {
       expect(validation.errors).toHaveLength(0);
     });
 
-    it('detects missing CLICK target', () => {
-      const invalidAction: Action<'CLICK'> = {
+    it('allows CLICK action without target (clicks at current position)', () => {
+      const validAction: Action<'CLICK'> = {
         id: '2',
         type: 'CLICK',
-        config: {} as any,
+        config: {} as any, // No target = clicks at current position (pure action)
         position: [0, 0],
       };
 
-      const validation = validateNodeConfig(invalidAction);
-      expect(validation.valid).toBe(false);
-      expect(validation.errors).toContain('Missing click target');
+      const validation = validateNodeConfig(validAction);
+      expect(validation.valid).toBe(true);
+      expect(validation.errors).toHaveLength(0);
     });
 
     it('validates IF action config', () => {

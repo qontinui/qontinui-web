@@ -13,8 +13,8 @@ from fastapi_users.authentication import (
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db
 from app.core.config import settings
+from app.db.session import get_async_db
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)

@@ -297,7 +297,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
                   </SelectTrigger>
                   <SelectContent className="bg-[#27272A] border-gray-700">
                     <SelectItem value="local">Local</SelectItem>
-                    <SelectItem value="process">Process</SelectItem>
+                    <SelectItem value="process">Workflow</SelectItem>
                     <SelectItem value="global">Global</SelectItem>
                   </SelectContent>
                 </Select>

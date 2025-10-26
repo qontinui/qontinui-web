@@ -49,7 +49,7 @@ export class ConfigTemplates {
           position: { x: 550, y: 300 }
         }
       ],
-      processes: [
+      workflows: [
         {
           id: 'start-game',
           name: 'Start Game',
@@ -98,9 +98,9 @@ export class ConfigTemplates {
       transitions: [
         {
           id: 'menu-to-game',
-          type: 'FromTransition',
+          type: 'OutgoingTransition',
           name: 'Start Game',
-          processes: ['start-game'],
+          workflows: ['start-game'],
           fromState: 'main-menu',
           toState: 'gameplay',
           staysVisible: false,
@@ -111,9 +111,9 @@ export class ConfigTemplates {
         },
         {
           id: 'game-to-inventory',
-          type: 'FromTransition',
+          type: 'OutgoingTransition',
           name: 'Open Inventory',
-          processes: ['open-inventory'],
+          workflows: ['open-inventory'],
           fromState: 'gameplay',
           toState: 'inventory',
           staysVisible: true,
@@ -193,7 +193,7 @@ export class ConfigTemplates {
           position: { x: 400, y: 300 }
         }
       ],
-      processes: [
+      workflows: [
         {
           id: 'login-process',
           name: 'Login',
@@ -297,9 +297,9 @@ export class ConfigTemplates {
       transitions: [
         {
           id: 'login-to-dashboard',
-          type: 'FromTransition',
+          type: 'OutgoingTransition',
           name: 'Login',
-          processes: ['login-process'],
+          workflows: ['login-process'],
           fromState: 'login-page',
           toState: 'dashboard',
           staysVisible: false,
@@ -387,7 +387,7 @@ export class ConfigTemplates {
           position: { x: 550, y: 300 }
         }
       ],
-      processes: [
+      workflows: [
         {
           id: 'launch-app',
           name: 'Launch Application',
@@ -462,9 +462,9 @@ export class ConfigTemplates {
       transitions: [
         {
           id: 'launch-app-transition',
-          type: 'FromTransition',
+          type: 'OutgoingTransition',
           name: 'Launch Application',
-          processes: ['launch-app'],
+          workflows: ['launch-app'],
           fromState: 'app-closed',
           toState: 'app-main',
           staysVisible: false,
@@ -475,9 +475,9 @@ export class ConfigTemplates {
         },
         {
           id: 'open-file-dialog',
-          type: 'FromTransition',
+          type: 'OutgoingTransition',
           name: 'Open File Dialog',
-          processes: ['open-file'],
+          workflows: ['open-file'],
           fromState: 'app-main',
           toState: 'file-dialog',
           staysVisible: true,
@@ -557,7 +557,7 @@ export class ConfigTemplates {
           position: { x: 250, y: 300 }
         }
       ],
-      processes: [
+      workflows: [
         {
           id: 'select-item',
           name: 'Select Item',
@@ -668,9 +668,9 @@ export class ConfigTemplates {
       transitions: [
         {
           id: 'list-to-detail',
-          type: 'FromTransition',
+          type: 'OutgoingTransition',
           name: 'View Details',
-          processes: ['select-item'],
+          workflows: ['select-item'],
           fromState: 'data-list',
           toState: 'detail-view',
           staysVisible: false,
@@ -681,9 +681,9 @@ export class ConfigTemplates {
         },
         {
           id: 'extract-and-return',
-          type: 'ToTransition',
+          type: 'IncomingTransition',
           name: 'Extract Data',
-          processes: ['extract-data'],
+          workflows: ['extract-data'],
           toState: 'detail-view',
           timeout: 5000,
           retryCount: 1

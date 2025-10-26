@@ -111,7 +111,7 @@ const ACTION_ICONS: Record<ActionType, LucideIcon> = {
 
   // State Actions
   GO_TO_STATE: Zap,
-  RUN_PROCESS: Play,
+  RUN_WORKFLOW: Play,
   SCREENSHOT: Camera,
 };
 

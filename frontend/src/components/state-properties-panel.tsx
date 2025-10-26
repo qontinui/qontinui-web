@@ -10,18 +10,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
-import { Plus, Trash2, Map, MapPin, Type, Image as ImageIcon, AlertTriangle, Info, ChevronDown, ChevronRight, Link2 } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Plus, Trash2, Map, MapPin, Type, Image as ImageIcon, AlertTriangle, Info, ChevronDown, ChevronRight, Link2, Target, ChevronUp, Sparkles } from "lucide-react"
 import { ImageSelector } from "@/components/image-selector"
 import { ImageStatsDisplay } from "@/components/image-stats-display"
 import { SpecialKeysSelector, SpecialKeyDisplay } from "@/components/special-keys-selector"
 import { StateImageViewer } from "@/components/state-image-viewer"
-import type { State, StateRegion, StateLocation, StateString, StateImage, PositionName } from "@/contexts/automation-context"
+import type { State, StateRegion, StateLocation, StateString, StateImage, PositionName, IncomingTransition, Transition, Workflow } from "@/contexts/automation-context"
+import { createFindAnyStateImageWorkflow } from "@/lib/workflow-helpers"
 
 interface StatePropertiesPanelProps {
   state: State
   allStates: State[]
   images: Array<{ id: string; name: string; url: string }>
+  incomingTransitions: IncomingTransition[]
+  workflows: Workflow[]
   updateState: (updates: Partial<State>) => void
+  addTransition: (transition: Transition) => void
+  updateTransition: (transition: Transition) => void
+  deleteTransition: (transitionId: string) => void
+  addWorkflow: (workflow: Workflow) => void
   addStateImage: () => void
   updateStateImage: (index: number, updates: Partial<StateImage>) => void
   removeStateImage: (index: number) => void
@@ -40,7 +48,13 @@ export function StatePropertiesPanel({
   state,
   allStates,
   images,
+  incomingTransitions,
+  workflows,
   updateState,
+  addTransition,
+  updateTransition,
+  deleteTransition,
+  addWorkflow,
   addStateImage,
   updateStateImage,
   removeStateImage,
@@ -58,6 +72,8 @@ export function StatePropertiesPanel({
   const [openImageSelectorId, setOpenImageSelectorId] = useState<string | null>(null)
   const [expandedAdvancedSections, setExpandedAdvancedSections] = useState<Set<string>>(new Set())
   const [showAddSearchRegionDialog, setShowAddSearchRegionDialog] = useState<{ stateImageIndex: number; patternIndex?: number } | null>(null)
+  const [expandedTransitionId, setExpandedTransitionId] = useState<string | null>(null)
+  const [workflowCategoryFilters, setWorkflowCategoryFilters] = useState<{ [key: string]: string }>({})
 
   // Function to set a ref for a specific string's textarea
   const setStringTextAreaRef = (stringId: string) => (el: HTMLTextAreaElement | null) => {
@@ -113,6 +129,33 @@ export function StatePropertiesPanel({
     prevStateImagesLength.current = currentLength
   }, [state.id, state.stateImages])
 
+  // Handler to create and add helper workflow for finding any state image
+  const handleAddFindAnyImageHelper = async (transition: IncomingTransition) => {
+    try {
+      // Generate the helper workflow
+      const helperWorkflow = createFindAnyStateImageWorkflow(state)
+
+      // Check if this transition exists in the database
+      const existingTransition = incomingTransitions.find(t => t.id === transition.id)
+
+      // Add as an inline workflow reference (NOT to global database)
+      const newWorkflows = [
+        ...(transition.workflows || []),
+        { type: 'inline' as const, workflow: helperWorkflow }
+      ]
+
+      if (existingTransition) {
+        // Update existing transition
+        updateTransition({ ...transition, workflows: newWorkflows })
+      } else {
+        // Create new transition with the workflow
+        addTransition({ ...transition, workflows: newWorkflows })
+      }
+    } catch (error) {
+      console.error('Failed to create helper workflow:', error)
+    }
+  }
+
   return (
     <Card className="border-gray-700 bg-[#27272A] h-full flex flex-col">
       <CardHeader className="pb-2 flex-shrink-0">
@@ -159,7 +202,7 @@ export function StatePropertiesPanel({
         </details>
 
         <Tabs defaultValue="images" className="flex-1 flex flex-col min-h-0 border border-gray-700 rounded-lg bg-[#1A1A1B] overflow-hidden">
-          <TabsList className="grid w-full grid-cols-4 h-10 bg-[#1A1A1B] border-b border-gray-700 p-1 rounded-none">
+          <TabsList className="grid w-full grid-cols-5 h-10 bg-[#1A1A1B] border-b border-gray-700 p-1 rounded-none">
             <TabsTrigger
               value="images"
               className="text-xs flex items-center justify-center data-[state=active]:bg-[#00D9FF]/20 data-[state=active]:text-[#00D9FF] data-[state=active]:border data-[state=active]:border-[#00D9FF]/50 data-[state=inactive]:text-gray-400 transition-all"
@@ -183,6 +226,12 @@ export function StatePropertiesPanel({
               className="text-xs flex items-center justify-center data-[state=active]:bg-[#FFD700]/20 data-[state=active]:text-[#FFD700] data-[state=active]:border data-[state=active]:border-[#FFD700]/50 data-[state=inactive]:text-gray-400 transition-all"
             >
               <Type className="w-4 h-4" />
+            </TabsTrigger>
+            <TabsTrigger
+              value="transitions"
+              className="text-xs flex items-center justify-center data-[state=active]:bg-[#00FF88]/20 data-[state=active]:text-[#00FF88] data-[state=active]:border data-[state=active]:border-[#00FF88]/50 data-[state=inactive]:text-gray-400 transition-all"
+            >
+              <Target className="w-4 h-4" />
             </TabsTrigger>
           </TabsList>
 
@@ -1142,6 +1191,243 @@ export function StatePropertiesPanel({
                 })}
               </div>
             )}
+          </TabsContent>
+
+          {/* Transitions Tab */}
+          <TabsContent value="transitions" className="flex-1 flex flex-col min-h-0 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-xs text-[#00FF88]">Incoming Transition</Label>
+              <Badge className="bg-[#00FF88] text-black text-xs px-2">
+                1
+              </Badge>
+            </div>
+
+            <div className="flex-1 space-y-2 overflow-y-auto pr-2">
+              {(() => {
+                // Get or create the incoming transition for this state
+                const transition = incomingTransitions[0] || {
+                  id: `incoming-${state.id}`,
+                  type: 'IncomingTransition' as const,
+                  toState: state.id,
+                  workflows: [],
+                  timeout: 10000,
+                  retryCount: 3,
+                }
+
+                const isExpanded = expandedTransitionId === transition.id
+                const categoryFilter = workflowCategoryFilters[transition.id] || "Transitions"
+                const availableWorkflows = workflows.filter(w => {
+                  const category = w.category || "Main"
+                  const matchesCategory = categoryFilter === "All" || category === categoryFilter
+                  // Check if this workflow is already referenced in the transition
+                  const alreadyAdded = transition.workflows?.some(
+                    ref => ref.type === 'reference' && ref.workflowId === w.id
+                  )
+                  return !alreadyAdded && matchesCategory
+                })
+
+                  return (
+                    <div key={transition.id} className="p-3 bg-gray-800/50 border border-[#00FF88]/30 rounded space-y-2">
+                      {/* Transition Header */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setExpandedTransitionId(isExpanded ? null : transition.id)}
+                            className="hover:text-[#00FF88] transition-colors"
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="w-4 h-4 text-[#00FF88]" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                            )}
+                          </button>
+                          <span className="text-xs text-gray-400">
+                            {(transition.workflows?.length || 0) === 0
+                              ? 'returns true'
+                              : `${transition.workflows.length} workflow${transition.workflows.length !== 1 ? 's' : ''}`
+                            }
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Expanded Content */}
+                      {isExpanded && (
+                        <div className="space-y-3 pt-2 border-t border-gray-700">
+                          {/* Workflows List */}
+                          {transition.workflows && transition.workflows.length > 0 && (
+                            <div className="space-y-1.5">
+                              <Label className="text-xs text-gray-400">Workflows (execute in order):</Label>
+                              <div className="space-y-1">
+                                {transition.workflows.map((workflowRef, idx) => {
+                                  // Get workflow based on reference type
+                                  const workflow = workflowRef.type === 'reference'
+                                    ? workflows.find(w => w.id === workflowRef.workflowId)
+                                    : workflowRef.workflow
+
+                                  const workflowName = workflow?.name || 'Unknown Workflow'
+
+                                  return (
+                                    <div
+                                      key={workflowRef.type === 'reference' ? workflowRef.workflowId : workflowRef.workflow.id}
+                                      className="flex items-center gap-2 text-xs text-gray-300 p-2 bg-gray-900/50 rounded"
+                                    >
+                                      <Badge className="bg-[#00D9FF] text-black text-xs px-1.5">
+                                        {idx + 1}
+                                      </Badge>
+                                      <span className="flex-1">{workflowName}</span>
+
+                                      {/* Type badge - inline vs referenced */}
+                                      {workflowRef.type === 'inline' ? (
+                                        <Badge className="bg-[#00FF88]/20 text-[#00FF88] border-[#00FF88]/30 text-xs px-1.5">
+                                          Helper
+                                        </Badge>
+                                      ) : (
+                                        workflow?.category && (
+                                          <Badge variant="outline" className="text-xs">
+                                            {workflow.category}
+                                          </Badge>
+                                        )
+                                      )}
+
+                                      {/* Reorder and Delete Buttons */}
+                                      <div className="flex items-center gap-0.5">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-5 w-5 p-0 text-gray-400 hover:text-gray-200"
+                                          disabled={idx === 0}
+                                          onClick={() => {
+                                            const newWorkflows = [...transition.workflows]
+                                            ;[newWorkflows[idx], newWorkflows[idx - 1]] = [newWorkflows[idx - 1], newWorkflows[idx]]
+                                            updateTransition({ ...transition, workflows: newWorkflows })
+                                          }}
+                                        >
+                                          <ChevronUp className="w-3 h-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-5 w-5 p-0 text-gray-400 hover:text-gray-200"
+                                          disabled={idx === transition.workflows.length - 1}
+                                          onClick={() => {
+                                            const newWorkflows = [...transition.workflows]
+                                            ;[newWorkflows[idx], newWorkflows[idx + 1]] = [newWorkflows[idx + 1], newWorkflows[idx]]
+                                            updateTransition({ ...transition, workflows: newWorkflows })
+                                          }}
+                                        >
+                                          <ChevronDown className="w-3 h-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-5 w-5 p-0 text-red-400 hover:text-red-300"
+                                          onClick={() => {
+                                            const newWorkflows = transition.workflows.filter((_, i) => i !== idx)
+                                            updateTransition({ ...transition, workflows: newWorkflows })
+                                          }}
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Quick Helper Button */}
+                          <div className="space-y-2 pb-2 border-b border-gray-700">
+                            <Label className="text-xs text-gray-400">Quick Helper:</Label>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full h-8 text-xs bg-[#00FF88]/10 border-[#00FF88]/30 text-[#00FF88] hover:bg-[#00FF88]/20 hover:text-[#00FF88] hover:border-[#00FF88]/50 transition-colors"
+                              onClick={() => handleAddFindAnyImageHelper(transition)}
+                              disabled={!state.stateImages || state.stateImages.length === 0}
+                            >
+                              <Sparkles className="w-3 h-3 mr-2" />
+                              Add "Find Any State Image"
+                            </Button>
+                            {(!state.stateImages || state.stateImages.length === 0) && (
+                              <p className="text-xs text-gray-500 italic">
+                                Add state images first to use this helper
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Add Workflow */}
+                          <div className="space-y-2">
+                            <Label className="text-xs text-gray-400">Filter by Category:</Label>
+                            <Select
+                              value={categoryFilter}
+                              onValueChange={(value) => {
+                                setWorkflowCategoryFilters(prev => ({ ...prev, [transition.id]: value }))
+                              }}
+                            >
+                              <SelectTrigger className="bg-gray-900 border-gray-600 text-xs h-8">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#27272A] border-gray-700">
+                                <SelectItem value="All">All Categories</SelectItem>
+                                <SelectItem value="Transitions">Transitions</SelectItem>
+                                <SelectItem value="Main">Main</SelectItem>
+                                {Array.from(new Set(workflows.map(w => w.category || "Main")))
+                                  .filter(c => c !== "Main" && c !== "Transitions")
+                                  .map((category) => (
+                                    <SelectItem key={category} value={category}>
+                                      {category}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {availableWorkflows.length > 0 ? (
+                            <div className="space-y-2">
+                              <Label className="text-xs text-gray-400">Add Workflow:</Label>
+                              <Select
+                                value=""
+                                onValueChange={(workflowId) => {
+                                  const newWorkflows = [
+                                    ...(transition.workflows || []),
+                                    { type: 'reference' as const, workflowId }
+                                  ]
+                                  updateTransition({ ...transition, workflows: newWorkflows })
+                                }}
+                              >
+                                <SelectTrigger className="bg-gray-900 border-gray-600 text-xs h-8">
+                                  <SelectValue placeholder="Select workflow to add..." />
+                                </SelectTrigger>
+                                <SelectContent className="bg-[#27272A] border-gray-700">
+                                  {availableWorkflows.map((workflow) => (
+                                    <SelectItem key={workflow.id} value={workflow.id} className="text-xs">
+                                      <div className="flex items-center gap-2">
+                                        <span>{workflow.name}</span>
+                                        {workflow.category && (
+                                          <Badge variant="outline" className="text-xs">
+                                            {workflow.category}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-500 text-center py-2">
+                              {categoryFilter === "Transitions"
+                                ? "No workflows in Transitions category. Try 'All Categories' to see all workflows."
+                                : "No available workflows in this category"}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+              })()}
+            </div>
           </TabsContent>
         </Tabs>
       </CardContent>

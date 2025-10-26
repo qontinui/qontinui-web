@@ -54,6 +54,13 @@ interface StateString {
   value: string
 }
 
+interface IncomingTransition {
+  id: string
+  type: "IncomingTransition"
+  toState: string
+  workflows: string[]
+}
+
 interface StateNodeData {
   state: {
     id: string
@@ -67,12 +74,13 @@ interface StateNodeData {
   }
   images?: ImageAsset[]
   hasIncomingTransitions?: boolean
+  incomingTransitions?: IncomingTransition[]
   isSelected: boolean
   onSelect: (id: string, selected: boolean) => void
 }
 
 export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
-  const { state, images = [], hasIncomingTransitions = false } = data
+  const { state, images = [], hasIncomingTransitions = false, incomingTransitions = [] } = data
 
   return (
     <div className="min-w-[200px]">
@@ -90,9 +98,13 @@ export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
             <div>
               <div className="flex items-center justify-center relative">
                 <h3 className="font-semibold text-white text-xl text-center">{state.name}</h3>
-                {hasIncomingTransitions && (
-                  <Badge className="absolute -top-2 -right-2 bg-[#00FF88] text-black text-xs px-1.5 py-0.5" title="Has IncomingTransitions">
+                {hasIncomingTransitions && incomingTransitions.length > 0 && (
+                  <Badge
+                    className="absolute -top-2 -right-2 bg-[#00FF88] text-black text-xs px-1.5 py-0.5 flex items-center gap-0.5"
+                    title={`${incomingTransitions.length} IncomingTransition${incomingTransitions.length > 1 ? 's' : ''}`}
+                  >
                     <Target className="w-3 h-3" />
+                    {incomingTransitions.length > 1 && <span className="font-semibold">{incomingTransitions.length}</span>}
                   </Badge>
                 )}
                 {state.initial && (

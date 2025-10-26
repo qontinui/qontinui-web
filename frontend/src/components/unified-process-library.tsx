@@ -26,7 +26,7 @@ import {
 import { toast } from "sonner"
 import { useAutomation } from "@/contexts/automation-context"
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog"
-import { DeleteProcessDialog } from "@/components/delete-process-dialog"
+import { DeleteWorkflowDialog } from "@/components/delete-process-dialog"
 import type { Workflow } from "@/lib/action-schema/action-types"
 
 // LibraryItem is now just Workflow - sequential workflows are linear graphs
@@ -88,7 +88,7 @@ export function UnifiedProcessLibrary({
 
   const getItemUsageCount = (item: LibraryItem) => {
     // Count how many transitions reference this workflow
-    return transitions.filter(t => t.process === item.id).length
+    return transitions.filter(t => t.workflows && t.workflows.includes(item.id)).length
   }
 
   const getItemName = (item: LibraryItem) => {
@@ -477,9 +477,9 @@ export function UnifiedProcessLibrary({
         onMoveToMain={handleMoveToMain}
       />
 
-      <DeleteProcessDialog
+      <DeleteWorkflowDialog
         open={deleteItemDialog.open}
-        processName={deleteItemDialog.item ? getItemName(deleteItemDialog.item) : ""}
+        workflowName={deleteItemDialog.item ? getItemName(deleteItemDialog.item) : ""}
         onClose={() => setDeleteItemDialog({ open: false, item: null })}
         onConfirm={handleConfirmDelete}
       />

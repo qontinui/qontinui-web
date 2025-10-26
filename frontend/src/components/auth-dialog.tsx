@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { loginFormSchema, registerFormSchema, type LoginFormData, type RegisterFormData } from '@/lib/schemas';
@@ -37,6 +38,7 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
     defaultValues: {
       username: '',
       password: '',
+      remember_me: false,
     }
   });
 
@@ -55,7 +57,7 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
   const handleLogin = async (data: LoginFormData) => {
     setLoading(true);
     try {
-      const user = await login(data.username, data.password);
+      const user = await login(data.username, data.password, data.remember_me);
       toast.success('Logged in successfully');
       onOpenChange(false);
       loginForm.reset();
@@ -130,6 +132,22 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
                 {loginForm.formState.errors.password && (
                   <p className="text-sm text-red-500">{loginForm.formState.errors.password.message}</p>
                 )}
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="remember-me"
+                  checked={loginForm.watch('remember_me')}
+                  onCheckedChange={(checked) => {
+                    loginForm.setValue('remember_me', checked as boolean);
+                  }}
+                  disabled={loading}
+                />
+                <Label
+                  htmlFor="remember-me"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Remember me for 90 days
+                </Label>
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Signing in...' : 'Sign In'}

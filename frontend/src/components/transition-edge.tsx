@@ -6,15 +6,19 @@ import { Badge } from "@/components/ui/badge"
 interface TransitionEdgeData {
   transition: {
     id: string
-    fromState: string
-    activateStates: string[]
-    deactivateStates: string[]
-    process: string
-    staysVisible: boolean
+    type?: "OutgoingTransition" | "IncomingTransition"
+    fromState?: string
+    toState?: string
+    activateStates?: string[]
+    deactivateStates?: string[]
+    process?: string
+    workflows?: string[]
+    staysVisible?: boolean
   }
   isMultiTarget?: boolean
   targetIndex?: number
   totalTargets?: number
+  isIncoming?: boolean
 }
 
 export function TransitionEdge({
@@ -37,12 +41,23 @@ export function TransitionEdge({
     targetPosition,
   })
 
-  const { transition, isMultiTarget, targetIndex, totalTargets } = data || {
+  const { transition, isMultiTarget, targetIndex, totalTargets, isIncoming } = data || {
     transition: { process: "", staysVisible: false },
     isMultiTarget: false,
     targetIndex: 0,
-    totalTargets: 1
+    totalTargets: 1,
+    isIncoming: false
   }
+
+  // Determine edge styling based on transition type
+  const isIncomingTransition = isIncoming || transition.type === "IncomingTransition"
+
+  // Edge colors
+  const normalColor = isIncomingTransition ? "#00FF88" : "#BD00FF"  // Green for incoming, Magenta for outgoing
+  const selectedColor = "#00D9FF"  // Cyan when selected
+
+  // Check if this is an outgoing transition's target edge (the dotted purple ones)
+  const isOutgoingTargetEdge = !isIncomingTransition && id.includes("-target-")
 
   return (
     <>
@@ -60,8 +75,9 @@ export function TransitionEdge({
       <path
         id={id}
         style={{
-          stroke: selected ? "#00D9FF" : "#BD00FF",
+          stroke: selected ? selectedColor : normalColor,
           strokeWidth: selected ? 3 : 2,
+          strokeDasharray: isOutgoingTargetEdge ? "5 5" : undefined,
           fill: "none",
           pointerEvents: "stroke",
           cursor: "pointer",

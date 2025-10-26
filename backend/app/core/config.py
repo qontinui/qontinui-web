@@ -23,7 +23,21 @@ class Settings(BaseSettings):
     )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hour
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30  # Standard refresh token expiry
+    REMEMBER_ME_TOKEN_EXPIRE_DAYS: int = (
+        90  # Long-lived refresh token for trusted devices
+    )
+
+    # Sliding Window Session Configuration
+    SLIDING_WINDOW_ENABLED: bool = Field(
+        default=True, description="Enable sliding window session extension"
+    )
+    SLIDING_WINDOW_THRESHOLD_MINUTES: int = Field(
+        default=5, description="Minutes before token expiry to trigger auto-refresh"
+    )
+    MAX_SESSION_DAYS: int = Field(
+        default=30, description="Absolute maximum session duration in days"
+    )
 
     # fastapi-users secrets (should be different from SECRET_KEY)
     ACCESS_SECRET_KEY: str | None = Field(
@@ -115,6 +129,32 @@ class Settings(BaseSettings):
     )
     STORAGE_USE_SSL: bool = Field(
         default=True, description="Use SSL for storage connections"
+    )
+
+    # Background cleanup jobs
+    CLEANUP_ENABLED: bool = Field(
+        default=True,
+        description="Enable automatic cleanup of expired sessions and old data",
+    )
+    CLEANUP_SESSION_DAYS: int = Field(
+        default=90, description="Delete device sessions not accessed in this many days"
+    )
+    CLEANUP_ANALYTICS_DAYS: int = Field(
+        default=90, description="Delete analytics events older than this many days"
+    )
+    CLEANUP_SCHEDULE: str = Field(
+        default="0 2 * * *",
+        description="Cron schedule for cleanup jobs (format: minute hour day month weekday)",
+    )
+
+    # Device verification settings
+    REQUIRE_DEVICE_VERIFICATION: bool = Field(
+        default=False,
+        description="Require email verification for new devices (optional feature)",
+    )
+    DEVICE_VERIFICATION_REQUIRED_FOR_TRUSTED: bool = Field(
+        default=True,
+        description="Device must be verified before it can be marked as trusted",
     )
 
     @field_validator("SECRET_KEY")

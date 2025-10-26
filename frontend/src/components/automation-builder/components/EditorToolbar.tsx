@@ -225,7 +225,7 @@ export function EditorToolbar({
             title={
               isLinear
                 ? 'Convert to Graph Workflow'
-                : 'Convert to Sequential Process'
+                : 'Convert to Sequential Workflow'
             }
           >
             <ArrowLeftRight className="w-4 h-4 mr-2" />
@@ -365,7 +365,7 @@ export function CompactToolbar({
           title={
             isLinear
               ? 'Convert to Workflow'
-              : 'Convert to Process'
+              : 'Convert to Sequential Workflow'
           }
         >
           <ArrowLeftRight className="w-4 h-4" />

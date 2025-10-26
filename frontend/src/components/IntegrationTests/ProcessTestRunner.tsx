@@ -101,17 +101,17 @@ export const ProcessTestRunner: React.FC = () => {
     const process = processes.find(p => p.id === selectedProcess);
     if (!process) return;
 
-    // Validate process has required fields for integration testing
+    // Validate workflow has required fields for integration testing
     if (!process.initialScreenshotId) {
-      toast.error("Process configuration incomplete", {
-        description: "Please set an initial screenshot for this process in the Process Builder tab."
+      toast.error("Workflow configuration incomplete", {
+        description: "Please set an initial screenshot for this workflow in the Workflow Builder tab."
       });
       return;
     }
 
     if (!process.initialStateIds || process.initialStateIds.length === 0) {
-      toast.error("Process configuration incomplete", {
-        description: "Please set initial active states for this process in the Process Builder tab."
+      toast.error("Workflow configuration incomplete", {
+        description: "Please set initial active states for this workflow in the Workflow Builder tab."
       });
       return;
     }

@@ -6,6 +6,7 @@ import { AuthProvider } from "@/contexts/auth-context";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { SessionTimeoutWarning } from "@/components/session-timeout-warning";
+import { RefreshTokenExpiryWarning } from "@/components/refresh-token-expiry-warning";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { BetaBanner } from "@/components/beta-banner";
 import { OnboardingTour } from "@/components/onboarding-tour";
@@ -44,10 +45,11 @@ export default function RootLayout({
         <ErrorBoundary>
           <QueryProvider>
             <AuthProvider>
-              <ActivityTracker />
+              {/* <ActivityTracker /> */}
               <BetaBanner />
               {children}
-              <SessionTimeoutWarning />
+              {/* <SessionTimeoutWarning /> */}
+              <RefreshTokenExpiryWarning />
               <OfflineIndicator />
               <OnboardingTour />
             </AuthProvider>

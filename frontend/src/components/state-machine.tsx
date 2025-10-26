@@ -6,7 +6,7 @@ import { useState, useCallback, useRef, useEffect } from "react"
 import { flushSync } from "react-dom"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Square, Trash2, Settings, ArrowRight, MapPin, Map, Type, Network } from "lucide-react"
+import { Plus, Square, Trash2, Settings, ArrowRight, MapPin, Type, Network } from "lucide-react"
 import {
   ReactFlow,
   type Node,
@@ -38,7 +38,6 @@ import {
 import { StateUpdateCoordinator } from "@/contexts/automation-context/state-update-coordinator"
 import { ImageSelector } from "@/components/image-selector"
 import { OutgoingTransitionBuilder } from "@/components/outgoing-transition-builder"
-import { IncomingTransitionBuilder } from "@/components/incoming-transition-builder"
 import { StatePropertiesPanel } from "@/components/state-properties-panel"
 import { TransitionPropertiesPanel } from "@/components/transition-properties-panel"
 import { getLayoutedElements } from "@/lib/layout-utils"
@@ -64,6 +63,7 @@ export function StateStructure() {
     updateTransition,
     deleteTransition,
     workflows,
+    addWorkflow,
     images,
     updateImageUsage,
     removeImageUsage,
@@ -162,11 +162,14 @@ export function StateStructure() {
 
   React.useEffect(() => {
     // Check which states have IncomingTransitions
-    const statesWithIncomingTransitions = new Set(
-      transitions
-        .filter((t): t is IncomingTransition => t.type === "IncomingTransition")
-        .map((t) => t.toState)
-    )
+    // Map incoming transitions by state
+    const incomingTransitionsByState = new Map<string, IncomingTransition[]>()
+    transitions
+      .filter((t): t is IncomingTransition => t.type === "IncomingTransition")
+      .forEach((t) => {
+        const existing = incomingTransitionsByState.get(t.toState) || []
+        incomingTransitionsByState.set(t.toState, [...existing, t])
+      })
 
     // Create state nodes
     const stateNodes: Node[] = states.map((state) => ({
@@ -176,7 +179,8 @@ export function StateStructure() {
       data: {
         state: { ...state }, // Spread to create new reference for React to detect changes
         images,
-        hasIncomingTransitions: statesWithIncomingTransitions.has(state.id),
+        hasIncomingTransitions: incomingTransitionsByState.has(state.id),
+        incomingTransitions: incomingTransitionsByState.get(state.id) || [],
       },
     }))
 
@@ -184,6 +188,7 @@ export function StateStructure() {
     const transitionNodes: Node[] = []
     const newEdges: Edge[] = []
 
+    // First, handle OutgoingTransitions
     transitions
       .filter((t): t is OutgoingTransition => t.type === "OutgoingTransition")
       .forEach((transition) => {
@@ -261,16 +266,14 @@ export function StateStructure() {
                 target: targetState,
                 type: "transitionEdge",
                 data: { transition, isMultiTarget: isMultiTarget },
-                style: {
-                  stroke: "#00D9FF",
-                  strokeWidth: 2,
-                  strokeDasharray: "5 5"
-                },
                 animated: true
               })
             })
         }
       })
+
+    // IncomingTransitions are now shown as badges on state nodes
+    // No need to create separate nodes and edges for them
 
     const newNodes = [...stateNodes, ...transitionNodes]
 
@@ -619,8 +622,13 @@ export function StateStructure() {
     ? transitions.find((t) => {
         // Handle direct transition IDs (from clicking transition nodes)
         if (t.id === selectedEdge) return true
-        // Handle edge IDs with suffixes
-        return selectedEdge.startsWith(t.id + '-')
+
+        // Handle outgoing transition edge IDs with suffixes
+        if (selectedEdge.startsWith(t.id + '-') && t.type === 'OutgoingTransition') {
+          return true
+        }
+
+        return false
       })
     : null
 
@@ -682,7 +690,6 @@ export function StateStructure() {
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">Transitions</h3>
             <OutgoingTransitionBuilder />
-            <IncomingTransitionBuilder />
           </div>
         </div>
       </div>
@@ -733,7 +740,16 @@ export function StateStructure() {
             state={selectedState}
             allStates={states}
             images={images}
+            incomingTransitions={transitions.filter(
+              (t): t is IncomingTransition =>
+                t.type === "IncomingTransition" && t.toState === selectedState.id
+            )}
+            workflows={workflows}
             updateState={updateSelectedState}
+            addTransition={addTransition}
+            updateTransition={updateTransition}
+            deleteTransition={deleteTransition}
+            addWorkflow={addWorkflow}
             addStateImage={addStateImage}
             updateStateImage={updateStateImage}
             removeStateImage={removeStateImage}

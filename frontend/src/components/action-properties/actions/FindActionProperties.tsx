@@ -6,6 +6,7 @@ import { ActionPropertiesComponentProps } from "../types"
 import { TimingProperties } from "../TimingProperties"
 import { SimilarityThresholdOverride } from "../SimilarityThresholdOverride"
 import { SearchStrategyOverride } from "../SearchStrategyOverride"
+import { DurationOverride } from "../DurationOverride"
 
 /**
  * Properties component for FIND action.
@@ -42,6 +43,7 @@ export function FindActionProperties({
 
       <SimilarityThresholdOverride action={action} updateConfig={updateConfig} />
       <SearchStrategyOverride action={action} updateConfig={updateConfig} />
+      <DurationOverride action={action} updateConfig={updateConfig} />
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
   )

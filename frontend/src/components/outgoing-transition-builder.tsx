@@ -13,20 +13,21 @@ import { toast } from "sonner"
 import { useAutomation } from "@/contexts/automation-context"
 
 interface OutgoingTransitionBuilderProps {
-  preselectedProcess?: string
+  preselectedWorkflow?: string
   onClose?: () => void
 }
 
-export function OutgoingTransitionBuilder({ preselectedProcess, onClose }: OutgoingTransitionBuilderProps = {}) {
+export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: OutgoingTransitionBuilderProps = {}) {
   const { states, workflows, addTransition } = useAutomation()
-  const [open, setOpen] = useState(!!preselectedProcess)
+  const [open, setOpen] = useState(!!preselectedWorkflow)
 
   // OutgoingTransition fields
   const [fromState, setFromState] = useState("")
   const [staysVisible, setStaysVisible] = useState(false)
   const [activateStates, setActivateStates] = useState<string[]>([])
   const [deactivateStates, setDeactivateStates] = useState<string[]>([])
-  const [selectedProcess, setSelectedProcess] = useState(preselectedProcess || "")
+  const [selectedWorkflows, setSelectedWorkflows] = useState<string[]>(preselectedWorkflow ? [preselectedWorkflow] : [])
+  const [workflowCategoryFilter, setWorkflowCategoryFilter] = useState<string>("Transitions")
 
   // Handle from state selection
   const handleFromStateChange = (stateId: string) => {
@@ -85,7 +86,9 @@ export function OutgoingTransitionBuilder({ preselectedProcess, onClose }: Outgo
       activateStates,
       staysVisible,
       deactivateStates,
-      process: selectedProcess
+      workflows: selectedWorkflows,
+      timeout: 10000,
+      retryCount: 0
     }
 
     addTransition(newTransition)
@@ -96,7 +99,8 @@ export function OutgoingTransitionBuilder({ preselectedProcess, onClose }: Outgo
     setStaysVisible(false)
     setActivateStates([])
     setDeactivateStates([])
-    setSelectedProcess("")
+    setSelectedWorkflows([])
+    setWorkflowCategoryFilter("Transitions")
     setOpen(false)
     onClose?.()
   }
@@ -117,7 +121,7 @@ export function OutgoingTransitionBuilder({ preselectedProcess, onClose }: Outgo
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      {!preselectedProcess && (
+      {!preselectedWorkflow && (
         <DialogTrigger asChild>
           <Button className="w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black">
             <ArrowRightLeft className="w-4 h-4 mr-2" />
@@ -269,22 +273,107 @@ export function OutgoingTransitionBuilder({ preselectedProcess, onClose }: Outgo
           </div>
 
           <div className="space-y-4 pt-4 border-t border-gray-700">
-            <div>
-              <Label>Process to Execute (Optional)</Label>
-              <Select value={selectedProcess || "none"} onValueChange={(value) => setSelectedProcess(value === "none" ? "" : value)}>
-                <SelectTrigger className="bg-transparent border-gray-600 mt-2">
-                  <SelectValue placeholder="Select a process to execute" />
+            <Label>Workflows to Execute (Optional)</Label>
+
+            {/* Category Filter */}
+            <div className="space-y-2">
+              <Label className="text-xs text-gray-400">Filter by Category</Label>
+              <Select value={workflowCategoryFilter} onValueChange={setWorkflowCategoryFilter}>
+                <SelectTrigger className="bg-transparent border-gray-600">
+                  <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  <SelectItem value="none">None</SelectItem>
-                  {workflows.map((workflow) => (
-                    <SelectItem key={workflow.id} value={workflow.id}>
-                      {workflow.name} ({workflow.actions.length} actions)
-                    </SelectItem>
-                  ))}
+                <SelectContent className="bg-[#27272A] border-gray-700">
+                  <SelectItem value="All">All Categories</SelectItem>
+                  <SelectItem value="Transitions">Transitions</SelectItem>
+                  <SelectItem value="Main">Main</SelectItem>
+                  {Array.from(new Set(workflows.map(w => w.category || "Main")))
+                    .filter(c => c !== "Main" && c !== "Transitions")
+                    .map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Workflow Selection */}
+            <div className="space-y-2">
+              <Label className="text-xs text-gray-400">Available Workflows</Label>
+              <div className="max-h-[180px] overflow-y-auto space-y-1 border border-gray-700 rounded p-2">
+                {workflows
+                  .filter(w => {
+                    const category = w.category || "Main"
+                    return workflowCategoryFilter === "All" || category === workflowCategoryFilter
+                  })
+                  .filter(w => !selectedWorkflows.includes(w.id))
+                  .length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">
+                      {workflowCategoryFilter === "Transitions"
+                        ? "No workflows in Transitions category. Try 'All Categories' to see all workflows."
+                        : "No available workflows"}
+                    </p>
+                  ) : (
+                    workflows
+                      .filter(w => {
+                        const category = w.category || "Main"
+                        return workflowCategoryFilter === "All" || category === workflowCategoryFilter
+                      })
+                      .filter(w => !selectedWorkflows.includes(w.id))
+                      .map((workflow) => (
+                        <button
+                          key={workflow.id}
+                          type="button"
+                          onClick={() => setSelectedWorkflows(prev => [...prev, workflow.id])}
+                          className="w-full text-left p-2 bg-gray-800 hover:bg-gray-700 rounded text-sm transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>{workflow.name}</span>
+                            <Badge className="text-xs">{workflow.category || "Main"}</Badge>
+                          </div>
+                          {workflow.description && (
+                            <p className="text-xs text-gray-400 mt-1">{workflow.description}</p>
+                          )}
+                        </button>
+                      ))
+                  )}
+              </div>
+            </div>
+
+            {/* Selected Workflows */}
+            {selectedWorkflows.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">Selected Workflows (will execute in order)</Label>
+                <div className="space-y-1">
+                  {selectedWorkflows.map((workflowId, index) => {
+                    const workflow = workflows.find(w => w.id === workflowId)
+                    return (
+                      <div
+                        key={workflowId}
+                        className="flex items-center justify-between p-2 bg-gray-800 rounded"
+                      >
+                        <div className="flex items-center gap-2 flex-1">
+                          <Badge className="text-xs bg-[#00FF88] text-black">{index + 1}</Badge>
+                          <span className="text-sm">{workflow?.name || "Unknown"}</span>
+                          {workflow?.category && (
+                            <Badge variant="outline" className="text-xs">{workflow.category}</Badge>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
+                          onClick={() => setSelectedWorkflows(prev => prev.filter(id => id !== workflowId))}
+                        >
+                          <span className="text-lg">×</span>
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-3 pt-4">

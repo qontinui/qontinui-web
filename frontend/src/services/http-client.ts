@@ -51,15 +51,21 @@ export class HttpClient {
         console.log('[HttpClient] Token refresh successful, retrying request');
         return this.executeSingleRequest(url, options, skipAuth);
       } else {
-        // Only trigger session expired if we truly have no valid tokens
-        const hasRefreshToken = !!this.tokenManager.getRefreshToken();
-        if (!hasRefreshToken && this.onSessionExpired) {
-          console.error('[HttpClient] No refresh token available - session truly expired');
-          this.onSessionExpired();
-        } else {
-          console.warn('[HttpClient] Token refresh failed but still have refresh token - may be temporary issue');
-        }
+        // DISABLED: Automatic logout on 401
+        // Users should be able to stay logged in even if some API calls fail
+        console.warn('[HttpClient] Token refresh failed - returning 401 response without auto-logout');
         return response;
+
+        // Original auto-logout logic (disabled):
+        // Only trigger session expired if we truly have no valid tokens
+        // const hasRefreshToken = !!this.tokenManager.getRefreshToken();
+        // if (!hasRefreshToken && this.onSessionExpired) {
+        //   console.error('[HttpClient] No refresh token available - session truly expired');
+        //   this.onSessionExpired();
+        // } else {
+        //   console.warn('[HttpClient] Token refresh failed but still have refresh token - may be temporary issue');
+        // }
+        // return response;
       }
     }
 
@@ -159,12 +165,27 @@ export class HttpClient {
         return true;
       } else {
         console.error('[HttpClient] Token refresh failed with status:', response.status);
+
+        // If refresh token is invalid (401/403), session has truly expired
+        if (response.status === 401 || response.status === 403) {
+          console.error('[HttpClient] Refresh token is invalid - triggering session expiry');
+          this.tokenManager.clearTokens();
+
+          // Trigger session expired handler (which dispatches the event)
+          if (this.onSessionExpired) {
+            this.onSessionExpired();
+          }
+        } else {
+          // For other errors, keep tokens and allow retry
+          console.warn('[HttpClient] Refresh failed but keeping tokens - may be temporary server issue');
+        }
       }
     } catch (error) {
       console.error('[HttpClient] Failed to refresh token:', error);
+      // Network errors - keep tokens for retry
+      console.warn('[HttpClient] Network error during refresh - keeping tokens for retry');
     }
 
-    this.tokenManager.clearTokens();
     return false;
   }
 }

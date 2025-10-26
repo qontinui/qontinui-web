@@ -29,12 +29,18 @@ class WorkerSettings:
     health_check_interval = 60  # Health check every 60 seconds
 
     # Task functions
+    from app.worker.scheduler import get_cleanup_cron_jobs, run_all_cleanup_tasks
     from app.worker.tasks import (
-        cleanup_old_data_task,
         send_analytics_report_task,
         send_email_task,
         send_password_reset_email_task,
         send_verification_email_task,
+    )
+    from app.worker.tasks.cleanup_tasks import (
+        cleanup_expired_device_sessions,
+        cleanup_expired_sessions,
+        cleanup_old_analytics_events,
+        cleanup_token_blacklist,
     )
 
     functions = [
@@ -42,26 +48,27 @@ class WorkerSettings:
         send_verification_email_task,
         send_password_reset_email_task,
         send_analytics_report_task,
-        cleanup_old_data_task,
+        # Cleanup tasks
+        cleanup_expired_sessions,
+        cleanup_expired_device_sessions,
+        cleanup_old_analytics_events,
+        cleanup_token_blacklist,
+        run_all_cleanup_tasks,
     ]
 
-    # Cron jobs - Enable these when Redis is deployed
-    # Runs cleanup daily at 2 AM UTC
-    # Runs weekly admin report on Monday at 9 AM UTC
-    cron_jobs = [
-        # Daily cleanup of old audit logs and metrics (keeps last 90 days)
-        # {
-        #     "function": cleanup_old_data_task,
-        #     "hour": 2,
-        #     "minute": 0,
-        #     "keep_result_forever": True,
-        # },
-        # Weekly analytics report for admin (user_id=1)
-        # {
-        #     "function": send_analytics_report_task,
-        #     "kwargs": {"user_id": 1, "report_type": "weekly"},
-        #     "weekday": 1,  # Monday
-        #     "hour": 9,
-        #     "minute": 0,
-        # },
-    ]
+    # Cron jobs - Dynamically loaded from scheduler
+    # The scheduler will enable/disable jobs based on CLEANUP_ENABLED setting
+    # Default schedule: daily at 2 AM UTC (configurable via CLEANUP_SCHEDULE)
+    cron_jobs = get_cleanup_cron_jobs()
+
+    # Example: Commented out old cron jobs for reference
+    # Weekly analytics report for admin (user_id=1)
+    # cron_jobs.extend([
+    #     {
+    #         "function": send_analytics_report_task,
+    #         "kwargs": {"user_id": 1, "report_type": "weekly"},
+    #         "weekday": 1,  # Monday
+    #         "hour": 9,
+    #         "minute": 0,
+    #     },
+    # ])

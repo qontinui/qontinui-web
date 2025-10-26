@@ -15,7 +15,7 @@ export { TypeActionProperties } from "./TypeActionProperties"
 export { ScrollActionProperties } from "./ScrollActionProperties"
 export { VanishActionProperties } from "./VanishActionProperties"
 export { GoToStateActionProperties } from "./GoToStateActionProperties"
-export { RunProcessActionProperties } from "./RunProcessActionProperties"
+export { RunWorkflowActionProperties } from "./RunWorkflowActionProperties"
 
 // Import Phase 1 components
 export { GetVariableActionProperties } from "./data-operations/GetVariableActionProperties"
@@ -35,7 +35,7 @@ import { TypeActionProperties } from "./TypeActionProperties"
 import { ScrollActionProperties } from "./ScrollActionProperties"
 import { VanishActionProperties } from "./VanishActionProperties"
 import { GoToStateActionProperties } from "./GoToStateActionProperties"
-import { RunProcessActionProperties } from "./RunProcessActionProperties"
+import { RunWorkflowActionProperties } from "./RunWorkflowActionProperties"
 
 // Import Phase 1 components
 import { GetVariableActionProperties } from "./data-operations/GetVariableActionProperties"
@@ -50,14 +50,13 @@ actionConfigRegistry.register("FIND_STATE_IMAGE", FindStateImageProperties, "FIN
 actionConfigRegistry.register("CLICK", ClickActionProperties, "CLICK")
 actionConfigRegistry.register("MOUSE_MOVE", MouseMoveProperties, "MOUSE_MOVE")
 actionConfigRegistry.registerMultiple(["MOUSE_DOWN", "MOUSE_UP"], MouseButtonProperties, "MOUSE_DOWN/MOUSE_UP")
-actionConfigRegistry.registerMultiple(["DOUBLE_CLICK", "RIGHT_CLICK"], SimpleClickProperties, "DOUBLE_CLICK/RIGHT_CLICK")
 actionConfigRegistry.registerMultiple(["KEY_PRESS", "KEY_DOWN", "KEY_UP"], KeyboardActionProperties, "KEY_PRESS/KEY_DOWN/KEY_UP")
 actionConfigRegistry.register("DRAG", DragActionProperties, "DRAG")
 actionConfigRegistry.register("TYPE", TypeActionProperties, "TYPE")
 actionConfigRegistry.register("SCROLL", ScrollActionProperties, "SCROLL")
 actionConfigRegistry.register("VANISH", VanishActionProperties, "VANISH")
 actionConfigRegistry.register("GO_TO_STATE", GoToStateActionProperties, "GO_TO_STATE")
-actionConfigRegistry.register("RUN_PROCESS", RunProcessActionProperties, "RUN_PROCESS")
+actionConfigRegistry.register("RUN_WORKFLOW", RunWorkflowActionProperties, "RUN_WORKFLOW")
 
 // Register Phase 1 components
 actionConfigRegistry.register("GET_VARIABLE", GetVariableActionProperties, "GET_VARIABLE")

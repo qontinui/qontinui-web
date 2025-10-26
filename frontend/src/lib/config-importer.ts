@@ -30,7 +30,7 @@ interface State {
 interface Transition {
   id: string;
   type: "OutgoingTransition" | "IncomingTransition";
-  processes: string[];
+  workflows: string[];
   timeout: number;
   retryCount: number;
   [key: string]: any;
@@ -294,10 +294,24 @@ export class ConfigImporter {
         }
       }
 
-      // Copy other config properties
+      // Handle GO_TO_STATE action: convert stateIds array to internal 'states' field
+      if (action.type === 'GO_TO_STATE' && action.config.stateIds) {
+        internalConfig.states = action.config.stateIds;
+      }
+
+      // Handle FIND_STATE_IMAGE action: convert stateId to internal 'state' field
+      if (action.type === 'FIND_STATE_IMAGE' && action.config.stateId) {
+        internalConfig.state = action.config.stateId;
+      }
+
+      // Copy other config properties (excluding converted fields)
       const configKeys = Object.keys(action.config);
       for (const key of configKeys) {
-        if (key !== 'target') {
+        if (key !== 'target' &&
+            key !== 'stateIds' &&
+            key !== 'stateNames' &&
+            key !== 'stateId' &&
+            key !== 'stateName') {
           internalConfig[key] = action.config[key];
         }
       }
@@ -447,23 +461,31 @@ export class ConfigImporter {
    */
   private importTransitions(exportTransitions: any[]): Transition[] {
     return exportTransitions.map(exportTransition => {
-      // Map export type names to internal type names
-      let type: "OutgoingTransition" | "IncomingTransition";
-      if (exportTransition.type === 'OutgoingTransition' || exportTransition.type === 'FromTransition') {
-        type = 'OutgoingTransition';
-      } else if (exportTransition.type === 'IncomingTransition' || exportTransition.type === 'ToTransition') {
-        type = 'IncomingTransition';
-      } else {
-        // Default fallback
-        type = exportTransition.type;
+      const type: "OutgoingTransition" | "IncomingTransition" = exportTransition.type;
+
+      // Convert from export format to internal WorkflowReference[] format
+      const workflowRefs: any[] = [];
+
+      // Add referenced workflows
+      if (Array.isArray(exportTransition.workflows)) {
+        exportTransition.workflows.forEach((workflowId: string) => {
+          workflowRefs.push({ type: 'reference', workflowId });
+        });
+      }
+
+      // Add inline workflows
+      if (Array.isArray(exportTransition.inlineWorkflows)) {
+        exportTransition.inlineWorkflows.forEach((workflow: any) => {
+          workflowRefs.push({ type: 'inline', workflow });
+        });
       }
 
       const transition: Transition = {
         id: exportTransition.id,
         type: type,
-        processes: Array.isArray(exportTransition.processes) ? exportTransition.processes : [],
-        timeout: exportTransition.timeout,
-        retryCount: exportTransition.retryCount
+        workflows: workflowRefs,
+        timeout: exportTransition.timeout || 10000,
+        retryCount: exportTransition.retryCount || 0
       };
 
       if (type === 'OutgoingTransition') {
@@ -472,10 +494,8 @@ export class ConfigImporter {
         transition.staysVisible = exportTransition.staysVisible;
         transition.activateStates = Array.isArray(exportTransition.activateStates) ? exportTransition.activateStates : [];
         transition.deactivateStates = Array.isArray(exportTransition.deactivateStates) ? exportTransition.deactivateStates : [];
-        transition.process = exportTransition.process || '';
       } else if (type === 'IncomingTransition') {
         transition.toState = exportTransition.toState;
-        transition.process = exportTransition.process || '';
       }
 
       return transition;
@@ -496,9 +516,9 @@ export class ConfigImporter {
 
     // Check transition references
     transitions.forEach(transition => {
-      // Check workflow references - only if processes array exists
-      if (Array.isArray(transition.processes)) {
-        transition.processes.forEach(workflowId => {
+      // Check workflow references
+      if (Array.isArray(transition.workflows)) {
+        transition.workflows.forEach(workflowId => {
           if (!workflowIds.has(workflowId)) {
             errors.push(`Transition ${transition.id} references unknown workflow: ${workflowId}`);
           }
@@ -663,15 +683,15 @@ export class ConfigImporter {
     imported.transitions.forEach(transition => {
       const newId = `imported_${Date.now()}_${transition.id}`;
 
-      // Update workflow references (processes field for backward compat)
-      const updatedWorkflows = transition.processes.map(wid =>
+      // Update workflow references
+      const updatedWorkflows = transition.workflows.map(wid =>
         idMap.get(wid) || wid
       );
 
       const updatedTransition: Transition = {
         ...transition,
         id: newId,
-        processes: updatedWorkflows
+        workflows: updatedWorkflows
       };
 
       // Update state references

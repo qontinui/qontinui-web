@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,51 +42,66 @@ class AuthenticationService:
             "token_type": "bearer",
         }
 
-    def refresh_user_tokens(self, refresh_token: str) -> dict | None:
+    async def refresh_user_tokens(self, refresh_token: str) -> dict | None:
         payload = self.token_service.decode_token(refresh_token)
 
         if not payload or payload.get("type") != "refresh":
             return None
 
         token_jti = payload.get("jti")
-        if token_jti and self.blacklist_service.is_blacklisted(token_jti):
+        if token_jti and await self.blacklist_service.is_blacklisted(token_jti):
             return None
 
         user_id = payload.get("sub")
         if not user_id:
             return None
 
-        self.blacklist_service.blacklist_token(token_jti)
+        # Get expiry from payload for TTL
+        expiry = None
+        if "exp" in payload:
+            expiry = datetime.fromtimestamp(payload["exp"])
+
+        await self.blacklist_service.blacklist_token(token_jti, expiry)
 
         return self.create_user_tokens(user_id)
 
-    def logout_user(
+    async def logout_user(
         self, access_token: str | None = None, refresh_token: str | None = None
     ) -> bool:
         success = False
 
         if access_token:
-            token_jti = self.token_service.extract_token_id(access_token)
+            payload = self.token_service.decode_token(access_token)
+            token_jti = payload.get("jti") if payload else None
             if token_jti:
-                self.blacklist_service.blacklist_token(token_jti)
+                # Get expiry from payload for TTL
+                expiry = None
+                if "exp" in payload:
+                    expiry = datetime.fromtimestamp(payload["exp"])
+                await self.blacklist_service.blacklist_token(token_jti, expiry)
                 success = True
 
         if refresh_token:
-            token_jti = self.token_service.extract_token_id(refresh_token)
+            payload = self.token_service.decode_token(refresh_token)
+            token_jti = payload.get("jti") if payload else None
             if token_jti:
-                self.blacklist_service.blacklist_token(token_jti)
+                # Get expiry from payload for TTL
+                expiry = None
+                if "exp" in payload:
+                    expiry = datetime.fromtimestamp(payload["exp"])
+                await self.blacklist_service.blacklist_token(token_jti, expiry)
                 success = True
 
         return success
 
-    def validate_access_token(self, token: str) -> dict | None:
+    async def validate_access_token(self, token: str) -> dict | None:
         payload = self.token_service.decode_token(token)
 
         if not payload or payload.get("type") != "access":
             return None
 
         token_jti = payload.get("jti")
-        if token_jti and self.blacklist_service.is_blacklisted(token_jti):
+        if token_jti and await self.blacklist_service.is_blacklisted(token_jti):
             return None
 
         return payload

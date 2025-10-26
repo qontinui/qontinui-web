@@ -58,6 +58,77 @@ export { StateIdManager } from "./state-id-manager"
 export { TransitionReferenceUpdater } from "./transition-reference-updater"
 export { StateUpdateCoordinator } from "./state-update-coordinator"
 
+// ============================================================================
+// Data Migration Functions
+// ============================================================================
+
+/**
+ * Migrate workflows from old format to new format
+ * - RUN_PROCESS → RUN_WORKFLOW
+ * - processId → workflowId
+ */
+function migrateWorkflows(workflows: Workflow[]): Workflow[] {
+  return workflows.map(workflow => {
+    const migratedActions = workflow.actions.map(action => {
+      // Migrate RUN_PROCESS to RUN_WORKFLOW
+      if (action.type === 'RUN_PROCESS') {
+        const config = { ...action.config }
+
+        // Migrate processId to workflowId
+        if ((config as any).processId) {
+          (config as any).workflowId = (config as any).processId
+          delete (config as any).processId
+        }
+
+        // Migrate processRepetition to repetition
+        if ((config as any).processRepetition) {
+          (config as any).repetition = (config as any).processRepetition
+          delete (config as any).processRepetition
+        }
+
+        return {
+          ...action,
+          type: 'RUN_WORKFLOW' as any,
+          config
+        }
+      }
+
+      return action
+    })
+
+    return {
+      ...workflow,
+      actions: migratedActions
+    }
+  })
+}
+
+/**
+ * Migrate transitions from old format to new format
+ * - Populate empty workflows arrays from old process field
+ */
+function migrateTransitions(transitions: Transition[]): Transition[] {
+  return transitions.map(transition => {
+    // If workflows array is empty but old process field exists, migrate it
+    if ((!transition.workflows || transition.workflows.length === 0) && (transition as any).process) {
+      return {
+        ...transition,
+        workflows: [(transition as any).process]
+      }
+    }
+
+    // Ensure workflows is always an array
+    if (!transition.workflows) {
+      return {
+        ...transition,
+        workflows: []
+      }
+    }
+
+    return transition
+  })
+}
+
 const AutomationContext = createContext<AutomationContextType | undefined>(undefined)
 
 export const useAutomation = () => {
@@ -276,9 +347,37 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         screenshotDB.getByProject(projectName),
       ])
 
-      setWorkflows(loadedWorkflows)
+      // Migrate old data formats to new schema
+      const migratedWorkflows = migrateWorkflows(loadedWorkflows)
+      const migratedTransitions = migrateTransitions(loadedTransitions)
+
+      // Save migrated data back to database if changes were made
+      let workflowsMigrated = false
+      let transitionsMigrated = false
+
+      for (let i = 0; i < migratedWorkflows.length; i++) {
+        if (JSON.stringify(migratedWorkflows[i]) !== JSON.stringify(loadedWorkflows[i])) {
+          workflowsMigrated = true
+          const workflowWithProject = { ...migratedWorkflows[i], projectName } as Workflow & { projectName: string }
+          await projectDB.updateWorkflow(workflowWithProject)
+        }
+      }
+
+      for (let i = 0; i < migratedTransitions.length; i++) {
+        if (JSON.stringify(migratedTransitions[i]) !== JSON.stringify(loadedTransitions[i])) {
+          transitionsMigrated = true
+          const transitionWithProject = { ...migratedTransitions[i], projectName } as Transition & { projectName: string }
+          await projectDB.updateTransition(transitionWithProject)
+        }
+      }
+
+      if (workflowsMigrated || transitionsMigrated) {
+        console.log(`Data migration completed - Workflows: ${workflowsMigrated}, Transitions: ${transitionsMigrated}`)
+      }
+
+      setWorkflows(migratedWorkflows)
       setStates(loadedStates)
-      setTransitions(loadedTransitions)
+      setTransitions(migratedTransitions)
       setImages(loadedImages)
       setScreenshots(loadedScreenshots)
 
@@ -339,6 +438,28 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
     }
     setStates((prev) => StateManager.addState(prev, stateWithProject))
+
+    // Auto-create an incoming transition for this state
+    // Every state should have exactly one incoming transition
+    const incomingTransition: IncomingTransition = {
+      id: `incoming-${state.id}`,
+      type: 'IncomingTransition',
+      toState: state.id,
+      workflows: [], // Default: empty workflows (returns true by default)
+      timeout: 10000,
+      retryCount: 3,
+      projectName,
+    }
+
+    try {
+      await projectDB.addTransition(incomingTransition)
+      setTransitions((prev) => [...prev, incomingTransition])
+    } catch (error: any) {
+      // If transition already exists, ignore the error
+      if (error.name !== 'ConstraintError') {
+        console.error('Failed to create incoming transition:', error)
+      }
+    }
   }, [projectName])
 
   const updateState = useCallback(async (state: State) => {

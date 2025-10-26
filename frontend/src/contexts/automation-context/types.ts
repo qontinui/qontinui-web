@@ -1,6 +1,7 @@
 // Import ActionSnapshot type
 import { ActionSnapshot } from '../../lib/integration-testing-framework';
 import type { ProjectSettings } from '@/types/project-settings';
+import type { Workflow } from '@/lib/action-schema/action-types';
 
 // ActionHistory type for state objects
 export interface ActionHistory {
@@ -12,6 +13,11 @@ export interface ActionHistory {
 // NOTE: Process type has been removed - use Workflow from action-schema instead
 // All processes are now Workflows (graph format with linear connections)
 // ============================================================================
+
+// Workflow reference types for transitions
+export type WorkflowReference =
+  | { type: 'reference'; workflowId: string }  // Reference to global workflow
+  | { type: 'inline'; workflow: Workflow }     // Inline workflow definition
 
 export interface StateRegion {
   id: string
@@ -138,7 +144,9 @@ export type TransitionType = "OutgoingTransition" | "IncomingTransition"
 export interface BaseTransition {
   id: string
   type: TransitionType
-  process: string
+  workflows: WorkflowReference[] // Ordered list of workflows (references or inline)
+  timeout: number
+  retryCount: number
   position?: { x: number; y: number }  // For transition node positioning
   projectName?: string
 }

@@ -93,26 +93,30 @@ export function exportStatesToQontinui(
       s.associatedStates.includes(state.id)
     );
 
-    // Collect all state images
+    // Collect all state images with deduplication
     const stateImages: QontinuiStateImage[] = [];
+    const imageIds = new Set<string>();
 
     // Add StateImages from state definition
     if (state.stateImages) {
       state.stateImages.forEach(stateImage => {
-        stateImages.push({
-          id: stateImage.id,
-          name: stateImage.name,
-          imageData: stateImage.image, // Assuming this is base64 or a path
-          searchRegions: (stateImage.searchRegions || []).map(sr => ({
-            id: sr.id,
-            name: sr.name,
-            x: sr.x,
-            y: sr.y,
-            width: sr.width,
-            height: sr.height
-          })),
-          fixed: stateImage.fixed || false
-        });
+        if (!imageIds.has(stateImage.id)) {
+          imageIds.add(stateImage.id);
+          stateImages.push({
+            id: stateImage.id,
+            name: stateImage.name,
+            imageData: stateImage.image, // Assuming this is base64 or a path
+            searchRegions: (stateImage.searchRegions || []).map(sr => ({
+              id: sr.id,
+              name: sr.name,
+              x: sr.x,
+              y: sr.y,
+              width: sr.width,
+              height: sr.height
+            })),
+            fixed: stateImage.fixed || false
+          });
+        }
       });
     }
 
@@ -134,7 +138,8 @@ export function exportStatesToQontinui(
         }));
 
       // Only add if not already present
-      if (!stateImages.find(si => si.id === stateImageId)) {
+      if (!imageIds.has(stateImageId)) {
+        imageIds.add(stateImageId);
         stateImages.push({
           id: stateImageId,
           name: screenshot.name,
@@ -145,21 +150,25 @@ export function exportStatesToQontinui(
       }
     });
 
-    // Collect all state regions
+    // Collect all state regions with deduplication
     const stateRegions: QontinuiStateRegion[] = [];
+    const regionIds = new Set<string>();
 
     // Add StateRegions from state definition
     if (state.regions) {
       state.regions.forEach(region => {
-        stateRegions.push({
-          id: region.id,
-          name: region.name,
-          x: region.x,
-          y: region.y,
-          width: region.width,
-          height: region.height,
-          searchRegion: false
-        });
+        if (!regionIds.has(region.id)) {
+          regionIds.add(region.id);
+          stateRegions.push({
+            id: region.id,
+            name: region.name,
+            x: region.x,
+            y: region.y,
+            width: region.width,
+            height: region.height,
+            searchRegion: false
+          });
+        }
       });
     }
 
@@ -168,7 +177,8 @@ export function exportStatesToQontinui(
       screenshot.regions
         .filter(r => r.type === 'StateRegion')
         .forEach(region => {
-          if (!stateRegions.find(sr => sr.id === region.id)) {
+          if (!regionIds.has(region.id)) {
+            regionIds.add(region.id);
             stateRegions.push({
               id: region.id,
               name: region.name,
@@ -182,31 +192,36 @@ export function exportStatesToQontinui(
         });
     });
 
-    // Collect all state locations
+    // Collect all state locations with deduplication
     const stateLocations: QontinuiStateLocation[] = [];
+    const locationIds = new Set<string>();
 
     // Add StateLocations from state definition
     if (state.locations) {
       state.locations.forEach(location => {
-        stateLocations.push({
-          id: location.id,
-          name: location.name,
-          x: location.x,
-          y: location.y,
-          fixed: location.fixed ?? false,
-          anchor: location.anchor ?? false,
-          referenceImageId: location.referenceImageId,
-          offsetX: location.offsetX ?? 0,
-          offsetY: location.offsetY ?? 0,
-          position: location.position
-        });
+        if (!locationIds.has(location.id)) {
+          locationIds.add(location.id);
+          stateLocations.push({
+            id: location.id,
+            name: location.name,
+            x: location.x,
+            y: location.y,
+            fixed: location.fixed ?? false,
+            anchor: location.anchor ?? false,
+            referenceImageId: location.referenceImageId,
+            offsetX: location.offsetX ?? 0,
+            offsetY: location.offsetY ?? 0,
+            position: location.position
+          });
+        }
       });
     }
 
     // Add StateLocations from screenshots
     stateScreenshots.forEach(screenshot => {
       screenshot.locations.forEach(location => {
-        if (!stateLocations.find(sl => sl.id === location.id)) {
+        if (!locationIds.has(location.id)) {
+          locationIds.add(location.id);
           stateLocations.push({
             id: location.id,
             name: location.name,
@@ -223,16 +238,24 @@ export function exportStatesToQontinui(
       });
     });
 
-    // Collect all state strings
-    const stateStrings: QontinuiStateString[] = (state.strings || []).map(str => ({
-      id: str.id,
-      name: str.name,
-      value: str.value,
-      identifier: str.identifier,
-      inputText: str.inputText,
-      expectedText: str.expectedText,
-      regexPattern: str.regexPattern
-    }));
+    // Collect all state strings with deduplication
+    const stateStrings: QontinuiStateString[] = [];
+    const stringIds = new Set<string>();
+
+    (state.strings || []).forEach(str => {
+      if (!stringIds.has(str.id)) {
+        stringIds.add(str.id);
+        stateStrings.push({
+          id: str.id,
+          name: str.name,
+          value: str.value,
+          identifier: str.identifier,
+          inputText: str.inputText,
+          expectedText: str.expectedText,
+          regexPattern: str.regexPattern
+        });
+      }
+    });
 
     return {
       id: state.id,

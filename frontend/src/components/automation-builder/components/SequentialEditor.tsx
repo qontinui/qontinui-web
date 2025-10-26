@@ -7,7 +7,7 @@
 
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -50,7 +50,7 @@ const ACTION_GROUPS = {
     { type: "IF", label: "If/Else", color: "bg-blue-500" },
     { type: "LOOP", label: "Loop", color: "bg-purple-500" },
     { type: "GO_TO_STATE", label: "Go to State", color: "bg-indigo-500" },
-    { type: "RUN_PROCESS", label: "Run Process", color: "bg-pink-500" },
+    { type: "RUN_WORKFLOW", label: "Run Workflow", color: "bg-pink-500" },
   ],
   Verification: [
     { type: "VANISH", label: "Wait for Vanish", color: "bg-red-500" },
@@ -68,8 +68,9 @@ export function SequentialEditor({
 }: SequentialEditorProps) {
   const { states, workflows, images } = useAutomation()
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [insertAtIndex, setInsertAtIndex] = useState<number | null>(null)
 
-  const addAction = (type: Action["type"]) => {
+  const addAction = (type: Action["type"], insertAfterIndex?: number) => {
     const newAction: Action = {
       id: `action-${Date.now()}`,
       type,
@@ -77,8 +78,18 @@ export function SequentialEditor({
       position: [100, 100 + actions.length * 150], // Auto-position vertically
     }
 
-    onUpdateActions([...actions, newAction])
+    if (insertAfterIndex !== undefined && insertAfterIndex >= -1) {
+      // Insert at specific position
+      const updatedActions = [...actions]
+      updatedActions.splice(insertAfterIndex + 1, 0, newAction)
+      onUpdateActions(updatedActions)
+    } else {
+      // Add to end
+      onUpdateActions([...actions, newAction])
+    }
+
     onSelectAction(newAction)
+    setInsertAtIndex(null)
   }
 
   const deleteAction = (actionId: string) => {
@@ -129,13 +140,14 @@ export function SequentialEditor({
   }
 
   return (
-    <div className="space-y-4 p-6">
-      <div className="flex items-center justify-between">
+    <div className="p-6 min-h-full flex flex-col items-center">
+      {/* Header */}
+      <div className="w-full max-w-3xl flex items-center justify-between mb-4">
         <h3 className="text-lg font-medium">Action Timeline</h3>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white">
+            <Button size="sm" className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white">
               <Plus className="w-4 h-4 mr-2" />
               Add Action
             </Button>
@@ -163,7 +175,8 @@ export function SequentialEditor({
         </DropdownMenu>
       </div>
 
-      <div className="space-y-2">
+      {/* Timeline Container */}
+      <div className="w-full max-w-3xl space-y-1">
         {actions.length === 0 ? (
           <div className="text-center py-12 text-gray-500 border-2 border-dashed border-gray-700 rounded-lg">
             <Plus className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -171,72 +184,163 @@ export function SequentialEditor({
             <p className="text-sm">Add an action to get started</p>
           </div>
         ) : (
-          actions.map((action, index) => {
-            const actionType = ACTION_TYPES.find((t) => t.type === action.type)
-            return (
-              <Card
-                key={action.id}
-                draggable
-                onDragStart={() => handleDragStart(index)}
-                onDragOver={(e) => handleDragOver(e, index)}
-                onDragEnd={handleDragEnd}
-                className={`cursor-move transition-all hover:border-[#BD00FF]/50 ${
-                  selectedAction?.id === action.id
-                    ? "border-[#BD00FF] bg-[#BD00FF]/10"
-                    : "border-gray-700 bg-[#27272A]"
-                } ${draggedIndex === index ? "opacity-50" : ""}`}
-                onClick={() => onSelectAction(action)}
-              >
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <GripVertical className="w-4 h-4 text-gray-400 cursor-grab active:cursor-grabbing" />
-                      <Badge className={`${actionType?.color} text-white text-xs`}>
-                        {index + 1}
-                      </Badge>
+          <>
+            {actions.map((action, index) => {
+              const actionType = ACTION_TYPES.find((t) => t.type === action.type)
+              return (
+                <React.Fragment key={action.id}>
+                  {/* Compact Insert Button */}
+                  <div className="relative h-4 group">
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <DropdownMenu open={insertAtIndex === index - 1} onOpenChange={(open) => setInsertAtIndex(open ? index - 1 : null)}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 w-8 p-0 text-gray-500 hover:text-[#BD00FF] hover:bg-[#BD00FF]/10 rounded"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="bg-[#27272A] border-gray-700">
+                          {Object.entries(ACTION_GROUPS).map(([groupName, actions]) => (
+                            <DropdownMenuSub key={groupName}>
+                              <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
+                                {groupName}
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
+                                {actions.map(({ type, label }) => (
+                                  <DropdownMenuItem
+                                    key={type}
+                                    onClick={() => addAction(type as Action["type"], index - 1)}
+                                    className="hover:bg-gray-700 focus:bg-gray-700"
+                                  >
+                                    {label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{actionType?.label}</span>
-                        {action.type !== "GO_TO_STATE" && action.type !== "RUN_PROCESS" && (
-                          <Badge variant="outline" className="text-xs">
-                            {action.type}
-                          </Badge>
-                        )}
-                      </div>
-                      {renderActionSummary(action, states, workflows, images)}
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 text-gray-400 hover:text-[#00D9FF]"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          duplicateAction(action)
-                        }}
-                      >
-                        <Copy className="w-3 h-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          deleteAction(action.id)
-                        }}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
+                    <div className="absolute inset-0 flex items-center pointer-events-none">
+                      <div className="w-full border-t border-gray-800" />
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })
+
+                  {/* Compact Action Card */}
+                  <Card
+                    draggable
+                    onDragStart={() => handleDragStart(index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragEnd={handleDragEnd}
+                    className={`cursor-move transition-all hover:border-[#BD00FF]/50 ${
+                      selectedAction?.id === action.id
+                        ? "border-[#BD00FF] bg-[#BD00FF]/10"
+                        : "border-gray-700 bg-[#27272A]"
+                    } ${draggedIndex === index ? "opacity-50" : ""}`}
+                    onClick={() => onSelectAction(action)}
+                  >
+                    <CardContent className="p-2 px-3">
+                      <div className="flex items-center gap-2">
+                        {/* Drag Handle & Number */}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <GripVertical className="w-3.5 h-3.5 text-gray-500 cursor-grab active:cursor-grabbing" />
+                          <Badge className={`${actionType?.color} text-white text-xs px-1.5 py-0 h-5 min-w-[1.5rem] flex items-center justify-center`}>
+                            {index + 1}
+                          </Badge>
+                        </div>
+
+                        {/* Action Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium text-sm truncate">{actionType?.label}</span>
+                            {action.type !== "GO_TO_STATE" && action.type !== "RUN_WORKFLOW" && (
+                              <Badge variant="outline" className="text-xs px-1 py-0 h-4">
+                                {action.type}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 truncate">
+                            {getActionSummary(action, states, workflows, images)}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-gray-500 hover:text-[#00D9FF] hover:bg-[#00D9FF]/10"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              duplicateAction(action)
+                            }}
+                          >
+                            <Copy className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-gray-500 hover:text-red-400 hover:bg-red-400/10"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              deleteAction(action.id)
+                            }}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </React.Fragment>
+              )
+            })}
+
+            {/* Insert button after last action */}
+            <div className="relative h-4 group">
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <DropdownMenu open={insertAtIndex === actions.length - 1} onOpenChange={(open) => setInsertAtIndex(open ? actions.length - 1 : null)}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 w-8 p-0 text-gray-500 hover:text-[#BD00FF] hover:bg-[#BD00FF]/10 rounded"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Plus className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="bg-[#27272A] border-gray-700">
+                    {Object.entries(ACTION_GROUPS).map(([groupName, actions]) => (
+                      <DropdownMenuSub key={groupName}>
+                        <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
+                          {groupName}
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
+                          {actions.map(({ type, label }) => (
+                            <DropdownMenuItem
+                              key={type}
+                              onClick={() => addAction(type as Action["type"], actions.length - 1)}
+                              className="hover:bg-gray-700 focus:bg-gray-700"
+                            >
+                              {label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className="absolute inset-0 flex items-center pointer-events-none">
+                <div className="w-full border-t border-gray-800" />
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -269,9 +373,9 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
     case "VANISH":
       return { image: null, timeout: 5000, check_interval: 500 }
     case "GO_TO_STATE":
-      return { state: null }
-    case "RUN_PROCESS":
-      return { process: null }
+      return { states: [] }  // Array of state IDs for multi-target pathfinding
+    case "RUN_WORKFLOW":
+      return { workflowId: "" }
     case "IF":
       return {
         condition: { type: "variable", variableName: "", operator: "==", expectedValue: "" },
@@ -407,15 +511,23 @@ function getActionSummary(action: Action, states: any[], workflows: any[], image
       }
       return action.config.image ? `Wait for ${action.config.image} to vanish` : "No image selected"
     case "GO_TO_STATE":
-      if (action.config.state) {
-        const state = states.find((s) => s.id === action.config.state)
-        return state ? `Target: ${state.name}` : `Target: ${action.config.state}`
+      const targetStates = (action.config.states as string[]) || [];
+      if (targetStates.length > 0) {
+        const stateNames = targetStates.map((stateId: string) => {
+          const state = states.find((s) => s.id === stateId);
+          return state ? state.name : stateId;
+        });
+        if (stateNames.length === 1) {
+          return `Target: ${stateNames[0]}`;
+        } else {
+          return `Targets: ${stateNames.join(', ')} (${stateNames.length} states)`;
+        }
       }
-      return "No state selected"
-    case "RUN_PROCESS":
-      if (action.config.process) {
-        const workflow = workflows.find((w: any) => w.id === action.config.process)
-        return workflow ? workflow.name : action.config.process
+      return "No states selected"
+    case "RUN_WORKFLOW":
+      if (action.config.workflowId) {
+        const workflow = workflows.find((w: any) => w.id === action.config.workflowId)
+        return workflow ? workflow.name : action.config.workflowId
       }
       return "No workflow selected"
     case "IF":
