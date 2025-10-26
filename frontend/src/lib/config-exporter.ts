@@ -302,6 +302,32 @@ export class ConfigExporter {
       }
     }
 
+    // Handle TYPE action: convert UI textSource format to schema format
+    if (action.type === 'TYPE') {
+      // If textSource is the string "stateString", convert to TextSource object
+      if ((config as any).textSource === 'stateString') {
+        // Create TextSource object from UI fields
+        if ((config as any).selectedState) {
+          (config as any).textSource = {
+            stateId: (config as any).selectedState,
+            stringIds: (config as any).selectedStateStrings || [],
+            useAll: (config as any).useAllStateStrings || false
+          };
+        } else {
+          // No state selected, remove textSource
+          delete (config as any).textSource;
+        }
+
+        // Clean up UI-specific fields
+        delete (config as any).selectedState;
+        delete (config as any).selectedStateStrings;
+        delete (config as any).useAllStateStrings;
+      } else if ((config as any).textSource === 'manual') {
+        // Manual text mode - remove textSource field, keep text field
+        delete (config as any).textSource;
+      }
+    }
+
     // Handle RUN_WORKFLOW action: convert UI field names to schema format
     if (action.type === 'RUN_WORKFLOW') {
       // Transform enableRepeat/maxRepeats/repeatDelay/repeatUntilSuccess -> repetition object
