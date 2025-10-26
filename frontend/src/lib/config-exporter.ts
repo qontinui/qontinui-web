@@ -47,6 +47,10 @@ export class ConfigExporter {
     // Store settings for use in other methods
     this.settings = settings || this.getDefaultSettings();
 
+    // Export images first and build a lookup map from base64 data to image IDs
+    const exportedImages = await this.exportImages(images || [], screenshots);
+    const base64ToImageId = this.buildBase64ToImageIdMap(exportedImages);
+
     const config: QontinuiConfig = {
       version: this.version,
       metadata: {
@@ -62,9 +66,9 @@ export class ConfigExporter {
           website: '2.0.0'
         }
       },
-      images: await this.exportImages(images || [], screenshots),
+      images: exportedImages,
       workflows: this.exportWorkflows(workflows || [], states || []),
-      states: this.exportStates(states || [], screenshots),
+      states: this.exportStates(states || [], screenshots, base64ToImageId),
       transitions: this.exportTransitions(transitions || [], states || []),
       categories: categories || ['Main'],
       settings: this.convertSettings(settings) || this.getDefaultSettings()
@@ -136,6 +140,28 @@ export class ConfigExporter {
         pause_after_action: projectSettings.wait?.pause_after_action || 0,
       },
     };
+  }
+
+  /**
+   * Build a lookup map from base64 data to image IDs
+   * This is used to convert embedded base64 data in patterns to imageId references
+   */
+  private buildBase64ToImageIdMap(exportedImages: ExportImageAsset[]): Map<string, string> {
+    const map = new Map<string, string>();
+
+    for (const img of exportedImages) {
+      if (img.data) {
+        // Store mapping for bare base64 string
+        map.set(img.data, img.id);
+
+        // Also store mappings with common data URL prefixes
+        map.set(`data:image/png;base64,${img.data}`, img.id);
+        map.set(`data:image/jpeg;base64,${img.data}`, img.id);
+        map.set(`data:image/jpg;base64,${img.data}`, img.id);
+      }
+    }
+
+    return map;
   }
 
   /**
@@ -378,7 +404,7 @@ export class ConfigExporter {
   /**
    * Convert states to export format
    */
-  private exportStates(states: State[], screenshots?: Screenshot[]): ExportState[] {
+  private exportStates(states: State[], screenshots?: Screenshot[], base64ToImageId?: Map<string, string>): ExportState[] {
     if (!states || !Array.isArray(states)) {
       return [];
     }
@@ -451,18 +477,34 @@ export class ConfigExporter {
           stateImages.push({
             id: img.id,
             name: img.name,
-            patterns: img.patterns.map(pattern => ({
-              id: pattern.id,
-              name: pattern.name,
-              image: pattern.image,
-              mask: pattern.mask,
-              searchRegions: pattern.searchRegions || [],
-              fixed: pattern.fixed,
-              similarity: pattern.similarity,
-              targetPosition: pattern.targetPosition,
-              offsetX: pattern.offsetX,
-              offsetY: pattern.offsetY
-            })),
+            patterns: img.patterns.map(pattern => {
+              // Convert embedded base64 data to imageId reference
+              let imageIdRef = pattern.image;
+
+              // If pattern.image is a base64 data URL, look it up in the image map
+              if (base64ToImageId && pattern.image) {
+                const matchedImageId = base64ToImageId.get(pattern.image);
+                if (matchedImageId) {
+                  imageIdRef = matchedImageId;
+                } else {
+                  // Log a warning if we can't find a matching image
+                  console.warn(`State "${state.name}": Pattern "${pattern.name || img.name}" has embedded base64 data that doesn't match any exported image`);
+                }
+              }
+
+              return {
+                id: pattern.id,
+                name: pattern.name,
+                imageId: imageIdRef, // Use imageId instead of image
+                mask: pattern.mask,
+                searchRegions: pattern.searchRegions || [],
+                fixed: pattern.fixed,
+                similarity: pattern.similarity,
+                targetPosition: pattern.targetPosition,
+                offsetX: pattern.offsetX,
+                offsetY: pattern.offsetY
+              };
+            }),
             shared: img.shared,
             source: img.source,
             probability: img.probability,
@@ -820,13 +862,14 @@ export class ConfigExporter {
     (config.states || []).forEach(state => {
       (state.stateImages || []).forEach(stateImage => {
         (stateImage.patterns || []).forEach(pattern => {
-          // Pattern.image contains the image ID reference
-          if (pattern.image && !validImageIds.has(pattern.image)) {
+          // Pattern.imageId contains the image ID reference (updated from pattern.image)
+          const imageRef = (pattern as any).imageId || (pattern as any).image; // Support both for compatibility
+          if (imageRef && !validImageIds.has(imageRef)) {
             const location = `State ${state.name || state.id}: StateImage ${stateImage.name}`;
-            errors.push(`${location} references non-existent image ID: ${pattern.image}`);
+            errors.push(`${location} references non-existent image ID: ${imageRef}`);
             missingRefs.push({
               location,
-              imageId: pattern.image,
+              imageId: imageRef,
               imageName: pattern.name || stateImage.name
             });
           }
@@ -925,15 +968,20 @@ export class ConfigExporter {
     // Fix state image patterns
     (config.states || []).forEach(state => {
       (state.stateImages || []).forEach(stateImage => {
-        (stateImage.patterns || []).forEach(pattern => {
-          if (pattern.image) {
+        (stateImage.patterns || []).forEach((pattern: any) => {
+          // Support both imageId (new) and image (legacy) fields
+          const imageRef = pattern.imageId || pattern.image;
+
+          if (imageRef) {
             // Check if this is base64 data instead of an ID (legacy format)
-            if (pattern.image.startsWith('data:image/')) {
+            if (imageRef.startsWith('data:image/')) {
               // Try to find image by base64 data
-              const matchedImageId = base64ToImageId.get(pattern.image);
+              const matchedImageId = base64ToImageId.get(imageRef);
 
               if (matchedImageId) {
-                pattern.image = matchedImageId;
+                // Update to use imageId field (remove old image field if present)
+                pattern.imageId = matchedImageId;
+                delete pattern.image;
                 details.push(`Fixed ${state.name}: ${stateImage.name} - converted base64 to image ID`);
                 fixed++;
               } else {
@@ -943,7 +991,8 @@ export class ConfigExporter {
                 const newImageId = nameToImageId.get(normalizedName);
 
                 if (newImageId) {
-                  pattern.image = newImageId;
+                  pattern.imageId = newImageId;
+                  delete pattern.image;
                   details.push(`Fixed ${state.name}: ${stateImage.name} - matched by name "${imageName}"`);
                   fixed++;
                 } else {
@@ -953,7 +1002,7 @@ export class ConfigExporter {
               }
             } else {
               // Regular image ID reference
-              const imageExists = (config.images || []).some(img => img.id === pattern.image);
+              const imageExists = (config.images || []).some(img => img.id === imageRef);
 
               if (!imageExists) {
                 // Try to match by pattern name or state image name
@@ -962,7 +1011,8 @@ export class ConfigExporter {
                 const newImageId = nameToImageId.get(normalizedName);
 
                 if (newImageId) {
-                  pattern.image = newImageId;
+                  pattern.imageId = newImageId;
+                  delete pattern.image;
                   details.push(`Fixed ${state.name}: ${stateImage.name} - matched "${imageName}"`);
                   fixed++;
                 } else {
