@@ -112,7 +112,7 @@ export function TypeActionProperties({
                           {index + 1}. {str.name || "Unnamed"}
                         </Label>
                         <div className="text-xs text-gray-500 font-mono mt-1 break-all">
-                          "{str.value}"
+                          "<SpecialKeyDisplay text={str.value} />"
                         </div>
                       </div>
                     </div>

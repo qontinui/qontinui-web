@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 # Set test environment
 os.environ["TESTING"] = "1"
-os.environ["ENVIRONMENT"] = "test"
+os.environ["ENVIRONMENT"] = "development"  # Use development for tests
 
 
 @pytest.fixture(scope="session")

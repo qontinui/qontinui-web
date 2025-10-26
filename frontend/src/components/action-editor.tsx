@@ -28,7 +28,7 @@ interface Action {
     // Control flow actions
     | "IF" | "LOOP"
     // Other actions
-    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
+    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_WORKFLOW"
   config: Record<string, any>
 }
 
@@ -64,7 +64,7 @@ const ACTION_GROUPS = {
     { type: "IF", label: "If/Else", color: "bg-blue-500" },
     { type: "LOOP", label: "Loop", color: "bg-purple-500" },
     { type: "GO_TO_STATE", label: "Go to State", color: "bg-indigo-500" },
-    { type: "RUN_PROCESS", label: "Run Process", color: "bg-pink-500" },
+    { type: "RUN_WORKFLOW", label: "Run Workflow", color: "bg-pink-500" },
   ],
   Verification: [
     { type: "VANISH", label: "Wait for Vanish", color: "bg-red-500" },
@@ -219,7 +219,7 @@ export function ActionEditor({ process, selectedAction, onSelectAction, onUpdate
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{actionType?.label}</span>
-                        {action.type !== "GO_TO_STATE" && action.type !== "RUN_PROCESS" && (
+                        {action.type !== "GO_TO_STATE" && action.type !== "RUN_WORKFLOW" && (
                           <Badge variant="outline" className="text-xs">
                             {action.type}
                           </Badge>
@@ -319,10 +319,10 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
       }
     case "GO_TO_STATE":
       return {
-        state: null,
+        states: [],  // Array of state IDs for multi-target pathfinding
         // pause_before_begin, pause_after_end are optional overrides
       }
-    case "RUN_PROCESS":
+    case "RUN_WORKFLOW":
       return {
         process: null,
         // pause_before_begin, pause_after_end are optional overrides
@@ -548,12 +548,20 @@ function getActionSummary(action: Action, states: any[], processes: any[], image
       }
       return action.config.image ? `Wait for ${action.config.image} to vanish` : "No image selected"
     case "GO_TO_STATE":
-      if (action.config.state) {
-        const state = states.find(s => s.id === action.config.state)
-        return state ? `Target: ${state.name}` : `Target: ${action.config.state}`
+      const targetStates = (action.config.states as string[]) || [];
+      if (targetStates.length > 0) {
+        const stateNames = targetStates.map((stateId: string) => {
+          const state = states.find(s => s.id === stateId);
+          return state ? state.name : stateId;
+        });
+        if (stateNames.length === 1) {
+          return `Target: ${stateNames[0]}`;
+        } else {
+          return `Targets: ${stateNames.join(', ')} (${stateNames.length} states)`;
+        }
       }
-      return "No state selected"
-    case "RUN_PROCESS":
+      return "No states selected"
+    case "RUN_WORKFLOW":
       if (action.config.process) {
         const proc = processes.find(p => p.id === action.config.process)
         return proc ? proc.name : action.config.process

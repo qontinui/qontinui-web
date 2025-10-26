@@ -130,8 +130,8 @@ export function ExecutionControls({
   // Validate and execute
   const handleExecute = () => {
     if (!selectedProcess) {
-      toast.error('No process selected', {
-        description: 'Please select a process to execute',
+      toast.error('No workflow selected', {
+        description: 'Please select a workflow to execute',
       });
       return;
     }

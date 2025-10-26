@@ -8,9 +8,9 @@ import { ActionPropertiesComponentProps } from "../types"
 import { TimingProperties } from "../TimingProperties"
 
 /**
- * Properties component for RUN_PROCESS action.
+ * Properties component for RUN_WORKFLOW action.
  */
-export function RunProcessActionProperties({
+export function RunWorkflowActionProperties({
   action,
   updateConfig,
   processes
@@ -18,10 +18,10 @@ export function RunProcessActionProperties({
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Process to Run</Label>
-        <Select value={action.config.process || ""} onValueChange={(value) => updateConfig("process", value)}>
+        <Label className="text-xs text-gray-400">Workflow to Run</Label>
+        <Select value={action.config.workflowId || ""} onValueChange={(value) => updateConfig("workflowId", value)}>
           <SelectTrigger className="bg-transparent border-gray-700">
-            <SelectValue placeholder="Select a process" />
+            <SelectValue placeholder="Select a workflow" />
           </SelectTrigger>
           <SelectContent className="bg-[#27272A] border-gray-700">
             {processes.map((process) => (
@@ -36,7 +36,7 @@ export function RunProcessActionProperties({
       {/* Repeat Configuration */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">Repeat Process</Label>
+          <Label className="text-xs text-gray-400">Repeat Workflow</Label>
           <Checkbox
             id="enableRepeat"
             checked={action.config.enableRepeat || false}
@@ -105,7 +105,7 @@ export function RunProcessActionProperties({
                     Repeat Until Success or Max Repeats
                   </Label>
                   <p className="text-xs text-gray-500">
-                    Stop early if process succeeds, otherwise continue until Max Repeats
+                    Stop early if workflow succeeds, otherwise continue until Max Repeats
                   </p>
                 </div>
               </div>

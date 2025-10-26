@@ -71,7 +71,7 @@ export const NODE_TYPES: Record<ActionType, NodeComponent> = {
 
   // State Actions
   GO_TO_STATE: SpecialNodes.GO_TO_STATE,
-  RUN_PROCESS: SpecialNodes.RUN_PROCESS,
+  RUN_WORKFLOW: SpecialNodes.RUN_WORKFLOW,
   SCREENSHOT: GuiActionNodes.SCREENSHOT,
 };
 
@@ -143,7 +143,7 @@ export const NODE_TYPE_GROUPS = {
     'STRING_OPERATION',
     'MATH_OPERATION',
   ] as ActionType[],
-  state: ['GO_TO_STATE', 'RUN_PROCESS', 'SCREENSHOT'] as ActionType[],
+  state: ['GO_TO_STATE', 'RUN_WORKFLOW', 'SCREENSHOT'] as ActionType[],
 };
 
 /**

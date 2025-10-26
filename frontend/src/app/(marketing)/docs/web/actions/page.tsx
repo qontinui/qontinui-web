@@ -222,12 +222,12 @@ export default function ActionsDocPage() {
                 important="Uses automatic pathfinding through the state graph"
               />
               <ActionCard
-                name="RUN_PROCESS"
-                description="Execute another process by ID"
+                name="RUN_WORKFLOW"
+                description="Execute another workflow by ID"
                 params={[
-                  { name: "processId", desc: "ID of process to execute" },
+                  { name: "workflowId", desc: "ID of workflow to execute" },
                 ]}
-                example="Run a reusable login process"
+                example="Run a reusable login workflow"
               />
             </CategorySection>
 

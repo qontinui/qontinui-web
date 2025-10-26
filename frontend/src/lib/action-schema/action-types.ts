@@ -18,8 +18,6 @@ import {
 
 import {
   ClickActionConfig,
-  DoubleClickActionConfig,
-  RightClickActionConfig,
   MouseMoveActionConfig,
   MouseDownActionConfig,
   MouseUpActionConfig,
@@ -57,7 +55,7 @@ import {
 
 import {
   GoToStateActionConfig,
-  RunProcessActionConfig,
+  RunWorkflowActionConfig,
   ScreenshotActionConfig,
 } from './configs/state-actions';
 
@@ -69,8 +67,6 @@ export type FindActionType = 'FIND' | 'FIND_STATE_IMAGE' | 'VANISH' | 'EXISTS' |
 
 export type MouseActionType =
   | 'CLICK'
-  | 'DOUBLE_CLICK'
-  | 'RIGHT_CLICK'
   | 'MOUSE_MOVE'
   | 'MOUSE_DOWN'
   | 'MOUSE_UP'
@@ -91,7 +87,7 @@ export type DataActionType =
   | 'STRING_OPERATION'
   | 'MATH_OPERATION';
 
-export type StateActionType = 'GO_TO_STATE' | 'RUN_PROCESS' | 'SCREENSHOT';
+export type StateActionType = 'GO_TO_STATE' | 'RUN_WORKFLOW' | 'SCREENSHOT';
 
 export type ActionType =
   | FindActionType
@@ -115,8 +111,6 @@ export interface ActionConfigMap {
 
   // Mouse actions
   CLICK: ClickActionConfig;
-  DOUBLE_CLICK: DoubleClickActionConfig;
-  RIGHT_CLICK: RightClickActionConfig;
   MOUSE_MOVE: MouseMoveActionConfig;
   MOUSE_DOWN: MouseDownActionConfig;
   MOUSE_UP: MouseUpActionConfig;
@@ -150,7 +144,7 @@ export interface ActionConfigMap {
 
   // State actions
   GO_TO_STATE: GoToStateActionConfig;
-  RUN_PROCESS: RunProcessActionConfig;
+  RUN_WORKFLOW: RunWorkflowActionConfig;
   SCREENSHOT: ScreenshotActionConfig;
 }
 

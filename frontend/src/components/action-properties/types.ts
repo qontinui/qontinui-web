@@ -14,7 +14,7 @@ export interface Action {
     // Combined keyboard actions
     | "TYPE"
     // Find actions
-    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_PROCESS"
+    | "FIND" | "FIND_STATE_IMAGE" | "VANISH" | "GO_TO_STATE" | "RUN_WORKFLOW"
     // Control flow actions
     | "IF" | "LOOP" | "BREAK" | "CONTINUE" | "SWITCH" | "TRY_CATCH"
     // Data operation actions
@@ -28,7 +28,7 @@ export interface ActionPropertiesComponentProps {
   updateConfig: (key: string, value: any, additionalUpdates?: Record<string, any>) => void
   images: any[]
   states: any[]
-  processes: any[]  // Note: kept as "processes" for prop compatibility, but receives workflows
+  processes: any[]  // Array of workflows (prop name "processes" for legacy compatibility)
   textAreaRef?: React.RefObject<HTMLTextAreaElement>
   shouldOpenImageSelector?: boolean
   onUpdateAction?: (action: Action) => void

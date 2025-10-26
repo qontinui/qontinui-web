@@ -8,34 +8,37 @@ import { VerificationConfig } from '../shared/verification-config';
 
 /**
  * CLICK - Click on a target
+ * Unified click action that handles left, right, middle, and double clicks.
+ * If no target is provided or target is "Current Position", clicks at the current mouse position (pure action).
  */
 export interface ClickActionConfig {
-  target: TargetConfig;
-  numberOfClicks?: number; // 1 = single, 2 = double, etc.
-  mouseButton?: MouseButton;
-  pressDuration?: number; // milliseconds
-  pauseAfterPress?: number; // milliseconds
-  pauseAfterRelease?: number; // milliseconds
-  verify?: VerificationConfig;
-}
+  /**
+   * Click target - can be:
+   * - "Last Find Result": Click on the last found image
+   * - "Current Position": Click at current mouse position (pure action)
+   * - "Coordinates": Click at specific X,Y coordinates
+   * - "StateImage": Click on a state image
+   * - "StateRegion": Click on a state region
+   * - "StateLocation": Click on a state location
+   */
+  target?: string;
 
-/**
- * DOUBLE_CLICK - Double click on a target
- */
-export interface DoubleClickActionConfig {
-  target: TargetConfig;
-  mouseButton?: MouseButton;
-  clickInterval?: number; // milliseconds between clicks
-  pressDuration?: number; // milliseconds
-  verify?: VerificationConfig;
-}
+  /** X coordinate (used when target is "Coordinates") */
+  x?: number;
 
-/**
- * RIGHT_CLICK - Right click on a target
- */
-export interface RightClickActionConfig {
-  target: TargetConfig;
-  pressDuration?: number; // milliseconds
+  /** Y coordinate (used when target is "Coordinates") */
+  y?: number;
+
+  /** Type of click: "left", "right", "middle", or "double" */
+  clickType?: 'left' | 'right' | 'middle' | 'double';
+
+  /** Number of times to click (1 = single, 2 = double, etc.) */
+  clickCount?: number;
+
+  /** How long to hold the button down in milliseconds */
+  hold_duration?: number;
+
+  /** Verification after click */
   verify?: VerificationConfig;
 }
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -40,6 +40,16 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     email_verification_token: Mapped[str | None] = mapped_column(String, nullable=True)
     subscription_tier: Mapped[str] = mapped_column(String, default="free")
 
+    # Analytics tracking fields
+    login_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    remember_me_usage_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
+    last_device_fingerprint: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Relationships
     projects = relationship(
         "Project", back_populates="owner", cascade="all, delete-orphan"
@@ -58,4 +68,10 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="user",
         uselist=False,
         cascade="all, delete-orphan",
+    )
+    device_sessions = relationship(
+        "DeviceSession", back_populates="user", cascade="all, delete-orphan"
+    )
+    analytics_events = relationship(
+        "AnalyticsEvent", back_populates="user", cascade="all, delete-orphan"
     )

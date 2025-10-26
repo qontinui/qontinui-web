@@ -5,7 +5,7 @@
 import { Region, Coordinates } from './common-types';
 import { SearchOptions } from './search-options';
 
-export type TargetType = 'image' | 'region' | 'text' | 'coordinates' | 'stateString';
+export type TargetType = 'image' | 'region' | 'text' | 'coordinates' | 'stateString' | 'currentPosition';
 
 export interface ImageTarget {
   type: 'image';
@@ -37,12 +37,17 @@ export interface StateStringTarget {
   useAll?: boolean;
 }
 
+export interface CurrentPositionTarget {
+  type: 'currentPosition';
+}
+
 export type TargetConfig =
   | ImageTarget
   | RegionTarget
   | TextTarget
   | CoordinatesTarget
-  | StateStringTarget;
+  | StateStringTarget
+  | CurrentPositionTarget;
 
 /**
  * Text search options for OCR-based finding

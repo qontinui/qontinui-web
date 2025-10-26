@@ -8,7 +8,7 @@
  * - GROUP - Visual grouping (container)
  * - MERGE - Merge point indicator
  * - GO_TO_STATE - State transition
- * - RUN_PROCESS - Sub-workflow execution
+ * - RUN_WORKFLOW - Sub-workflow execution
  */
 
 import React from 'react';
@@ -16,7 +16,7 @@ import { NodeProps } from '@xyflow/react';
 import { BaseNode, BaseNodeData, TerminalNode } from './BaseNode';
 import type {
   GoToStateActionConfig,
-  RunProcessActionConfig,
+  RunWorkflowActionConfig,
 } from '@/lib/action-schema/configs/state-actions';
 
 // =============================================================================
@@ -194,33 +194,23 @@ export function GoToStateNode(props: NodeProps<BaseNodeData>) {
 }
 
 /**
- * RUN_PROCESS Node - Execute sub-workflow
+ * RUN_WORKFLOW Node - Execute sub-workflow
  */
-export function RunProcessNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as RunProcessActionConfig;
-  const processName = config.processName || 'Sub-workflow';
-  const async = config.async || false;
+export function RunWorkflowNode(props: NodeProps<BaseNodeData>) {
+  const config = props.data.action.config as RunWorkflowActionConfig;
+  const workflowId = config.workflowId || 'Sub-workflow';
 
   return (
     <div className="relative">
       <BaseNode
         {...props}
-        className="state-node run-process-node border-violet-400 bg-violet-50"
+        className="state-node run-workflow-node border-violet-400 bg-violet-50"
       />
 
-      {/* Show async badge */}
-      {async && (
-        <div className="absolute right-2 top-2 pointer-events-none">
-          <span className="px-2 py-0.5 bg-violet-100 text-violet-700 text-xs rounded-full border border-violet-300">
-            async
-          </span>
-        </div>
-      )}
-
-      {/* Show process name */}
+      {/* Show workflow ID */}
       <div className="absolute left-0 bottom-full mb-2 pointer-events-none">
         <div className="text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded border border-violet-300 max-w-[200px] truncate">
-          {processName}
+          {workflowId}
         </div>
       </div>
     </div>
@@ -240,5 +230,5 @@ export const SpecialNodes = {
 
   // State actions
   GO_TO_STATE: GoToStateNode,
-  RUN_PROCESS: RunProcessNode,
+  RUN_WORKFLOW: RunWorkflowNode,
 };

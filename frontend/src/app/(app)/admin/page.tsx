@@ -7,12 +7,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { authService } from "@/services/service-factory"
-import { LayoutDashboard, Users, FolderOpen, TrendingUp, Server, Home } from "lucide-react"
+import { LayoutDashboard, Users, FolderOpen, TrendingUp, Server, Home, Activity } from "lucide-react"
 import OverviewTab from "@/components/admin/OverviewTab"
 import UsersTab from "@/components/admin/UsersTab"
 import ProjectsTab from "@/components/admin/ProjectsTab"
 import AnalyticsTab from "@/components/admin/AnalyticsTab"
 import SystemTab from "@/components/admin/SystemTab"
+import HealthDashboardTab from "@/components/admin/health/HealthDashboardTab"
 
 export default function AdminDashboard() {
   const { user, loading: authLoading } = useAuth()
@@ -65,7 +66,7 @@ export default function AdminDashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <LayoutDashboard className="h-4 w-4" />
               <span className="hidden sm:inline">Overview</span>
@@ -81,6 +82,10 @@ export default function AdminDashboard() {
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
               <span className="hidden sm:inline">Analytics</span>
+            </TabsTrigger>
+            <TabsTrigger value="health" className="flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              <span className="hidden sm:inline">Health</span>
             </TabsTrigger>
             <TabsTrigger value="system" className="flex items-center gap-2">
               <Server className="h-4 w-4" />
@@ -102,6 +107,10 @@ export default function AdminDashboard() {
 
           <TabsContent value="analytics" className="space-y-6">
             <AnalyticsTab />
+          </TabsContent>
+
+          <TabsContent value="health" className="space-y-6">
+            <HealthDashboardTab />
           </TabsContent>
 
           <TabsContent value="system" className="space-y-6">

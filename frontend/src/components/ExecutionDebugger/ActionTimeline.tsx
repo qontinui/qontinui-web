@@ -12,6 +12,8 @@ import {
 import { useExecutionDebugger } from '../../stores/execution-debugger-store';
 import { Action } from '../../contexts/automation-context/types';
 import { ActionExecutionStatus } from '../../types/debugger/execution-types';
+import { SpecialKeyDisplay } from '../special-keys-selector';
+import { useAutomation } from '../../contexts/automation-context';
 
 interface ActionTimelineProps {
   actions: Action[];
@@ -65,6 +67,35 @@ const getActionIcon = (actionType: string) => {
   return null;
 };
 
+// Helper to resolve TYPE action text from StateStrings
+const getTypeActionText = (action: Action, states: any[]): string | null => {
+  if (action.type !== 'TYPE') return null;
+
+  // If using manual text, return it directly
+  if (action.config.textSource !== "stateString" && action.config.text) {
+    return action.config.text;
+  }
+
+  // If using StateString, resolve the values
+  if (action.config.textSource === "stateString" && action.config.selectedState) {
+    const state = states.find(s => s.id === action.config.selectedState);
+    if (!state || !state.strings) return null;
+
+    if (action.config.selectedStateStrings?.length > 0) {
+      const selectedStrings = state.strings
+        .filter((s: any) => action.config.selectedStateStrings.includes(s.id))
+        .map((s: any) => s.value)
+        .filter((v: any) => v);
+
+      if (selectedStrings.length > 0) {
+        return selectedStrings.join(" | ");
+      }
+    }
+  }
+
+  return null;
+};
+
 interface ActionItemProps {
   action: Action;
   index: number;
@@ -72,6 +103,7 @@ interface ActionItemProps {
   status: ActionExecutionStatus;
   duration?: number;
   executionCount: number;
+  states: any[];
   onClick?: () => void;
 }
 
@@ -82,6 +114,7 @@ const ActionItem: React.FC<ActionItemProps> = ({
   status,
   duration,
   executionCount,
+  states,
   onClick,
 }) => {
   const config = STATUS_CONFIG[status];
@@ -140,9 +173,22 @@ const ActionItem: React.FC<ActionItemProps> = ({
             </span>
           )}
         </div>
-        {action.config.description && (
-          <p className="text-xs text-gray-600 truncate">{action.config.description}</p>
-        )}
+        {(() => {
+          const typeText = action.type === 'TYPE' ? getTypeActionText(action, states) : null;
+          const displayText = typeText || action.config.description;
+
+          if (!displayText) return null;
+
+          return (
+            <div className="text-xs text-gray-600 truncate">
+              {action.type === 'TYPE' && typeText ? (
+                <SpecialKeyDisplay text={typeText} />
+              ) : (
+                displayText
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Status and timing */}
@@ -168,6 +214,7 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
   onActionClick,
 }) => {
   const { currentActionIndex, actionEvents, toggleBreakpoint } = useExecutionDebugger();
+  const { states } = useAutomation();
 
   const getActionStatus = (index: number): ActionExecutionStatus => {
     const event = actionEvents.find((e) => e.actionIndex === index);
@@ -224,6 +271,7 @@ export const ActionTimeline: React.FC<ActionTimelineProps> = ({
                   status={getActionStatus(index)}
                   duration={getActionDuration(index)}
                   executionCount={getExecutionCount(index)}
+                  states={states}
                   onClick={() => handleActionClick(index)}
                 />
               </div>

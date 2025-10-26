@@ -279,7 +279,7 @@ export const ACTION_TYPE_TO_CATEGORY: Record<ActionType, ActionCategory> = {
 
   // State actions
   GO_TO_STATE: ActionCategory.STATE,
-  RUN_PROCESS: ActionCategory.STATE,
+  RUN_WORKFLOW: ActionCategory.STATE,
   SCREENSHOT: ActionCategory.STATE,
 };
 

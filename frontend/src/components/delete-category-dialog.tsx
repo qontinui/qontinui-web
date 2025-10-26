@@ -37,7 +37,7 @@ export function DeleteCategoryDialog({
             Delete Category "{categoryName}"
           </DialogTitle>
           <DialogDescription>
-            This category contains {processCount} process{processCount !== 1 ? 'es' : ''}. What would you like to do with them?
+            This category contains {processCount} workflow{processCount !== 1 ? 's' : ''}. What would you like to do with them?
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-4">
@@ -61,7 +61,7 @@ export function DeleteCategoryDialog({
             variant="destructive"
             className="w-full"
           >
-            Delete All Processes
+            Delete All Workflows
           </Button>
           <Button
             onClick={onClose}

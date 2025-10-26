@@ -28,7 +28,7 @@ export class TransitionManager {
   static removeProcessFromTransitions(transitions: Transition[], processId: string): Transition[] {
     return transitions.map((t) => ({
       ...t,
-      process: t.process === processId ? "" : t.process
+      workflows: t.workflows.filter(wid => wid !== processId)
     }))
   }
 }

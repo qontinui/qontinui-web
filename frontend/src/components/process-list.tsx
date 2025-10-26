@@ -15,7 +15,7 @@ import { Play, Trash2, Folder, FolderOpen, ChevronRight, ChevronDown, Plus } fro
 import { toast } from "sonner"
 import { useAutomation } from "@/contexts/automation-context"
 import { DeleteCategoryDialog } from "@/components/delete-category-dialog"
-import { DeleteProcessDialog } from "@/components/delete-process-dialog"
+import { DeleteWorkflowDialog } from "@/components/delete-process-dialog"
 
 interface Process {
   id: string
@@ -59,7 +59,7 @@ export function ProcessList({
     category: string
     processes: Process[]
   }>({ open: false, category: "", processes: [] })
-  const [deleteProcessDialog, setDeleteProcessDialog] = useState<{
+  const [deleteWorkflowDialog, setDeleteWorkflowDialog] = useState<{
     open: boolean
     processId: string
     processName: string
@@ -85,11 +85,11 @@ export function ProcessList({
   }, {} as Record<string, Process[]>)
 
   const getProcessUsageCount = (processId: string) => {
-    return transitions.filter(t => t.process === processId).length
+    return transitions.filter(t => t.workflows.includes(processId)).length
   }
 
   const handleDelete = (processId: string, processName: string) => {
-    setDeleteProcessDialog({
+    setDeleteWorkflowDialog({
       open: true,
       processId,
       processName
@@ -97,12 +97,12 @@ export function ProcessList({
   }
 
   const handleConfirmDelete = () => {
-    const { processId, processName } = deleteProcessDialog
+    const { processId, processName } = deleteWorkflowDialog
     onDeleteProcess(processId)
-    toast.success("Process deleted", {
+    toast.success("Workflow deleted", {
       description: `"${processName}" has been removed.`
     })
-    setDeleteProcessDialog({ open: false, processId: "", processName: "" })
+    setDeleteWorkflowDialog({ open: false, processId: "", processName: "" })
   }
 
   const toggleCategory = (category: string) => {
@@ -206,7 +206,7 @@ export function ProcessList({
     if (draggedProcess && onUpdateProcess) {
       const updatedProcess = { ...draggedProcess, category }
       onUpdateProcess(updatedProcess)
-      toast.success("Process moved", {
+      toast.success("Workflow moved", {
         description: `"${draggedProcess.name}" moved to ${category}`
       })
     }
@@ -416,10 +416,10 @@ export function ProcessList({
         onMoveToMain={handleMoveToMain}
       />
 
-      <DeleteProcessDialog
-        open={deleteProcessDialog.open}
-        processName={deleteProcessDialog.processName}
-        onClose={() => setDeleteProcessDialog({ open: false, processId: "", processName: "" })}
+      <DeleteWorkflowDialog
+        open={deleteWorkflowDialog.open}
+        workflowName={deleteWorkflowDialog.processName}
+        onClose={() => setDeleteWorkflowDialog({ open: false, processId: "", processName: "" })}
         onConfirm={handleConfirmDelete}
       />
       </div>

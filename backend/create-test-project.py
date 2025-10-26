@@ -87,7 +87,7 @@ sample_config = {
     "transitions": [
         {
             "id": "trans-1",
-            "type": "FromTransition",
+            "type": "OutgoingTransition",
             "name": "Open Settings",
             "processes": ["proc-1"],
             "fromState": "state-1",

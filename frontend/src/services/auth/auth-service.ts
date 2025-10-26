@@ -26,8 +26,15 @@ export class AuthService {
     formData.append('password', credentials.password);
 
     console.log('[AuthService] Attempting login to:', ApiConfig.AUTH_LOGIN);
+    console.log('[AuthService] Remember me:', credentials.remember_me);
 
-    const response = await fetch(ApiConfig.AUTH_LOGIN, {
+    // Add remember_me as query parameter
+    const url = new URL(ApiConfig.AUTH_LOGIN);
+    if (credentials.remember_me) {
+      url.searchParams.append('remember_me', 'true');
+    }
+
+    const response = await fetch(url.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

@@ -117,7 +117,7 @@ export type ActionType =
   | 'WAIT'
   | 'VANISH'
   | 'GO_TO_STATE'
-  | 'RUN_PROCESS'
+  | 'RUN_WORKFLOW'
   | 'EXISTS'
   | 'SCREENSHOT'
   | 'CONDITION'
@@ -270,6 +270,12 @@ export interface ActionConfig {
   maxWaitTime?: number; // Maximum time to wait for vanish
   vanishPollInterval?: number; // Poll interval for vanish check
 
+  // === GO_TO_STATE Options ===
+  stateIds?: string[]; // Target state IDs for GO_TO_STATE action
+  stateNames?: string[]; // Target state names (for readability in export)
+  strategy?: 'all' | 'any' | 'optimal'; // Pathfinding strategy for multiple states
+  verify?: boolean; // Verify state(s) were reached
+
   // === Repetition Options (for individual actions) ===
   repetitionOptions?: {
     timesToRepeat?: number; // Times to repeat individual action
@@ -277,9 +283,9 @@ export interface ActionConfig {
     maxRepetitions?: number; // Maximum allowed repetitions
   };
 
-  // === Process Repetition Options (for RUN_PROCESS action) ===
-  processRepetition?: {
-    enabled?: boolean; // Whether to repeat the process
+  // === Workflow Repetition Options (for RUN_WORKFLOW action) ===
+  workflowRepetition?: {
+    enabled?: boolean; // Whether to repeat the workflow
     maxRepeats?: number; // Maximum number of repeats (1 = run once more)
     delay?: number; // Delay between repeats in milliseconds
     untilSuccess?: boolean; // If true: stop early on success, otherwise run all maxRepeats
@@ -437,17 +443,18 @@ export interface SearchRegions {
 
 export interface Transition {
   id: string;
-  type: 'FromTransition' | 'ToTransition';
+  type: 'OutgoingTransition' | 'IncomingTransition';
   name?: string;
   description?: string;
-  workflows: string[]; // Workflow IDs to execute
+  workflows: string[]; // Workflow IDs to execute (references to global workflows)
+  inlineWorkflows?: Workflow[]; // Inline workflow definitions (not in global database)
   timeout: number;
   retryCount: number;
   priority?: number; // For handling multiple valid transitions
 }
 
-export interface FromTransition extends Transition {
-  type: 'FromTransition';
+export interface OutgoingTransition extends Transition {
+  type: 'OutgoingTransition';
   fromState: string; // State ID
   toState: string; // State ID
   staysVisible: boolean;
@@ -456,10 +463,10 @@ export interface FromTransition extends Transition {
   condition?: TransitionCondition;
 }
 
-export interface ToTransition extends Transition {
-  type: 'ToTransition';
+export interface IncomingTransition extends Transition {
+  type: 'IncomingTransition';
   toState: string; // State ID
-  executeAfter?: string[]; // FromTransition IDs that trigger this
+  executeAfter?: string[]; // OutgoingTransition IDs that trigger this
 }
 
 export interface TransitionCondition {
@@ -717,7 +724,7 @@ export const configJsonSchema = {
         "required": ["id", "type", "workflows", "timeout", "retryCount"],
         "properties": {
           "id": { "type": "string" },
-          "type": { "enum": ["FromTransition", "ToTransition"] },
+          "type": { "enum": ["OutgoingTransition", "IncomingTransition"] },
           "workflows": { "type": "array", "items": { "type": "string" } },
           "timeout": { "type": "number", "minimum": 0 },
           "retryCount": { "type": "number", "minimum": 0 }

@@ -12,6 +12,8 @@
 import { Action, ActionType, getActionOutputCount } from '@/lib/action-schema/action-types';
 import type {
   ClickActionConfig,
+  DoubleClickActionConfig,
+  RightClickActionConfig,
   TypeActionConfig,
   WaitActionConfig,
 } from '@/lib/action-schema/configs/mouse-actions';
@@ -88,7 +90,7 @@ export function getNodeCategory(actionType: ActionType): NodeCategory {
   }
 
   // State actions
-  if (['GO_TO_STATE', 'RUN_PROCESS', 'SCREENSHOT'].includes(actionType)) {
+  if (['GO_TO_STATE', 'RUN_WORKFLOW', 'SCREENSHOT'].includes(actionType)) {
     return 'state';
   }
 
@@ -138,14 +140,25 @@ export function getNodeSummary(action: Action): string {
     // Mouse Actions
     case 'CLICK':
       const clickConfig = config as ClickActionConfig;
+      if (!clickConfig.target || clickConfig.target.type === 'currentPosition') {
+        return 'Click at current position';
+      }
       return clickConfig.target?.text
         ? `Click "${clickConfig.target.text}"`
         : 'Click element';
 
     case 'DOUBLE_CLICK':
+      const doubleClickConfig = config as DoubleClickActionConfig;
+      if (!doubleClickConfig.target || doubleClickConfig.target.type === 'currentPosition') {
+        return 'Double click at current position';
+      }
       return 'Double click element';
 
     case 'RIGHT_CLICK':
+      const rightClickConfig = config as RightClickActionConfig;
+      if (!rightClickConfig.target || rightClickConfig.target.type === 'currentPosition') {
+        return 'Right click at current position';
+      }
       return 'Right click element';
 
     case 'MOUSE_MOVE':
@@ -244,8 +257,8 @@ export function getNodeSummary(action: Action): string {
     case 'GO_TO_STATE':
       return 'Go to state';
 
-    case 'RUN_PROCESS':
-      return 'Run process';
+    case 'RUN_WORKFLOW':
+      return 'Run workflow';
 
     case 'SCREENSHOT':
       return 'Take screenshot';
@@ -384,10 +397,8 @@ export function validateNodeConfig(action: Action): ValidationResult {
     case 'CLICK':
     case 'DOUBLE_CLICK':
     case 'RIGHT_CLICK':
-      const clickConfig = action.config as ClickActionConfig;
-      if (!clickConfig.target) {
-        errors.push('Missing click target');
-      }
+      // Target is optional - defaults to current position (pure action)
+      // No validation error needed
       break;
 
     case 'TYPE':
@@ -489,7 +500,7 @@ export function getActionTypeDisplayName(actionType: ActionType): string {
     STRING_OPERATION: 'String Operation',
     MATH_OPERATION: 'Math Operation',
     GO_TO_STATE: 'Go To State',
-    RUN_PROCESS: 'Run Process',
+    RUN_WORKFLOW: 'Run Workflow',
   };
 
   return displayNames[actionType] || actionType.replace(/_/g, ' ');

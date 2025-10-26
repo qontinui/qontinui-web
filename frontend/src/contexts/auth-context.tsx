@@ -7,7 +7,7 @@ import { User } from '@/types/auth-types';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<User>;
+  login: (username: string, password: string, rememberMe?: boolean) => Promise<User>;
   register: (email: string, username: string, password: string, fullName?: string) => Promise<void>;
   logout: () => void;
   updateUser: (data: Partial<User>) => Promise<void>;
@@ -67,9 +67,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, rememberMe?: boolean) => {
     try {
-      const loggedInUser = await authService.login({ username, password });
+      const loggedInUser = await authService.login({
+        username,
+        password,
+        remember_me: rememberMe
+      });
       setUser(loggedInUser);
       return loggedInUser;
     } catch (error) {

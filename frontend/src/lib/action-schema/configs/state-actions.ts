@@ -3,30 +3,40 @@
  */
 
 /**
- * GO_TO_STATE - Navigate to a specific state
+ * GO_TO_STATE - Navigate to one or more target states
+ *
+ * Supports pathfinding to multiple target states. The runner will find the optimal
+ * path to reach all specified states, executing transitions that may activate
+ * additional states along the way.
+ *
+ * Example: If there's a transition A -> {B,C}, then GO_TO_STATE([B]) from A
+ * will execute that transition, activating both B and C.
  */
 export interface GoToStateActionConfig {
-  /** State ID to navigate to */
-  stateId: string;
+  /** State ID(s) to navigate to - supports both single state and multiple states */
+  stateIds: string[];
 
   /** Maximum time to wait for state transition (milliseconds) */
   timeout?: number;
 
-  /** Verify state was reached */
+  /** Verify state(s) were reached */
   verify?: boolean;
+
+  /** Strategy for pathfinding to multiple states */
+  strategy?: 'all' | 'any' | 'optimal';
 }
 
 /**
- * RUN_PROCESS - Execute another process
+ * RUN_WORKFLOW - Execute another workflow
  */
-export interface RunProcessActionConfig {
-  /** Process ID to execute */
-  processId: string;
+export interface RunWorkflowActionConfig {
+  /** Workflow ID to execute */
+  workflowId: string;
 
-  /** Pass variables to the process */
+  /** Pass variables to the workflow */
   variables?: Record<string, any>;
 
-  /** Process repetition options */
+  /** Workflow repetition options */
   repetition?: {
     /** Enable repetition */
     enabled: boolean;
@@ -38,7 +48,7 @@ export interface RunProcessActionConfig {
     untilSuccess?: boolean;
   };
 
-  /** Store process result in variable */
+  /** Store workflow result in variable */
   outputVariable?: string;
 }
 

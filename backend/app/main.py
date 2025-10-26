@@ -23,6 +23,7 @@ from app.middleware.error_handler import (
 from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.sliding_window_session import SlidingWindowSessionMiddleware
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -97,6 +98,14 @@ app.add_middleware(
 
 # Add request ID tracking middleware (should be first for proper context binding)
 app.add_middleware(RequestIDMiddleware)
+
+# Add sliding window session middleware (before metrics for accurate activity tracking)
+if settings.SLIDING_WINDOW_ENABLED:
+    app.add_middleware(SlidingWindowSessionMiddleware)
+    logger.info(
+        "sliding_window_session_enabled",
+        threshold_minutes=settings.SLIDING_WINDOW_THRESHOLD_MINUTES,
+    )
 
 # Add metrics tracking middleware
 app.add_middleware(MetricsMiddleware)

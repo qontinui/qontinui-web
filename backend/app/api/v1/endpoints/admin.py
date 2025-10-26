@@ -12,6 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_user_async
 from app.models.project import Project
 from app.models.user import User
+from app.schemas.health import (
+    DatabaseHealth,
+    HealthOverview,
+    HealthThresholds,
+    RedisHealth,
+    SecurityWarnings,
+    SessionStats,
+    TokenBlacklistStats,
+)
+from app.services.auth_analytics_service import auth_analytics_service
+from app.services.health_service import health_service
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -367,6 +378,34 @@ async def get_analytics(
     }
 
 
+@router.get("/analytics/summary")
+async def get_analytics_summary(
+    days: int = 30,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> Any:
+    """
+    Get comprehensive analytics summary for remember_me usage and user behavior.
+
+    This endpoint provides detailed insights into:
+    - Login statistics (last 7/30 days)
+    - Remember me adoption rate
+    - Active sessions count
+    - Device mismatch count
+    - Top users by activity
+    - Session and security metrics
+
+    Args:
+        days: Number of days to look back for trends (default: 30)
+
+    Returns:
+        Comprehensive analytics summary with login stats, remember_me adoption,
+        active sessions, security events, and top user activity
+    """
+    summary = await auth_analytics_service.get_comprehensive_summary(db, days)
+    return summary
+
+
 @router.get("/system/health")
 async def get_system_health(
     db: AsyncSession = Depends(get_async_db),
@@ -445,3 +484,224 @@ async def get_system_health(
         "last_backup": None,
         "recent_errors": [],
     }
+
+
+@router.post("/cleanup/run")
+async def run_cleanup_manually(
+    current_user: User = Depends(require_admin),
+) -> Any:
+    """
+    Manually trigger cleanup of expired sessions and old data.
+
+    This endpoint allows admins to run cleanup tasks on-demand without
+    waiting for the scheduled cron job. Useful for testing or immediate cleanup needs.
+
+    Requires superuser authentication.
+
+    Returns:
+        Dict with cleanup results including count of deleted records per task
+    """
+    logger.info(
+        "manual_cleanup_triggered",
+        user_id=str(current_user.id),
+        user_email=current_user.email,
+    )
+
+    try:
+        # Import cleanup tasks
+        from app.worker.scheduler import run_all_cleanup_tasks
+
+        # Run all cleanup tasks
+        # Pass empty context since we're not running via ARQ
+        ctx: dict[str, Any] = {}
+        results = await run_all_cleanup_tasks(ctx)
+
+        logger.info(
+            "manual_cleanup_completed",
+            user_id=str(current_user.id),
+            status=results.get("status"),
+            total_deleted=results.get("total_deleted", 0),
+        )
+
+        return results
+
+    except Exception as e:
+        logger.exception(
+            "manual_cleanup_failed",
+            user_id=str(current_user.id),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Cleanup failed: {str(e)}",
+        )
+
+
+# ==================== Health Monitoring Endpoints ====================
+
+
+@router.get("/health/overview", response_model=HealthOverview)
+async def get_health_overview(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> HealthOverview:
+    """
+    Get comprehensive health overview with all system metrics.
+
+    Returns detailed status for:
+    - Redis availability and performance
+    - Database connection pool and status
+    - Token blacklist statistics
+    - Security warnings and suspicious activity
+    - Session statistics and adoption rates
+    - System resources (CPU, memory, disk)
+
+    Cached for 30 seconds to avoid overwhelming system with health checks.
+
+    Requires superuser authentication.
+    """
+    overview = await health_service.get_health_overview(db)
+    return HealthOverview(**overview)
+
+
+@router.get("/health/redis", response_model=RedisHealth)
+async def get_health_redis(
+    current_user: User = Depends(require_admin),
+) -> RedisHealth:
+    """
+    Get detailed Redis health status and metrics.
+
+    Returns:
+    - Connection status (healthy/degraded/down/disabled)
+    - Uptime and performance metrics
+    - Memory usage and availability
+    - Connected clients count
+    - Operations per second
+    - Alert level based on thresholds
+
+    Requires superuser authentication.
+    """
+    redis_status = await health_service.get_redis_status()
+    return RedisHealth(**redis_status)
+
+
+@router.get("/health/database", response_model=DatabaseHealth)
+async def get_health_database(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> DatabaseHealth:
+    """
+    Get database health status and connection pool metrics.
+
+    Returns:
+    - Connection status
+    - Pool size and usage
+    - Active vs idle connections
+    - Pool usage percentage
+    - Alert level based on thresholds
+
+    Requires superuser authentication.
+    """
+    db_health = await health_service.get_database_health(db)
+    return DatabaseHealth(**db_health)
+
+
+@router.get("/health/security", response_model=SecurityWarnings)
+async def get_health_security(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> SecurityWarnings:
+    """
+    Get security warnings and suspicious activity alerts.
+
+    Returns (last 24 hours):
+    - Device fingerprint mismatches
+    - New device registrations
+    - Failed login attempts
+    - Untrusted devices count
+    - Users with multiple devices
+    - Alert level and recommendations
+
+    Alert thresholds:
+    - Warning: 50+ device mismatches, 30+ failed logins, 20+ new devices
+    - Critical: 100+ device mismatches, 100+ failed logins, 50+ new devices
+
+    Requires superuser authentication.
+    """
+    security = await health_service.get_security_warnings(db)
+    return SecurityWarnings(**security)
+
+
+@router.get("/health/sessions", response_model=SessionStats)
+async def get_health_sessions(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> SessionStats:
+    """
+    Get session statistics and adoption metrics.
+
+    Returns:
+    - Total active sessions
+    - Remember me vs standard session counts
+    - Remember me adoption rate (%)
+    - Average session age
+    - Sessions expiring soon (within 1 hour)
+    - Recent activity metrics
+
+    Useful for understanding:
+    - User engagement patterns
+    - Feature adoption (remember me)
+    - Session lifecycle management
+
+    Requires superuser authentication.
+    """
+    sessions = await health_service.get_session_stats(db)
+    return SessionStats(**sessions)
+
+
+@router.get("/health/blacklist", response_model=TokenBlacklistStats)
+async def get_health_blacklist(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> TokenBlacklistStats:
+    """
+    Get token blacklist statistics.
+
+    Returns:
+    - Storage mode (redis/memory/disabled)
+    - Number of blacklisted tokens
+    - Estimated size in MB
+    - Redis keys count (if Redis mode)
+    - Availability status
+
+    Useful for:
+    - Monitoring blacklist growth
+    - Memory usage tracking
+    - Performance optimization
+
+    Requires superuser authentication.
+    """
+    blacklist = await health_service.get_token_blacklist_stats(db)
+    return TokenBlacklistStats(**blacklist)
+
+
+@router.get("/health/thresholds", response_model=HealthThresholds)
+async def get_health_thresholds(
+    current_user: User = Depends(require_admin),
+) -> HealthThresholds:
+    """
+    Get current health monitoring thresholds configuration.
+
+    Returns all alert thresholds for:
+    - System resources (CPU, memory, disk)
+    - Redis memory usage
+    - Security events (device mismatches, failed logins, new devices)
+    - Database connection pool
+
+    Thresholds define when alerts transition from:
+    - Healthy (green) -> Warning (yellow) -> Critical (red)
+
+    Requires superuser authentication.
+    """
+    return HealthThresholds(**health_service.THRESHOLDS)
