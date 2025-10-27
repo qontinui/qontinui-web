@@ -53,7 +53,8 @@ export function createFindAnyStateImageWorkflow(state: State): Workflow {
 
   // Create actions and connections for each state image
   const actions: Action[] = [];
-  const connections: Record<string, string[]> = {};
+  // Pydantic schema format: {action_id: {type: [[{action, type, index}]]}}
+  const connections: Record<string, Record<string, Array<Array<{action: string, type: string, index: number}>>>> = {};
 
   // Starting position for layout
   let xPos = 100;
@@ -84,9 +85,15 @@ export function createFindAnyStateImageWorkflow(state: State): Workflow {
     // Connect to previous action (if not first)
     if (index > 0) {
       const prevActionId = actions[index - 1].id;
-      // Connect through the 'else' branch (false path) of previous IF
-      connections[prevActionId] = connections[prevActionId] || [];
-      connections[prevActionId].push(`${ifActionId}:false`);
+      // Connect through the 'false' branch (else path) of previous IF
+      if (!connections[prevActionId]) {
+        connections[prevActionId] = {};
+      }
+      connections[prevActionId]['false'] = [[{
+        action: ifActionId,
+        type: 'false',
+        index: 0
+      }]];
     }
 
     xPos += xSpacing;
@@ -103,11 +110,17 @@ export function createFindAnyStateImageWorkflow(state: State): Workflow {
   };
   actions.push(finalAction);
 
-  // Connect last IF's else branch to final action
+  // Connect last IF's false branch to final action
   if (actions.length > 1) {
     const lastIfId = actions[actions.length - 2].id;
-    connections[lastIfId] = connections[lastIfId] || [];
-    connections[lastIfId].push(`${finalActionId}:false`);
+    if (!connections[lastIfId]) {
+      connections[lastIfId] = {};
+    }
+    connections[lastIfId]['false'] = [[{
+      action: finalActionId,
+      type: 'false',
+      index: 0
+    }]];
   }
 
   return {
