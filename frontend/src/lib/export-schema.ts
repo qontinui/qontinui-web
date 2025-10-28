@@ -39,15 +39,30 @@ export interface Workflow {
   metadata?: WorkflowMetadata;
 }
 
+/**
+ * Connection from one action to another in graph format.
+ * Matches the Pydantic Connection model from qontinui library.
+ */
+export interface Connection {
+  action: string; // Target action ID
+  type: string; // Connection type (main, error, success, etc.)
+  index: number; // Input index on target action
+}
+
 export interface WorkflowConnections {
   [actionId: string]: ActionOutputs;
 }
 
 export interface ActionOutputs {
-  main?: number[][]; // Main output connections
-  success?: number[][]; // Success path connections
-  error?: number[][]; // Error path connections
-  parallel?: number[][]; // Parallel execution connections
+  main?: Connection[][]; // Main output connections
+  success?: Connection[][]; // Success path connections
+  error?: Connection[][]; // Error path connections
+  parallel?: Connection[][]; // Parallel execution connections
+  // Conditional branches for IF actions
+  true?: Connection[][];
+  false?: Connection[][];
+  // Dynamic branches for SWITCH actions (case_0, case_1, etc.)
+  [key: string]: Connection[][] | undefined;
 }
 
 export interface WorkflowMetadata {
@@ -661,7 +676,15 @@ export const configJsonSchema = {
                     "description": "Main execution path (default)",
                     "items": {
                       "type": "array",
-                      "items": { "type": "number", "minimum": 0 }
+                      "items": {
+                        "type": "object",
+                        "required": ["action", "type", "index"],
+                        "properties": {
+                          "action": { "type": "string", "description": "Target action ID" },
+                          "type": { "type": "string", "description": "Connection type" },
+                          "index": { "type": "number", "minimum": 0, "description": "Input index on target" }
+                        }
+                      }
                     }
                   },
                   "success": {
@@ -669,7 +692,15 @@ export const configJsonSchema = {
                     "description": "Path taken when action succeeds",
                     "items": {
                       "type": "array",
-                      "items": { "type": "number", "minimum": 0 }
+                      "items": {
+                        "type": "object",
+                        "required": ["action", "type", "index"],
+                        "properties": {
+                          "action": { "type": "string" },
+                          "type": { "type": "string" },
+                          "index": { "type": "number", "minimum": 0 }
+                        }
+                      }
                     }
                   },
                   "error": {
@@ -677,7 +708,15 @@ export const configJsonSchema = {
                     "description": "Path taken when action fails",
                     "items": {
                       "type": "array",
-                      "items": { "type": "number", "minimum": 0 }
+                      "items": {
+                        "type": "object",
+                        "required": ["action", "type", "index"],
+                        "properties": {
+                          "action": { "type": "string" },
+                          "type": { "type": "string" },
+                          "index": { "type": "number", "minimum": 0 }
+                        }
+                      }
                     }
                   },
                   "parallel": {
@@ -685,11 +724,19 @@ export const configJsonSchema = {
                     "description": "Parallel execution paths (read-only actions only)",
                     "items": {
                       "type": "array",
-                      "items": { "type": "number", "minimum": 0 }
+                      "items": {
+                        "type": "object",
+                        "required": ["action", "type", "index"],
+                        "properties": {
+                          "action": { "type": "string" },
+                          "type": { "type": "string" },
+                          "index": { "type": "number", "minimum": 0 }
+                        }
+                      }
                     }
                   }
                 },
-                "additionalProperties": false
+                "additionalProperties": true
               }
             }
           },
