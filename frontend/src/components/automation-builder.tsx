@@ -21,7 +21,7 @@ import { AuthDialog } from "@/components/auth-dialog"
 import { ProjectManager } from "@/components/project-manager"
 import { SettingsTab } from "@/components/settings/SettingsTab"
 import { ProjectSettingsComponent } from "@/components/project-settings"
-import { Save, Download, Upload, User, LogOut, FileCode, Edit2, Check, X, Plus, Home, ChevronDown } from "lucide-react"
+import { Save, Download, Upload, User, LogOut, FileCode, Edit2, Check, X, Plus, Home, ChevronDown, RefreshCw } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +33,7 @@ import { AutomationProvider, useAutomation } from "@/contexts/automation-context
 import { useAuth } from "@/contexts/auth-context"
 import { ConfigExporter } from "@/lib/config-exporter"
 import { ConfigImporter } from "@/lib/config-importer"
+import { regenerateConfiguration } from "@/lib/config-regenerator"
 import { projectService } from "@/services/service-factory"
 import { useQueryClient } from "@tanstack/react-query"
 import { projectKeys } from "@/hooks/use-projects"
@@ -329,6 +330,46 @@ function AutomationBuilderContent() {
     loadConfiguration(config)
   }
 
+  const handleRegenerate = async () => {
+    if (!user) {
+      setAuthDialogOpen(true)
+      toast.error("Authentication required", {
+        description: "Please log in to regenerate your configuration.",
+      })
+      return
+    }
+
+    try {
+      // Call regenerateConfiguration with current data
+      const { workflows: regeneratedWorkflows, transitions: regeneratedTransitions, result } =
+        await regenerateConfiguration(workflows, transitions, states)
+
+      if (result.success) {
+        // Update the context with regenerated data
+        loadConfiguration({
+          workflows: regeneratedWorkflows,
+          transitions: regeneratedTransitions,
+          states,
+          images,
+          categories,
+          screenshots
+        })
+
+        toast.success("Configuration regenerated", {
+          description: `Regenerated ${result.details.helperWorkflowsRegenerated} helper workflows and processed ${result.details.workflowsProcessed} workflows successfully.`,
+        })
+      } else {
+        toast.warning("Regeneration completed with errors", {
+          description: result.message + (result.details.errors.length > 0 ? ` ${result.details.errors.length} error(s) occurred.` : ''),
+        })
+      }
+    } catch (error) {
+      toast.error("Regeneration failed", {
+        description: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+  }
+
   return (
     <div className="h-screen bg-[#0A0A0B] text-white flex flex-col overflow-hidden">
       <header className="border-b border-gray-800 bg-[#0A0A0B]/95 backdrop-blur-sm sticky top-0 z-50">
@@ -445,6 +486,20 @@ function AutomationBuilderContent() {
             >
               <Download className="w-4 h-4 mr-2" />
               Export
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRegenerate}
+              className={`border-gray-700 bg-transparent ${
+                user
+                  ? "text-gray-300 hover:border-[#FF8800] hover:text-[#FF8800]"
+                  : "text-gray-500 hover:border-red-500 hover:text-red-500 cursor-pointer"
+              }`}
+              title={!user ? "Login required" : "Regenerate configuration to pick up code changes"}
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Regenerate
             </Button>
             {user ? (
               <>
