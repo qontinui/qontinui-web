@@ -86,7 +86,10 @@ export function regenerateHelperWorkflows(
  * Update action configs to use the new schema format.
  * - FIND actions: Converts {imageId: '...'} to {target: {type: 'image', imageId: '...'}}
  * - MOUSE_MOVE actions: Converts "Last Find Result" string to {type: 'lastFindResult'}
- * - CLICK actions: Converts "Current Position" string to {type: 'currentPosition'}
+ * - CLICK actions:
+ *   - Converts "Current Position" string to {type: 'currentPosition'}
+ *   - Migrates clickType -> mouseButton (lowercase to uppercase)
+ *   - Migrates clickCount -> numberOfClicks
  */
 function updateActionConfigs(actions: any[]): number {
   let updatedCount = 0;
@@ -129,6 +132,32 @@ function updateActionConfigs(actions: any[]): number {
         action.config.target = {
           type: 'currentPosition'
         };
+        updatedCount++;
+      }
+
+      // Migrate old field names to new schema (clickType -> mouseButton, clickCount -> numberOfClicks)
+      if (action.config.clickType !== undefined) {
+        // Convert clickType ('left', 'right', 'middle') to mouseButton ('LEFT', 'RIGHT', 'MIDDLE')
+        const clickTypeMap: Record<string, string> = {
+          'left': 'LEFT',
+          'right': 'RIGHT',
+          'middle': 'MIDDLE',
+          'double': 'LEFT' // double-click is LEFT button with numberOfClicks=2
+        };
+        action.config.mouseButton = clickTypeMap[action.config.clickType.toLowerCase()] || 'LEFT';
+
+        // Handle double-click: convert to numberOfClicks=2
+        if (action.config.clickType.toLowerCase() === 'double' && !action.config.numberOfClicks) {
+          action.config.numberOfClicks = 2;
+        }
+
+        delete action.config.clickType;
+        updatedCount++;
+      }
+
+      if (action.config.clickCount !== undefined) {
+        action.config.numberOfClicks = action.config.clickCount;
+        delete action.config.clickCount;
         updatedCount++;
       }
     }
