@@ -289,7 +289,7 @@ stringLength('name', 1, 100)
 pattern('variableName', /^[a-zA-Z_][a-zA-Z0-9_]*$/)
 
 // Enum values
-enumValue('clickType', ['left', 'right', 'middle'])
+enumValue('mouseButton', ['LEFT', 'RIGHT', 'MIDDLE'])
 ```
 
 ### Custom Validators

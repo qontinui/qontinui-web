@@ -37,7 +37,7 @@ describe('CanvasPropertiesPanel', () => {
       {
         id: 'action-1',
         type: 'CLICK',
-        config: { target: 'test', clickType: 'left', clickCount: 1 },
+        config: { target: 'test', mouseButton: 'LEFT', numberOfClicks: 1 },
         position: [100, 100],
       },
       {

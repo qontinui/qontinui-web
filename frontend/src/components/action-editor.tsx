@@ -281,8 +281,8 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
     case "CLICK":
       return {
         target: "Last Find Result",
-        clickType: "left",
-        clickCount: 1,
+        mouseButton: "LEFT",
+        numberOfClicks: 1,
         hold_duration: 0,
         // pause_before_begin, pause_after_end are optional overrides
       }
@@ -379,7 +379,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
     case "DOUBLE_CLICK":
       return {
         target: "Last Find Result",
-        clickType: "left",
+        mouseButton: "LEFT",
         // Optional timing overrides: click_hold_duration, double_click_interval, etc.
       }
     case "RIGHT_CLICK":
@@ -482,7 +482,7 @@ function getActionSummary(action: Action, states: any[], processes: any[], image
       }
       return "No state selected"
     case "CLICK":
-      return `${action.config.clickType} click on ${action.config.target}`
+      return `${action.config.mouseButton?.toLowerCase() || 'left'} click on ${action.config.target}`
     case "DOUBLE_CLICK":
       return `Double click on ${action.config.target || "Last Find Result"}`
     case "RIGHT_CLICK":

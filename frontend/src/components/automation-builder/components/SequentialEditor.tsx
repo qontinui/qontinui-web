@@ -360,7 +360,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
     case "FIND_STATE_IMAGE":
       return { state: null }
     case "CLICK":
-      return { target: "Last Find Result", clickType: "left", clickCount: 1, hold_duration: 0 }
+      return { target: "Last Find Result", mouseButton: "LEFT", numberOfClicks: 1, hold_duration: 0 }
     case "TYPE":
       return {
         text: "",
@@ -402,7 +402,7 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
     case "MOUSE_UP":
       return { button: "left", target: null }
     case "DOUBLE_CLICK":
-      return { target: "Last Find Result", clickType: "left" }
+      return { target: "Last Find Result", mouseButton: "LEFT" }
     case "RIGHT_CLICK":
       return { target: "Last Find Result" }
     case "KEY_PRESS":
@@ -481,7 +481,7 @@ function getActionSummary(action: Action, states: any[], workflows: any[], image
       }
       return "No state selected"
     case "CLICK":
-      return `${action.config.clickType} click on ${action.config.target}`
+      return `${action.config.mouseButton?.toLowerCase() || 'left'} click on ${action.config.target}`
     case "DOUBLE_CLICK":
       return `Double click on ${action.config.target || "Last Find Result"}`
     case "RIGHT_CLICK":
