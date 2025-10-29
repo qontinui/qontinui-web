@@ -83,6 +83,36 @@ export function regenerateHelperWorkflows(
 }
 
 /**
+ * Update FIND action configs to use the new schema format.
+ * Converts old format {imageId: '...'} to new format {target: {type: 'image', imageId: '...'}}.
+ */
+function updateFindActionConfigs(actions: any[]): number {
+  let updatedCount = 0;
+
+  actions.forEach(action => {
+    if (action.type === 'FIND' && action.config) {
+      // Check if using old schema (has imageId but no target)
+      if (action.config.imageId && !action.config.target) {
+        const oldImageId = action.config.imageId;
+
+        // Convert to new schema
+        action.config.target = {
+          type: 'image',
+          imageId: oldImageId
+        };
+
+        // Remove old imageId field
+        delete action.config.imageId;
+
+        updatedCount++;
+      }
+    }
+  });
+
+  return updatedCount;
+}
+
+/**
  * Process workflows through current export logic.
  * This ensures they match the latest schema and code structure.
  */
@@ -92,6 +122,7 @@ export function processWorkflowsThroughExportLogic(workflows: Workflow[]): {
 } {
   const processed: Workflow[] = [];
   const errors: string[] = [];
+  let totalFindActionsUpdated = 0;
 
   workflows.forEach(workflow => {
     try {
@@ -108,6 +139,16 @@ export function processWorkflowsThroughExportLogic(workflows: Workflow[]): {
         processedWorkflow.connections = {};
       }
 
+      // Update FIND action configs to new schema
+      if (processedWorkflow.actions && Array.isArray(processedWorkflow.actions)) {
+        const updatedCount = updateFindActionConfigs(processedWorkflow.actions);
+        totalFindActionsUpdated += updatedCount;
+
+        if (updatedCount > 0) {
+          console.log(`Regenerate: Updated ${updatedCount} FIND action(s) in workflow '${processedWorkflow.name || processedWorkflow.id}'`);
+        }
+      }
+
       // Update metadata timestamps
       if (!processedWorkflow.metadata) {
         processedWorkflow.metadata = {};
@@ -119,6 +160,10 @@ export function processWorkflowsThroughExportLogic(workflows: Workflow[]): {
       errors.push(`Failed to process workflow ${workflow.id}: ${error}`);
     }
   });
+
+  if (totalFindActionsUpdated > 0) {
+    console.log(`Regenerate: Total FIND actions updated: ${totalFindActionsUpdated}`);
+  }
 
   return { processed, errors };
 }
