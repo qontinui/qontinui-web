@@ -7,6 +7,7 @@
 
 import { RefObject, useCallback, useState, useEffect, useRef } from 'react';
 import { ActionType, createAction } from '@/lib/action-schema/action-types';
+import { getDefaultConfig } from '@/lib/action-schema/default-configs';
 import { useCanvasStore } from '@/stores/canvas-store';
 import { useReactFlow, ReactFlowInstance } from 'reactflow';
 
@@ -283,10 +284,10 @@ export function usePaletteDrag(
         ? snapToGrid(position, gridSize)
         : position;
 
-      // Create new action at drop position
+      // Create new action at drop position with proper default config
       const newAction = createAction(
         state.draggedType,
-        {} as any, // Default config - would populate from defaults
+        getDefaultConfig(state.draggedType),
         [finalPosition.x, finalPosition.y]
       );
 
@@ -354,10 +355,10 @@ export function useClickToAdd() {
         y: viewportHeight / 2,
       });
 
-      // Create action at center
+      // Create action at center with proper default config
       const newAction = createAction(
         nodeType,
-        {} as any, // Default config
+        getDefaultConfig(nodeType),
         [centerPosition.x, centerPosition.y]
       );
 
@@ -370,7 +371,7 @@ export function useClickToAdd() {
     (nodeType: ActionType, x: number, y: number) => {
       const newAction = createAction(
         nodeType,
-        {} as any, // Default config
+        getDefaultConfig(nodeType),
         [x, y]
       );
 

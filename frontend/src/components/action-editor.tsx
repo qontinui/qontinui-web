@@ -267,7 +267,10 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
   switch (type) {
     case "FIND":
       return {
-        image: null,
+        target: {
+          type: "image",
+          imageId: null
+        }
         // similarity, strategy, pause_before_begin, pause_after_end are optional overrides
       }
     case "FIND_STATE_IMAGE":
@@ -312,9 +315,12 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
       }
     case "VANISH":
       return {
-        image: null,
-        timeout: 5000,
-        check_interval: 500,
+        target: {
+          type: "image",
+          imageId: null
+        },
+        maxWaitTime: 5000,
+        pollInterval: 500,
         // pause_before_begin, pause_after_end are optional overrides
       }
     case "GO_TO_STATE":
@@ -440,11 +446,13 @@ function getActionSummary(action: Action, states: any[], processes: any[], image
       if (action.config.removedImage) {
         return `[REMOVED: ${action.config.removedImage}]`
       }
-      if (action.config.image) {
+      // Handle new target structure
+      const imageId = action.config.target?.type === 'image' ? action.config.target.imageId : action.config.image
+      if (imageId) {
         // First look for StateImage across all states
         let stateImageName = null
         for (const state of states) {
-          const stateImage = state.stateImages?.find((si: any) => si.id === action.config.image)
+          const stateImage = state.stateImages?.find((si: any) => si.id === imageId)
           if (stateImage) {
             stateImageName = stateImage.name
             break
@@ -458,7 +466,7 @@ function getActionSummary(action: Action, states: any[], processes: any[], image
         }
 
         // Fall back to image library
-        const image = images.find(img => img.id === action.config.image)
+        const image = images.find(img => img.id === imageId)
         if (image) {
           // Remove file extension from image name
           const nameWithoutExtension = image.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, '')
@@ -546,7 +554,17 @@ function getActionSummary(action: Action, states: any[], processes: any[], image
       if (action.config.removedImage) {
         return `Wait for [REMOVED: ${action.config.removedImage}] to vanish`
       }
-      return action.config.image ? `Wait for ${action.config.image} to vanish` : "No image selected"
+      // Handle new target structure
+      const vanishImageId = action.config.target?.type === 'image' ? action.config.target.imageId : action.config.image
+      if (vanishImageId) {
+        const vanishImage = images.find(img => img.id === vanishImageId)
+        if (vanishImage) {
+          const nameWithoutExtension = vanishImage.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, '')
+          return `Wait for ${nameWithoutExtension} to vanish`
+        }
+        return `Wait for ${vanishImageId} to vanish`
+      }
+      return "No image selected"
     case "GO_TO_STATE":
       const targetStates = (action.config.states as string[]) || [];
       if (targetStates.length > 0) {
