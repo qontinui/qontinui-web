@@ -61,8 +61,8 @@ export function getDefaultConfig<T extends ActionType>(type: T): ActionConfigMap
         target: {
           type: 'currentPosition'
         },
-        button: 'left',
-        clickCount: 1
+        mouseButton: 'LEFT',
+        numberOfClicks: 1
       } as ActionConfigMap[T];
 
     case 'MOUSE_MOVE':

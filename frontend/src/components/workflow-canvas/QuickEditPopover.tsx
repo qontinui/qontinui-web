@@ -89,11 +89,11 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Click Count</Label>
+              <Label className="text-xs">Number of Clicks</Label>
               <Input
                 type="number"
-                value={action.config.clickCount || 1}
-                onChange={(e) => updateConfig('clickCount', Number(e.target.value))}
+                value={action.config.numberOfClicks || 1}
+                onChange={(e) => updateConfig('numberOfClicks', Number(e.target.value))}
                 onKeyDown={handleKeyDown}
                 className="h-8 text-sm"
                 min="1"

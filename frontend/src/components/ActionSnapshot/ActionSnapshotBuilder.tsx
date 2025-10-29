@@ -35,7 +35,7 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
   const [actionConfig, setActionConfig] = useState({
     similarity: 0.8,
     waitTime: 0,
-    clickType: 'LEFT',
+    mouseButton: 'LEFT',
     offset: { x: 0, y: 0 }
   });
 
@@ -168,12 +168,12 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
             {actionType === 'CLICK' && (
               <div className="space-y-2">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Click Type</label>
+                  <label className="block text-sm font-medium mb-1">Mouse Button</label>
                   <select
-                    value={actionConfig.clickType}
+                    value={actionConfig.mouseButton}
                     onChange={(e) => setActionConfig({
                       ...actionConfig,
-                      clickType: e.target.value
+                      mouseButton: e.target.value
                     })}
                     className="w-full px-3 py-1 border rounded"
                   >

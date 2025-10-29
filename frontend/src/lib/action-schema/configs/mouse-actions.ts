@@ -29,11 +29,11 @@ export interface ClickActionConfig {
   /** Y coordinate (used when target is "Coordinates") */
   y?: number;
 
-  /** Type of click: "left", "right", "middle", or "double" */
-  clickType?: 'left' | 'right' | 'middle' | 'double';
+  /** Mouse button to use for the click */
+  mouseButton?: MouseButton;
 
   /** Number of times to click (1 = single, 2 = double, etc.) */
-  clickCount?: number;
+  numberOfClicks?: number;
 
   /** How long to hold the button down in milliseconds */
   hold_duration?: number;

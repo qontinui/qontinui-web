@@ -261,8 +261,8 @@ export function custom(
 const ACTION_VALIDATORS: Partial<Record<ActionType, ValidatorFunction[]>> = {
   CLICK: [
     // Target is optional - defaults to current position (pure action)
-    enumValue('clickType', ['left', 'right', 'middle', 'double'], 'Invalid click type'),
-    minValue('clickCount', 1, 'Click count must be at least 1'),
+    enumValue('mouseButton', ['LEFT', 'RIGHT', 'MIDDLE'], 'Invalid mouse button'),
+    minValue('numberOfClicks', 1, 'Number of clicks must be at least 1'),
     minValue('hold_duration', 0, 'Hold duration cannot be negative'),
   ],
 

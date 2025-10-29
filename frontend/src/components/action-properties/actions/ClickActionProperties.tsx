@@ -56,27 +56,26 @@ export function ClickActionProperties({
       )}
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Click Type</Label>
-        <Select value={action.config.clickType} onValueChange={(value) => updateConfig("clickType", value)}>
+        <Label className="text-xs text-gray-400">Mouse Button</Label>
+        <Select value={action.config.mouseButton} onValueChange={(value) => updateConfig("mouseButton", value)}>
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-[#27272A] border-gray-700">
-            <SelectItem value="left">Left Click</SelectItem>
-            <SelectItem value="right">Right Click</SelectItem>
-            <SelectItem value="middle">Middle Click</SelectItem>
-            <SelectItem value="double">Double Click</SelectItem>
+            <SelectItem value="LEFT">Left Click</SelectItem>
+            <SelectItem value="RIGHT">Right Click</SelectItem>
+            <SelectItem value="MIDDLE">Middle Click</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Click Count</Label>
+        <Label className="text-xs text-gray-400">Number of Clicks</Label>
         <Input
           type="number"
           min="1"
-          value={action.config.clickCount}
-          onChange={(e) => updateConfig("clickCount", Number.parseInt(e.target.value))}
+          value={action.config.numberOfClicks}
+          onChange={(e) => updateConfig("numberOfClicks", Number.parseInt(e.target.value))}
           className="bg-transparent border-gray-700"
         />
       </div>

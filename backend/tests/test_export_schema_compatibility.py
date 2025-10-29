@@ -511,8 +511,8 @@ class TestCompleteConfigExport:
                         "target": {
                             "type": "currentPosition"
                         },
-                        "button": "left",
-                        "clickCount": 1
+                        "mouseButton": "LEFT",
+                        "numberOfClicks": 1
                     },
                     "position": [200, 100]
                 },

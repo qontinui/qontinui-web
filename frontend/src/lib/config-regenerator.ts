@@ -83,13 +83,16 @@ export function regenerateHelperWorkflows(
 }
 
 /**
- * Update FIND action configs to use the new schema format.
- * Converts old format {imageId: '...'} to new format {target: {type: 'image', imageId: '...'}}.
+ * Update action configs to use the new schema format.
+ * - FIND actions: Converts {imageId: '...'} to {target: {type: 'image', imageId: '...'}}
+ * - MOUSE_MOVE actions: Converts "Last Find Result" string to {type: 'lastFindResult'}
+ * - CLICK actions: Converts "Current Position" string to {type: 'currentPosition'}
  */
-function updateFindActionConfigs(actions: any[]): number {
+function updateActionConfigs(actions: any[]): number {
   let updatedCount = 0;
 
   actions.forEach(action => {
+    // Update FIND actions
     if (action.type === 'FIND' && action.config) {
       // Check if using old schema (has imageId but no target)
       if (action.config.imageId && !action.config.target) {
@@ -104,6 +107,28 @@ function updateFindActionConfigs(actions: any[]): number {
         // Remove old imageId field
         delete action.config.imageId;
 
+        updatedCount++;
+      }
+    }
+
+    // Update MOUSE_MOVE actions with "Last Find Result" string target
+    if (action.type === 'MOUSE_MOVE' && action.config) {
+      if (typeof action.config.target === 'string' && action.config.target === 'Last Find Result') {
+        // Convert to LastFindResultTarget
+        action.config.target = {
+          type: 'lastFindResult'
+        };
+        updatedCount++;
+      }
+    }
+
+    // Update CLICK actions with "Current Position" string target
+    if (action.type === 'CLICK' && action.config) {
+      if (typeof action.config.target === 'string' && action.config.target === 'Current Position') {
+        // Convert to CurrentPositionTarget
+        action.config.target = {
+          type: 'currentPosition'
+        };
         updatedCount++;
       }
     }
@@ -139,13 +164,13 @@ export function processWorkflowsThroughExportLogic(workflows: Workflow[]): {
         processedWorkflow.connections = {};
       }
 
-      // Update FIND action configs to new schema
+      // Update action configs to new schema (FIND and MOUSE_MOVE)
       if (processedWorkflow.actions && Array.isArray(processedWorkflow.actions)) {
-        const updatedCount = updateFindActionConfigs(processedWorkflow.actions);
+        const updatedCount = updateActionConfigs(processedWorkflow.actions);
         totalFindActionsUpdated += updatedCount;
 
         if (updatedCount > 0) {
-          console.log(`Regenerate: Updated ${updatedCount} FIND action(s) in workflow '${processedWorkflow.name || processedWorkflow.id}'`);
+          console.log(`Regenerate: Updated ${updatedCount} action(s) in workflow '${processedWorkflow.name || processedWorkflow.id}'`);
         }
       }
 
