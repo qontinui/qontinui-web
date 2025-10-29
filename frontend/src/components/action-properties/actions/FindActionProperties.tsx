@@ -10,6 +10,7 @@ import { DurationOverride } from "../DurationOverride"
 
 /**
  * Properties component for FIND action.
+ * Uses the new target structure: {target: {type: "image", imageId: "..."}}
  */
 export function FindActionProperties({
   action,
@@ -18,6 +19,19 @@ export function FindActionProperties({
   states,
   shouldOpenImageSelector
 }: ActionPropertiesComponentProps) {
+  // Extract imageId from the new target structure
+  const imageId = action.config.target?.type === 'image'
+    ? action.config.target.imageId
+    : null
+
+  const handleImageSelect = (selectedImageId: string) => {
+    // Generate the new target structure
+    updateConfig("target", {
+      type: "image",
+      imageId: selectedImageId
+    })
+  }
+
   return (
     <>
       <div className="space-y-2">
@@ -31,8 +45,8 @@ export function FindActionProperties({
           </div>
         )}
         <ImageSelector
-          selectedImage={action.config.image || null}
-          onSelectImage={(imageId) => updateConfig("image", imageId)}
+          selectedImage={imageId}
+          onSelectImage={handleImageSelect}
           images={images}
           states={states}
           placeholder="Select image to find"

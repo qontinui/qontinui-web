@@ -574,12 +574,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
     workflows.forEach(workflow => {
       const actionsWithImage = workflow.actions.filter(action => {
-        // Check if action uses this image directly
+        // Check if action uses this image in new target structure
+        if (action.config.target?.type === 'image' && action.config.target.imageId === imageId) return true
+        // Check legacy format
         if (action.config.image === imageId) return true
         // Check DRAG actions (to field)
         if (action.type === "DRAG" && action.config.to === imageId) return true
-        // Check VANISH actions
-        if (action.type === "VANISH" && action.config.image === imageId) return true
         return false
       })
 
@@ -623,7 +623,22 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     for (const workflow of workflows) {
       let hasChanges = false
       const updatedActions = workflow.actions.map(action => {
-        // Check if action uses this image
+        // Check if action uses this image in new target structure
+        if (action.config.target?.type === 'image' && action.config.target.imageId === imageId) {
+          hasChanges = true
+          return {
+            ...action,
+            config: {
+              ...action.config,
+              target: {
+                type: 'image',
+                imageId: null
+              },
+              removedImage: imageName // Store the original image name
+            }
+          }
+        }
+        // Check legacy format
         if (action.config.image === imageId) {
           hasChanges = true
           return {
@@ -644,18 +659,6 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
               ...action.config,
               to: null,
               removedImageTo: imageName
-            }
-          }
-        }
-        // Check VANISH actions
-        if (action.type === "VANISH" && action.config.image === imageId) {
-          hasChanges = true
-          return {
-            ...action,
-            config: {
-              ...action.config,
-              image: null,
-              removedImage: imageName
             }
           }
         }

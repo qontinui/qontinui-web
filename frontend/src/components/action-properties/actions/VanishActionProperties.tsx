@@ -8,12 +8,26 @@ import { TimingProperties } from "../TimingProperties"
 
 /**
  * Properties component for VANISH action.
+ * Uses the new target structure: {target: {type: "image", imageId: "..."}}
  */
 export function VanishActionProperties({
   action,
   updateConfig,
   images
 }: ActionPropertiesComponentProps) {
+  // Extract imageId from the new target structure
+  const imageId = action.config.target?.type === 'image'
+    ? action.config.target.imageId
+    : null
+
+  const handleImageSelect = (selectedImageId: string) => {
+    // Generate the new target structure
+    updateConfig("target", {
+      type: "image",
+      imageId: selectedImageId
+    })
+  }
+
   return (
     <>
       <div className="space-y-2">
@@ -27,8 +41,8 @@ export function VanishActionProperties({
           </div>
         )}
         <ImageSelector
-          selectedImage={action.config.image || null}
-          onSelectImage={(imageId) => updateConfig("image", imageId)}
+          selectedImage={imageId}
+          onSelectImage={handleImageSelect}
           images={images}
           placeholder="Select image to wait for disappearance"
         />
@@ -39,8 +53,8 @@ export function VanishActionProperties({
         <Input
           type="number"
           min="0"
-          value={action.config.timeout}
-          onChange={(e) => updateConfig("timeout", Number.parseInt(e.target.value))}
+          value={action.config.maxWaitTime || 5000}
+          onChange={(e) => updateConfig("maxWaitTime", Number.parseInt(e.target.value))}
           className="bg-transparent border-gray-700"
         />
       </div>
@@ -50,8 +64,8 @@ export function VanishActionProperties({
         <Input
           type="number"
           min="0"
-          value={action.config.check_interval}
-          onChange={(e) => updateConfig("check_interval", Number.parseInt(e.target.value))}
+          value={action.config.pollInterval || 500}
+          onChange={(e) => updateConfig("pollInterval", Number.parseInt(e.target.value))}
           className="bg-transparent border-gray-700"
         />
       </div>

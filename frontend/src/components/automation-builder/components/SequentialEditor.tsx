@@ -351,7 +351,12 @@ export function SequentialEditor({
 function getDefaultConfig(type: Action["type"]): Record<string, any> {
   switch (type) {
     case "FIND":
-      return { image: null }
+      return {
+        target: {
+          type: "image",
+          imageId: null
+        }
+      }
     case "FIND_STATE_IMAGE":
       return { state: null }
     case "CLICK":
@@ -371,7 +376,14 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
     case "SCROLL":
       return { direction: "down", amount: 3, scroll_duration: 500, smooth_scroll: true }
     case "VANISH":
-      return { image: null, timeout: 5000, check_interval: 500 }
+      return {
+        target: {
+          type: "image",
+          imageId: null
+        },
+        maxWaitTime: 5000,
+        pollInterval: 500
+      }
     case "GO_TO_STATE":
       return { states: [] }  // Array of state IDs for multi-target pathfinding
     case "RUN_WORKFLOW":
@@ -439,10 +451,12 @@ function getActionSummary(action: Action, states: any[], workflows: any[], image
       if (action.config.removedImage) {
         return `[REMOVED: ${action.config.removedImage}]`
       }
-      if (action.config.image) {
+      // Handle new target structure
+      const imageId = action.config.target?.type === 'image' ? action.config.target.imageId : action.config.image
+      if (imageId) {
         let stateImageName = null
         for (const state of states) {
-          const stateImage = state.stateImages?.find((si: any) => si.id === action.config.image)
+          const stateImage = state.stateImages?.find((si: any) => si.id === imageId)
           if (stateImage) {
             stateImageName = stateImage.name
             break
@@ -452,7 +466,7 @@ function getActionSummary(action: Action, states: any[], workflows: any[], image
           const nameWithoutExtension = stateImageName.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
           return `Find ${nameWithoutExtension}`
         }
-        const image = images.find((img) => img.id === action.config.image)
+        const image = images.find((img) => img.id === imageId)
         if (image) {
           const nameWithoutExtension = image.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
           return `Find ${nameWithoutExtension}`
@@ -509,7 +523,17 @@ function getActionSummary(action: Action, states: any[], workflows: any[], image
       if (action.config.removedImage) {
         return `Wait for [REMOVED: ${action.config.removedImage}] to vanish`
       }
-      return action.config.image ? `Wait for ${action.config.image} to vanish` : "No image selected"
+      // Handle new target structure
+      const vanishImageId = action.config.target?.type === 'image' ? action.config.target.imageId : action.config.image
+      if (vanishImageId) {
+        const vanishImage = images.find((img) => img.id === vanishImageId)
+        if (vanishImage) {
+          const nameWithoutExtension = vanishImage.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
+          return `Wait for ${nameWithoutExtension} to vanish`
+        }
+        return `Wait for ${vanishImageId} to vanish`
+      }
+      return "No image selected"
     case "GO_TO_STATE":
       const targetStates = (action.config.states as string[]) || [];
       if (targetStates.length > 0) {

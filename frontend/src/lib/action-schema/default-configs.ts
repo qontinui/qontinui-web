@@ -1,0 +1,297 @@
+/**
+ * Default configuration values for all action types
+ *
+ * Provides type-safe default configs that match the schema definitions.
+ * Used when creating new actions from palette or programmatically.
+ */
+
+import { ActionType, ActionConfigMap } from './action-types';
+
+/**
+ * Get default configuration for a given action type
+ */
+export function getDefaultConfig<T extends ActionType>(type: T): ActionConfigMap[T] {
+  switch (type) {
+    // ========================================================================
+    // Find Actions
+    // ========================================================================
+    case 'FIND':
+      return {
+        target: {
+          type: 'image',
+          imageId: null as any
+        }
+      } as ActionConfigMap[T];
+
+    case 'FIND_STATE_IMAGE':
+      return {
+        stateId: '',
+        imageId: ''
+      } as ActionConfigMap[T];
+
+    case 'VANISH':
+      return {
+        target: {
+          type: 'image',
+          imageId: null as any
+        },
+        maxWaitTime: 5000,
+        pollInterval: 500
+      } as ActionConfigMap[T];
+
+    case 'EXISTS':
+      return {
+        target: {
+          type: 'image',
+          imageId: null as any
+        }
+      } as ActionConfigMap[T];
+
+    case 'WAIT':
+      return {
+        waitFor: 'time',
+        duration: 1000
+      } as ActionConfigMap[T];
+
+    // ========================================================================
+    // Mouse Actions
+    // ========================================================================
+    case 'CLICK':
+      return {
+        target: {
+          type: 'currentPosition'
+        },
+        button: 'left',
+        clickCount: 1
+      } as ActionConfigMap[T];
+
+    case 'MOUSE_MOVE':
+      return {
+        target: {
+          type: 'currentPosition'
+        }
+      } as ActionConfigMap[T];
+
+    case 'MOUSE_DOWN':
+      return {
+        button: 'left'
+      } as ActionConfigMap[T];
+
+    case 'MOUSE_UP':
+      return {
+        button: 'left'
+      } as ActionConfigMap[T];
+
+    case 'DRAG':
+      return {
+        from: {
+          type: 'currentPosition'
+        },
+        to: {
+          type: 'currentPosition'
+        }
+      } as ActionConfigMap[T];
+
+    case 'SCROLL':
+      return {
+        direction: 'down',
+        amount: 3
+      } as ActionConfigMap[T];
+
+    // ========================================================================
+    // Keyboard Actions
+    // ========================================================================
+    case 'TYPE':
+      return {
+        text: ''
+      } as ActionConfigMap[T];
+
+    case 'KEY_PRESS':
+      return {
+        key: ''
+      } as ActionConfigMap[T];
+
+    case 'KEY_DOWN':
+      return {
+        key: ''
+      } as ActionConfigMap[T];
+
+    case 'KEY_UP':
+      return {
+        key: ''
+      } as ActionConfigMap[T];
+
+    case 'HOTKEY':
+      return {
+        keys: []
+      } as ActionConfigMap[T];
+
+    // ========================================================================
+    // Control Flow Actions
+    // ========================================================================
+    case 'IF':
+      return {
+        condition: {
+          type: 'javascript',
+          expression: 'true'
+        },
+        thenBranch: []
+      } as ActionConfigMap[T];
+
+    case 'LOOP':
+      return {
+        loopType: 'count',
+        count: 10,
+        body: []
+      } as ActionConfigMap[T];
+
+    case 'BREAK':
+      return {} as ActionConfigMap[T];
+
+    case 'CONTINUE':
+      return {} as ActionConfigMap[T];
+
+    case 'SWITCH':
+      return {
+        value: {
+          type: 'javascript',
+          expression: ''
+        },
+        cases: []
+      } as ActionConfigMap[T];
+
+    case 'TRY_CATCH':
+      return {
+        tryBranch: [],
+        catchBranch: []
+      } as ActionConfigMap[T];
+
+    // ========================================================================
+    // Data Actions
+    // ========================================================================
+    case 'SET_VARIABLE':
+      return {
+        variableName: '',
+        value: {
+          type: 'literal',
+          value: ''
+        }
+      } as ActionConfigMap[T];
+
+    case 'GET_VARIABLE':
+      return {
+        variableName: '',
+        outputVariable: ''
+      } as ActionConfigMap[T];
+
+    case 'SORT':
+      return {
+        array: {
+          type: 'variable',
+          variableName: ''
+        },
+        order: 'ascending',
+        outputVariable: ''
+      } as ActionConfigMap[T];
+
+    case 'FILTER':
+      return {
+        array: {
+          type: 'variable',
+          variableName: ''
+        },
+        condition: {
+          type: 'javascript',
+          expression: ''
+        },
+        outputVariable: ''
+      } as ActionConfigMap[T];
+
+    case 'MAP':
+      return {
+        array: {
+          type: 'variable',
+          variableName: ''
+        },
+        transform: {
+          type: 'javascript',
+          expression: ''
+        },
+        outputVariable: ''
+      } as ActionConfigMap[T];
+
+    case 'REDUCE':
+      return {
+        array: {
+          type: 'variable',
+          variableName: ''
+        },
+        reducer: {
+          type: 'javascript',
+          expression: ''
+        },
+        initialValue: null,
+        outputVariable: ''
+      } as ActionConfigMap[T];
+
+    case 'STRING_OPERATION':
+      return {
+        operation: 'concat',
+        inputs: [],
+        outputVariable: ''
+      } as ActionConfigMap[T];
+
+    case 'MATH_OPERATION':
+      return {
+        operation: 'add',
+        operands: [],
+        outputVariable: ''
+      } as ActionConfigMap[T];
+
+    // ========================================================================
+    // State Actions
+    // ========================================================================
+    case 'GO_TO_STATE':
+      return {
+        stateId: ''
+      } as ActionConfigMap[T];
+
+    case 'RUN_WORKFLOW':
+      return {
+        workflowId: ''
+      } as ActionConfigMap[T];
+
+    case 'SCREENSHOT':
+      return {
+        region: 'fullscreen',
+        outputVariable: 'screenshot'
+      } as ActionConfigMap[T];
+
+    default:
+      return {} as ActionConfigMap[T];
+  }
+}
+
+/**
+ * Check if an action config is valid (has required fields)
+ */
+export function isValidConfig<T extends ActionType>(type: T, config: any): config is ActionConfigMap[T] {
+  // Basic validation - could be expanded
+  switch (type) {
+    case 'FIND':
+    case 'EXISTS':
+    case 'VANISH':
+      return config?.target?.type === 'image';
+
+    case 'TYPE':
+      return typeof config?.text === 'string';
+
+    case 'KEY_PRESS':
+    case 'KEY_DOWN':
+    case 'KEY_UP':
+      return typeof config?.key === 'string';
+
+    default:
+      return true; // Assume valid for other types
+  }
+}

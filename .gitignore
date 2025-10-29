@@ -89,3 +89,6 @@ src/examples/
 
 # Claude development guidelines (local only)
 CLAUDE.md
+
+# Coverage reports
+coverage.xml
