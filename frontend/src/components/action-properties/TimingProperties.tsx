@@ -8,28 +8,41 @@ import { Action } from "./types"
 
 interface TimingPropertiesProps {
   action: Action
-  updateConfig: (key: string, value: any) => void
+  updateConfig?: (key: string, value: any) => void
 }
 
 /**
- * Reusable timing properties component for pause_before_begin and pause_after_end.
+ * Reusable timing properties component for pauseBeforeBegin and pauseAfterEnd.
+ * These settings are stored in action.base (not action.config) and exported as camelCase.
  */
 export function TimingProperties({ action, updateConfig }: TimingPropertiesProps) {
+  const pauseBeforeBegin = action.base?.pauseBeforeBegin
+  const pauseAfterEnd = action.base?.pauseAfterEnd
+
+  const updateBase = (key: 'pauseBeforeBegin' | 'pauseAfterEnd', value: number | undefined) => {
+    if (!updateConfig) return
+
+    const newBase = { ...(action.base || {}), [key]: value }
+    // Remove undefined values
+    if (value === undefined) {
+      delete newBase[key]
+    }
+    // Update via special __base__ key that the action editor will handle
+    updateConfig('__base__', Object.keys(newBase).length > 0 ? newBase : undefined)
+  }
+
   return (
     <>
       {/* Pause Before Begin Override */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label className="text-xs text-gray-400">Pause Before Begin Override (ms)</Label>
-          {action.config.pause_before_begin !== undefined ? (
+          {pauseBeforeBegin !== undefined ? (
             <Button
               variant="ghost"
               size="sm"
               className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
-              onClick={() => {
-                const { pause_before_begin, ...rest } = action.config
-                updateConfig("__reset__", rest)
-              }}
+              onClick={() => updateBase('pauseBeforeBegin', undefined)}
               title="Remove override (use default 0ms)"
             >
               <X className="w-3 h-3" />
@@ -38,12 +51,12 @@ export function TimingProperties({ action, updateConfig }: TimingPropertiesProps
             <span className="text-xs text-gray-500">(default: 0ms)</span>
           )}
         </div>
-        {action.config.pause_before_begin !== undefined ? (
+        {pauseBeforeBegin !== undefined ? (
           <Input
             type="number"
             min="0"
-            value={action.config.pause_before_begin}
-            onChange={(e) => updateConfig("pause_before_begin", Number.parseInt(e.target.value))}
+            value={pauseBeforeBegin}
+            onChange={(e) => updateBase('pauseBeforeBegin', Number.parseInt(e.target.value))}
             className="bg-transparent border-gray-700"
           />
         ) : (
@@ -51,7 +64,7 @@ export function TimingProperties({ action, updateConfig }: TimingPropertiesProps
             variant="ghost"
             size="sm"
             className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
-            onClick={() => updateConfig("pause_before_begin", 0)}
+            onClick={() => updateBase('pauseBeforeBegin', 0)}
           >
             <Plus className="w-3 h-3 mr-1" />
             Set Override
@@ -63,15 +76,12 @@ export function TimingProperties({ action, updateConfig }: TimingPropertiesProps
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label className="text-xs text-gray-400">Pause After End Override (ms)</Label>
-          {action.config.pause_after_end !== undefined ? (
+          {pauseAfterEnd !== undefined ? (
             <Button
               variant="ghost"
               size="sm"
               className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
-              onClick={() => {
-                const { pause_after_end, ...rest } = action.config
-                updateConfig("__reset__", rest)
-              }}
+              onClick={() => updateBase('pauseAfterEnd', undefined)}
               title="Remove override (use default 0ms)"
             >
               <X className="w-3 h-3" />
@@ -80,12 +90,12 @@ export function TimingProperties({ action, updateConfig }: TimingPropertiesProps
             <span className="text-xs text-gray-500">(default: 0ms)</span>
           )}
         </div>
-        {action.config.pause_after_end !== undefined ? (
+        {pauseAfterEnd !== undefined ? (
           <Input
             type="number"
             min="0"
-            value={action.config.pause_after_end}
-            onChange={(e) => updateConfig("pause_after_end", Number.parseInt(e.target.value))}
+            value={pauseAfterEnd}
+            onChange={(e) => updateBase('pauseAfterEnd', Number.parseInt(e.target.value))}
             className="bg-transparent border-gray-700"
           />
         ) : (
@@ -93,7 +103,7 @@ export function TimingProperties({ action, updateConfig }: TimingPropertiesProps
             variant="ghost"
             size="sm"
             className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
-            onClick={() => updateConfig("pause_after_end", 0)}
+            onClick={() => updateBase('pauseAfterEnd', 0)}
           >
             <Plus className="w-3 h-3 mr-1" />
             Set Override

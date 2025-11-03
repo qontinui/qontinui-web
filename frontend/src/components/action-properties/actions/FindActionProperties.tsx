@@ -10,7 +10,8 @@ import { DurationOverride } from "../DurationOverride"
 
 /**
  * Properties component for FIND action.
- * Uses the new target structure: {target: {type: "image", imageId: "..."}}
+ * Supports multi-image selection with new target structure:
+ * {target: {type: "image", imageIds: ["id1", "id2", ...]}}
  */
 export function FindActionProperties({
   action,
@@ -19,37 +20,41 @@ export function FindActionProperties({
   states,
   shouldOpenImageSelector
 }: ActionPropertiesComponentProps) {
-  // Extract imageId from the new target structure
-  const imageId = action.config.target?.type === 'image'
-    ? action.config.target.imageId
+  // Extract imageIds from the new target structure (array format)
+  const imageIds = action.config.target?.type === 'image'
+    ? action.config.target.imageIds
     : null
 
-  const handleImageSelect = (selectedImageId: string) => {
-    // Generate the new target structure
+  // Handle single image IDs for backward compatibility (shouldn't happen with new schema)
+  const hasImageIds = imageIds && Array.isArray(imageIds)
+
+  const handleImagesSelect = (selectedImageIds: string[]) => {
+    // Generate the new target structure with array of image IDs
     updateConfig("target", {
       type: "image",
-      imageId: selectedImageId
+      imageIds: selectedImageIds
     })
   }
 
   return (
     <>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-400">Image</Label>
+        <Label className="text-xs text-gray-400">Images (multi-select enabled)</Label>
         {action.config.removedImage && (
           <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-300">
             <span className="font-medium">Removed Image:</span> {action.config.removedImage}
             <p className="text-xs text-red-400 mt-1">
-              This image was deleted. Please select a new image.
+              This image was deleted. Please select new images.
             </p>
           </div>
         )}
         <ImageSelector
-          selectedImage={imageId}
-          onSelectImage={handleImageSelect}
+          selectedImages={hasImageIds ? imageIds : []}
+          onSelectImages={handleImagesSelect}
+          multiSelect={true}
           images={images}
           states={states}
-          placeholder="Select image to find"
+          placeholder="Select images to find"
           showStateFilter={true}
           initialOpen={shouldOpenImageSelector}
         />

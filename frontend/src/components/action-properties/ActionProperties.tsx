@@ -57,6 +57,16 @@ export function ActionProperties({ action, onUpdateAction }: ActionPropertiesPro
       return
     }
 
+    // Special case: update base settings (pause timing, etc.)
+    if (key === "__base__") {
+      const updatedAction = {
+        ...action,
+        base: value
+      }
+      onUpdateAction(updatedAction)
+      return
+    }
+
     if (key === "image") {
       // Remove old image usage
       if (action.config.image) {

@@ -254,17 +254,6 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label className="text-xs text-gray-400">Continue on Error</Label>
-                <p className="text-xs text-gray-500">Don't stop on action failures</p>
-              </div>
-              <Switch
-                checked={workflow.settings?.continueOnError || false}
-                onCheckedChange={(checked) => updateSettings('continueOnError', checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
                 <Label className="text-xs text-gray-400">Parallel Execution</Label>
                 <p className="text-xs text-gray-500">Enable parallel branches</p>
               </div>
