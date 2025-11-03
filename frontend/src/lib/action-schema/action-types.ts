@@ -263,6 +263,10 @@ export interface WorkflowVariables {
 
 /**
  * Workflow execution settings
+ *
+ * Note: Model-based GUI automation is resilient by design - workflows always
+ * continue executing even if individual actions fail. This makes automation
+ * robust and flexible, able to handle unexpected states gracefully.
  */
 export interface WorkflowSettings {
   /** Maximum execution time in milliseconds */
@@ -273,9 +277,6 @@ export interface WorkflowSettings {
 
   /** Delay between retry attempts in milliseconds */
   retryDelay?: number;
-
-  /** Whether to continue execution on action failures */
-  continueOnError?: boolean;
 
   /** Enable parallel execution where possible */
   enableParallelExecution?: boolean;

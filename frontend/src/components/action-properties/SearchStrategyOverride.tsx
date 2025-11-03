@@ -13,38 +13,85 @@ interface SearchStrategyOverrideProps {
 
 /**
  * Reusable search strategy override component for FIND and FIND_STATE_IMAGE actions.
+ *
+ * Strategy is stored in target.searchOptions.searchStrategy (nested in searchOptions).
  */
 export function SearchStrategyOverride({ action, updateConfig }: SearchStrategyOverrideProps) {
+  // Strategy is nested in target.searchOptions.searchStrategy
+  const currentStrategy = action.config.target?.searchOptions?.searchStrategy
+
+  const handleStrategyChange = (value: string) => {
+    const currentTarget = action.config.target || { type: "image", imageIds: [] }
+    const currentSearchOptions = currentTarget.searchOptions || {}
+
+    updateConfig("target", {
+      ...currentTarget,
+      searchOptions: {
+        ...currentSearchOptions,
+        searchStrategy: value
+      }
+    })
+  }
+
+  const handleRemoveStrategy = () => {
+    const currentTarget = action.config.target || { type: "image", imageIds: [] }
+    const currentSearchOptions = currentTarget.searchOptions || {}
+    const { searchStrategy, ...restSearchOptions } = currentSearchOptions
+
+    updateConfig("target", {
+      ...currentTarget,
+      searchOptions: Object.keys(restSearchOptions).length > 0 ? restSearchOptions : undefined
+    })
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="text-xs text-gray-400">Search Strategy Override</Label>
-        {action.config.strategy !== undefined ? (
+        <Label className="text-xs text-gray-400">Search Strategy</Label>
+        {currentStrategy !== undefined ? (
           <Button
             variant="ghost"
             size="sm"
             className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
-            onClick={() => {
-              const { strategy, ...rest } = action.config
-              updateConfig("__reset__", rest)
-            }}
-            title="Remove override (use project default)"
+            onClick={handleRemoveStrategy}
+            title="Remove override (use default: FIRST)"
           >
             <X className="w-3 h-3" />
           </Button>
         ) : (
-          <span className="text-xs text-gray-500">(using project default)</span>
+          <span className="text-xs text-gray-500">(default: FIRST)</span>
         )}
       </div>
-      {action.config.strategy !== undefined ? (
-        <Select value={action.config.strategy} onValueChange={(value) => updateConfig("strategy", value)}>
+      {currentStrategy !== undefined ? (
+        <Select value={currentStrategy} onValueChange={handleStrategyChange}>
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-[#27272A] border-gray-700">
-            <SelectItem value="First">First</SelectItem>
-            <SelectItem value="All">All</SelectItem>
-            <SelectItem value="Best">Best</SelectItem>
+            <SelectItem value="FIRST">
+              <div className="flex flex-col">
+                <span>FIRST</span>
+                <span className="text-xs text-gray-400">Return first match found</span>
+              </div>
+            </SelectItem>
+            <SelectItem value="BEST">
+              <div className="flex flex-col">
+                <span>BEST</span>
+                <span className="text-xs text-gray-400">Return highest confidence match</span>
+              </div>
+            </SelectItem>
+            <SelectItem value="ALL">
+              <div className="flex flex-col">
+                <span>ALL</span>
+                <span className="text-xs text-gray-400">Return all matches found</span>
+              </div>
+            </SelectItem>
+            <SelectItem value="EACH">
+              <div className="flex flex-col">
+                <span>EACH</span>
+                <span className="text-xs text-gray-400">Return one match per image</span>
+              </div>
+            </SelectItem>
           </SelectContent>
         </Select>
       ) : (
@@ -52,11 +99,19 @@ export function SearchStrategyOverride({ action, updateConfig }: SearchStrategyO
           variant="ghost"
           size="sm"
           className="w-full h-6 text-xs text-[#00D9FF] hover:text-[#00D9FF]/80 hover:bg-[#00D9FF]/10"
-          onClick={() => updateConfig("strategy", "First")}
+          onClick={() => handleStrategyChange("FIRST")}
         >
           <Plus className="w-3 h-3 mr-1" />
-          Set Override
+          Set Strategy
         </Button>
+      )}
+      {currentStrategy && (
+        <p className="text-xs text-gray-500 mt-1">
+          {currentStrategy === "FIRST" && "Searches patterns in parallel, returns immediately on first match."}
+          {currentStrategy === "BEST" && "Searches all patterns in parallel, returns the highest confidence match."}
+          {currentStrategy === "ALL" && "Searches all patterns in parallel, returns all matches found."}
+          {currentStrategy === "EACH" && "Searches all patterns in parallel, returns best match per image."}
+        </p>
       )}
     </div>
   )

@@ -282,15 +282,27 @@ export class ConfigImporter {
 
     // Start with the config object directly
     if (action.config) {
-      // Handle target if present
+      // Handle target if present - keep target structure intact for new UI
       if (action.config.target) {
+        // For image targets, ensure imageIds is an array
         if (action.config.target.type === 'image') {
-          internalConfig.imageId = action.config.target.imageId;
-          internalConfig.threshold = action.config.target.threshold;
-        } else if (action.config.target.type === 'region') {
-          internalConfig.region = action.config.target.region;
-        } else if (action.config.target.type === 'coordinates') {
-          internalConfig.coordinates = action.config.target.coordinates;
+          const target = { ...action.config.target };
+
+          // Convert old single imageId to imageIds array
+          if (target.imageId && !target.imageIds) {
+            target.imageIds = [target.imageId];
+            delete target.imageId;
+          }
+
+          // Ensure imageIds is an array
+          if (target.imageIds && !Array.isArray(target.imageIds)) {
+            target.imageIds = [target.imageIds];
+          }
+
+          internalConfig.target = target;
+        } else {
+          // Keep other target types as-is
+          internalConfig.target = action.config.target;
         }
       }
 
@@ -366,15 +378,26 @@ export class ConfigImporter {
   private importActionConfig(config: any, action: any): Record<string, any> {
     const internalConfig: Record<string, any> = {};
 
-    // Handle target
+    // Handle target - keep target structure for new UI
     if (config.target) {
       if (config.target.type === 'image') {
-        internalConfig.imageId = config.target.imageId;
-        internalConfig.threshold = config.target.threshold;
-      } else if (config.target.type === 'region') {
-        internalConfig.region = config.target.region;
-      } else if (config.target.type === 'coordinates') {
-        internalConfig.coordinates = config.target.coordinates;
+        const target = { ...config.target };
+
+        // Convert old single imageId to imageIds array
+        if (target.imageId && !target.imageIds) {
+          target.imageIds = [target.imageId];
+          delete target.imageId;
+        }
+
+        // Ensure imageIds is an array
+        if (target.imageIds && !Array.isArray(target.imageIds)) {
+          target.imageIds = [target.imageIds];
+        }
+
+        internalConfig.target = target;
+      } else {
+        // Keep other target types as-is
+        internalConfig.target = config.target;
       }
     }
 

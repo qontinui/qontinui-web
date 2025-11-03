@@ -50,7 +50,6 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
   const commonEnabled = getCommonValue('enabled');
   const commonTimeout = getCommonValue('timeout');
   const commonRetries = getCommonValue('maxRetries');
-  const commonContinueOnError = getCommonValue('continueOnError');
 
   // Check for type consistency
   const actionTypes = new Set(actions.map((a) => a.type));
@@ -175,21 +174,6 @@ export const MultiSelectProperties: React.FC<MultiSelectPropertiesProps> = ({
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-xs text-gray-400">Continue on Error</Label>
-                <p className="text-xs text-gray-500">Don't stop on failures</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {isMixedValue('continueOnError') && (
-                  <span className="text-xs text-yellow-400">(mixed)</span>
-                )}
-                <Switch
-                  checked={commonContinueOnError === true}
-                  onCheckedChange={(checked) => updateCommonConfig('continueOnError', checked)}
-                />
-              </div>
-            </div>
           </div>
         </section>
 
