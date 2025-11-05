@@ -135,20 +135,23 @@ export function StatePropertiesPanel({
       // Generate the helper workflow
       const helperWorkflow = createFindAnyStateImageWorkflow(state)
 
+      // Add helper workflow to global workflows database
+      addWorkflow(helperWorkflow)
+
       // Check if this transition exists in the database
       const existingTransition = incomingTransitions.find(t => t.id === transition.id)
 
-      // Add as an inline workflow reference (NOT to global database)
+      // Add helper workflow ID to transition's workflows array
       const newWorkflows = [
         ...(transition.workflows || []),
-        { type: 'inline' as const, workflow: helperWorkflow }
+        helperWorkflow.id
       ]
 
       if (existingTransition) {
         // Update existing transition
         updateTransition({ ...transition, workflows: newWorkflows })
       } else {
-        // Create new transition with the workflow
+        // Create new transition with the helper workflow reference
         addTransition({ ...transition, workflows: newWorkflows })
       }
     } catch (error) {
@@ -1220,9 +1223,7 @@ export function StatePropertiesPanel({
                   const category = w.category || "Main"
                   const matchesCategory = categoryFilter === "All" || category === categoryFilter
                   // Check if this workflow is already referenced in the transition
-                  const alreadyAdded = transition.workflows?.some(
-                    ref => ref.type === 'reference' && ref.workflowId === w.id
-                  )
+                  const alreadyAdded = transition.workflows?.includes(w.id)
                   return !alreadyAdded && matchesCategory
                 })
 
@@ -1258,17 +1259,14 @@ export function StatePropertiesPanel({
                             <div className="space-y-1.5">
                               <Label className="text-xs text-gray-400">Workflows (execute in order):</Label>
                               <div className="space-y-1">
-                                {transition.workflows.map((workflowRef, idx) => {
-                                  // Get workflow based on reference type
-                                  const workflow = workflowRef.type === 'reference'
-                                    ? workflows.find(w => w.id === workflowRef.workflowId)
-                                    : workflowRef.workflow
-
+                                {transition.workflows.map((workflowId, idx) => {
+                                  const workflow = workflows.find(w => w.id === workflowId)
                                   const workflowName = workflow?.name || 'Unknown Workflow'
+                                  const isHelper = workflowId.startsWith('wf-helper-')
 
                                   return (
                                     <div
-                                      key={workflowRef.type === 'reference' ? workflowRef.workflowId : workflowRef.workflow.id}
+                                      key={workflowId}
                                       className="flex items-center gap-2 text-xs text-gray-300 p-2 bg-gray-900/50 rounded"
                                     >
                                       <Badge className="bg-[#00D9FF] text-black text-xs px-1.5">
@@ -1276,8 +1274,8 @@ export function StatePropertiesPanel({
                                       </Badge>
                                       <span className="flex-1">{workflowName}</span>
 
-                                      {/* Type badge - inline vs referenced */}
-                                      {workflowRef.type === 'inline' ? (
+                                      {/* Helper badge for auto-generated workflows */}
+                                      {isHelper ? (
                                         <Badge className="bg-[#00FF88]/20 text-[#00FF88] border-[#00FF88]/30 text-xs px-1.5">
                                           Helper
                                         </Badge>
@@ -1289,46 +1287,18 @@ export function StatePropertiesPanel({
                                         )
                                       )}
 
-                                      {/* Reorder and Delete Buttons */}
-                                      <div className="flex items-center gap-0.5">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-5 w-5 p-0 text-gray-400 hover:text-gray-200"
-                                          disabled={idx === 0}
-                                          onClick={() => {
-                                            const newWorkflows = [...transition.workflows]
-                                            ;[newWorkflows[idx], newWorkflows[idx - 1]] = [newWorkflows[idx - 1], newWorkflows[idx]]
-                                            updateTransition({ ...transition, workflows: newWorkflows })
-                                          }}
-                                        >
-                                          <ChevronUp className="w-3 h-3" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-5 w-5 p-0 text-gray-400 hover:text-gray-200"
-                                          disabled={idx === transition.workflows.length - 1}
-                                          onClick={() => {
-                                            const newWorkflows = [...transition.workflows]
-                                            ;[newWorkflows[idx], newWorkflows[idx + 1]] = [newWorkflows[idx + 1], newWorkflows[idx]]
-                                            updateTransition({ ...transition, workflows: newWorkflows })
-                                          }}
-                                        >
-                                          <ChevronDown className="w-3 h-3" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-5 w-5 p-0 text-red-400 hover:text-red-300"
-                                          onClick={() => {
-                                            const newWorkflows = transition.workflows.filter((_, i) => i !== idx)
-                                            updateTransition({ ...transition, workflows: newWorkflows })
-                                          }}
-                                        >
-                                          <Trash2 className="w-3 h-3" />
-                                        </Button>
-                                      </div>
+                                      {/* Delete Button */}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-5 w-5 p-0 text-red-400 hover:text-red-300"
+                                        onClick={() => {
+                                          const newWorkflows = transition.workflows.filter((_, i) => i !== idx)
+                                          updateTransition({ ...transition, workflows: newWorkflows })
+                                        }}
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </Button>
                                     </div>
                                   )
                                 })}
@@ -1391,7 +1361,7 @@ export function StatePropertiesPanel({
                                 onValueChange={(workflowId) => {
                                   const newWorkflows = [
                                     ...(transition.workflows || []),
-                                    { type: 'reference' as const, workflowId }
+                                    workflowId
                                   ]
                                   updateTransition({ ...transition, workflows: newWorkflows })
                                 }}

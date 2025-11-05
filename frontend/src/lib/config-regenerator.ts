@@ -36,20 +36,16 @@ export function regenerateHelperWorkflows(
   const stateMap = new Map<string, State>();
   states.forEach(state => stateMap.set(state.id, state));
 
-  // Process each transition
-  transitions.forEach(transition => {
-    // Check if this transition has inline workflows (helper workflows)
-    const workflowRefs = transition.workflows || [];
+  // Find all helper workflows in the workflows array (by ID pattern)
+  const helperWorkflows = workflows.filter(w => w.id.startsWith('wf-helper-find-any-'));
 
-    workflowRefs.forEach(ref => {
-      if (ref.type === 'inline' && ref.workflow) {
-        const inlineWorkflow = ref.workflow;
-
-        // Check if this looks like a helper workflow (starts with wf-helper-)
-        if (inlineWorkflow.id.startsWith('wf-helper-find-any-')) {
+  helperWorkflows.forEach(helperWorkflow => {
+    if (helperWorkflow) {
+      // Check if this looks like a helper workflow (starts with wf-helper-)
+      if (helperWorkflow.id.startsWith('wf-helper-find-any-')) {
           // Extract the state this helper workflow is for
           // Helper workflows are tagged with the state ID
-          const stateTags = inlineWorkflow.tags?.filter(tag =>
+          const stateTags = helperWorkflow.tags?.filter(tag =>
             !['helper', 'auto-generated', 'find-state-image'].includes(tag)
           ) || [];
 
@@ -63,21 +59,20 @@ export function regenerateHelperWorkflows(
                 const newWorkflow = createFindAnyStateImageWorkflow(state);
 
                 // Preserve the original ID so references don't break
-                newWorkflow.id = inlineWorkflow.id;
+                newWorkflow.id = helperWorkflow.id;
 
-                regenerated.set(inlineWorkflow.id, newWorkflow);
+                regenerated.set(helperWorkflow.id, newWorkflow);
                 count++;
               } catch (error) {
-                errors.push(`Failed to regenerate helper workflow ${inlineWorkflow.id}: ${error}`);
+                errors.push(`Failed to regenerate helper workflow ${helperWorkflow.id}: ${error}`);
               }
             } else {
-              errors.push(`State ${stateId} not found for helper workflow ${inlineWorkflow.id}`);
+              errors.push(`State ${stateId} not found for helper workflow ${helperWorkflow.id}`);
             }
           }
         }
       }
     });
-  });
 
   return { regenerated, count, errors };
 }
@@ -225,28 +220,14 @@ export function processWorkflowsThroughExportLogic(workflows: Workflow[]): {
 /**
  * Update transitions with regenerated helper workflows.
  */
-export function updateTransitionsWithRegeneratedWorkflows(
-  transitions: Transition[],
+export function updateWorkflowsWithRegenerated(
+  workflows: Workflow[],
   regeneratedWorkflows: Map<string, Workflow>
-): Transition[] {
-  return transitions.map(transition => {
-    const updatedWorkflowRefs = (transition.workflows || []).map(ref => {
-      if (ref.type === 'inline' && ref.workflow) {
-        const regenerated = regeneratedWorkflows.get(ref.workflow.id);
-        if (regenerated) {
-          return {
-            ...ref,
-            workflow: regenerated
-          };
-        }
-      }
-      return ref;
-    });
-
-    return {
-      ...transition,
-      workflows: updatedWorkflowRefs
-    };
+): Workflow[] {
+  return workflows.map(workflow => {
+    // If this workflow was regenerated, use the new version
+    const regenerated = regeneratedWorkflows.get(workflow.id);
+    return regenerated || workflow;
   });
 }
 

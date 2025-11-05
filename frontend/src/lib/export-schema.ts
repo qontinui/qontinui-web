@@ -382,7 +382,7 @@ export interface State {
 export interface Pattern {
   id: string;
   name?: string;
-  image: string; // Base64 PNG with transparency
+  imageId: string; // Reference to image ID in images array
   mask?: string; // Optional mask
   searchRegions?: SearchRegion[]; // Pattern-level search regions (precedence level 2)
   fixed: boolean; // If true, pattern position is fixed on screen
@@ -461,8 +461,7 @@ export interface Transition {
   type: 'OutgoingTransition' | 'IncomingTransition';
   name?: string;
   description?: string;
-  workflows: string[]; // Workflow IDs to execute (references to global workflows)
-  inlineWorkflows?: Workflow[]; // Inline workflow definitions (not in global database)
+  workflows: string[]; // Workflow IDs to execute in order (all workflows are in global database)
   timeout: number;
   retryCount: number;
   priority?: number; // For handling multiple valid transitions

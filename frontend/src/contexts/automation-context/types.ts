@@ -14,11 +14,6 @@ export interface ActionHistory {
 // All processes are now Workflows (graph format with linear connections)
 // ============================================================================
 
-// Workflow reference types for transitions
-export type WorkflowReference =
-  | { type: 'reference'; workflowId: string }  // Reference to global workflow
-  | { type: 'inline'; workflow: Workflow }     // Inline workflow definition
-
 export interface StateRegion {
   id: string
   name: string
@@ -144,7 +139,7 @@ export type TransitionType = "OutgoingTransition" | "IncomingTransition"
 export interface BaseTransition {
   id: string
   type: TransitionType
-  workflows: WorkflowReference[] // Ordered list of workflows (references or inline)
+  workflows: string[] // Workflow IDs to execute in order (v2.0.0 format)
   timeout: number
   retryCount: number
   position?: { x: number; y: number }  // For transition node positioning
@@ -154,6 +149,7 @@ export interface BaseTransition {
 export interface OutgoingTransition extends BaseTransition {
   type: "OutgoingTransition"
   fromState: string
+  toState?: string
   activateStates: string[]
   staysVisible: boolean
   deactivateStates: string[]
