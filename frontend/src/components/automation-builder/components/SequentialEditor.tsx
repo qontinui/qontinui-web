@@ -451,8 +451,10 @@ function getActionSummary(action: Action, states: any[], workflows: any[], image
       if (action.config.removedImage) {
         return `[REMOVED: ${action.config.removedImage}]`
       }
-      // Handle new target structure
-      const imageId = action.config.target?.type === 'image' ? action.config.target.imageId : action.config.image
+      // Handle new target structure with imageIds array
+      const imageIds = action.config.target?.type === 'image' ? action.config.target.imageIds : null
+      const imageId = imageIds?.[0] || action.config.target?.imageId || action.config.image
+
       if (imageId) {
         let stateImageName = null
         for (const state of states) {
@@ -464,12 +466,14 @@ function getActionSummary(action: Action, states: any[], workflows: any[], image
         }
         if (stateImageName) {
           const nameWithoutExtension = stateImageName.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
-          return `Find ${nameWithoutExtension}`
+          const suffix = imageIds && imageIds.length > 1 ? ` +${imageIds.length - 1} more` : ""
+          return `Find ${nameWithoutExtension}${suffix}`
         }
         const image = images.find((img) => img.id === imageId)
         if (image) {
           const nameWithoutExtension = image.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
-          return `Find ${nameWithoutExtension}`
+          const suffix = imageIds && imageIds.length > 1 ? ` +${imageIds.length - 1} more` : ""
+          return `Find ${nameWithoutExtension}${suffix}`
         }
         return "Image not found"
       }

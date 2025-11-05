@@ -49,6 +49,7 @@ function AutomationBuilderContent() {
   const [screenshots, setScreenshots] = useState<Screenshot[]>([])
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(null)
   const [createImagesDropdownOpen, setCreateImagesDropdownOpen] = useState(false)
+  const [imageAssetsDropdownOpen, setImageAssetsDropdownOpen] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const previousProjectName = useRef<string>('')
 
@@ -578,7 +579,10 @@ function AutomationBuilderContent() {
               <div className="bg-[#27272A] border-b border-gray-700 h-11 flex items-center px-4 gap-2">
                 <Button
                   variant="ghost"
-                  onClick={() => setActiveTab("state-machine")}
+                  onClick={() => {
+                    setActiveCategory("develop");
+                    setActiveTab("state-machine");
+                  }}
                   className={`h-9 px-6 font-medium transition-colors rounded-md ${
                     activeTab === "state-machine"
                       ? "bg-[#BD00FF] text-white"
@@ -588,17 +592,57 @@ function AutomationBuilderContent() {
                   State Structure
                 </Button>
 
-                <Button
-                  variant="ghost"
-                  onClick={() => setActiveTab("images")}
-                  className={`h-9 px-6 font-medium transition-colors rounded-md ${
-                    activeTab === "images"
-                      ? "bg-[#00FF88] text-black"
-                      : "text-gray-400 hover:text-white hover:bg-transparent"
-                  }`}
-                >
-                  Image Library
-                </Button>
+                {/* Image Assets Dropdown */}
+                <DropdownMenu open={imageAssetsDropdownOpen} onOpenChange={setImageAssetsDropdownOpen} modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className={`h-9 px-6 font-medium transition-colors rounded-md ${
+                        ["images", "screenshots"].includes(activeTab)
+                          ? "bg-[#00FF88] text-black hover:bg-[#00FF88]/90"
+                          : "text-gray-400 hover:text-white hover:bg-transparent"
+                      }`}
+                      onMouseEnter={() => setImageAssetsDropdownOpen(true)}
+                      onMouseLeave={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const isMovingDown = e.clientY > rect.bottom
+                        if (!isMovingDown) {
+                          setImageAssetsDropdownOpen(false)
+                        }
+                      }}
+                    >
+                      Image Assets
+                      <ChevronDown className="ml-1 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="w-56 bg-[#27272A] border-gray-700"
+                    onMouseEnter={() => setImageAssetsDropdownOpen(true)}
+                    onMouseLeave={() => setImageAssetsDropdownOpen(false)}
+                  >
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setActiveCategory("develop");
+                        setActiveTab("images");
+                      }}
+                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#00FF88]/20 focus:bg-[#00FF88]/20 focus:text-white"
+                    >
+                      <span className="w-3 h-3 rounded-full bg-[#00FF88] mr-3" />
+                      Library
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setActiveCategory("develop");
+                        setActiveTab("screenshots");
+                      }}
+                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FF8C42]/20 focus:bg-[#FF8C42]/20 focus:text-white"
+                    >
+                      <span className="w-3 h-3 rounded-full bg-[#FF8C42] mr-3" />
+                      Screenshots
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
                 {/* Create Images Dropdown */}
                 <DropdownMenu open={createImagesDropdownOpen} onOpenChange={setCreateImagesDropdownOpen} modal={false}>
@@ -606,7 +650,7 @@ function AutomationBuilderContent() {
                     <Button
                       variant="ghost"
                       className={`h-9 px-6 font-medium transition-colors rounded-md ${
-                        ["screenshots", "image-extraction", "pattern-optimization", "state-discovery", "background-removal"].includes(activeTab)
+                        ["image-extraction", "pattern-optimization", "state-discovery", "background-removal"].includes(activeTab)
                           ? "bg-[#FFD700] text-black hover:bg-[#FFD700]/90"
                           : "text-gray-400 hover:text-white hover:bg-transparent"
                       }`}
@@ -630,28 +674,30 @@ function AutomationBuilderContent() {
                     onMouseLeave={() => setCreateImagesDropdownOpen(false)}
                   >
                     <DropdownMenuItem
-                      onClick={() => setActiveTab("screenshots")}
-                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FF8C42]/20 focus:bg-[#FF8C42]/20 focus:text-white"
-                    >
-                      <span className="w-3 h-3 rounded-full bg-[#FF8C42] mr-3" />
-                      Screenshots
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setActiveTab("image-extraction")}
+                      onClick={() => {
+                        setActiveCategory("develop");
+                        setActiveTab("image-extraction");
+                      }}
                       className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FFA500]/20 focus:bg-[#FFA500]/20 focus:text-white"
                     >
                       <span className="w-3 h-3 rounded-full bg-[#FFA500] mr-3" />
                       Image Extraction
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => setActiveTab("pattern-optimization")}
+                      onClick={() => {
+                        setActiveCategory("develop");
+                        setActiveTab("pattern-optimization");
+                      }}
                       className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FFD700]/20 focus:bg-[#FFD700]/20 focus:text-white"
                     >
                       <span className="w-3 h-3 rounded-full bg-[#FFD700] mr-3" />
                       Pattern Optimization
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => setActiveTab("state-discovery")}
+                      onClick={() => {
+                        setActiveCategory("develop");
+                        setActiveTab("state-discovery");
+                      }}
                       className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#4ECDC4]/20 focus:bg-[#4ECDC4]/20 focus:text-white"
                     >
                       <span className="w-3 h-3 rounded-full bg-[#4ECDC4] mr-3" />
@@ -659,7 +705,10 @@ function AutomationBuilderContent() {
                       <span className="ml-2 text-xs bg-amber-500 text-black px-1.5 py-0.5 rounded">Beta</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => setActiveTab("background-removal")}
+                      onClick={() => {
+                        setActiveCategory("develop");
+                        setActiveTab("background-removal");
+                      }}
                       className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#9B59B6]/20 focus:bg-[#9B59B6]/20 focus:text-white"
                     >
                       <span className="w-3 h-3 rounded-full bg-[#9B59B6] mr-3" />
@@ -671,7 +720,10 @@ function AutomationBuilderContent() {
 
                 <Button
                   variant="ghost"
-                  onClick={() => setActiveTab("screenshot-annotation")}
+                  onClick={() => {
+                    setActiveCategory("develop");
+                    setActiveTab("screenshot-annotation");
+                  }}
                   className={`h-9 px-6 font-medium transition-colors rounded-md ${
                     activeTab === "screenshot-annotation"
                       ? "bg-[#FF6B35] text-white"

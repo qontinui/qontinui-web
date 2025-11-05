@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -18,6 +19,13 @@ export function TypeActionProperties({
   states,
   textAreaRef
 }: ActionPropertiesComponentProps) {
+  // Initialize textSource to default value if not set
+  useEffect(() => {
+    if (!action.config.textSource) {
+      updateConfig("textSource", "stateString")
+    }
+  }, [])
+
   return (
     <>
       <div className="space-y-2">
@@ -45,7 +53,7 @@ export function TypeActionProperties({
         </Select>
       </div>
 
-      {action.config.textSource === "stateString" ? (
+      {(action.config.textSource === "stateString" || !action.config.textSource) ? (
         <>
           <div className="space-y-2">
             <Label className="text-xs text-gray-400">Select State</Label>

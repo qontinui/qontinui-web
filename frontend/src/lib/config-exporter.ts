@@ -20,8 +20,7 @@ import { Action, ActionType, BaseActionSettings, ExecutionSettings, Workflow } f
 import type {
   ImageAsset,
   State,
-  Transition,
-  WorkflowReference
+  Transition
 } from '../contexts/automation-context/types';
 import { Screenshot } from '../types/Screenshot';
 
@@ -51,6 +50,14 @@ export class ConfigExporter {
     const exportedImages = await this.exportImages(images || [], screenshots);
     const base64ToImageId = this.buildBase64ToImageIdMap(exportedImages);
 
+    // Collect helper workflows from transitions and add to main workflows array
+    const allWorkflows = [...(workflows || [])];
+    (transitions || []).forEach(transition => {
+      if ((transition as any).inlineWorkflows) {
+        allWorkflows.push(...(transition as any).inlineWorkflows);
+      }
+    });
+
     const config: QontinuiConfig = {
       version: this.version,
       metadata: {
@@ -67,7 +74,7 @@ export class ConfigExporter {
         }
       },
       images: exportedImages,
-      workflows: this.exportWorkflows(workflows || [], states || []),
+      workflows: this.exportWorkflows(allWorkflows, states || []),
       states: this.exportStates(states || [], screenshots, base64ToImageId),
       transitions: this.exportTransitions(transitions || [], states || []),
       categories: categories || ['Main'],
@@ -624,23 +631,13 @@ export class ConfigExporter {
     }
 
     return transitions.map(transition => {
-      // Separate WorkflowReference[] into referenced IDs and inline workflows
-      const workflowRefs = transition.workflows || [];
-      const workflows: string[] = [];
-      const inlineWorkflows: any[] = [];
-
-      workflowRefs.forEach(ref => {
-        if (ref.type === 'reference') {
-          workflows.push(ref.workflowId);
-        } else if (ref.type === 'inline') {
-          inlineWorkflows.push(ref.workflow);
-        }
-      });
+      // In v2.0.0, transition.workflows is a simple string array containing all workflow IDs
+      // (both regular workflows and helper workflows)
+      const workflows = transition.workflows || [];
 
       const baseTransition: any = {
         id: transition.id,
         workflows,
-        ...(inlineWorkflows.length > 0 ? { inlineWorkflows } : {}),
         timeout: transition.timeout,
         retryCount: transition.retryCount
       };

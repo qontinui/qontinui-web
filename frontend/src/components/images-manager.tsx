@@ -277,7 +277,7 @@ export function ImagesManager() {
     <div className="h-full overflow-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <h2 className="text-2xl font-bold">Image Library</h2>
+          <h2 className="text-2xl font-bold">Library</h2>
 
           {/* Stats - moved next to title */}
           {images.length > 0 && (

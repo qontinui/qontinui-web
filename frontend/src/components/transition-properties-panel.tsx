@@ -35,17 +35,22 @@ interface OutgoingTransition {
   id: string
   type: "OutgoingTransition"
   fromState: string
+  toState?: string
   activateStates: string[]
   staysVisible: boolean
   deactivateStates: string[]
-  process: string
+  workflows: string[]
+  timeout?: number
+  retryCount?: number
 }
 
 interface IncomingTransition {
   id: string
   type: "IncomingTransition"
   toState: string
-  process: string
+  workflows: string[]
+  timeout?: number
+  retryCount?: number
 }
 
 type Transition = OutgoingTransition | IncomingTransition
@@ -97,11 +102,11 @@ export function TransitionPropertiesPanel({
   const handleAddWorkflow = (workflowId: string) => {
     const currentWorkflows = transition.workflows || []
     // Check if workflow is already added
-    const alreadyAdded = currentWorkflows.some(ref => ref.workflowId === workflowId)
+    const alreadyAdded = currentWorkflows.includes(workflowId)
 
     if (!alreadyAdded) {
       updateTransition({
-        workflows: [...currentWorkflows, { type: 'reference' as const, workflowId }],
+        workflows: [...currentWorkflows, workflowId],
       })
     }
     setWorkflowDialogOpen(false)
@@ -110,7 +115,7 @@ export function TransitionPropertiesPanel({
   const handleRemoveWorkflow = (workflowId: string) => {
     const currentWorkflows = transition.workflows || []
     updateTransition({
-      workflows: currentWorkflows.filter(ref => ref.workflowId !== workflowId),
+      workflows: currentWorkflows.filter(id => id !== workflowId),
     })
   }
 
@@ -153,7 +158,7 @@ export function TransitionPropertiesPanel({
   // Filter out already selected workflows
   const availableWorkflows = filteredWorkflows.filter(p => {
     const currentWorkflows = transition.workflows || []
-    return !currentWorkflows.some(ref => ref.workflowId === p.id)
+    return !currentWorkflows.includes(p.id)
   })
 
   return (
@@ -445,8 +450,7 @@ export function TransitionPropertiesPanel({
             </div>
           ) : (
             <div className="space-y-1">
-              {transition.workflows.map((workflowRef, index) => {
-                const workflowId = workflowRef.workflowId
+              {transition.workflows.map((workflowId, index) => {
                 const workflow = processes.find(p => p.id === workflowId)
                 return (
                   <div

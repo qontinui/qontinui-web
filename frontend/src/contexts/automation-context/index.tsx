@@ -109,14 +109,6 @@ function migrateWorkflows(workflows: Workflow[]): Workflow[] {
  */
 function migrateTransitions(transitions: Transition[]): Transition[] {
   return transitions.map(transition => {
-    // If workflows array is empty but old process field exists, migrate it
-    if ((!transition.workflows || transition.workflows.length === 0) && (transition as any).process) {
-      return {
-        ...transition,
-        workflows: [(transition as any).process]
-      }
-    }
-
     // Ensure workflows is always an array
     if (!transition.workflows) {
       return {
