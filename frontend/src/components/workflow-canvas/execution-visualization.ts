@@ -9,7 +9,7 @@
  * - Progress indicators
  */
 
-import type { Node, Edge } from 'reactflow';
+import type { Node, Edge } from '@xyflow/react';
 import type { CanvasNode, CanvasEdge } from './canvas-types';
 import type { ActionExecutionStatus } from '@/services/backend-api';
 

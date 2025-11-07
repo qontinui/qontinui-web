@@ -14,7 +14,7 @@
  * - Proper z-index layering
  */
 
-import { Node, Edge } from 'reactflow';
+import { Node, Edge } from '@xyflow/react';
 import { CanvasNode, CanvasEdge } from './canvas-types';
 import { COLORS, hexToRgba } from './canvas-config';
 

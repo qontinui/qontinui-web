@@ -5,7 +5,7 @@
  */
 
 import React, { memo } from 'react';
-import { Handle, Position, NodeProps } from 'reactflow';
+import { Handle, Position, NodeProps } from '@xyflow/react';
 import { CanvasNodeData } from '../canvas-types';
 import { getActionTypeColor, COLORS, getActionOutputCount } from '../canvas-config';
 
@@ -16,7 +16,7 @@ export interface DefaultNodeProps extends NodeProps {
 /**
  * Default node component
  */
-export const DefaultNode = memo(({ data, selected }: DefaultNodeProps) => {
+export const DefaultNode = memo(({ data, selected, id }: DefaultNodeProps) => {
   const action = data.action;
   const color = getActionTypeColor(action.type);
   const outputCount = getActionOutputCount(action.type, action.config);

@@ -8,7 +8,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ReactFlow, {
+import {
+  ReactFlow,
   Background,
   Controls,
   MiniMap,
@@ -21,13 +22,15 @@ import ReactFlow, {
   OnNodesChange,
   OnEdgesChange,
   OnConnect,
+  OnReconnect,
   NodeChange,
   EdgeChange,
   Panel,
   useReactFlow,
   ReactFlowProvider,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+  MarkerType,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 
 import { Workflow, Action, Connection } from '@/lib/action-schema/action-types';
 import {
@@ -46,7 +49,8 @@ import {
 } from './canvas-utils';
 import { CustomEdge } from './CustomEdge';
 import { DefaultNode } from './nodes/DefaultNode';
-import { GRID_CONFIG, ZOOM_CONFIG, COLORS } from './canvas-config';
+import { GRID_CONFIG, ZOOM_CONFIG, COLORS, getConnectionColor, getConnectionStyle } from './canvas-config';
+import { ControlFlowNodes } from './nodes/ControlFlowNodes';
 import './WorkflowCanvas.css';
 
 // ============================================================================
@@ -84,6 +88,7 @@ export interface WorkflowCanvasProps {
 // ============================================================================
 
 const nodeTypes = {
+  // Default for most nodes - categories use DefaultNode
   default: DefaultNode,
   find: DefaultNode,
   mouse: DefaultNode,
@@ -91,6 +96,14 @@ const nodeTypes = {
   control_flow: DefaultNode,
   data: DefaultNode,
   state: DefaultNode,
+
+  // Specific control flow nodes with custom handle IDs
+  IF: ControlFlowNodes.IF,
+  LOOP: ControlFlowNodes.LOOP,
+  SWITCH: ControlFlowNodes.SWITCH,
+  TRY_CATCH: ControlFlowNodes.TRY_CATCH,
+  BREAK: ControlFlowNodes.BREAK,
+  CONTINUE: ControlFlowNodes.CONTINUE,
 };
 
 const edgeTypes = {
@@ -131,9 +144,20 @@ function WorkflowCanvasInner({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
 
+  // Track if we initiated the last workflow change
+  const isInternalChangeRef = useRef(false);
+  const lastWorkflowRef = useRef(workflow);
+
   // Update nodes/edges when workflow changes externally
   useEffect(() => {
-    console.log('[WorkflowCanvas] Workflow changed:', {
+    // Skip if we initiated this change
+    if (isInternalChangeRef.current) {
+      isInternalChangeRef.current = false;
+      lastWorkflowRef.current = workflow;
+      return;
+    }
+
+    console.log('[WorkflowCanvas] External workflow change detected:', {
       id: workflow.id,
       name: workflow.name,
       actionsCount: workflow.actions.length,
@@ -150,7 +174,8 @@ function WorkflowCanvasInner({
 
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [workflow.id, workflow.actions.length]); // Watch actions.length instead of version
+    lastWorkflowRef.current = workflow;
+  }, [workflow.actions, workflow.connections, workflow.id]); // Watch actions and connections arrays
 
   // ============================================================================
   // Event Handlers
@@ -163,24 +188,46 @@ function WorkflowCanvasInner({
     (changes: NodeChange[]) => {
       if (readonly) return;
 
+      console.log('[WorkflowCanvas] handleNodesChange:', changes);
+
+      // Apply changes first
       onNodesChange(changes);
 
-      // Update workflow if positions changed
+      // Update workflow if positions changed or nodes removed
       const positionChanges = changes.filter((c) => c.type === 'position');
-      if (positionChanges.length > 0) {
-        // Debounce workflow update
+      const removals = changes.filter((c) => c.type === 'remove');
+
+      if (positionChanges.length > 0 || removals.length > 0) {
+        console.log('[WorkflowCanvas] Node changes detected - position:', positionChanges.length, 'removals:', removals.length);
+
+        // Use queueMicrotask to avoid setState during render
         setTimeout(() => {
-          const updatedWorkflow = reactFlowToWorkflow(
-            nodes,
-            edges,
-            workflow.id,
-            workflow.name
-          );
-          onWorkflowChange(updatedWorkflow);
+          setNodes((currentNodes) => {
+            setEdges((currentEdges) => {
+              // Queue the workflow update outside of render
+              queueMicrotask(() => {
+                const updatedWorkflow = reactFlowToWorkflow(
+                  currentNodes,
+                  currentEdges,
+                  workflow.id,
+                  workflow.name
+                );
+                console.log('[WorkflowCanvas] Updated workflow after node changes:', {
+                  id: updatedWorkflow.id,
+                  actionsCount: updatedWorkflow.actions.length,
+                  actions: updatedWorkflow.actions.map(a => ({ id: a.id, type: a.type }))
+                });
+                isInternalChangeRef.current = true;
+                onWorkflowChange(updatedWorkflow);
+              });
+              return currentEdges; // Return unchanged
+            });
+            return currentNodes; // Return unchanged
+          });
         }, 100);
       }
     },
-    [readonly, onNodesChange, nodes, edges, workflow.id, workflow.name, onWorkflowChange]
+    [readonly, onNodesChange, setNodes, setEdges, workflow.id, workflow.name, onWorkflowChange]
   );
 
   /**
@@ -190,23 +237,44 @@ function WorkflowCanvasInner({
     (changes: EdgeChange[]) => {
       if (readonly) return;
 
+      console.log('[WorkflowCanvas] handleEdgesChange:', changes);
+
+      // Apply changes first
       onEdgesChange(changes);
 
       // Update workflow if edges were removed
       const removals = changes.filter((c) => c.type === 'remove');
       if (removals.length > 0) {
+        console.log('[WorkflowCanvas] Edge removals detected:', removals.length);
+
+        // Use queueMicrotask to avoid setState during render
         setTimeout(() => {
-          const updatedWorkflow = reactFlowToWorkflow(
-            nodes,
-            edges,
-            workflow.id,
-            workflow.name
-          );
-          onWorkflowChange(updatedWorkflow);
+          setNodes((currentNodes) => {
+            setEdges((currentEdges) => {
+              // Queue the workflow update outside of render
+              queueMicrotask(() => {
+                const updatedWorkflow = reactFlowToWorkflow(
+                  currentNodes,
+                  currentEdges,
+                  workflow.id,
+                  workflow.name
+                );
+                console.log('[WorkflowCanvas] Updated workflow after edge changes:', {
+                  id: updatedWorkflow.id,
+                  actionsCount: updatedWorkflow.actions.length,
+                  connectionsCount: Object.keys(updatedWorkflow.connections || {}).length
+                });
+                isInternalChangeRef.current = true;
+                onWorkflowChange(updatedWorkflow);
+              });
+              return currentEdges; // Return unchanged
+            });
+            return currentNodes; // Return unchanged
+          });
         }, 50);
       }
     },
-    [readonly, onEdgesChange, nodes, edges, workflow.id, workflow.name, onWorkflowChange]
+    [readonly, onEdgesChange, setNodes, setEdges, workflow.id, workflow.name, onWorkflowChange]
   );
 
   /**
@@ -215,6 +283,13 @@ function WorkflowCanvasInner({
   const handleConnect: OnConnect = useCallback(
     (connection: ReactFlowConnection) => {
       if (readonly) return;
+
+      console.log('[WorkflowCanvas] handleConnect called:', {
+        source: connection.source,
+        sourceHandle: connection.sourceHandle,
+        target: connection.target,
+        targetHandle: connection.targetHandle
+      });
 
       // Validate connection
       const attempt: ConnectionAttempt = {
@@ -232,8 +307,104 @@ function WorkflowCanvasInner({
         return;
       }
 
-      // Add edge
-      const newEdges = addEdge(connection, edges);
+      // Parse sourceHandle to get connection type and output index
+      let connType: 'main' | 'error' | 'success' | 'parallel' = 'main';
+      let outputIndex = 0;
+
+      if (connection.sourceHandle) {
+        const parts = connection.sourceHandle.split('-');
+        console.log('[WorkflowCanvas] Parsing sourceHandle:', connection.sourceHandle, 'parts:', parts);
+        if (parts.length >= 2) {
+          const handleType = parts[0];
+          const handleIndex = parseInt(parts[1], 10);
+
+          if (handleType === 'error' || handleType === 'success' || handleType === 'parallel') {
+            connType = handleType;
+          } else {
+            connType = 'main';
+          }
+
+          outputIndex = isNaN(handleIndex) ? 0 : handleIndex;
+          console.log('[WorkflowCanvas] Parsed - handleType:', handleType, 'connType:', connType, 'outputIndex:', outputIndex);
+        }
+      }
+
+      // Get source action for label generation
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+      const sourceAction = sourceNode?.data.action;
+
+      console.log('[WorkflowCanvas] Source action:', {
+        type: sourceAction?.type,
+        id: sourceAction?.id,
+        connType,
+        outputIndex
+      });
+
+      // Generate edge label
+      let label: string | undefined;
+      if (sourceAction) {
+        switch (sourceAction.type) {
+          case 'IF':
+            label = outputIndex === 0 ? 'true' : 'false';
+            break;
+          case 'TRY_CATCH':
+            label = connType === 'error' ? 'catch' : 'try';
+            break;
+          case 'LOOP':
+            label = outputIndex === 0 ? 'loop' : 'exit';
+            break;
+          case 'SWITCH':
+            if (sourceAction.config.cases && outputIndex < sourceAction.config.cases.length) {
+              label = String(sourceAction.config.cases[outputIndex]);
+            } else {
+              label = 'default';
+            }
+            break;
+        }
+      }
+
+      console.log('[WorkflowCanvas] Generated label:', label, 'for connType:', connType);
+
+      // Get color and style
+      const color = getConnectionColor(connType);
+      const style = getConnectionStyle(connType);
+      console.log('[WorkflowCanvas] Color:', color, 'for connType:', connType);
+
+      // Create enriched edge with full data
+      const enrichedEdge: CanvasEdge = {
+        id: `${connection.source}-${connection.target}-${Date.now()}`,
+        source: connection.source!,
+        target: connection.target!,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+        type: 'custom',
+        animated: false,
+        data: {
+          connection: {
+            action: connection.target!,
+            type: connType,
+            index: 0,
+          },
+          connectionType: connType,
+          outputIndex,
+          label,
+          selected: false,
+          animated: false,
+        },
+        style: {
+          ...style,
+          stroke: color,
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: color,
+          width: 20,
+          height: 20,
+        },
+      };
+
+      // Add enriched edge
+      const newEdges = [...edges, enrichedEdge];
       setEdges(newEdges);
 
       // Update workflow
@@ -244,11 +415,56 @@ function WorkflowCanvasInner({
           workflow.id,
           workflow.name
         );
+        isInternalChangeRef.current = true;
         onWorkflowChange(updatedWorkflow);
       }, 50);
     },
     [readonly, nodes, edges, workflow.id, workflow.name, setEdges, onWorkflowChange]
   );
+
+  /**
+   * Handle edge reconnection (dragging edge endpoint to different node)
+   */
+  const handleReconnect: OnReconnect = useCallback(
+    (oldEdge: Edge, newConnection: ReactFlowConnection) => {
+      if (readonly) return;
+
+      // Validate new connection
+      const attempt: ConnectionAttempt = {
+        source: newConnection.source!,
+        sourceHandle: newConnection.sourceHandle,
+        target: newConnection.target!,
+        targetHandle: newConnection.targetHandle,
+      };
+
+      const validation = validateConnection(attempt, nodes, edges);
+
+      if (!validation.valid) {
+        console.warn('Invalid reconnection:', validation.message);
+        // TODO: Show toast notification
+        return;
+      }
+
+      // Remove old edge and add new one
+      const edgesWithoutOld = edges.filter((e) => e.id !== oldEdge.id);
+      const newEdges = addEdge(newConnection, edgesWithoutOld);
+      setEdges(newEdges);
+
+      // Update workflow
+      setTimeout(() => {
+        const updatedWorkflow = reactFlowToWorkflow(
+          nodes,
+          newEdges,
+          workflow.id,
+          workflow.name
+        );
+        isInternalChangeRef.current = true;
+        onWorkflowChange(updatedWorkflow);
+      }, 50);
+    },
+    [readonly, nodes, edges, workflow.id, workflow.name, setEdges, onWorkflowChange]
+  );
+
 
   /**
    * Handle node click
@@ -311,6 +527,7 @@ function WorkflowCanvasInner({
       actions: layoutedActions,
     };
 
+    isInternalChangeRef.current = true;
     onWorkflowChange(updatedWorkflow);
 
     // Fit view after layout
@@ -349,6 +566,7 @@ function WorkflowCanvasInner({
       workflow.id,
       workflow.name
     );
+    isInternalChangeRef.current = true;
     onWorkflowChange(updatedWorkflow);
 
     setSelectedNode(null);
@@ -419,6 +637,7 @@ function WorkflowCanvasInner({
         workflow.id,
         workflow.name
       );
+      isInternalChangeRef.current = true;
       onWorkflowChange(updatedWorkflow);
     };
 
@@ -447,6 +666,7 @@ function WorkflowCanvasInner({
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
+        onReconnect={handleReconnect}
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
@@ -461,6 +681,7 @@ function WorkflowCanvasInner({
         snapGrid={[settings.gridSize, settings.gridSize]}
         nodesDraggable={!readonly}
         nodesConnectable={!readonly}
+        reconnectRadius={20}
         nodesFocusable={settings.nodesSelectable}
         edgesFocusable={settings.edgesSelectable}
         elementsSelectable={settings.nodesSelectable || settings.edgesSelectable}

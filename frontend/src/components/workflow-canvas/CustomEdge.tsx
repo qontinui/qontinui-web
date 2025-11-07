@@ -10,7 +10,7 @@ import {
   getBezierPath,
   EdgeLabelRenderer,
   BaseEdge,
-} from 'reactflow';
+} from '@xyflow/react';
 import { X } from 'lucide-react';
 import { CanvasEdgeData } from './canvas-types';
 import { getConnectionColor, hexToRgba } from './canvas-config';
@@ -78,11 +78,13 @@ export function CustomEdge({
   };
 
   // Delete button style
+  // Position above label if label exists, otherwise at label position
+  const deleteButtonY = data.label ? labelY - 35 : labelY;
   const deleteButtonStyle: React.CSSProperties = {
     position: 'absolute',
-    transform: `translate(-50%, -50%) translate(${labelX}px,${labelY - 30}px)`,
+    transform: `translate(-50%, -50%) translate(${labelX}px,${deleteButtonY}px)`,
     pointerEvents: 'all',
-    opacity: isHovered && !data.label ? 1 : 0,
+    opacity: isHovered ? 1 : 0,
     transition: 'opacity 0.15s ease-in-out',
   };
 

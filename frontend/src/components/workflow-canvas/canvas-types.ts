@@ -4,7 +4,7 @@
  * Defines the bridge between qontinui's workflow format and React Flow's node/edge system.
  */
 
-import { Node, Edge, Viewport, XYPosition } from 'reactflow';
+import { Node, Edge, Viewport, XYPosition } from '@xyflow/react';
 import { Action, Workflow, Connection, ActionType } from '@/lib/action-schema/action-types';
 
 // Re-export ActionType for convenience
@@ -392,8 +392,19 @@ export type NodeTypeKey = keyof typeof NODE_TYPES;
 
 /**
  * Get React Flow node type for an action
+ *
+ * For control flow nodes with custom components (IF, LOOP, SWITCH, TRY_CATCH, BREAK, CONTINUE),
+ * returns the specific ActionType so React Flow uses the correct component.
+ * For other actions, returns the category-based node type.
  */
 export function getNodeType(action: Action): string {
+  // Control flow nodes need specific components for proper handle IDs
+  const controlFlowActions = ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH', 'BREAK', 'CONTINUE'];
+  if (controlFlowActions.includes(action.type)) {
+    return action.type; // Return 'TRY_CATCH', 'IF', etc.
+  }
+
+  // For all other actions, use category-based node type
   const category = getActionCategory(action.type);
   return NODE_TYPES[category] || NODE_TYPES.default;
 }
