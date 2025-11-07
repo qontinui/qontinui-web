@@ -71,6 +71,16 @@ export function Footer() {
                   Terms of Service
                 </Link>
               </li>
+              <li>
+                <Link href="/acceptable-use" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                  Acceptable Use Policy
+                </Link>
+              </li>
+              <li>
+                <Link href="/responsible-use" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                  Responsible Use FAQ
+                </Link>
+              </li>
             </ul>
           </div>
         </div>
