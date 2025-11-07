@@ -182,6 +182,42 @@ export class ConfigImporter {
       }
     }
 
+    // Handle target object to string conversion for UI
+    // Convert proper target objects back to UI string format
+    if (config.target && typeof config.target === 'object' && config.target.type) {
+      const targetType = config.target.type;
+
+      if (targetType === 'lastFindResult') {
+        config.target = 'Last Find Result';
+      } else if (targetType === 'currentPosition') {
+        config.target = 'Current Position';
+      } else if (targetType === 'coordinates' && config.target.coordinates) {
+        config.target = 'Coordinates';
+        config.x = config.target.coordinates.x;
+        config.y = config.target.coordinates.y;
+      }
+      // Handle the 3 new multi-result target types
+      // These are imported as objects and stay as objects in the UI
+      else if (targetType === 'resultIndex') {
+        // ResultIndexTarget: Ensure index field exists (default to 0)
+        if (config.target.index === undefined) {
+          config.target.index = 0;
+        }
+      }
+      else if (targetType === 'allResults') {
+        // AllResultsTarget: No additional processing needed
+        // Already has correct type field
+      }
+      else if (targetType === 'resultByImage') {
+        // ResultByImageTarget: Ensure imageId field exists
+        // The JSON format uses imageId (camelCase), which matches UI expectation
+        if (!config.target.imageId) {
+          console.warn('ResultByImageTarget missing imageId field');
+        }
+      }
+      // Keep image and other complex targets as objects
+    }
+
     // Handle action-specific transformations
     if (action.type === 'GO_TO_STATE' && config.stateIds) {
       config.states = config.stateIds;

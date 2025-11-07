@@ -5,7 +5,7 @@
 import { Region, Coordinates } from './common-types';
 import { SearchOptions } from './search-options';
 
-export type TargetType = 'image' | 'region' | 'text' | 'coordinates' | 'stateString' | 'currentPosition';
+export type TargetType = 'image' | 'region' | 'text' | 'coordinates' | 'stateString' | 'currentPosition' | 'resultIndex' | 'allResults' | 'resultByImage';
 
 export interface ImageTarget {
   type: 'image';
@@ -41,13 +41,42 @@ export interface CurrentPositionTarget {
   type: 'currentPosition';
 }
 
+/**
+ * ResultIndexTarget - Reference a specific match by index from last FIND result
+ * Used after a FIND action that returned multiple matches
+ */
+export interface ResultIndexTarget {
+  type: 'resultIndex';
+  index: number;
+}
+
+/**
+ * AllResultsTarget - Reference all matches from last FIND result
+ * Primarily for multi-location actions; single-location actions use first match with warning
+ */
+export interface AllResultsTarget {
+  type: 'allResults';
+}
+
+/**
+ * ResultByImageTarget - Reference match from specific image in multi-image FIND result
+ * Used after a FIND action with multiple images (EACH strategy)
+ */
+export interface ResultByImageTarget {
+  type: 'resultByImage';
+  imageId: string;
+}
+
 export type TargetConfig =
   | ImageTarget
   | RegionTarget
   | TextTarget
   | CoordinatesTarget
   | StateStringTarget
-  | CurrentPositionTarget;
+  | CurrentPositionTarget
+  | ResultIndexTarget
+  | AllResultsTarget
+  | ResultByImageTarget;
 
 /**
  * Text search options for OCR-based finding

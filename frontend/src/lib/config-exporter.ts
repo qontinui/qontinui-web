@@ -481,6 +481,66 @@ export class ConfigExporter {
       }
     }
 
+    // Handle target transformation for MOUSE_MOVE, CLICK, and other actions
+    // Convert UI string values like "Last Find Result" to proper target objects
+    if ((config as any).target && typeof (config as any).target === 'string') {
+      const targetString = (config as any).target;
+
+      if (targetString === 'Last Find Result') {
+        (config as any).target = { type: 'lastFindResult' };
+      } else if (targetString === 'Current Position') {
+        (config as any).target = { type: 'currentPosition' };
+      } else if (targetString === 'Coordinates') {
+        // Convert to coordinates target with x, y values
+        (config as any).target = {
+          type: 'coordinates',
+          coordinates: {
+            x: (config as any).x || 0,
+            y: (config as any).y || 0
+          }
+        };
+        // Remove flat x, y fields
+        delete (config as any).x;
+        delete (config as any).y;
+      }
+      // Note: StateImage, StateRegion, StateLocation would need more complex handling
+      // with additional data from the UI, not implemented here yet
+    }
+
+    // Handle target transformation for the 3 new target types
+    // These are likely already objects from the UI, but we ensure proper field mapping
+    if ((config as any).target && typeof (config as any).target === 'object') {
+      const target = (config as any).target;
+
+      // ResultIndexTarget: Target specific match by index
+      if (target.type === 'resultIndex') {
+        // Ensure index field exists (default to 0 if not specified)
+        if (target.index === undefined) {
+          target.index = 0;
+        }
+        // No field name conversion needed - already matches JSON format
+      }
+
+      // AllResultsTarget: Target all matches
+      // No additional processing needed - just ensure type field is correct
+      if (target.type === 'allResults') {
+        // Type is already correct, no additional fields needed
+      }
+
+      // ResultByImageTarget: Target match from specific image
+      if (target.type === 'resultByImage') {
+        // Ensure imageId field exists and convert from snake_case if needed
+        if (target.image_id && !target.imageId) {
+          target.imageId = target.image_id;
+          delete target.image_id;
+        }
+        // Validate that imageId is present
+        if (!target.imageId) {
+          console.warn('ResultByImageTarget requires imageId field');
+        }
+      }
+    }
+
     return config;
   }
 

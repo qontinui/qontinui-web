@@ -10,9 +10,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { SubscriptionBadge } from "@/components/subscription-badge"
-import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play, User as UserIcon, BarChart3 } from "lucide-react"
+import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play, User as UserIcon, BarChart3, BookOpen } from "lucide-react"
 import { toast } from "sonner"
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog"
+import { WelcomeModal } from "@/components/onboarding/WelcomeModal"
+import { QuickStartChecklist } from "@/components/onboarding/QuickStartChecklist"
+import { TutorialOverlay } from "@/components/onboarding/TutorialOverlay"
+import { FirstProjectWizard } from "@/components/onboarding/FirstProjectWizard"
+import { useOnboardingStore } from "@/stores/onboarding-store"
 
 interface Project {
   id: string
@@ -40,6 +45,15 @@ export default function Dashboard() {
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
+  const [showFirstProjectWizard, setShowFirstProjectWizard] = useState(false)
+
+  // Onboarding state
+  const {
+    showWelcomeModal,
+    showTutorialOverlay,
+    hasCompletedWelcome,
+    toggleWelcomeModal
+  } = useOnboardingStore()
 
   const isNewUser = () => {
     if (!user?.created_at) return false
@@ -54,7 +68,12 @@ export default function Dashboard() {
       router.push('/')
       return
     }
-  }, [user, authLoading, router])
+
+    // Show welcome modal for new users who haven't completed onboarding
+    if (user && !authLoading && isNewUser() && !hasCompletedWelcome) {
+      toggleWelcomeModal()
+    }
+  }, [user, authLoading, router, hasCompletedWelcome, toggleWelcomeModal])
 
   // Transform API projects to match our interface
   const projects = useMemo(() =>
@@ -91,6 +110,12 @@ export default function Dashboard() {
   }
 
   const handleNewProject = async () => {
+    // Show wizard for new users with no projects
+    if (projects.length === 0 && isNewUser()) {
+      setShowFirstProjectWizard(true)
+      return
+    }
+
     try {
       console.log('Creating new project...')
 
@@ -206,6 +231,16 @@ export default function Dashboard() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => router.push('/docs')}
+              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              title="Documentation"
+              data-tour="documentation"
+            >
+              <BookOpen className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => router.push('/analytics')}
               className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
               title="View Analytics"
@@ -218,6 +253,7 @@ export default function Dashboard() {
               onClick={() => router.push('/profile')}
               className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
               title="View Profile"
+              data-tour="profile"
             >
               <UserIcon className="w-4 h-4" />
             </Button>
@@ -313,12 +349,13 @@ export default function Dashboard() {
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Projects Section */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-3" data-tour="projects">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-semibold">Your Projects</h3>
               <Button
                 onClick={handleNewProject}
                 className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+                data-tour="new-project"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 New Project
@@ -435,6 +472,15 @@ export default function Dashboard() {
           setProjectToDelete(null)
         }}
         onConfirm={handleConfirmDelete}
+      />
+
+      {/* Onboarding Components */}
+      <WelcomeModal />
+      {showTutorialOverlay && <TutorialOverlay />}
+      <QuickStartChecklist />
+      <FirstProjectWizard
+        isOpen={showFirstProjectWizard}
+        onClose={() => setShowFirstProjectWizard(false)}
       />
     </div>
   )
