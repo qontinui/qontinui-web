@@ -43,7 +43,7 @@ export function BaseNode({
   selected,
   showInputHandle = true,
   showOutputHandle = true,
-  outputHandleIds = ['main'],
+  outputHandleIds = ['main-0'],
   className = '',
   compact = false,
 }: BaseNodeProps) {
@@ -108,13 +108,14 @@ export function BaseNode({
         <Handle
           type="target"
           position={Position.Left}
-          id="input"
+          id="input-0"
           className="node-handle node-handle-input"
           style={{
-            width: '12px',
-            height: '12px',
+            width: '16px',
+            height: '16px',
             background: '#666',
             border: '2px solid #fff',
+            cursor: 'crosshair',
           }}
         />
       )}
@@ -207,10 +208,11 @@ export function BaseNode({
                 className="node-handle node-handle-output"
                 style={{
                   top: `${topPercent}%`,
-                  width: '12px',
-                  height: '12px',
+                  width: '16px',
+                  height: '16px',
                   background: '#666',
                   border: '2px solid #fff',
+                  cursor: 'crosshair',
                 }}
               />
             );

@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback } from 'react'
-import { ReactFlowProvider } from 'reactflow'
+import { ReactFlowProvider } from '@xyflow/react'
 import { WorkflowCanvas } from '@/components/workflow-canvas'
 import { NodePalette } from '@/components/workflow-canvas/NodePalette'
 import type { Workflow, Action, Connection, ActionType } from '@/lib/action-schema/action-types'
@@ -56,10 +56,12 @@ function GraphEditorInner({
    */
   const handleNodeAdd = useCallback(
     (nodeType: ActionType) => {
-      console.log('[GraphEditor] Adding node:', nodeType)
+      console.log('[GraphEditor] handleNodeAdd called with:', nodeType)
+      console.log('[GraphEditor] Current workflow has', workflow.actions.length, 'actions')
       onAddNode(nodeType)
+      console.log('[GraphEditor] onAddNode completed')
     },
-    [onAddNode]
+    [onAddNode, workflow.actions.length]
   )
 
   return (

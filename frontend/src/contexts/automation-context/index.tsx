@@ -406,9 +406,17 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   }, [projectName])
 
   const updateWorkflow = useCallback(async (workflow: Workflow) => {
+    console.log('[AutomationContext] updateWorkflow called:', {
+      id: workflow.id,
+      name: workflow.name,
+      actionsCount: workflow.actions.length,
+      projectName
+    })
     const workflowWithProject = { ...workflow, projectName } as Workflow & { projectName: string }
     await projectDB.updateWorkflow(workflowWithProject)
+    console.log('[AutomationContext] Database update completed for workflow:', workflow.id)
     setWorkflows((prev) => prev.map(w => w.id === workflow.id ? workflow : w))
+    console.log('[AutomationContext] State updated for workflow:', workflow.id)
   }, [projectName])
 
   const deleteWorkflow = useCallback(async (workflowId: string) => {

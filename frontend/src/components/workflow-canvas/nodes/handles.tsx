@@ -53,7 +53,7 @@ export function InputHandle({
  * Standard output handle (right side)
  */
 export function OutputHandle({
-  id = 'main',
+  id = 'main-0',
   className = '',
   isConnectable = true,
   top = '50%',
@@ -167,7 +167,7 @@ export function getHandleConfig(actionType: ActionType): {
     ],
     outputs: [
       {
-        id: 'main',
+        id: 'main-0',
         type: 'source' as const,
         position: Position.Right,
       },
@@ -181,14 +181,14 @@ export function getHandleConfig(actionType: ActionType): {
         inputs: defaultConfig.inputs,
         outputs: [
           {
-            id: 'true',
+            id: 'main-0',
             type: 'source',
             position: Position.Right,
             label: 'True',
             color: '#10b981',
           },
           {
-            id: 'false',
+            id: 'main-1',
             type: 'source',
             position: Position.Right,
             label: 'False',
@@ -202,14 +202,14 @@ export function getHandleConfig(actionType: ActionType): {
         inputs: defaultConfig.inputs,
         outputs: [
           {
-            id: 'loop',
+            id: 'main-0',
             type: 'source',
             position: Position.Right,
             label: 'Loop',
             color: '#3b82f6',
           },
           {
-            id: 'main',
+            id: 'main-1',
             type: 'source',
             position: Position.Right,
             label: 'Exit',
@@ -223,14 +223,14 @@ export function getHandleConfig(actionType: ActionType): {
         inputs: defaultConfig.inputs,
         outputs: [
           {
-            id: 'main',
+            id: 'main-0',
             type: 'source',
             position: Position.Right,
             label: 'Success',
             color: '#10b981',
           },
           {
-            id: 'error',
+            id: 'error-0',
             type: 'source',
             position: Position.Right,
             label: 'Error',
@@ -246,13 +246,13 @@ export function getHandleConfig(actionType: ActionType): {
         inputs: defaultConfig.inputs,
         outputs: [
           {
-            id: 'case_0',
+            id: 'main-0',
             type: 'source',
             position: Position.Right,
             label: 'Case 0',
           },
           {
-            id: 'default',
+            id: 'main-1',
             type: 'source',
             position: Position.Right,
             label: 'Default',
@@ -280,18 +280,18 @@ export function getHandleConfig(actionType: ActionType): {
 export function getSwitchOutputHandles(cases: number): MultiOutputConfig[] {
   const outputs: MultiOutputConfig[] = [];
 
-  // Add handle for each case
+  // Add handle for each case (using main-0, main-1, etc. format)
   for (let i = 0; i < cases; i++) {
     outputs.push({
-      id: `case_${i}`,
+      id: `main-${i}`,
       label: `Case ${i}`,
       color: '#3b82f6',
     });
   }
 
-  // Add default handle
+  // Add default handle (as the last index)
   outputs.push({
-    id: 'default',
+    id: `main-${cases}`,
     label: 'Default',
     color: '#6b7280',
   });
@@ -327,33 +327,34 @@ export function canConnect(
   }
 
   // Special validation for control flow
+  // All control flow nodes now use 'main-N' or 'error-N' format
   if (sourceType === 'IF') {
-    return sourceHandleId === 'true' || sourceHandleId === 'false';
+    return sourceHandleId === 'main-0' || sourceHandleId === 'main-1';
   }
 
   if (sourceType === 'LOOP') {
-    return sourceHandleId === 'loop' || sourceHandleId === 'main';
+    return sourceHandleId === 'main-0' || sourceHandleId === 'main-1';
   }
 
   if (sourceType === 'TRY_CATCH') {
-    return sourceHandleId === 'main' || sourceHandleId === 'error';
+    return sourceHandleId === 'main-0' || sourceHandleId === 'error-0';
   }
 
   if (sourceType === 'SWITCH') {
-    return sourceHandleId.startsWith('case_') || sourceHandleId === 'default';
+    return sourceHandleId.startsWith('main-');
   }
 
-  // Default: main output
-  return sourceHandleId === 'main';
+  // Default: main-0 output (or just 'main' for backward compatibility)
+  return sourceHandleId === 'main-0' || sourceHandleId === 'main';
 }
 
 /**
  * Get handle color based on type
  */
 export function getHandleColor(handleId: string): string {
-  if (handleId === 'true' || handleId === 'main') return '#10b981';
-  if (handleId === 'false' || handleId === 'error') return '#ef4444';
-  if (handleId === 'loop') return '#3b82f6';
-  if (handleId.startsWith('case_')) return '#3b82f6';
+  if (handleId === 'main-0' || handleId === 'main') return '#10b981';
+  if (handleId === 'main-1') return '#ef4444';
+  if (handleId === 'error-0' || handleId === 'error') return '#ef4444';
+  if (handleId.startsWith('main-')) return '#3b82f6';
   return '#6b7280';
 }

@@ -5,7 +5,7 @@
  * plus validation and helper functions.
  */
 
-import { Node, Edge, MarkerType } from 'reactflow';
+import { Node, Edge, MarkerType } from '@xyflow/react';
 import {
   Workflow,
   Action,
@@ -260,9 +260,33 @@ function edgesToConnections(edges: CanvasEdge[]): Connections {
   edges.forEach((edge) => {
     const sourceId = edge.source;
     const targetId = edge.target;
-    // Handle edges that don't have data yet (newly created connections)
-    const connType = edge.data?.connectionType || 'main';
-    const outputIndex = edge.data?.outputIndex ?? 0;
+
+    // Parse sourceHandle to determine connection type and output index
+    // Format: "main-0", "error-0", etc.
+    let connType: 'main' | 'error' | 'success' | 'parallel' = 'main';
+    let outputIndex = 0;
+
+    if (edge.data?.connectionType && edge.data?.outputIndex !== undefined) {
+      // Use existing data if available
+      connType = edge.data.connectionType;
+      outputIndex = edge.data.outputIndex;
+    } else if (edge.sourceHandle) {
+      // Parse sourceHandle for newly created edges
+      const parts = edge.sourceHandle.split('-');
+      if (parts.length >= 2) {
+        const handleType = parts[0];
+        const handleIndex = parseInt(parts[1], 10);
+
+        // Map handle type to connection type
+        if (handleType === 'error' || handleType === 'success' || handleType === 'parallel') {
+          connType = handleType;
+        } else {
+          connType = 'main';
+        }
+
+        outputIndex = isNaN(handleIndex) ? 0 : handleIndex;
+      }
+    }
 
     // Initialize source if needed
     if (!connections[sourceId]) {

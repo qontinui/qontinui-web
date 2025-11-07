@@ -52,8 +52,13 @@ export const PaletteItem: React.FC<PaletteItemProps> = ({
     }
   };
 
-  const handleClick = () => {
+  const handleClick = (event?: React.MouseEvent) => {
+    console.log('[PaletteItem] handleClick called for:', metadata.type);
+    if (event) {
+      event.stopPropagation();
+    }
     if (onAdd) {
+      console.log('[PaletteItem] Calling onAdd for:', metadata.type);
       onAdd(metadata.type);
     }
   };

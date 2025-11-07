@@ -18,6 +18,7 @@ import { ActionProperties } from '@/components/action-properties'
 import { useAutomation } from '@/contexts/automation-context'
 import { toast } from 'sonner'
 import type { Workflow, Action, ActionType } from '@/lib/action-schema/action-types'
+import { getDefaultConfig } from '@/lib/action-schema/default-configs'
 
 // Import our new components
 import {
@@ -155,10 +156,17 @@ export function AutomationBuilder() {
    */
   const handleUpdateWorkflow = useCallback(
     (workflow: Workflow) => {
+      console.log('[AutomationBuilder] handleUpdateWorkflow called:', {
+        id: workflow.id,
+        name: workflow.name,
+        actionsCount: workflow.actions.length,
+        actions: workflow.actions.map(a => ({ id: a.id, type: a.type }))
+      })
       updateWorkflow(workflow)
       if (selectedItem?.id === workflow.id) {
         setSelectedItem(workflow)
       }
+      console.log('[AutomationBuilder] handleUpdateWorkflow completed')
     },
     [updateWorkflow, selectedItem]
   )
@@ -191,21 +199,34 @@ export function AutomationBuilder() {
    */
   const handleAddNode = useCallback(
     (nodeType: ActionType) => {
-      if (!selectedItem) return
+      const callId = Date.now()
+      console.log('[AutomationBuilder] handleAddNode called with:', nodeType, 'callId:', callId)
+      console.log('[AutomationBuilder] selectedItem:', selectedItem?.id, selectedItem?.name)
+      console.log('[AutomationBuilder] Current actions:', selectedItem?.actions)
+
+      if (!selectedItem) {
+        console.warn('[AutomationBuilder] No selectedItem, cannot add node')
+        return
+      }
 
       const newAction: Action = {
         id: `action-${Date.now()}`,
         type: nodeType,
-        config: {},
+        config: getDefaultConfig(nodeType),
         position: [100, 100], // Auto-position
       }
+
+      console.log('[AutomationBuilder] Created new action:', newAction)
 
       const updatedWorkflow = {
         ...selectedItem,
         actions: [...selectedItem.actions, newAction],
       }
 
+      console.log('[AutomationBuilder] Updated workflow actions count:', updatedWorkflow.actions.length)
+      console.log('[AutomationBuilder] Calling handleUpdateWorkflow with callId:', callId)
       handleUpdateWorkflow(updatedWorkflow)
+      console.log('[AutomationBuilder] handleUpdateWorkflow completed for callId:', callId)
     },
     [selectedItem, handleUpdateWorkflow]
   )

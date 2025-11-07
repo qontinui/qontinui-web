@@ -9,7 +9,7 @@ import { RefObject, useCallback, useState, useEffect, useRef } from 'react';
 import { ActionType, createAction } from '@/lib/action-schema/action-types';
 import { getDefaultConfig } from '@/lib/action-schema/default-configs';
 import { useCanvasStore } from '@/stores/canvas-store';
-import { useReactFlow, ReactFlowInstance } from 'reactflow';
+import { useReactFlow, ReactFlowInstance } from '@xyflow/react';
 
 // ============================================================================
 // Types

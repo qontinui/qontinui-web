@@ -33,8 +33,8 @@ export function IfNode(props: NodeProps<BaseNodeData>) {
   const expression = config.condition?.expression || '';
 
   const outputLabels = [
-    { id: 'true', label: 'True', color: 'bg-green-500 text-white' },
-    { id: 'false', label: 'False', color: 'bg-red-500 text-white' },
+    { id: 'main-0', label: 'True', color: 'bg-green-500 text-white' },
+    { id: 'main-1', label: 'False', color: 'bg-red-500 text-white' },
   ];
 
   return (
@@ -56,8 +56,8 @@ export function LoopNode(props: NodeProps<BaseNodeData>) {
   const iteratorVar = config.iteratorVariable || 'i';
 
   const outputLabels = [
-    { id: 'loop', label: 'Loop', color: 'bg-blue-500 text-white' },
-    { id: 'main', label: 'Exit', color: 'bg-gray-500 text-white' },
+    { id: 'main-0', label: 'Loop', color: 'bg-blue-500 text-white' },
+    { id: 'main-1', label: 'Exit', color: 'bg-gray-500 text-white' },
   ];
 
   return (
@@ -146,8 +146,8 @@ export function TryCatchNode(props: NodeProps<BaseNodeData>) {
   const hasFinally = config.finallyActions && config.finallyActions.length > 0;
 
   const outputLabels = [
-    { id: 'main', label: 'Success', color: 'bg-green-500 text-white' },
-    { id: 'error', label: 'Error', color: 'bg-red-500 text-white' },
+    { id: 'main-0', label: 'Success', color: 'bg-green-500 text-white' },
+    { id: 'error-0', label: 'Error', color: 'bg-red-500 text-white' },
   ];
 
   return (

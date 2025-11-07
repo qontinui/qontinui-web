@@ -109,7 +109,7 @@ const ConfettiCelebration: React.FC<{ show: boolean }> = ({ show }) => {
       {particles.map((particle) => (
         <div
           key={particle.id}
-          className="absolute animate-[confetti-fall_3s_ease-out_forwards]"
+          className="absolute"
           style={{
             left: `${particle.left}%`,
             top: "-10px",
@@ -117,22 +117,11 @@ const ConfettiCelebration: React.FC<{ show: boolean }> = ({ show }) => {
             height: "8px",
             backgroundColor: particle.color,
             borderRadius: "50%",
+            animation: `confetti-fall 3s ease-out forwards`,
             animationDelay: `${Math.random() * 0.5}s`,
           }}
         />
       ))}
-      <style jsx>{`
-        @keyframes confetti-fall {
-          0% {
-            transform: translateY(0) rotate(0deg);
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(100vh) rotate(720deg);
-            opacity: 0;
-          }
-        }
-      `}</style>
     </div>
   );
 };
@@ -261,16 +250,6 @@ export const QuickStartChecklist: React.FC = () => {
                   isComplete && "bg-qontinui-green/20"
                 )}
               />
-              <style jsx>{`
-                :global(.h-2 .bg-blue-600) {
-                  background: linear-gradient(
-                    90deg,
-                    rgb(var(--qontinui-cyan)) 0%,
-                    rgb(var(--qontinui-purple)) 50%,
-                    rgb(var(--qontinui-green)) 100%
-                  );
-                }
-              `}</style>
             </div>
           </CardHeader>
 
@@ -306,21 +285,6 @@ export const QuickStartChecklist: React.FC = () => {
           )}
         </Card>
       </TooltipProvider>
-
-      {/* Custom animation styles */}
-      <style jsx global>{`
-        @keyframes pulse-slow {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.8;
-          }
-        }
-        .animate-pulse-slow {
-          animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-      `}</style>
     </>
   );
 };
