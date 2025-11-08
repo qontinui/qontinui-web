@@ -36,6 +36,13 @@ frontend/scripts
 # Development documentation (excluded - moved to qontinui-dev-notes)
 docs/
 
+# Markdown documentation files (all moved to qontinui-dev-notes)
+# Ignore all .md files except essential root-level files
+*.md
+!README.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+
 # IDE
 .vscode/
 .idea/
