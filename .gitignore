@@ -15,7 +15,6 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 poetry.lock
-backend/docs
 backend/scripts
 
 # Frontend (Next.js)
@@ -32,8 +31,10 @@ yarn-error.log*
 .pnpm-debug.log*
 package-lock.json
 next.config.js
-frontend/docs
 frontend/scripts
+
+# Development documentation (excluded - moved to qontinui-dev-notes)
+docs/
 
 # IDE
 .vscode/
