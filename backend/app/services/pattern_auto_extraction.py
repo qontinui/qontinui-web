@@ -10,8 +10,14 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+    CV2_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    np = None
+    CV2_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,10 @@ class PatternAutoExtractor:
         Returns:
             List of detected patterns filtered by confidence
         """
+        if not CV2_AVAILABLE:
+            logger.warning("OpenCV not available - pattern auto-extraction disabled")
+            return []
+
         patterns = []
 
         for path in screenshot_paths:

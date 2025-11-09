@@ -12,8 +12,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+    CV2_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    np = None
+    CV2_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -424,6 +430,10 @@ class VideoExporter:
         Returns:
             Dict with video metadata
         """
+        if not CV2_AVAILABLE:
+            logger.error("OpenCV not available - video export disabled")
+            raise RuntimeError("Video export requires OpenCV (cv2) which is not available")
+
         try:
             start_time = datetime.now()
 
