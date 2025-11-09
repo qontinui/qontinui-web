@@ -24,6 +24,16 @@ if database_url_str.startswith("postgresql://"):
 else:
     async_database_url = database_url_str
 
+# Handle SSL configuration for asyncpg
+# asyncpg doesn't accept sslmode in the URL, so we parse it and configure separately
+connect_args = {}
+if "sslmode=require" in async_database_url:
+    # Remove sslmode from URL and configure SSL via connect_args
+    async_database_url = async_database_url.replace("?sslmode=require", "")
+    async_database_url = async_database_url.replace("&sslmode=require", "")
+    # For asyncpg, ssl=True enables SSL
+    connect_args["ssl"] = True
+
 async_engine = create_async_engine(
     async_database_url,
     echo=settings.DEBUG if hasattr(settings, "DEBUG") else False,
@@ -31,6 +41,7 @@ async_engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
+    connect_args=connect_args,
 )
 
 AsyncSessionLocal = async_sessionmaker(
