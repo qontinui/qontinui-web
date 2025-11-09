@@ -13,7 +13,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device_session import DeviceSession
-from app.services.geolocation_service import geolocation_service
+
+# Try to import geolocation service (requires httpx)
+# If not available, geolocation features will be disabled
+try:
+    from app.services.geolocation_service import geolocation_service
+    GEOLOCATION_AVAILABLE = True
+except ImportError:
+    geolocation_service = None
+    GEOLOCATION_AVAILABLE = False
 
 logger = structlog.get_logger(__name__)
 
@@ -46,8 +54,14 @@ class DeviceSessionService:
         Returns:
             Created DeviceSession
         """
-        # Get geolocation from IP address
-        geo_data = await geolocation_service.get_location_from_ip(ip_address)
+        # Get geolocation from IP address if available
+        if GEOLOCATION_AVAILABLE:
+            geo_data = await geolocation_service.get_location_from_ip(ip_address)
+            country = geo_data.country
+            city = geo_data.city
+        else:
+            country = None
+            city = None
 
         device_session = DeviceSession(
             id=uuid.uuid4(),
@@ -58,8 +72,8 @@ class DeviceSessionService:
             accept_language=accept_language,
             is_trusted=is_trusted,
             last_ip=ip_address,
-            country=geo_data.country,
-            city=geo_data.city,
+            country=country,
+            city=city,
             email_verified=False,
         )
 
