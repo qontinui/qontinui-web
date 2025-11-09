@@ -5,6 +5,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ImageIcon, Target, Play, MapPin, Square, Type } from "lucide-react"
 import { StateImageViewer } from "@/components/state-image-viewer"
+import { useAutomation } from "@/contexts/automation-context"
+import type { Pattern } from "@/contexts/automation-context/types"
 
 interface ImageAsset {
   id: string
@@ -13,16 +15,6 @@ interface ImageAsset {
   size: number
   uploadedAt: Date
   usageCount: number
-}
-
-interface Pattern {
-  id: string
-  name?: string
-  image: string
-  mask?: string
-  searchRegions: any[]
-  fixed: boolean
-  similarity?: number
 }
 
 interface StateImage {
@@ -81,6 +73,7 @@ interface StateNodeData {
 
 export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
   const { state, images = [], hasIncomingTransitions = false, incomingTransitions = [] } = data
+  const { resolvePatternImage } = useAutomation()
 
   return (
     <div className="min-w-[200px]">
@@ -120,8 +113,9 @@ export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
             {state.stateImages && state.stateImages.length > 0 && (
               <div className="grid grid-cols-3 gap-1 max-w-[150px] mx-auto">
                 {state.stateImages.slice(0, 6).map((stateImage) => {
-                  // Get first pattern's image
+                  // Get first pattern's image from library
                   const firstPattern = stateImage.patterns?.[0];
+                  const imageData = firstPattern ? resolvePatternImage(firstPattern) : null;
                   return (
                     <div
                       key={stateImage.id}
@@ -133,11 +127,11 @@ export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
                         backgroundColor: '#4B5563'
                       }}
                     >
-                      {firstPattern?.image ? (
+                      {imageData ? (
                         <StateImageViewer
-                          image={firstPattern.image}
-                          mask={firstPattern.mask}
-                          mode={firstPattern.mask ? 'with-mask' : 'normal'}
+                          image={imageData.url}
+                          mask={imageData.mask}
+                          mode={imageData.mask ? 'with-mask' : 'normal'}
                           alt={stateImage.name}
                           className="w-full h-full"
                         />

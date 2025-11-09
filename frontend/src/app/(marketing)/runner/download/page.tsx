@@ -17,8 +17,8 @@ interface ReleaseInfo {
 // Latest release info - update this when releasing
 const LATEST_RELEASE: ReleaseInfo = {
   version: '0.1.0',
-  date: '2025-01-15',
-  github_url: 'https://github.com/jspinak/qontinui-runner/releases/tag/v0.1.0'
+  date: 'November 9, 2025',
+  github_url: 'https://github.com/qontinui/qontinui-runner/releases/tag/v0.1.0'
 };
 
 function detectPlatform(): Platform {
@@ -124,11 +124,11 @@ export default function DownloadPage() {
               {platform === 'windows' && (
                 <Button
                   size="lg"
-                  disabled={downloading === 'qontinui-runner-windows-v0.1.0.msi'}
-                  onClick={() => handleDownload('windows', 'qontinui-runner-windows-v0.1.0.msi')}
+                  disabled={downloading === 'Qontinui.Runner_0.1.0_x64_en-US.msi'}
+                  onClick={() => handleDownload('windows', 'Qontinui.Runner_0.1.0_x64_en-US.msi')}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
-                  {downloading === 'qontinui-runner-windows-v0.1.0.msi' ? (
+                  {downloading === 'Qontinui.Runner_0.1.0_x64_en-US.msi' ? (
                     <>
                       <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                       Starting Download...
@@ -136,50 +136,42 @@ export default function DownloadPage() {
                   ) : (
                     <>
                       <Download className="mr-2 h-5 w-5" />
-                      Download for Windows
+                      Download for Windows (MSI)
                     </>
                   )}
                 </Button>
               )}
               {platform === 'macos' && (
-                <Button
-                  size="lg"
-                  disabled={downloading === 'qontinui-runner-macos-v0.1.0.dmg'}
-                  onClick={() => handleDownload('macos', 'qontinui-runner-macos-v0.1.0.dmg')}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {downloading === 'qontinui-runner-macos-v0.1.0.dmg' ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Starting Download...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="mr-2 h-5 w-5" />
-                      Download for macOS
-                    </>
-                  )}
-                </Button>
+                <div className="text-center">
+                  <p className="text-slate-700 mb-3 font-medium">
+                    macOS builds coming soon!
+                  </p>
+                  <a
+                    href="https://github.com/qontinui/qontinui-runner#macos"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                  >
+                    <Github className="w-4 h-4" />
+                    Build from source
+                  </a>
+                </div>
               )}
               {platform === 'linux' && (
-                <Button
-                  size="lg"
-                  disabled={downloading === 'qontinui-runner-linux-v0.1.0.AppImage'}
-                  onClick={() => handleDownload('linux', 'qontinui-runner-linux-v0.1.0.AppImage')}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {downloading === 'qontinui-runner-linux-v0.1.0.AppImage' ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Starting Download...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="mr-2 h-5 w-5" />
-                      Download for Linux
-                    </>
-                  )}
-                </Button>
+                <div className="text-center">
+                  <p className="text-slate-700 mb-3 font-medium">
+                    Linux builds coming soon!
+                  </p>
+                  <a
+                    href="https://github.com/qontinui/qontinui-runner#linux"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                  >
+                    <Github className="w-4 h-4" />
+                    Build from source
+                  </a>
+                </div>
               )}
             </div>
           </div>
@@ -213,55 +205,81 @@ export default function DownloadPage() {
             currentPlatform={platform}
             downloads={[
               {
-                name: "Windows Installer",
-                file: "qontinui-runner-windows-v0.1.0.msi",
-                size: "~4 MB",
+                name: "Windows Installer (MSI)",
+                file: "Qontinui.Runner_0.1.0_x64_en-US.msi",
+                size: "~6 MB",
                 type: "MSI Package",
                 signed: false, // Update to true when signed
-                description: "Standard Windows installer (Windows 10 or later)",
-                onDownload: () => handleDownload('windows', 'qontinui-runner-windows-v0.1.0.msi'),
-                downloading: downloading === 'qontinui-runner-windows-v0.1.0.msi'
+                description: "Recommended - Standard Windows installer (Windows 10 or later)",
+                onDownload: () => handleDownload('windows', 'Qontinui.Runner_0.1.0_x64_en-US.msi'),
+                downloading: downloading === 'Qontinui.Runner_0.1.0_x64_en-US.msi'
+              },
+              {
+                name: "Windows Installer (EXE)",
+                file: "Qontinui.Runner_0.1.0_x64-setup.exe",
+                size: "~4 MB",
+                type: "NSIS Installer",
+                signed: false,
+                description: "Alternative installer for Windows 10 or later",
+                onDownload: () => handleDownload('windows', 'Qontinui.Runner_0.1.0_x64-setup.exe'),
+                downloading: downloading === 'Qontinui.Runner_0.1.0_x64-setup.exe'
               },
             ]}
           />
 
           {/* macOS */}
-          <DownloadSection
-            platform="macOS"
-            icon="🍎"
-            currentPlatform={platform}
-            downloads={[
-              {
-                name: "macOS Universal",
-                file: "qontinui-runner-macos-v0.1.0.dmg",
-                size: "~4 MB",
-                type: "DMG Image",
-                signed: false, // Update to true when signed
-                description: "For Intel and Apple Silicon Macs (macOS 11+)",
-                onDownload: () => handleDownload('macos', 'qontinui-runner-macos-v0.1.0.dmg'),
-                downloading: downloading === 'qontinui-runner-macos-v0.1.0.dmg'
-              },
-            ]}
-          />
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden opacity-60">
+            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
+              <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+                <span className="text-3xl">🍎</span>
+                macOS
+                <span className="text-sm font-normal bg-amber-500 text-white px-2 py-1 rounded">
+                  Coming Soon
+                </span>
+              </h2>
+            </div>
+            <div className="p-6">
+              <p className="text-slate-600 mb-4">
+                Pre-built macOS binaries are not yet available. For now, please build from source.
+              </p>
+              <a
+                href="https://github.com/qontinui/qontinui-runner#macos"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+              >
+                <Github className="w-4 h-4" />
+                Build Instructions
+              </a>
+            </div>
+          </div>
 
           {/* Linux */}
-          <DownloadSection
-            platform="Linux"
-            icon="🐧"
-            currentPlatform={platform}
-            downloads={[
-              {
-                name: "AppImage (Universal)",
-                file: "qontinui-runner-linux-v0.1.0.AppImage",
-                size: "~4 MB",
-                type: "AppImage",
-                signed: false,
-                description: "Runs on most Linux distributions",
-                onDownload: () => handleDownload('linux', 'qontinui-runner-linux-v0.1.0.AppImage'),
-                downloading: downloading === 'qontinui-runner-linux-v0.1.0.AppImage'
-              },
-            ]}
-          />
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden opacity-60">
+            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
+              <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+                <span className="text-3xl">🐧</span>
+                Linux
+                <span className="text-sm font-normal bg-amber-500 text-white px-2 py-1 rounded">
+                  Coming Soon
+                </span>
+              </h2>
+            </div>
+            <div className="p-6">
+              <p className="text-slate-600 mb-4">
+                Pre-built Linux binaries are not yet available. For now, please build from source.
+              </p>
+              <a
+                href="https://github.com/qontinui/qontinui-runner#linux"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+              >
+                <Github className="w-4 h-4" />
+                Build Instructions
+              </a>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -311,27 +329,21 @@ export default function DownloadPage() {
               ]}
             />
 
-            <InstallInstructions
-              platform="macOS"
-              steps={[
-                "Download the .dmg file",
-                "Open the DMG file",
-                "Drag Qontinui Runner to Applications",
-                "⚠️ First launch: Right-click app → Open (Gatekeeper warning)",
-                "Click 'Open' in the dialog",
-                "Subsequent launches will work normally",
-              ]}
-            />
-
-            <InstallInstructions
-              platform="Linux"
-              steps={[
-                "Download the .AppImage file",
-                "Make it executable: chmod +x qontinui-runner-*.AppImage",
-                "Run: ./qontinui-runner-*.AppImage",
-                "Optional: Integrate with system menu using AppImageLauncher",
-              ]}
-            />
+            <div className="bg-slate-50 p-6 rounded-lg border border-slate-200">
+              <h3 className="text-lg font-semibold mb-4 text-slate-900">macOS & Linux</h3>
+              <p className="text-slate-700 mb-3">
+                Pre-built binaries for macOS and Linux are coming soon. For now, please build from source:
+              </p>
+              <a
+                href="https://github.com/qontinui/qontinui-runner#installation"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold underline"
+              >
+                <Github className="w-4 h-4" />
+                View build instructions on GitHub →
+              </a>
+            </div>
           </div>
 
           <div className="mt-8 text-center">
@@ -403,7 +415,7 @@ export default function DownloadPage() {
               Documentation
             </Link>
             <a
-              href="https://github.com/jspinak/qontinui-runner/issues"
+              href="https://github.com/qontinui/qontinui-runner/issues"
               className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-6 py-2 rounded-lg font-semibold transition-colors"
               target="_blank"
               rel="noopener noreferrer"

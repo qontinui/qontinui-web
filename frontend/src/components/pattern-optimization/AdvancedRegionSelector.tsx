@@ -10,11 +10,15 @@ interface AdvancedRegionSelectorProps {
   onRegionChange: (region: Region) => void;
 }
 
-type Tool = 'select' | 'pan';
 type DragHandle = 'tl' | 'tr' | 'bl' | 'br' | 't' | 'r' | 'b' | 'l' | 'move' | null;
 
 /**
  * Advanced Region Selector with zoom, pan, and adjustable borders
+ *
+ * Mouse Controls:
+ * - Left Click: Select/Draw rectangular regions
+ * - Right Click: Pan/Move the image
+ * - Mouse Wheel: Zoom in/out
  */
 export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   screenshotId,
@@ -31,7 +35,6 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   // View state
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [tool, setTool] = useState<Tool>('select');
 
   // Interaction state
   const [isDrawing, setIsDrawing] = useState(false);
@@ -280,25 +283,30 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     }
     console.log('[AdvancedRegionSelector] Coords:', coords);
 
-    if (tool === 'pan') {
+    // Right-click for panning
+    if (e.button === 2) {
+      e.preventDefault();
       setIsPanning(true);
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
       return;
     }
 
-    // Check if clicking on a handle
-    const handle = getHandleAtPoint(coords.x, coords.y);
-    if (handle) {
-      console.log('[AdvancedRegionSelector] Clicking on handle:', handle);
-      setIsDragging(true);
-      setDragHandle(handle);
-      setDragStart(coords);
-    } else {
-      // Start drawing new region
-      console.log('[AdvancedRegionSelector] Starting new region');
-      setIsDrawing(true);
-      setDragStart(coords);
-      setCurrentRegion(null);
+    // Left-click for selecting/drawing
+    if (e.button === 0) {
+      // Check if clicking on a handle
+      const handle = getHandleAtPoint(coords.x, coords.y);
+      if (handle) {
+        console.log('[AdvancedRegionSelector] Clicking on handle:', handle);
+        setIsDragging(true);
+        setDragHandle(handle);
+        setDragStart(coords);
+      } else {
+        // Start drawing new region
+        console.log('[AdvancedRegionSelector] Starting new region');
+        setIsDrawing(true);
+        setDragStart(coords);
+        setCurrentRegion(null);
+      }
     }
   };
 
@@ -319,7 +327,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
       } else if (handle === 'l' || handle === 'r') {
         e.currentTarget.style.cursor = 'ew-resize';
       } else {
-        e.currentTarget.style.cursor = tool === 'pan' ? 'grab' : 'crosshair';
+        e.currentTarget.style.cursor = 'crosshair';
       }
     }
 
@@ -426,22 +434,9 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
       {/* Toolbar */}
       <div className="bg-white border-b p-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setTool('select')}
-            className={`p-2 rounded ${tool === 'select' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
-            title="Select tool"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setTool('pan')}
-            className={`p-2 rounded ${tool === 'pan' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
-            title="Pan tool"
-          >
-            <Move className="w-4 h-4" />
-          </button>
+          <div className="text-sm text-gray-600 px-2">
+            <span className="font-medium">Left Click:</span> Select/Draw Region • <span className="font-medium">Right Click:</span> Pan
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -489,6 +484,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
             onWheel={handleWheel}
+            onContextMenu={(e) => e.preventDefault()}
             className="w-full h-full"
           />
         ) : (

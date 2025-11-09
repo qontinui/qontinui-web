@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Upload, X, Scissors, ImageIcon, Plus, FolderOpen, AlertCircle, Edit } from 'lucide-react';
 import { useAutomation } from '@/contexts/automation-context';
-import { ScreenshotSelector } from '../screenshot-selector';
+import { useTabState } from '@/contexts/tab-state-context';
+import { ScreenshotPicker } from '../common/ScreenshotPicker';
 import { AdvancedRegionSelector } from '../pattern-optimization/AdvancedRegionSelector';
 import { MaskEditor } from '../mask-editor';
 import { Region } from '@/types/pattern-optimization';
@@ -27,62 +28,60 @@ export const ImageExtractionTab: React.FC = () => {
   const [showStateImageDialog, setShowStateImageDialog] = useState(false);
   const [stateImageName, setStateImageName] = useState('');
   const [selectedStateId, setSelectedStateId] = useState<string>('');
+  const [newStateName, setNewStateName] = useState('');
   const [fixedLocation, setFixedLocation] = useState(true);
   const [showMaskEditor, setShowMaskEditor] = useState(false);
   const [editingMask, setEditingMask] = useState<{ imageUrl: string; initialMask?: string } | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const screenshotSelectorTriggerRef = useRef<HTMLButtonElement>(null);
-
   const { states, addState, updateState, screenshots: projectScreenshots, images, addImage } = useAutomation();
+  const { getImageExtractionState, setImageExtractionState } = useTabState();
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      const file = files[0]; // Only take first file
-      const url = URL.createObjectURL(file);
+  // Load persisted state on mount
+  useEffect(() => {
+    const persistedState = getImageExtractionState();
 
-      setCurrentScreenshot({
-        id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: file.name,
-        url,
-      });
-
-      // Reset extracted result when new screenshot is loaded
-      setExtractedResult(null);
+    if (persistedState.selectedStateId) {
+      setSelectedStateId(persistedState.selectedStateId);
     }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+
+    if (persistedState.newStateName) {
+      setNewStateName(persistedState.newStateName);
     }
+
+    // Note: We don't persist screenshots due to storage limitations
+    // Users will need to re-upload when navigating back
+  }, []);
+
+  // Persist state changes (only metadata, not images)
+  useEffect(() => {
+    setImageExtractionState({
+      selectedRegion: currentScreenshot?.region || null,
+      selectedStateId,
+      newStateName,
+    });
+  }, [currentScreenshot?.region, selectedStateId, newStateName, setImageExtractionState]);
+
+  const handleUploadScreenshot = (file: File) => {
+    const url = URL.createObjectURL(file);
+
+    setCurrentScreenshot({
+      id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: file.name,
+      url,
+    });
+
+    // Reset extracted result when new screenshot is loaded
+    setExtractedResult(null);
   };
 
   const handleProjectScreenshotSelect = async (screenshotId: string) => {
     const projectScreenshot = projectScreenshots.find(s => s.id === screenshotId);
     if (projectScreenshot) {
-      console.log('[ImageExtraction] Selected screenshot:', projectScreenshot.name, 'URL type:', typeof projectScreenshot.url);
-
-      // Convert data URL to blob URL for better compatibility
-      try {
-        const response = await fetch(projectScreenshot.url);
-        const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-
-        console.log('[ImageExtraction] Converted to blob URL:', blobUrl);
-
-        setCurrentScreenshot({
-          id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: projectScreenshot.name,
-          url: blobUrl,
-        });
-      } catch (error) {
-        console.error('[ImageExtraction] Failed to convert URL, using original:', error);
-        // Fallback to original URL if conversion fails
-        setCurrentScreenshot({
-          id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: projectScreenshot.name,
-          url: projectScreenshot.url,
-        });
-      }
+      setCurrentScreenshot({
+        id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: projectScreenshot.name,
+        url: projectScreenshot.url,
+      });
 
       // Reset extracted result when new screenshot is loaded
       setExtractedResult(null);
@@ -159,6 +158,12 @@ export const ImageExtractionTab: React.FC = () => {
       return;
     }
 
+    // Validate new state name when creating a new state
+    if (selectedStateId === 'new' && !newStateName.trim()) {
+      toast.error('Please enter a name for the new state');
+      return;
+    }
+
     try {
       const imageData = extractedResult.croppedImage;
 
@@ -183,7 +188,8 @@ export const ImageExtractionTab: React.FC = () => {
           searchRegion: searchRegion,
         },
         selectedStateId,
-        states
+        states,
+        newStateName.trim() || undefined
       );
 
       if (result.action === 'create-state' && result.targetState) {
@@ -209,6 +215,7 @@ export const ImageExtractionTab: React.FC = () => {
       setShowStateImageDialog(false);
       setStateImageName('');
       setSelectedStateId('');
+      setNewStateName('');
       setExtractedResult(null);
     } catch (error) {
       console.error('Error creating StateImage:', error);
@@ -230,83 +237,34 @@ export const ImageExtractionTab: React.FC = () => {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Screenshot Info */}
-        <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 flex flex-col">
-          <div className="p-4 border-b border-gray-800">
-            <h2 className="font-semibold text-white mb-3">Screenshot</h2>
-            <div className="space-y-2">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full px-3 py-2 bg-[#00D9FF] text-black rounded-md hover:bg-[#00D9FF]/90 text-sm flex items-center justify-center gap-2 font-medium"
-              >
-                <Upload className="w-4 h-4" />
-                Upload Image
-              </button>
-              <button
-                onClick={() => screenshotSelectorTriggerRef.current?.click()}
-                className="w-full px-3 py-2 bg-[#00FF88] text-black rounded-md hover:bg-[#00FF88]/90 text-sm flex items-center justify-center gap-2 font-medium"
-              >
-                <FolderOpen className="w-4 h-4" />
-                From Project
-              </button>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-          </div>
-
-          {/* Current Screenshot Info */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {currentScreenshot ? (
-              <div className="space-y-4">
-                <div className="p-3 border border-[#00D9FF] bg-[#00D9FF]/10 rounded-lg">
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-white truncate" title={currentScreenshot.name}>
-                        {currentScreenshot.name}
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleClearScreenshot}
-                      className="ml-2 p-1 hover:bg-[#00D9FF]/20 rounded transition-colors flex-shrink-0"
-                      title="Clear screenshot"
-                    >
-                      <X className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-                  {currentScreenshot.region ? (
-                    <div className="text-xs text-[#00FF88] mt-1">
-                      Region: {Math.round(currentScreenshot.region.width)}×{Math.round(currentScreenshot.region.height)}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-gray-400 mt-1">
-                      Select a region on the image
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-[#27272A] rounded-lg p-3 border border-gray-700">
-                  <h3 className="text-xs font-medium text-gray-300 mb-2">Instructions</h3>
-                  <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
-                    <li>Draw a selection box on the image</li>
-                    <li>Choose processing mode</li>
-                    <li>Click "Extract Image"</li>
-                    <li>Create StateImage from result</li>
-                  </ol>
-                </div>
+        <div className="w-64 bg-[#27272A]/50 border-r border-gray-800 flex flex-col overflow-hidden">
+          <ScreenshotPicker
+            currentScreenshot={currentScreenshot ? {
+              id: currentScreenshot.id,
+              name: currentScreenshot.name,
+              url: currentScreenshot.url,
+            } : null}
+            onUploadScreenshot={handleUploadScreenshot}
+            onSelectProjectScreenshot={handleProjectScreenshotSelect}
+            onClearScreenshot={handleClearScreenshot}
+            showRegionInfo={true}
+            regionDimensions={currentScreenshot?.region ? {
+              width: currentScreenshot.region.width,
+              height: currentScreenshot.region.height,
+            } : null}
+            additionalInfo={
+              <div className="bg-[#27272A] rounded-lg p-3 border border-gray-700">
+                <h3 className="text-xs font-medium text-gray-300 mb-2">Instructions</h3>
+                <ol className="text-xs text-gray-400 space-y-1 list-decimal list-inside">
+                  <li>Draw a selection box on the image</li>
+                  <li>Choose processing mode</li>
+                  <li>Click "Extract Image"</li>
+                  <li>Create StateImage from result</li>
+                </ol>
               </div>
-            ) : (
-              <div className="text-center py-8">
-                <ImageIcon className="w-12 h-12 mx-auto mb-2 text-gray-600" />
-                <p className="text-sm text-gray-400">No screenshot loaded</p>
-                <p className="text-xs text-gray-500 mt-1">Upload or select from project</p>
-              </div>
-            )}
-          </div>
+            }
+            className="flex-1 flex flex-col overflow-hidden"
+          />
         </div>
 
         {/* Middle Panel - Configuration and Viewer */}
@@ -574,6 +532,21 @@ export const ImageExtractionTab: React.FC = () => {
                 </select>
               </div>
 
+              {selectedStateId === 'new' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    New State Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newStateName}
+                    onChange={(e) => setNewStateName(e.target.value)}
+                    placeholder="Enter name for the new state"
+                    className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
+                  />
+                </div>
+              )}
+
               <div className="flex items-center">
                 <input
                   type="checkbox"
@@ -600,6 +573,7 @@ export const ImageExtractionTab: React.FC = () => {
                   setShowStateImageDialog(false);
                   setStateImageName('');
                   setSelectedStateId('');
+                  setNewStateName('');
                 }}
                 className="px-4 py-2 text-sm text-gray-300 bg-gray-700 rounded-md hover:bg-gray-600"
               >
@@ -607,7 +581,7 @@ export const ImageExtractionTab: React.FC = () => {
               </button>
               <button
                 onClick={handleCreateStateImage}
-                disabled={!stateImageName || !selectedStateId}
+                disabled={!stateImageName || !selectedStateId || (selectedStateId === 'new' && !newStateName.trim())}
                 className="px-4 py-2 text-sm text-black bg-[#00FF88] rounded-md hover:bg-[#00FF88]/90 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
               >
                 Create StateImage
@@ -616,20 +590,6 @@ export const ImageExtractionTab: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Screenshot Selector */}
-      <ScreenshotSelector
-        selectedScreenshot={currentScreenshot?.id || ""}
-        onSelectScreenshot={handleProjectScreenshotSelect}
-        multiSelect={false}
-        allowUpload={false}
-        trigger={
-          <button
-            ref={screenshotSelectorTriggerRef}
-            style={{ display: 'none' }}
-          />
-        }
-      />
 
       {/* Mask Editor */}
       {showMaskEditor && editingMask && (

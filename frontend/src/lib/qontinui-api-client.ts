@@ -146,11 +146,18 @@ export class QontinuiAPIClient {
     const url = `${this.baseUrl}${endpoint}`;
     console.log(`[QontinuiAPI] Making request to: ${url}`);
 
+    const headers: Record<string, string> = {};
+
+    // Only add Content-Type for requests with body to avoid CORS preflight
+    if (body) {
+      headers['Content-Type'] = 'application/json';
+    }
+
     const options: RequestInit = {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
+      mode: 'cors', // Explicitly enable CORS
+      credentials: 'include', // Match server's allow_credentials=True
     };
 
     if (body) {
@@ -158,16 +165,35 @@ export class QontinuiAPIClient {
     }
 
     try {
-      const response = await fetch(url, options);
+      console.log('[QontinuiAPI] Initiating fetch...');
+
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.error('[QontinuiAPI] Request timeout after 5 seconds');
+        controller.abort();
+      }, 5000);
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      console.log(`[QontinuiAPI] Fetch completed, status: ${response.status}`);
 
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`API Error: ${response.status} - ${error}`);
       }
 
-      return response.json();
+      const data = await response.json();
+      console.log(`[QontinuiAPI] Response data:`, data);
+      return data;
     } catch (error) {
       console.error(`[QontinuiAPI] Request failed:`, error);
+      console.error(`[QontinuiAPI] Error type:`, error instanceof Error ? error.name : typeof error);
+      console.error(`[QontinuiAPI] Error message:`, error instanceof Error ? error.message : String(error));
       console.error(`[QontinuiAPI] URL was: ${url}`);
       console.error(`[QontinuiAPI] Base URL: ${this.baseUrl}`);
       throw error;
@@ -460,10 +486,20 @@ export class QontinuiAPIClient {
    */
   async testConnection(): Promise<boolean> {
     try {
+      console.log('[QontinuiAPI] Testing connection...');
       const health = await this.healthCheck();
-      return health.status === 'healthy' && health.qontinui_available;
+      console.log('[QontinuiAPI] Health check response:', health);
+      const isHealthy = health.status === 'healthy' && health.qontinui_available;
+      console.log(`[QontinuiAPI] Connection test result: ${isHealthy ? 'SUCCESS' : 'FAILED'}`);
+      if (!isHealthy) {
+        console.warn('[QontinuiAPI] Health check failed:', {
+          status: health.status,
+          qontinui_available: health.qontinui_available,
+        });
+      }
+      return isHealthy;
     } catch (error) {
-      console.error('Failed to connect to Qontinui API:', error);
+      console.error('[QontinuiAPI] Failed to connect to Qontinui API:', error);
       return false;
     }
   }

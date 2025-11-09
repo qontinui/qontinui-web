@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
-import { Paintbrush, Eraser, Undo, Redo, Trash2, Save, X } from "lucide-react"
+import { Paintbrush, Eraser, Undo, Redo, Trash2, Save, X, Sparkles, Box } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { applyBackgroundRemoval, applyBorderRemoval } from "@/lib/mask-processing"
 
 interface MaskEditorProps {
   imageUrl: string
@@ -42,6 +43,8 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number; scale?: number } | null>(null)
   const [cropToMask, setCropToMask] = useState(true)
+  const [removalTolerance, setRemovalTolerance] = useState([10])
+  const [isProcessing, setIsProcessing] = useState(false)
 
   const originalCanvasRef = useRef<HTMLCanvasElement>(null)
   const maskCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -58,10 +61,19 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     if (!open || !imageUrl) return
 
     const img = new Image()
-    img.crossOrigin = "anonymous"
+    // Only set crossOrigin for external URLs, not for data URLs
+    if (!imageUrl.startsWith('data:')) {
+      img.crossOrigin = "anonymous"
+    }
     img.onload = () => {
       imageRef.current = img
       initializeCanvases(img)
+    }
+    img.onerror = (error) => {
+      console.error("Failed to load image:", error, "URL:", imageUrl)
+      toast.error("Failed to load image", {
+        description: "The image could not be loaded. Please try again.",
+      })
     }
     img.src = imageUrl
   }, [open, imageUrl])
@@ -109,7 +121,10 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     if (initialMask) {
       // Load existing mask from initialMask prop
       const maskImg = new Image()
-      maskImg.crossOrigin = "anonymous"
+      // Only set crossOrigin for external URLs, not for data URLs
+      if (!initialMask.startsWith('data:')) {
+        maskImg.crossOrigin = "anonymous"
+      }
       maskImg.onload = () => {
         // Draw the mask image to get its pixel data
         maskCtx.drawImage(maskImg, 0, 0, canvasWidth, canvasHeight)
@@ -126,10 +141,28 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
         updateMaskCanvas()
         updateResultCanvas()
       }
+      maskImg.onerror = (error) => {
+        console.error("Failed to load mask:", error, "Mask URL:", initialMask)
+        toast.error("Failed to load mask", {
+          description: "The mask could not be loaded. Starting with blank mask.",
+        })
+        // Fall back to blank mask
+        maskDataRef.current = maskCtx.createImageData(canvasWidth, canvasHeight)
+        saveToHistory()
+        updateMaskCanvas()
+        updateResultCanvas()
+      }
       maskImg.src = initialMask
     } else {
-      // Initialize mask data (all transparent initially)
+      // Initialize mask data (all visible initially - white = visible)
       maskDataRef.current = maskCtx.createImageData(canvasWidth, canvasHeight)
+      // Set all pixels to white (255) = visible by default
+      for (let i = 0; i < maskDataRef.current.data.length; i += 4) {
+        maskDataRef.current.data[i] = 255     // R
+        maskDataRef.current.data[i + 1] = 255 // G
+        maskDataRef.current.data[i + 2] = 255 // B
+        maskDataRef.current.data[i + 3] = 255 // A
+      }
 
       // Save initial state to history
       saveToHistory()
@@ -514,6 +547,100 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     clearMask()
   }
 
+  const getCurrentMaskedImage = (): string | null => {
+    if (!originalCanvasRef.current || !maskDataRef.current || !imageRef.current) return null
+
+    const { width, height } = imageDimensionsRef.current
+
+    // Create a temporary canvas to generate the current masked image
+    const tempCanvas = document.createElement('canvas')
+    tempCanvas.width = width
+    tempCanvas.height = height
+    const ctx = tempCanvas.getContext('2d')
+    if (!ctx) return null
+
+    // Draw the original image
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(imageRef.current, 0, 0, width, height)
+
+    // Apply the current mask to make masked areas transparent
+    const imageData = ctx.getImageData(0, 0, width, height)
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const brightness = maskDataRef.current.data[i] // Use red channel as brightness
+      if (brightness < 128) {
+        // Masked area (black in mask) - make transparent
+        imageData.data[i + 3] = 0
+      }
+    }
+    ctx.putImageData(imageData, 0, 0)
+
+    return tempCanvas.toDataURL('image/png')
+  }
+
+  const handleRemoveBackground = async () => {
+    if (!imageUrl || !maskDataRef.current || !originalCanvasRef.current || isProcessing) return
+
+    setIsProcessing(true)
+    try {
+      // Get the current edited image (original image with current mask applied)
+      const currentEditedImage = getCurrentMaskedImage()
+      if (!currentEditedImage) {
+        toast.error('Failed to get current image state')
+        setIsProcessing(false)
+        return
+      }
+
+      const result = await applyBackgroundRemoval(currentEditedImage, maskDataRef.current, removalTolerance[0])
+
+      if (result.success && result.maskData) {
+        maskDataRef.current = result.maskData
+        saveToHistory()
+        updateMaskCanvas()
+        updateResultCanvas()
+        toast.success(result.message || 'Background removed successfully')
+      } else {
+        toast.error(result.message || 'Failed to remove background')
+      }
+    } catch (error) {
+      console.error('Background removal error:', error)
+      toast.error('Failed to remove background')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleRemoveBorder = async () => {
+    if (!imageUrl || !maskDataRef.current || !originalCanvasRef.current || isProcessing) return
+
+    setIsProcessing(true)
+    try {
+      // Get the current edited image (original image with current mask applied)
+      const currentEditedImage = getCurrentMaskedImage()
+      if (!currentEditedImage) {
+        toast.error('Failed to get current image state')
+        setIsProcessing(false)
+        return
+      }
+
+      const result = await applyBorderRemoval(currentEditedImage, maskDataRef.current, removalTolerance[0])
+
+      if (result.success && result.maskData) {
+        maskDataRef.current = result.maskData
+        saveToHistory()
+        updateMaskCanvas()
+        updateResultCanvas()
+        toast.success(result.message || 'Border removed successfully')
+      } else {
+        toast.error(result.message || 'Failed to remove border')
+      }
+    } catch (error) {
+      console.error('Border removal error:', error)
+      toast.error('Failed to remove border')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   const onClose = () => {
     onCancel()
   }
@@ -603,6 +730,30 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
             <Button variant="ghost" size="icon" className="w-9 h-9" onClick={clearMask} title="Clear all masks">
               <Trash2 className="w-4 h-4" />
             </Button>
+
+            <Separator className="w-6 my-1" />
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-9 h-9"
+              onClick={handleRemoveBackground}
+              disabled={isProcessing}
+              title="Remove Background"
+            >
+              <Sparkles className="w-4 h-4" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-9 h-9"
+              onClick={handleRemoveBorder}
+              disabled={isProcessing}
+              title="Remove Border"
+            >
+              <Box className="w-4 h-4" />
+            </Button>
           </div>
 
           {/* Center Canvas Area */}
@@ -612,6 +763,12 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
               <span className="text-sm text-gray-400 whitespace-nowrap">Brush Size:</span>
               <Slider value={brushSize} onValueChange={setBrushSize} min={1} max={maxBrushSize} step={1} className="w-48" />
               <span className="text-sm text-gray-300 w-8">{brushSize[0]}</span>
+
+              <Separator orientation="vertical" className="h-6 mx-2" />
+
+              <span className="text-sm text-gray-400 whitespace-nowrap">Removal Tolerance:</span>
+              <Slider value={removalTolerance} onValueChange={setRemovalTolerance} min={0} max={50} step={1} className="w-48" />
+              <span className="text-sm text-gray-300 w-8">{removalTolerance[0]}</span>
             </div>
 
             <div className="flex-1 flex gap-4 p-4 bg-[#0A0A0B] min-h-0">
@@ -696,6 +853,15 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                 </li>
                 <li>
                   <strong className="text-gray-300">Undo/Redo:</strong> Navigate through last 10 changes
+                </li>
+                <li>
+                  <strong className="text-gray-300">Remove Background:</strong> Automatically detect and remove background (samples edge colors)
+                </li>
+                <li>
+                  <strong className="text-gray-300">Remove Border:</strong> Automatically detect and remove border pixels
+                </li>
+                <li>
+                  <strong className="text-gray-300">Removal Tolerance:</strong> Adjust color matching sensitivity (0-50, default: 10)
                 </li>
               </ul>
             </div>

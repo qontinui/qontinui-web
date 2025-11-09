@@ -197,12 +197,13 @@ export function ImagesManager() {
     setShowMaskEditor(true)
   }
 
-  const handleSaveMask = (maskedImage: string) => {
+  const handleSaveMask = (maskedImage: string, mask: string) => {
     if (!editingImage) return
 
     const updatedImage: ImageAsset = {
       ...editingImage,
       url: maskedImage,
+      mask: mask, // Store the separate mask image
     }
 
     updateImage(updatedImage)
@@ -516,7 +517,7 @@ export function ImagesManager() {
         <MaskEditor
           imageUrl={editingImage.url}
           imageName={editingImage.name}
-          initialMask={undefined}
+          initialMask={editingImage.mask}
           onSave={handleSaveMask}
           onCancel={() => {
             setShowMaskEditor(false)

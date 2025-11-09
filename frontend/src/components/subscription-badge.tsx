@@ -1,5 +1,37 @@
 'use client';
 
+import { Rocket } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+
+/**
+ * Early Access Subscription Badge
+ *
+ * Shows "Early Access - Free" instead of pricing tiers during early access period.
+ * No upgrade buttons or pricing links until February 2026 launch.
+ */
+export function SubscriptionBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'flex items-center gap-1.5 px-3 py-1',
+        'bg-blue-500/20 text-blue-400 border-blue-500/30'
+      )}
+      title="Free during early access until February 2026"
+    >
+      <Rocket className="h-3.5 w-3.5" />
+      <span className="font-medium">Early Access - Free</span>
+    </Badge>
+  );
+}
+
+/*
+// ORIGINAL SUBSCRIPTION BADGE (COMMENTED OUT FOR EARLY ACCESS)
+// Will be restored for February 2026 launch
+
+'use client';
+
 import { useEffect, useState } from 'react';
 import { Crown, Sparkles, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -86,3 +118,4 @@ export function SubscriptionBadge() {
     </div>
   );
 }
+*/

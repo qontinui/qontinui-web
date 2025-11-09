@@ -186,7 +186,7 @@ export async function removeBorder(
       );
 
       resolve({
-        croppedImage: croppedCanvas.toDataURL(),
+        croppedImage: croppedCanvas.toDataURL('image/png'),
         bounds: {
           x: minX,
           y: minY,
@@ -322,8 +322,8 @@ export async function removeBackground(
       maskCtx.putImageData(maskImageData, 0, 0);
 
       resolve({
-        croppedImage: croppedCanvas.toDataURL(),
-        mask: maskCanvas.toDataURL(),
+        croppedImage: croppedCanvas.toDataURL('image/png'),
+        mask: maskCanvas.toDataURL('image/png'),
         bounds: {
           x: minX,
           y: minY,
@@ -369,7 +369,7 @@ export async function extractRegion(
       );
 
       resolve({
-        croppedImage: canvas.toDataURL(),
+        croppedImage: canvas.toDataURL('image/png'),
         bounds: {
           x: Math.floor(region.x),
           y: Math.floor(region.y),

@@ -18,6 +18,7 @@ import { QuickStartChecklist } from "@/components/onboarding/QuickStartChecklist
 import { TutorialOverlay } from "@/components/onboarding/TutorialOverlay"
 import { FirstProjectWizard } from "@/components/onboarding/FirstProjectWizard"
 import { useOnboardingStore } from "@/stores/onboarding-store"
+import { EarlyAccessBanner, EarlyAccessWelcomeModal } from "@/components/early-access"
 
 interface Project {
   id: string
@@ -46,6 +47,7 @@ export default function Dashboard() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [showFirstProjectWizard, setShowFirstProjectWizard] = useState(false)
+  const [showEarlyAccessWelcome, setShowEarlyAccessWelcome] = useState(false)
 
   // Onboarding state
   const {
@@ -72,6 +74,15 @@ export default function Dashboard() {
     // Show welcome modal for new users who haven't completed onboarding
     if (user && !authLoading && isNewUser() && !hasCompletedWelcome) {
       toggleWelcomeModal()
+    }
+
+    // Show early access welcome for new users (separate from onboarding)
+    if (user && !authLoading && isNewUser()) {
+      // Small delay to let onboarding modal show first if needed
+      const timer = setTimeout(() => {
+        setShowEarlyAccessWelcome(true)
+      }, hasCompletedWelcome ? 500 : 3000) // Longer delay if showing onboarding first
+      return () => clearTimeout(timer)
     }
   }, [user, authLoading, router, hasCompletedWelcome, toggleWelcomeModal])
 
@@ -161,6 +172,20 @@ export default function Dashboard() {
     toast.info('Import functionality coming soon!')
   }
 
+  const handleExport = () => {
+    // For now, show a helpful message
+    // TODO: Wire this up to actual export functionality when available
+    toast.info('To export your work, open a project and use File → Export', {
+      duration: 5000
+    })
+  }
+
+  const handleShowExport = () => {
+    // Close welcome modal and show export info
+    setShowEarlyAccessWelcome(false)
+    handleExport()
+  }
+
   const handleBrowseTemplates = () => {
     // TODO: Implement templates
     toast.info('Templates coming soon!')
@@ -213,6 +238,9 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
+      {/* Early Access Banner */}
+      <EarlyAccessBanner onExport={handleExport} />
+
       {/* Header */}
       <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center justify-between px-6 py-4">
@@ -481,6 +509,13 @@ export default function Dashboard() {
       <FirstProjectWizard
         isOpen={showFirstProjectWizard}
         onClose={() => setShowFirstProjectWizard(false)}
+      />
+
+      {/* Early Access Welcome Modal */}
+      <EarlyAccessWelcomeModal
+        open={showEarlyAccessWelcome}
+        onClose={() => setShowEarlyAccessWelcome(false)}
+        onShowExport={handleShowExport}
       />
     </div>
   )

@@ -9,7 +9,7 @@ import "./marketing.css"
 export const metadata: Metadata = {
   title: "Qontinui - GUI Automation That Thinks Like You Do",
   description:
-    "Model-based GUI automation that adapts to unexpected changes instead of breaking. Beta access available now.",
+    "Model-based GUI automation that adapts to unexpected changes instead of breaking. Based on peer-reviewed research published in Springer. Free during early access until February 2026.",
   generator: "v0.app",
 }
 
