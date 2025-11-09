@@ -19,7 +19,7 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry config virtualenvs.create false
 
 # Install dependencies
-# Cache bust: 2025-11-09-22:45
+# Cache bust: 2025-11-09-22:51
 RUN poetry install --no-dev --no-interaction --no-ansi
 
 # Copy application code
