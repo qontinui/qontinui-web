@@ -11,7 +11,8 @@ echo "Updating Elastic Beanstalk environment: $ENVIRONMENT_NAME"
 echo ""
 
 # Get the Vercel frontend URL
-read -p "Enter your Vercel frontend URL (e.g., https://app.qontinui.com): " VERCEL_URL
+read -p "Enter your Vercel frontend URL (default: https://qontinui.io): " VERCEL_URL
+VERCEL_URL=${VERCEL_URL:-https://qontinui.io}
 
 # Generate secrets if needed
 echo ""
@@ -39,7 +40,7 @@ aws elasticbeanstalk update-environment \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=STRIPE_SECRET_KEY,Value="sk_test_51SFYGgD0GLnmL6QjB4VOHwLYIk2wFlif4SiPASBgTji2QGfrMG7SO0HGWSHtslntyBza1DQrx9IOIvgdRbiUceYo00grCCcDRx" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=STRIPE_PUBLISHABLE_KEY,Value="pk_test_51SFYGgD0GLnmL6Qjp8rsmDzzSxQ34gRv78KW6AaMiU3ENUPRfSposbl0EshDiWUdSWakvkxBNs3JoaGXXt5H4pDk00KoAdieQa" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=FRONTEND_URL,Value="$VERCEL_URL" \
-      Namespace=aws:elasticbeanstalk:application:environment,OptionName=BACKEND_CORS_ORIGINS,Value='["'"$VERCEL_URL"'","https://*.vercel.app","https://qontinui.com","https://app.qontinui.com","https://www.qontinui.com"]' \
+      Namespace=aws:elasticbeanstalk:application:environment,OptionName=BACKEND_CORS_ORIGINS,Value='["'"$VERCEL_URL"'","https://*.vercel.app","https://qontinui.io","https://www.qontinui.io","https://qontinui.com"]' \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=ENVIRONMENT,Value="production" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEBUG,Value="False" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=PORT,Value="8000" \
