@@ -72,6 +72,9 @@ origins = [
     "http://localhost:3002",
     "http://localhost:3003",
     "http://localhost:3004",
+    # Allow frontend on Windows to access WSL backend
+    "http://172.27.67.252:3001",
+    "http://172.27.67.252:3000",
 ]
 
 if settings.ENVIRONMENT == "production":

@@ -80,10 +80,13 @@ class S3Backend(StorageBackend):
         self.region = region
 
         # Configure boto3 client
+        # MinIO requires path-style addressing
+        s3_addressing_style = "path" if endpoint_url else "auto"
         config = Config(
             region_name=region,
             signature_version="s3v4",
             retries={"max_attempts": 3, "mode": "standard"},
+            s3={"addressing_style": s3_addressing_style},
         )
 
         # Support for MinIO or S3-compatible services
@@ -139,6 +142,14 @@ class S3Backend(StorageBackend):
                         error=str(create_error),
                     )
                     raise
+            elif error_code == "403":
+                # For MinIO, 403 on head_bucket often means bucket exists but has access restrictions
+                # We'll assume the bucket exists and continue
+                logger.warning(
+                    "bucket_access_restricted",
+                    bucket=self.bucket_name,
+                    message="Received 403 on head_bucket, assuming bucket exists"
+                )
             else:
                 logger.error(
                     "bucket_check_failed",
