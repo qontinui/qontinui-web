@@ -241,63 +241,64 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Handle pan/drag with middle mouse or space+click
-    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    // Right-click for panning
+    if (e.button === 2) {
+      e.preventDefault();
       setIsDragging(true);
       setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-      e.preventDefault();
       return;
     }
 
-    if (selectionMode === 'view') {
-      // Check if clicking on existing region or location
+    // Left-click for mode-specific actions
+    if (e.button === 0) {
       const coords = getCanvasCoordinates(e);
 
-      // Check regions
-      const clickedRegion = screenshot.regions.find(r =>
-        coords.x >= r.bounds.x &&
-        coords.x <= r.bounds.x + r.bounds.width &&
-        coords.y >= r.bounds.y &&
-        coords.y <= r.bounds.y + r.bounds.height
-      );
+      if (selectionMode === 'view') {
+        // Check if clicking on existing region or location
+        // Check regions
+        const clickedRegion = screenshot.regions.find(r =>
+          coords.x >= r.bounds.x &&
+          coords.x <= r.bounds.x + r.bounds.width &&
+          coords.y >= r.bounds.y &&
+          coords.y <= r.bounds.y + r.bounds.height
+        );
 
-      if (clickedRegion) {
-        onRegionSelect(clickedRegion);
-        onLocationSelect(null); // Deselect location when region is selected
+        if (clickedRegion) {
+          onRegionSelect(clickedRegion);
+          onLocationSelect(null); // Deselect location when region is selected
+          return;
+        }
+
+        // Check locations
+        const clickedLocation = screenshot.locations.find(l => {
+          const distance = Math.sqrt(Math.pow(coords.x - l.x, 2) + Math.pow(coords.y - l.y, 2));
+          return distance < 10;
+        });
+
+        if (clickedLocation) {
+          onLocationSelect(clickedLocation);
+          onRegionSelect(null); // Deselect region when location is selected
+          return;
+        }
+
+        onRegionSelect(null);
+        onLocationSelect(null);
         return;
       }
 
-      // Check locations
-      const clickedLocation = screenshot.locations.find(l => {
-        const distance = Math.sqrt(Math.pow(coords.x - l.x, 2) + Math.pow(coords.y - l.y, 2));
-        return distance < 10;
-      });
-
-      if (clickedLocation) {
-        onLocationSelect(clickedLocation);
-        onRegionSelect(null); // Deselect region when location is selected
-        return;
+      if (selectionMode === 'location') {
+        onLocationCreate({
+          id: generateId(),
+          screenshotId: screenshot.id,
+          stateId: screenshot.associatedStates[0] || '', // Use first associated state or empty
+          name: `Location_${screenshot.locations.length + 1}`,
+          x: Math.round(coords.x),
+          y: Math.round(coords.y)
+        });
+      } else if (selectionMode === 'region') {
+        setIsDrawing(true);
+        setStartPoint(coords);
       }
-
-      onRegionSelect(null);
-      onLocationSelect(null);
-      return;
-    }
-
-    const coords = getCanvasCoordinates(e);
-
-    if (selectionMode === 'location') {
-      onLocationCreate({
-        id: generateId(),
-        screenshotId: screenshot.id,
-        stateId: screenshot.associatedStates[0] || '', // Use first associated state or empty
-        name: `Location_${screenshot.locations.length + 1}`,
-        x: Math.round(coords.x),
-        y: Math.round(coords.y)
-      });
-    } else if (selectionMode === 'region') {
-      setIsDrawing(true);
-      setStartPoint(coords);
     }
   };
 
@@ -379,7 +380,7 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
     if (isDragging) return 'grabbing';
     if (selectionMode === 'view') {
       if (hoveredRegion || hoveredLocation) return 'pointer';
-      return manualZoom > 1 ? 'grab' : 'default';
+      return 'default';
     }
     if (selectionMode === 'location') return 'crosshair';
     if (selectionMode === 'region') return 'crosshair';
@@ -391,17 +392,11 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
       {/* Top Bar with Mode Indicator and Zoom Controls */}
       <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center gap-2">
-          {selectionMode !== 'view' && (
-            <div className="bg-blue-600 text-white px-3 py-1 rounded text-sm">
-              {selectionMode === 'region' ? 'Click and drag to create region' : 'Click to place location'}
-              {manualZoom > 1 && ' • Shift+drag to pan'}
-            </div>
-          )}
-          {selectionMode === 'view' && manualZoom > 1 && (
-            <div className="bg-blue-600 text-white px-3 py-1 rounded text-sm">
-              Shift+drag to pan
-            </div>
-          )}
+          <div className="bg-blue-600 text-white px-3 py-1 rounded text-sm">
+            {selectionMode === 'view' && 'Left Click: Select annotation • Right Click: Pan'}
+            {selectionMode === 'region' && 'Left Click: Draw region • Right Click: Pan'}
+            {selectionMode === 'location' && 'Left Click: Place location • Right Click: Pan'}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -449,6 +444,7 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
                 setHoveredLocation(null);
                 setIsDragging(false);
               }}
+              onContextMenu={(e) => e.preventDefault()}
               className="border border-gray-300 shadow-lg bg-white"
               style={{
                 cursor: getCursor(),

@@ -545,9 +545,24 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   }, [images])
 
   const updateImage = useCallback(async (image: ImageAsset) => {
+    // Update the image in the library (source of truth)
+    // No cascade needed - patterns reference by ID and will get updates automatically
     await projectDB.updateImage(image)
     setImages((prev) => prev.map(img => img.id === image.id ? image : img))
   }, [])
+
+  // Helper: Resolve image by ID from library
+  const getImageById = useCallback((imageId: string | undefined): ImageAsset | null => {
+    if (!imageId) return null
+    return images.find(img => img.id === imageId) || null
+  }, [images])
+
+  // Helper: Resolve pattern's image data
+  const resolvePatternImage = useCallback((pattern: Pattern): { url: string; mask?: string } | null => {
+    const image = getImageById(pattern.imageId)
+    if (!image) return null
+    return { url: image.url, mask: image.mask }
+  }, [getImageById])
 
   // Get detailed usage information for an image
   const getImageUsage = useCallback((imageId: string) => {
@@ -556,12 +571,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       return { states: [], processes: [] }
     }
 
-    // Find states that use this image (check both legacy image field and patterns)
+    // Find states that use this image by checking pattern imageIds
     const usedInStates = states
       .filter(state =>
         state.stateImages?.some(si =>
-          si.image === image.url ||
-          si.patterns?.some(p => p.image === image.url)
+          si.patterns?.some(p => p.imageId === imageId)
         )
       )
       .map(state => ({
@@ -575,7 +589,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     workflows.forEach(workflow => {
       const actionsWithImage = workflow.actions.filter(action => {
         // Check if action uses this image in new target structure
-        if (action.config.target?.type === 'image' && action.config.target.imageId === imageId) return true
+        if (action.config.target?.type === 'image') {
+          // Handle both single imageId and array imageIds
+          if (action.config.target.imageId === imageId) return true
+          if (action.config.target.imageIds?.includes(imageId)) return true
+        }
         // Check legacy format
         if (action.config.image === imageId) return true
         // Check DRAG actions (to field)
@@ -1049,6 +1067,8 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     getImageUsage,
     removeImageFromStates,
     markImageAsRemovedInProcesses,
+    getImageById,
+    resolvePatternImage,
 
     // Screenshot management
     screenshots,

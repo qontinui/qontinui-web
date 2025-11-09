@@ -48,6 +48,7 @@ const PatternOptimizationContent: React.FC = () => {
   const [showScreenshotSelector, setShowScreenshotSelector] = useState(false);
   const [stateImageName, setStateImageName] = useState('');
   const [selectedStateId, setSelectedStateId] = useState<string>('');
+  const [newStateName, setNewStateName] = useState('');
   const [fixedLocation, setFixedLocation] = useState(true);
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -286,6 +287,12 @@ const PatternOptimizationContent: React.FC = () => {
       return;
     }
 
+    // Validate new state name when creating a new state
+    if (selectedStateId === 'new' && !newStateName.trim()) {
+      toast.error('Please enter a name for the new state');
+      return;
+    }
+
     try {
       const imageData = editedPattern || extractedPattern.patternImage || '';
 
@@ -315,7 +322,8 @@ const PatternOptimizationContent: React.FC = () => {
           searchRegion: searchRegion,
         },
         selectedStateId,
-        states
+        states,
+        newStateName.trim() || undefined
       );
 
       if (result.action === 'create-state' && result.targetState) {
@@ -341,6 +349,7 @@ const PatternOptimizationContent: React.FC = () => {
       setShowStateImageDialog(false);
       setStateImageName('');
       setSelectedStateId('');
+      setNewStateName('');
     } catch (error) {
       console.error('Error creating StateImage:', error);
       toast.error('Failed to create StateImage');
@@ -930,6 +939,21 @@ const PatternOptimizationContent: React.FC = () => {
                 </select>
               </div>
 
+              {selectedStateId === 'new' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    New State Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newStateName}
+                    onChange={(e) => setNewStateName(e.target.value)}
+                    placeholder="Enter name for the new state"
+                    className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00D9FF] text-white"
+                  />
+                </div>
+              )}
+
               <div className="flex items-center">
                 <input
                   type="checkbox"
@@ -956,6 +980,7 @@ const PatternOptimizationContent: React.FC = () => {
                   setShowStateImageDialog(false);
                   setStateImageName('');
                   setSelectedStateId('');
+                  setNewStateName('');
                 }}
                 className="px-4 py-2 text-sm text-gray-300 bg-gray-700 rounded-md hover:bg-gray-600"
               >
@@ -963,7 +988,7 @@ const PatternOptimizationContent: React.FC = () => {
               </button>
               <button
                 onClick={handleCreateStateImage}
-                disabled={!stateImageName || !selectedStateId}
+                disabled={!stateImageName || !selectedStateId || (selectedStateId === 'new' && !newStateName.trim())}
                 className="px-4 py-2 text-sm text-black bg-[#00FF88] rounded-md hover:bg-[#00FF88]/90 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
               >
                 Create StateImage

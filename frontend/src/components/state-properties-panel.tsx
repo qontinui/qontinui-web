@@ -16,6 +16,7 @@ import { ImageSelector } from "@/components/image-selector"
 import { ImageStatsDisplay } from "@/components/image-stats-display"
 import { SpecialKeysSelector, SpecialKeyDisplay } from "@/components/special-keys-selector"
 import { StateImageViewer } from "@/components/state-image-viewer"
+import { useAutomation } from "@/contexts/automation-context"
 import type { State, StateRegion, StateLocation, StateString, StateImage, PositionName, IncomingTransition, Transition, Workflow } from "@/contexts/automation-context"
 import { createFindAnyStateImageWorkflow } from "@/lib/workflow-helpers"
 
@@ -68,6 +69,8 @@ export function StatePropertiesPanel({
   updateString,
   removeString,
 }: StatePropertiesPanelProps) {
+  const { resolvePatternImage } = useAutomation()
+
   const stringTextAreaRefs = useRef<{ [key: string]: HTMLTextAreaElement | null }>({})
   const [openImageSelectorId, setOpenImageSelectorId] = useState<string | null>(null)
   const [expandedAdvancedSections, setExpandedAdvancedSections] = useState<Set<string>>(new Set())
@@ -332,19 +335,22 @@ export function StatePropertiesPanel({
                                         backgroundColor: '#444'
                                       }}
                                     >
-                                      {pattern.image ? (
-                                        <StateImageViewer
-                                          image={pattern.image}
-                                          mask={pattern.mask}
-                                          mode={pattern.mask ? 'with-mask' : 'normal'}
-                                          alt={pattern.name || `Pattern ${pIdx + 1}`}
-                                          className="w-full h-full"
-                                        />
-                                      ) : (
-                                        <div className="w-full h-full flex items-center justify-center">
-                                          <ImageIcon className="w-4 h-4 text-gray-600" />
-                                        </div>
-                                      )}
+                                      {(() => {
+                                        const imageData = resolvePatternImage(pattern);
+                                        return imageData ? (
+                                          <StateImageViewer
+                                            image={imageData.url}
+                                            mask={imageData.mask}
+                                            mode={imageData.mask ? 'with-mask' : 'normal'}
+                                            alt={pattern.name || `Pattern ${pIdx + 1}`}
+                                            className="w-full h-full"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center">
+                                            <ImageIcon className="w-4 h-4 text-gray-600" />
+                                          </div>
+                                        );
+                                      })()}
                                     </div>
 
                                     {/* Pattern info */}
@@ -359,7 +365,7 @@ export function StatePropertiesPanel({
                                         className="h-6 bg-gray-800 border-gray-600 text-gray-200 text-xs px-2 mb-1"
                                         placeholder={`Pattern ${pIdx + 1}`}
                                       />
-                                      <ImageStatsDisplay imageDataUrl={pattern.image || null} />
+                                      <ImageStatsDisplay imageDataUrl={resolvePatternImage(pattern)?.url || null} />
                                       {(pattern.searchRegions?.length || 0) > 0 && (
                                         <div className="text-xs text-gray-500 mt-0.5">
                                           {pattern.searchRegions!.length} search region{pattern.searchRegions!.length > 1 ? 's' : ''}
@@ -565,39 +571,20 @@ export function StatePropertiesPanel({
 
                                   {/* Hidden image selector for this pattern */}
                                   <ImageSelector
-                                    selectedImage={pattern.image || null}
+                                    selectedImage={pattern.imageId || null}
                                     onSelectImage={async (imageId) => {
+                                      const updatedPatterns = [...(stateImage.patterns || [])];
                                       if (imageId) {
-                                        const selectedImg = images.find(img => img.id === imageId);
-                                        if (selectedImg && selectedImg.url) {
-                                          let base64Image = '';
-                                          if (selectedImg.url.startsWith('data:')) {
-                                            base64Image = selectedImg.url;
-                                          } else {
-                                            try {
-                                              const response = await fetch(selectedImg.url);
-                                              const blob = await response.blob();
-                                              const reader = new FileReader();
-                                              await new Promise<void>((resolve) => {
-                                                reader.onloadend = () => {
-                                                  base64Image = reader.result as string;
-                                                  resolve();
-                                                };
-                                                reader.readAsDataURL(blob);
-                                              });
-                                            } catch (error) {
-                                              console.error('Failed to convert image to base64:', error);
-                                              base64Image = selectedImg.url;
-                                            }
-                                          }
-                                          const updatedPatterns = [...(stateImage.patterns || [])];
-                                          updatedPatterns[pIdx] = { ...updatedPatterns[pIdx], image: base64Image };
-                                          updateStateImage(index, { patterns: updatedPatterns, source: 'upload' });
-                                        }
+                                        // Store only the imageId - library is source of truth
+                                        updatedPatterns[pIdx] = {
+                                          ...updatedPatterns[pIdx],
+                                          imageId: imageId,
+                                        };
+                                        updateStateImage(index, { patterns: updatedPatterns, source: 'upload' });
                                       } else {
-                                        const updatedPatterns = [...(stateImage.patterns || [])];
-                                        updatedPatterns[pIdx] = { ...updatedPatterns[pIdx], image: '' };
-                                        updateStateImage(index, { patterns: updatedPatterns });
+                                        // Remove the pattern if no image selected
+                                        const filteredPatterns = updatedPatterns.filter((_, idx) => idx !== pIdx);
+                                        updateStateImage(index, { patterns: filteredPatterns });
                                       }
                                     }}
                                     images={images}
@@ -621,7 +608,7 @@ export function StatePropertiesPanel({
                                 onClick={() => {
                                   const newPattern = {
                                     id: `pattern_${Date.now()}`,
-                                    image: '',
+                                    imageId: undefined, // Library is source of truth - no embedded data
                                     searchRegions: [],
                                     fixed: false
                                   };

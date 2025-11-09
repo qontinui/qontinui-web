@@ -97,11 +97,11 @@ export interface SearchRegion {
 }
 
 // Pattern represents a single image variation with its search configuration
+// Images are referenced by ID from the Library - Library is the source of truth
 export interface Pattern {
   id: string
   name?: string
-  image: string // Base64 data URL with transparency (PNG format)
-  mask?: string // Optional separate mask image (base64)
+  imageId?: string // ID of ImageAsset in library (library is source of truth)
   searchRegions: SearchRegion[] // Where to search for this pattern
   fixed: boolean // If true, pattern position is fixed on screen
   similarity?: number // Similarity threshold (0.0-1.0)
@@ -172,12 +172,18 @@ export interface ImageAsset {
   id: string
   name: string
   url: string
+  mask?: string // Optional separate mask image (base64)
   size: number
   createdAt: Date
   usageCount: number
   usage?: ImageUsage[]
   projectName?: string
   source: 'uploaded' | 'pattern_optimization' | 'image_extraction' | 'state_discovery'
+
+  // Versioning support (not yet implemented, but architecture ready)
+  version?: number // Version number (default: 1)
+  parentImageId?: string // ID of the original image if this is a version
+  versions?: string[] // Array of version IDs (only on parent images)
 }
 
 // Screenshot annotation types (simplified from full Screenshot types)
@@ -344,6 +350,10 @@ export interface AutomationContextType {
   getImageUsage: (imageId: string) => { states: Array<{ id: string; name: string }>; processes: Array<{ id: string; name: string; actionCount: number }> }
   removeImageFromStates: (imageUrl: string) => Promise<number>
   markImageAsRemovedInProcesses: (imageId: string, imageName: string) => Promise<number>
+
+  // Image resolution helpers (library is source of truth)
+  getImageById: (imageId: string | undefined) => ImageAsset | null
+  resolvePatternImage: (pattern: Pattern) => { url: string; mask?: string } | null
 
   // Screenshot management
   screenshots: Screenshot[]

@@ -20,6 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { loginFormSchema, registerFormSchema, type LoginFormData, type RegisterFormData } from '@/lib/schemas';
+import { EarlyAccessSignupWarning } from '@/components/early-access/EarlyAccessSignupWarning';
 
 interface AuthDialogProps {
   open: boolean;
@@ -165,6 +166,9 @@ export function AuthDialog({ open, onOpenChange, defaultTab = 'signin' }: AuthDi
           </TabsContent>
 
           <TabsContent value="register">
+            {/* Early Access Warning */}
+            <EarlyAccessSignupWarning />
+
             <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="register-email">Email</Label>

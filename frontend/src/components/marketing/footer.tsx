@@ -8,8 +8,11 @@ export function Footer() {
           {/* Brand */}
           <div>
             <h3 className="text-lg font-bold text-primary mb-4">Qontinui</h3>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground mb-4">
               Model-based GUI automation that adapts to unexpected changes.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Free during early access until February 2026
             </p>
           </div>
 
@@ -24,16 +27,36 @@ export function Footer() {
               </li>
               <li>
                 <Link href="/runner/download" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-                  Download
+                  Download Runner
                 </Link>
+              </li>
+              <li>
+                <a
+                  href="https://github.com/qontinui/qontinui"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  pip install qontinui
+                </a>
               </li>
             </ul>
           </div>
 
-          {/* Company */}
+          {/* Research & Open Source */}
           <div>
-            <h4 className="font-semibold mb-4">Company</h4>
+            <h4 className="font-semibold mb-4">Research & Open Source</h4>
             <ul className="space-y-2">
+              <li>
+                <a
+                  href="https://link.springer.com/article/10.1007/s10270-025-01319-9"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Springer Paper (Oct 2025)
+                </a>
+              </li>
               <li>
                 <a
                   href="https://github.com/qontinui"
@@ -41,17 +64,17 @@ export function Footer() {
                   rel="noopener noreferrer"
                   className="text-sm text-muted-foreground hover:text-primary transition-colors"
                 >
-                  GitHub
+                  GitHub Organization
                 </a>
               </li>
               <li>
                 <a
-                  href="https://twitter.com/qontinui"
+                  href="https://qontinui.github.io/multistate/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-muted-foreground hover:text-primary transition-colors"
                 >
-                  Twitter
+                  multistate Docs
                 </a>
               </li>
             </ul>

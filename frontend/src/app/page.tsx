@@ -83,7 +83,9 @@ function LandingContent() {
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
         <div className="absolute inset-0 dot-grid animate-pulse" />
         <div className="container mx-auto px-4 text-center relative z-10">
-          <Badge className="mb-6 bg-accent/20 text-accent border-accent/30 glow-green">Free to Get Started</Badge>
+          <Badge className="mb-6 bg-blue-500/20 text-blue-300 border-blue-500/30">
+            Early Access - Free Until February 2026
+          </Badge>
 
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 text-balance">
             GUI Automation That <span className="text-primary">Thinks Like You Do</span>
@@ -98,7 +100,7 @@ function LandingContent() {
             onClick={handleGetStarted}
             className="bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan pulse-cyan text-lg px-8 py-4"
           >
-            Get Started Free
+            Try Early Access
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
         </div>
@@ -234,19 +236,87 @@ function LandingContent() {
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* Research & Open Source Section */}
       <section className="py-20 px-4 bg-muted/20">
+        <div className="container mx-auto max-w-5xl">
+          <div className="text-center mb-12">
+            <Badge className="mb-4 bg-primary/20 text-primary border-primary/30">Peer-Reviewed Research</Badge>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Built on Published Science, Open to Everyone</h2>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              Qontinui is based on peer-reviewed research published in Springer's Software and Systems Modeling journal (October 2025)
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 mb-8">
+            <Card className="p-8 bg-card border-border hover:border-primary/50 transition-all duration-300">
+              <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                <Brain className="h-6 w-6 text-primary" />
+                Peer-Reviewed Foundation
+              </h3>
+              <p className="text-muted-foreground mb-6">
+                Published in Springer SoSyM - the first mathematically-proven approach to GUI automation that reduces complexity from exponential to polynomial growth.
+              </p>
+              <a
+                href="https://link.springer.com/article/10.1007/s10270-025-01319-9"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center text-primary hover:underline"
+              >
+                Read the Paper
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </a>
+            </Card>
+
+            <Card className="p-8 bg-card border-border hover:border-primary/50 transition-all duration-300">
+              <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                <Zap className="h-6 w-6 text-primary" />
+                Open-Source Implementation
+              </h3>
+              <p className="text-muted-foreground mb-6">
+                All core libraries are open-source. The qontinui Python library, multistate framework, runner, and API bridge are freely available on GitHub.
+              </p>
+              <div className="space-y-2">
+                <a
+                  href="https://github.com/qontinui/qontinui"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-primary hover:underline"
+                >
+                  GitHub: qontinui (Python)
+                </a>
+                <a
+                  href="https://qontinui.github.io/multistate/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-primary hover:underline"
+                >
+                  Docs: multistate (state machine)
+                </a>
+              </div>
+            </Card>
+          </div>
+
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground">
+              <code className="bg-muted px-2 py-1 rounded">pip install qontinui</code> to get started with the open-source library
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-20 px-4">
         <div className="container mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-bold mb-4">Ready to Transform Your Automation?</h2>
+          <h2 className="text-3xl font-bold mb-4">Ready to Try It?</h2>
           <p className="text-muted-foreground mb-8">
-            Start building intelligent, adaptive GUI automation in minutes
+            Start building intelligent, adaptive GUI automation today - free during early access
           </p>
           <Button
             size="lg"
             onClick={handleGetStarted}
             className="bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan pulse-cyan text-lg px-8 py-4"
           >
-            Get Started Free
+            Try Early Access
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
         </div>

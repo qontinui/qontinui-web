@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { AutomationProvider, useAutomation } from "@/contexts/automation-context"
+import { TabStateProvider } from "@/contexts/tab-state-context"
 import { useAuth } from "@/contexts/auth-context"
 import { ConfigExporter } from "@/lib/config-exporter"
 import { ConfigImporter } from "@/lib/config-importer"
@@ -830,7 +831,9 @@ function AutomationBuilderContent() {
 export default function AutomationBuilder() {
   return (
     <AutomationProvider>
-      <AutomationBuilderContent />
+      <TabStateProvider>
+        <AutomationBuilderContent />
+      </TabStateProvider>
     </AutomationProvider>
   )
 }

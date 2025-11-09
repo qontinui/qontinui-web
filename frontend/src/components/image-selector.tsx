@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { ImageIcon, Search, X, Filter, CheckCircle2, Circle } from "lucide-react"
 import { useImageStats } from "@/hooks/use-image-stats"
+import { useAutomation } from "@/contexts/automation-context"
 
 interface ImageAsset {
   id: string
@@ -64,6 +65,7 @@ export function ImageSelector({
   onOpenChange,
   hideTrigger = false,
 }: ImageSelectorProps) {
+  const { resolvePatternImage } = useAutomation()
   const [internalOpen, setInternalOpen] = useState(initialOpen)
 
   // Temporary multi-select state (used during dialog interaction)
@@ -83,42 +85,43 @@ export function ImageSelector({
     setOpen(newOpen)
   }
 
-  // Get StateImages to display based on filter
-  const getStateImages = (): ImageAsset[] => {
+  // Get images to display based on filter
+  const getAvailableImages = (): ImageAsset[] => {
+    // If not using state filter, show library images (ImageAssets)
     if (!showStateFilter) {
-      // If not using state filter, show all StateImages from all states
-      return states.flatMap(state =>
-        (state.stateImages || []).map(si => ({
-          id: si.id,
-          name: si.name,
-          url: si.patterns?.[0]?.image || '', // Use first pattern's image as thumbnail
-        }))
-      )
+      return images
     }
 
+    // Using state filter - show StateImages (resolve pattern images from library)
     if (selectedStateFilter === "all") {
       // "All Images" - show all StateImages from all states
       return states.flatMap(state =>
-        (state.stateImages || []).map(si => ({
-          id: si.id,
-          name: si.name,
-          url: si.patterns?.[0]?.image || '', // Use first pattern's image as thumbnail
-        }))
+        (state.stateImages || []).map(si => {
+          const imageData = si.patterns?.[0] ? resolvePatternImage(si.patterns[0]) : null
+          return {
+            id: si.id,
+            name: si.name,
+            url: imageData?.url || '', // Resolve pattern's image from library
+          }
+        })
       )
     }
 
     // Specific state selected - show only that state's StateImages
     const selectedState = states.find(s => s.id === selectedStateFilter)
     return selectedState
-      ? (selectedState.stateImages || []).map(si => ({
-          id: si.id,
-          name: si.name,
-          url: si.patterns?.[0]?.image || '', // Use first pattern's image as thumbnail
-        }))
+      ? (selectedState.stateImages || []).map(si => {
+          const imageData = si.patterns?.[0] ? resolvePatternImage(si.patterns[0]) : null
+          return {
+            id: si.id,
+            name: si.name,
+            url: imageData?.url || '', // Resolve pattern's image from library
+          }
+        })
       : []
   }
 
-  const availableImages = getStateImages()
+  const availableImages = getAvailableImages()
   const filteredImages = availableImages.filter((image) => image.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
   // Find which state contains a StateImage for badge display
@@ -138,11 +141,14 @@ export function ImageSelector({
   const selectedImageData = selectedImage && !isBase64 && !selectedStateImage
     ? images.find((img) => img.id === selectedImage)
     : selectedStateImage
-      ? {
-          id: selectedStateImage.id || selectedImage,
-          name: selectedStateImage.name,
-          url: selectedStateImage.patterns?.[0]?.image || '',
-        }
+      ? (() => {
+          const imageData = selectedStateImage.patterns?.[0] ? resolvePatternImage(selectedStateImage.patterns[0]) : null
+          return {
+            id: selectedStateImage.id || selectedImage,
+            name: selectedStateImage.name,
+            url: imageData?.url || '',
+          }
+        })()
       : null
 
   const stats = useImageStats(isBase64 ? selectedImage : null)

@@ -81,14 +81,15 @@ export function addStateImageToState(
 export function prepareStateImageCreation(
   options: StateImageCreationOptions,
   targetStateId: string | 'new',
-  existingStates: State[]
+  existingStates: State[],
+  newStateName: string | undefined
 ): StateImageCreationResult {
   const stateImage = createStateImage(options);
 
   if (targetStateId === 'new') {
     return {
       stateImage,
-      targetState: createStateWithImage(stateImage),
+      targetState: createStateWithImage(stateImage, newStateName),
       action: 'create-state',
     };
   } else if (targetStateId) {
