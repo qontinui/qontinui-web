@@ -243,7 +243,7 @@ async def get_all_projects(
 
         project_data.append(
             AdminProjectData(
-                id=project.id,
+                id=str(project.id),
                 name=project.name,
                 description=project.description,
                 owner_id=str(project.owner_id),
