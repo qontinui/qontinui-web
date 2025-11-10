@@ -26,13 +26,18 @@ else:
 
 # Handle SSL configuration for asyncpg
 # asyncpg doesn't accept sslmode in the URL, so we parse it and configure separately
+import ssl
+
 connect_args = {}
 if "sslmode=require" in async_database_url:
     # Remove sslmode from URL and configure SSL via connect_args
     async_database_url = async_database_url.replace("?sslmode=require", "")
     async_database_url = async_database_url.replace("&sslmode=require", "")
-    # For asyncpg, ssl=True enables SSL
-    connect_args["ssl"] = True
+    # For asyncpg with RDS, create SSL context that doesn't verify certificates
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    connect_args["ssl"] = ssl_context
 
 async_engine = create_async_engine(
     async_database_url,

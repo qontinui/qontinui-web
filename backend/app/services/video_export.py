@@ -94,7 +94,7 @@ class VideoFrameRenderer:
         frame_number: int,
         total_frames: int,
         target_size: tuple[int, int] | None = None,
-    ) -> np.ndarray:
+    ) -> "np.ndarray":
         """
         Render a single frame with all overlays
 
@@ -144,8 +144,8 @@ class VideoFrameRenderer:
         return img
 
     def _resize_frame(
-        self, img: np.ndarray, target_size: tuple[int, int]
-    ) -> np.ndarray:
+        self, img: "np.ndarray", target_size: tuple[int, int]
+    ) -> "np.ndarray":
         """Resize frame maintaining aspect ratio"""
         h, w = img.shape[:2]
         target_w, target_h = target_size
@@ -168,8 +168,8 @@ class VideoFrameRenderer:
         return img
 
     def _add_action_overlays(
-        self, img: np.ndarray, action_data: dict[str, Any]
-    ) -> np.ndarray:
+        self, img: "np.ndarray", action_data: dict[str, Any]
+    ) -> "np.ndarray":
         """Add action-specific visualizations"""
         action_type = action_data.get("action_type", "")
 
@@ -230,8 +230,8 @@ class VideoFrameRenderer:
         return img
 
     def _add_text_overlays(
-        self, img: np.ndarray, action_data: dict[str, Any]
-    ) -> np.ndarray:
+        self, img: "np.ndarray", action_data: dict[str, Any]
+    ) -> "np.ndarray":
         """Add text overlays showing action details"""
         h, w = img.shape[:2]
 
@@ -267,8 +267,8 @@ class VideoFrameRenderer:
         return img
 
     def _add_timeline(
-        self, img: np.ndarray, frame_number: int, total_frames: int
-    ) -> np.ndarray:
+        self, img: "np.ndarray", frame_number: int, total_frames: int
+    ) -> "np.ndarray":
         """Add timeline progress bar at bottom"""
         h, w = img.shape[:2]
 
@@ -316,7 +316,7 @@ class VideoFrameRenderer:
 
         return img
 
-    def _add_status_badge(self, img: np.ndarray, success: bool) -> np.ndarray:
+    def _add_status_badge(self, img: "np.ndarray", success: bool) -> "np.ndarray":
         """Add success/failure badge in top-right corner"""
         h, w = img.shape[:2]
 
@@ -355,7 +355,7 @@ class VideoFrameRenderer:
 
         return img
 
-    def _add_states_badge(self, img: np.ndarray, states: list[str]) -> np.ndarray:
+    def _add_states_badge(self, img: "np.ndarray", states: list[str]) -> "np.ndarray":
         """Add active states badge in top-left corner"""
         if not states:
             return img
@@ -534,8 +534,8 @@ class VideoExporter:
 
     def _write_frames_with_transition(
         self,
-        out: cv2.VideoWriter,
-        current_frame: np.ndarray,
+        out: "cv2.VideoWriter",
+        current_frame: "np.ndarray",
         current_screenshot: str,
         next_screenshot: str,
         next_action: dict[str, Any],

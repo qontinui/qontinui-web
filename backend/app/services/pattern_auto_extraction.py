@@ -9,6 +9,15 @@ import base64
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import numpy as np
+else:
+    try:
+        import numpy as np
+    except ImportError:
+        np = None  # type: ignore
 
 try:
     import cv2
@@ -16,7 +25,7 @@ try:
     CV2_AVAILABLE = True
 except ImportError:
     cv2 = None
-    np = None
+    np = None  # type: ignore
     CV2_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -105,7 +114,7 @@ class PatternAutoExtractor:
 
         return patterns
 
-    def _detect_buttons(self, img: np.ndarray, path: str) -> list[DetectedPattern]:
+    def _detect_buttons(self, img: "np.ndarray", path: str) -> list[DetectedPattern]:
         """
         Detect button-like regions using edge detection.
 
@@ -145,7 +154,7 @@ class PatternAutoExtractor:
 
         return patterns
 
-    def _detect_input_fields(self, img: np.ndarray, path: str) -> list[DetectedPattern]:
+    def _detect_input_fields(self, img: "np.ndarray", path: str) -> list[DetectedPattern]:
         """
         Detect input field regions.
 
@@ -183,7 +192,7 @@ class PatternAutoExtractor:
 
         return patterns
 
-    def _detect_icons(self, img: np.ndarray, path: str) -> list[DetectedPattern]:
+    def _detect_icons(self, img: "np.ndarray", path: str) -> list[DetectedPattern]:
         """
         Detect small icon-like regions.
 
@@ -279,7 +288,7 @@ class PatternAutoExtractor:
         return inter_area / union_area if union_area > 0 else 0
 
     def _calculate_confidence(
-        self, contour: np.ndarray, region_img: np.ndarray
+        self, contour: "np.ndarray", region_img: "np.ndarray"
     ) -> float:
         """
         Calculate confidence score for a detected pattern.
@@ -313,7 +322,7 @@ class PatternAutoExtractor:
 
         return min(1.0, confidence)
 
-    def _encode_region(self, img: np.ndarray, x: int, y: int, w: int, h: int) -> str:
+    def _encode_region(self, img: "np.ndarray", x: int, y: int, w: int, h: int) -> str:
         """
         Extract and encode region as base64.
 

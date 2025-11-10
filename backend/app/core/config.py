@@ -207,6 +207,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Ignore extra env vars like PYTHONPATH set by EB
 
 
 settings = Settings()
