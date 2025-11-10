@@ -160,8 +160,8 @@ export function SecurityWarningsCard({ data, loading, onRefresh }: SecurityWarni
           <ScrollArea className="h-[400px] pr-4">
             <div className="space-y-3">
               {displayWarnings.map((warning) => {
-                const Icon = warningTypeIcons[warning.type]
-                const typeLabel = warningTypeLabels[warning.type]
+                const Icon = warningTypeIcons[warning.type] || AlertTriangle
+                const typeLabel = warningTypeLabels[warning.type] || 'Security Alert'
 
                 return (
                   <div
