@@ -61,24 +61,28 @@ if settings.ENVIRONMENT == "production":
     )
 
 # Set up CORS
-origins = [
-    "http://localhost:3001",
-    "http://localhost:3000",
-    "http://localhost:3002",
-    "http://localhost:3003",
-    "http://localhost:3004",
-    # Allow frontend on Windows to access WSL backend
-    "http://172.27.67.252:3001",
-    "http://172.27.67.252:3000",
-]
-
-if settings.ENVIRONMENT == "production":
+# Use configured CORS origins from settings if available, otherwise use defaults
+if settings.BACKEND_CORS_ORIGINS:
+    # Convert AnyHttpUrl objects to strings
+    origins = [str(origin) for origin in settings.BACKEND_CORS_ORIGINS]
+elif settings.ENVIRONMENT == "production":
     origins = [
         "https://qontinui.com",
         "https://app.qontinui.com",
         "https://www.qontinui.com",
         "https://qontinui.io",
         "https://www.qontinui.io",
+    ]
+else:
+    origins = [
+        "http://localhost:3001",
+        "http://localhost:3000",
+        "http://localhost:3002",
+        "http://localhost:3003",
+        "http://localhost:3004",
+        # Allow frontend on Windows to access WSL backend
+        "http://172.27.67.252:3001",
+        "http://172.27.67.252:3000",
     ]
 
 app.add_middleware(
