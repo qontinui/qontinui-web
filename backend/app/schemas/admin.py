@@ -30,7 +30,7 @@ class AdminUserData(BaseModel):
 class AdminProjectData(BaseModel):
     """Schema for admin project data response."""
 
-    id: int = Field(..., description="Project ID", gt=0)
+    id: str = Field(..., description="Project ID or UUID")
     name: str = Field(..., min_length=1)
     description: Optional[str] = None
     owner_id: str = Field(..., description="Owner UUID")

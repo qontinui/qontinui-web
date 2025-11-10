@@ -116,7 +116,7 @@ export const AdminUserDataSchema = z.object({
 export type AdminUserData = z.infer<typeof AdminUserDataSchema>
 
 export const AdminProjectDataSchema = z.object({
-  id: z.number().int().positive(),
+  id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().nullable(),
   owner_id: z.string().uuid(),
