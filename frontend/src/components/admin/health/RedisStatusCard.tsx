@@ -66,7 +66,7 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
     return 'healthy'
   }
 
-  const memoryStatus = getMemoryStatus(data.memory_percent)
+  const memoryStatus = getMemoryStatus(data.memory_percent ?? 0)
 
   return (
     <Card>
@@ -125,12 +125,12 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {data.memory_usage_mb.toFixed(1)} MB / {data.memory_limit_mb.toFixed(1)} MB
+                  {(data.memory_usage_mb ?? 0).toFixed(1)} MB / {(data.memory_limit_mb ?? 0).toFixed(1)} MB
                 </span>
-                <span className="font-medium">{data.memory_percent.toFixed(1)}%</span>
+                <span className="font-medium">{(data.memory_percent ?? 0).toFixed(1)}%</span>
               </div>
               <Progress
-                value={data.memory_percent}
+                value={data.memory_percent ?? 0}
                 className="h-2"
               />
             </div>
@@ -146,7 +146,7 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
                 <Users className="h-4 w-4" />
                 Clients
               </div>
-              <div className="text-2xl font-bold">{data.connected_clients}</div>
+              <div className="text-2xl font-bold">{data.connected_clients ?? 0}</div>
             </div>
           )}
 
@@ -157,7 +157,7 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
                 <Database className="h-4 w-4" />
                 Keys
               </div>
-              <div className="text-2xl font-bold">{data.total_keys.toLocaleString()}</div>
+              <div className="text-2xl font-bold">{(data.total_keys ?? 0).toLocaleString()}</div>
             </div>
           )}
 
@@ -179,7 +179,7 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
                 <TrendingUp className="h-4 w-4" />
                 Hit Rate
               </div>
-              <div className="text-2xl font-bold">{data.hit_rate.toFixed(1)}%</div>
+              <div className="text-2xl font-bold">{(data.hit_rate ?? 0).toFixed(1)}%</div>
             </div>
           )}
         </div>
@@ -217,7 +217,7 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
             <div>
               <div className="font-medium text-red-600">Memory Critical</div>
               <div className="text-sm text-red-600/80 mt-1">
-                Redis memory usage is at {data.memory_percent.toFixed(1)}%. Consider increasing the memory limit
+                Redis memory usage is at {(data.memory_percent ?? 0).toFixed(1)}%. Consider increasing the memory limit
                 or clearing old keys to prevent performance issues.
               </div>
             </div>
@@ -230,7 +230,7 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
             <div>
               <div className="font-medium text-yellow-600">Memory Warning</div>
               <div className="text-sm text-yellow-600/80 mt-1">
-                Redis memory usage is at {data.memory_percent.toFixed(1)}%. Monitor memory usage and
+                Redis memory usage is at {(data.memory_percent ?? 0).toFixed(1)}%. Monitor memory usage and
                 consider cleanup if it continues to increase.
               </div>
             </div>

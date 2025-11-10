@@ -79,7 +79,7 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
               <Users className="h-4 w-4" />
               Active Sessions
             </div>
-            <div className="text-2xl font-bold">{data.total_active_sessions.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{(data.total_active_sessions ?? 0).toLocaleString()}</div>
           </div>
 
           <div className="space-y-1">
@@ -87,7 +87,7 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
               <Activity className="h-4 w-4" />
               Active Users
             </div>
-            <div className="text-2xl font-bold">{data.active_users_now.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{(data.active_users_now ?? 0).toLocaleString()}</div>
           </div>
 
           <div className="space-y-1">
@@ -95,7 +95,7 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
               <TrendingUp className="h-4 w-4" />
               Sessions Today
             </div>
-            <div className="text-2xl font-bold">{data.sessions_today.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{(data.sessions_today ?? 0).toLocaleString()}</div>
           </div>
 
           <div className="space-y-1">
@@ -104,7 +104,7 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
               Avg Duration
             </div>
             <div className="text-2xl font-bold">
-              {data.average_session_duration_minutes.toFixed(0)}m
+              {(data.average_session_duration_minutes ?? 0).toFixed(0)}m
             </div>
           </div>
         </div>
@@ -114,7 +114,7 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Standard Sessions</span>
-              <span className="font-medium">{data.standard_sessions.toLocaleString()}</span>
+              <span className="font-medium">{(data.standard_sessions ?? 0).toLocaleString()}</span>
             </div>
             <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
@@ -133,7 +133,7 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Remember Me Sessions</span>
-              <span className="font-medium">{data.remember_me_sessions.toLocaleString()}</span>
+              <span className="font-medium">{(data.remember_me_sessions ?? 0).toLocaleString()}</span>
             </div>
             <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
@@ -156,7 +156,7 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
             <div>
               <div className="text-sm text-muted-foreground">Remember Me Adoption</div>
               <div className="text-3xl font-bold text-green-600 dark:text-green-400">
-                {data.remember_me_percentage.toFixed(1)}%
+                {(data.remember_me_percentage ?? 0).toFixed(1)}%
               </div>
             </div>
             {data.total_active_sessions > 0 && (
