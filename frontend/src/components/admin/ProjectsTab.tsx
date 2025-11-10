@@ -13,9 +13,7 @@ export default function ProjectsTab() {
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState("recent")
 
-  const filteredProjects = useMemo(() => applyFilters(), [searchTerm, sortBy, projects])
-
-  const applyFilters = () => {
+  const filteredProjects = useMemo(() => {
     let filtered = [...projects]
 
     // Search filter
@@ -50,7 +48,7 @@ export default function ProjectsTab() {
     }
 
     return filtered
-  }
+  }, [searchTerm, sortBy, projects])
 
   const getComplexityBadge = (stateCount: number, transitionCount: number) => {
     const total = stateCount + transitionCount
