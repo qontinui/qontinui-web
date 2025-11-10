@@ -13,6 +13,7 @@ from sqlalchemy.orm import joinedload
 from app.api.deps import get_async_db, get_current_user_async
 from app.models.project import Project
 from app.models.user import User
+from app.schemas.admin import AdminProjectData, AdminUserData
 from app.schemas.health import (
     DatabaseHealth,
     HealthOverview,
@@ -125,13 +126,13 @@ async def get_admin_stats(
     }
 
 
-@router.get("/users")
+@router.get("/users", response_model=list[AdminUserData])
 async def get_users_list(
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_admin),
-) -> Any:
+) -> list[AdminUserData]:
     """Get list of users with basic info."""
 
     result = await db.execute(
@@ -148,18 +149,19 @@ async def get_users_list(
         project_count = result.scalar()
 
         user_data.append(
-            {
-                "id": str(user.id),
-                "email": user.email,
-                "username": user.username,
-                "full_name": user.full_name,
-                "is_active": user.is_active,
-                "is_verified": user.is_verified,  # Changed from email_verified
-                "created_at": user.created_at.isoformat() if user.created_at else None,
-                "project_count": project_count or 0,
-                "subscription_tier": user.subscription_tier,
-                "last_login": None,  # Add last_login tracking in future
-            }
+            AdminUserData(
+                id=str(user.id),
+                email=user.email,
+                username=user.username,
+                full_name=user.full_name,
+                is_active=user.is_active,
+                is_verified=user.is_verified,
+                email_verified=user.is_verified,  # Alias for frontend compatibility
+                created_at=user.created_at.isoformat() if user.created_at else None,
+                project_count=project_count or 0,
+                subscription_tier=user.subscription_tier,
+                last_login=None,  # Add last_login tracking in future
+            )
         )
 
     return user_data
@@ -212,13 +214,13 @@ async def get_user_details(
     }
 
 
-@router.get("/projects")
+@router.get("/projects", response_model=list[AdminProjectData])
 async def get_all_projects(
     skip: int = 0,
     limit: int = 1000,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(require_admin),
-) -> Any:
+) -> list[AdminProjectData]:
     """Get all projects across all users."""
 
     result = await db.execute(
@@ -240,22 +242,22 @@ async def get_all_projects(
         )
 
         project_data.append(
-            {
-                "id": project.id,
-                "name": project.name,
-                "description": project.description,
-                "owner_id": str(project.owner_id),
-                "owner_username": project.owner.username,
-                "owner_email": project.owner.email,
-                "created_at": project.created_at.isoformat()
+            AdminProjectData(
+                id=project.id,
+                name=project.name,
+                description=project.description,
+                owner_id=str(project.owner_id),
+                owner_username=project.owner.username,
+                owner_email=project.owner.email,
+                created_at=project.created_at.isoformat()
                 if project.created_at
                 else None,
-                "updated_at": project.updated_at.isoformat()
+                updated_at=project.updated_at.isoformat()
                 if project.updated_at
                 else None,
-                "state_count": state_count,
-                "transition_count": transition_count,
-            }
+                state_count=state_count,
+                transition_count=transition_count,
+            )
         )
 
     return project_data
