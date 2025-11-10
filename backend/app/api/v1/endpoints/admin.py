@@ -8,7 +8,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload
 
 from app.api.deps import get_async_db, get_current_user_async
 from app.models.project import Project
@@ -223,13 +223,12 @@ async def get_all_projects(
 
     result = await db.execute(
         select(Project)
-        .join(User, Project.owner_id == User.id)
-        .options(selectinload(Project.owner))
+        .options(joinedload(Project.owner))
         .order_by(Project.updated_at.desc())
         .offset(skip)
         .limit(limit)
     )
-    projects = result.scalars().all()
+    projects = result.unique().scalars().all()
 
     project_data = []
     for project in projects:
