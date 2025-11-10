@@ -9,14 +9,14 @@ export const metadata = {
 
 export default function DocsHomePage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-5xl font-bold text-slate-900 mb-6">
+          <h1 className="text-5xl font-bold mb-6">
             Qontinui Documentation
           </h1>
-          <p className="text-xl text-slate-600 mb-8">
+          <p className="text-xl text-muted-foreground mb-8">
             Everything you need to build intelligent GUI automation workflows
           </p>
         </div>
@@ -25,19 +25,19 @@ export default function DocsHomePage() {
       {/* Quick Start */}
       <section className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 mb-12">
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-8 mb-12">
             <div className="flex items-start gap-4">
-              <Rocket className="w-8 h-8 text-blue-600 flex-shrink-0 mt-1" />
+              <Rocket className="w-8 h-8 text-primary flex-shrink-0 mt-1" />
               <div>
-                <h2 className="text-2xl font-bold text-slate-900 mb-3">
+                <h2 className="text-2xl font-bold mb-3">
                   New to Qontinui?
                 </h2>
-                <p className="text-slate-700 mb-4">
+                <p className="text-muted-foreground mb-4">
                   Start with our getting started guide to build your first automation in minutes.
                 </p>
                 <Link
                   href="/docs/getting-started"
-                  className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
+                  className="inline-block bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2 rounded-lg font-semibold transition-colors"
                 >
                   Get Started →
                 </Link>
@@ -55,7 +55,7 @@ export default function DocsHomePage() {
           </h2>
           <div className="grid md:grid-cols-2 gap-8">
             <DocSection
-              icon={<Globe className="w-8 h-8 text-blue-600" />}
+              icon={<Globe className="w-8 h-8 text-primary" />}
               title="Qontinui Web"
               description="Visual configuration builder for creating automation workflows in your browser"
               links={[
@@ -68,7 +68,7 @@ export default function DocsHomePage() {
             />
 
             <DocSection
-              icon={<Terminal className="w-8 h-8 text-green-600" />}
+              icon={<Terminal className="w-8 h-8 text-accent" />}
               title="Qontinui Runner"
               description="Desktop application for executing automation workflows on your system"
               links={[
@@ -81,7 +81,7 @@ export default function DocsHomePage() {
             />
 
             <DocSection
-              icon={<FileCode className="w-8 h-8 text-purple-600" />}
+              icon={<FileCode className="w-8 h-8 text-secondary" />}
               title="Python API"
               description="Use Qontinui programmatically in your Python projects"
               links={[
@@ -93,7 +93,7 @@ export default function DocsHomePage() {
             />
 
             <DocSection
-              icon={<Zap className="w-8 h-8 text-orange-600" />}
+              icon={<Zap className="w-8 h-8 text-primary" />}
               title="Core Concepts"
               description="Understand the model-based architecture behind Qontinui"
               links={[
@@ -109,10 +109,10 @@ export default function DocsHomePage() {
       </section>
 
       {/* Additional Resources */}
-      <section className="border-t border-slate-200">
+      <section className="border-t border-border">
         <div className="container mx-auto px-4 py-16">
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold text-slate-900 mb-8 text-center">
+            <h2 className="text-2xl font-bold mb-8 text-center">
               Additional Resources
             </h2>
             <div className="grid md:grid-cols-3 gap-6">
@@ -148,12 +148,12 @@ interface DocSectionProps {
 
 function DocSection({ icon, title, description, links }: DocSectionProps) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-6 hover:shadow-lg transition-shadow">
+    <div className="bg-card border border-border rounded-lg p-6 hover:shadow-lg hover:border-primary/50 transition-all">
       <div className="flex items-start gap-4 mb-4">
         <div className="flex-shrink-0">{icon}</div>
         <div>
-          <h3 className="text-xl font-bold text-slate-900 mb-2">{title}</h3>
-          <p className="text-slate-600 text-sm">{description}</p>
+          <h3 className="text-xl font-bold mb-2">{title}</h3>
+          <p className="text-muted-foreground text-sm">{description}</p>
         </div>
       </div>
       <ul className="space-y-2">
@@ -161,7 +161,7 @@ function DocSection({ icon, title, description, links }: DocSectionProps) {
           <li key={link.href}>
             <Link
               href={link.href}
-              className="text-blue-600 hover:text-blue-700 text-sm flex items-center gap-1"
+              className="text-primary hover:underline text-sm flex items-center gap-1"
               {...(link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
             >
               {link.label}
@@ -186,14 +186,14 @@ function ResourceCard({ title, description, link }: ResourceCardProps) {
   return (
     <Link
       href={link}
-      className="block bg-white border border-slate-200 rounded-lg p-6 hover:shadow-md transition-shadow"
+      className="block bg-card border border-border rounded-lg p-6 hover:shadow-md hover:border-primary/50 transition-all"
       {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
     >
-      <h3 className="font-semibold text-slate-900 mb-2 flex items-center gap-1">
+      <h3 className="font-semibold mb-2 flex items-center gap-1">
         {title}
-        {isExternal && <span className="text-xs text-slate-400">↗</span>}
+        {isExternal && <span className="text-xs text-muted-foreground">↗</span>}
       </h3>
-      <p className="text-sm text-slate-600">{description}</p>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </Link>
   );
 }

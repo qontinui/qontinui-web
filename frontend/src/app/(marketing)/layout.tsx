@@ -4,6 +4,9 @@ import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import { Suspense } from "react"
+import { AuthProvider } from "@/contexts/auth-context"
+import { Header } from "@/components/marketing/header"
+import { Footer } from "@/components/marketing/footer"
 import "./marketing.css"
 
 export const metadata: Metadata = {
@@ -19,9 +22,15 @@ export default function MarketingLayout({
   children: React.ReactNode
 }>) {
   return (
-    <>
-      <Suspense fallback={null}>{children}</Suspense>
+    <AuthProvider>
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 pt-16">
+          <Suspense fallback={null}>{children}</Suspense>
+        </main>
+        <Footer />
+      </div>
       <Analytics />
-    </>
+    </AuthProvider>
   )
 }
