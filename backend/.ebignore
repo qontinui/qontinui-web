@@ -1,5 +1,9 @@
-# Ignore docker-compose for single-container deployments
+# Ignore Docker files (not needed for Python platform)
+Dockerfile
+Dockerrun.aws.json
 docker-compose.yml
+docker-compose*.yml
+.dockerignore
 
 # Ignore local development files
 .env

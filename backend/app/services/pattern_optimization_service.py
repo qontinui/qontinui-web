@@ -2,7 +2,7 @@
 
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import structlog
@@ -34,7 +34,7 @@ class PatternData:
     screenshot_index: int
     region: dict[str, int]
     image_data: str
-    array: np.ndarray | None = None
+    array: Optional[Any] = None  # np.ndarray when available
 
 
 @dataclass

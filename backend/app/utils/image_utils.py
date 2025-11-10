@@ -13,7 +13,7 @@ class ImageProcessor:
     """Handles image encoding, decoding, and basic processing operations."""
 
     @staticmethod
-    def decode_base64_to_array(base64_string: str) -> np.ndarray:
+    def decode_base64_to_array(base64_string: str) -> "np.ndarray":
         """
         Decode base64 string to numpy array.
 
@@ -34,7 +34,7 @@ class ImageProcessor:
             raise HTTPException(status_code=400, detail=f"Invalid image data: {str(e)}")
 
     @staticmethod
-    def encode_array_to_base64(image_array: np.ndarray, format: str = "PNG") -> str:
+    def encode_array_to_base64(image_array: "np.ndarray", format: str = "PNG") -> str:
         """
         Encode numpy array to base64 string.
 
@@ -52,8 +52,8 @@ class ImageProcessor:
 
     @staticmethod
     def extract_region(
-        image: np.ndarray, x: int, y: int, width: int, height: int
-    ) -> np.ndarray:
+        image: "np.ndarray", x: int, y: int, width: int, height: int
+    ) -> "np.ndarray":
         """
         Extract a rectangular region from an image.
 
@@ -100,7 +100,7 @@ class ImageProcessor:
         return hashlib.sha256(base64_string.encode()).hexdigest()
 
     @staticmethod
-    def calculate_similarity(pattern1: np.ndarray, pattern2: np.ndarray) -> float:
+    def calculate_similarity(pattern1: "np.ndarray", pattern2: "np.ndarray") -> float:
         """
         Calculate similarity between two patterns using normalized correlation.
 
