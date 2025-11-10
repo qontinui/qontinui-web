@@ -130,6 +130,29 @@ export const AdminProjectDataSchema = z.object({
 
 export type AdminProjectData = z.infer<typeof AdminProjectDataSchema>
 
+// Detailed project schema with full configuration
+export const AdminProjectDetailsSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().nullable(),
+  owner_id: z.string().uuid(),
+  owner_username: z.string().min(1),
+  owner_email: z.string().email(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  configuration: z.record(z.any()),
+  states: z.array(z.any()),
+  state_count: z.number().int().nonnegative(),
+  transition_count: z.number().int().nonnegative(),
+  image_library: z.array(z.object({
+    state_id: z.string().optional(),
+    state_name: z.string().optional(),
+    image: z.any(),
+  })),
+})
+
+export type AdminProjectDetails = z.infer<typeof AdminProjectDetailsSchema>
+
 // ============================================================================
 // Authentication Schemas
 // ============================================================================

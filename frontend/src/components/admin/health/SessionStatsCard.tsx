@@ -60,7 +60,7 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
     { name: 'Remember Me', value: data.remember_me_sessions, color: COLORS.remember_me },
   ]
 
-  const hourlyData = data.hourly_sessions.slice(-12) // Last 12 hours
+  const hourlyData = (data.hourly_sessions || []).slice(-12) // Last 12 hours
 
   return (
     <Card>

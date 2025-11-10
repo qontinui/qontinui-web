@@ -27,12 +27,14 @@ import {
   AdminStatsSchema,
   AdminUsersArraySchema,
   AdminProjectsArraySchema,
+  AdminProjectDetailsSchema,
   parseApi,
 } from '@/lib/schemas'
 import type {
   AdminStats,
   AdminUserData,
   AdminProjectData,
+  AdminProjectDetails,
 } from '@/lib/schemas'
 
 // Admin API base URL
@@ -46,10 +48,11 @@ export const adminKeys = {
   userList: (params?: { limit?: number; offset?: number }) => [...adminKeys.users(), params] as const,
   projects: () => [...adminKeys.all, 'projects'] as const,
   projectList: (params?: { limit?: number; offset?: number }) => [...adminKeys.projects(), params] as const,
+  projectDetail: (projectId: string) => [...adminKeys.projects(), projectId] as const,
 }
 
 // Re-export types for convenience
-export type { AdminStats, AdminUserData, AdminProjectData }
+export type { AdminStats, AdminUserData, AdminProjectData, AdminProjectDetails }
 
 /**
  * Hook to fetch admin statistics
@@ -169,5 +172,46 @@ export function useAdminProjects(params?: { limit?: number; offset?: number }) {
     // Keep project list cached for 1 minute
     staleTime: 60 * 1000,
     placeholderData: (previousData) => previousData,
+  })
+}
+
+/**
+ * Hook to fetch detailed project information
+ *
+ * @param projectId - The project ID to fetch
+ * @param enabled - Whether to enable the query (default: true)
+ */
+export function useAdminProjectDetails(projectId: string | null, enabled: boolean = true) {
+  return useQuery({
+    queryKey: adminKeys.projectDetail(projectId || ''),
+    queryFn: async () => {
+      if (!projectId) {
+        throw new Error('Project ID is required')
+      }
+
+      const apiUrl = getApiUrl()
+      const accessToken = authService.tokenManager.getAccessToken()
+
+      if (!accessToken) {
+        throw new Error('Not authenticated')
+      }
+
+      const response = await fetch(`${apiUrl}/api/v1/admin/projects/${projectId}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch project details')
+      }
+
+      const data = await response.json()
+      return parseApi(AdminProjectDetailsSchema, data, 'admin project details')
+    },
+    enabled: enabled && !!projectId,
+    // Keep project details cached for 2 minutes
+    staleTime: 2 * 60 * 1000,
   })
 }

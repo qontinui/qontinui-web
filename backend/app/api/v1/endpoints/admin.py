@@ -263,6 +263,57 @@ async def get_all_projects(
     return project_data
 
 
+@router.get("/projects/{project_id}")
+async def get_project_details(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(require_admin),
+) -> Any:
+    """Get detailed information about a specific project including full configuration."""
+
+    result = await db.execute(
+        select(Project)
+        .options(joinedload(Project.owner))
+        .filter(Project.id == project_id)
+    )
+    project = result.unique().scalar_one_or_none()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    # Get full configuration
+    config = project.configuration or {}
+    states = config.get("states", [])
+
+    # Extract image library from states
+    image_library = []
+    for state in states:
+        if "image" in state and state["image"]:
+            image_library.append({
+                "state_id": state.get("id"),
+                "state_name": state.get("name"),
+                "image": state["image"],
+            })
+
+    return {
+        "id": str(project.id),
+        "name": project.name,
+        "description": project.description,
+        "owner_id": str(project.owner_id),
+        "owner_username": project.owner.username,
+        "owner_email": project.owner.email,
+        "created_at": project.created_at.isoformat() if project.created_at else None,
+        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        "configuration": config,
+        "states": states,
+        "state_count": len(states),
+        "transition_count": sum(len(state.get("transitions", [])) for state in states),
+        "image_library": image_library,
+    }
+
+
 @router.get("/analytics")
 async def get_analytics(
     db: AsyncSession = Depends(get_async_db),
