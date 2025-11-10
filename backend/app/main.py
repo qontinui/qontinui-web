@@ -65,6 +65,7 @@ if settings.ENVIRONMENT == "production":
 if settings.BACKEND_CORS_ORIGINS:
     # Convert AnyHttpUrl objects to strings
     origins = [str(origin) for origin in settings.BACKEND_CORS_ORIGINS]
+    logger.info("Using CORS origins from settings", origins=origins)
 elif settings.ENVIRONMENT == "production":
     origins = [
         "https://qontinui.com",
@@ -73,6 +74,7 @@ elif settings.ENVIRONMENT == "production":
         "https://qontinui.io",
         "https://www.qontinui.io",
     ]
+    logger.info("Using hardcoded production CORS origins", origins=origins)
 else:
     origins = [
         "http://localhost:3001",
@@ -84,6 +86,7 @@ else:
         "http://172.27.67.252:3001",
         "http://172.27.67.252:3000",
     ]
+    logger.info("Using development CORS origins", origins=origins)
 
 app.add_middleware(
     CORSMiddleware,
