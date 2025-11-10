@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { SubscriptionBadge } from "@/components/subscription-badge"
-import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play, User as UserIcon, BarChart3, BookOpen } from "lucide-react"
+import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play, User as UserIcon, BarChart3, BookOpen, Shield } from "lucide-react"
 import { toast } from "sonner"
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog"
 import { WelcomeModal } from "@/components/onboarding/WelcomeModal"
@@ -256,6 +256,17 @@ export default function Dashboard() {
               <p className="text-xs text-gray-400">{user.email}</p>
             </div>
             {user.is_beta && <Badge className="bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30">Beta User</Badge>}
+            {user.is_superuser && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/admin')}
+                className="border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF] bg-transparent"
+                title="Admin Panel"
+              >
+                <Shield className="w-4 h-4" />
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
