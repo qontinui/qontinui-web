@@ -17,6 +17,11 @@ interface ProjectDetailModalProps {
 export default function ProjectDetailModal({ projectId, open, onOpenChange }: ProjectDetailModalProps) {
   const { data: project, isLoading } = useAdminProjectDetails(projectId, open)
 
+  // Debug logging
+  console.log('[ProjectDetailModal] projectId:', projectId)
+  console.log('[ProjectDetailModal] project data:', project)
+  console.log('[ProjectDetailModal] image_library:', project?.image_library)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh]">

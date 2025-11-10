@@ -126,6 +126,12 @@ function AutomationBuilderContent() {
 
   const loadProjectFromBackend = async (projectId: string) => {
     try {
+      // Guard against invalid project IDs
+      if (!projectId || isNaN(Number(projectId))) {
+        console.warn('[automation-builder] Invalid project ID:', projectId)
+        return
+      }
+
       const project = await projectService.getProject(Number(projectId))
 
       // Load configuration first
