@@ -31,19 +31,30 @@ class EmailTransportService:
         """
         # Check if email is configured
         if not settings.SMTP_HOST:
-            logger.warning("SMTP not configured, skipping email send")
-            logger.info(f"Would send email to {to_email}: {subject}")
+            logger.warning("smtp_not_configured", message="SMTP not configured, skipping email send")
+            logger.info("would_send_email", to_email=to_email, subject=subject)
             return False
 
         try:
+            logger.info("smtp_send_start", to_email=to_email, subject=subject, smtp_host=settings.SMTP_HOST)
             message = self._create_message(to_email, subject, text_body, html_body)
             await self._send_via_smtp(message)
 
-            logger.info(f"Email sent successfully to {to_email}")
+            logger.info("smtp_send_success", to_email=to_email, subject=subject)
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {str(e)}")
+            import traceback
+            logger.error(
+                "smtp_send_failed",
+                to_email=to_email,
+                subject=subject,
+                error=str(e),
+                error_type=type(e).__name__,
+                traceback=traceback.format_exc(),
+                smtp_host=settings.SMTP_HOST,
+                smtp_port=settings.SMTP_PORT,
+            )
             return False
 
     def _create_message(
