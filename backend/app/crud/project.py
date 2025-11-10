@@ -9,7 +9,7 @@ from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.stripe_service import StripeService
 
 
-async def get_project(db: AsyncSession, project_id: int) -> Project | None:
+async def get_project(db: AsyncSession, project_id: str) -> Project | None:
     result = await db.execute(select(Project).filter(Project.id == project_id))
     return result.scalar_one_or_none()
 
@@ -69,7 +69,7 @@ async def update_project(
     return project
 
 
-async def delete_project(db: AsyncSession, project_id: int) -> bool:
+async def delete_project(db: AsyncSession, project_id: str) -> bool:
     project = await get_project(db, project_id)
     if project:
         await db.delete(project)

@@ -61,7 +61,7 @@ async def create_new_project(
 async def read_project(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: str,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     project = await get_project(db, project_id=project_id)
@@ -77,7 +77,7 @@ async def read_project(
 async def update_existing_project(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: str,
     project_update: ProjectUpdate,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
@@ -105,7 +105,7 @@ async def update_existing_project(
 async def delete_existing_project(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: str,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     # Check if user is in read-only mode

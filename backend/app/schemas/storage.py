@@ -10,7 +10,7 @@ class StorageUsageBase(BaseModel):
     file_path: str
     file_type: str
     file_size: int
-    project_id: int | None = None
+    project_id: str | None = None
 
 
 class StorageUsageCreate(StorageUsageBase):

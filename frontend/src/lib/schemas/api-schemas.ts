@@ -58,7 +58,7 @@ export type User = z.infer<typeof UserSchema>
 export const ProjectConfigurationSchema = z.record(z.unknown()).default({})
 
 export const ProjectSchema = z.object({
-  id: z.number().int().positive(),
+  id: z.string().min(1),
   name: z.string().min(1).max(255),
   description: z.string().nullable().optional(),
   configuration: ProjectConfigurationSchema,
