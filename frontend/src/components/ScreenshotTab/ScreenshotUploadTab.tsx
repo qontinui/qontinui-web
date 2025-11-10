@@ -4,6 +4,9 @@ import { Screenshot } from '../../types/Screenshot';
 import { generateId } from '../../lib/utils';
 import { downloadStateExport, downloadPythonStateCode } from '../../lib/state-exporter';
 import { useAutomation } from '../../contexts/automation-context';
+import { apiClient } from '@/lib/api-client';
+import { ImageUploadProgress, type UploadingImage } from '@/components/ImageUploadProgress';
+import { toast } from 'sonner';
 import {
   QontinuiPage,
   QontinuiHeader,
@@ -26,13 +29,15 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
   states,
   onExport
 }) => {
-  const { screenshots: projectScreenshots, addScreenshot, updateScreenshot, deleteScreenshot: removeScreenshot } = useAutomation();
+  const { screenshots: projectScreenshots, addScreenshot, updateScreenshot, deleteScreenshot: removeScreenshot, projectName, projectId } = useAutomation();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [editingScreenshotId, setEditingScreenshotId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
   const [zoomMode, setZoomMode] = useState<'fit' | 'original'>('fit');
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingImage[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync local screenshots with project screenshots
@@ -78,57 +83,142 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     loadScreenshots();
   }, [projectScreenshots]);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (files) {
-      Array.from(files).forEach(file => {
-        if (!file.type.startsWith('image/')) {
-          alert(`Invalid file type: ${file.name} is not an image file.`);
-          return;
-        }
+    if (!files || files.length === 0) return;
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
+    // Validate projectId is available
+    if (!projectId) {
+      toast.error('No project selected', {
+        description: 'Please open a project before uploading screenshots.',
+      });
+      return;
+    }
+
+    const fileArray = Array.from(files);
+
+    // Validate file types before upload
+    const invalidFiles = fileArray.filter(file => !file.type.startsWith('image/'));
+    if (invalidFiles.length > 0) {
+      toast.error('Invalid file type', {
+        description: `${invalidFiles[0].name} is not an image file.`,
+      });
+      return;
+    }
+
+    // Initialize upload progress for all files
+    const initialProgress: Record<string, number> = {};
+    const initialUploading: UploadingImage[] = [];
+    fileArray.forEach(file => {
+      initialProgress[file.name] = 0;
+      initialUploading.push({ name: file.name, progress: 0 });
+    });
+    setUploadProgress(initialProgress);
+    setUploadingFiles(initialUploading);
+
+    // Upload files sequentially to avoid overwhelming the backend
+    for (const file of fileArray) {
+      try {
+        // Validate image before uploading
+        await new Promise<void>((resolve, reject) => {
+          const img = new window.Image();
+          const reader = new FileReader();
+
+          reader.onload = (e) => {
+            img.onload = () => {
+              if (img.width < 10 || img.height < 10) {
+                reject(new Error(`Image too small: ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`));
+              } else {
+                resolve();
+              }
+            };
+            img.onerror = () => reject(new Error('Failed to load image'));
+            img.src = e.target?.result as string;
+          };
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsDataURL(file);
+        });
+
+        // Upload to S3 via API
+        const result = await apiClient.uploadProjectImage(
+          projectId,
+          file,
+          (progress) => {
+            setUploadProgress(prev => ({ ...prev, [file.name]: progress }));
+            setUploadingFiles(prev =>
+              prev.map(f => f.name === file.name ? { ...f, progress } : f)
+            );
+          }
+        );
+
+        // Create screenshot object with S3 data
+        const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, '');
+        const screenshot = {
+          id: result.image_id,
+          name: nameWithoutExtension,
+          url: result.url, // S3 presigned URL
+          size: result.size,
+          uploadedAt: new Date(result.created_at),
+          projectName: projectName,
+        };
+
+        // Add to context
+        addScreenshot(screenshot);
+
+        toast.success(`${file.name} uploaded successfully`);
+
+        // Select first uploaded screenshot
+        if (!selectedScreenshot) {
           const img = new window.Image();
           img.onload = () => {
-            if (img.width < 10 || img.height < 10) {
-              alert(`Image too small: ${file.name} is ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`);
-              return;
-            }
-
-            const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, '');
-            const projectScreenshot = {
-              id: generateId(),
-              name: nameWithoutExtension,
-              url: e.target?.result as string,
-              size: file.size,
-              uploadedAt: new Date(),
-            };
-            addScreenshot(projectScreenshot);
-
-            const screenshot: Screenshot = {
-              id: projectScreenshot.id,
-              name: nameWithoutExtension,
-              imageData: e.target?.result as string,
+            setSelectedScreenshot({
+              id: screenshot.id,
+              name: screenshot.name,
+              imageData: screenshot.url,
               width: img.width,
               height: img.height,
-              uploadedAt: new Date(),
+              uploadedAt: screenshot.uploadedAt,
               associatedStates: [],
               regions: [],
               locations: []
-            };
+            });
+          };
+          img.src = screenshot.url;
+        }
 
-            if (!selectedScreenshot) {
-              setSelectedScreenshot(screenshot);
-            }
-          };
-          img.onerror = () => {
-            alert(`Failed to load image: ${file.name} could not be processed.`);
-          };
-          img.src = e.target?.result as string;
-        };
-        reader.readAsDataURL(file);
-      });
+        // Remove from uploading list
+        setUploadingFiles(prev => prev.filter(f => f.name !== file.name));
+      } catch (error: any) {
+        console.error(`Upload failed for ${file.name}:`, error);
+
+        // Show user-friendly error message
+        const errorMsg = error.message || 'Unknown error occurred';
+        if (errorMsg.includes('quota') || errorMsg.includes('Quota')) {
+          toast.error('Storage quota exceeded', {
+            description: 'Please upgrade your plan or delete unused images.',
+          });
+        } else if (errorMsg.includes('too small')) {
+          toast.error('Image too small', {
+            description: errorMsg,
+          });
+        } else if (errorMsg.includes('Network error') || errorMsg.includes('timeout')) {
+          toast.error('Network error', {
+            description: 'Please check your internet connection and try again.',
+          });
+        } else {
+          toast.error(`Failed to upload ${file.name}`, {
+            description: errorMsg,
+          });
+        }
+
+        // Remove from uploading list
+        setUploadingFiles(prev => prev.filter(f => f.name !== file.name));
+      }
+    }
+
+    // Reset file input
+    if (event.target) {
+      event.target.value = '';
     }
   };
 
@@ -189,6 +279,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-[#0A0A0B]">
+      {/* Upload Progress Indicator */}
+      <ImageUploadProgress uploads={uploadingFiles} />
+
       {/* Toolbar */}
       <QontinuiHeader>
         <div className="flex items-center justify-between w-full">

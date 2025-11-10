@@ -180,6 +180,10 @@ export interface ImageAsset {
   projectName?: string
   source: 'uploaded' | 'pattern_optimization' | 'image_extraction' | 'state_discovery'
 
+  // S3 storage fields
+  s3_key: string // S3 object key
+  url_expires_at: Date // When presigned URL expires
+
   // Versioning support (not yet implemented, but architecture ready)
   version?: number // Version number (default: 1)
   parentImageId?: string // ID of the original image if this is a version
@@ -320,6 +324,8 @@ export interface AutomationContextType {
   projectName: string
   setProjectName: (name: string) => void
   renameProject: (newName: string) => Promise<void>
+  projectId: number | null
+  setProjectId: (id: number | null) => void
 
   // Workflow management (unified - replaces both processes and workflows)
   workflows: Workflow[]

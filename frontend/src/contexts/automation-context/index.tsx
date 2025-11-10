@@ -158,6 +158,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   // State for project metadata - using localStorage for persistence
   const [projectName, setProjectName] = useLocalStorage<string>('qontinui-project-name', 'Untitled Project')
   const [lastSaved, setLastSaved] = useLocalStorage<string | null>('qontinui-lastSaved', null)
+  const [projectId, setProjectId] = useState<number | null>(null)
 
   // Categories are now stored per-project in the database, not in global localStorage
   const [categories, setCategories] = useState<string[]>([])
@@ -1037,6 +1038,8 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     projectName,
     setProjectName,
     renameProject,
+    projectId,
+    setProjectId,
 
     // Workflow management (unified - replaces both processes and workflows)
     workflows,
@@ -1113,6 +1116,8 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     projectName,
     setProjectName,
     renameProject,
+    projectId,
+    setProjectId,
     workflows,
     addWorkflow,
     updateWorkflow,

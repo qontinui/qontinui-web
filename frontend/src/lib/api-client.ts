@@ -258,6 +258,110 @@ class ApiClient {
     });
   }
 
+  // S3 Image Storage Methods
+  async uploadProjectImage(
+    projectId: number,
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<{
+    image_id: string;
+    s3_key: string;
+    url: string;
+    size: number;
+    created_at: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file);
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          const progress = (e.loaded / e.total) * 100;
+          onProgress(progress);
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch (error) {
+            reject(new Error('Failed to parse upload response'));
+          }
+        } else {
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            reject(new Error(errorData.detail || 'Upload failed'));
+          } catch {
+            reject(new Error(`Upload failed with status ${xhr.status}`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during upload'));
+      });
+
+      xhr.addEventListener('timeout', () => {
+        reject(new Error('Upload timeout'));
+      });
+
+      xhr.open('POST', `${API_BASE_URL}/api/v1/images/projects/${projectId}/images/upload`);
+
+      const accessToken = authService.isAuthenticated() ? authService.tokenManager.getAccessToken() : null;
+      if (accessToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+      }
+
+      const csrfToken = csrfService.getToken();
+      if (csrfToken) {
+        xhr.setRequestHeader('X-CSRF-Token', csrfToken);
+      }
+
+      xhr.timeout = 60000; // 60 seconds for file uploads
+      xhr.send(formData);
+    });
+  }
+
+  async deleteProjectImage(projectId: number, s3Key: string): Promise<void> {
+    const response = await this.fetchWithAuth(
+      `/images/projects/${projectId}/images/${encodeURIComponent(s3Key)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to delete image: ${response.status} - ${errorText}`);
+    }
+  }
+
+  async refreshPresignedUrl(
+    projectId: number,
+    s3Key: string
+  ): Promise<{
+    s3_key: string;
+    url: string;
+    expires_in: number;
+  }> {
+    const response = await this.fetchWithAuth(
+      `/images/projects/${projectId}/images/${encodeURIComponent(s3Key)}/refresh-url`,
+      {
+        method: 'POST',
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to refresh presigned URL: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  }
+
   isAuthenticated(): boolean {
     return authService.isAuthenticated();
   }

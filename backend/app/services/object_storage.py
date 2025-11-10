@@ -400,6 +400,175 @@ class ObjectStorageService:
             generate_unique_name=generate_unique_name,
         )
 
+    def upload_image(
+        self,
+        file_obj: BinaryIO,
+        user_id: str | int,
+        project_id: str | int,
+        filename: str,
+        metadata: dict | None = None,
+    ) -> tuple[str, str, int]:
+        """
+        Upload image with proper path structure
+
+        Args:
+            file_obj: Image file object to upload
+            user_id: User ID for path organization
+            project_id: Project ID for path organization
+            filename: Original filename (used for extension detection)
+            metadata: Optional metadata to attach to the file
+
+        Returns:
+            Tuple of (s3_key, presigned_url, file_size)
+
+        Example:
+            s3_key, presigned_url, file_size = upload_image(
+                file_obj=image_file,
+                user_id=123,
+                project_id=456,
+                filename="screenshot.png",
+                metadata={"description": "UI screenshot"}
+            )
+        """
+        # Generate unique filename with UUID
+        extension = Path(filename).suffix
+        unique_filename = f"{uuid.uuid4()}{extension}"
+
+        # Construct path: images/{user_id}/{project_id}/{uuid}.{ext}
+        prefix = f"images/{user_id}/{project_id}"
+        key = f"{prefix}/{unique_filename}"
+
+        # Detect MIME type from filename
+        content_type = self._get_image_mime_type(filename)
+
+        # Get file size by seeking to end and back
+        current_pos = file_obj.tell()
+        file_obj.seek(0, 2)  # Seek to end
+        file_size = file_obj.tell()
+        file_obj.seek(current_pos)  # Seek back to original position
+
+        # Upload to S3 with metadata
+        try:
+            self.backend.upload_file(
+                file_obj=file_obj,
+                key=key,
+                content_type=content_type,
+                metadata=metadata,
+            )
+
+            # Generate presigned URL (7 days = 604800 seconds)
+            presigned_url = self.generate_presigned_url(key, expiration=604800)
+
+            logger.info(
+                "image_uploaded",
+                key=key,
+                user_id=user_id,
+                project_id=project_id,
+                file_size=file_size,
+            )
+
+            return key, presigned_url, file_size
+
+        except Exception as e:
+            logger.error(
+                "image_upload_failed",
+                key=key,
+                user_id=user_id,
+                project_id=project_id,
+                error=str(e),
+            )
+            raise
+
+    def delete_project_images(
+        self, user_id: str | int, project_id: str | int
+    ) -> int:
+        """
+        Delete all images for a project
+
+        Args:
+            user_id: User ID for path organization
+            project_id: Project ID for path organization
+
+        Returns:
+            Number of files deleted
+
+        Example:
+            deleted_count = delete_project_images(user_id=123, project_id=456)
+        """
+        prefix = f"images/{user_id}/{project_id}/"
+        deleted_count = 0
+
+        try:
+            # List all objects with the prefix
+            response = self.backend.client.list_objects_v2(
+                Bucket=self.backend.bucket_name, Prefix=prefix
+            )
+
+            # Check if any objects were found
+            if "Contents" not in response:
+                logger.info(
+                    "no_images_found",
+                    user_id=user_id,
+                    project_id=project_id,
+                    prefix=prefix,
+                )
+                return 0
+
+            # Delete each object
+            for obj in response["Contents"]:
+                key = obj["Key"]
+                if self.delete_file(key):
+                    deleted_count += 1
+
+            logger.info(
+                "project_images_deleted",
+                user_id=user_id,
+                project_id=project_id,
+                deleted_count=deleted_count,
+            )
+
+            return deleted_count
+
+        except ClientError as e:
+            logger.error(
+                "project_images_deletion_failed",
+                user_id=user_id,
+                project_id=project_id,
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete project images: {str(e)}",
+            )
+
+    def _get_image_mime_type(self, filename: str) -> str:
+        """
+        Private helper to get MIME type from filename
+
+        Args:
+            filename: Filename with extension
+
+        Returns:
+            MIME type string
+
+        Supported formats:
+            - .png -> image/png
+            - .jpg, .jpeg -> image/jpeg
+            - .gif -> image/gif
+            - .webp -> image/webp
+        """
+        extension = Path(filename).suffix.lower()
+
+        mime_types = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+        }
+
+        return mime_types.get(extension, "application/octet-stream")
+
 
 # Singleton instance
 object_storage = ObjectStorageService()
