@@ -184,40 +184,71 @@ export default function ProjectDetailModal({ projectId, open, onOpenChange }: Pr
                         <CardHeader>
                           <div className="flex items-center gap-2">
                             <ImageIcon className="h-4 w-4" />
-                            <CardTitle className="text-sm">{item.state_name || `Image ${index + 1}`}</CardTitle>
+                            <CardTitle className="text-sm">
+                              {item.source === 'image_library'
+                                ? item.image.name || `Image ${index + 1}`
+                                : item.state_name || `State Image ${index + 1}`
+                              }
+                            </CardTitle>
                           </div>
-                          {item.state_id && (
-                            <CardDescription className="font-mono text-xs">
-                              State: {item.state_id}
-                            </CardDescription>
-                          )}
+                          <CardDescription className="font-mono text-xs">
+                            {item.source === 'image_library' ? (
+                              <span>Source: Image Library</span>
+                            ) : (
+                              <span>Source: State ({item.state_id})</span>
+                            )}
+                          </CardDescription>
                         </CardHeader>
                         <CardContent>
                           {item.image && (
                             <div className="space-y-2">
-                              {item.image.name && (
-                                <p className="text-sm">
-                                  <span className="font-medium">Name:</span> {item.image.name}
-                                </p>
-                              )}
-                              {item.image.coordinates && (
-                                <p className="text-sm">
-                                  <span className="font-medium">Coordinates:</span>{" "}
-                                  ({item.image.coordinates.x}, {item.image.coordinates.y})
-                                </p>
-                              )}
-                              {item.image.pixelHash && (
-                                <p className="text-sm font-mono text-xs truncate">
-                                  <span className="font-medium">Hash:</span> {item.image.pixelHash}
-                                </p>
-                              )}
-                              {item.image.stabilityScore !== undefined && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium">Stability:</span>
-                                  <Badge variant={item.image.stabilityScore > 0.8 ? "default" : "secondary"}>
-                                    {(item.image.stabilityScore * 100).toFixed(1)}%
-                                  </Badge>
-                                </div>
+                              {item.source === 'image_library' ? (
+                                // Display ImageAsset fields
+                                <>
+                                  {item.image.size && (
+                                    <p className="text-sm">
+                                      <span className="font-medium">Size:</span> {(item.image.size / 1024).toFixed(2)} KB
+                                    </p>
+                                  )}
+                                  {item.image.usageCount !== undefined && (
+                                    <p className="text-sm">
+                                      <span className="font-medium">Usage Count:</span> {item.image.usageCount}
+                                    </p>
+                                  )}
+                                  {item.image.source && (
+                                    <p className="text-sm">
+                                      <span className="font-medium">Type:</span> {item.image.source.replace(/_/g, ' ')}
+                                    </p>
+                                  )}
+                                </>
+                              ) : (
+                                // Display state image fields
+                                <>
+                                  {item.image.name && (
+                                    <p className="text-sm">
+                                      <span className="font-medium">Name:</span> {item.image.name}
+                                    </p>
+                                  )}
+                                  {item.image.coordinates && (
+                                    <p className="text-sm">
+                                      <span className="font-medium">Coordinates:</span>{" "}
+                                      ({item.image.coordinates.x}, {item.image.coordinates.y})
+                                    </p>
+                                  )}
+                                  {item.image.pixelHash && (
+                                    <p className="text-sm font-mono text-xs truncate">
+                                      <span className="font-medium">Hash:</span> {item.image.pixelHash}
+                                    </p>
+                                  )}
+                                  {item.image.stabilityScore !== undefined && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium">Stability:</span>
+                                      <Badge variant={item.image.stabilityScore > 0.8 ? "default" : "secondary"}>
+                                        {(item.image.stabilityScore * 100).toFixed(1)}%
+                                      </Badge>
+                                    </div>
+                                  )}
+                                </>
                               )}
                             </div>
                           )}

@@ -287,11 +287,24 @@ async def get_project_details(
     config = project.configuration or {}
     states = config.get("states", [])
 
-    # Extract image library from states
+    # Extract image library from two sources:
+    # 1. Images from the general image library (configuration.images)
+    # 2. Images attached to specific states (state.image)
     image_library = []
+
+    # Add images from the general image library
+    for image_asset in config.get("images", []):
+        if image_asset:
+            image_library.append({
+                "source": "image_library",
+                "image": image_asset,
+            })
+
+    # Add images from states
     for state in states:
         if "image" in state and state["image"]:
             image_library.append({
+                "source": "state",
                 "state_id": state.get("id"),
                 "state_name": state.get("name"),
                 "image": state["image"],

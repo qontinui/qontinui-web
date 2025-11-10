@@ -145,6 +145,7 @@ export const AdminProjectDetailsSchema = z.object({
   state_count: z.number().int().nonnegative(),
   transition_count: z.number().int().nonnegative(),
   image_library: z.array(z.object({
+    source: z.enum(['image_library', 'state']),
     state_id: z.string().optional(),
     state_name: z.string().optional(),
     image: z.any(),

@@ -50,7 +50,8 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
     )
   }
 
-  const formatUptime = (hours: number) => {
+  const formatUptime = (hours: number | undefined) => {
+    if (!hours || hours === 0) return '0h'
     if (hours < 24) return `${Math.round(hours)}h`
     const days = Math.floor(hours / 24)
     const remainingHours = Math.round(hours % 24)

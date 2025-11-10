@@ -120,7 +120,31 @@ class HealthService {
       }
     }
 
-    return response.json()
+    const data = await response.json()
+
+    // Transform backend response to frontend format
+    // Backend returns nested structure, frontend expects flat structure
+    return {
+      api_status: data.system?.alert_level === 'critical' ? 'down' : data.system?.alert_level === 'warning' ? 'degraded' : 'healthy',
+      database_status: data.database?.status || 'healthy',
+      redis_status: data.redis?.status || 'healthy',
+      overall_status: data.overall_status === 'critical' ? 'down' : data.overall_status,
+      uptime_hours: data.redis?.uptime_hours || 0, // Use Redis uptime as proxy for system uptime
+      active_sessions: data.sessions?.total_active_sessions || 0,
+      critical_alerts: this.countCriticalAlerts(data),
+    }
+  }
+
+  private countCriticalAlerts(data: any): number {
+    let count = 0
+
+    // Count critical alerts from various sources
+    if (data.redis?.alert_level === 'critical') count++
+    if (data.database?.alert_level === 'critical') count++
+    if (data.system?.alert_level === 'critical') count++
+    if (data.security?.alert_level === 'critical') count++
+
+    return count
   }
 
   async getRedisStatus(): Promise<RedisStatus> {
