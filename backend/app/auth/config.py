@@ -1,10 +1,13 @@
 """FastAPI-Users configuration for authentication."""
 
 import uuid
+from typing import Optional
 
 import structlog
 from fastapi import Depends, Request
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
+from fastapi_users import exceptions
 from fastapi_users.authentication import (
     AuthenticationBackend,
     BearerTransport,
@@ -95,6 +98,47 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             logger.info("verification_email_enqueued", email=user.email, job_id=job_id)
         else:
             logger.error("verification_email_enqueue_failed", email=user.email)
+
+    async def authenticate(
+        self, credentials: OAuth2PasswordRequestForm
+    ) -> Optional[User]:
+        """
+        Authenticate and return a user following a username/email and password.
+
+        Supports authentication with both email and username.
+        Will automatically upgrade password hash if necessary.
+
+        :param credentials: The user credentials (username field can be email or username).
+        """
+        # First try to get user by email
+        try:
+            user = await self.get_by_email(credentials.username)
+        except exceptions.UserNotExists:
+            # Try to get user by username instead
+            from sqlalchemy import select
+
+            result = await self.user_db.session.execute(
+                select(User).filter(User.username == credentials.username)
+            )
+            user = result.scalar_one_or_none()
+
+            if not user:
+                # Run the hasher to mitigate timing attack
+                self.password_helper.hash(credentials.password)
+                return None
+
+        # Verify password
+        verified, updated_password_hash = self.password_helper.verify_and_update(
+            credentials.password, user.hashed_password
+        )
+        if not verified:
+            return None
+
+        # Update password hash to a more robust one if needed
+        if updated_password_hash is not None:
+            await self.user_db.update(user, {"hashed_password": updated_password_hash})
+
+        return user
 
 
 async def get_user_manager(user_db=Depends(get_user_db)):
