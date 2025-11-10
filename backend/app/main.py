@@ -61,20 +61,20 @@ if settings.ENVIRONMENT == "production":
     )
 
 # Set up CORS
-# Use configured CORS origins from settings if available, otherwise use defaults
-if settings.BACKEND_CORS_ORIGINS:
-    # Convert AnyHttpUrl objects to strings
-    origins = [str(origin) for origin in settings.BACKEND_CORS_ORIGINS]
-    logger.info("Using CORS origins from settings", origins=origins)
-elif settings.ENVIRONMENT == "production":
+# TEMPORARY FIX: Hardcode for production while debugging env var parsing
+if settings.ENVIRONMENT == "production":
     origins = [
+        "https://qontinui.io",
+        "https://www.qontinui.io",
         "https://qontinui.com",
         "https://app.qontinui.com",
         "https://www.qontinui.com",
-        "https://qontinui.io",
-        "https://www.qontinui.io",
     ]
-    logger.info("Using hardcoded production CORS origins", origins=origins)
+    logger.info("Using hardcoded production CORS origins", origins=origins, environment=settings.ENVIRONMENT)
+elif settings.BACKEND_CORS_ORIGINS:
+    # Convert AnyHttpUrl objects to strings
+    origins = [str(origin) for origin in settings.BACKEND_CORS_ORIGINS]
+    logger.info("Using CORS origins from settings", origins=origins)
 else:
     origins = [
         "http://localhost:3001",
