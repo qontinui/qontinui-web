@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     SMTP_FROM_EMAIL: str = "noreply@qontinui.com"
 
+    # AWS Settings (for SES)
+    AWS_REGION: str = Field(default="eu-central-1", description="AWS region for SES")
+    USE_SES_API: bool = Field(
+        default=True,
+        description="Use AWS SES API instead of SMTP (recommended for AWS deployments)"
+    )
+
     # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 60
