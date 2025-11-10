@@ -21,7 +21,7 @@ class ProjectUpdate(BaseSchema):
 
 
 class ProjectInDBBase(ProjectBase, BaseORMSchema):
-    id: int
+    id: str  # Project ID (UUID in production database)
     owner_id: UUID  # Changed from int to UUID to match fastapi-users User model
     created_at: IsoDatetime  # Serializes to ISO 8601 format
     updated_at: IsoDatetime  # Serializes to ISO 8601 format

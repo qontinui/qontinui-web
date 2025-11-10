@@ -46,7 +46,7 @@ class StorageService:
         file_path: str,
         file_size_bytes: int,
         file_type: str,
-        project_id: int | None = None,
+        project_id: str | None = None,
     ) -> StorageUsage:
         """
         Track a file upload in the storage_usage table.

@@ -99,7 +99,7 @@ class AuditService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: str,
         project_name: str,
         ip_address: str | None = None,
     ) -> AuditLog:
@@ -118,7 +118,7 @@ class AuditService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: str,
         project_name: str,
         ip_address: str | None = None,
     ) -> AuditLog:

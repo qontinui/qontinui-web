@@ -19,7 +19,7 @@ router = APIRouter()
 async def export_project_configuration(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: str,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """
@@ -72,7 +72,7 @@ async def export_project_configuration(
 async def import_project_configuration(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: str,
     configuration: dict,
     merge: bool = False,
     current_user: User = Depends(get_current_active_user_async),
@@ -138,7 +138,7 @@ async def validate_configuration(
 async def get_project_configuration(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: str,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """
