@@ -16,9 +16,7 @@ export default function UsersTab() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedUser, setSelectedUser] = useState<AdminUserData | null>(null)
 
-  const filteredUsers = useMemo(() => applyFilters(), [searchTerm, tierFilter, statusFilter, users])
-
-  const applyFilters = () => {
+  const filteredUsers = useMemo(() => {
     let filtered = [...users]
 
     // Search filter
@@ -50,7 +48,7 @@ export default function UsersTab() {
     }
 
     return filtered
-  }
+  }, [searchTerm, tierFilter, statusFilter, users])
 
   const getTierColor = (tier: string) => {
     switch (tier) {
