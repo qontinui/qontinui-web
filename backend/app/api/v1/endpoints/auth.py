@@ -110,16 +110,11 @@ async def login(
     Args:
         remember_me: If True, issues 90-day refresh token; if False, 30-day token
     """
-    # Get user by email
-    user = await get_user_by_email(db, email=form_data.username)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="LOGIN_BAD_CREDENTIALS",
-        )
+    # Authenticate user (supports both username and email)
+    from app.crud.user import authenticate_user
 
-    # Verify password using core.security (same as fastapi-users uses)
-    if not verify_password(form_data.password, user.hashed_password):
+    user = await authenticate_user(db, form_data.username, form_data.password)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="LOGIN_BAD_CREDENTIALS",
