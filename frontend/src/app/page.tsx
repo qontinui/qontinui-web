@@ -55,12 +55,22 @@ function LandingContent() {
                 <span className="text-sm text-muted-foreground">{user.email}</span>
                 <Button
                   variant="outline"
-                  onClick={() => router.push(user.is_superuser ? '/admin' : '/dashboard')}
+                  onClick={() => router.push('/dashboard')}
                   className="border-primary/50 hover:border-primary hover:bg-primary/10"
                 >
-                  {user.is_superuser ? 'Go to Admin' : 'Go to Dashboard'}
+                  Go to Dashboard
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
+                {user.is_superuser && (
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push('/admin')}
+                    className="border-secondary/50 hover:border-secondary hover:bg-secondary/10"
+                  >
+                    Go to Admin
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                )}
               </div>
             ) : (
               <Button
