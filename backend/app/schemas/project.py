@@ -1,7 +1,15 @@
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
+from pydantic.functional_serializers import PlainSerializer
+
 from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
+
+# Custom type that accepts UUID and serializes to string
+UuidAsString = Annotated[
+    UUID | str,
+    PlainSerializer(lambda v: str(v) if v else None, return_type=str),
+]
 
 
 class ProjectBase(BaseSchema):
@@ -21,8 +29,8 @@ class ProjectUpdate(BaseSchema):
 
 
 class ProjectInDBBase(ProjectBase, BaseORMSchema):
-    id: str  # Project ID (UUID in production database)
-    owner_id: UUID  # Changed from int to UUID to match fastapi-users User model
+    id: UuidAsString  # Project ID (UUID in production database, serialized as string)
+    owner_id: UuidAsString  # Owner UUID (serialized as string)
     created_at: IsoDatetime  # Serializes to ISO 8601 format
     updated_at: IsoDatetime  # Serializes to ISO 8601 format
 
