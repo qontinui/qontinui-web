@@ -1,5 +1,6 @@
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +15,11 @@ from app.crud.project import (
 from app.models.user import User
 from app.schemas.project import Project, ProjectCreate, ProjectUpdate
 from app.services.limit_checker import LimitChecker
+from app.services.object_storage import object_storage
+from app.services.storage_service import StorageService
 from app.utils.authorization import verify_project_access
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -26,9 +31,6 @@ async def read_projects(
     limit: int = 100,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
-    import structlog
-
-    logger = structlog.get_logger(__name__)
     logger.info("get_projects_request", user_id=current_user.id, skip=skip, limit=limit)
 
     projects = await get_projects_by_owner(
@@ -122,6 +124,28 @@ async def delete_existing_project(
             status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
         )
     verify_project_access(project, current_user, "delete")
+
+    # Get all image s3_keys from configuration
+    config = project.configuration or {}
+    images = config.get("images", [])
+
+    # Delete all images from S3
+    deleted_count = 0
+    for image in images:
+        s3_key = image.get("s3_key")
+        if s3_key:
+            try:
+                # Delete from S3
+                object_storage.delete_file(s3_key)
+                # Update storage tracking
+                await StorageService.delete_file_record(db, s3_key, current_user.id)
+                deleted_count += 1
+            except Exception as e:
+                logger.error("image_deletion_failed", s3_key=s3_key, error=str(e))
+                # Continue with other deletions
+
+    logger.info("project_images_deleted", project_id=project_id, deleted_count=deleted_count)
+
     success = await delete_project(db, project_id=project_id)
     if not success:
         raise HTTPException(

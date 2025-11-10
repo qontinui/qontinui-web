@@ -80,7 +80,8 @@ function AutomationBuilderContent() {
     transitions,
     categories,
     settings,
-    updateSettings
+    updateSettings,
+    setProjectId
   } = useAutomation()
   const { user, logout } = useAuth()
   const router = useRouter()
@@ -96,6 +97,11 @@ function AutomationBuilderContent() {
       loadProjectFromBackend(projectId)
     }
   }, [searchParams])
+
+  // Sync projectId to context whenever currentProjectId changes
+  useEffect(() => {
+    setProjectId(currentProjectId)
+  }, [currentProjectId, setProjectId])
 
   // Sync project name to backend when it changes
   useEffect(() => {

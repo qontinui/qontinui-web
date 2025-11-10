@@ -12,6 +12,8 @@ import { Upload, ImageIcon, Trash2, Search, X, Edit } from "lucide-react"
 import { toast } from "sonner"
 import { useAutomation } from "@/contexts/automation-context"
 import { ImageDeletionDialog, type ImageUsageInfo } from "@/components/image-deletion-dialog"
+import { apiClient } from "@/lib/api-client"
+import { ImageUploadProgress, type UploadingImage } from "@/components/ImageUploadProgress"
 
 interface ImageAsset {
   id: string
@@ -32,7 +34,9 @@ export function ImagesManager() {
     updateImage,
     getImageUsage,
     removeImageFromStates,
-    markImageAsRemovedInProcesses
+    markImageAsRemovedInProcesses,
+    projectName,
+    projectId
   } = useAutomation()
   const [searchQuery, setSearchQuery] = useState("")
   const [dragActive, setDragActive] = useState(false)
@@ -42,6 +46,8 @@ export function ImagesManager() {
   const [showDeletionDialog, setShowDeletionDialog] = useState(false)
   const [imageToDelete, setImageToDelete] = useState<ImageAsset | null>(null)
   const [deletionUsageInfo, setDeletionUsageInfo] = useState<ImageUsageInfo>({ states: [], processes: [] })
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingImage[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Count images by source
@@ -61,84 +67,138 @@ export function ImagesManager() {
   })
 
   const handleFiles = useCallback(
-    (files: FileList) => {
-      const newImages: ImageAsset[] = []
-      let processedFiles = 0
-      const totalFiles = files.length
+    async (files: FileList) => {
+      // Validate projectId is available
+      if (!projectId) {
+        toast.error('No project selected', {
+          description: 'Please open a project before uploading images.',
+        });
+        return;
+      }
 
-      Array.from(files).forEach((file) => {
-        if (!file.type.startsWith("image/")) {
-          toast.error("Invalid file type", {
-            description: `${file.name} is not an image file.`,
-          })
-          processedFiles++
-          if (processedFiles === totalFiles && newImages.length > 0) {
-            newImages.forEach(image => addImage(image))
-            toast.success("Images uploaded", {
-              description: `${newImages.length} image(s) added to your library.`,
-            })
-          }
-          return
-        }
+      const fileArray = Array.from(files)
 
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          const img = new Image()
-          img.onload = () => {
-            // Validate image dimensions
-            if (img.width < 10 || img.height < 10) {
-              toast.error("Image too small", {
-                description: `${file.name} is ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`,
-              })
-              processedFiles++
-              if (processedFiles === totalFiles && newImages.length > 0) {
-                newImages.forEach(image => addImage(image))
-                toast.success("Images uploaded", {
-                  description: `${newImages.length} image(s) added to your library.`,
-                })
-              }
-              return
-            }
+      // Validate file types before upload
+      const invalidFiles = fileArray.filter(file => !file.type.startsWith("image/"))
+      if (invalidFiles.length > 0) {
+        toast.error("Invalid file type", {
+          description: `${invalidFiles[0].name} is not an image file.`,
+        })
+        return
+      }
 
-            const newImage: ImageAsset = {
-              id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              name: file.name,
-              url: e.target?.result as string,
-              size: file.size,
-              createdAt: new Date(),
-              usageCount: 0,
-              usedIn: [],
-              source: 'uploaded',
-            }
-
-            newImages.push(newImage)
-            processedFiles++
-
-            if (processedFiles === totalFiles && newImages.length > 0) {
-              newImages.forEach(image => addImage(image))
-              toast.success("Images uploaded", {
-                description: `${newImages.length} image(s) added to your library.`,
-              })
-            }
-          }
-          img.onerror = () => {
-            toast.error("Failed to load image", {
-              description: `${file.name} could not be processed.`,
-            })
-            processedFiles++
-            if (processedFiles === totalFiles && newImages.length > 0) {
-              newImages.forEach(image => addImage(image))
-              toast.success("Images uploaded", {
-                description: `${newImages.length} image(s) added to your library.`,
-              })
-            }
-          }
-          img.src = e.target?.result as string
-        }
-        reader.readAsDataURL(file)
+      // Initialize upload progress for all files
+      const initialProgress: Record<string, number> = {}
+      const initialUploading: UploadingImage[] = []
+      fileArray.forEach(file => {
+        initialProgress[file.name] = 0
+        initialUploading.push({ name: file.name, progress: 0 })
       })
+      setUploadProgress(initialProgress)
+      setUploadingFiles(initialUploading)
+
+      // Upload all files concurrently (with progress tracking)
+      const uploadPromises = fileArray.map(async (file) => {
+        try {
+          // Validate image before uploading
+          await new Promise<void>((resolve, reject) => {
+            const img = new Image()
+            const reader = new FileReader()
+
+            reader.onload = (e) => {
+              img.onload = () => {
+                if (img.width < 10 || img.height < 10) {
+                  reject(new Error(`Image too small: ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`))
+                } else {
+                  resolve()
+                }
+              }
+              img.onerror = () => reject(new Error('Failed to load image'))
+              img.src = e.target?.result as string
+            }
+            reader.onerror = () => reject(new Error('Failed to read file'))
+            reader.readAsDataURL(file)
+          })
+
+          // Upload to S3 via API
+          const result = await apiClient.uploadProjectImage(
+            projectId,
+            file,
+            (progress) => {
+              setUploadProgress(prev => ({ ...prev, [file.name]: progress }))
+              setUploadingFiles(prev =>
+                prev.map(f => f.name === file.name ? { ...f, progress } : f)
+              )
+            }
+          )
+
+          // Create ImageAsset with S3 data
+          const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, '')
+          const imageAsset: ImageAsset = {
+            id: result.image_id,
+            name: nameWithoutExtension,
+            url: result.url, // S3 presigned URL
+            size: result.size,
+            createdAt: new Date(result.created_at),
+            usageCount: 0,
+            usedIn: [],
+            source: 'uploaded',
+            projectName: projectName,
+            // S3 fields (matching ImageAsset type in context)
+            s3_key: result.s3_key,
+            url_expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+          }
+
+          // Add to context
+          addImage(imageAsset)
+
+          toast.success(`${file.name} uploaded`)
+
+          // Remove from uploading list
+          setUploadingFiles(prev => prev.filter(f => f.name !== file.name))
+
+          return { success: true, fileName: file.name }
+        } catch (error: any) {
+          console.error(`Upload failed for ${file.name}:`, error)
+
+          // Show user-friendly error message
+          const errorMsg = error.message || 'Unknown error occurred'
+          if (errorMsg.includes('quota') || errorMsg.includes('Quota')) {
+            toast.error('Storage quota exceeded', {
+              description: 'Please upgrade your plan or delete unused images.',
+            })
+          } else if (errorMsg.includes('too small')) {
+            toast.error('Image too small', {
+              description: errorMsg,
+            })
+          } else if (errorMsg.includes('Network error') || errorMsg.includes('timeout')) {
+            toast.error('Network error', {
+              description: 'Please check your internet connection and try again.',
+            })
+          } else {
+            toast.error(`Failed to upload ${file.name}`, {
+              description: errorMsg,
+            })
+          }
+
+          // Remove from uploading list
+          setUploadingFiles(prev => prev.filter(f => f.name !== file.name))
+
+          return { success: false, fileName: file.name, error: errorMsg }
+        }
+      })
+
+      // Wait for all uploads to complete
+      const results = await Promise.all(uploadPromises)
+      const successCount = results.filter(r => r.success).length
+
+      if (successCount > 0) {
+        toast.success("Upload complete", {
+          description: `${successCount} image(s) added to your library.`,
+        })
+      }
     },
-    [addImage],
+    [addImage, projectName, projectId],
   )
 
   const handleDeleteImage = (imageId: string) => {
@@ -276,6 +336,9 @@ export function ImagesManager() {
 
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
+      {/* Upload Progress Indicator */}
+      <ImageUploadProgress uploads={uploadingFiles} />
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-6">
           <h2 className="text-2xl font-bold">Library</h2>
