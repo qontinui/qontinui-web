@@ -7,11 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Search, FolderOpen, User, Calendar, FileText, ChevronRight } from "lucide-react"
 import { useAdminProjects } from "@/hooks/use-admin"
+import ProjectDetailModal from "./ProjectDetailModal"
 
 export default function ProjectsTab() {
   const { data: projects = [], isLoading: loading } = useAdminProjects()
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState("recent")
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   const filteredProjects = useMemo(() => {
     let filtered = [...projects]
@@ -115,6 +118,10 @@ export default function ProjectsTab() {
                   <div
                     key={project.id}
                     className="p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                    onClick={() => {
+                      setSelectedProjectId(project.id)
+                      setIsModalOpen(true)
+                    }}
                   >
                     <div className="flex items-start gap-4">
                       <div className="flex-1 min-w-0">
@@ -198,6 +205,13 @@ export default function ProjectsTab() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Project Detail Modal */}
+      <ProjectDetailModal
+        projectId={selectedProjectId}
+        open={isModalOpen}
+        onOpenChange={setIsModalOpen}
+      />
     </div>
   )
 }
