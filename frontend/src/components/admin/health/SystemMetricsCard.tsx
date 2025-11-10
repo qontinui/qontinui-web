@@ -198,13 +198,17 @@ export function SystemMetricsCard({ data, loading }: SystemMetricsCardProps) {
           </div>
           <div className="space-y-1">
             <Progress
-              value={(data.database_connections.active / data.database_connections.max) * 100}
+              value={
+                data.database_connections.max > 0
+                  ? (data.database_connections.active / data.database_connections.max) * 100
+                  : 0
+              }
               className="h-2"
             />
             <div className="text-xs text-muted-foreground text-center">
-              {((data.database_connections.active / data.database_connections.max) * 100).toFixed(
-                1
-              )}
+              {data.database_connections.max > 0
+                ? ((data.database_connections.active / data.database_connections.max) * 100).toFixed(1)
+                : '0.0'}
               % utilization
             </div>
           </div>
