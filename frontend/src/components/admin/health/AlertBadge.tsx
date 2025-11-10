@@ -89,7 +89,7 @@ export function AlertBadge({
   size = 'md',
   className,
 }: AlertBadgeProps) {
-  const config = statusConfig[status]
+  const config = statusConfig[status] || statusConfig.warning // Fallback to warning for unknown statuses
   const sizeStyles = sizeConfig[size]
   const Icon = config.icon
   const displayLabel = label || config.label
@@ -138,13 +138,15 @@ export function StatusDot({ status, size = 'md', className, pulsing = false }: S
     high: 'bg-orange-500',
   }
 
+  const dotColor = dotColors[status] || dotColors.warning // Fallback to warning for unknown statuses
+
   return (
     <div className={cn('relative inline-flex', className)}>
       <div
         className={cn(
           'rounded-full',
           dotSizes[size],
-          dotColors[status],
+          dotColor,
           pulsing && 'animate-pulse'
         )}
       />
@@ -152,7 +154,7 @@ export function StatusDot({ status, size = 'md', className, pulsing = false }: S
         <div
           className={cn(
             'absolute inset-0 rounded-full animate-ping opacity-75',
-            dotColors[status]
+            dotColor
           )}
         />
       )}
