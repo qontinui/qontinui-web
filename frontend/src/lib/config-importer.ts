@@ -1,5 +1,6 @@
 import { QontinuiConfig, ImageAsset as ExportImageAsset, Workflow as ExportWorkflow } from './export-schema';
 import { Action as NewFormatAction, Workflow } from './action-schema';
+import { migrateConfigToLatest, needsMigration } from './config-migration';
 
 // Types that match the automation context
 interface ImageAsset {
@@ -59,9 +60,38 @@ export class ConfigImporter {
 
     try {
       // Parse JSON if string
-      const config: any = typeof configJson === 'string'
+      let config: any = typeof configJson === 'string'
         ? JSON.parse(configJson)
         : configJson;
+
+      // Migrate config if needed
+      if (needsMigration(config.version)) {
+        const migrationResult = await migrateConfigToLatest(config);
+
+        if (!migrationResult.success) {
+          // Migration failed - return errors
+          errors.push(...migrationResult.context.errors);
+          return {
+            success: false,
+            images: [],
+            workflows: [],
+            states: [],
+            transitions: [],
+            settings: undefined,
+            errors,
+            warnings
+          };
+        }
+
+        // Migration succeeded - use migrated config and collect warnings
+        config = migrationResult.config;
+        warnings.push(...migrationResult.context.warnings);
+
+        // Add migration summary
+        warnings.push(
+          `Configuration migrated from v${migrationResult.context.fromVersion} to v${migrationResult.context.toVersion}`
+        );
+      }
 
       // Validate version
       if (config.version !== this.SUPPORTED_VERSION) {

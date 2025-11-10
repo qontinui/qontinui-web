@@ -1,6 +1,6 @@
 "use client"
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +25,9 @@ export default function ProjectDetailModal({ projectId, open, onOpenChange }: Pr
             <FileText className="h-5 w-5" />
             {project?.name || "Project Details"}
           </DialogTitle>
+          <DialogDescription>
+            View project information, state workflows, and image library
+          </DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
