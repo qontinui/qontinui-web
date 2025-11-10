@@ -21,10 +21,13 @@ class EmailTemplateService:
         """
         if template_dir is None:
             # Default to backend/templates/emails
-            backend_dir = Path(__file__).parent.parent.parent
+            # __file__ is app/services/email/email_template_service.py
+            # Go up to backend/ directory, then add templates/emails
+            backend_dir = Path(__file__).parent.parent.parent.parent
             template_dir = backend_dir / "templates" / "emails"
 
         self.template_dir = Path(template_dir)
+        logger.info("template_dir_initialized", template_dir=str(self.template_dir), exists=self.template_dir.exists())
         self.env = Environment(
             loader=FileSystemLoader(str(self.template_dir)),
             autoescape=True,  # Enable autoescaping for security
