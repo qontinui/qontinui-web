@@ -582,27 +582,36 @@ class HealthService:
             await db.execute(text("SELECT 1"))
             connection_status = "connected"
 
-            # Try to get pool statistics
-            # Note: This is approximate and may vary based on SQLAlchemy configuration
-            pool = db.get_bind().pool
-            pool_size = pool.size()
-            checked_out = pool.checked_out_connections
-            active = checked_out
-            idle = pool_size - checked_out
+            # Try to get pool statistics (may not be available in all environments)
+            pool_size = 0
+            active = 0
+            idle = 0
+            pool_usage_percent = 0.0
+            pool_stats_available = False
 
-            # Calculate pool usage
-            pool_usage_percent = (active / pool_size * 100) if pool_size > 0 else 0.0
+            try:
+                pool = db.get_bind().pool
+                pool_size = pool.size()
+                checked_out = pool.checked_out_connections
+                active = checked_out
+                idle = pool_size - checked_out
+                pool_usage_percent = (active / pool_size * 100) if pool_size > 0 else 0.0
+                pool_stats_available = True
+            except Exception as pool_error:
+                # Pool statistics not available in this environment (e.g., AWS with async pools)
+                logger.warning("pool_statistics_unavailable", error=str(pool_error))
 
-            # Determine alert level
+            # Determine alert level based on pool usage (if available)
             alert_level = "healthy"
-            if pool_usage_percent >= self.THRESHOLDS["db_connections_critical"]:
-                alert_level = "critical"
-                status = "degraded"
-            elif pool_usage_percent >= self.THRESHOLDS["db_connections_warning"]:
-                alert_level = "warning"
-                status = "healthy"
-            else:
-                status = "healthy"
+            status = "healthy"
+
+            if pool_stats_available:
+                if pool_usage_percent >= self.THRESHOLDS["db_connections_critical"]:
+                    alert_level = "critical"
+                    status = "degraded"
+                elif pool_usage_percent >= self.THRESHOLDS["db_connections_warning"]:
+                    alert_level = "warning"
+                    status = "healthy"
 
             return {
                 "status": status,
@@ -612,6 +621,7 @@ class HealthService:
                 "idle_connections": idle,
                 "pool_usage_percent": round(pool_usage_percent, 2),
                 "alert_level": alert_level,
+                "pool_stats_available": pool_stats_available,
             }
 
         except Exception as e:
@@ -625,6 +635,7 @@ class HealthService:
                 "pool_usage_percent": 0.0,
                 "alert_level": "critical",
                 "error": str(e),
+                "pool_stats_available": False,
             }
 
     async def get_health_overview(self, db: AsyncSession) -> dict[str, Any]:
