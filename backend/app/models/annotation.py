@@ -5,7 +5,7 @@ Annotation models for GUI element ground truth data
 from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from app.db.base_class import Base
+from app.db.base import Base
 import uuid
 
 
