@@ -17,7 +17,7 @@ class AnnotationBase(BaseModel):
     label: Optional[str] = None
     description: Optional[str] = None
     reason: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    extra_data: Optional[Dict[str, Any]] = None
 
 
 class AnnotationCreate(AnnotationBase):
@@ -32,7 +32,7 @@ class AnnotationUpdate(BaseModel):
     label: Optional[str] = None
     description: Optional[str] = None
     reason: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    extra_data: Optional[Dict[str, Any]] = None
 
 
 class AnnotationResponse(AnnotationBase):
