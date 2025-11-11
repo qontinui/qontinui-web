@@ -1,0 +1,13 @@
+# Core dependencies
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+numpy>=1.24.0
+pillow>=10.0.0
+
+# Optional: For SAM2 support (state-of-the-art detection)
+# Uncomment and install separately if needed:
+# torch>=2.0.0
+# torchvision>=0.15.0
+# Install SAM2 with: pip install git+https://github.com/facebookresearch/segment-anything-2.git
+
+# Note: opencv-contrib-python is required for selective search (ximgproc module)
