@@ -9,3 +9,4 @@ from app.models.audit_log import AuditLog  # noqa
 from app.models.subscription import Subscription  # noqa
 from app.models.session_activity import SessionActivity  # noqa
 from app.models.device_session import DeviceSession  # noqa
+from app.models.annotation import AnnotationSet, Annotation  # noqa
