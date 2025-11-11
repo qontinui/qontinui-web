@@ -4,6 +4,20 @@ import { TokenRefreshService } from './token-refresh-service';
 import { ApiConfig } from '../api-config';
 
 /**
+ * Map backend error codes to user-friendly messages
+ */
+function getFriendlyErrorMessage(errorCode: string): string {
+  const errorMessages: Record<string, string> = {
+    'REGISTER_USER_ALREADY_EXISTS': 'This email is already registered. Please use a different email or try logging in.',
+    'LOGIN_BAD_CREDENTIALS': 'Invalid username or password. Please try again.',
+    'LOGIN_USER_NOT_VERIFIED': 'Please verify your email address before logging in.',
+    'VALIDATION_ERROR': 'Please check your input and try again.',
+  };
+
+  return errorMessages[errorCode] || errorCode;
+}
+
+/**
  * AuthService - Single Responsibility: Handle authentication operations
  * Manages login, logout, registration, and user information
  * Delegates token management and refresh to specialized services
@@ -47,7 +61,8 @@ export class AuthService {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Login failed');
+      const errorMessage = error.message || error.detail || 'Login failed';
+      throw new Error(getFriendlyErrorMessage(errorMessage));
     }
 
     const tokens: TokenResponse = await response.json();
@@ -71,7 +86,8 @@ export class AuthService {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Registration failed');
+      const errorMessage = error.message || error.detail || 'Registration failed';
+      throw new Error(getFriendlyErrorMessage(errorMessage));
     }
 
     return response.json();
