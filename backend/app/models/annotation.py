@@ -56,7 +56,7 @@ class Annotation(Base):
     reason = Column(Text)  # Why this element is useful
 
     # Additional data (custom properties)
-    metadata = Column(JSON)
+    extra_data = Column(JSON)
 
     # Order in the list
     order = Column(Integer, default=0)
