@@ -2,15 +2,16 @@
 Annotation models for GUI element ground truth data
 """
 
-from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, ForeignKey, Boolean, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
+from typing import Optional, Dict, Any, List
 import uuid
 
 
 class AnnotationSet(Base):
-    """A set of annotations for a screenshot"""
+    """A set of annotations for a screenshot or multiple screenshots"""
     __tablename__ = "annotation_sets"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -18,6 +19,11 @@ class AnnotationSet(Base):
     screenshot_url = Column(String, nullable=False)
     image_width = Column(Integer, nullable=False)
     image_height = Column(Integer, nullable=False)
+
+    # Multi-screenshot support: array of screenshot objects
+    # Format: [{"name": "...", "url": "...", "width": ..., "height": ...}, ...]
+    # If null, this is a single-screenshot set (backward compatibility)
+    screenshots = Column(JSON, nullable=True)
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -36,6 +42,30 @@ class AnnotationSet(Base):
     annotations = relationship("Annotation", back_populates="annotation_set", cascade="all, delete-orphan")
     created_by = relationship("User")
 
+    @property
+    def screenshot_count(self) -> int:
+        """Get the number of screenshots in this set"""
+        if self.screenshots is None:
+            return 1  # Single screenshot (backward compatibility)
+        return len(self.screenshots)
+
+    def get_screenshot(self, index: int = 0) -> Optional[Dict[str, Any]]:
+        """Get screenshot metadata by index"""
+        if self.screenshots is None:
+            # Single screenshot mode - return the original fields
+            if index == 0:
+                return {
+                    "name": self.screenshot_name,
+                    "url": self.screenshot_url,
+                    "width": self.image_width,
+                    "height": self.image_height,
+                }
+            return None
+
+        if 0 <= index < len(self.screenshots):
+            return self.screenshots[index]
+        return None
+
 
 class Annotation(Base):
     """Individual bounding box annotation"""
@@ -43,6 +73,10 @@ class Annotation(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     annotation_set_id = Column(String, ForeignKey("annotation_sets.id", ondelete="CASCADE"), nullable=False)
+
+    # Screenshot index for multi-screenshot support
+    # For single-screenshot sets, this is always 0
+    screenshot_index = Column(Integer, default=0, nullable=False, index=True)
 
     # Bounding box coordinates
     x = Column(Integer, nullable=False)
@@ -63,3 +97,7 @@ class Annotation(Base):
 
     # Relationship
     annotation_set = relationship("AnnotationSet", back_populates="annotations")
+
+    __table_args__ = (
+        Index('ix_annotations_set_screenshot', 'annotation_set_id', 'screenshot_index'),
+    )

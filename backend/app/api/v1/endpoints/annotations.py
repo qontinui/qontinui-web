@@ -51,12 +51,18 @@ async def create_annotation_set(
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> AnnotationSet:
     """Create a new annotation set (admin only)"""
+    # Convert screenshots to JSON if provided
+    screenshots_json = None
+    if annotation_set_in.screenshots:
+        screenshots_json = [s.model_dump() for s in annotation_set_in.screenshots]
+
     annotation_set = AnnotationSet(
         id=str(uuid.uuid4()),
         screenshot_name=annotation_set_in.screenshot_name,
         screenshot_url=annotation_set_in.screenshot_url,
         image_width=annotation_set_in.image_width,
         image_height=annotation_set_in.image_height,
+        screenshots=screenshots_json,
         notes=annotation_set_in.notes,
         boundary_width=annotation_set_in.boundary_width,
         created_by_id=str(current_user.id),
@@ -69,6 +75,7 @@ async def create_annotation_set(
         annotation = Annotation(
             id=str(uuid.uuid4()),
             annotation_set_id=annotation_set.id,
+            screenshot_index=ann_data.screenshot_index,
             x=ann_data.x,
             y=ann_data.y,
             width=ann_data.width,
@@ -130,6 +137,9 @@ async def update_annotation_set(
         annotation_set.notes = annotation_set_in.notes
     if annotation_set_in.boundary_width is not None:
         annotation_set.boundary_width = annotation_set_in.boundary_width
+    if annotation_set_in.screenshots is not None:
+        # Convert screenshots to JSON
+        annotation_set.screenshots = [s.model_dump() for s in annotation_set_in.screenshots]
 
     annotation_set.updated_at = datetime.utcnow()
 
@@ -145,6 +155,7 @@ async def update_annotation_set(
             annotation = Annotation(
                 id=str(uuid.uuid4()),
                 annotation_set_id=annotation_set.id,
+                screenshot_index=ann_data.screenshot_index,
                 x=ann_data.x,
                 y=ann_data.y,
                 width=ann_data.width,
@@ -198,6 +209,14 @@ async def add_annotation(
     if not annotation_set:
         raise HTTPException(status_code=404, detail="Annotation set not found")
 
+    # Validate screenshot_index is within bounds
+    max_screenshot_index = annotation_set.screenshot_count - 1
+    if annotation_in.screenshot_index > max_screenshot_index:
+        raise HTTPException(
+            status_code=400,
+            detail=f"screenshot_index {annotation_in.screenshot_index} exceeds maximum {max_screenshot_index}"
+        )
+
     # Get max order
     count_result = await db.execute(
         select(func.count()).select_from(Annotation).filter(Annotation.annotation_set_id == annotation_set_id)
@@ -207,6 +226,7 @@ async def add_annotation(
     annotation = Annotation(
         id=str(uuid.uuid4()),
         annotation_set_id=annotation_set_id,
+        screenshot_index=annotation_in.screenshot_index,
         x=annotation_in.x,
         y=annotation_in.y,
         width=annotation_in.width,
@@ -241,6 +261,16 @@ async def update_annotation(
     annotation = result.scalar_one_or_none()
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
+
+    # Validate screenshot_index if being updated
+    if annotation_in.screenshot_index is not None:
+        max_screenshot_index = annotation.annotation_set.screenshot_count - 1
+        if annotation_in.screenshot_index > max_screenshot_index:
+            raise HTTPException(
+                status_code=400,
+                detail=f"screenshot_index {annotation_in.screenshot_index} exceeds maximum {max_screenshot_index}"
+            )
+        annotation.screenshot_index = annotation_in.screenshot_index
 
     # Update fields
     if annotation_in.x is not None:
@@ -290,3 +320,92 @@ async def delete_annotation(
     await db.delete(annotation)
     await db.commit()
     return {"success": True, "message": "Annotation deleted"}
+
+
+# Export endpoints
+
+@router.get("/{annotation_set_id}/export/multi")
+async def export_annotation_set_multi(
+    annotation_set_id: str,
+    db: AsyncSession = Depends(deps.get_async_db),
+    current_user: User = Depends(deps.get_current_superuser_async),
+) -> dict:
+    """
+    Export annotation set in research format for multi-screenshot support.
+
+    This endpoint exports annotations grouped by screenshot, suitable for
+    research and analysis purposes where annotations need to be organized
+    by the screenshot they belong to.
+
+    Returns:
+        {
+            "id": str,
+            "screenshots": [
+                {
+                    "index": int,
+                    "name": str,
+                    "url": str,
+                    "width": int,
+                    "height": int,
+                    "annotations": [...]
+                },
+                ...
+            ],
+            "notes": str,
+            "boundary_width": int,
+            "created_at": datetime,
+            "updated_at": datetime
+        }
+    """
+    result = await db.execute(
+        select(AnnotationSet)
+        .options(selectinload(AnnotationSet.annotations))
+        .filter(AnnotationSet.id == annotation_set_id)
+    )
+    annotation_set = result.scalar_one_or_none()
+    if not annotation_set:
+        raise HTTPException(status_code=404, detail="Annotation set not found")
+
+    # Group annotations by screenshot_index
+    from collections import defaultdict
+    annotations_by_screenshot = defaultdict(list)
+    for ann in annotation_set.annotations:
+        annotations_by_screenshot[ann.screenshot_index].append({
+            "id": ann.id,
+            "x": ann.x,
+            "y": ann.y,
+            "width": ann.width,
+            "height": ann.height,
+            "label": ann.label,
+            "description": ann.description,
+            "reason": ann.reason,
+            "extra_data": ann.extra_data,
+            "order": ann.order,
+        })
+
+    # Build screenshots array with their annotations
+    screenshots = []
+    for i in range(annotation_set.screenshot_count):
+        screenshot_data = annotation_set.get_screenshot(i)
+        if screenshot_data:
+            screenshots.append({
+                "index": i,
+                "name": screenshot_data["name"],
+                "url": screenshot_data["url"],
+                "width": screenshot_data["width"],
+                "height": screenshot_data["height"],
+                "annotations": sorted(
+                    annotations_by_screenshot.get(i, []),
+                    key=lambda a: a["order"]
+                ),
+            })
+
+    return {
+        "id": annotation_set.id,
+        "screenshots": screenshots,
+        "notes": annotation_set.notes,
+        "boundary_width": annotation_set.boundary_width,
+        "created_at": annotation_set.created_at.isoformat(),
+        "updated_at": annotation_set.updated_at.isoformat(),
+        "created_by_id": annotation_set.created_by_id,
+    }

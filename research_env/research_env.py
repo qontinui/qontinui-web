@@ -21,7 +21,15 @@ from datetime import datetime
 import cv2
 import numpy as np
 
-from evaluator import Evaluator, BBox, EvaluationResult, compare_methods
+from evaluator import (
+    Evaluator,
+    BBox,
+    EvaluationResult,
+    compare_methods,
+    load_multi_screenshot_dataset,
+    MultiScreenshotDataset,
+    MultiScreenshotEvaluator,
+)
 from detectors import (
     EdgeBasedDetector,
     ContourDetector,
@@ -32,6 +40,7 @@ from detectors import (
     HybridDetector,
     SAM2Detector,
 )
+from detectors.consistency_detector import ConsistencyDetector
 
 
 class ResearchNotes:
@@ -150,7 +159,12 @@ class ResearchEnvironment:
         self.annotated_screenshot: Optional[Path] = None
         self.boundary_width: int = 0
 
-        # Detectors
+        # Multi-screenshot mode
+        self.multi_screenshot_mode: bool = False
+        self.multi_screenshot_dataset: Optional[MultiScreenshotDataset] = None
+        self.multi_screenshot_evaluator: Optional[MultiScreenshotEvaluator] = None
+
+        # Single-screenshot detectors
         self.detectors = [
             EdgeBasedDetector(),
             ContourDetector(),
@@ -160,6 +174,11 @@ class ResearchEnvironment:
             SelectiveSearchDetector(),
             HybridDetector(),
             SAM2Detector(),
+        ]
+
+        # Multi-screenshot detectors
+        self.multi_screenshot_detectors = [
+            ConsistencyDetector(),
         ]
 
         # Track best results
@@ -185,44 +204,77 @@ class ResearchEnvironment:
         with open(self.ground_truth_file, 'r') as f:
             data = json.load(f)
 
-        # Load boxes
-        self.ground_truth_boxes = []
-        for ann in data['annotations']:
-            bbox = ann['bbox']
-            self.ground_truth_boxes.append(BBox(
-                x1=bbox[0],
-                y1=bbox[1],
-                x2=bbox[2],
-                y2=bbox[3],
-                label=ann.get('label', '')
-            ))
+        # Detect format version to determine single vs multi-screenshot mode
+        format_version = data.get('format_version', '1.0')
 
-        # Load boundary_width (default to 0 for backwards compatibility)
-        self.boundary_width = data.get('boundary_width', 0)
+        if format_version == '2.0':
+            # Multi-screenshot mode
+            print("📊 Multi-screenshot mode detected (format v2.0)")
+            self.multi_screenshot_mode = True
 
-        # Re-initialize evaluator with boundary_width
-        self.evaluator = Evaluator(iou_threshold=0.5, boundary_width=self.boundary_width)
+            # Load multi-screenshot dataset
+            self.multi_screenshot_dataset = load_multi_screenshot_dataset(
+                str(self.ground_truth_file),
+                str(self.screenshots_dir)
+            )
 
-        # Find annotated screenshot
-        screenshot_name = data['screenshot']
-        self.annotated_screenshot = self.screenshots_dir / screenshot_name
+            # Initialize multi-screenshot evaluator
+            self.boundary_width = self.multi_screenshot_dataset.boundary_width
+            self.multi_screenshot_evaluator = MultiScreenshotEvaluator(
+                iou_threshold=0.5,
+                boundary_width=self.boundary_width
+            )
 
-        if not self.annotated_screenshot.exists():
-            print(f"❌ Annotated screenshot not found: {self.annotated_screenshot}")
-            return False
+            print(f"✓ Loaded {len(self.multi_screenshot_dataset.screenshots)} screenshots")
+            print(f"✓ Loaded {len(self.multi_screenshot_dataset.annotations)} cross-screenshot annotations")
+            if self.boundary_width > 0:
+                print(f"✓ Boundary tolerance: {self.boundary_width} pixels")
 
-        print(f"✓ Loaded {len(self.ground_truth_boxes)} ground truth elements")
-        print(f"✓ Annotated screenshot: {screenshot_name}")
-        if self.boundary_width > 0:
-            print(f"✓ Boundary tolerance: {self.boundary_width} pixels")
+            return True
 
-        # Load all other screenshots
-        self.test_screenshots = [f for f in self.screenshots_dir.glob("*.png") if f != self.annotated_screenshot]
-        self.test_screenshots.extend([f for f in self.screenshots_dir.glob("*.jpg") if f != self.annotated_screenshot])
+        else:
+            # Single-screenshot mode (v1.0 or missing version)
+            print("📊 Single-screenshot mode detected (format v1.0)")
+            self.multi_screenshot_mode = False
 
-        print(f"✓ Found {len(self.test_screenshots)} additional test screenshots")
+            # Load boxes
+            self.ground_truth_boxes = []
+            for ann in data['annotations']:
+                bbox = ann['bbox']
+                self.ground_truth_boxes.append(BBox(
+                    x1=bbox[0],
+                    y1=bbox[1],
+                    x2=bbox[2],
+                    y2=bbox[3],
+                    label=ann.get('label', '')
+                ))
 
-        return True
+            # Load boundary_width (default to 0 for backwards compatibility)
+            self.boundary_width = data.get('boundary_width', 0)
+
+            # Re-initialize evaluator with boundary_width
+            self.evaluator = Evaluator(iou_threshold=0.5, boundary_width=self.boundary_width)
+
+            # Find annotated screenshot
+            screenshot_name = data['screenshot']
+            self.annotated_screenshot = self.screenshots_dir / screenshot_name
+
+            if not self.annotated_screenshot.exists():
+                print(f"❌ Annotated screenshot not found: {self.annotated_screenshot}")
+                return False
+
+            print(f"✓ Loaded {len(self.ground_truth_boxes)} ground truth elements")
+            print(f"✓ Annotated screenshot: {screenshot_name}")
+            if self.boundary_width > 0:
+                print(f"✓ Boundary tolerance: {self.boundary_width} pixels")
+
+            # Load all other screenshots
+            self.test_screenshots = [f for f in self.screenshots_dir.glob("*.png") if f != self.annotated_screenshot]
+            self.test_screenshots.extend([f for f in self.screenshots_dir.glob("*.jpg") if f != self.annotated_screenshot])
+
+            print(f"✓ Found {len(self.test_screenshots)} additional test screenshots")
+
+            return True
 
     def test_detector(self, detector, image_path: str, params: Dict) -> Tuple[List[BBox], float]:
         """Test a detector with given parameters"""
@@ -285,6 +337,68 @@ class ResearchEnvironment:
                     print(f"\n   🎉 PERFECT DETECTION ACHIEVED!")
                     self._save_result(result, detector.name, params)
                     return results
+
+        return results
+
+    def run_multi_screenshot_iteration(self, iteration: int) -> List[EvaluationResult]:
+        """Run one iteration of multi-screenshot testing"""
+        print(f"\n{'='*80}")
+        print(f"MULTI-SCREENSHOT ITERATION {iteration}")
+        print(f"{'='*80}\n")
+
+        results = []
+
+        # Test each multi-screenshot detector with its parameter grid
+        for detector in self.multi_screenshot_detectors:
+            param_grid = detector.get_param_grid()
+
+            if not param_grid:
+                print(f"⏭ Skipping {detector.name} (no parameters or not available)")
+                continue
+
+            print(f"\n🔬 Testing {detector.name} ({len(param_grid)} configurations)...")
+
+            for i, params in enumerate(param_grid):
+                # Test on multi-screenshot dataset
+                start_time = time.time()
+                try:
+                    predictions = detector.detect_multi(self.multi_screenshot_dataset, **params)
+                    proc_time = time.time() - start_time
+                except Exception as e:
+                    print(f"   ⚠ Error in {detector.name} config {i+1}: {e}")
+                    continue
+
+                # Evaluate per-screenshot results
+                method_name = f"{detector.name} [{i+1}]"
+                per_screenshot_results = self.multi_screenshot_evaluator.evaluate_multi(
+                    method_name=method_name,
+                    dataset=self.multi_screenshot_dataset,
+                    predictions=predictions,
+                    processing_time=proc_time
+                )
+
+                # Aggregate results across screenshots
+                aggregated_result = self.multi_screenshot_evaluator.aggregate_results(per_screenshot_results)
+
+                if aggregated_result:
+                    results.append(aggregated_result)
+
+                    # Print summary
+                    status = "✓" if aggregated_result.is_perfect() else "✗"
+                    print(f"   {status} Config {i+1}: P={aggregated_result.precision:.2%} R={aggregated_result.recall:.2%} "
+                          f"F1={aggregated_result.f1:.2%} ({proc_time:.3f}s)")
+
+                    # Track best
+                    if self.best_result is None or aggregated_result.f1 > self.best_result.f1:
+                        self.best_result = aggregated_result
+                        self.best_params = params
+                        self.best_detector = detector.name
+
+                    # If perfect, save and report
+                    if aggregated_result.is_perfect():
+                        print(f"\n   🎉 PERFECT DETECTION ACHIEVED!")
+                        self._save_result(aggregated_result, detector.name, params)
+                        return results
 
         return results
 
@@ -372,13 +486,23 @@ class ResearchEnvironment:
             print("   Use the web-based annotation tool at /admin/annotations")
             return
 
-        print(f"\n🎯 Goal: Detect all {len(self.ground_truth_boxes)} elements with 100% precision and recall")
+        # Print goal based on mode
+        if self.multi_screenshot_mode:
+            total_annotations = len(self.multi_screenshot_dataset.annotations)
+            total_screenshots = len(self.multi_screenshot_dataset.screenshots)
+            print(f"\n🎯 Goal: Detect all {total_annotations} elements across {total_screenshots} screenshots with 100% precision and recall")
+        else:
+            print(f"\n🎯 Goal: Detect all {len(self.ground_truth_boxes)} elements with 100% precision and recall")
+
         print(f"📊 Max iterations: {self.max_iterations}\n")
 
         # Main research loop
         for iteration in range(1, self.max_iterations + 1):
-            # Run iteration
-            results = self.run_iteration(iteration)
+            # Run iteration based on mode
+            if self.multi_screenshot_mode:
+                results = self.run_multi_screenshot_iteration(iteration)
+            else:
+                results = self.run_iteration(iteration)
 
             if not results:
                 print("\n⚠ No results from this iteration")
