@@ -8,6 +8,7 @@ from typing import List, Dict, Tuple, Optional
 import numpy as np
 from dataclasses import dataclass
 import json
+import os
 
 
 @dataclass
@@ -309,3 +310,275 @@ def compare_methods(results: List[EvaluationResult]) -> str:
         report += f"   False positives: {best.false_positives} detections\n"
 
     return report
+
+
+# ============================================================================
+# Multi-Screenshot Comparative Analysis Support
+# ============================================================================
+
+@dataclass
+class ScreenshotInfo:
+    """Information about a screenshot in a multi-screenshot dataset"""
+    path: str
+    screenshot_id: int
+    metadata: Dict = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
+
+
+@dataclass
+class MultiScreenshotAnnotation:
+    """Annotation for an element across multiple screenshots"""
+    element_id: str
+    label: str
+    screenshot_bboxes: Dict[int, List[int]]  # screenshot_id -> [x1, y1, x2, y2]
+    mask_path: Optional[str] = None  # Path to pixel-level mask (optional)
+    metadata: Dict = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
+
+    def get_bbox(self, screenshot_id: int) -> Optional[BBox]:
+        """Get bounding box for a specific screenshot"""
+        bbox_coords = self.screenshot_bboxes.get(screenshot_id)
+        if bbox_coords is None:
+            return None
+        return BBox(
+            x1=bbox_coords[0],
+            y1=bbox_coords[1],
+            x2=bbox_coords[2],
+            y2=bbox_coords[3],
+            label=self.label
+        )
+
+    def get_all_bboxes(self) -> Dict[int, BBox]:
+        """Get all bounding boxes as BBox objects"""
+        return {
+            sid: self.get_bbox(sid)
+            for sid in self.screenshot_bboxes.keys()
+        }
+
+
+@dataclass
+class MultiScreenshotDataset:
+    """Dataset containing multiple screenshots with cross-screenshot annotations"""
+    screenshots: List[ScreenshotInfo]
+    annotations: List[MultiScreenshotAnnotation]
+    format_version: str = "2.0"
+    boundary_width: int = 0
+    metadata: Dict = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
+
+    def get_screenshot_by_id(self, screenshot_id: int) -> Optional[ScreenshotInfo]:
+        """Get screenshot info by ID"""
+        for screenshot in self.screenshots:
+            if screenshot.screenshot_id == screenshot_id:
+                return screenshot
+        return None
+
+    def get_annotations_for_screenshot(self, screenshot_id: int) -> List[BBox]:
+        """Get all annotations for a specific screenshot as BBox list"""
+        boxes = []
+        for ann in self.annotations:
+            bbox = ann.get_bbox(screenshot_id)
+            if bbox is not None:
+                boxes.append(bbox)
+        return boxes
+
+
+class MultiScreenshotEvaluator:
+    """Evaluates multi-screenshot detection methods"""
+
+    def __init__(self, iou_threshold: float = 0.5, boundary_width: int = 0):
+        self.iou_threshold = iou_threshold
+        self.boundary_width = boundary_width
+        self.evaluator = Evaluator(iou_threshold=iou_threshold, boundary_width=boundary_width)
+
+    def evaluate_multi(
+        self,
+        method_name: str,
+        dataset: MultiScreenshotDataset,
+        predictions: Dict[int, List[BBox]],  # screenshot_id -> list of detected boxes
+        processing_time: float
+    ) -> Dict[int, EvaluationResult]:
+        """
+        Evaluate predictions across multiple screenshots
+
+        Args:
+            method_name: Name of detection method
+            dataset: Multi-screenshot dataset with ground truth
+            predictions: Dict mapping screenshot_id to list of predicted boxes
+            processing_time: Total time taken for detection
+
+        Returns:
+            Dict mapping screenshot_id to EvaluationResult
+        """
+        results = {}
+
+        for screenshot in dataset.screenshots:
+            screenshot_id = screenshot.screenshot_id
+
+            # Get ground truth for this screenshot
+            ground_truth = dataset.get_annotations_for_screenshot(screenshot_id)
+
+            # Get predictions for this screenshot
+            preds = predictions.get(screenshot_id, [])
+
+            # Evaluate
+            result = self.evaluator.evaluate(
+                method_name=f"{method_name} (screenshot {screenshot_id})",
+                ground_truth=ground_truth,
+                predictions=preds,
+                processing_time=processing_time / len(dataset.screenshots)  # Divide time evenly
+            )
+
+            results[screenshot_id] = result
+
+        return results
+
+    def aggregate_results(self, results: Dict[int, EvaluationResult]) -> EvaluationResult:
+        """
+        Aggregate results across multiple screenshots into a single result
+
+        Args:
+            results: Dict mapping screenshot_id to EvaluationResult
+
+        Returns:
+            Aggregated EvaluationResult
+        """
+        if not results:
+            return None
+
+        # Aggregate counts
+        total_tp = sum(r.true_positives for r in results.values())
+        total_fp = sum(r.false_positives for r in results.values())
+        total_fn = sum(r.false_negatives for r in results.values())
+        total_time = sum(r.processing_time for r in results.values())
+
+        # Calculate aggregate metrics
+        precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
+        recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+        # Aggregate IoU
+        all_matches = []
+        all_unmatched_gt = []
+        all_unmatched_pred = []
+
+        for result in results.values():
+            all_matches.extend(result.matches)
+            all_unmatched_gt.extend(result.unmatched_gt)
+            all_unmatched_pred.extend(result.unmatched_pred)
+
+        avg_iou = sum(iou for _, _, iou in all_matches) / len(all_matches) if all_matches else 0.0
+
+        # Get method name (use first result's name, but remove screenshot suffix)
+        method_name = list(results.values())[0].method_name.split(" (screenshot")[0]
+
+        return EvaluationResult(
+            method_name=f"{method_name} (aggregated)",
+            precision=precision,
+            recall=recall,
+            f1=f1,
+            true_positives=total_tp,
+            false_positives=total_fp,
+            false_negatives=total_fn,
+            avg_iou=avg_iou,
+            processing_time=total_time,
+            matches=all_matches,
+            unmatched_gt=all_unmatched_gt,
+            unmatched_pred=all_unmatched_pred
+        )
+
+
+def load_multi_screenshot_dataset(annotation_file: str, screenshots_dir: str = None) -> MultiScreenshotDataset:
+    """
+    Load multi-screenshot dataset from annotation file
+    Supports both v1.0 (single screenshot) and v2.0 (multi-screenshot) formats
+
+    Args:
+        annotation_file: Path to annotation JSON file
+        screenshots_dir: Base directory for screenshots (optional, for relative paths)
+
+    Returns:
+        MultiScreenshotDataset object
+
+    Raises:
+        ValueError: If format is invalid
+    """
+    with open(annotation_file, 'r') as f:
+        data = json.load(f)
+
+    format_version = data.get('format_version', '1.0')
+
+    if format_version == '2.0':
+        # Multi-screenshot format
+        screenshots = []
+        for screenshot_data in data.get('screenshots', []):
+            path = screenshot_data['path']
+            # Make path absolute if screenshots_dir provided and path is relative
+            if screenshots_dir and not os.path.isabs(path):
+                path = os.path.join(screenshots_dir, path)
+
+            screenshots.append(ScreenshotInfo(
+                path=path,
+                screenshot_id=screenshot_data['screenshot_id'],
+                metadata=screenshot_data.get('metadata', {})
+            ))
+
+        annotations = []
+        for ann_data in data.get('annotations', []):
+            annotations.append(MultiScreenshotAnnotation(
+                element_id=ann_data['element_id'],
+                label=ann_data.get('label', ''),
+                screenshot_bboxes=ann_data['screenshot_bboxes'],
+                mask_path=ann_data.get('mask_path'),
+                metadata=ann_data.get('metadata', {})
+            ))
+
+        return MultiScreenshotDataset(
+            screenshots=screenshots,
+            annotations=annotations,
+            format_version=format_version,
+            boundary_width=data.get('boundary_width', 0),
+            metadata=data.get('metadata', {})
+        )
+
+    else:
+        # Single screenshot format (v1.0 or missing version) - convert to multi-screenshot format
+        screenshot_path = data['screenshot']
+
+        # Make path absolute if screenshots_dir provided and path is relative
+        if screenshots_dir and not os.path.isabs(screenshot_path):
+            screenshot_path = os.path.join(screenshots_dir, screenshot_path)
+
+        screenshots = [ScreenshotInfo(
+            path=screenshot_path,
+            screenshot_id=0,
+            metadata={}
+        )]
+
+        annotations = []
+        for i, ann_data in enumerate(data.get('annotations', [])):
+            bbox = ann_data['bbox']
+            annotations.append(MultiScreenshotAnnotation(
+                element_id=str(i),
+                label=ann_data.get('label', ''),
+                screenshot_bboxes={0: bbox},  # Single screenshot with ID 0
+                mask_path=None,
+                metadata={}
+            ))
+
+        return MultiScreenshotDataset(
+            screenshots=screenshots,
+            annotations=annotations,
+            format_version='1.0',
+            boundary_width=data.get('boundary_width', 0),
+            metadata={}
+        )
