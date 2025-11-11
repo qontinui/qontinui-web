@@ -3,11 +3,14 @@ Base detector class that all detectors inherit from
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TYPE_CHECKING
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
+
+if TYPE_CHECKING:
+    from evaluator import MultiScreenshotDataset
 
 
 class BaseDetector(ABC):
@@ -146,3 +149,38 @@ class BaseDetector(ABC):
                 keep.append(box1)
 
         return keep
+
+
+class MultiScreenshotDetector(ABC):
+    """Abstract base class for detectors that work across multiple screenshots"""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.params = {}
+
+    @abstractmethod
+    def detect_multi(self, dataset: 'MultiScreenshotDataset', **params) -> Dict[int, List[BBox]]:
+        """
+        Detect GUI elements across multiple screenshots
+
+        Args:
+            dataset: MultiScreenshotDataset containing screenshots and annotations
+            **params: Detector-specific parameters
+
+        Returns:
+            Dict mapping screenshot_id to list of detected bounding boxes
+        """
+        pass
+
+    def set_params(self, **params):
+        """Update detector parameters"""
+        self.params.update(params)
+
+    def get_param_grid(self) -> List[Dict[str, Any]]:
+        """
+        Return parameter grid for hyperparameter search
+
+        Returns:
+            List of parameter dictionaries to try
+        """
+        return [{}]  # Default: no parameters
