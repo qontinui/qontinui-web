@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-GUI Annotation Tool for Ground Truth Creation
+GUI Annotation Tool for Ground Truth Creation - OPTIMIZED
 
 Features:
 - Load multiple screenshots
 - Draw and resize bounding boxes
-- Zoom and pan
+- Fast zoom and pan (right-click to pan)
 - Add labels and descriptions for each element
 - Save annotations in JSON format
+
+Performance optimizations:
+- Event-driven updates (no polling)
+- Efficient redraw only when needed
+- Cached image scaling
 """
 
 import tkinter as tk
@@ -122,7 +127,7 @@ class BoundingBox:
 
 
 class AnnotationCanvas(tk.Canvas):
-    """Canvas for drawing and editing bounding boxes"""
+    """Canvas for drawing and editing bounding boxes - OPTIMIZED"""
 
     CURSORS = {
         'n': 'top_side',
@@ -137,14 +142,16 @@ class AnnotationCanvas(tk.Canvas):
         '': 'arrow'
     }
 
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent, on_change_callback=None, **kwargs):
         super().__init__(parent, **kwargs)
 
         self.image = None
         self.photo_image = None
+        self.scaled_cache = {}  # Cache scaled images
         self.boxes: List[BoundingBox] = []
         self.selected_box: Optional[BoundingBox] = None
         self.current_edge: str = ''
+        self.on_change_callback = on_change_callback
 
         # Drawing state
         self.drawing = False
@@ -169,8 +176,17 @@ class AnnotationCanvas(tk.Canvas):
         self.bind('<B1-Motion>', self.on_mouse_drag)
         self.bind('<ButtonRelease-1>', self.on_mouse_up)
         self.bind('<Motion>', self.on_mouse_move)
-        self.bind('<Button-2>', self.on_pan_start)  # Middle mouse
+
+        # Right-click for panning (more intuitive)
+        self.bind('<Button-3>', self.on_pan_start)  # Right mouse
+        self.bind('<B3-Motion>', self.on_pan_drag)
+        self.bind('<ButtonRelease-3>', self.on_pan_end)
+
+        # Middle mouse as alternative
+        self.bind('<Button-2>', self.on_pan_start)
         self.bind('<B2-Motion>', self.on_pan_drag)
+        self.bind('<ButtonRelease-2>', self.on_pan_end)
+
         self.bind('<MouseWheel>', self.on_zoom)  # Windows/Mac
         self.bind('<Button-4>', lambda e: self.on_zoom_linux(e, 1))  # Linux scroll up
         self.bind('<Button-5>', lambda e: self.on_zoom_linux(e, -1))  # Linux scroll down
@@ -183,6 +199,7 @@ class AnnotationCanvas(tk.Canvas):
         self.pan_y = 0
         self.boxes.clear()
         self.selected_box = None
+        self.scaled_cache.clear()  # Clear cache
         self.redraw()
 
     def screen_to_image_coords(self, screen_x: int, screen_y: int) -> Tuple[int, int]:
@@ -198,20 +215,20 @@ class AnnotationCanvas(tk.Canvas):
         return screen_x, screen_y
 
     def on_zoom(self, event):
-        """Handle zoom with mouse wheel"""
+        """Handle zoom with mouse wheel - OPTIMIZED"""
         if not self.image:
             return
 
-        # Get zoom factor
+        # Get zoom factor (increased sensitivity)
         if event.delta > 0:
-            factor = 1.1
+            factor = 1.2  # Increased from 1.1
         else:
-            factor = 0.9
+            factor = 0.833  # 1/1.2
 
         # Zoom towards mouse position
         old_zoom = self.zoom_level
         self.zoom_level *= factor
-        self.zoom_level = max(0.1, min(10.0, self.zoom_level))
+        self.zoom_level = max(0.1, min(50.0, self.zoom_level))  # Increased max from 10 to 50
 
         # Adjust pan to zoom towards mouse
         zoom_ratio = self.zoom_level / old_zoom
@@ -230,9 +247,10 @@ class AnnotationCanvas(tk.Canvas):
         self.panning = True
         self.pan_start_x = event.x
         self.pan_start_y = event.y
+        self.config(cursor='hand2')
 
     def on_pan_drag(self, event):
-        """Pan the view"""
+        """Pan the view - OPTIMIZED"""
         if self.panning:
             dx = event.x - self.pan_start_x
             dy = event.y - self.pan_start_y
@@ -242,9 +260,14 @@ class AnnotationCanvas(tk.Canvas):
             self.pan_start_y = event.y
             self.redraw()
 
+    def on_pan_end(self, event):
+        """End panning"""
+        self.panning = False
+        self.config(cursor='crosshair')
+
     def on_mouse_down(self, event):
         """Handle mouse button press"""
-        if not self.image:
+        if not self.image or self.panning:
             return
 
         img_x, img_y = self.screen_to_image_coords(event.x, event.y)
@@ -258,6 +281,7 @@ class AnnotationCanvas(tk.Canvas):
                 self.last_x = img_x
                 self.last_y = img_y
                 self.redraw()
+                self._notify_change()
                 return
 
         # Start drawing new box
@@ -267,10 +291,11 @@ class AnnotationCanvas(tk.Canvas):
         self.temp_box = None
         self.selected_box = None
         self.redraw()
+        self._notify_change()
 
     def on_mouse_drag(self, event):
-        """Handle mouse drag"""
-        if not self.image:
+        """Handle mouse drag - OPTIMIZED"""
+        if not self.image or self.panning:
             return
 
         img_x, img_y = self.screen_to_image_coords(event.x, event.y)
@@ -304,6 +329,7 @@ class AnnotationCanvas(tk.Canvas):
             if self.temp_box.x2 - self.temp_box.x1 > 5 and self.temp_box.y2 - self.temp_box.y1 > 5:
                 self.boxes.append(self.temp_box)
                 self.selected_box = self.temp_box
+                self._notify_change()
             self.temp_box = None
             self.drawing = False
             self.redraw()
@@ -312,7 +338,7 @@ class AnnotationCanvas(tk.Canvas):
 
     def on_mouse_move(self, event):
         """Update cursor based on position"""
-        if not self.image or self.drawing or (self.selected_box and self.current_edge):
+        if not self.image or self.drawing or self.panning or (self.selected_box and self.current_edge):
             return
 
         img_x, img_y = self.screen_to_image_coords(event.x, event.y)
@@ -326,19 +352,32 @@ class AnnotationCanvas(tk.Canvas):
         self.config(cursor='crosshair')
 
     def redraw(self):
-        """Redraw the canvas"""
+        """Redraw the canvas - OPTIMIZED with caching"""
         self.delete('all')
 
         if not self.image:
             return
 
-        # Draw scaled image
+        # Calculate scaled dimensions
         scaled_width = int(self.image.width * self.zoom_level)
         scaled_height = int(self.image.height * self.zoom_level)
 
         if scaled_width > 0 and scaled_height > 0:
-            scaled_image = self.image.resize((scaled_width, scaled_height), Image.Resampling.LANCZOS)
-            self.photo_image = ImageTk.PhotoImage(scaled_image)
+            # Use cache key
+            cache_key = (scaled_width, scaled_height)
+
+            # Check cache
+            if cache_key not in self.scaled_cache:
+                # Only rescale if not cached
+                scaled_image = self.image.resize((scaled_width, scaled_height), Image.Resampling.LANCZOS)
+                self.scaled_cache[cache_key] = ImageTk.PhotoImage(scaled_image)
+
+                # Limit cache size
+                if len(self.scaled_cache) > 10:
+                    # Remove oldest entry
+                    self.scaled_cache.pop(next(iter(self.scaled_cache)))
+
+            self.photo_image = self.scaled_cache[cache_key]
             self.create_image(self.pan_x, self.pan_y, anchor='nw', image=self.photo_image)
 
         # Draw bounding boxes
@@ -370,16 +409,22 @@ class AnnotationCanvas(tk.Canvas):
             self.boxes.remove(self.selected_box)
             self.selected_box = None
             self.redraw()
+            self._notify_change()
             return True
         return False
 
+    def _notify_change(self):
+        """Notify parent of changes"""
+        if self.on_change_callback:
+            self.on_change_callback()
+
 
 class AnnotationTool:
-    """Main annotation tool application"""
+    """Main annotation tool application - OPTIMIZED"""
 
     def __init__(self, root):
         self.root = root
-        self.root.title("GUI Element Annotation Tool")
+        self.root.title("GUI Element Annotation Tool - OPTIMIZED")
         self.root.geometry("1400x900")
 
         self.screenshots_dir = Path("screenshots")
@@ -428,11 +473,13 @@ class AnnotationTool:
         canvas_frame = ttk.Frame(left_frame, relief='sunken', borderwidth=2)
         canvas_frame.pack(fill='both', expand=True)
 
-        self.canvas = AnnotationCanvas(canvas_frame, bg='gray30', highlightthickness=0)
+        self.canvas = AnnotationCanvas(canvas_frame, on_change_callback=self.on_canvas_change,
+                                      bg='gray30', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True)
 
         # Info label
-        self.info_label = ttk.Label(left_frame, text="Use mouse wheel to zoom, middle button to pan, left button to draw/edit boxes",
+        self.info_label = ttk.Label(left_frame,
+                                    text="Mouse wheel: zoom | Right-click drag: pan | Left-click: draw/edit boxes",
                                     foreground='blue')
         self.info_label.pack(fill='x', pady=2)
 
@@ -480,14 +527,10 @@ class AnnotationTool:
         self.root.bind('<Delete>', lambda e: self.delete_selected())
         self.root.bind('<Control-s>', lambda e: self.save_annotations())
 
-        # Update timer
-        self.root.after(100, self.update_ui)
-
-    def update_ui(self):
-        """Periodic UI update"""
+    def on_canvas_change(self):
+        """Called when canvas changes - updates UI"""
         self.update_box_list()
         self.update_stats()
-        self.root.after(100, self.update_ui)
 
     def load_screenshots(self):
         """Load multiple screenshots"""
@@ -541,6 +584,8 @@ class AnnotationTool:
                     data = json.load(f)
                     self.canvas.boxes = [BoundingBox.from_dict(b) for b in data['annotations']]
                     self.canvas.redraw()
+                    self.update_box_list()
+                    self.update_stats()
             except Exception as e:
                 print(f"Error loading annotations: {e}")
 
@@ -578,14 +623,15 @@ class AnnotationTool:
                     data = json.load(f)
                     self.canvas.boxes = [BoundingBox.from_dict(b) for b in data['annotations']]
                     self.canvas.redraw()
+                    self.update_box_list()
+                    self.update_stats()
                 messagebox.showinfo("Success", f"Loaded {len(self.canvas.boxes)} annotations")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load annotations: {e}")
 
     def delete_selected(self):
         """Delete selected box"""
-        if self.canvas.delete_selected():
-            self.update_box_list()
+        self.canvas.delete_selected()
 
     def reset_zoom(self):
         """Reset zoom and pan"""
