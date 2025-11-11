@@ -114,7 +114,7 @@ def check_annotations():
         return True
     else:
         print("⚠ No annotations found")
-        print("  Run annotation_tool.py to create annotations")
+        print("  Use the web-based annotation tool at /admin/annotations")
         return False
 
 
@@ -156,13 +156,13 @@ def main():
         elif screenshots_ok and not annotations_ok:
             print("⚠ Need annotations")
             print()
-            print("Next step: python annotation_tool.py")
+            print("Next step: Create annotations at /admin/annotations (web app)")
         else:
             print("⚠ Need screenshots")
             print()
             print("Next steps:")
             print("  1. Add screenshots to screenshots/ directory")
-            print("  2. Run: python annotation_tool.py")
+            print("  2. Create annotations at /admin/annotations (web app)")
             print("  3. Run: python research_env.py")
     else:
         print("✗ Setup incomplete")

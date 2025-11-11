@@ -6,7 +6,7 @@ An autonomous research environment for detecting GUI elements in screenshots usi
 
 This system consists of two main components:
 
-1. **Annotation Tool** - A GUI tool for creating ground truth annotations
+1. **Web-Based Annotation Tool** - Located at `/admin/annotations` in the web application for creating ground truth annotations
 2. **Research Environment** - An autonomous system that tests and refines detection strategies
 
 ## Quick Start
@@ -25,19 +25,21 @@ pip install git+https://github.com/facebookresearch/segment-anything-2.git
 
 ### 2. Annotate Screenshots
 
-Place your screenshots in the `screenshots/` directory, then run:
+Use the web-based annotation tool:
 
-```bash
-python annotation_tool.py
-```
+1. Start the web application
+2. Log in as an admin user
+3. Navigate to `/admin/annotations`
+4. Upload screenshots or select from existing ones
+5. Create bounding box annotations
 
 **Annotation Tool Features:**
-- Load multiple screenshots
-- Draw bounding boxes around GUI elements
-- Zoom and pan for precise annotation (mouse wheel to zoom, middle button to pan)
-- Resize boxes by dragging edges
-- Add labels, descriptions, and reasons for each element
-- Save annotations to JSON
+- Upload and manage screenshots
+- Draw bounding boxes around GUI elements with precise edge dragging
+- Zoom up to 50x and pan (right-click) for precise annotation
+- Add labels and descriptions for each element
+- Configurable boundary tolerance (0-50 pixels) for flexible matching
+- Save annotations to database and export to JSON
 
 **Important:** You only need to annotate ONE screenshot. The other screenshots provide context for the detection algorithms.
 
@@ -70,7 +72,6 @@ The system runs autonomously - just type "continue" when prompted or let it run 
 
 ```
 research_env/
-├── annotation_tool.py          # GUI annotation tool
 ├── research_env.py             # Main research environment
 ├── evaluator.py                # Evaluation metrics and visualization
 ├── detectors/                  # Detection strategies
@@ -84,7 +85,7 @@ research_env/
 │   ├── hybrid_detector.py      # Combines multiple methods
 │   └── sam2_detector.py        # SAM2-based detection (ML)
 ├── screenshots/                # Place screenshots here
-├── annotations/                # Annotations saved here
+├── annotations/                # Annotations exported from web app
 └── results/                    # Research results and notes
     ├── research_notes.md       # Detailed research notes
     └── *.json                  # Individual result files
@@ -195,9 +196,9 @@ Use these insights to:
 ## Troubleshooting
 
 ### "No annotation files found"
-- Run `annotation_tool.py` first
-- Make sure you saved annotations (click "Save Annotations")
-- Check that files are in `annotations/` directory
+- Create annotations using the web-based tool at `/admin/annotations`
+- Export annotations to JSON and save to the `annotations/` directory
+- Check that files are in `annotations/` directory with `*_annotations.json` naming
 
 ### "SAM2 not available"
 - SAM2 is optional
@@ -226,12 +227,17 @@ Use these insights to:
            │
            ▼
 ┌─────────────────────┐
-│ Annotate One Image  │◄─── Use annotation_tool.py
+│ Annotate One Image  │◄─── Use /admin/annotations (web app)
 └──────────┬──────────┘
            │
            ▼
 ┌─────────────────────┐
-│ Run Research Env    │◄─── Use research_env.py
+│ Export to JSON      │◄─── Save to annotations/ directory
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ Run Research Env    │◄─── python research_env.py
 └──────────┬──────────┘
            │
            ▼
@@ -260,6 +266,7 @@ Use these insights to:
   "screenshot": "app_screenshot.png",
   "image_size": [1920, 1080],
   "num_elements": 15,
+  "boundary_width": 5,
   "annotations": [
     {
       "bbox": [100, 200, 300, 250],
@@ -273,6 +280,8 @@ Use these insights to:
   ]
 }
 ```
+
+The `boundary_width` field (0-50 pixels) specifies the tolerance for matching detected boxes to ground truth. A larger value allows more flexibility - detected boxes within this margin of the ground truth boundaries are considered correct matches.
 
 ### Research Notes
 `results/research_notes.md` - Comprehensive markdown notes with:

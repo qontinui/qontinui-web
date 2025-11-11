@@ -368,8 +368,8 @@ class ResearchEnvironment:
 
         # Load ground truth
         if not self.load_ground_truth():
-            print("\n❌ Cannot proceed without ground truth. Please annotate screenshots first.")
-            print("   Run: python annotation_tool.py")
+            print("\n❌ Cannot proceed without ground truth. Please create annotations first.")
+            print("   Use the web-based annotation tool at /admin/annotations")
             return
 
         print(f"\n🎯 Goal: Detect all {len(self.ground_truth_boxes)} elements with 100% precision and recall")
