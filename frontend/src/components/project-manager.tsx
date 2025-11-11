@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useProjects, useCreateProject, useUpdateProject, useDeleteProject, useProject } from '@/hooks/use-projects';
-import { Project } from '@/services/project-service';
+import type { Project } from '@/lib/schemas';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import {
