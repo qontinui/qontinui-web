@@ -45,10 +45,13 @@ echo ""
 if [ ! -d "annotations" ] || [ -z "$(ls -A annotations/*.json 2>/dev/null)" ]; then
     echo "⚠ No annotations found"
     echo ""
-    echo "Opening annotation tool..."
-    echo "Please annotate at least ONE screenshot, then run this script again."
+    echo "Please create annotations using the web-based annotation tool:"
+    echo "  1. Start the web application"
+    echo "  2. Navigate to /admin/annotations (admin user required)"
+    echo "  3. Upload screenshots and create bounding box annotations"
+    echo "  4. Export annotations to the annotations/ directory"
     echo ""
-    python3 annotation_tool.py
+    echo "Then run this script again."
     exit 0
 fi
 
