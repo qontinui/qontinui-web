@@ -36,7 +36,7 @@ export class ProjectService {
     return projects;
   }
 
-  async getProject(id: number): Promise<Project> {
+  async getProject(id: string): Promise<Project> {
     const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/projects/${id}`);
     if (!response.ok) {
       throw new Error('Failed to get project');
@@ -61,7 +61,7 @@ export class ProjectService {
     return response.json();
   }
 
-  async updateProject(id: number, data: ProjectUpdate): Promise<Project> {
+  async updateProject(id: string, data: ProjectUpdate): Promise<Project> {
     const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/projects/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -72,7 +72,7 @@ export class ProjectService {
     return response.json();
   }
 
-  async deleteProject(id: number): Promise<void> {
+  async deleteProject(id: string): Promise<void> {
     const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/projects/${id}`, {
       method: 'DELETE',
     });

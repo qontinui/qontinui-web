@@ -35,7 +35,7 @@ export const projectKeys = {
   lists: () => [...projectKeys.all, 'list'] as const,
   list: (filters?: Record<string, unknown>) => [...projectKeys.lists(), { filters }] as const,
   details: () => [...projectKeys.all, 'detail'] as const,
-  detail: (id: number) => [...projectKeys.details(), id] as const,
+  detail: (id: string) => [...projectKeys.details(), id] as const,
 }
 
 /**
@@ -81,14 +81,14 @@ export function useProjects() {
  * @param id - Project ID to fetch
  * @param enabled - Whether to run the query (defaults to true)
  */
-export function useProject(id: number, enabled = true) {
+export function useProject(id: string, enabled = true) {
   return useQuery({
     queryKey: projectKeys.detail(id),
     queryFn: async () => {
       const data = await projectService.getProject(id)
       return parseApi(ProjectSchema, data, 'project detail')
     },
-    enabled: enabled && id > 0, // Only fetch if enabled and ID is valid
+    enabled: enabled && !!id, // Only fetch if enabled and ID is valid
     placeholderData: (previousData) => previousData,
   })
 }
@@ -134,7 +134,7 @@ export function useUpdateProject() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<Project> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Project> }) => {
       const result = await projectService.updateProject(id, data)
       return parseApi(ProjectSchema, result, 'update project')
     },
@@ -183,7 +183,7 @@ export function useDeleteProject() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (id: number) => projectService.deleteProject(id),
+    mutationFn: (id: string) => projectService.deleteProject(id),
     // Optimistic update
     onMutate: async (id) => {
       // Cancel outgoing refetches
