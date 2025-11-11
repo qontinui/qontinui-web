@@ -22,7 +22,7 @@ class AnnotationSet(Base):
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    created_by_id = Column(String, ForeignKey("user.id"), nullable=False)
+    created_by_id = Column(String, ForeignKey("users.id"), nullable=False)
 
     # Notes about this annotation set
     notes = Column(Text)
