@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { authService } from "@/services/service-factory"
-import { LayoutDashboard, Users, FolderOpen, TrendingUp, Server, Home, Activity } from "lucide-react"
+import { LayoutDashboard, Users, FolderOpen, TrendingUp, Server, Home, Activity, Tag } from "lucide-react"
 import OverviewTab from "@/components/admin/OverviewTab"
 import UsersTab from "@/components/admin/UsersTab"
 import ProjectsTab from "@/components/admin/ProjectsTab"
@@ -54,14 +54,24 @@ export default function AdminDashboard() {
               <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
               <p className="text-muted-foreground">Manage users, projects, and monitor system health</p>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => router.push('/dashboard')}
-              className="flex items-center gap-2"
-            >
-              <Home className="h-4 w-4" />
-              Go to Dashboard
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => router.push('/admin/annotations')}
+                className="flex items-center gap-2"
+              >
+                <Tag className="h-4 w-4" />
+                Annotations
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => router.push('/dashboard')}
+                className="flex items-center gap-2"
+              >
+                <Home className="h-4 w-4" />
+                Dashboard
+              </Button>
+            </div>
           </div>
         </div>
 
