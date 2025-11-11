@@ -2,10 +2,11 @@
 API endpoints for annotation management (admin only)
 """
 
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import desc, select, delete as sql_delete, func
+from sqlalchemy.orm import selectinload
 
 from app.api import deps
 from app.models.user import User
@@ -18,7 +19,6 @@ from app.schemas.annotation import (
     AnnotationUpdate,
     AnnotationResponse,
 )
-from app.utils.authorization import verify_superuser
 import uuid
 from datetime import datetime
 
@@ -29,24 +29,25 @@ router = APIRouter()
 async def list_annotation_sets(
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(deps.get_db),
+    db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> List[AnnotationSet]:
     """List all annotation sets (admin only)"""
-    annotation_sets = (
-        db.query(AnnotationSet)
+    result = await db.execute(
+        select(AnnotationSet)
+        .options(selectinload(AnnotationSet.annotations))
         .order_by(desc(AnnotationSet.created_at))
         .offset(skip)
         .limit(limit)
-        .all()
     )
-    return annotation_sets
+    annotation_sets = result.scalars().all()
+    return list(annotation_sets)
 
 
 @router.post("/", response_model=AnnotationSetResponse)
 async def create_annotation_set(
     annotation_set_in: AnnotationSetCreate,
-    db: Session = Depends(deps.get_db),
+    db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> AnnotationSet:
     """Create a new annotation set (admin only)"""
@@ -57,7 +58,8 @@ async def create_annotation_set(
         image_width=annotation_set_in.image_width,
         image_height=annotation_set_in.image_height,
         notes=annotation_set_in.notes,
-        created_by_id=current_user.id,
+        boundary_width=annotation_set_in.boundary_width,
+        created_by_id=str(current_user.id),
     )
 
     db.add(annotation_set)
@@ -74,24 +76,29 @@ async def create_annotation_set(
             label=ann_data.label,
             description=ann_data.description,
             reason=ann_data.reason,
-            metadata=ann_data.metadata,
+            extra_data=ann_data.extra_data,
             order=i,
         )
         db.add(annotation)
 
-    db.commit()
-    db.refresh(annotation_set)
+    await db.commit()
+    await db.refresh(annotation_set, ['annotations'])
     return annotation_set
 
 
 @router.get("/{annotation_set_id}", response_model=AnnotationSetResponse)
 async def get_annotation_set(
     annotation_set_id: str,
-    db: Session = Depends(deps.get_db),
+    db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> AnnotationSet:
     """Get a specific annotation set (admin only)"""
-    annotation_set = db.query(AnnotationSet).filter(AnnotationSet.id == annotation_set_id).first()
+    result = await db.execute(
+        select(AnnotationSet)
+        .options(selectinload(AnnotationSet.annotations))
+        .filter(AnnotationSet.id == annotation_set_id)
+    )
+    annotation_set = result.scalar_one_or_none()
     if not annotation_set:
         raise HTTPException(status_code=404, detail="Annotation set not found")
     return annotation_set
@@ -101,11 +108,16 @@ async def get_annotation_set(
 async def update_annotation_set(
     annotation_set_id: str,
     annotation_set_in: AnnotationSetUpdate,
-    db: Session = Depends(deps.get_db),
+    db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> AnnotationSet:
     """Update an annotation set (admin only)"""
-    annotation_set = db.query(AnnotationSet).filter(AnnotationSet.id == annotation_set_id).first()
+    result = await db.execute(
+        select(AnnotationSet)
+        .options(selectinload(AnnotationSet.annotations))
+        .filter(AnnotationSet.id == annotation_set_id)
+    )
+    annotation_set = result.scalar_one_or_none()
     if not annotation_set:
         raise HTTPException(status_code=404, detail="Annotation set not found")
 
@@ -124,7 +136,9 @@ async def update_annotation_set(
     # Update annotations if provided
     if annotation_set_in.annotations is not None:
         # Delete existing annotations
-        db.query(Annotation).filter(Annotation.annotation_set_id == annotation_set_id).delete()
+        await db.execute(
+            sql_delete(Annotation).filter(Annotation.annotation_set_id == annotation_set_id)
+        )
 
         # Add new annotations
         for i, ann_data in enumerate(annotation_set_in.annotations):
@@ -138,29 +152,32 @@ async def update_annotation_set(
                 label=ann_data.label,
                 description=ann_data.description,
                 reason=ann_data.reason,
-                metadata=ann_data.metadata,
+                extra_data=ann_data.extra_data,
                 order=i,
             )
             db.add(annotation)
 
-    db.commit()
-    db.refresh(annotation_set)
+    await db.commit()
+    await db.refresh(annotation_set, ['annotations'])
     return annotation_set
 
 
 @router.delete("/{annotation_set_id}")
 async def delete_annotation_set(
     annotation_set_id: str,
-    db: Session = Depends(deps.get_db),
+    db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> dict:
     """Delete an annotation set (admin only)"""
-    annotation_set = db.query(AnnotationSet).filter(AnnotationSet.id == annotation_set_id).first()
+    result = await db.execute(
+        select(AnnotationSet).filter(AnnotationSet.id == annotation_set_id)
+    )
+    annotation_set = result.scalar_one_or_none()
     if not annotation_set:
         raise HTTPException(status_code=404, detail="Annotation set not found")
 
-    db.delete(annotation_set)
-    db.commit()
+    await db.delete(annotation_set)
+    await db.commit()
     return {"success": True, "message": "Annotation set deleted"}
 
 
@@ -170,16 +187,22 @@ async def delete_annotation_set(
 async def add_annotation(
     annotation_set_id: str,
     annotation_in: AnnotationCreate,
-    db: Session = Depends(deps.get_db),
+    db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> Annotation:
     """Add an annotation to an existing set (admin only)"""
-    annotation_set = db.query(AnnotationSet).filter(AnnotationSet.id == annotation_set_id).first()
+    result = await db.execute(
+        select(AnnotationSet).filter(AnnotationSet.id == annotation_set_id)
+    )
+    annotation_set = result.scalar_one_or_none()
     if not annotation_set:
         raise HTTPException(status_code=404, detail="Annotation set not found")
 
     # Get max order
-    max_order = db.query(Annotation).filter(Annotation.annotation_set_id == annotation_set_id).count()
+    count_result = await db.execute(
+        select(func.count()).select_from(Annotation).filter(Annotation.annotation_set_id == annotation_set_id)
+    )
+    max_order = count_result.scalar()
 
     annotation = Annotation(
         id=str(uuid.uuid4()),
@@ -191,14 +214,14 @@ async def add_annotation(
         label=annotation_in.label,
         description=annotation_in.description,
         reason=annotation_in.reason,
-        metadata=annotation_in.metadata,
+        extra_data=annotation_in.extra_data,
         order=max_order,
     )
 
     db.add(annotation)
     annotation_set.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(annotation)
+    await db.commit()
+    await db.refresh(annotation)
     return annotation
 
 
@@ -206,11 +229,16 @@ async def add_annotation(
 async def update_annotation(
     annotation_id: str,
     annotation_in: AnnotationUpdate,
-    db: Session = Depends(deps.get_db),
+    db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> Annotation:
     """Update an annotation (admin only)"""
-    annotation = db.query(Annotation).filter(Annotation.id == annotation_id).first()
+    result = await db.execute(
+        select(Annotation)
+        .options(selectinload(Annotation.annotation_set))
+        .filter(Annotation.id == annotation_id)
+    )
+    annotation = result.scalar_one_or_none()
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
 
@@ -229,31 +257,36 @@ async def update_annotation(
         annotation.description = annotation_in.description
     if annotation_in.reason is not None:
         annotation.reason = annotation_in.reason
-    if annotation_in.metadata is not None:
-        annotation.metadata = annotation_in.metadata
+    if annotation_in.extra_data is not None:
+        annotation.extra_data = annotation_in.extra_data
 
     # Update annotation set timestamp
     annotation.annotation_set.updated_at = datetime.utcnow()
 
-    db.commit()
-    db.refresh(annotation)
+    await db.commit()
+    await db.refresh(annotation)
     return annotation
 
 
 @router.delete("/annotations/{annotation_id}")
 async def delete_annotation(
     annotation_id: str,
-    db: Session = Depends(deps.get_db),
+    db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> dict:
     """Delete an annotation (admin only)"""
-    annotation = db.query(Annotation).filter(Annotation.id == annotation_id).first()
+    result = await db.execute(
+        select(Annotation)
+        .options(selectinload(Annotation.annotation_set))
+        .filter(Annotation.id == annotation_id)
+    )
+    annotation = result.scalar_one_or_none()
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
 
     # Update annotation set timestamp
     annotation.annotation_set.updated_at = datetime.utcnow()
 
-    db.delete(annotation)
-    db.commit()
+    await db.delete(annotation)
+    await db.commit()
     return {"success": True, "message": "Annotation deleted"}
