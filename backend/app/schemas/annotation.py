@@ -52,6 +52,7 @@ class AnnotationSetBase(BaseModel):
     image_width: int = Field(..., gt=0)
     image_height: int = Field(..., gt=0)
     notes: Optional[str] = None
+    boundary_width: int = Field(default=5, ge=0, le=50, description="Boundary tolerance in pixels for matching")
 
 
 class AnnotationSetCreate(AnnotationSetBase):
@@ -62,6 +63,7 @@ class AnnotationSetUpdate(BaseModel):
     screenshot_name: Optional[str] = None
     screenshot_url: Optional[str] = None
     notes: Optional[str] = None
+    boundary_width: Optional[int] = Field(None, ge=0, le=50, description="Boundary tolerance in pixels")
     annotations: Optional[List[AnnotationCreate]] = None
 
 
