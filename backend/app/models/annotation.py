@@ -3,6 +3,7 @@ Annotation models for GUI element ground truth data
 """
 
 from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, ForeignKey, Boolean, Index
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
@@ -14,7 +15,7 @@ class AnnotationSet(Base):
     """A set of annotations for a screenshot or multiple screenshots"""
     __tablename__ = "annotation_sets"
 
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     screenshot_name = Column(String, nullable=False, index=True)
     screenshot_url = Column(String, nullable=False)
     image_width = Column(Integer, nullable=False)
@@ -28,7 +29,7 @@ class AnnotationSet(Base):
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    created_by_id = Column(String, ForeignKey("users.id"), nullable=False)
+    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     # Notes about this annotation set
     notes = Column(Text)
@@ -71,8 +72,8 @@ class Annotation(Base):
     """Individual bounding box annotation"""
     __tablename__ = "annotations"
 
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    annotation_set_id = Column(String, ForeignKey("annotation_sets.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    annotation_set_id = Column(UUID(as_uuid=True), ForeignKey("annotation_sets.id", ondelete="CASCADE"), nullable=False)
 
     # Screenshot index for multi-screenshot support
     # For single-screenshot sets, this is always 0
