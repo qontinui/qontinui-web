@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Slider } from '@/components/ui/slider'
 import { ImageCanvas, BoundingBox } from '@/components/common/ImageCanvas'
 import {
   Upload,
@@ -44,6 +45,7 @@ interface AnnotationSet {
   image_width: number
   image_height: number
   notes?: string
+  boundary_width?: number
   annotations: Annotation[]
 }
 
@@ -79,6 +81,7 @@ export default function AnnotationsPage() {
   const [description, setDescription] = useState('')
   const [reason, setReason] = useState('')
   const [notes, setNotes] = useState('')
+  const [boundaryWidth, setBoundaryWidth] = useState(5)
 
   // UI state
   const [isSaving, setIsSaving] = useState(false)
@@ -206,6 +209,7 @@ export default function AnnotationsPage() {
         image_width: imageDimensions.width,
         image_height: imageDimensions.height,
         notes,
+        boundary_width: boundaryWidth,
         annotations: boxes.map((box) => ({
           id: box.id,
           x: Math.round(box.x),
@@ -309,6 +313,7 @@ export default function AnnotationsPage() {
       })) as BoundingBox[]
     )
     setNotes(set.notes || '')
+    setBoundaryWidth(set.boundary_width || 5)
     setCurrentSetId(set.id)
     setShowLoadDialog(false)
     toast.success('Annotation set loaded')
@@ -388,6 +393,25 @@ export default function AnnotationsPage() {
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
               />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="boundary-width">Boundary Width</Label>
+                <span className="text-sm text-muted-foreground">{boundaryWidth}px</span>
+              </div>
+              <Slider
+                id="boundary-width"
+                min={0}
+                max={50}
+                step={1}
+                value={[boundaryWidth]}
+                onValueChange={(value) => setBoundaryWidth(value[0])}
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                Tolerance for matching detected boxes to ground truth. Higher values allow more flexibility.
+              </p>
             </div>
 
             <div className="flex gap-2">

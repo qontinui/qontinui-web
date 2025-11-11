@@ -94,8 +94,21 @@ Extra:     {len(self.unmatched_pred)} false detections
 class Evaluator:
     """Evaluates detection results against ground truth"""
 
-    def __init__(self, iou_threshold: float = 0.5):
+    def __init__(self, iou_threshold: float = 0.5, boundary_width: int = 0):
         self.iou_threshold = iou_threshold
+        self.boundary_width = boundary_width
+
+    @staticmethod
+    def expand_box(box: BBox, margin: int) -> BBox:
+        """Expand a box by a margin on all sides"""
+        return BBox(
+            x1=box.x1 - margin,
+            y1=box.y1 - margin,
+            x2=box.x2 + margin,
+            y2=box.y2 + margin,
+            label=box.label,
+            confidence=box.confidence
+        )
 
     @staticmethod
     def compute_iou(box1: BBox, box2: BBox) -> float:
@@ -128,9 +141,15 @@ class Evaluator:
         if not ground_truth or not predictions:
             return [], ground_truth[:], predictions[:]
 
-        # Compute IoU matrix
+        # Expand ground truth boxes by boundary_width if specified
+        if self.boundary_width > 0:
+            expanded_gt = [self.expand_box(box, self.boundary_width) for box in ground_truth]
+        else:
+            expanded_gt = ground_truth
+
+        # Compute IoU matrix with expanded boxes
         iou_matrix = np.zeros((len(ground_truth), len(predictions)))
-        for i, gt_box in enumerate(ground_truth):
+        for i, gt_box in enumerate(expanded_gt):
             for j, pred_box in enumerate(predictions):
                 iou_matrix[i, j] = self.compute_iou(gt_box, pred_box)
 
@@ -196,8 +215,13 @@ class Evaluator:
         )
 
     @staticmethod
-    def load_ground_truth(annotation_file: str) -> List[BBox]:
-        """Load ground truth from annotation file"""
+    def load_ground_truth(annotation_file: str) -> Tuple[List[BBox], int]:
+        """
+        Load ground truth from annotation file
+
+        Returns:
+            Tuple of (boxes, boundary_width)
+        """
         with open(annotation_file, 'r') as f:
             data = json.load(f)
 
@@ -212,7 +236,10 @@ class Evaluator:
                 label=ann.get('label', '')
             ))
 
-        return boxes
+        # Get boundary_width from annotation set, default to 0 for backwards compatibility
+        boundary_width = data.get('boundary_width', 0)
+
+        return boxes, boundary_width
 
     @staticmethod
     def visualize_results(image_path: str, ground_truth: List[BBox], predictions: List[BBox],

@@ -27,6 +27,11 @@ class AnnotationSet(Base):
     # Notes about this annotation set
     notes = Column(Text)
 
+    # Boundary tolerance for matching (pixels)
+    # A larger width allows more flexibility - detected boxes within this margin
+    # of the ground truth boundary are considered correct matches
+    boundary_width = Column(Integer, default=5, nullable=False)
+
     # Relationships
     annotations = relationship("Annotation", back_populates="annotation_set", cascade="all, delete-orphan")
     created_by = relationship("User")

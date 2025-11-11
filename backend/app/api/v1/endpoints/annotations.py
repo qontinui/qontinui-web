@@ -116,6 +116,8 @@ async def update_annotation_set(
         annotation_set.screenshot_url = annotation_set_in.screenshot_url
     if annotation_set_in.notes is not None:
         annotation_set.notes = annotation_set_in.notes
+    if annotation_set_in.boundary_width is not None:
+        annotation_set.boundary_width = annotation_set_in.boundary_width
 
     annotation_set.updated_at = datetime.utcnow()
 

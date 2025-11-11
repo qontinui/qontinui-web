@@ -139,7 +139,7 @@ class ResearchEnvironment:
         # Create directories
         self.results_dir.mkdir(exist_ok=True)
 
-        # Initialize components
+        # Initialize components (evaluator will be re-initialized with boundary_width after loading ground truth)
         self.evaluator = Evaluator(iou_threshold=0.5)
         self.notes = ResearchNotes(str(self.results_dir / "research_notes.md"))
 
@@ -148,6 +148,7 @@ class ResearchEnvironment:
         self.ground_truth_boxes: List[BBox] = []
         self.test_screenshots: List[Path] = []
         self.annotated_screenshot: Optional[Path] = None
+        self.boundary_width: int = 0
 
         # Detectors
         self.detectors = [
@@ -196,6 +197,12 @@ class ResearchEnvironment:
                 label=ann.get('label', '')
             ))
 
+        # Load boundary_width (default to 0 for backwards compatibility)
+        self.boundary_width = data.get('boundary_width', 0)
+
+        # Re-initialize evaluator with boundary_width
+        self.evaluator = Evaluator(iou_threshold=0.5, boundary_width=self.boundary_width)
+
         # Find annotated screenshot
         screenshot_name = data['screenshot']
         self.annotated_screenshot = self.screenshots_dir / screenshot_name
@@ -206,6 +213,8 @@ class ResearchEnvironment:
 
         print(f"✓ Loaded {len(self.ground_truth_boxes)} ground truth elements")
         print(f"✓ Annotated screenshot: {screenshot_name}")
+        if self.boundary_width > 0:
+            print(f"✓ Boundary tolerance: {self.boundary_width} pixels")
 
         # Load all other screenshots
         self.test_screenshots = [f for f in self.screenshots_dir.glob("*.png") if f != self.annotated_screenshot]
