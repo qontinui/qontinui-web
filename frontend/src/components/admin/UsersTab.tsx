@@ -6,15 +6,56 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Search, Filter, ChevronRight, Mail, Calendar, Activity, FolderOpen } from "lucide-react"
+import { Search, Filter, ChevronRight, Mail, Calendar, Activity, FolderOpen, Trash2 } from "lucide-react"
 import { useAdminUsers, type AdminUserData } from "@/hooks/use-admin"
+import { toast } from "sonner"
+import { ApiConfig } from "@/services/api-config"
+import { authService } from "@/services/service-factory"
 
 export default function UsersTab() {
-  const { data: users = [], isLoading: loading } = useAdminUsers({ limit: 1000 })
+  const { data: users = [], isLoading: loading, refetch } = useAdminUsers({ limit: 1000 })
   const [searchTerm, setSearchTerm] = useState("")
   const [tierFilter, setTierFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedUser, setSelectedUser] = useState<AdminUserData | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const handleDeleteUser = async (userId: string, username: string) => {
+    if (!confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
+      return
+    }
+
+    setIsDeleting(true)
+    try {
+      const accessToken = authService.tokenManager.getAccessToken()
+
+      if (!accessToken) {
+        throw new Error('Not authenticated')
+      }
+
+      const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete user')
+      }
+
+      toast.success(`User "${username}" deleted successfully`)
+      setSelectedUser(null)
+      refetch() // Refresh the users list
+    } catch (error) {
+      console.error('Error deleting user:', error)
+      toast.error('Failed to delete user. Please try again.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   const filteredUsers = useMemo(() => {
     let filtered = [...users]
@@ -210,9 +251,20 @@ export default function UsersTab() {
                   <div>{new Date(selectedUser.last_login).toLocaleString()}</div>
                 </div>
               )}
-              <Button variant="outline" onClick={() => setSelectedUser(null)} className="mt-4">
-                Close
-              </Button>
+              <div className="flex gap-2 mt-4">
+                <Button variant="outline" onClick={() => setSelectedUser(null)}>
+                  Close
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => handleDeleteUser(selectedUser.id, selectedUser.username)}
+                  disabled={isDeleting}
+                  className="ml-auto"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {isDeleting ? 'Deleting...' : 'Delete User'}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
