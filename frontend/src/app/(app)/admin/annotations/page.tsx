@@ -29,6 +29,8 @@ import {
   Plus,
   Eye,
   EyeOff,
+  LayoutDashboard,
+  Shield,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -604,6 +606,26 @@ export default function AnnotationsPage() {
           </div>
         </div>
       )}
+
+      {/* Navigation Links */}
+      <div className="mb-6 flex items-center gap-4">
+        <Button
+          variant="ghost"
+          onClick={() => router.push('/dashboard')}
+          className="hover:bg-primary/10"
+        >
+          <LayoutDashboard className="mr-2 h-4 w-4" />
+          Dashboard
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => router.push('/admin')}
+          className="hover:bg-secondary/10"
+        >
+          <Shield className="mr-2 h-4 w-4" />
+          Admin
+        </Button>
+      </div>
 
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">GUI Element Annotation Tool</h1>
