@@ -28,12 +28,22 @@ export default function UsersTab() {
     setIsDeleting(true)
     try {
       const accessToken = authService.tokenManager.getAccessToken()
+      console.log('[UsersTab] Delete user - Access token:', accessToken ? 'Present' : 'Missing')
+      console.log('[UsersTab] Access token preview:', accessToken?.substring(0, 20) + '...')
 
       if (!accessToken) {
+        console.error('[UsersTab] No access token available!')
         throw new Error('Not authenticated')
       }
 
-      const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/users/${userId}`, {
+      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/${userId}`
+      console.log('[UsersTab] DELETE request to:', url)
+      console.log('[UsersTab] Headers:', {
+        'Authorization': `Bearer ${accessToken.substring(0, 20)}...`,
+        'Content-Type': 'application/json',
+      })
+
+      const response = await fetch(url, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -42,15 +52,24 @@ export default function UsersTab() {
         credentials: 'include',
       })
 
+      console.log('[UsersTab] Response status:', response.status)
+      console.log('[UsersTab] Response ok:', response.ok)
+
       if (!response.ok) {
-        throw new Error('Failed to delete user')
+        const errorText = await response.text().catch(() => 'No error text')
+        console.error('[UsersTab] Delete failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+        })
+        throw new Error(`Failed to delete user: ${response.status} ${response.statusText}`)
       }
 
       toast.success(`User "${username}" deleted successfully`)
       setSelectedUser(null)
       refetch() // Refresh the users list
     } catch (error) {
-      console.error('Error deleting user:', error)
+      console.error('[UsersTab] Error deleting user:', error)
       toast.error('Failed to delete user. Please try again.')
     } finally {
       setIsDeleting(false)
