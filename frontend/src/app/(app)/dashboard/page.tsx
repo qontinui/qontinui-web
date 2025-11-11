@@ -157,7 +157,7 @@ export default function Dashboard() {
     if (!projectToDelete) return
 
     try {
-      await deleteProject.mutateAsync(parseInt(projectToDelete.id))
+      await deleteProject.mutateAsync(projectToDelete.id)
       toast.success('Project deleted successfully')
       setDeleteDialogOpen(false)
       setProjectToDelete(null)
