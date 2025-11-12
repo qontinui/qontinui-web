@@ -31,6 +31,7 @@ import {
   EyeOff,
   LayoutDashboard,
   Shield,
+  Sparkles,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -624,6 +625,14 @@ export default function AnnotationsPage() {
         >
           <Shield className="mr-2 h-4 w-4" />
           Admin
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => router.push('/admin/analysis')}
+          className="hover:bg-accent/10"
+        >
+          <Sparkles className="mr-2 h-4 w-4" />
+          Analysis
         </Button>
       </div>
 
