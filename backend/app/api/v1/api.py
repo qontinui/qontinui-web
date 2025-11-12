@@ -4,6 +4,7 @@ from app.api.v1.endpoints import (
     admin,
     admin_ws,
     analytics,
+    analysis,
     annotations,
     auth,
     background_removal,
@@ -37,3 +38,4 @@ api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
 api_router.include_router(annotations.router, prefix="/annotations", tags=["annotations"])
+api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
