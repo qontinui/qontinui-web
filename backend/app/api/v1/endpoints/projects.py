@@ -40,7 +40,8 @@ async def read_projects(
     logger.info(
         "get_projects_response", user_id=current_user.id, project_count=len(projects)
     )
-    return projects
+    # Convert ORM objects to Pydantic models so field_serializer can run
+    return [Project.model_validate(project) for project in projects]
 
 
 @router.post("/", response_model=Project)
