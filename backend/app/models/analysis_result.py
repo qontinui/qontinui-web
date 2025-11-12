@@ -84,7 +84,7 @@ class AnalyzerResult(Base):
     # Results
     elements_found = Column(Integer, default=0)
     confidence = Column(Float)  # Overall confidence from analyzer
-    metadata = Column(JSON)  # Analyzer-specific metadata
+    analyzer_metadata = Column(JSON)  # Analyzer-specific metadata
 
     # Timing
     execution_time_ms = Column(Integer)  # Execution time in milliseconds
@@ -125,7 +125,7 @@ class DetectedElementModel(Base):
     screenshot_index = Column(Integer, default=0, nullable=False, index=True)
 
     # Additional data
-    metadata = Column(JSON)
+    element_metadata = Column(JSON)
 
     # Relationships
     analyzer_result = relationship("AnalyzerResult", back_populates="detected_elements")
@@ -167,7 +167,7 @@ class FusedElement(Base):
     screenshot_index = Column(Integer, default=0, nullable=False, index=True)
 
     # Additional data
-    metadata = Column(JSON)
+    element_metadata = Column(JSON)
 
     # Relationships
     analysis_job = relationship("AnalysisJob", back_populates="fused_elements")
