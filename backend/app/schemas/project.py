@@ -2,13 +2,16 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic.functional_serializers import PlainSerializer
+from pydantic.functional_validators import BeforeValidator
 
 from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 
-# Custom type that accepts UUID and serializes to string
+# Custom type that accepts int, UUID, or str and serializes to string
+# The BeforeValidator converts any input to string first, then PlainSerializer ensures string output
 UuidAsString = Annotated[
-    UUID | str,
-    PlainSerializer(lambda v: str(v) if v else None, return_type=str),
+    str,
+    BeforeValidator(lambda v: str(v) if v is not None else None),
+    PlainSerializer(lambda v: str(v) if v is not None else None, return_type=str),
 ]
 
 
