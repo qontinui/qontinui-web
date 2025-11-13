@@ -1,18 +1,18 @@
 """
-CRUD operations for snapshots
+CRUD operations for snapshots (async)
 """
 
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import desc, func
-from sqlalchemy.orm import Session
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.snapshot import Pattern, Screenshot, SnapshotRun
 
 
-def create_snapshot_run(
-    db: Session,
+async def create_snapshot_run(
+    db: AsyncSession,
     run_id: str,
     run_name: str,
     timestamp: datetime,
@@ -38,23 +38,25 @@ def create_snapshot_run(
         num_patterns=0,
     )
     db.add(snapshot_run)
-    db.commit()
-    db.refresh(snapshot_run)
+    await db.commit()
+    await db.refresh(snapshot_run)
     return snapshot_run
 
 
-def get_snapshot_run(db: Session, run_id: str) -> SnapshotRun | None:
+async def get_snapshot_run(db: AsyncSession, run_id: str) -> SnapshotRun | None:
     """Get a snapshot run by run_id"""
-    return db.query(SnapshotRun).filter(SnapshotRun.run_id == run_id).first()
+    result = await db.execute(select(SnapshotRun).filter(SnapshotRun.run_id == run_id))
+    return result.scalar_one_or_none()
 
 
-def get_snapshot_run_by_id(db: Session, id: int) -> SnapshotRun | None:
+async def get_snapshot_run_by_id(db: AsyncSession, id: int) -> SnapshotRun | None:
     """Get a snapshot run by database ID"""
-    return db.query(SnapshotRun).filter(SnapshotRun.id == id).first()
+    result = await db.execute(select(SnapshotRun).filter(SnapshotRun.id == id))
+    return result.scalar_one_or_none()
 
 
-def list_snapshot_runs(
-    db: Session,
+async def list_snapshot_runs(
+    db: AsyncSession,
     skip: int = 0,
     limit: int = 50,
     project_id: int | None = None,
@@ -67,7 +69,7 @@ def list_snapshot_runs(
     Returns:
         tuple of (runs, total_count)
     """
-    query = db.query(SnapshotRun)
+    query = select(SnapshotRun)
 
     # Apply filters
     if project_id is not None:
@@ -82,21 +84,24 @@ def list_snapshot_runs(
             query = query.filter(SnapshotRun.tags.contains([tag]))
 
     # Get total count
-    total = query.count()
+    count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total = count_result.scalar_one()
 
     # Order by timestamp descending (most recent first)
-    runs = query.order_by(desc(SnapshotRun.timestamp)).offset(skip).limit(limit).all()
+    query = query.order_by(desc(SnapshotRun.timestamp)).offset(skip).limit(limit)
+    result = await db.execute(query)
+    runs = list(result.scalars().all())
 
     return runs, total
 
 
-def update_snapshot_run(
-    db: Session,
+async def update_snapshot_run(
+    db: AsyncSession,
     run_id: str,
     **kwargs: Any,
 ) -> SnapshotRun | None:
     """Update a snapshot run"""
-    snapshot_run = get_snapshot_run(db, run_id)
+    snapshot_run = await get_snapshot_run(db, run_id)
     if not snapshot_run:
         return None
 
@@ -105,24 +110,24 @@ def update_snapshot_run(
             setattr(snapshot_run, key, value)
 
     snapshot_run.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(snapshot_run)
+    await db.commit()
+    await db.refresh(snapshot_run)
     return snapshot_run
 
 
-def delete_snapshot_run(db: Session, run_id: str) -> bool:
+async def delete_snapshot_run(db: AsyncSession, run_id: str) -> bool:
     """Delete a snapshot run and all associated data"""
-    snapshot_run = get_snapshot_run(db, run_id)
+    snapshot_run = await get_snapshot_run(db, run_id)
     if not snapshot_run:
         return False
 
-    db.delete(snapshot_run)
-    db.commit()
+    await db.delete(snapshot_run)
+    await db.commit()
     return True
 
 
-def add_screenshot(
-    db: Session,
+async def add_screenshot(
+    db: AsyncSession,
     snapshot_run_id: int,
     screenshot_path: str,
     active_states: list[str],
@@ -146,18 +151,18 @@ def add_screenshot(
     db.add(screenshot)
 
     # Update snapshot run screenshot count
-    snapshot_run = get_snapshot_run_by_id(db, snapshot_run_id)
+    snapshot_run = await get_snapshot_run_by_id(db, snapshot_run_id)
     if snapshot_run:
         snapshot_run.num_screenshots += 1
         snapshot_run.updated_at = datetime.utcnow()
 
-    db.commit()
-    db.refresh(screenshot)
+    await db.commit()
+    await db.refresh(screenshot)
     return screenshot
 
 
-def add_pattern(
-    db: Session,
+async def add_pattern(
+    db: AsyncSession,
     snapshot_run_id: int,
     pattern_id: str,
     name: str,
@@ -183,59 +188,53 @@ def add_pattern(
     db.add(pattern)
 
     # Update snapshot run pattern count
-    snapshot_run = get_snapshot_run_by_id(db, snapshot_run_id)
+    snapshot_run = await get_snapshot_run_by_id(db, snapshot_run_id)
     if snapshot_run:
         snapshot_run.num_patterns += 1
         snapshot_run.updated_at = datetime.utcnow()
 
-    db.commit()
-    db.refresh(pattern)
+    await db.commit()
+    await db.refresh(pattern)
     return pattern
 
 
-def get_screenshots_by_state(
-    db: Session,
+async def get_screenshots_by_state(
+    db: AsyncSession,
     snapshot_run_id: int,
     state_name: str,
 ) -> list[Screenshot]:
     """Get all screenshots from a snapshot run that include a specific state"""
-    return (
-        db.query(Screenshot)
-        .filter(
-            Screenshot.snapshot_run_id == snapshot_run_id,
-            Screenshot.active_states.contains([state_name]),
-        )
-        .all()
+    query = select(Screenshot).filter(
+        Screenshot.snapshot_run_id == snapshot_run_id,
+        Screenshot.active_states.contains([state_name]),
     )
+    result = await db.execute(query)
+    return list(result.scalars().all())
 
 
-def get_patterns_by_state(
-    db: Session,
+async def get_patterns_by_state(
+    db: AsyncSession,
     snapshot_run_id: int,
     state_name: str,
 ) -> list[Pattern]:
     """Get all patterns from a snapshot run that are active in a specific state"""
-    return (
-        db.query(Pattern)
-        .filter(
-            Pattern.snapshot_run_id == snapshot_run_id,
-            Pattern.active_states.contains([state_name]),
-        )
-        .all()
+    query = select(Pattern).filter(
+        Pattern.snapshot_run_id == snapshot_run_id,
+        Pattern.active_states.contains([state_name]),
     )
+    result = await db.execute(query)
+    return list(result.scalars().all())
 
 
-def get_patterns_by_type(
-    db: Session,
+async def get_patterns_by_type(
+    db: AsyncSession,
     snapshot_run_id: int,
     pattern_type: str,
 ) -> list[Pattern]:
     """Get all patterns of a specific type from a snapshot run"""
-    return (
-        db.query(Pattern)
-        .filter(
-            Pattern.snapshot_run_id == snapshot_run_id,
-            Pattern.type == pattern_type,
-        )
-        .all()
+    query = select(Pattern).filter(
+        Pattern.snapshot_run_id == snapshot_run_id,
+        Pattern.type == pattern_type,
     )
+    result = await db.execute(query)
+    return list(result.scalars().all())
