@@ -11,4 +11,5 @@ from app.models.session_activity import SessionActivity  # noqa
 from app.models.device_session import DeviceSession  # noqa
 from app.models.annotation import AnnotationSet, Annotation  # noqa
 from app.models.snapshot import SnapshotRun, Screenshot, Pattern  # noqa
+from app.models.analytics_event import AnalyticsEvent  # noqa
 from app.models.project import Project  # noqa
