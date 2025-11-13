@@ -105,6 +105,7 @@ import sys
 sys.path.insert(0, '${backendDir.replace(/\\/g, '/')}')
 
 from app.db.session import AsyncSessionLocal
+from app.db.base_class import Base  # Import to register all models
 from tests.utils.seed_snapshot_data import create_test_snapshots
 
 async def seed():
