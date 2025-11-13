@@ -75,6 +75,21 @@ jobs:
     name: Frontend E2E Tests
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     strategy:
       matrix:
         node-version: [20]
@@ -110,6 +125,18 @@ jobs:
       - name: Install Playwright browsers
         working-directory: ./frontend
         run: npx playwright install --with-deps chromium
+
+      - name: Run database migrations
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: '1'
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: 'false'
+        run: |
+          alembic upgrade head
 
       - name: Run frontend E2E tests
         working-directory: ./frontend
