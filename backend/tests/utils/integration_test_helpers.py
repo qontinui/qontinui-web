@@ -54,7 +54,7 @@ def create_test_snapshot(
 
     # Create mock pattern data
     patterns = []
-    if include_patterns:
+    if include_patterns and num_screenshots > 0:
         pattern_types = ["button", "input", "menu", "icon", "text"]
         for i in range(10):
             patterns.append(
