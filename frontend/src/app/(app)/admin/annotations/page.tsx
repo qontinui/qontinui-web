@@ -33,6 +33,7 @@ import {
   LayoutDashboard,
   Shield,
   Sparkles,
+  Grid3x3,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -817,7 +818,15 @@ export default function AnnotationsPage() {
           className="hover:bg-accent/10"
         >
           <Sparkles className="mr-2 h-4 w-4" />
-          Analysis
+          Element Analysis
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => router.push('/admin/region-analysis')}
+          className="hover:bg-accent/10"
+        >
+          <Grid3x3 className="mr-2 h-4 w-4" />
+          Region Analysis
         </Button>
       </div>
 
