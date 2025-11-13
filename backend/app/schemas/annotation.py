@@ -2,9 +2,10 @@
 Pydantic schemas for annotation API
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict, field_serializer
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from uuid import UUID
 
 
 # Screenshot schema for multi-screenshot support
@@ -52,8 +53,15 @@ class AnnotationResponse(AnnotationBase):
     annotation_set_id: str
     order: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('id', 'annotation_set_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        """Convert UUID objects to strings before validation"""
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
 
 # Annotation Set schemas
@@ -126,8 +134,15 @@ class AnnotationSetResponse(AnnotationSetBase):
     created_by_id: str
     annotations: List[AnnotationResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('id', 'created_by_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        """Convert UUID objects to strings before validation"""
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     @property
     def screenshot_count(self) -> int:
