@@ -104,11 +104,11 @@ import asyncio
 import sys
 sys.path.insert(0, '${backendDir.replace(/\\/g, '/')}')
 
-from app.db.session import async_session_maker
+from app.db.session import AsyncSessionLocal
 from tests.utils.seed_snapshot_data import create_test_snapshots
 
 async def seed():
-    async with async_session_maker() as db:
+    async with AsyncSessionLocal() as db:
         run_ids = await create_test_snapshots(db)
         print(f"Created {len(run_ids)} test snapshots")
 
