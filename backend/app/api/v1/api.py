@@ -28,6 +28,7 @@ from app.api.v1.endpoints import (
     project_files,
     projects,
     public,
+    recordings,
     region_analysis,
     runners,
     security,
@@ -114,3 +115,4 @@ api_router.include_router(testing.router, prefix="/testing", tags=["testing"])
 api_router.include_router(
     training_datasets.router, prefix="/datasets", tags=["training-datasets"]
 )
+api_router.include_router(recordings.router, prefix="/recordings", tags=["recordings"])
