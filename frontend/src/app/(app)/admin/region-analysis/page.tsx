@@ -1,9 +1,9 @@
 'use client'
 
 /**
- * GUI Element Analysis Page
+ * Region Analysis Page
  *
- * Admin page for running and viewing GUI element detection analysis
+ * Admin page for running and viewing region detection analysis (including grid detection)
  */
 
 import { useEffect, useState } from 'react'
@@ -21,8 +21,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { LayoutDashboard, Shield, Sparkles, Grid3x3 } from 'lucide-react'
-import { AnalysisPanel, AnalysisResults, AnalysisJobList } from '@/components/analysis'
-import type { AnalysisResponse } from '@/services/analysis'
+import { RegionAnalysisPanel, RegionAnalysisResults, RegionJobList } from '@/components/region-analysis'
+import type { RegionAnalysisResponse } from '@/services/regionAnalysis'
 
 interface AnnotationSet {
   id: string
@@ -35,7 +35,7 @@ interface AnnotationSet {
   annotations_count: number
 }
 
-export default function AnalysisPage() {
+export default function RegionAnalysisPage() {
   const { user, loading: authLoading, getAccessToken } = useAuth()
   const router = useRouter()
   const [token, setToken] = useState<string>('')
@@ -46,7 +46,7 @@ export default function AnalysisPage() {
   const [isLoadingSets, setIsLoadingSets] = useState(true)
 
   // Analysis results
-  const [analysisResults, setAnalysisResults] = useState<AnalysisResponse | null>(null)
+  const [analysisResults, setAnalysisResults] = useState<RegionAnalysisResponse | null>(null)
 
   // Protection
   useEffect(() => {
@@ -108,9 +108,9 @@ export default function AnalysisPage() {
     }
   }
 
-  const handleAnalysisComplete = (results: AnalysisResponse) => {
+  const handleAnalysisComplete = (results: RegionAnalysisResponse) => {
     setAnalysisResults(results)
-    toast.success('Analysis complete! View results in the Results tab.')
+    toast.success('Region analysis complete! View results in the Results tab.')
   }
 
   const selectedSet = annotationSets.find((s) => s.id === selectedSetId)
@@ -149,21 +149,21 @@ export default function AnalysisPage() {
         </Button>
         <Button
           variant="ghost"
-          onClick={() => router.push('/admin/region-analysis')}
+          onClick={() => router.push('/admin/analysis')}
           className="hover:bg-accent/10"
         >
-          <Grid3x3 className="mr-2 h-4 w-4" />
-          Region Analysis
+          <Sparkles className="mr-2 h-4 w-4" />
+          Element Analysis
         </Button>
       </div>
 
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
-          <Sparkles className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold">GUI Element Analysis</h1>
+          <Grid3x3 className="h-8 w-8 text-primary" />
+          <h1 className="text-3xl font-bold">Region Analysis</h1>
         </div>
         <p className="text-muted-foreground">
-          Run automated analysis to detect GUI elements using multiple detection methods
+          Run automated analysis to detect UI regions and grid structures using specialized region analyzers
         </p>
       </div>
 
@@ -172,7 +172,7 @@ export default function AnalysisPage() {
         <CardHeader>
           <CardTitle>Select Annotation Set</CardTitle>
           <CardDescription>
-            Choose an annotation set to analyze
+            Choose an annotation set to analyze for regions and grids
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -248,7 +248,7 @@ export default function AnalysisPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Configuration Panel */}
               <div className="lg:col-span-1">
-                <AnalysisPanel
+                <RegionAnalysisPanel
                   annotationSetId={selectedSetId}
                   token={token}
                   onAnalysisComplete={handleAnalysisComplete}
@@ -280,7 +280,7 @@ export default function AnalysisPage() {
 
           <TabsContent value="results" className="space-y-6">
             {analysisResults ? (
-              <AnalysisResults
+              <RegionAnalysisResults
                 results={analysisResults}
                 imageUrl={selectedSet?.screenshot_url}
                 imageWidth={selectedSet?.image_width}
@@ -290,10 +290,10 @@ export default function AnalysisPage() {
               <Card>
                 <CardContent className="py-12">
                   <div className="text-center text-muted-foreground">
-                    <Sparkles className="mx-auto h-12 w-12 mb-4" />
-                    <p>No analysis results yet</p>
+                    <Grid3x3 className="mx-auto h-12 w-12 mb-4" />
+                    <p>No region analysis results yet</p>
                     <p className="text-sm mt-2">
-                      Run an analysis to see results here
+                      Run a region analysis to see results here
                     </p>
                   </div>
                 </CardContent>
@@ -302,24 +302,25 @@ export default function AnalysisPage() {
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
-            <AnalysisJobList
+            <RegionJobList
               token={token}
               annotationSetId={selectedSetId}
               onJobSelect={(job) => {
-                // Convert job to AnalysisResponse format
-                const results: AnalysisResponse = {
+                // Convert job to RegionAnalysisResponse format
+                const results: RegionAnalysisResponse = {
                   analysis_job_id: job.id,
                   annotation_set_id: job.annotation_set_id,
                   analyzer_results: [],
-                  fused_elements: job.fused_elements,
+                  fused_regions: job.fused_regions,
                   analyzer_statistics: job.analyzer_statistics || {},
                   fusion_stats: {
-                    total_elements: job.total_fused_elements,
+                    total_regions: job.total_fused_regions,
                     avg_confidence:
-                      job.fused_elements.reduce((sum, e) => sum + e.confidence, 0) /
-                      job.fused_elements.length,
-                    multi_vote_elements: job.fused_elements.filter((e) => e.votes > 1)
+                      job.fused_regions.reduce((sum, r) => sum + r.confidence, 0) /
+                      job.fused_regions.length,
+                    multi_vote_regions: job.fused_regions.filter((r) => r.votes > 1)
                       .length,
+                    total_grid_cells: job.total_grid_cells,
                   },
                   status: job.status,
                 }
