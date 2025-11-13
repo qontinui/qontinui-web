@@ -99,22 +99,7 @@ async function globalSetup(config: FullConfig) {
   console.log('Seeding test snapshot data...');
   const seedProcess = spawn(
     'python',
-    ['-c', `
-import asyncio
-import sys
-sys.path.insert(0, '${backendDir.replace(/\\/g, '/')}')
-
-from app.db.session import AsyncSessionLocal
-from app.db.base_class import Base  # Import to register all models
-from tests.utils.seed_snapshot_data import create_test_snapshots
-
-async def seed():
-    async with AsyncSessionLocal() as db:
-        run_ids = await create_test_snapshots(db)
-        print(f"Created {len(run_ids)} test snapshots")
-
-asyncio.run(seed())
-    `],
+    [path.join(backendDir, 'tests', 'utils', 'run_seed.py')],
     {
       cwd: backendDir,
       stdio: 'pipe',
