@@ -541,8 +541,24 @@ async def start_processing(
 
     await db.commit()
 
-    # TODO: Queue Celery task for processing
-    # background_tasks.add_task(process_recording_task, recording_id)
+    # Queue ARQ task for processing
+    try:
+        from app.worker.queue import get_arq_pool
+        pool = await get_arq_pool()
+        job = await pool.enqueue_job(
+            "process_recording_task",
+            recording_id
+        )
+        logger.info(f"Queued processing task for recording {recording_id}", job_id=job.job_id if job else None)
+    except Exception as e:
+        logger.error(f"Failed to queue processing task: {str(e)}", exc_info=True)
+        # Revert status
+        recording.status = RecordingStatus.UPLOADED
+        recording.processing_phase = None
+        recording.processing_progress = 0.0
+        recording.processing_started_at = None
+        await db.commit()
+        raise HTTPException(status_code=500, detail=f"Failed to start processing: {str(e)}")
 
     return {
         "success": True,
