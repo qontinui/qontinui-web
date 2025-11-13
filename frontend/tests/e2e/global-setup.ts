@@ -141,11 +141,25 @@ async function globalSetup(config: FullConfig) {
   });
 
   // Start frontend dev server
+  const frontendUrl = 'http://localhost:3001';
+
   console.log('Starting frontend dev server...');
+
+  // Check if frontend is already running
+  try {
+    const response = await fetch(frontendUrl);
+    if (response.ok || response.status === 404) {
+      console.log('Frontend is already running, skipping startup');
+      return;
+    }
+  } catch (error) {
+    // Frontend not running, start it
+  }
+
   const frontendDir = path.resolve(__dirname, '../..');
   const frontendProcess = spawn(
     'npm',
-    ['run', 'dev', '--', '--port', '3001'],
+    ['run', 'dev'],
     {
       cwd: frontendDir,
       stdio: 'pipe',
@@ -173,7 +187,6 @@ async function globalSetup(config: FullConfig) {
   });
 
   // Wait for frontend to be ready
-  const frontendUrl = 'http://localhost:3001';
   let frontendReady = false;
   for (let i = 0; i < 60; i++) {
     try {
