@@ -34,14 +34,14 @@ next.config.js
 frontend/scripts
 
 # Development documentation (excluded - moved to qontinui-dev-notes)
-docs/
+# docs/ - REMOVED: Need to include automated state discovery docs
 
 # Markdown documentation files (all moved to qontinui-dev-notes)
 # Ignore all .md files except essential root-level files
-*.md
-!README.md
-!CONTRIBUTING.md
-!CODE_OF_CONDUCT.md
+# *.md - REMOVED: Need to include automated state discovery docs
+# !README.md
+# !CONTRIBUTING.md
+# !CODE_OF_CONDUCT.md
 
 # IDE
 .vscode/
