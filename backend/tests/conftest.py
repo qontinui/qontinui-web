@@ -13,6 +13,18 @@ from fastapi.testclient import TestClient
 os.environ["TESTING"] = "1"
 os.environ["ENVIRONMENT"] = "development"  # Use development for tests
 
+# Set required configuration for tests
+os.environ["DATABASE_URL"] = "postgresql://test_user:test_password@localhost:5432/test_db"
+os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-not-for-production"
+os.environ["ACCESS_SECRET_KEY"] = "test-access-secret-key"
+os.environ["RESET_PASSWORD_SECRET_KEY"] = "test-reset-password-secret-key"
+os.environ["VERIFICATION_SECRET_KEY"] = "test-verification-secret-key"
+os.environ["ALGORITHM"] = "HS256"
+os.environ["FRONTEND_URL"] = "http://localhost:3000"
+os.environ["BACKEND_CORS_ORIGINS"] = '["http://localhost:3000"]'
+os.environ["STORAGE_BACKEND"] = "local"
+os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
+
 
 @pytest.fixture(scope="session")
 def test_client() -> Generator[TestClient, None, None]:
