@@ -49,13 +49,29 @@ async function globalSetup(config: FullConfig) {
   }
 
   // Start backend with uvicorn
+  // Use python -m uvicorn to ensure it works in all environments
   backendProcess = spawn(
-    'uvicorn',
-    ['app.main:app', '--host', '0.0.0.0', '--port', '8000'],
+    'python',
+    ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000'],
     {
       cwd: backendDir,
       stdio: 'pipe',
       detached: false,
+      env: {
+        ...process.env,
+        TESTING: '1',
+        ENVIRONMENT: 'development',
+        DATABASE_URL: 'postgresql://test_user:test_password@localhost:5432/test_db',
+        SECRET_KEY: 'test-secret-key-for-testing-only-not-for-production',
+        ACCESS_SECRET_KEY: 'test-access-secret-key',
+        RESET_PASSWORD_SECRET_KEY: 'test-reset-password-secret-key',
+        VERIFICATION_SECRET_KEY: 'test-verification-secret-key',
+        ALGORITHM: 'HS256',
+        FRONTEND_URL: 'http://localhost:3000',
+        BACKEND_CORS_ORIGINS: '["http://localhost:3000"]',
+        STORAGE_BACKEND: 'local',
+        REDIS_ENABLED: 'false',
+      },
     }
   );
 
