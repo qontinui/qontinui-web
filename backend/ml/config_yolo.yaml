@@ -1,0 +1,42 @@
+# YOLO-specific Training Configuration for Button Detection
+
+# Model Configuration
+model: yolov8  # Options: yolov8, yolov5
+model_size: n  # Options: n (nano), s (small), m (medium), l (large), x (xlarge)
+num_classes: 4
+pretrained: true
+
+# Training Configuration
+epochs: 100  # YOLO typically needs more epochs
+batch_size: 16  # Smaller batch size for YOLO
+img_size: 640  # Standard YOLO input size
+num_workers: 8
+
+# YOLO Data Configuration
+# data.yaml format:
+# path: /path/to/dataset
+# train: images/train
+# val: images/val
+# nc: 4
+# names: ['primary_button', 'secondary_button', 'icon_button', 'text_button']
+data_yaml: /path/to/button_dataset/data.yaml
+
+# YOLO-specific parameters
+conf_threshold: 0.25
+iou_threshold: 0.45
+max_det: 100
+
+# Checkpointing
+checkpoint_dir: checkpoints/yolo
+log_dir: runs/yolo_button_detector
+
+# GPU Configuration
+use_gpu: true
+
+# Additional YOLO training parameters (passed to YOLO train method)
+patience: 10  # Early stopping patience
+save: true  # Save checkpoints
+save_period: 5  # Save checkpoint every N epochs
+workers: 8
+project: button_detection
+name: yolov8_button_detector
