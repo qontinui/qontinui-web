@@ -136,7 +136,7 @@ jobs:
           STORAGE_BACKEND: local
           REDIS_ENABLED: 'false'
         run: |
-          alembic upgrade head
+          alembic upgrade heads
 
       - name: Run frontend E2E tests
         working-directory: ./frontend
