@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import desc, select, delete as sql_delete, func
 from sqlalchemy.orm import selectinload
 import io
+import structlog
 
 from app.api import deps
 from app.models.user import User
@@ -24,6 +25,8 @@ from app.services.object_storage import object_storage
 import uuid
 from datetime import datetime
 
+logger = structlog.get_logger(__name__)
+
 router = APIRouter()
 
 
@@ -36,6 +39,12 @@ async def upload_screenshot(
     Upload a screenshot for annotations and return the permanent URL.
     This must be called before creating an annotation set to get a permanent URL.
     """
+    logger.info(
+        "upload_screenshot_called",
+        user_id=str(current_user.id),
+        is_superuser=current_user.is_superuser,
+        filename=file.filename,
+    )
     # Validate file type
     if not file.content_type or not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="File must be an image")
@@ -47,13 +56,21 @@ async def upload_screenshot(
 
         # Generate unique filename
         file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'png'
-        unique_filename = f"annotations/{str(current_user.id)}/{uuid.uuid4()}.{file_extension}"
+        unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
-        # Upload to S3/MinIO
-        url = object_storage.upload_file(
+        # Upload to S3/MinIO using the backend directly
+        key = f"annotations/{str(current_user.id)}/{unique_filename}"
+        url = object_storage.backend.upload_file(
             file_obj=file_obj,
-            key=unique_filename,
+            key=key,
             content_type=file.content_type,
+        )
+
+        logger.info(
+            "screenshot_uploaded",
+            user_id=str(current_user.id),
+            key=key,
+            url=url,
         )
 
         return {
