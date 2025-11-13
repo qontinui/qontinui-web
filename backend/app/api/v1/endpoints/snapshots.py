@@ -8,9 +8,9 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db
+from app.api.deps import get_async_db
 from app.crud import snapshot as snapshot_crud
 from app.schemas.snapshot import (
     SnapshotRun,
@@ -24,22 +24,22 @@ router = APIRouter()
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=SnapshotRun)
-def create_snapshot_run(
+async def create_snapshot_run(
     snapshot_data: SnapshotRunCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """
     Create a new snapshot run
     """
     # Check if run_id already exists
-    existing = snapshot_crud.get_snapshot_run(db, snapshot_data.run_id)
+    existing = await snapshot_crud.get_snapshot_run(db, snapshot_data.run_id)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Snapshot run with run_id '{snapshot_data.run_id}' already exists",
         )
 
-    snapshot_run = snapshot_crud.create_snapshot_run(
+    snapshot_run = await snapshot_crud.create_snapshot_run(
         db=db,
         run_id=snapshot_data.run_id,
         run_name=snapshot_data.run_name,
@@ -56,13 +56,13 @@ def create_snapshot_run(
 
 
 @router.get("/", response_model=SnapshotRunListResponse)
-def list_snapshot_runs(
+async def list_snapshot_runs(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     project_id: int | None = Query(None),
     workflow_id: int | None = Query(None),
     tags: str | None = Query(None, description="Comma-separated list of tags"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """
     List snapshot runs with optional filtering
@@ -76,7 +76,7 @@ def list_snapshot_runs(
     # Parse tags if provided
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
 
-    runs, total = snapshot_crud.list_snapshot_runs(
+    runs, total = await snapshot_crud.list_snapshot_runs(
         db=db,
         skip=skip,
         limit=limit,
@@ -94,14 +94,14 @@ def list_snapshot_runs(
 
 
 @router.get("/{run_id}", response_model=SnapshotRunDetail)
-def get_snapshot_run(
+async def get_snapshot_run(
     run_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """
     Get a specific snapshot run with full details
     """
-    snapshot_run = snapshot_crud.get_snapshot_run(db, run_id)
+    snapshot_run = await snapshot_crud.get_snapshot_run(db, run_id)
     if not snapshot_run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -112,10 +112,10 @@ def get_snapshot_run(
 
 
 @router.patch("/{run_id}", response_model=SnapshotRun)
-def update_snapshot_run(
+async def update_snapshot_run(
     run_id: str,
     snapshot_data: SnapshotRunUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """
     Update a snapshot run
@@ -123,7 +123,7 @@ def update_snapshot_run(
     # Only update fields that were provided
     update_data = snapshot_data.model_dump(exclude_unset=True)
 
-    snapshot_run = snapshot_crud.update_snapshot_run(db, run_id, **update_data)
+    snapshot_run = await snapshot_crud.update_snapshot_run(db, run_id, **update_data)
     if not snapshot_run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -134,17 +134,17 @@ def update_snapshot_run(
 
 
 @router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_snapshot_run(
+async def delete_snapshot_run(
     run_id: str,
     delete_files: bool = Query(False, description="Also delete associated files from storage"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> None:
     """
     Delete a snapshot run
 
     - **delete_files**: If true, also delete associated screenshot files from storage
     """
-    success = snapshot_crud.delete_snapshot_run(db, run_id)
+    success = await snapshot_crud.delete_snapshot_run(db, run_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -158,15 +158,15 @@ def delete_snapshot_run(
 
 
 @router.get("/{run_id}/screenshots", response_model=dict[str, Any])
-def get_snapshot_screenshots(
+async def get_snapshot_screenshots(
     run_id: str,
     state: str | None = Query(None, description="Filter by active state"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """
     Get screenshots from a snapshot run, optionally filtered by state
     """
-    snapshot_run = snapshot_crud.get_snapshot_run(db, run_id)
+    snapshot_run = await snapshot_crud.get_snapshot_run(db, run_id)
     if not snapshot_run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -174,7 +174,7 @@ def get_snapshot_screenshots(
         )
 
     if state:
-        screenshots = snapshot_crud.get_screenshots_by_state(db, snapshot_run.id, state)
+        screenshots = await snapshot_crud.get_screenshots_by_state(db, snapshot_run.id, state)
     else:
         screenshots = snapshot_run.screenshots
 
@@ -186,16 +186,16 @@ def get_snapshot_screenshots(
 
 
 @router.get("/{run_id}/patterns", response_model=dict[str, Any])
-def get_snapshot_patterns(
+async def get_snapshot_patterns(
     run_id: str,
     state: str | None = Query(None, description="Filter by active state"),
     pattern_type: str | None = Query(None, description="Filter by pattern type"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """
     Get patterns from a snapshot run, optionally filtered by state or type
     """
-    snapshot_run = snapshot_crud.get_snapshot_run(db, run_id)
+    snapshot_run = await snapshot_crud.get_snapshot_run(db, run_id)
     if not snapshot_run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -203,9 +203,9 @@ def get_snapshot_patterns(
         )
 
     if state:
-        patterns = snapshot_crud.get_patterns_by_state(db, snapshot_run.id, state)
+        patterns = await snapshot_crud.get_patterns_by_state(db, snapshot_run.id, state)
     elif pattern_type:
-        patterns = snapshot_crud.get_patterns_by_type(db, snapshot_run.id, pattern_type)
+        patterns = await snapshot_crud.get_patterns_by_type(db, snapshot_run.id, pattern_type)
     else:
         patterns = snapshot_run.patterns
 
