@@ -14,6 +14,13 @@ from .analyzers import (
     # Single Shot
     SingleShotEdgeAnalyzer,
     SingleShotColorAnalyzer,
+    # Specialized GUI Element Detectors
+    InputFieldDetector,
+    DropdownDetector,
+    MenuBarDetector,
+    SidebarDetector,
+    IconButtonDetector,
+    ModalDialogDetector,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +41,14 @@ def register_default_analyzers():
     # Register Single Shot analyzers
     analyzer_registry.register(SingleShotEdgeAnalyzer)
     analyzer_registry.register(SingleShotColorAnalyzer)
+
+    # Register Specialized GUI Element Detectors
+    analyzer_registry.register(InputFieldDetector)
+    analyzer_registry.register(DropdownDetector)
+    analyzer_registry.register(MenuBarDetector)
+    analyzer_registry.register(SidebarDetector)
+    analyzer_registry.register(IconButtonDetector)
+    analyzer_registry.register(ModalDialogDetector)
 
     registered = analyzer_registry.list_analyzers()
     logger.info(f"Registered {len(registered)} analyzers:")
