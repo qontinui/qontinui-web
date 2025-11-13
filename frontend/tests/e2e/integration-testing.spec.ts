@@ -519,9 +519,9 @@ test.describe('Integration Testing - Error States', () => {
     });
 
     // Trigger execution
-    const executeButton = page.locator(
-      'button:has-text("Execute"), [data-testid="execute-button"]'
-    );
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .last();
     if (await executeButton.isVisible()) {
       await executeButton.click();
 
@@ -539,9 +539,9 @@ test.describe('Integration Testing - Error States', () => {
     });
 
     // Trigger execution
-    const executeButton = page.locator(
-      'button:has-text("Execute"), [data-testid="execute-button"]'
-    );
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .last();
     if (await executeButton.isVisible()) {
       await executeButton.click();
 
@@ -554,9 +554,9 @@ test.describe('Integration Testing - Error States', () => {
 
   test('should handle missing snapshots error', async ({ page }) => {
     // Try to execute without selecting snapshots
-    const executeButton = page.locator(
-      'button:has-text("Execute"), [data-testid="execute-button"]'
-    );
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .last();
 
     if (await executeButton.isVisible()) {
       await executeButton.click();
@@ -650,9 +650,9 @@ test.describe('Integration Testing - Visualization', () => {
     page,
   }) => {
     // Execute process
-    const executeButton = page.locator(
-      'button:has-text("Execute"), [data-testid="execute-button"]'
-    );
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .last();
     if (await executeButton.isVisible()) {
       await executeButton.click();
       await page.waitForTimeout(1000);
@@ -671,9 +671,9 @@ test.describe('Integration Testing - Visualization', () => {
 
   test('should navigate through timeline steps', async ({ page }) => {
     // Execute process
-    const executeButton = page.locator(
-      'button:has-text("Execute"), [data-testid="execute-button"]'
-    );
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .last();
     if (await executeButton.isVisible()) {
       await executeButton.click();
       await page.waitForTimeout(1000);
@@ -704,9 +704,9 @@ test.describe('Integration Testing - Visualization', () => {
 
   test('should display action details on selection', async ({ page }) => {
     // Execute process
-    const executeButton = page.locator(
-      'button:has-text("Execute"), [data-testid="execute-button"]'
-    );
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .last();
     if (await executeButton.isVisible()) {
       await executeButton.click();
       await page.waitForTimeout(1000);
