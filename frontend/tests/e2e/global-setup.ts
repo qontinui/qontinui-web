@@ -95,6 +95,65 @@ async function globalSetup(config: FullConfig) {
     throw new Error('Backend failed to start within timeout period');
   }
 
+  // Seed test data in the database
+  console.log('Seeding test snapshot data...');
+  const seedProcess = spawn(
+    'python',
+    ['-c', `
+import asyncio
+import sys
+sys.path.insert(0, '${backendDir.replace(/\\/g, '/')}')
+
+from app.db.session import async_session_maker
+from tests.utils.seed_snapshot_data import create_test_snapshots
+
+async def seed():
+    async with async_session_maker() as db:
+        run_ids = await create_test_snapshots(db)
+        print(f"Created {len(run_ids)} test snapshots")
+
+asyncio.run(seed())
+    `],
+    {
+      cwd: backendDir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        TESTING: '1',
+        ENVIRONMENT: 'development',
+        DATABASE_URL: 'postgresql://test_user:test_password@localhost:5432/test_db',
+        SECRET_KEY: 'test-secret-key-for-testing-only-minimum-32-chars-required',
+        STORAGE_BACKEND: 'local',
+        REDIS_ENABLED: 'false',
+      },
+    }
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    let output = '';
+    let errorOutput = '';
+
+    seedProcess.stdout?.on('data', (data) => {
+      output += data.toString();
+      console.log(`Seed: ${data}`);
+    });
+
+    seedProcess.stderr?.on('data', (data) => {
+      errorOutput += data.toString();
+      console.error(`Seed Error: ${data}`);
+    });
+
+    seedProcess.on('close', (code) => {
+      if (code === 0) {
+        console.log('Test data seeding complete');
+        resolve();
+      } else {
+        console.error('Seeding failed:', errorOutput);
+        reject(new Error(`Seeding failed with code ${code}`));
+      }
+    });
+  });
+
   console.log('Global E2E test setup complete');
 }
 

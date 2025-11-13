@@ -16,16 +16,16 @@
 import { test, expect } from './fixtures';
 
 test.describe('Integration Testing - Complete Workflow', () => {
-  test.beforeEach(async ({ pageWithMockSnapshots }) => {
+  test.beforeEach(async ({ page }) => {
     // Navigate to integration testing page before each test
-    await pageWithMockSnapshots.goto('/integration-testing');
+    await page.goto('/integration-testing');
 
     // Wait for page to load
-    await pageWithMockSnapshots.waitForLoadState('networkidle');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should display integration testing page with all sections', async ({
-    pageWithMockSnapshots: page,
+    page,
   }) => {
     // Verify page title
     await expect(page.locator('h1')).toContainText('Integration Testing');
@@ -43,7 +43,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     ).toBeVisible();
   });
 
-  test('should select process from dropdown', async ({ pageWithMockSnapshots: page }) => {
+  test('should select process from dropdown', async ({ page }) => {
     // Look for process selector
     const processSelector = page
       .locator('select, [role="combobox"]')
@@ -64,7 +64,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     await expect(processSelector).not.toHaveValue('');
   });
 
-  test('should view and apply smart recommendations', async ({ pageWithMockSnapshots: page }) => {
+  test('should view and apply smart recommendations', async ({ page }) => {
     // Look for recommendations section
     const recommendationsSection = page.locator(
       'text=Smart Recommendations, text=Recommendations, [data-testid="recommendations"]'
@@ -89,7 +89,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     }
   });
 
-  test('should manually select snapshots', async ({ pageWithMockSnapshots: page }) => {
+  test('should manually select snapshots', async ({ page }) => {
     // Look for snapshot selector
     const snapshotSelector = page.locator(
       '[data-testid="snapshot-selector"], [data-testid="snapshot-list"]'
@@ -108,7 +108,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     }
   });
 
-  test('should execute process and display results', async ({ pageWithMockSnapshots: page }) => {
+  test('should execute process and display results', async ({ page }) => {
     // Mock API response for execution
     await page.route('**/api/integration-testing/execute', async (route) => {
       await route.fulfill({
@@ -180,7 +180,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     }
   });
 
-  test('should play execution timeline', async ({ pageWithMockSnapshots: page }) => {
+  test('should play execution timeline', async ({ page }) => {
     // First, ensure we have execution results loaded
     await page.route('**/api/integration-testing/execute', async (route) => {
       await route.fulfill({
@@ -238,7 +238,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     }
   });
 
-  test('should display coverage panel', async ({ pageWithMockSnapshots: page }) => {
+  test('should display coverage panel', async ({ page }) => {
     // Look for coverage panel
     const coveragePanel = page.locator(
       '[data-testid="coverage-panel"], text=Coverage'
@@ -257,7 +257,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     }
   });
 
-  test('should export execution to PDF', async ({ pageWithMockSnapshots: page }) => {
+  test('should export execution to PDF', async ({ page }) => {
     // Mock execution data first
     await page.route('**/api/integration-testing/execute', async (route) => {
       await route.fulfill({
@@ -318,7 +318,7 @@ test.describe('Integration Testing - Complete Workflow', () => {
     }
   });
 
-  test('should export execution to video', async ({ pageWithMockSnapshots: page }) => {
+  test('should export execution to video', async ({ page }) => {
     // Mock execution data
     await page.route('**/api/integration-testing/execute', async (route) => {
       await route.fulfill({
@@ -395,12 +395,12 @@ test.describe('Integration Testing - Complete Workflow', () => {
 });
 
 test.describe('Integration Testing - Manual Selection Mode', () => {
-  test.beforeEach(async ({ pageWithMockSnapshots: page }) => {
+  test.beforeEach(async ({ page }) => {
     await page.goto('/integration-testing');
     await page.waitForLoadState('networkidle');
   });
 
-  test('should switch to manual selection mode', async ({ pageWithMockSnapshots: page }) => {
+  test('should switch to manual selection mode', async ({ page }) => {
     // Look for mode toggle or manual selection option
     const manualModeToggle = page.locator(
       'button:has-text("Manual"), [data-testid="manual-mode-toggle"]'
@@ -416,7 +416,7 @@ test.describe('Integration Testing - Manual Selection Mode', () => {
     }
   });
 
-  test('should select multiple snapshots manually', async ({ pageWithMockSnapshots: page }) => {
+  test('should select multiple snapshots manually', async ({ page }) => {
     const checkboxes = page.locator(
       '[data-testid="snapshot-checkbox"], input[type="checkbox"]'
     );
@@ -437,12 +437,12 @@ test.describe('Integration Testing - Manual Selection Mode', () => {
 });
 
 test.describe('Integration Testing - Error States', () => {
-  test.beforeEach(async ({ pageWithMockSnapshots: page }) => {
+  test.beforeEach(async ({ page }) => {
     await page.goto('/integration-testing');
     await page.waitForLoadState('networkidle');
   });
 
-  test('should handle execution failure gracefully', async ({ pageWithMockSnapshots: page }) => {
+  test('should handle execution failure gracefully', async ({ page }) => {
     // Mock failed execution
     await page.route('**/api/integration-testing/execute', async (route) => {
       await route.fulfill({
@@ -488,7 +488,7 @@ test.describe('Integration Testing - Error States', () => {
     }
   });
 
-  test('should handle network error', async ({ pageWithMockSnapshots: page }) => {
+  test('should handle network error', async ({ page }) => {
     // Mock network error
     await page.route('**/api/integration-testing/execute', async (route) => {
       await route.abort('failed');
@@ -508,7 +508,7 @@ test.describe('Integration Testing - Error States', () => {
     }
   });
 
-  test('should handle missing snapshots error', async ({ pageWithMockSnapshots: page }) => {
+  test('should handle missing snapshots error', async ({ page }) => {
     // Try to execute without selecting snapshots
     const executeButton = page.locator(
       'button:has-text("Execute"), [data-testid="execute-button"]'
@@ -528,7 +528,7 @@ test.describe('Integration Testing - Error States', () => {
 });
 
 test.describe('Integration Testing - Visualization', () => {
-  test.beforeEach(async ({ pageWithMockSnapshots: page }) => {
+  test.beforeEach(async ({ page }) => {
     await page.goto('/integration-testing');
     await page.waitForLoadState('networkidle');
 
@@ -625,7 +625,7 @@ test.describe('Integration Testing - Visualization', () => {
     }
   });
 
-  test('should navigate through timeline steps', async ({ pageWithMockSnapshots: page }) => {
+  test('should navigate through timeline steps', async ({ page }) => {
     // Execute process
     const executeButton = page.locator(
       'button:has-text("Execute"), [data-testid="execute-button"]'
@@ -658,7 +658,7 @@ test.describe('Integration Testing - Visualization', () => {
     }
   });
 
-  test('should display action details on selection', async ({ pageWithMockSnapshots: page }) => {
+  test('should display action details on selection', async ({ page }) => {
     // Execute process
     const executeButton = page.locator(
       'button:has-text("Execute"), [data-testid="execute-button"]'
