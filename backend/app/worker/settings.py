@@ -22,7 +22,7 @@ class WorkerSettings:
 
     # Worker behavior
     max_jobs = 10  # Maximum concurrent jobs
-    job_timeout = 300  # 5 minutes timeout per job
+    job_timeout = 1800  # 30 minutes timeout per job (recording processing can take time)
     keep_result = 3600  # Keep job results for 1 hour
 
     # Health check
@@ -42,6 +42,9 @@ class WorkerSettings:
         cleanup_old_analytics_events,
         cleanup_token_blacklist,
     )
+    from app.worker.tasks.recording_processing_tasks import (
+        process_recording_task,
+    )
 
     functions = [
         # Email tasks
@@ -55,6 +58,8 @@ class WorkerSettings:
         cleanup_old_analytics_events,
         cleanup_token_blacklist,
         run_all_cleanup_tasks,
+        # Recording processing tasks
+        process_recording_task,
     ]
 
     # Cron jobs - Dynamically loaded from scheduler
