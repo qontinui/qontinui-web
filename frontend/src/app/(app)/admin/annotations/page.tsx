@@ -10,6 +10,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
+import { authService } from '@/services/service-factory'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -51,6 +52,7 @@ interface Annotation extends Omit<BoundingBox, 'id'> {
   id: string
   description?: string
   reason?: string
+  screenshot_index?: number
 }
 
 interface AnnotationSet {
@@ -332,6 +334,7 @@ export default function AnnotationsPage() {
   }
 
   // Save current screenshot annotations
+  // Updated: 2025-11-12 - Fixed API endpoint URL with trailing slash and proper auth headers
   const handleSave = async () => {
     if (!currentScreenshot || currentScreenshot.annotations.length === 0) {
       toast.error('Please annotate at least one element before saving')
@@ -349,7 +352,6 @@ export default function AnnotationsPage() {
         notes,
         boundary_width: boundaryWidth,
         annotations: currentScreenshot.annotations.map((box) => ({
-          id: box.id,
           x: Math.round(box.x),
           y: Math.round(box.y),
           width: Math.round(box.width),
@@ -357,19 +359,49 @@ export default function AnnotationsPage() {
           label: box.label,
           description: (box as any).description,
           reason: (box as any).reason,
+          screenshot_index: 0,
         })),
       }
 
-      const response = await fetch('/api/annotations', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const accessToken = authService.tokenManager.getAccessToken()
+
+      console.log('[Annotations] Attempting to save:', {
+        hasToken: !!accessToken,
+        tokenPreview: accessToken ? accessToken.substring(0, 20) + '...' : 'none',
+        apiUrl,
+        annotationCount: annotationSet.annotations.length,
+      })
+
+      if (!accessToken) {
+        throw new Error('Not authenticated')
+      }
+
+      const response = await fetch(`${apiUrl}/api/v1/annotations/`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(annotationSet),
       })
 
+      console.log('[Annotations] Response received:', {
+        status: response.status,
+        ok: response.ok,
+        statusText: response.statusText,
+      })
+
       if (!response.ok) {
-        throw new Error('Failed to save annotations')
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        console.error('[Annotations] Error response:', errorData)
+
+        // Special handling for 401 Unauthorized
+        if (response.status === 401) {
+          throw new Error('Authentication failed. Please ensure you are logged in as an admin/superuser.')
+        }
+
+        throw new Error(errorData.detail || `Failed to save annotations (${response.status})`)
       }
 
       const saved = await response.json()
@@ -390,7 +422,8 @@ export default function AnnotationsPage() {
       toast.success(`Annotations saved for ${currentScreenshot.file.name}`)
     } catch (error) {
       console.error('Error saving annotations:', error)
-      toast.error('Failed to save annotations')
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save annotations'
+      toast.error(errorMessage)
     } finally {
       setIsSaving(false)
     }
@@ -422,7 +455,6 @@ export default function AnnotationsPage() {
           notes,
           boundary_width: boundaryWidth,
           annotations: screenshot.annotations.map((box) => ({
-            id: box.id,
             x: Math.round(box.x),
             y: Math.round(box.y),
             width: Math.round(box.width),
@@ -430,20 +462,30 @@ export default function AnnotationsPage() {
             label: box.label,
             description: (box as any).description,
             reason: (box as any).reason,
+            screenshot_index: 0,
           })),
         }
 
         try {
-          const response = await fetch('/api/annotations', {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+          const accessToken = authService.tokenManager.getAccessToken()
+
+          if (!accessToken) {
+            throw new Error('Not authenticated')
+          }
+
+          const response = await fetch(`${apiUrl}/api/v1/annotations/`, {
             method: 'POST',
             headers: {
+              'Authorization': `Bearer ${accessToken}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(annotationSet),
           })
 
           if (!response.ok) {
-            throw new Error('Failed to save')
+            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+            throw new Error(errorData.detail || `Failed to save (${response.status})`)
           }
 
           successCount++
@@ -561,34 +603,125 @@ export default function AnnotationsPage() {
   // Load saved annotation sets
   const handleLoadDialog = async () => {
     try {
-      const response = await fetch('/api/annotations')
-      if (!response.ok) throw new Error('Failed to load annotation sets')
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const accessToken = authService.tokenManager.getAccessToken()
+
+      if (!accessToken) {
+        throw new Error('Not authenticated')
+      }
+
+      const response = await fetch(`${apiUrl}/api/v1/annotations/`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        throw new Error(errorData.detail || `Failed to load annotation sets (${response.status})`)
+      }
 
       const sets = await response.json()
       setSavedSets(sets)
       setShowLoadDialog(true)
     } catch (error) {
       console.error('Error loading annotation sets:', error)
-      toast.error('Failed to load annotation sets')
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load annotation sets'
+      toast.error(errorMessage)
     }
   }
 
   // Load a specific annotation set
-  const handleLoadSet = (set: AnnotationSet) => {
-    // TODO: Load screenshot from URL
-    // For now, we can't load the image file, so we just load the annotations
-    // if the user has already uploaded the same screenshot
+  const handleLoadSet = async (set: AnnotationSet) => {
+    try {
+      // Fetch the screenshot from the URL
+      const response = await fetch(set.screenshot_url)
+      if (!response.ok) {
+        throw new Error('Failed to fetch screenshot')
+      }
 
-    setNotes(set.notes || '')
-    setBoundaryWidth(set.boundary_width || 5)
-    setCurrentSetId(set.id)
-    setShowLoadDialog(false)
-    toast.info('Note: Screenshot loading from saved sets is not yet implemented')
+      // Convert to blob and then to File
+      const blob = await response.blob()
+      const file = new File([blob], set.screenshot_name, { type: blob.type })
+
+      // Load image dimensions
+      const url = URL.createObjectURL(file)
+      const dimensions = await loadImageDimensions(file)
+
+      // Create the screenshot data with saved annotations
+      const newScreenshot: ScreenshotData = {
+        id: `screenshot-${Date.now()}-${Math.random()}`,
+        file,
+        url,
+        dimensions,
+        annotations: set.annotations.map((ann) => ({
+          id: ann.id,
+          x: ann.x,
+          y: ann.y,
+          width: ann.width,
+          height: ann.height,
+          label: ann.label,
+          color: '#3b82f6', // Default blue color
+        })),
+        hasUnsavedChanges: false,
+      }
+
+      // Replace current screenshots with the loaded one
+      setScreenshots([newScreenshot])
+      setCurrentScreenshotIndex(0)
+      setNotes(set.notes || '')
+      setBoundaryWidth(set.boundary_width || 5)
+      setCurrentSetId(set.id)
+      setShowLoadDialog(false)
+      setSelectedBoxId(null)
+
+      toast.success(`Loaded "${set.screenshot_name}" with ${set.annotations.length} annotation(s)`)
+    } catch (error) {
+      console.error('Error loading screenshot:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load screenshot'
+      toast.error(errorMessage)
+    }
   }
 
   // Don't render until auth is confirmed
+  if (authLoading) {
+    return (
+      <div className="container mx-auto py-8">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!user?.is_superuser) {
-    return null
+    return (
+      <div className="container mx-auto py-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Admin Access Required
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground">
+              This page is only accessible to administrators. You need superuser permissions to create and manage annotations.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => router.push('/dashboard')}
+              className="mt-4"
+            >
+              <LayoutDashboard className="mr-2 h-4 w-4" />
+              Return to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -643,9 +776,9 @@ export default function AnnotationsPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Panel - Screenshot Management */}
-        <Card className="lg:col-span-1">
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Screenshots</CardTitle>
             <CardDescription>
@@ -785,7 +918,7 @@ export default function AnnotationsPage() {
         </Card>
 
         {/* Middle Panel - Canvas */}
-        <Card className="lg:col-span-1">
+        <Card className="lg:col-span-8">
           <CardHeader>
             <CardTitle>Annotation Canvas</CardTitle>
             <CardDescription>
@@ -816,7 +949,7 @@ export default function AnnotationsPage() {
         </Card>
 
         {/* Right Panel - Element Details */}
-        <Card className="lg:col-span-1">
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Element Details</CardTitle>
             <CardDescription>
