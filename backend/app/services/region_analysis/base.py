@@ -24,6 +24,7 @@ class RegionType(str, Enum):
     SKILL_TREE = "skill_tree"          # Skill/ability trees
     QUEST_LOG = "quest_log"            # Quest/mission panels
     EQUIPMENT_PANEL = "equipment_panel" # Character equipment
+    TEXT_AREA = "text_area"            # Text regions (labels, captions, etc.)
     CUSTOM = "custom"                  # Extensibility for game-specific regions
 
 
