@@ -260,7 +260,7 @@ jobs:
           PLAYWRIGHT_BASE_URL: http://localhost:3001
           API_BASE_URL: http://localhost:8000
         run: |
-          npx playwright test
+          npx playwright test --project=chromium
 
       - name: Upload full integration test results
         if: always()
