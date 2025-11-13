@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     background_removal,
     billing,
     export,
+    feedback,
     images,
     integration_testing,
     pattern_optimization,
@@ -39,3 +40,4 @@ api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
 api_router.include_router(annotations.router, prefix="/annotations", tags=["annotations"])
 api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
+api_router.include_router(feedback.router, tags=["feedback"])

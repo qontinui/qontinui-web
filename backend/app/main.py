@@ -72,8 +72,8 @@ if settings.ENVIRONMENT == "production":
     ]
     logger.info("Using hardcoded production CORS origins", origins=origins, environment=settings.ENVIRONMENT)
 elif settings.BACKEND_CORS_ORIGINS:
-    # Convert AnyHttpUrl objects to strings
-    origins = [str(origin) for origin in settings.BACKEND_CORS_ORIGINS]
+    # Convert AnyHttpUrl objects to strings and strip trailing slashes
+    origins = [str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS]
     logger.info("Using CORS origins from settings", origins=origins)
 else:
     origins = [
