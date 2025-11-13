@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Backend for qontinui-web"
 authors = ["Joshua Spinak <jspinak@hotmail.com>"]
 readme = "README.md"
+packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = "^3.12"
