@@ -12,7 +12,7 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_current_user, get_db_session
+from app.api.deps import get_current_user_async, get_async_db
 from app.models.user import User
 from app.models.annotation import AnnotationSet
 from app.models.analysis_result import (
@@ -35,9 +35,10 @@ from app.schemas.analysis import (
     BoundingBoxSchema,
     DetectedElementSchema,
 )
-from app.services.analysis import AnalysisOrchestrator, AnalysisInput
+from app.services.analysis import AnalysisOrchestrator
+from app.services.analysis.base import AnalysisInput
 from app.services.analysis.orchestrator import analyzer_registry
-from app.services.object_storage import download_file
+from app.services.object_storage import object_storage
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ orchestrator = AnalysisOrchestrator()
 
 @router.get("/analyzers", response_model=AnalyzerListResponse)
 async def list_analyzers(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_async),
 ):
     """
     List all available analyzers
@@ -77,8 +78,8 @@ async def list_analyzers(
 async def run_analysis(
     request: AnalysisRequest,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ):
     """
     Run analysis on an annotation set
@@ -122,7 +123,7 @@ async def run_analysis(
         screenshot_data = []
         for screenshot in screenshots:
             try:
-                data = await download_file(screenshot["url"])
+                data = object_storage.download_file(screenshot["url"])
                 screenshot_data.append(data)
             except Exception as e:
                 logger.error(f"Error downloading screenshot {screenshot['url']}: {e}")
@@ -183,8 +184,8 @@ async def run_analysis(
 @router.post("/analyze/quick", response_model=AnalysisResponse)
 async def run_quick_analysis(
     request: QuickAnalysisRequest,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ):
     """
     Run quick analysis without saving to database
@@ -212,8 +213,8 @@ async def list_analysis_jobs(
     status: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ):
     """
     List analysis jobs
@@ -267,8 +268,8 @@ async def list_analysis_jobs(
 @router.get("/jobs/{job_id}", response_model=AnalysisJobDetailSchema)
 async def get_analysis_job(
     job_id: UUID,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ):
     """
     Get detailed analysis job results
@@ -338,8 +339,8 @@ async def get_analysis_job(
 @router.delete("/jobs/{job_id}")
 async def delete_analysis_job(
     job_id: UUID,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ):
     """
     Delete an analysis job and all its results

@@ -344,9 +344,43 @@ export default function AnnotationsPage() {
     setIsSaving(true)
 
     try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const accessToken = authService.tokenManager.getAccessToken()
+
+      if (!accessToken) {
+        throw new Error('Not authenticated')
+      }
+
+      // Determine if we need to upload a new screenshot
+      // If the URL is a blob URL, we need to upload; if it's already an S3 URL, we can reuse it
+      let permanentUrl = currentScreenshot.url
+
+      if (currentScreenshot.url.startsWith('blob:')) {
+        // Step 1: Upload the screenshot file to get a permanent URL
+        const formData = new FormData()
+        formData.append('file', currentScreenshot.file)
+
+        const uploadResponse = await fetch(`${apiUrl}/api/v1/annotations/upload-screenshot`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: formData,
+        })
+
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json().catch(() => ({ detail: 'Unknown error' }))
+          throw new Error(errorData.detail || `Failed to upload screenshot (${uploadResponse.status})`)
+        }
+
+        const uploadResult = await uploadResponse.json()
+        permanentUrl = uploadResult.url
+      }
+
+      // Step 2: Create or update the annotation set with the permanent URL
       const annotationSet: AnnotationSet = {
         screenshot_name: currentScreenshot.file.name,
-        screenshot_url: currentScreenshot.url,
+        screenshot_url: permanentUrl,
         image_width: currentScreenshot.dimensions.width,
         image_height: currentScreenshot.dimensions.height,
         notes,
@@ -363,22 +397,26 @@ export default function AnnotationsPage() {
         })),
       }
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const accessToken = authService.tokenManager.getAccessToken()
+      // Decide whether to create (POST) or update (PUT)
+      const isUpdate = !!currentSetId
+      const method = isUpdate ? 'PUT' : 'POST'
+      const endpoint = isUpdate
+        ? `${apiUrl}/api/v1/annotations/${currentSetId}`
+        : `${apiUrl}/api/v1/annotations/`
 
       console.log('[Annotations] Attempting to save:', {
         hasToken: !!accessToken,
         tokenPreview: accessToken ? accessToken.substring(0, 20) + '...' : 'none',
         apiUrl,
+        method,
+        isUpdate,
+        currentSetId,
         annotationCount: annotationSet.annotations.length,
+        screenshotUrl: permanentUrl,
       })
 
-      if (!accessToken) {
-        throw new Error('Not authenticated')
-      }
-
-      const response = await fetch(`${apiUrl}/api/v1/annotations/`, {
-        method: 'POST',
+      const response = await fetch(endpoint, {
+        method,
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
@@ -406,6 +444,11 @@ export default function AnnotationsPage() {
 
       const saved = await response.json()
 
+      // Set the current set ID if this was a new save
+      if (!isUpdate && saved.id) {
+        setCurrentSetId(saved.id)
+      }
+
       // Mark as saved (no unsaved changes)
       const updatedScreenshots = screenshots.map((screenshot, index) => {
         if (index === currentScreenshotIndex) {
@@ -419,7 +462,8 @@ export default function AnnotationsPage() {
 
       setScreenshots(updatedScreenshots)
 
-      toast.success(`Annotations saved for ${currentScreenshot.file.name}`)
+      const actionText = isUpdate ? 'updated' : 'saved'
+      toast.success(`Annotations ${actionText} for ${currentScreenshot.file.name}`)
     } catch (error) {
       console.error('Error saving annotations:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to save annotations'
@@ -427,6 +471,14 @@ export default function AnnotationsPage() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  // Save as new annotation set
+  const handleSaveAs = async () => {
+    // Clear the current set ID to force creating a new annotation set
+    setCurrentSetId(undefined)
+    // Then call the regular save function which will create a new set
+    await handleSave()
   }
 
   // Save all screenshots
@@ -875,8 +927,19 @@ export default function AnnotationsPage() {
                       size="sm"
                     >
                       <Save className="h-4 w-4 mr-2" />
-                      Save Current
+                      {currentSetId ? 'Update' : 'Save'}
                     </Button>
+                    {currentSetId && (
+                      <Button
+                        onClick={handleSaveAs}
+                        disabled={isSaving || currentScreenshot.annotations.length === 0}
+                        variant="outline"
+                        size="sm"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Save As New
+                      </Button>
+                    )}
                     <Button
                       onClick={handleExport}
                       disabled={currentScreenshot.annotations.length === 0}
