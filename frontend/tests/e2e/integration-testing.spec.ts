@@ -32,36 +32,42 @@ test.describe('Integration Testing - Complete Workflow', () => {
 
     // Verify main sections are present
     await expect(
-      page.locator('text=Process Selection').or(page.locator('text=Select Process'))
+      page.locator('text=Process Selection')
     ).toBeVisible();
 
-    // Verify snapshot selector is present
+    // Verify snapshot selector is present (Smart Recommendations or Manual Selection)
     await expect(
       page
-        .locator('text=Snapshot Selection')
-        .or(page.locator('text=Select Snapshots'))
+        .locator('text=Smart Recommendations')
+        .or(page.locator('text=Manual Selection'))
     ).toBeVisible();
   });
 
   test('should select process from dropdown', async ({ page }) => {
-    // Look for process selector
+    // Look for process selector combobox trigger
     const processSelector = page
-      .locator('select, [role="combobox"]')
-      .first();
+      .locator('[role="combobox"]')
+      .filter({ hasText: 'Select a process' })
+      .or(page.locator('[role="combobox"]').nth(1)); // Second combobox is the process selector
+
     await expect(processSelector).toBeVisible({ timeout: 10000 });
 
     // Open dropdown
     await processSelector.click();
 
+    // Wait for options to appear
+    await page.waitForSelector('[role="option"]', { timeout: 5000 });
+
     // Select first process option
     const firstOption = page
-      .locator('[role="option"], option')
+      .locator('[role="option"]')
       .first();
     await firstOption.click();
 
-    // Verify selection was made
-    // The selected value should be visible somewhere on the page
-    await expect(processSelector).not.toHaveValue('');
+    // Verify selection was made by checking that the placeholder text changed
+    await expect(
+      page.locator('text=Select a process')
+    ).not.toBeVisible();
   });
 
   test('should view and apply smart recommendations', async ({ page }) => {
@@ -158,10 +164,12 @@ test.describe('Integration Testing - Complete Workflow', () => {
       });
     });
 
-    // Find and click execute button
-    const executeButton = page.locator(
-      'button:has-text("Execute"), button:has-text("Run Process"), [data-testid="execute-button"]'
-    );
+    // Find and click execute button (not the tab, but the actual action button)
+    // The Execute button should be in the ExecutionControls card, not in the tabs
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .filter({ has: page.locator('svg') }) // ExecutionControls button has an icon
+      .or(page.locator('button').filter({ hasText: 'Execute' }).last()); // Or get the last one
 
     if (await executeButton.isVisible()) {
       await executeButton.click();
@@ -212,10 +220,11 @@ test.describe('Integration Testing - Complete Workflow', () => {
       });
     });
 
-    // Trigger execution
-    const executeButton = page.locator(
-      'button:has-text("Execute"), [data-testid="execute-button"]'
-    );
+    // Trigger execution (use last Execute button to avoid tab ambiguity)
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .last();
+
     if (await executeButton.isVisible()) {
       await executeButton.click();
       await page.waitForTimeout(1000);
@@ -239,20 +248,24 @@ test.describe('Integration Testing - Complete Workflow', () => {
   });
 
   test('should display coverage panel', async ({ page }) => {
-    // Look for coverage panel
-    const coveragePanel = page.locator(
-      '[data-testid="coverage-panel"], text=Coverage'
-    );
+    // Navigate to Coverage tab first
+    await page.getByRole('tab', { name: 'Coverage' }).click();
+
+    // Look for coverage panel content
+    const coveragePanel = page.locator('[data-testid="coverage-panel"]')
+      .or(page.getByText('Coverage'));
 
     if (await coveragePanel.isVisible()) {
       // Verify coverage metrics are displayed
       await expect(
-        page.locator('text=%, [data-testid="coverage-percentage"]')
+        page.locator('[data-testid="coverage-percentage"]')
+          .or(page.getByText('%'))
       ).toBeVisible();
 
       // Verify state coverage information
       await expect(
-        page.locator('text=States, text=Covered')
+        page.getByText('States')
+          .or(page.getByText('Covered'))
       ).toBeVisible();
     }
   });
@@ -289,10 +302,11 @@ test.describe('Integration Testing - Complete Workflow', () => {
       });
     });
 
-    // Trigger execution first
-    const executeButton = page.locator(
-      'button:has-text("Execute"), [data-testid="execute-button"]'
-    );
+    // Trigger execution first (use last Execute button to avoid tab ambiguity)
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .last();
+
     if (await executeButton.isVisible()) {
       await executeButton.click();
       await page.waitForTimeout(1000);
@@ -369,10 +383,11 @@ test.describe('Integration Testing - Complete Workflow', () => {
       }
     );
 
-    // Trigger execution first
-    const executeButton = page.locator(
-      'button:has-text("Execute"), [data-testid="execute-button"]'
-    );
+    // Trigger execution first (use last Execute button to avoid tab ambiguity)
+    const executeButton = page
+      .getByRole('button', { name: /execute/i })
+      .last();
+
     if (await executeButton.isVisible()) {
       await executeButton.click();
       await page.waitForTimeout(1000);
