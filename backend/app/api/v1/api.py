@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     integration_testing,
     pattern_optimization,
     projects,
+    recordings,
     settings,
     users,
 )
@@ -37,3 +38,4 @@ api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
 api_router.include_router(annotations.router, prefix="/annotations", tags=["annotations"])
+api_router.include_router(recordings.router, prefix="/recordings", tags=["recordings"])
