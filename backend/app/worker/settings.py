@@ -21,7 +21,7 @@ class WorkerSettings:
 
     # Worker behavior
     max_jobs = 10  # Maximum concurrent jobs
-    job_timeout = 300  # 5 minutes timeout per job
+    job_timeout = 1800  # 30 minutes timeout per job (recording processing can take time)
     keep_result = 3600  # Keep job results for 1 hour
 
     # Health check
@@ -50,6 +50,9 @@ class WorkerSettings:
         get_partition_cron_jobs,
         get_partition_statistics,
     )
+    from app.worker.tasks.recording_processing_tasks import (
+        process_recording_task,
+    )
 
     functions = [
         # Email tasks
@@ -71,6 +74,8 @@ class WorkerSettings:
         auto_create_partitions,
         cleanup_old_partitions,
         get_partition_statistics,
+        # Recording processing tasks
+        process_recording_task,
     ]
 
     # Cron jobs - Dynamically loaded from scheduler
