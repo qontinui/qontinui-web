@@ -320,8 +320,12 @@ class LocalBackend(StorageBackend):
 
             logger.info("file_uploaded_locally", key=key, path=str(file_path))
 
-            # Return a local file URL (for consistency with S3Backend)
-            return f"/uploads/{key}"
+            # Return a local file URL with backend host (for consistency with S3Backend)
+            # Use localhost instead of 0.0.0.0 for the URL
+            from app.core.config import settings
+            host = "localhost" if settings.HOST == "0.0.0.0" else settings.HOST
+            backend_url = f"http://{host}:{settings.PORT}"
+            return f"{backend_url}/uploads/{key}"
 
         except Exception as e:
             logger.error("local_upload_failed", key=key, error=str(e))
@@ -378,7 +382,10 @@ class LocalBackend(StorageBackend):
 
         Note: expiration parameter is ignored for local backend
         """
-        return f"/uploads/{key}"
+        from app.core.config import settings
+        host = "localhost" if settings.HOST == "0.0.0.0" else settings.HOST
+        backend_url = f"http://{host}:{settings.PORT}"
+        return f"{backend_url}/uploads/{key}"
 
     def file_exists(self, key: str) -> bool:
         """Check if file exists in local filesystem"""

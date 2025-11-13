@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
+import { authService } from '@/services/service-factory'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,7 +37,7 @@ interface AnnotationSet {
 }
 
 export default function AnalysisPage() {
-  const { user, loading: authLoading, getAccessToken } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const [token, setToken] = useState<string>('')
 
@@ -63,15 +64,12 @@ export default function AnalysisPage() {
 
     // Get access token
     if (user) {
-      const fetchToken = async () => {
-        const accessToken = await getAccessToken()
-        if (accessToken) {
-          setToken(accessToken)
-        }
+      const accessToken = authService.tokenManager.getAccessToken()
+      if (accessToken) {
+        setToken(accessToken)
       }
-      fetchToken()
     }
-  }, [user, authLoading, router, getAccessToken])
+  }, [user, authLoading, router])
 
   // Load annotation sets
   useEffect(() => {
@@ -83,7 +81,8 @@ export default function AnalysisPage() {
   const loadAnnotationSets = async () => {
     try {
       setIsLoadingSets(true)
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/annotations/sets`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/api/v1/annotations/`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

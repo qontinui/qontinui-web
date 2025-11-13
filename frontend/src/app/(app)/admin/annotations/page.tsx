@@ -686,25 +686,25 @@ export default function AnnotationsPage() {
   // Load a specific annotation set
   const handleLoadSet = async (set: AnnotationSet) => {
     try {
-      // Fetch the screenshot from the URL
+      // Fetch the screenshot from the URL to create a File object
       const response = await fetch(set.screenshot_url)
       if (!response.ok) {
         throw new Error('Failed to fetch screenshot')
       }
 
-      // Convert to blob and then to File
+      // Convert to blob and then to File (needed for potential re-upload)
       const blob = await response.blob()
       const file = new File([blob], set.screenshot_name, { type: blob.type })
 
-      // Load image dimensions
-      const url = URL.createObjectURL(file)
+      // Load image dimensions from the file
       const dimensions = await loadImageDimensions(file)
 
       // Create the screenshot data with saved annotations
+      // Use the server URL directly instead of creating a blob URL
       const newScreenshot: ScreenshotData = {
         id: `screenshot-${Date.now()}-${Math.random()}`,
         file,
-        url,
+        url: set.screenshot_url, // Use the permanent server URL
         dimensions,
         annotations: set.annotations.map((ann) => ({
           id: ann.id,
