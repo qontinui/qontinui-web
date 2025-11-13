@@ -416,7 +416,7 @@ async def _save_analysis_to_db(
                     label=elem_data.get("label"),
                     element_type=elem_data.get("element_type"),
                     screenshot_index=elem_data.get("screenshot_index", 0),
-                    metadata=elem_data.get("metadata")
+                    element_metadata=elem_data.get("metadata")
                 )
                 db.add(elem)
 
