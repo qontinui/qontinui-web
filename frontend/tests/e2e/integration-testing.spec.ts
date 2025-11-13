@@ -35,11 +35,10 @@ test.describe('Integration Testing - Complete Workflow', () => {
       page.locator('text=Process Selection')
     ).toBeVisible();
 
-    // Verify snapshot selector is present (Smart Recommendations or Manual Selection)
+    // Verify snapshot selector is present (check for Smart Recommendations card)
     await expect(
-      page
-        .locator('text=Smart Recommendations')
-        .or(page.locator('text=Manual Selection'))
+      page.getByRole('heading', { name: 'Smart Recommendations' })
+        .or(page.getByText('Smart Recommendations').first())
     ).toBeVisible();
   });
 
