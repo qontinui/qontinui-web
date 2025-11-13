@@ -140,72 +140,8 @@ async function globalSetup(config: FullConfig) {
     });
   });
 
-  // Start frontend dev server
-  const frontendUrl = 'http://localhost:3001';
-
-  console.log('Starting frontend dev server...');
-
-  // Check if frontend is already running
-  try {
-    const response = await fetch(frontendUrl);
-    if (response.ok || response.status === 404) {
-      console.log('Frontend is already running, skipping startup');
-      return;
-    }
-  } catch (error) {
-    // Frontend not running, start it
-  }
-
-  const frontendDir = path.resolve(__dirname, '../..');
-  const frontendProcess = spawn(
-    'npm',
-    ['run', 'dev'],
-    {
-      cwd: frontendDir,
-      stdio: 'pipe',
-      detached: false,
-      env: {
-        ...process.env,
-        API_URL: 'http://localhost:8000',
-        NEXT_PUBLIC_API_URL: 'http://localhost:8000',
-      },
-    }
-  );
-
-  // Store process PID for cleanup
-  if (frontendProcess.pid) {
-    (global as any).__FRONTEND_PID__ = frontendProcess.pid;
-  }
-
-  // Log frontend output
-  frontendProcess.stdout?.on('data', (data) => {
-    console.log(`Frontend: ${data}`);
-  });
-
-  frontendProcess.stderr?.on('data', (data) => {
-    console.error(`Frontend Error: ${data}`);
-  });
-
-  // Wait for frontend to be ready
-  let frontendReady = false;
-  for (let i = 0; i < 60; i++) {
-    try {
-      const response = await fetch(frontendUrl);
-      if (response.ok || response.status === 404) {
-        // 404 is ok since we're just checking if Next.js is running
-        console.log('Frontend is ready');
-        frontendReady = true;
-        break;
-      }
-    } catch (error) {
-      // Frontend not ready yet
-    }
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-
-  if (!frontendReady) {
-    throw new Error('Frontend failed to start within timeout period');
-  }
+  // Note: Frontend server is started by Playwright's webServer config
+  // No need to start it here
 
   console.log('Global E2E test setup complete');
 }
