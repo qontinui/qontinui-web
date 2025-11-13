@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     pattern_optimization,
     projects,
     settings,
+    snapshots,
     users,
 )
 
@@ -31,6 +32,7 @@ api_router.include_router(
     prefix="/integration-testing",
     tags=["integration-testing"],
 )
+api_router.include_router(snapshots.router, prefix="/snapshots", tags=["snapshots"])
 api_router.include_router(pattern_optimization.router, tags=["pattern-optimization"])
 api_router.include_router(background_removal.router, tags=["background-removal"])
 api_router.include_router(analytics.router, tags=["analytics"])
