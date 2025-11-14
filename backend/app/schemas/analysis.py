@@ -82,6 +82,7 @@ class QuickAnalysisRequest(BaseModel):
 class AnalysisResponse(BaseModel):
     """Response from running analysis"""
     analysis_job_id: Optional[UUID] = None  # None if not saved to DB
+    progress_job_id: Optional[UUID] = None  # For polling progress (only during analysis)
     annotation_set_id: UUID
     analyzer_results: List[AnalyzerResultSchema]
     fused_elements: Optional[List[FusedElementSchema]] = None

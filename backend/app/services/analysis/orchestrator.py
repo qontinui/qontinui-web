@@ -3,12 +3,13 @@ Analysis Orchestrator - Manages the analysis pipeline
 """
 
 import logging
-from typing import List, Dict, Any, Optional, Type
+from typing import List, Dict, Any, Optional, Type, Callable
 from uuid import UUID
 import asyncio
 
 from .base import BaseAnalyzer, AnalysisInput, AnalysisResult, AnalysisType
 from .fusion import DecisionFusion, FusedElement
+from .progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ class AnalysisOrchestrator:
         self,
         fusion_system: Optional[DecisionFusion] = None,
         registry: Optional[AnalyzerRegistry] = None,
+        progress_tracker: Optional[ProgressTracker] = None,
     ):
         """
         Initialize orchestrator
@@ -99,9 +101,11 @@ class AnalysisOrchestrator:
         Args:
             fusion_system: Decision fusion system (default: new instance)
             registry: Analyzer registry (default: global registry)
+            progress_tracker: Progress tracker (default: new instance)
         """
         self.fusion_system = fusion_system or DecisionFusion()
         self.registry = registry or analyzer_registry
+        self.progress_tracker = progress_tracker or ProgressTracker()
 
     async def analyze(
         self,
@@ -111,6 +115,7 @@ class AnalysisOrchestrator:
         parallel: bool = True,
         fuse_results: bool = True,
         overlap_threshold: float = 0.5,
+        job_id: Optional[UUID] = None,
     ) -> Dict[str, Any]:
         """
         Run analysis pipeline
@@ -122,6 +127,7 @@ class AnalysisOrchestrator:
             parallel: Run analyzers in parallel
             fuse_results: Whether to fuse results
             overlap_threshold: Overlap threshold for fusion
+            job_id: Optional job ID for progress tracking
 
         Returns:
             Dictionary with analysis results and fused elements
@@ -137,6 +143,14 @@ class AnalysisOrchestrator:
             analyzer_names = [a["name"] for a in available]
 
         logger.info(f"Using analyzers: {analyzer_names}")
+
+        # Initialize progress tracking if job_id provided
+        if job_id:
+            await self.progress_tracker.initialize(
+                job_id=job_id,
+                total_analyzers=len(analyzer_names),
+                analyzer_names=analyzer_names,
+            )
 
         # Get analyzer instances
         analyzer_configs = analyzer_configs or {}
@@ -156,15 +170,24 @@ class AnalysisOrchestrator:
                 )
 
         if not valid_analyzers:
+            if job_id:
+                await self.progress_tracker.update_error(
+                    job_id, "No valid analyzers for this input"
+                )
             raise ValueError("No valid analyzers for this input")
 
         # Run analyzers
-        if parallel:
-            results = await self._run_parallel(valid_analyzers, input_data)
-        else:
-            results = await self._run_sequential(valid_analyzers, input_data)
+        try:
+            if parallel:
+                results = await self._run_parallel(valid_analyzers, input_data, job_id)
+            else:
+                results = await self._run_sequential(valid_analyzers, input_data, job_id)
 
-        logger.info(f"Analysis complete. Got {len(results)} results")
+            logger.info(f"Analysis complete. Got {len(results)} results")
+        except Exception as e:
+            if job_id:
+                await self.progress_tracker.update_error(job_id, str(e))
+            raise
 
         # Prepare response
         response = {
@@ -177,6 +200,10 @@ class AnalysisOrchestrator:
 
         # Fuse results if requested
         if fuse_results and len(results) > 0:
+            total_elements = sum(len(r.elements) for r in results)
+            if job_id:
+                await self.progress_tracker.update_fusion_start(job_id, total_elements)
+
             fused_elements = await self.fusion_system.fuse(
                 results, overlap_threshold
             )
@@ -192,13 +219,36 @@ class AnalysisOrchestrator:
                 ),
             }
 
+            if job_id:
+                await self.progress_tracker.update_fusion_complete(
+                    job_id, len(fused_elements)
+                )
+
         return response
 
     async def _run_parallel(
-        self, analyzers: List[BaseAnalyzer], input_data: AnalysisInput
+        self, analyzers: List[BaseAnalyzer], input_data: AnalysisInput, job_id: Optional[UUID] = None
     ) -> List[AnalysisResult]:
         """Run analyzers in parallel"""
-        tasks = [analyzer.analyze(input_data) for analyzer in analyzers]
+        async def run_with_progress(analyzer: BaseAnalyzer):
+            if job_id:
+                await self.progress_tracker.update_analyzer_start(job_id, analyzer.name)
+
+            try:
+                result = await analyzer.analyze(input_data)
+                if job_id:
+                    await self.progress_tracker.update_analyzer_complete(
+                        job_id, analyzer.name, len(result.elements)
+                    )
+                return result
+            except Exception as e:
+                if job_id:
+                    await self.progress_tracker.update_analyzer_error(
+                        job_id, analyzer.name, str(e)
+                    )
+                raise
+
+        tasks = [run_with_progress(analyzer) for analyzer in analyzers]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Filter out exceptions
@@ -215,19 +265,31 @@ class AnalysisOrchestrator:
         return valid_results
 
     async def _run_sequential(
-        self, analyzers: List[BaseAnalyzer], input_data: AnalysisInput
+        self, analyzers: List[BaseAnalyzer], input_data: AnalysisInput, job_id: Optional[UUID] = None
     ) -> List[AnalysisResult]:
         """Run analyzers sequentially"""
         results = []
         for analyzer in analyzers:
+            if job_id:
+                await self.progress_tracker.update_analyzer_start(job_id, analyzer.name)
+
             try:
                 result = await analyzer.analyze(input_data)
                 results.append(result)
+
+                if job_id:
+                    await self.progress_tracker.update_analyzer_complete(
+                        job_id, analyzer.name, len(result.elements)
+                    )
             except Exception as e:
                 logger.error(
                     f"Analyzer {analyzer.name} failed: {e}",
                     exc_info=e
                 )
+                if job_id:
+                    await self.progress_tracker.update_analyzer_error(
+                        job_id, analyzer.name, str(e)
+                    )
 
         return results
 
