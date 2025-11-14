@@ -7,6 +7,142 @@
  */
 
 /**
+ * Tutorial display modes
+ * - overlay: Full-screen modal with sidebar navigation (original mode)
+ * - contextual: Embedded in-page tutorial with tooltips and spotlights
+ * - hybrid: Combination of both modes, switching as needed
+ */
+export type TutorialMode = 'overlay' | 'contextual' | 'hybrid';
+
+/**
+ * Highlight types for contextual tutorials
+ */
+export type HighlightType = 'spotlight' | 'border' | 'pulse' | 'arrow';
+
+/**
+ * Tooltip position relative to target element
+ */
+export type TooltipPosition = 'top' | 'bottom' | 'left' | 'right' | 'center';
+
+/**
+ * Validation types for interactive steps
+ */
+export type ValidationType = 'action' | 'state' | 'input' | 'custom';
+
+/**
+ * Target element configuration for contextual tutorials
+ * Defines which UI element to highlight and how to interact with it
+ */
+export interface TargetElement {
+  /** CSS selector or data-tutorial-id attribute to find the element */
+  selector: string;
+
+  /** Type of visual highlighting to apply */
+  highlightType: HighlightType;
+
+  /** Position of the tooltip relative to the target */
+  position: TooltipPosition;
+
+  /** Whether user can interact with the highlighted element */
+  allowInteraction: boolean;
+
+  /** Optional scroll behavior when focusing element */
+  scrollIntoView?: boolean;
+
+  /** Optional delay before highlighting (milliseconds) */
+  delay?: number;
+
+  /** Optional custom offset from element (pixels) */
+  offset?: { x: number; y: number };
+}
+
+/**
+ * Validation configuration for interactive tutorial steps
+ * Ensures users complete required actions before proceeding
+ */
+export interface StepValidation {
+  /** Type of validation to perform */
+  type: ValidationType;
+
+  /** Validation function (stored as string for serialization) */
+  condition: string;
+
+  /** Feedback messages for different outcomes */
+  feedback: {
+    /** Message shown when validation passes */
+    success: string;
+
+    /** Message shown when validation fails */
+    failure: string;
+
+    /** Optional hint to help user succeed */
+    hint?: string;
+  };
+
+  /** Optional timeout for validation (milliseconds) */
+  timeout?: number;
+
+  /** Optional flag to allow skipping validation */
+  optional?: boolean;
+}
+
+/**
+ * Tutorial trigger configuration
+ * Defines when and how tutorials should be automatically started
+ */
+export interface TutorialTriggers {
+  /** Auto-start on first page load */
+  automatic?: boolean;
+
+  /** Can be manually started from help menu */
+  manual?: boolean;
+
+  /** Contextual triggers based on user actions or page state */
+  contextual?: {
+    /** Event that triggers the tutorial */
+    event: string;
+
+    /** Condition function (stored as string) */
+    condition: string;
+  }[];
+}
+
+/**
+ * Workflow integration configuration
+ * Controls how tutorials interact with actual workflow editing
+ */
+export interface WorkflowIntegration {
+  /** Allow real editing during tutorial (vs. read-only demo) */
+  enableRealEditing: boolean;
+
+  /** Pre-populate with sample data */
+  provideSampleData: boolean;
+
+  /** Validate user actions match tutorial expectations */
+  validateUserActions: boolean;
+
+  /** Optional sample data to use */
+  sampleData?: Record<string, any>;
+
+  /** Optional cleanup function after tutorial */
+  cleanup?: boolean;
+}
+
+/**
+ * Step actions for setup and teardown
+ */
+export interface StepActions {
+  /** Function to run before step is shown */
+  before?: string;
+
+  /** Function to run after step is completed */
+  after?: string;
+
+  /** Whether to automatically execute the action (for demos) */
+  autoExecute?: boolean;
+}
+
+/**
  * Annotation types for highlighting and guiding users on screenshots
  *
  * @example
@@ -168,6 +304,21 @@ export interface TutorialStep {
     url: string;
     type?: 'documentation' | 'video' | 'article' | 'api-reference';
   }[];
+
+  /** Optional target element for contextual tutorials */
+  targetElement?: TargetElement;
+
+  /** Optional validation for interactive steps */
+  validation?: StepValidation;
+
+  /** Optional setup/teardown actions */
+  actions?: StepActions;
+
+  /** Optional flag to wait for user action before auto-advancing */
+  waitForUserAction?: boolean;
+
+  /** Optional custom component to render for this step */
+  customComponent?: string;
 }
 
 /**
@@ -194,6 +345,18 @@ export interface Tutorial {
 
   /** Ordered array of tutorial steps */
   steps: TutorialStep[];
+
+  /** Tutorial display mode */
+  mode: TutorialMode;
+
+  /** Optional target page/route for contextual tutorials */
+  targetPage?: string;
+
+  /** Optional trigger configuration */
+  triggers?: TutorialTriggers;
+
+  /** Optional workflow integration settings */
+  workflowIntegration?: WorkflowIntegration;
 
   /** Optional complete automation configuration resulting from following the tutorial */
   finalProject?: Record<string, any>;

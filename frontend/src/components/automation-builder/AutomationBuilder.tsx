@@ -308,11 +308,11 @@ export function AutomationBuilder() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full" data-tutorial-id="automation-builder-container">
       {/* Left Panel - Library */}
-      <div className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-r border-gray-800 bg-[#27272A]/50 overflow-hidden flex flex-col">
+      <div className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-r border-gray-800 bg-[#27272A]/50 overflow-hidden flex flex-col" data-tutorial-id="action-library">
         {/* Mode Selector */}
-        <div className="p-4 border-b border-gray-800">
+        <div className="p-4 border-b border-gray-800" data-tutorial-id="mode-selector">
           <BuilderModeSelector mode={mode} onModeChange={setMode} />
         </div>
 
@@ -331,7 +331,7 @@ export function AutomationBuilder() {
       </div>
 
       {/* Center Panel - Editor */}
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden" data-tutorial-id="workflow-editor">
         {/* Toolbar */}
         <EditorToolbar
           item={selectedItem}
@@ -346,7 +346,7 @@ export function AutomationBuilder() {
       </div>
 
       {/* Right Panel - Properties */}
-      <div className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
+      <div className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto" data-tutorial-id="properties-panel">
         {selectedItem && !selectedAction ? (
           // Show item metadata when no action is selected
           <ItemMetadataPanel item={selectedItem} onUpdate={handleUpdateItem} />

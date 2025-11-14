@@ -87,6 +87,7 @@ export function EditorToolbar({
             onClick={onSave}
             disabled={!item || isSaving}
             size="sm"
+            data-tutorial-id="save-workflow"
             style={{
               backgroundColor: item ? `${accentColor}22` : undefined,
               borderColor: item ? `${accentColor}44` : undefined,
@@ -145,6 +146,7 @@ export function EditorToolbar({
                 onClick={onRun}
                 size="sm"
                 variant="ghost"
+                data-tutorial-id="run-workflow"
                 className="text-gray-300 hover:text-white hover:bg-gray-800"
               >
                 <Play className="w-4 h-4 mr-2" />
@@ -291,6 +293,7 @@ export function CompactToolbar({
           disabled={!item || isSaving}
           size="sm"
           variant="ghost"
+          data-tutorial-id="save-workflow"
           className="h-8 w-8 p-0"
           style={{
             color: item ? accentColor : undefined,
@@ -335,6 +338,7 @@ export function CompactToolbar({
           onClick={onRun}
           size="sm"
           variant="ghost"
+          data-tutorial-id="run-workflow"
           className="h-8 w-8 p-0"
           title="Run"
         >
