@@ -56,6 +56,13 @@ interface Annotation extends Omit<BoundingBox, 'id'> {
   screenshot_index?: number
 }
 
+interface ScreenshotMetadata {
+  name: string
+  url: string
+  width: number
+  height: number
+}
+
 interface AnnotationSet {
   id?: string
   screenshot_name: string
@@ -65,6 +72,7 @@ interface AnnotationSet {
   notes?: string
   boundary_width?: number
   annotations: Annotation[]
+  screenshots?: ScreenshotMetadata[] // Multi-screenshot support
 }
 
 export default function AnnotationsPage() {
@@ -107,6 +115,11 @@ export default function AnnotationsPage() {
   const [savedSets, setSavedSets] = useState<AnnotationSet[]>([])
   const [currentSetId, setCurrentSetId] = useState<string | undefined>()
 
+  // Auto-save state
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved')
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+
   // Unsaved changes warning
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
   const [pendingScreenshotIndex, setPendingScreenshotIndex] = useState<number | null>(null)
@@ -129,6 +142,53 @@ export default function AnnotationsPage() {
       setReason('')
     }
   }, [selectedBoxId, selectedBox])
+
+  // Auto-save effect - triggers after 2 seconds of inactivity
+  useEffect(() => {
+    // Clear any existing timer
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+    }
+
+    // Don't auto-save if there are no unsaved changes
+    if (!hasUnsavedChanges) {
+      return
+    }
+
+    // Don't auto-save if there are no annotations yet
+    if (!currentScreenshot || currentScreenshot.annotations.length === 0) {
+      return
+    }
+
+    // Set status to unsaved
+    setSaveStatus('unsaved')
+
+    // Set up debounced auto-save
+    autoSaveTimerRef.current = setTimeout(() => {
+      // Trigger save by calling handleSave directly
+      // We'll wrap it in a function to avoid adding handleSave to dependencies
+      setSaveStatus('saving')
+      handleSave()
+    }, 2000) // 2 seconds delay
+
+    // Cleanup function
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+    }
+    // Note: We intentionally don't include handleSave in dependencies to avoid infinite loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasUnsavedChanges, currentScreenshot?.annotations.length, notes, boundaryWidth])
+
+  // Cancel pending saves on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+    }
+  }, [])
 
   // Load image dimensions
   const loadImageDimensions = async (file: File): Promise<{ width: number; height: number }> => {
@@ -165,6 +225,8 @@ export default function AnnotationsPage() {
     // If this is the first upload, select the first screenshot
     if (screenshots.length === 0) {
       setCurrentScreenshotIndex(0)
+      setHasUnsavedChanges(false)
+      setSaveStatus('saved')
     }
 
     setSelectedBoxId(null)
@@ -226,6 +288,16 @@ export default function AnnotationsPage() {
     setSelectedBoxId(null)
     setShowUnsavedWarning(false)
     setPendingScreenshotIndex(null)
+
+    // Reset unsaved changes state for the new screenshot
+    const newScreenshot = screenshots[index]
+    if (newScreenshot && !newScreenshot.hasUnsavedChanges) {
+      setHasUnsavedChanges(false)
+      setSaveStatus('saved')
+    } else if (newScreenshot?.hasUnsavedChanges) {
+      setHasUnsavedChanges(true)
+      setSaveStatus('unsaved')
+    }
   }
 
   // Confirm switch with unsaved changes
@@ -274,6 +346,7 @@ export default function AnnotationsPage() {
     })
 
     setScreenshots(updatedScreenshots)
+    setHasUnsavedChanges(true)
   }
 
   // Handle box selection
@@ -309,6 +382,7 @@ export default function AnnotationsPage() {
     })
 
     setScreenshots(updatedScreenshots)
+    setHasUnsavedChanges(true)
     toast.success('Element details updated')
   }
 
@@ -330,6 +404,7 @@ export default function AnnotationsPage() {
     })
 
     setScreenshots(updatedScreenshots)
+    setHasUnsavedChanges(true)
     setSelectedBoxId(null)
     toast.success('Element deleted')
   }
@@ -343,6 +418,7 @@ export default function AnnotationsPage() {
     }
 
     setIsSaving(true)
+    setSaveStatus('saving')
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -352,50 +428,102 @@ export default function AnnotationsPage() {
         throw new Error('Not authenticated')
       }
 
-      // Determine if we need to upload a new screenshot
-      // If the URL is a blob URL, we need to upload; if it's already an S3 URL, we can reuse it
-      let permanentUrl = currentScreenshot.url
+      // Upload all screenshots and prepare annotation set
+      // For multi-screenshot sets, we need to upload each screenshot and collect their URLs
+      const screenshotMetadata: Array<{name: string, url: string, width: number, height: number}> = []
+      const allAnnotations: Array<any> = []
 
-      if (currentScreenshot.url.startsWith('blob:')) {
-        // Step 1: Upload the screenshot file to get a permanent URL
-        const formData = new FormData()
-        formData.append('file', currentScreenshot.file)
+      for (let i = 0; i < screenshots.length; i++) {
+        const screenshot = screenshots[i]
 
-        const uploadResponse = await fetch(`${apiUrl}/api/v1/annotations/upload-screenshot`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          body: formData,
+        console.log(`[Annotations] Processing screenshot ${i}:`, {
+          hasPermUrl: !!screenshot.permanentUrl,
+          permUrl: screenshot.permanentUrl,
+          displayUrl: screenshot.url,
+          urlType: screenshot.url.startsWith('blob:') ? 'blob' : 'other'
         })
 
-        if (!uploadResponse.ok) {
-          const errorData = await uploadResponse.json().catch(() => ({ detail: 'Unknown error' }))
-          throw new Error(errorData.detail || `Failed to upload screenshot (${uploadResponse.status})`)
+        // Use permanent URL if available, otherwise use blob URL and upload
+        let screenshotUrl = screenshot.permanentUrl || screenshot.url
+        if (!screenshot.permanentUrl && screenshot.url.startsWith('blob:')) {
+          console.log(`[Annotations] Screenshot ${i} needs upload (blob URL, no permanentUrl)`)
+
+          const formData = new FormData()
+          formData.append('file', screenshot.file)
+
+          const uploadResponse = await fetch(`${apiUrl}/api/v1/annotations/upload-screenshot`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+            },
+            body: formData,
+          })
+
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json().catch(() => ({ detail: 'Unknown error' }))
+            throw new Error(errorData.detail || `Failed to upload screenshot ${screenshot.file.name} (${uploadResponse.status})`)
+          }
+
+          const uploadResult = await uploadResponse.json()
+          screenshotUrl = uploadResult.url
+
+          console.log('[Annotations] Upload result for screenshot', i, ':', uploadResult)
+          console.log('[Annotations] Backend returned URL:', screenshotUrl)
+
+          // Store the permanent URL (keep it relative as returned by backend)
+          // This will be sent in the screenshots array when saving
+          screenshots[i] = {
+            ...screenshot,
+            permanentUrl: screenshotUrl, // Store permanent URL separately
+          }
+
+          console.log('[Annotations] Updated screenshot', i, 'state:', {
+            permanentUrl: screenshots[i].permanentUrl,
+            displayUrl: screenshots[i].url,
+          })
+        } else {
+          console.log(`[Annotations] Screenshot ${i} skipping upload:`, {
+            reason: screenshot.permanentUrl ? 'already has permanentUrl' : 'not a blob URL',
+            permanentUrl: screenshot.permanentUrl,
+            url: screenshot.url
+          })
         }
 
-        const uploadResult = await uploadResponse.json()
-        permanentUrl = uploadResult.url
+        // Add screenshot metadata
+        screenshotMetadata.push({
+          name: screenshot.file.name,
+          url: screenshotUrl,
+          width: screenshot.dimensions.width,
+          height: screenshot.dimensions.height,
+        })
+
+        // Add annotations for this screenshot with correct screenshot_index
+        screenshot.annotations.forEach((box) => {
+          allAnnotations.push({
+            x: Math.round(box.x),
+            y: Math.round(box.y),
+            width: Math.round(box.width),
+            height: Math.round(box.height),
+            label: box.label,
+            description: (box as any).description,
+            reason: (box as any).reason,
+            screenshot_index: i,
+          })
+        })
       }
 
-      // Step 2: Create or update the annotation set with the permanent URL
+      // Create annotation set with multi-screenshot support
       const annotationSet: AnnotationSet = {
-        screenshot_name: currentScreenshot.file.name,
-        screenshot_url: permanentUrl,
-        image_width: currentScreenshot.dimensions.width,
-        image_height: currentScreenshot.dimensions.height,
+        // For backward compatibility, set the first screenshot in the old fields
+        screenshot_name: screenshotMetadata[0].name,
+        screenshot_url: screenshotMetadata[0].url,
+        image_width: screenshotMetadata[0].width,
+        image_height: screenshotMetadata[0].height,
+        // New multi-screenshot field
+        screenshots: screenshotMetadata.length > 1 ? screenshotMetadata : undefined,
         notes,
         boundary_width: boundaryWidth,
-        annotations: currentScreenshot.annotations.map((box) => ({
-          x: Math.round(box.x),
-          y: Math.round(box.y),
-          width: Math.round(box.width),
-          height: Math.round(box.height),
-          label: box.label,
-          description: (box as any).description,
-          reason: (box as any).reason,
-          screenshot_index: 0,
-        })),
+        annotations: allAnnotations,
       }
 
       // Decide whether to create (POST) or update (PUT)
@@ -413,7 +541,8 @@ export default function AnnotationsPage() {
         isUpdate,
         currentSetId,
         annotationCount: annotationSet.annotations.length,
-        screenshotUrl: permanentUrl,
+        screenshotCount: screenshotMetadata.length,
+        firstScreenshotUrl: screenshotMetadata[0]?.url,
       })
 
       const response = await fetch(endpoint, {
@@ -445,30 +574,60 @@ export default function AnnotationsPage() {
 
       const saved = await response.json()
 
+      console.log('[Annotations] Save response:', saved)
+      console.log('[Annotations] Response screenshots field:', saved.screenshots)
+      if (saved.screenshots && Array.isArray(saved.screenshots)) {
+        console.log('[Annotations] Response contains screenshots array with', saved.screenshots.length, 'items')
+        saved.screenshots.forEach((s: any, i: number) => {
+          console.log(`[Annotations]   Response screenshot ${i}:`, s)
+        })
+      }
+      console.log('[Annotations] Screenshots before state update:', screenshots.map((s, i) => ({
+        index: i,
+        url: s.url,
+        permanentUrl: s.permanentUrl,
+        name: s.file?.name,
+        urlType: s.url.startsWith('blob:') ? 'blob' : 'other'
+      })))
+
       // Set the current set ID if this was a new save
       if (!isUpdate && saved.id) {
         setCurrentSetId(saved.id)
       }
 
-      // Mark as saved (no unsaved changes)
-      const updatedScreenshots = screenshots.map((screenshot, index) => {
-        if (index === currentScreenshotIndex) {
-          return {
-            ...screenshot,
-            hasUnsavedChanges: false,
-          }
-        }
-        return screenshot
-      })
+      // Mark all screenshots as saved (no unsaved changes)
+      // Use the screenshots array that was updated during upload (with permanent URLs)
+      const updatedScreenshots = screenshots.map((screenshot) => ({
+        ...screenshot,
+        hasUnsavedChanges: false,
+      }))
 
+      console.log('[Annotations] Screenshots after mapping:', updatedScreenshots.map((s, i) => ({
+        index: i,
+        url: s.url,
+        permanentUrl: s.permanentUrl,
+        name: s.file?.name,
+        urlType: s.url.startsWith('blob:') ? 'blob' : 'other'
+      })))
+
+      console.log('[Annotations] Calling setScreenshots with updated array')
       setScreenshots(updatedScreenshots)
+      console.log('[Annotations] setScreenshots called')
+      setHasUnsavedChanges(false)
+      setSaveStatus('saved')
 
       const actionText = isUpdate ? 'updated' : 'saved'
-      toast.success(`Annotations ${actionText} for ${currentScreenshot.file.name}`)
+      const screenshotCount = screenshots.length
+      const annotationCount = allAnnotations.length
+      toast.success(
+        `Annotation set ${actionText} with ${screenshotCount} screenshot${screenshotCount > 1 ? 's' : ''} ` +
+        `and ${annotationCount} annotation${annotationCount > 1 ? 's' : ''}`
+      )
     } catch (error) {
       console.error('Error saving annotations:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to save annotations'
       toast.error(errorMessage)
+      setSaveStatus('unsaved')
     } finally {
       setIsSaving(false)
     }
@@ -480,93 +639,6 @@ export default function AnnotationsPage() {
     setCurrentSetId(undefined)
     // Then call the regular save function which will create a new set
     await handleSave()
-  }
-
-  // Save all screenshots
-  const handleSaveAll = async () => {
-    const screenshotsWithAnnotations = screenshots.filter(
-      (screenshot) => screenshot.annotations.length > 0
-    )
-
-    if (screenshotsWithAnnotations.length === 0) {
-      toast.error('No screenshots have annotations to save')
-      return
-    }
-
-    setIsSaving(true)
-
-    try {
-      let successCount = 0
-      let errorCount = 0
-
-      for (const screenshot of screenshotsWithAnnotations) {
-        const annotationSet: AnnotationSet = {
-          screenshot_name: screenshot.file.name,
-          screenshot_url: screenshot.url,
-          image_width: screenshot.dimensions.width,
-          image_height: screenshot.dimensions.height,
-          notes,
-          boundary_width: boundaryWidth,
-          annotations: screenshot.annotations.map((box) => ({
-            x: Math.round(box.x),
-            y: Math.round(box.y),
-            width: Math.round(box.width),
-            height: Math.round(box.height),
-            label: box.label,
-            description: (box as any).description,
-            reason: (box as any).reason,
-            screenshot_index: 0,
-          })),
-        }
-
-        try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-          const accessToken = authService.tokenManager.getAccessToken()
-
-          if (!accessToken) {
-            throw new Error('Not authenticated')
-          }
-
-          const response = await fetch(`${apiUrl}/api/v1/annotations/`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(annotationSet),
-          })
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
-            throw new Error(errorData.detail || `Failed to save (${response.status})`)
-          }
-
-          successCount++
-        } catch (error) {
-          console.error(`Error saving ${screenshot.file.name}:`, error)
-          errorCount++
-        }
-      }
-
-      // Mark all as saved
-      const updatedScreenshots = screenshots.map((screenshot) => ({
-        ...screenshot,
-        hasUnsavedChanges: false,
-      }))
-
-      setScreenshots(updatedScreenshots)
-
-      if (errorCount === 0) {
-        toast.success(`Saved annotations for ${successCount} screenshot(s)`)
-      } else {
-        toast.warning(`Saved ${successCount} screenshot(s), ${errorCount} failed`)
-      }
-    } catch (error) {
-      console.error('Error saving annotations:', error)
-      toast.error('Failed to save annotations')
-    } finally {
-      setIsSaving(false)
-    }
   }
 
   // Export current screenshot annotations as JSON
@@ -687,51 +759,143 @@ export default function AnnotationsPage() {
   // Load a specific annotation set
   const handleLoadSet = async (set: AnnotationSet) => {
     try {
-      // Fetch the screenshot from the URL
-      const response = await fetch(set.screenshot_url)
-      if (!response.ok) {
-        throw new Error('Failed to fetch screenshot')
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+      console.log('[Annotations] Loading annotation set:', set.id)
+      console.log('[Annotations] Has screenshots array:', !!set.screenshots)
+
+      // Helper function to convert relative URLs to absolute
+      const makeAbsoluteUrl = (url: string): string => {
+        if (url.startsWith('/')) {
+          const absoluteUrl = `${apiUrl}${url}`
+          console.log('[Annotations] Converting relative URL to absolute:', { original: url, absolute: absoluteUrl })
+          return absoluteUrl
+        }
+        return url
       }
 
-      // Convert to blob and then to File
-      const blob = await response.blob()
-      const file = new File([blob], set.screenshot_name, { type: blob.type })
+      // Determine which format we're dealing with
+      const screenshotsToLoad = set.screenshots && set.screenshots.length > 0
+        ? set.screenshots // New multi-screenshot format
+        : [{ // Old single-screenshot format
+            name: set.screenshot_name,
+            url: set.screenshot_url,
+            width: set.image_width,
+            height: set.image_height,
+          }]
 
-      // Load image dimensions
-      const url = URL.createObjectURL(file)
-      const dimensions = await loadImageDimensions(file)
+      console.log('[Annotations] Loading', screenshotsToLoad.length, 'screenshot(s)')
 
-      // Create the screenshot data with saved annotations
-      const newScreenshot: ScreenshotData = {
-        id: `screenshot-${Date.now()}-${Math.random()}`,
-        file,
-        url,
-        dimensions,
-        annotations: set.annotations.map((ann) => ({
-          id: ann.id,
-          x: ann.x,
-          y: ann.y,
-          width: ann.width,
-          height: ann.height,
-          label: ann.label,
-          color: '#3b82f6', // Default blue color
-        })),
-        hasUnsavedChanges: false,
+      // Load all screenshots
+      const loadedScreenshots: ScreenshotData[] = []
+
+      for (let i = 0; i < screenshotsToLoad.length; i++) {
+        const screenshot = screenshotsToLoad[i]
+        const absoluteUrl = makeAbsoluteUrl(screenshot.url)
+
+        // Check if the screenshot URL is a blob URL (invalid)
+        if (absoluteUrl.startsWith('blob:')) {
+          toast.error('Cannot load annotation set - screenshot was not saved properly. Please delete this set and create a new one.')
+          console.error('Error loading screenshot: Annotation set has blob URL (not saved):', absoluteUrl)
+          return
+        }
+
+        console.log('[Annotations] Fetching screenshot', i, 'from:', absoluteUrl)
+
+        // Fetch the screenshot from the URL
+        const response = await fetch(absoluteUrl)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch screenshot ${i}: ${response.status} ${response.statusText}`)
+        }
+
+        // Convert to blob and then to File
+        const blob = await response.blob()
+        const file = new File([blob], screenshot.name, { type: blob.type })
+
+        // Load image dimensions
+        const url = URL.createObjectURL(file)
+        const dimensions = await loadImageDimensions(file)
+
+        // Get annotations for this screenshot index
+        const screenshotAnnotations = set.annotations
+          .filter((ann) => (ann.screenshot_index ?? 0) === i)
+          .map((ann) => ({
+            id: ann.id,
+            x: ann.x,
+            y: ann.y,
+            width: ann.width,
+            height: ann.height,
+            label: ann.label,
+            color: '#3b82f6', // Default blue color
+          }))
+
+        console.log('[Annotations] Screenshot', i, 'has', screenshotAnnotations.length, 'annotation(s)')
+
+        // Create the screenshot data
+        loadedScreenshots.push({
+          id: `screenshot-${Date.now()}-${i}-${Math.random()}`,
+          file,
+          url, // Use blob URL for display
+          dimensions,
+          annotations: screenshotAnnotations,
+          hasUnsavedChanges: false,
+        })
       }
 
-      // Replace current screenshots with the loaded one
-      setScreenshots([newScreenshot])
+      // Replace current screenshots with the loaded ones
+      setScreenshots(loadedScreenshots)
       setCurrentScreenshotIndex(0)
       setNotes(set.notes || '')
       setBoundaryWidth(set.boundary_width || 5)
       setCurrentSetId(set.id)
       setShowLoadDialog(false)
       setSelectedBoxId(null)
+      setHasUnsavedChanges(false)
+      setSaveStatus('saved')
 
-      toast.success(`Loaded "${set.screenshot_name}" with ${set.annotations.length} annotation(s)`)
+      const totalAnnotations = set.annotations.length
+      toast.success(
+        `Loaded ${loadedScreenshots.length} screenshot(s) with ${totalAnnotations} annotation(s)`
+      )
     } catch (error) {
       console.error('Error loading screenshot:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to load screenshot'
+      toast.error(errorMessage)
+    }
+  }
+
+  // Delete an annotation set
+  const handleDeleteSet = async (setId: string, setName: string) => {
+    if (!confirm(`Are you sure you want to delete "${setName}"? This cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const accessToken = authService.tokenManager.getAccessToken()
+
+      if (!accessToken) {
+        throw new Error('Not authenticated')
+      }
+
+      const response = await fetch(`${apiUrl}/api/v1/annotations/${setId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        throw new Error(errorData.detail || `Failed to delete annotation set (${response.status})`)
+      }
+
+      // Remove from local state
+      setSavedSets((prev) => prev.filter((s) => s.id !== setId))
+      toast.success(`Deleted "${setName}"`)
+    } catch (error) {
+      console.error('Error deleting annotation set:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete annotation set'
       toast.error(errorMessage)
     }
   }
@@ -902,7 +1066,10 @@ export default function AnnotationsPage() {
                     id="notes"
                     placeholder="Add notes about this annotation set..."
                     value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    onChange={(e) => {
+                      setNotes(e.target.value)
+                      setHasUnsavedChanges(true)
+                    }}
                     rows={3}
                   />
                 </div>
@@ -918,7 +1085,10 @@ export default function AnnotationsPage() {
                     max={50}
                     step={1}
                     value={[boundaryWidth]}
-                    onValueChange={(value) => setBoundaryWidth(value[0])}
+                    onValueChange={(value) => {
+                      setBoundaryWidth(value[0])
+                      setHasUnsavedChanges(true)
+                    }}
                     className="w-full"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -927,22 +1097,29 @@ export default function AnnotationsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Actions</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Actions</Label>
+                    {currentScreenshot.annotations.length > 0 && (
+                      <div className="text-xs">
+                        {saveStatus === 'saving' && (
+                          <span className="text-blue-500">Saving...</span>
+                        )}
+                        {saveStatus === 'saved' && (
+                          <span className="text-muted-foreground">All changes saved</span>
+                        )}
+                        {saveStatus === 'unsaved' && (
+                          <span className="text-yellow-600">Unsaved changes</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex gap-2">
-                    <Button
-                      onClick={handleSave}
-                      disabled={isSaving || currentScreenshot.annotations.length === 0}
-                      className="flex-1"
-                      size="sm"
-                    >
-                      <Save className="h-4 w-4 mr-2" />
-                      {currentSetId ? 'Update' : 'Save'}
-                    </Button>
                     {currentSetId && (
                       <Button
                         onClick={handleSaveAs}
                         disabled={isSaving || currentScreenshot.annotations.length === 0}
                         variant="outline"
+                        className="flex-1"
                         size="sm"
                       >
                         <Plus className="h-4 w-4 mr-2" />
@@ -959,25 +1136,15 @@ export default function AnnotationsPage() {
                     </Button>
                   </div>
                   {screenshots.length > 1 && (
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleSaveAll}
-                        disabled={isSaving}
-                        variant="secondary"
-                        className="flex-1"
-                        size="sm"
-                      >
-                        <Save className="h-4 w-4 mr-2" />
-                        Save All
-                      </Button>
-                      <Button
-                        onClick={handleExportAll}
-                        variant="outline"
-                        size="sm"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={handleExportAll}
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export All
+                    </Button>
                   )}
                 </div>
               </>
@@ -1188,26 +1355,61 @@ export default function AnnotationsPage() {
               </p>
             ) : (
               <div className="space-y-2">
-                {savedSets.map((set) => (
-                  <button
-                    key={set.id}
-                    onClick={() => handleLoadSet(set)}
-                    className="w-full text-left p-4 rounded border hover:bg-accent transition-colors"
-                  >
-                    <div className="font-medium">{set.screenshot_name}</div>
-                    <div className="text-sm text-muted-foreground mt-1">
-                      {set.annotations.length} elements • {set.image_width} × {set.image_height}px
+                {savedSets.map((set) => {
+                  const isBlobUrl = set.screenshot_url.startsWith('blob:')
+                  return (
+                    <div
+                      key={set.id}
+                      className={`relative p-4 rounded border transition-colors ${
+                        isBlobUrl
+                          ? 'opacity-50 bg-muted'
+                          : 'hover:bg-accent'
+                      }`}
+                    >
+                      <button
+                        onClick={() => handleLoadSet(set)}
+                        disabled={isBlobUrl}
+                        className="w-full text-left"
+                      >
+                        <div className="font-medium">
+                          {set.screenshot_name}
+                          {isBlobUrl && (
+                            <span className="ml-2 text-xs text-red-500 font-normal">
+                              (Invalid - not saved)
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          {set.annotations.length} elements • {set.image_width} × {set.image_height}px
+                        </div>
+                        {set.notes && (
+                          <div className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                            {set.notes}
+                          </div>
+                        )}
+                        <div className="text-xs text-muted-foreground mt-2">
+                          {new Date((set as any).created_at).toLocaleString()}
+                        </div>
+                        {isBlobUrl && (
+                          <div className="text-xs text-red-500 mt-2">
+                            Screenshot was not properly saved. Please delete this set.
+                          </div>
+                        )}
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteSet(set.id, set.screenshot_name)
+                        }}
+                        className="absolute top-2 right-2"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                    {set.notes && (
-                      <div className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                        {set.notes}
-                      </div>
-                    )}
-                    <div className="text-xs text-muted-foreground mt-2">
-                      {new Date((set as any).created_at).toLocaleString()}
-                    </div>
-                  </button>
-                ))}
+                  )
+                })}
               </div>
             )}
           </ScrollArea>

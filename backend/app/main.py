@@ -83,8 +83,11 @@ else:
         "http://localhost:3003",
         "http://localhost:3004",
         # Allow frontend on Windows to access WSL backend
+        # Note: WSL IP may change, consider using localhost instead
         "http://172.27.67.252:3001",
         "http://172.27.67.252:3000",
+        "http://172.24.89.15:3001",
+        "http://172.24.89.15:3000",
     ]
     logger.info("Using development CORS origins", origins=origins)
 
