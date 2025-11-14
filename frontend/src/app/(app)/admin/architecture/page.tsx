@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Home, Shield, ArrowLeft } from 'lucide-react'
 import { ArchitectureDiagram } from '@/components/admin/architecture/ArchitectureDiagram'
 import { ComponentDetailPanel } from '@/components/admin/architecture/ComponentDetailPanel'
@@ -104,16 +105,60 @@ export default function ArchitecturePage() {
           </Card>
         </div>
 
-        {/* Instructions */}
-        <Card className="mt-6 p-6">
-          <h3 className="text-lg font-semibold mb-3">How to Use</h3>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>• Click on any component in the diagram to view detailed information</li>
-            <li>• Hover over components to see their names and status</li>
-            <li>• Arrows indicate data flow and dependencies between components</li>
-            <li>• Color coding: Blue = Core Libraries, Green = Applications, Purple = Services</li>
-          </ul>
-        </Card>
+        {/* Instructions and Features */}
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <Home className="h-5 w-5" />
+              How to Use
+            </h3>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <span className="text-primary mt-1">•</span>
+                <span><strong>Click</strong> on any component to view comprehensive details</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-primary mt-1">•</span>
+                <span><strong>Hover</strong> over components to see quick info tooltips</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-primary mt-1">•</span>
+                <span><strong>Watch</strong> as related components highlight when hovering</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-primary mt-1">•</span>
+                <span><strong>Arrows</strong> show data flow and dependencies between components</span>
+              </li>
+            </ul>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              About the Ecosystem
+            </h3>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                The Qontinui ecosystem is a comprehensive platform for GUI automation, built on
+                peer-reviewed academic research.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                  📚 2 Core Libraries
+                </Badge>
+                <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
+                  🖥️ 2 Applications
+                </Badge>
+                <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/20">
+                  ⚙️ 1 Service
+                </Badge>
+              </div>
+              <p className="text-xs">
+                All components are open-source under the MIT license.
+              </p>
+            </div>
+          </Card>
+        </div>
       </div>
     </div>
   )
