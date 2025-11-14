@@ -38,6 +38,7 @@ from app.schemas.analysis import (
 from app.services.analysis import AnalysisOrchestrator
 from app.services.analysis.base import AnalysisInput
 from app.services.analysis.orchestrator import analyzer_registry
+from app.services.analysis.progress import ProgressTracker
 from app.services.object_storage import object_storage
 
 logger = logging.getLogger(__name__)
@@ -45,8 +46,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# Initialize orchestrator
-orchestrator = AnalysisOrchestrator()
+# Initialize orchestrator and progress tracker
+progress_tracker = ProgressTracker()
+orchestrator = AnalysisOrchestrator(progress_tracker=progress_tracker)
 
 
 @router.get("/analyzers", response_model=AnalyzerListResponse)
@@ -150,6 +152,10 @@ async def run_analysis(
             parameters=request.analyzer_configs or {}
         )
 
+        # Generate a temporary job ID for progress tracking
+        import uuid
+        temp_job_id = uuid.uuid4()
+
         # Run analysis
         results = await orchestrator.analyze(
             input_data=analysis_input,
@@ -158,6 +164,7 @@ async def run_analysis(
             parallel=request.parallel,
             fuse_results=request.fuse_results,
             overlap_threshold=request.overlap_threshold,
+            job_id=temp_job_id,
         )
 
         # Save to database if requested
@@ -170,6 +177,7 @@ async def run_analysis(
         # Convert to response schema
         response = AnalysisResponse(
             analysis_job_id=analysis_job_id,
+            progress_job_id=temp_job_id,  # Return progress ID for potential polling
             annotation_set_id=request.annotation_set_id,
             analyzer_results=[
                 _convert_analyzer_result(r) for r in results["analyzer_results"]
@@ -181,6 +189,9 @@ async def run_analysis(
             analyzer_statistics=results["analyzer_statistics"],
             status="completed"
         )
+
+        # Clean up progress data after completion
+        await progress_tracker.clear_progress(temp_job_id)
 
         return response
 
@@ -378,6 +389,38 @@ async def delete_analysis_job(
     except Exception as e:
         logger.error(f"Error deleting analysis job: {e}", exc_info=True)
         await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/progress/{job_id}")
+async def get_analysis_progress(
+    job_id: UUID,
+    current_user: User = Depends(get_current_user_async),
+):
+    """
+    Get real-time progress of an analysis job
+
+    Returns progress information including:
+    - Overall status
+    - Current analyzer being run
+    - Progress per analyzer
+    - Fusion status
+    """
+    try:
+        progress = await progress_tracker.get_progress(job_id)
+
+        if not progress:
+            raise HTTPException(
+                status_code=404,
+                detail="Progress not found. Job may be completed or does not exist."
+            )
+
+        return progress
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting analysis progress: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
