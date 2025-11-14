@@ -7,6 +7,8 @@ from app.api.v1.endpoints import (
     analysis,
     annotations,
     auth,
+    automation,
+    automation_ws,
     background_removal,
     billing,
     export,
@@ -41,6 +43,8 @@ api_router.include_router(settings.router, prefix="/settings", tags=["settings"]
 api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
+api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
+api_router.include_router(automation_ws.router, prefix="/automation", tags=["automation-websockets"])
 api_router.include_router(annotations.router, prefix="/annotations", tags=["annotations"])
 api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
 api_router.include_router(region_analysis.router, prefix="/region-analysis", tags=["region-analysis"])

@@ -123,7 +123,17 @@ async def run_analysis(
         screenshot_data = []
         for screenshot in screenshots:
             try:
-                data = object_storage.download_file(screenshot["url"])
+                # Strip /uploads/ prefix if present to get the storage key
+                url = screenshot["url"]
+                if url.startswith("/uploads/"):
+                    key = url[len("/uploads/"):]
+                elif url.startswith("uploads/"):
+                    key = url[len("uploads/"):]
+                else:
+                    key = url
+
+                logger.info(f"Downloading screenshot: url={url}, key={key}")
+                data = object_storage.download_file(key)
                 screenshot_data.append(data)
             except Exception as e:
                 logger.error(f"Error downloading screenshot {screenshot['url']}: {e}")
