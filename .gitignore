@@ -33,15 +33,8 @@ package-lock.json
 next.config.js
 frontend/scripts
 
-# Development documentation (excluded - moved to qontinui-dev-notes)
-docs/
-
-# Markdown documentation files (all moved to qontinui-dev-notes)
-# Ignore all .md files except essential root-level files
-*.md
-!README.md
-!CONTRIBUTING.md
-!CODE_OF_CONDUCT.md
+# Documentation is now committed to the repository
+# (Previously excluded, but now included for project documentation)
 
 # IDE
 .vscode/
