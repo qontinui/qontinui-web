@@ -8,9 +8,12 @@ from app.api.v1.endpoints import (
     auth,
     background_removal,
     billing,
+    collaboration,
+    collaboration_ws,
     export,
     images,
     integration_testing,
+    organizations,
     pattern_optimization,
     projects,
     settings,
@@ -37,3 +40,6 @@ api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
 api_router.include_router(annotations.router, prefix="/annotations", tags=["annotations"])
+api_router.include_router(organizations.router, prefix="/organizations", tags=["organizations"])
+api_router.include_router(collaboration.router, prefix="/projects", tags=["collaboration"])
+api_router.include_router(collaboration_ws.router, tags=["collaboration-websockets"])
