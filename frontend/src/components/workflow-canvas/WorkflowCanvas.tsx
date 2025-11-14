@@ -658,6 +658,7 @@ function WorkflowCanvasInner({
     <div
       ref={containerRef}
       className={`workflow-canvas ${className}`}
+      data-tutorial-id="workflow-canvas"
       style={{
         width: '100%',
         height: '100%',
@@ -713,6 +714,7 @@ function WorkflowCanvasInner({
             showFitView={true}
             showInteractive={false}
             position="top-left"
+            data-tutorial-id="canvas-controls"
           />
         )}
 
@@ -737,12 +739,13 @@ function WorkflowCanvasInner({
         )}
 
         {/* Top panel - Actions */}
-        <Panel position="top-right" className="workflow-canvas-panel">
+        <Panel position="top-right" className="workflow-canvas-panel" data-tutorial-id="canvas-toolbar">
           <div className="flex gap-2">
             <button
               onClick={handleFitView}
               className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-sm"
               title="Fit view (Ctrl+F)"
+              data-tutorial-id="fit-view"
             >
               Fit View
             </button>
@@ -752,6 +755,7 @@ function WorkflowCanvasInner({
                   onClick={handleAutoLayout}
                   className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded text-sm"
                   title="Auto layout (Ctrl+L)"
+                  data-tutorial-id="auto-layout"
                 >
                   Auto Layout
                 </button>
