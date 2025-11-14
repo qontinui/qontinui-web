@@ -18,6 +18,7 @@ export const civ6EarlyGameTutorial: Tutorial = {
     'Master your opening moves while Qontinui handles the micro-management. Learn to automate unit selection, settler movement, and city founding in Civilization VI.',
   duration: '15 minutes',
   difficulty: 'beginner',
+  mode: 'overlay',
   category: 'Gaming',
   tags: ['civ6', 'strategy', 'automation', 'gaming', 'turn-based'],
 

@@ -272,13 +272,14 @@ export function GraphWorkflowBuilder() {
 
   return (
     <ReactFlowProvider>
-      <div className="flex h-full">
+      <div className="flex h-full" data-tutorial-id="graph-builder-container">
         {/* Left Panel - Workflow List */}
-        <div className="w-64 border-r border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto flex-shrink-0">
+        <div className="w-64 border-r border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto flex-shrink-0" data-tutorial-id="workflow-list">
         <div className="space-y-4">
           <Button
             onClick={handleCreateWorkflow}
             className="w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black font-medium"
+            data-tutorial-id="create-workflow"
           >
             <Plus className="w-4 h-4 mr-2" />
             New Workflow
@@ -394,6 +395,7 @@ export function GraphWorkflowBuilder() {
                   size="sm"
                   onClick={handleImportWorkflow}
                   className="border-gray-700 hover:border-[#00FF88] hover:text-[#00FF88]"
+                  data-tutorial-id="import-workflow"
                 >
                   <Upload className="w-4 h-4 mr-2" />
                   Import
@@ -403,6 +405,7 @@ export function GraphWorkflowBuilder() {
                   size="sm"
                   onClick={handleExportWorkflow}
                   className="border-gray-700 hover:border-[#00FF88] hover:text-[#00FF88]"
+                  data-tutorial-id="export-workflow"
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Export
@@ -411,9 +414,9 @@ export function GraphWorkflowBuilder() {
             </div>
 
             {/* Canvas with Node Palette */}
-            <div className="flex-1 min-h-0 flex relative" ref={canvasRef}>
+            <div className="flex-1 min-h-0 flex relative" ref={canvasRef} data-tutorial-id="graph-canvas">
               {/* Node Palette - Left side */}
-              <div className="absolute left-0 top-0 bottom-0 z-10 w-80">
+              <div className="absolute left-0 top-0 bottom-0 z-10 w-80" data-tutorial-id="node-palette-panel">
                 <NodePalette
                   position="left"
                   showSearch={true}
@@ -454,7 +457,7 @@ export function GraphWorkflowBuilder() {
       </div>
 
       {/* Right Panel - Action Properties */}
-      <div className="w-96 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto flex-shrink-0">
+      <div className="w-96 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto flex-shrink-0" data-tutorial-id="graph-properties">
         {selectedAction ? (
           <ActionProperties
             action={selectedAction}

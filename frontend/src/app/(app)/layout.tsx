@@ -9,6 +9,11 @@ import { OfflineIndicator } from "@/components/offline-indicator";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { UnifiedSidebar } from "@/components/navigation";
 import { cn } from "@/lib/utils";
+import { TutorialProvider } from "@/components/tutorial/integration/TutorialProvider";
+import { TutorialTrigger } from "@/components/tutorial/integration/TutorialTrigger";
+import { TutorialMenuButton } from "@/components/tutorial/TutorialMenuButton";
+import { allTutorials } from "@/data/tutorials";
+import "@/components/tutorial/integration/tutorial-targets.css";
 
 export const dynamic = 'force-dynamic'
 
@@ -41,9 +46,13 @@ export default function AppLayout({
       {/* <OrganizationProvider> */}
         <SidebarProvider>
           <AutomationProvider>
-            <AppLayoutContent>
-              {children}
-            </AppLayoutContent>
+            <TutorialProvider defaultMode="contextual">
+              <AppLayoutContent>
+                {children}
+              </AppLayoutContent>
+              <TutorialTrigger tutorials={allTutorials} enabled={true} />
+              <TutorialMenuButton />
+            </TutorialProvider>
           </AutomationProvider>
         </SidebarProvider>
       {/* </OrganizationProvider> */}
