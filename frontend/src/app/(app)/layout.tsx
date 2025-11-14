@@ -12,6 +12,12 @@ import { OnboardingTour } from "@/components/onboarding-tour";
 import { SessionTimeoutWarning } from "@/components/session-timeout-warning";
 import { UnifiedSidebar } from "@/components/navigation";
 import { cn } from "@/lib/utils";
+// Tutorial system imports - files pending restoration
+// import { TutorialProvider } from "@/components/tutorial/integration/TutorialProvider";
+// import { TutorialTrigger } from "@/components/tutorial/integration/TutorialTrigger";
+// import { TutorialMenuButton } from "@/components/tutorial/TutorialMenuButton";
+// import { allTutorials } from "@/data/tutorials";
+// import "@/components/tutorial/integration/tutorial-targets.css";
 
 export const dynamic = 'force-dynamic'
 

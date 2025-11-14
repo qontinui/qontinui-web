@@ -180,6 +180,7 @@ export function ItemMetadataPanel({
             value={tempName}
             onChange={(e) => setTempName(e.target.value)}
             onKeyDown={handleKeyDown}
+            data-tutorial-id="workflow-name-input"
             className="bg-gray-900 border-gray-700 text-white"
             placeholder="Enter name..."
             autoFocus

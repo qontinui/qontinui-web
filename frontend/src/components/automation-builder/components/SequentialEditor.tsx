@@ -147,7 +147,7 @@ export function SequentialEditor({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white">
+            <Button size="sm" data-tutorial-id="add-action-button" className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white">
               <Plus className="w-4 h-4 mr-2" />
               Add Action
             </Button>
