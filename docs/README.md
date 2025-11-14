@@ -4,11 +4,13 @@ Welcome to the comprehensive documentation for Qontinui, the advanced workflow a
 
 ## Quick Navigation
 
-### Workflow Builder Features
+### Core Features
 
-The Workflow Builder provides enterprise-grade features for creating, managing, and optimizing automation workflows.
+Qontinui provides two powerful automation systems:
 
-#### Core Features
+#### 1. Workflow Builder (Actions & Workflows)
+
+Enterprise-grade features for creating, managing, and optimizing automation workflows.
 
 - **[Workflow Builder Overview](./workflow-builder/README.md)** - Complete overview and getting started guide
 - **[Organization & Folders](./workflow-builder/organization.md)** - Hierarchical folder structure with tags and search
@@ -19,22 +21,179 @@ The Workflow Builder provides enterprise-grade features for creating, managing, 
 - **[Documentation System](./workflow-builder/documentation.md)** - Auto-generate and maintain workflow documentation
 - **[Version Control](./workflow-builder/version-control.md)** - Git-like branches, versions, tags, and merging
 
-#### Reference Documentation
+#### 2. State Machine (Images, States & Transitions)
 
-- **[API Reference](./workflow-builder/api-reference.md)** - Complete API documentation for all services
+Powerful visual state machine builder for complex automation scenarios with large-scale project support.
+
+- **[Image Library](./image-library/README.md)** - Centralized image management (100+ images)
+- **[State Builder](./state-builder/README.md)** - Visual state machine builder (50+ states)
+- **[Transitions](./transitions/README.md)** - Transition management and validation (100+ transitions)
+- **[Project Management](./project-management/README.md)** - Project dashboard and optimization tools
+- **[Best Practices](./best-practices/large-projects.md)** - Large project strategies and guidelines
+
+## Image Library & Management
+
+Master image organization and management for large automation projects.
+
+### Image Library
+- **[Image Library Overview](./image-library/README.md)** - Centralized image repository
+  - Image upload and management
+  - Usage tracking across states and workflows
+  - Source categorization (uploaded, pattern optimization, extraction, state discovery)
+  - Smart deletion protection
+  - S3 cloud storage
+- **[Image Organization](./image-library/organization.md)** - Organization strategies for 100+ images
+  - Naming conventions and best practices
+  - Tagging strategies
+  - Collections and grouping
+  - Search and filters
+  - Bulk operations
+  - Maintenance workflows
+
+### Key Image Features
+- **Centralized Management**: All images in one library
+- **Automatic Tracking**: Usage across states and workflows
+- **Smart Search**: Filter by name, source, usage, date
+- **Cloud Storage**: Scalable S3 storage with presigned URLs
+- **Usage Analysis**: Identify unused or overused images
+
+## State Machine & Builder
+
+Build and manage complex state machines visually.
+
+### State Builder
+- **[State Builder Overview](./state-builder/README.md)** - Visual state modeling
+  - Creating and configuring states
+  - StateImages, Regions, Locations, and Strings
+  - Visual canvas with auto-layout
+  - State validation
+  - Usage tracking
+- **[State Templates](./state-builder/templates.md)** - Reusable state patterns
+  - Built-in templates (login, dashboard, form, dialog, error, loading)
+  - Creating custom templates
+  - Template best practices
+- **[State Organization](./state-builder/organization.md)** - Managing 50+ states
+  - Naming conventions
+  - Virtual grouping strategies
+  - Visual organization on canvas
+  - Search and navigation
+  - Dependency management
+  - Maintenance workflows
+
+### Key State Features
+- **Visual Modeling**: Drag-and-drop state machine builder
+- **Rich Components**: StateImages, Regions, Locations, Strings
+- **State Templates**: Quickly create common patterns
+- **Auto-Layout**: Automatic graph organization
+- **Relative Positioning**: Responsive to layout changes
+
+## Transitions & Flow
+
+Manage state transitions and navigation logic.
+
+### Transition Management
+- **[Transitions Overview](./transitions/README.md)** - Transition types and management
+  - Outgoing and Incoming transitions
+  - State activation and deactivation
+  - Workflow execution during transitions
+  - Timeout and retry configuration
+  - Bulk operations
+- **[Transition Templates](./transitions/templates.md)** - Common transition patterns
+  - Navigation, modal, form submission, login, data loading templates
+  - Creating custom templates
+- **[Transition Validation](./transitions/validation.md)** - Validation and debugging
+  - Broken reference detection
+  - Circular dependency detection
+  - Unreachable state detection
+  - Automated fixing
+
+### Key Transition Features
+- **Two Types**: Outgoing (from→to) and Incoming (initialization)
+- **State Management**: Activate/deactivate states intelligently
+- **Workflow Integration**: Execute workflows during transitions
+- **Validation**: Detect and fix issues automatically
+- **Visual Flow**: See transition relationships on canvas
+
+## Project Management
+
+Tools for managing large automation projects.
+
+### Project Tools
+- **[Project Dashboard](./project-management/README.md)** - Overview and health monitoring
+  - Project health score (0-100)
+  - Resource counts and tracking
+  - Issue detection and recommendations
+  - Backup and export
+- **[Project Optimization](./project-management/optimization.md)** - Keep projects lean
+  - Finding unused resources
+  - Detecting duplicates
+  - Fixing broken references
+  - Performance optimization
+  - Improving health score
+- **[Global Search](./project-management/global-search.md)** - Quick resource access
+  - Universal search (Cmd/Ctrl+K)
+  - Search operators and filters
+  - Searching by resource type
+  - Quick actions from search
+
+### Key Project Features
+- **Health Monitoring**: Track project health (0-100 score)
+- **Resource Tracking**: Monitor all images, states, transitions, workflows
+- **Optimization Tools**: Find and fix issues automatically
+- **Global Search**: Cmd/Ctrl+K to find anything instantly
+- **Export/Import**: Backup and restore projects
+
+## Best Practices
+
+Guidelines for building and maintaining large automation projects.
+
+### Best Practices Guide
+- **[Large Projects](./best-practices/large-projects.md)** - Comprehensive best practices
+  - Organization strategies for 100+ resources
+  - Naming conventions (images, states, transitions, workflows)
+  - Folder structure recommendations
+  - Performance optimization tips
+  - Team collaboration workflows
+  - Maintenance schedules (daily, weekly, monthly, quarterly)
+  - Common pitfalls and solutions
+
+### Key Best Practices
+- **Naming Conventions**: Hierarchical, consistent, descriptive
+- **Organization**: Feature-based grouping with prefixes
+- **Performance**: Optimize images, simplify states
+- **Maintenance**: Regular cleanup (weekly/monthly)
+- **Team Collaboration**: Documentation and ownership
+- **Validation**: Run before commits
+
+## API Reference
+
+Technical reference for developers.
+
+### API Documentation
+- **[Resource Services](./api-reference/resource-services.md)** - Complete API reference
+  - Image Service (add, delete, update, find, usage tracking)
+  - State Service (CRUD operations, validation)
+  - Transition Service (CRUD, validation, circular dependency detection)
+  - Project Service (health metrics, export/import)
+  - Validation Service (automated validation and fixing)
+  - Search Service (global search, query parsing)
+  - Complete type definitions and interfaces
+
+### Workflow Builder API
+- **[Workflow API Reference](./workflow-builder/api-reference.md)** - Workflow builder APIs
 - **[Data Models](./workflow-builder/data-models.md)** - Type definitions and schemas
-- **[Examples](./workflow-builder/examples.md)** - Complete working examples
-
-#### Guides
-
-- **[Migration Guide](./workflow-builder/migration-guide.md)** - Migrate from legacy workflows
-- **[Best Practices](./workflow-builder/best-practices.md)** - Design patterns and recommended strategies
-- **[Troubleshooting](./workflow-builder/troubleshooting.md)** - Common issues and solutions
 
 ## Getting Started
 
 ### For New Users
 
+**State Machine:**
+1. **Start Here**: Read the [Image Library Overview](./image-library/README.md)
+2. **Build States**: Learn [State Builder](./state-builder/README.md)
+3. **Create Flow**: Master [Transitions](./transitions/README.md)
+4. **Follow Best Practices**: [Large Project Guide](./best-practices/large-projects.md)
+
+**Workflow Builder:**
 1. **Start Here**: Read the [Workflow Builder Overview](./workflow-builder/README.md)
 2. **Learn Organization**: [Organization Guide](./workflow-builder/organization.md)
 3. **Try Examples**: [Complete Examples](./workflow-builder/examples.md)
@@ -42,6 +201,12 @@ The Workflow Builder provides enterprise-grade features for creating, managing, 
 
 ### For Developers
 
+**State Machine:**
+1. **API Reference**: [Resource Services API](./api-reference/resource-services.md)
+2. **Type Definitions**: See API Reference for complete types
+3. **Examples**: Each guide includes code examples
+
+**Workflow Builder:**
 1. **API Reference**: [Complete API Documentation](./workflow-builder/api-reference.md)
 2. **Data Models**: [Type Definitions](./workflow-builder/data-models.md)
 3. **Examples**: [Code Examples](./workflow-builder/examples.md)
@@ -49,110 +214,40 @@ The Workflow Builder provides enterprise-grade features for creating, managing, 
 ### For QA/Test Engineers
 
 1. **Testing Framework**: [Testing Guide](./workflow-builder/testing.md)
-2. **Analytics**: [Performance & Metrics](./workflow-builder/analytics.md)
-3. **Best Practices**: [Testing Best Practices](./workflow-builder/best-practices.md)
-
-## Feature Overview
-
-### Organization & Management
-
-Create hierarchical folder structures to organize workflows, add tags for easy categorization, and use powerful search and filtering capabilities.
-
-**Learn more:** [Organization Guide](./workflow-builder/organization.md)
-
-**Key Features:**
-- Nested folder structure
-- Tag-based categorization
-- Advanced search and filtering
-- Bulk operations
-- Export/import folder structures
-
-### Dependency Analysis
-
-Understand relationships between workflows, detect circular dependencies, and perform impact analysis before making changes.
-
-**Learn more:** [Dependencies Guide](./workflow-builder/dependencies.md)
-
-**Key Features:**
-- Dependency graph visualization
-- Circular dependency detection
-- Impact analysis
-- Find unused workflows
-- Export dependency reports
-
-### Reusable Components
-
-Build a library of reusable workflow components with parameterization and versioning for code reuse across workflows.
-
-**Learn more:** [Components Guide](./workflow-builder/components.md)
-
-**Key Features:**
-- Create parameterized components
-- Built-in component library
-- Component versioning
-- Parameter validation
-- Usage tracking
-
-### Testing Framework
-
-Comprehensive testing with multiple assertion types, test suites, mock execution, and detailed result tracking.
-
-**Learn more:** [Testing Guide](./workflow-builder/testing.md)
-
-**Key Features:**
-- Multiple assertion types
-- Test suites
-- Mock execution environment
-- Detailed test results
-- Test coverage tracking
-
-### Analytics & Performance
-
-Track workflow execution metrics, analyze performance, identify bottlenecks, and get optimization suggestions.
-
-**Learn more:** [Analytics Guide](./workflow-builder/analytics.md)
-
-**Key Features:**
-- Execution metrics and success rates
-- Performance analysis
-- Bottleneck identification
-- Parallelization opportunities
-- Optimization suggestions
-- Performance heatmaps
-
-### Documentation System
-
-Auto-generate comprehensive documentation from workflow structure with markdown support and customizable templates.
-
-**Learn more:** [Documentation Guide](./workflow-builder/documentation.md)
-
-**Key Features:**
-- Auto-generated documentation
-- Markdown support
-- Custom templates
-- Multiple export formats
-- Version documentation
-
-### Version Control
-
-Git-like version control with branches, versions, tags, detailed diffs, and merge operations with conflict detection.
-
-**Learn more:** [Version Control Guide](./workflow-builder/version-control.md)
-
-**Key Features:**
-- Branch management
-- Version history
-- Tagging
-- Detailed diffs
-- Merge with conflict detection
-- Rollback capabilities
-- Export/import version history
+2. **Validation**: [Transition Validation](./transitions/validation.md)
+3. **Analytics**: [Performance & Metrics](./workflow-builder/analytics.md)
 
 ## Documentation Structure
 
 ```
 docs/
 ├── README.md (this file)
+│
+├── image-library/
+│   ├── README.md                 # Image library overview
+│   └── organization.md           # Organization strategies
+│
+├── state-builder/
+│   ├── README.md                 # State builder overview
+│   ├── templates.md              # State templates
+│   └── organization.md           # State organization
+│
+├── transitions/
+│   ├── README.md                 # Transition overview
+│   ├── templates.md              # Transition templates
+│   └── validation.md             # Validation guide
+│
+├── project-management/
+│   ├── README.md                 # Project dashboard
+│   ├── optimization.md           # Optimization guide
+│   └── global-search.md          # Search features
+│
+├── best-practices/
+│   └── large-projects.md         # Best practices
+│
+├── api-reference/
+│   └── resource-services.md      # API reference
+│
 └── workflow-builder/
     ├── README.md                 # Overview and getting started
     ├── organization.md           # Folder management
@@ -170,101 +265,143 @@ docs/
     └── examples.md               # Complete examples
 ```
 
-## Quick Links
+## Quick Links by Role
 
-### By Role
+### Automation Engineers
+- [Image Library](./image-library/README.md) - Manage visual assets
+- [State Builder](./state-builder/README.md) - Build state machines
+- [Transitions](./transitions/README.md) - Define state flow
+- [Best Practices](./best-practices/large-projects.md) - Proven strategies
 
-**Developers:**
-- [API Reference](./workflow-builder/api-reference.md)
-- [Data Models](./workflow-builder/data-models.md)
-- [Examples](./workflow-builder/examples.md)
+### Developers
+- [API Reference](./api-reference/resource-services.md) - State machine APIs
+- [Workflow API](./workflow-builder/api-reference.md) - Workflow APIs
+- [Data Models](./workflow-builder/data-models.md) - Type definitions
 
-**QA Engineers:**
-- [Testing Guide](./workflow-builder/testing.md)
-- [Analytics](./workflow-builder/analytics.md)
-- [Best Practices](./workflow-builder/best-practices.md)
+### QA Engineers
+- [Testing Guide](./workflow-builder/testing.md) - Test framework
+- [Validation](./transitions/validation.md) - State validation
+- [Analytics](./workflow-builder/analytics.md) - Performance metrics
 
-**DevOps/Automation Engineers:**
-- [Organization](./workflow-builder/organization.md)
-- [Version Control](./workflow-builder/version-control.md)
-- [Components](./workflow-builder/components.md)
+### Project Managers
+- [Project Dashboard](./project-management/README.md) - Project overview
+- [Optimization](./project-management/optimization.md) - Health monitoring
+- [Best Practices](./best-practices/large-projects.md) - Project strategies
 
-**Project Managers:**
-- [Overview](./workflow-builder/README.md)
-- [Analytics](./workflow-builder/analytics.md)
-- [Dependencies](./workflow-builder/dependencies.md)
+## Quick Links by Task
 
-### By Task
+### Setting Up a Project
+- [Getting Started - Images](./image-library/README.md#getting-started)
+- [Getting Started - States](./state-builder/README.md#getting-started)
+- [Organization Strategies](./best-practices/large-projects.md#organization-strategies)
+- [Naming Conventions](./best-practices/large-projects.md#naming-conventions)
 
-**Setting Up:**
-- [Getting Started](./workflow-builder/README.md#quick-start)
-- [Migration Guide](./workflow-builder/migration-guide.md)
-- [Organization](./workflow-builder/organization.md)
+### Building Automation
+- [Uploading Images](./image-library/README.md#uploading-images)
+- [Creating States](./state-builder/README.md#creating-your-first-state)
+- [Creating Transitions](./transitions/README.md#creating-transitions)
+- [Using Templates](./state-builder/templates.md)
 
-**Building Workflows:**
-- [Components](./workflow-builder/components.md)
-- [Best Practices](./workflow-builder/best-practices.md)
-- [Examples](./workflow-builder/examples.md)
+### Managing Large Projects
+- [Image Organization](./image-library/organization.md)
+- [State Organization](./state-builder/organization.md)
+- [Global Search](./project-management/global-search.md)
+- [Project Optimization](./project-management/optimization.md)
 
-**Testing:**
-- [Testing Framework](./workflow-builder/testing.md)
-- [Examples - Testing](./workflow-builder/examples.md#testing-examples)
+### Maintenance & Optimization
+- [Finding Unused Resources](./project-management/optimization.md#finding-unused-resources)
+- [Detecting Duplicates](./project-management/optimization.md#detecting-duplicates)
+- [Validation](./transitions/validation.md)
+- [Performance Tips](./best-practices/large-projects.md#performance-tips)
 
-**Optimizing:**
-- [Analytics](./workflow-builder/analytics.md)
-- [Performance](./workflow-builder/analytics.md#performance-analysis)
-- [Best Practices - Performance](./workflow-builder/best-practices.md#performance)
+### Troubleshooting
+- [Image Issues](./image-library/README.md#troubleshooting)
+- [State Issues](./state-builder/README.md#troubleshooting)
+- [Transition Issues](./transitions/README.md#troubleshooting)
+- [Workflow Issues](./workflow-builder/troubleshooting.md)
 
-**Managing:**
-- [Organization](./workflow-builder/organization.md)
-- [Version Control](./workflow-builder/version-control.md)
-- [Dependencies](./workflow-builder/dependencies.md)
+## Feature Comparison
 
-**Troubleshooting:**
-- [Troubleshooting Guide](./workflow-builder/troubleshooting.md)
-- [Common Pitfalls](./workflow-builder/best-practices.md#common-pitfalls)
+### State Machine vs. Workflow Builder
+
+**Use State Machine when:**
+- Modeling application screens/states
+- Visual pattern matching needed
+- Complex state relationships
+- UI-driven automation
+
+**Use Workflow Builder when:**
+- Sequential action flows
+- Complex logic and branching
+- Reusable components needed
+- API/service automation
+
+**Use Both when:**
+- Complete automation solution
+- State transitions trigger workflows
+- Workflows navigate between states
 
 ## Common Workflows
 
-### Create and Organize a Workflow
+### Create and Organize Images
+1. Upload images: [Upload Guide](./image-library/README.md#uploading-images)
+2. Organize with naming: [Naming Guide](./image-library/organization.md#naming-conventions)
+3. Track usage: [Usage Tracking](./image-library/README.md#usage-tracking)
+4. Maintain library: [Maintenance](./image-library/organization.md#maintenance-workflows)
 
-1. Create workflow with actions
-2. Move to appropriate folder: [Organization](./workflow-builder/organization.md#moving-workflows)
-3. Add tags: [Tags](./workflow-builder/organization.md#tags)
-4. Save version: [Version Control](./workflow-builder/version-control.md#versions)
-5. Create test: [Testing](./workflow-builder/testing.md#test-cases)
+### Build a State Machine
+1. Create states: [State Creation](./state-builder/README.md#creating-your-first-state)
+2. Add StateImages: [StateImages](./state-builder/README.md#stateimages)
+3. Create transitions: [Transitions](./transitions/README.md#creating-transitions)
+4. Validate: [Validation](./transitions/validation.md)
+5. Test: [Testing](./workflow-builder/testing.md)
 
-### Optimize Workflow Performance
+### Optimize a Large Project
+1. Check health: [Health Metrics](./project-management/README.md#health-monitoring)
+2. Find unused resources: [Unused Resources](./project-management/optimization.md#finding-unused-resources)
+3. Fix broken references: [Broken References](./project-management/optimization.md#fixing-broken-references)
+4. Optimize performance: [Performance](./project-management/optimization.md#performance-optimization)
+5. Re-validate: [Validation](./transitions/validation.md#running-validation)
 
-1. Analyze performance: [Performance Analysis](./workflow-builder/analytics.md#performance-analysis)
-2. Review bottlenecks: [Bottlenecks](./workflow-builder/analytics.md#bottleneck-detection)
-3. Apply suggestions: [Optimization](./workflow-builder/analytics.md#optimization-suggestions)
-4. Test changes: [Testing](./workflow-builder/testing.md)
-5. Measure impact: [Analytics](./workflow-builder/analytics.md)
-
-### Release a Workflow
-
-1. Run tests: [Testing](./workflow-builder/testing.md#running-tests)
-2. Analyze dependencies: [Dependencies](./workflow-builder/dependencies.md)
-3. Check performance: [Analytics](./workflow-builder/analytics.md)
-4. Generate documentation: [Documentation](./workflow-builder/documentation.md)
-5. Merge to main: [Version Control](./workflow-builder/version-control.md#merging)
-6. Tag release: [Tags](./workflow-builder/version-control.md#tags)
+### Manage Team Collaboration
+1. Establish conventions: [Naming Conventions](./best-practices/large-projects.md#naming-conventions)
+2. Document standards: [Documentation](./best-practices/large-projects.md#team-collaboration)
+3. Regular maintenance: [Maintenance](./best-practices/large-projects.md#maintenance)
+4. Code reviews: [Team Workflows](./best-practices/large-projects.md#team-workflows)
 
 ## Support & Resources
 
 ### Getting Help
 
-- **Troubleshooting Guide**: [Common Issues](./workflow-builder/troubleshooting.md)
-- **Best Practices**: [Recommended Patterns](./workflow-builder/best-practices.md)
-- **Examples**: [Working Code](./workflow-builder/examples.md)
-- **API Reference**: [Method Documentation](./workflow-builder/api-reference.md)
+- **Image Library**: [Troubleshooting](./image-library/README.md#troubleshooting)
+- **State Builder**: [Troubleshooting](./state-builder/README.md#troubleshooting)
+- **Transitions**: [Troubleshooting](./transitions/README.md#troubleshooting)
+- **Workflows**: [Troubleshooting Guide](./workflow-builder/troubleshooting.md)
 
 ### Additional Resources
 
-- **Migration**: [From Legacy System](./workflow-builder/migration-guide.md)
-- **Data Models**: [Type Definitions](./workflow-builder/data-models.md)
-- **Architecture**: [System Overview](./workflow-builder/README.md#architecture)
+- **Best Practices**: [Large Projects](./best-practices/large-projects.md)
+- **API Reference**: [Complete API Docs](./api-reference/resource-services.md)
+- **Examples**: [Workflow Examples](./workflow-builder/examples.md)
+
+## Keyboard Shortcuts
+
+### Global
+- `Cmd/Ctrl + K`: Open global search
+- `Cmd/Ctrl + S`: Save project
+- `Cmd/Ctrl + Z`: Undo
+- `Cmd/Ctrl + Shift + Z`: Redo
+
+### State Builder
+- `Ctrl/Cmd + Click`: Multi-select states
+- `Delete`: Delete selected state
+- `F`: Fit view to all states
+- `Arrow Keys`: Nudge selected state
+
+### Image Library
+- `Ctrl/Cmd + F`: Focus search
+- `Ctrl/Cmd + U`: Upload images
+- `Delete`: Delete selected image (with confirmation)
 
 ## Feedback & Contributions
 
@@ -279,7 +416,15 @@ Please reach out to the development team or create an issue in the project repos
 
 ## Version History
 
-- **v1.0.0** (2024-01-15) - Initial comprehensive documentation release
+- **v2.0.0** (2025-01-14) - Added comprehensive State Machine documentation
+  - Image Library guides
+  - State Builder guides
+  - Transition management guides
+  - Project management guides
+  - Best practices for large projects
+  - Complete API reference
+
+- **v1.0.0** (2024-01-15) - Initial Workflow Builder documentation release
   - Complete API reference
   - All feature guides
   - Migration guide
@@ -289,6 +434,7 @@ Please reach out to the development team or create an issue in the project repos
 
 ---
 
-**Last Updated:** 2024-01-15
-**Documentation Version:** 1.0.0
-**Qontinui Version:** 1.0.0
+**Last Updated:** 2025-01-14
+**Documentation Version:** 2.0.0
+**Qontinui Version:** 2.0.0
+
