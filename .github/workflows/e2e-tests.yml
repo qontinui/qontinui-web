@@ -75,6 +75,21 @@ jobs:
     name: Frontend E2E Tests
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     strategy:
       matrix:
         node-version: [20]
@@ -83,6 +98,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
@@ -90,13 +110,33 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install dependencies
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e .; fi
+
+      - name: Install frontend dependencies
         working-directory: ./frontend
         run: npm ci
 
       - name: Install Playwright browsers
         working-directory: ./frontend
         run: npx playwright install --with-deps chromium
+
+      - name: Run database migrations
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: '1'
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: 'false'
+        run: |
+          alembic upgrade heads
 
       - name: Run frontend E2E tests
         working-directory: ./frontend
@@ -200,8 +240,17 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/test_db
           REDIS_URL: redis://localhost:6379
           TESTING: 1
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          ACCESS_SECRET_KEY: test-access-secret-key-minimum-32-characters-required
+          RESET_PASSWORD_SECRET_KEY: test-reset-password-secret-key-min-32-chars-required
+          VERIFICATION_SECRET_KEY: test-verification-secret-key-min-32-chars-required
+          ALGORITHM: HS256
+          FRONTEND_URL: http://localhost:3000
+          BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: 'false'
         run: |
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
           sleep 10
 
       - name: Run full integration tests
@@ -211,9 +260,7 @@ jobs:
           PLAYWRIGHT_BASE_URL: http://localhost:3001
           API_BASE_URL: http://localhost:8000
         run: |
-          npm run dev &
-          sleep 10
-          npx playwright test
+          npx playwright test --project=chromium
 
       - name: Upload full integration test results
         if: always()

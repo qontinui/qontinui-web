@@ -158,3 +158,74 @@ class ResendVerificationEmailComposer(BaseEmailComposer):
             text_body=text_body,
             html_body=html_body,
         )
+
+
+class FeedbackEmailComposer(BaseEmailComposer):
+    """Composes and sends feedback emails."""
+
+    async def send(
+        self,
+        name: str,
+        email: str,
+        message: str,
+        page_url: str | None = None,
+    ) -> bool:
+        """
+        Send feedback email to admin.
+
+        Args:
+            name: User's name
+            email: User's email address
+            message: Feedback message
+            page_url: URL where feedback was submitted (optional)
+
+        Returns:
+            True if email sent successfully
+        """
+        # Create email body without template
+        text_body = f"""
+New Feedback Received from Qontinui Beta
+
+Name: {name}
+Email: {email}
+Page: {page_url or 'Not provided'}
+
+Message:
+{message}
+
+---
+This feedback was submitted through the Qontinui Beta feedback form.
+"""
+
+        html_body = f"""
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+    <h2 style="color: #6366f1;">New Feedback Received from Qontinui Beta</h2>
+
+    <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin: 20px 0;">
+        <p><strong>Name:</strong> {name}</p>
+        <p><strong>Email:</strong> <a href="mailto:{email}">{email}</a></p>
+        <p><strong>Page:</strong> {page_url or 'Not provided'}</p>
+    </div>
+
+    <div style="margin: 20px 0;">
+        <p><strong>Message:</strong></p>
+        <div style="background-color: #fff; border-left: 4px solid #6366f1; padding: 15px; margin: 10px 0;">
+            {message.replace('\n', '<br>')}
+        </div>
+    </div>
+
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+    <p style="color: #6b7280; font-size: 14px;">
+        This feedback was submitted through the Qontinui Beta feedback form.
+    </p>
+</body>
+</html>
+"""
+
+        return await self.transport_service.send_email(
+            to_email="jspinak@hotmail.com",
+            subject=f"Qontinui Beta Feedback from {name}",
+            text_body=text_body,
+            html_body=html_body,
+        )
