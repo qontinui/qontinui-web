@@ -65,8 +65,13 @@ export function AnalysisPanel({
       const data = await listAnalyzers(token)
       setAnalyzers(data)
 
-      // Select all analyzers by default
-      setSelectedAnalyzers(new Set(data.map(a => a.name)))
+      // Select only analyzers that work with single screenshots by default
+      // (required_screenshots <= 1)
+      const singleScreenshotAnalyzers = data
+        .filter(a => a.required_screenshots <= 1)
+        .map(a => a.name)
+
+      setSelectedAnalyzers(new Set(singleScreenshotAnalyzers))
 
       // Initialize configs with default parameters
       const configs: Record<string, Record<string, any>> = {}

@@ -9,6 +9,9 @@ from .base import AnalysisResult, BaseAnalyzer, AnalysisType
 from .orchestrator import AnalysisOrchestrator
 from .fusion import DecisionFusion
 
+# Import register module to trigger analyzer registration
+from . import register  # noqa: F401
+
 __all__ = [
     "AnalysisResult",
     "BaseAnalyzer",

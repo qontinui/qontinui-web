@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
+import { authService } from '@/services/service-factory'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,7 +37,7 @@ interface AnnotationSet {
 }
 
 export default function AnalysisPage() {
-  const { user, loading: authLoading, getAccessToken } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const [token, setToken] = useState<string>('')
 
@@ -63,15 +64,14 @@ export default function AnalysisPage() {
 
     // Get access token
     if (user) {
-      const fetchToken = async () => {
-        const accessToken = await getAccessToken()
-        if (accessToken) {
-          setToken(accessToken)
-        }
+      console.log('[AnalysisPage] User authenticated, getting access token...')
+      const accessToken = authService.tokenManager.getAccessToken()
+      console.log('[AnalysisPage] Access token:', accessToken ? `${accessToken.substring(0, 20)}...` : 'null')
+      if (accessToken) {
+        setToken(accessToken)
       }
-      fetchToken()
     }
-  }, [user, authLoading, router, getAccessToken])
+  }, [user, authLoading, router])
 
   // Load annotation sets
   useEffect(() => {
@@ -83,17 +83,32 @@ export default function AnalysisPage() {
   const loadAnnotationSets = async () => {
     try {
       setIsLoadingSets(true)
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/annotations/sets`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const fullUrl = `${apiUrl}/api/v1/annotations/`
+
+      console.log('[AnalysisPage] Loading annotation sets...')
+      console.log('[AnalysisPage] NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL)
+      console.log('[AnalysisPage] apiUrl:', apiUrl)
+      console.log('[AnalysisPage] Full URL:', fullUrl)
+      console.log('[AnalysisPage] Token:', token ? 'present' : 'missing')
+
+      const response = await fetch(fullUrl, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
       })
 
+      console.log('[AnalysisPage] Response status:', response.status)
+      console.log('[AnalysisPage] Response ok:', response.ok)
+
       if (!response.ok) {
-        throw new Error('Failed to load annotation sets')
+        const errorText = await response.text()
+        console.error('[AnalysisPage] Error response:', errorText)
+        throw new Error(`Failed to load annotation sets: ${response.status} ${errorText}`)
       }
 
       const data = await response.json()
+      console.log('[AnalysisPage] Loaded annotation sets:', data)
       setAnnotationSets(data)
 
       // Select first set by default
@@ -101,7 +116,7 @@ export default function AnalysisPage() {
         setSelectedSetId(data[0].id)
       }
     } catch (error) {
-      console.error('Error loading annotation sets:', error)
+      console.error('[AnalysisPage] Error loading annotation sets:', error)
       toast.error('Failed to load annotation sets')
     } finally {
       setIsLoadingSets(false)
