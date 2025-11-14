@@ -1,7 +1,7 @@
 from app.db.base import Base  # noqa
-from app.models.project import Project  # noqa
 
 # Import all models here for Alembic to detect them
+# Note: Import snapshot models before project to avoid circular imports
 from app.models.user import User  # noqa
 from app.models.usage_metric import UsageMetric  # noqa
 from app.models.storage_usage import StorageUsage  # noqa
@@ -10,3 +10,6 @@ from app.models.subscription import Subscription  # noqa
 from app.models.session_activity import SessionActivity  # noqa
 from app.models.device_session import DeviceSession  # noqa
 from app.models.annotation import AnnotationSet, Annotation  # noqa
+from app.models.snapshot import SnapshotRun, Screenshot, Pattern  # noqa
+from app.models.analytics_event import AnalyticsEvent  # noqa
+from app.models.project import Project  # noqa

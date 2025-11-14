@@ -8,6 +8,7 @@ env/
 venv/
 .venv
 .env
+.env.*.local
 *.sqlite3
 *.db
 .coverage
