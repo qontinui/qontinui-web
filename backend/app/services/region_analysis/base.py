@@ -25,6 +25,9 @@ class RegionType(str, Enum):
     QUEST_LOG = "quest_log"            # Quest/mission panels
     EQUIPMENT_PANEL = "equipment_panel" # Character equipment
     TEXT_AREA = "text_area"            # Text regions (labels, captions, etc.)
+    WINDOW = "window"                  # Application windows with title bars
+    TITLE_BAR = "title_bar"            # Window title bars
+    CLOSE_BUTTON = "close_button"      # Window close buttons (X icon)
     CUSTOM = "custom"                  # Extensibility for game-specific regions
 
 

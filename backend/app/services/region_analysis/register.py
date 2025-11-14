@@ -72,6 +72,25 @@ def register_default_region_analyzers():
     except Exception as e:
         logger.warning(f"Failed to register GradientTextDetector: {e}")
 
+    # Import window detection analyzers
+    try:
+        from .analyzers.window_title_bar_detector import WindowTitleBarDetector
+        region_analyzer_registry.register(WindowTitleBarDetector)
+    except Exception as e:
+        logger.warning(f"Failed to register WindowTitleBarDetector: {e}")
+
+    try:
+        from .analyzers.window_border_detector import WindowBorderDetector
+        region_analyzer_registry.register(WindowBorderDetector)
+    except Exception as e:
+        logger.warning(f"Failed to register WindowBorderDetector: {e}")
+
+    try:
+        from .analyzers.window_close_button_detector import WindowCloseButtonDetector
+        region_analyzer_registry.register(WindowCloseButtonDetector)
+    except Exception as e:
+        logger.warning(f"Failed to register WindowCloseButtonDetector: {e}")
+
     registered = region_analyzer_registry.list_analyzers()
     logger.info(f"Registered {len(registered)} region analyzers:")
     for analyzer in registered:
