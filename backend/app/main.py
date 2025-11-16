@@ -91,23 +91,8 @@ else:
     ]
     logger.info("Using development CORS origins", origins=origins)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=[
-        "X-Total-Count",
-        "X-RateLimit-Limit",
-        "X-RateLimit-Remaining",
-        "X-RateLimit-Reset",
-        "X-Request-ID",
-    ],
-)
-
-# Add request ID tracking middleware (should be first for proper context binding)
-app.add_middleware(RequestIDMiddleware)
+# Add metrics tracking middleware
+app.add_middleware(MetricsMiddleware)
 
 # Add sliding window session middleware (before metrics for accurate activity tracking)
 if settings.SLIDING_WINDOW_ENABLED:
@@ -117,8 +102,24 @@ if settings.SLIDING_WINDOW_ENABLED:
         threshold_minutes=settings.SLIDING_WINDOW_THRESHOLD_MINUTES,
     )
 
-# Add metrics tracking middleware
-app.add_middleware(MetricsMiddleware)
+# Add request ID tracking middleware (should be first for proper context binding)
+app.add_middleware(RequestIDMiddleware)
+
+# CORS middleware must be added LAST so it executes FIRST (middleware order is reversed)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=[
+        "X-Total-Count",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+        "X-Request-ID",
+    ],
+)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

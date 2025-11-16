@@ -443,6 +443,26 @@ async def beta_signup(
         user.is_verified = True  # Changed from email_verified
         await db.commit()
 
+        # Create personal organization for beta user
+        from app.services.organization_service import organization_service
+
+        personal_org = await organization_service.create_personal_organization(
+            db=db,
+            user=user,
+        )
+
+        if personal_org:
+            logger.info(
+                "beta_user_org_created",
+                user_email=user.email,
+                org_id=str(personal_org.id),
+            )
+        else:
+            logger.warning(
+                "beta_user_org_creation_failed",
+                user_email=user.email,
+            )
+
         # Send welcome email with credentials in background
         job_id = await task_queue.send_email(
             to_email=user.email,

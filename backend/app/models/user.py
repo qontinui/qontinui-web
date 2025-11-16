@@ -50,6 +50,31 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     last_device_fingerprint: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Automation streaming control
+    automation_streaming_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,  # Disabled by default for all users
+        nullable=False,
+        index=True
+    )
+
+    automation_sessions_limit: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,  # NULL = unlimited (for paid users)
+        default=None
+    )
+
+    automation_sessions_used: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
+    automation_sessions_reset_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
     # Relationships
     projects = relationship(
         "Project", back_populates="owner", cascade="all, delete-orphan"
@@ -74,4 +99,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     analytics_events = relationship(
         "AnalyticsEvent", back_populates="user", cascade="all, delete-orphan"
+    )
+    automation_sessions = relationship(
+        "AutomationSession", back_populates="user", cascade="all, delete-orphan"
     )

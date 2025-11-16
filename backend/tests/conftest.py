@@ -4,10 +4,15 @@ Pytest configuration and shared fixtures for integration tests.
 
 import os
 import tempfile
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
+from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 # Set test environment
 os.environ["TESTING"] = "1"
@@ -92,3 +97,63 @@ def pytest_collection_modifyitems(config, items):
         # Mark slow tests
         if "test_large" in item.name or "test_many" in item.name:
             item.add_marker(pytest.mark.slow)
+
+
+# ===== ASYNC DATABASE FIXTURES =====
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Create an async database session for testing.
+    Uses in-memory SQLite for fast, isolated tests.
+    """
+    from app.db.base import Base
+
+    # Create async engine with in-memory SQLite
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=NullPool,
+        echo=False,
+    )
+
+    # Create tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    # Create session factory
+    async_session_maker = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    # Yield session
+    async with async_session_maker() as session:
+        yield session
+
+    # Cleanup
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def test_user(async_db_session: AsyncSession):
+    """
+    Create a test user in the database.
+    """
+    from app.models.user import User
+
+    user = User(
+        email=f"testuser_{uuid4()}@example.com",
+        username=f"testuser_{uuid4().hex[:8]}",
+        full_name="Test User",
+        hashed_password="hashed_password",
+        is_active=True,
+        is_verified=True,
+    )
+    async_db_session.add(user)
+    await async_db_session.commit()
+    await async_db_session.refresh(user)
+
+    return user

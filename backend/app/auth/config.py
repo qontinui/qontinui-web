@@ -43,7 +43,28 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     async def on_after_register(self, user: User, request: Request | None = None):
         """Called after a user successfully registers."""
         logger.info("user_registered", user_id=str(user.id), email=user.email)
-        # TODO: Send welcome email via background task
+
+        # Create personal organization for the new user
+        from app.services.organization_service import organization_service
+
+        personal_org = await organization_service.create_personal_organization(
+            db=self.user_db.session,
+            user=user,
+        )
+
+        if personal_org:
+            logger.info(
+                "user_registration_complete_with_org",
+                user_id=str(user.id),
+                org_id=str(personal_org.id),
+            )
+        else:
+            logger.warning(
+                "user_registration_complete_without_org",
+                user_id=str(user.id),
+            )
+
+        # Send welcome email via background task
         from app.services.auth.token_service import token_service
         from app.worker.queue import task_queue
 

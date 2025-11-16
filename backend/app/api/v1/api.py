@@ -11,16 +11,21 @@ from app.api.v1.endpoints import (
     automation_ws,
     background_removal,
     billing,
+    collaboration,
+    collaboration_ws,
     export,
     feedback,
     images,
     integration_testing,
+    organizations,
     pattern_optimization,
     projects,
     region_analysis,
     settings,
     snapshots,
+    state_discovery,
     users,
+    videos,
 )
 
 api_router = APIRouter()
@@ -49,3 +54,8 @@ api_router.include_router(annotations.router, prefix="/annotations", tags=["anno
 api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
 api_router.include_router(region_analysis.router, prefix="/region-analysis", tags=["region-analysis"])
 api_router.include_router(feedback.router, tags=["feedback"])
+api_router.include_router(organizations.router, prefix="/organizations", tags=["organizations"])
+api_router.include_router(collaboration.router, prefix="/projects", tags=["collaboration"])
+api_router.include_router(collaboration_ws.router, tags=["collaboration-websockets"])
+api_router.include_router(state_discovery.router, prefix="/state-discovery", tags=["state-discovery"])
+api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
