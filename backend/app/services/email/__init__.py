@@ -3,6 +3,7 @@
 from app.services.email.email_composers import (
     BetaWelcomeEmailComposer,
     EmailVerificationComposer,
+    FeedbackEmailComposer,
     PasswordResetEmailComposer,
     ResendVerificationEmailComposer,
 )
@@ -16,4 +17,5 @@ __all__ = [
     "PasswordResetEmailComposer",
     "EmailVerificationComposer",
     "ResendVerificationEmailComposer",
+    "FeedbackEmailComposer",
 ]

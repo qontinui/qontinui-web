@@ -40,6 +40,15 @@ export function ThumbnailCard({
   onRemove,
   fileName,
 }: ThumbnailCardProps) {
+  // Log the URL being used for the thumbnail
+  React.useEffect(() => {
+    console.log(`[ThumbnailCard] Screenshot ${index} rendering with URL:`, {
+      url,
+      urlType: url.startsWith('blob:') ? 'blob' : url.startsWith('http') ? 'http' : 'other',
+      fileName
+    })
+  }, [url, index, fileName])
+
   return (
     <div
       className={cn(
@@ -86,6 +95,13 @@ export function ThumbnailCard({
             'w-full h-full object-cover transition-transform',
             'group-hover:scale-105'
           )}
+          onError={(e) => {
+            console.error(`[ThumbnailCard] Failed to load image for screenshot ${index}:`, {
+              url,
+              fileName,
+              error: e
+            })
+          }}
         />
       </div>
 

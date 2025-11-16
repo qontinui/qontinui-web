@@ -1,0 +1,58 @@
+# Button Detection Model Training Configuration
+
+# Model Configuration
+model: mobilenet_v3  # Options: mobilenet_v3, efficientnet_b0, custom, yolov8, yolov5
+model_size: n  # For YOLO models: n (nano), s (small), m (medium), l (large), x (xlarge)
+num_classes: 4  # Number of button types to detect
+pretrained: true  # Use pretrained ImageNet/COCO weights
+
+# Training Configuration
+epochs: 50
+batch_size: 32
+img_size: 224  # Image size (224 for CNN, 640 for YOLO)
+num_workers: 4
+
+# Optimizer Configuration
+optimizer: adam  # Options: adam, adamw, sgd
+lr: 0.001  # Learning rate
+weight_decay: 0.00001
+momentum: 0.9  # For SGD
+
+# Scheduler Configuration
+scheduler: cosine  # Options: cosine, step, plateau, none
+step_size: 10  # For step scheduler
+gamma: 0.1  # Learning rate decay factor
+patience: 5  # For plateau scheduler
+factor: 0.5  # For plateau scheduler
+
+# Model-specific Configuration
+dropout: 0.3  # Dropout rate for regularization
+freeze_backbone: false  # Freeze feature extractor for transfer learning
+
+# Data Configuration
+data_root: /path/to/button_dataset/images
+train_annotations: /path/to/button_dataset/annotations/train.json
+val_annotations: /path/to/button_dataset/annotations/val.json
+data_yaml: /path/to/button_dataset/data.yaml  # For YOLO models
+
+# Augmentation (future expansion)
+augmentation: true
+
+# Checkpointing
+checkpoint_dir: checkpoints
+save_interval: 10  # Save checkpoint every N epochs
+log_dir: runs/button_detector
+
+# Logging
+log_interval: 10  # Log every N batches
+print_interval: 50  # Print progress every N batches
+
+# GPU Configuration
+use_gpu: true  # Use GPU if available
+
+# Class Names (must match annotation categories)
+class_names:
+  - primary_button
+  - secondary_button
+  - icon_button
+  - text_button

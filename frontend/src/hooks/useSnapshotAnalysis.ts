@@ -19,7 +19,7 @@ export function useSnapshotAnalysis(params?: UseSnapshotAnalysisParams) {
     setError(null);
 
     try {
-      const response = await fetch(`/api/snapshots/${snapshotId}/analysis`);
+      const response = await fetch(`/api/v1/snapshots/${snapshotId}/analysis`);
 
       if (!response.ok) {
         throw new Error('Failed to fetch snapshot analysis');
@@ -40,7 +40,7 @@ export function useSnapshotAnalysis(params?: UseSnapshotAnalysisParams) {
     setError(null);
 
     try {
-      const response = await fetch(`/api/snapshots/${snapshotId}/detail`);
+      const response = await fetch(`/api/v1/snapshots/${snapshotId}/detail`);
 
       if (!response.ok) {
         throw new Error('Failed to fetch snapshot detail');

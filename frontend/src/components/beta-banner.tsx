@@ -3,10 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { X, Sparkles, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { FeedbackForm } from '@/components/feedback-form';
 
 export function BetaBanner() {
   const [isVisible, setIsVisible] = useState(true);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -31,40 +33,43 @@ export function BetaBanner() {
   }
 
   return (
-    <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white">
-      <div className="container mx-auto px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Sparkles className="h-5 w-5 flex-shrink-0" />
-            <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
-              <span className="font-semibold">Welcome to Qontinui Beta!</span>
-              <span className="text-sm opacity-90">
-                We're actively developing new features. Your feedback helps us improve.
-              </span>
+    <>
+      <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-5 w-5 flex-shrink-0" />
+              <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                <span className="font-semibold">Welcome to Qontinui Beta!</span>
+                <span className="text-sm opacity-90">
+                  We're actively developing new features. Your feedback helps us improve.
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-white hover:bg-white/20"
-              onClick={() => window.open('https://github.com/qontinui/feedback', '_blank')}
-            >
-              Give Feedback
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-white hover:bg-white/20"
-              onClick={handleDismiss}
-              aria-label="Dismiss beta banner"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-white hover:bg-white/20"
+                onClick={() => setFeedbackOpen(true)}
+              >
+                Give Feedback
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-white hover:bg-white/20"
+                onClick={handleDismiss}
+                aria-label="Dismiss beta banner"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+      <FeedbackForm open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+    </>
   );
 }
 

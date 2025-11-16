@@ -20,3 +20,4 @@ class Project(Base):
 
     # Relationships
     owner = relationship("User", back_populates="projects")
+    snapshot_runs = relationship("SnapshotRun", back_populates="project", cascade="all, delete-orphan")

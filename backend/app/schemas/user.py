@@ -88,3 +88,23 @@ class ActivityLogResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
     )
+
+
+# Automation streaming schemas
+class AutomationStreamingSettings(BaseModel):
+    """Response model for automation streaming settings"""
+
+    enabled: bool
+    sessions_limit: int | None = None
+    sessions_used: int
+    sessions_reset_at: IsoDatetime | None = None
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+
+class AutomationStreamingToggle(BaseModel):
+    """Request model for toggling automation streaming"""
+
+    enabled: bool

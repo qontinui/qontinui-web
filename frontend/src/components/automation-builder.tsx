@@ -41,8 +41,6 @@ import { projectKeys } from "@/hooks/use-projects"
 import { Screenshot } from "../types/Screenshot"
 
 function AutomationBuilderContent() {
-  const [activeCategory, setActiveCategory] = useState("build")
-  const [activeTab, setActiveTab] = useState("processes")
   const [authDialogOpen, setAuthDialogOpen] = useState(false)
   const [isEditingName, setIsEditingName] = useState(false)
   const [tempProjectName, setTempProjectName] = useState("")
@@ -52,19 +50,6 @@ function AutomationBuilderContent() {
   const [imageAssetsDropdownOpen, setImageAssetsDropdownOpen] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const previousProjectName = useRef<string>('')
-
-  // Set default tab when category changes
-  useEffect(() => {
-    if (activeCategory === "build") {
-      setActiveTab("processes")
-    } else if (activeCategory === "develop") {
-      setActiveTab("state-machine")
-    } else if (activeCategory === "verify") {
-      setActiveTab("pattern-matching")
-    } else if (activeCategory === "settings") {
-      setActiveTab("settings")
-    }
-  }, [activeCategory])
   const {
     projectName,
     setProjectName,
@@ -89,6 +74,34 @@ function AutomationBuilderContent() {
   const queryClient = useQueryClient()
   const exporter = new ConfigExporter()
   const importer = new ConfigImporter()
+
+  // Get active category and tab from URL parameters
+  const activeCategory = searchParams.get('category') || 'build'
+  const activeTab = searchParams.get('tab') || getDefaultTab(activeCategory)
+
+  // Helper to get default tab for a category
+  function getDefaultTab(category: string): string {
+    switch (category) {
+      case 'build':
+        return 'processes'
+      case 'develop':
+        return 'state-machine'
+      case 'verify':
+        return 'pattern-matching'
+      case 'settings':
+        return 'action-params'
+      default:
+        return 'processes'
+    }
+  }
+
+  // Helper to update URL with new category/tab
+  const updateRoute = (category: string, tab: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('category', category)
+    params.set('tab', tab)
+    router.push(`/automation-builder?${params.toString()}`)
+  }
 
   // Load project from URL parameter
   useEffect(() => {
@@ -497,287 +510,49 @@ function AutomationBuilderContent() {
       </header>
 
       <main className="flex-1 flex flex-col min-h-0">
-        {/* Main Category Tabs */}
-        <Tabs value={activeCategory} onValueChange={setActiveCategory} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="w-full justify-start bg-[#1A1A1C] border-b border-gray-800 rounded-none h-14 flex-shrink-0">
-            <TabsTrigger
-              value="build"
-              className="data-[state=active]:bg-[#00D9FF] data-[state=active]:text-black data-[state=inactive]:text-gray-300 font-semibold px-8 hover:text-white transition-colors h-10"
-            >
-              Build Automation Workflows
-            </TabsTrigger>
-            <TabsTrigger
-              value="develop"
-              className="data-[state=active]:bg-[#BD00FF] data-[state=active]:text-white data-[state=inactive]:text-gray-300 font-semibold px-8 hover:text-white transition-colors h-10"
-            >
-              Develop State Structure
-            </TabsTrigger>
-            <TabsTrigger
-              value="verify"
-              className="data-[state=active]:bg-[#FF6B6B] data-[state=active]:text-white data-[state=inactive]:text-gray-300 font-semibold px-8 hover:text-white transition-colors h-10"
-            >
-              Verify Automation
-            </TabsTrigger>
-            <TabsTrigger
-              value="settings"
-              className="data-[state=active]:bg-[#FFD700] data-[state=active]:text-black data-[state=inactive]:text-gray-300 font-semibold px-8 hover:text-white transition-colors h-10"
-            >
-              Settings
-            </TabsTrigger>
-          </TabsList>
+        {/* Build Category - Unified Automation Builder */}
+        {activeCategory === 'build' && (
+          <UnifiedAutomationBuilder />
+        )}
 
-          {/* Build Category - Unified Automation Builder */}
-          <TabsContent value="build" className="flex-1 min-h-0 mt-0">
-            <UnifiedAutomationBuilder />
-          </TabsContent>
+        {/* Develop Category - State Structure with nested sub-tabs */}
+        {activeCategory === 'develop' && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            {/* Render the appropriate component based on activeTab */}
+            {activeTab === 'state-machine' && <StateStructure />}
+            {activeTab === 'images' && <ImagesManager />}
+            {activeTab === 'screenshots' && (
+              <ScreenshotUploadTab
+                states={states}
+                onExport={setScreenshots}
+              />
+            )}
+            {activeTab === 'screenshot-annotation' && <ScreenshotAnnotationTab states={states} />}
+            {activeTab === 'image-extraction' && <ImageExtractionTab />}
+            {activeTab === 'pattern-optimization' && <PatternOptimizationSimplified />}
+            {activeTab === 'state-discovery' && <StateDiscoveryTab />}
+            {activeTab === 'background-removal' && <BackgroundRemovalTab />}
+          </div>
+        )}
 
-          {/* Develop Category - State Structure with nested sub-tabs */}
-          <TabsContent value="develop" className="flex-1 min-h-0 mt-0 flex flex-col">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-              <div className="bg-[#27272A] border-b border-gray-700 h-11 flex items-center px-4 gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setActiveCategory("develop");
-                    setActiveTab("state-machine");
-                  }}
-                  className={`h-9 px-6 font-medium transition-colors rounded-md ${
-                    activeTab === "state-machine"
-                      ? "bg-[#BD00FF] text-white"
-                      : "text-gray-400 hover:text-white hover:bg-transparent"
-                  }`}
-                >
-                  State Structure
-                </Button>
+        {/* Verify Category - Testing & Verification tabs */}
+        {activeCategory === 'verify' && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            {activeTab === 'pattern-matching' && <PatternMatchingTest screenshots={screenshots} />}
+            {activeTab === 'integration-tests' && <ProcessTestRunner />}
+            {activeTab === 'semantic-analysis' && <SemanticAnalysisTab />}
+          </div>
+        )}
 
-                {/* Image Assets Dropdown */}
-                <DropdownMenu open={imageAssetsDropdownOpen} onOpenChange={setImageAssetsDropdownOpen} modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className={`h-9 px-6 font-medium transition-colors rounded-md ${
-                        ["images", "screenshots"].includes(activeTab)
-                          ? "bg-[#00FF88] text-black hover:bg-[#00FF88]/90"
-                          : "text-gray-400 hover:text-white hover:bg-transparent"
-                      }`}
-                      onMouseEnter={() => setImageAssetsDropdownOpen(true)}
-                      onMouseLeave={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const isMovingDown = e.clientY > rect.bottom
-                        if (!isMovingDown) {
-                          setImageAssetsDropdownOpen(false)
-                        }
-                      }}
-                    >
-                      Image Assets
-                      <ChevronDown className="ml-1 h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    className="w-56 bg-[#27272A] border-gray-700"
-                    onMouseEnter={() => setImageAssetsDropdownOpen(true)}
-                    onMouseLeave={() => setImageAssetsDropdownOpen(false)}
-                  >
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setActiveCategory("develop");
-                        setActiveTab("images");
-                      }}
-                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#00FF88]/20 focus:bg-[#00FF88]/20 focus:text-white"
-                    >
-                      <span className="w-3 h-3 rounded-full bg-[#00FF88] mr-3" />
-                      Library
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setActiveCategory("develop");
-                        setActiveTab("screenshots");
-                      }}
-                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FF8C42]/20 focus:bg-[#FF8C42]/20 focus:text-white"
-                    >
-                      <span className="w-3 h-3 rounded-full bg-[#FF8C42] mr-3" />
-                      Screenshots
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                {/* Create Images Dropdown */}
-                <DropdownMenu open={createImagesDropdownOpen} onOpenChange={setCreateImagesDropdownOpen} modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className={`h-9 px-6 font-medium transition-colors rounded-md ${
-                        ["image-extraction", "pattern-optimization", "state-discovery", "background-removal"].includes(activeTab)
-                          ? "bg-[#FFD700] text-black hover:bg-[#FFD700]/90"
-                          : "text-gray-400 hover:text-white hover:bg-transparent"
-                      }`}
-                      onMouseEnter={() => setCreateImagesDropdownOpen(true)}
-                      onMouseLeave={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const isMovingDown = e.clientY > rect.bottom
-                        if (!isMovingDown) {
-                          setCreateImagesDropdownOpen(false)
-                        }
-                      }}
-                    >
-                      Create Images
-                      <ChevronDown className="ml-1 h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    className="w-56 bg-[#27272A] border-gray-700"
-                    onMouseEnter={() => setCreateImagesDropdownOpen(true)}
-                    onMouseLeave={() => setCreateImagesDropdownOpen(false)}
-                  >
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setActiveCategory("develop");
-                        setActiveTab("image-extraction");
-                      }}
-                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FFA500]/20 focus:bg-[#FFA500]/20 focus:text-white"
-                    >
-                      <span className="w-3 h-3 rounded-full bg-[#FFA500] mr-3" />
-                      Image Extraction
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setActiveCategory("develop");
-                        setActiveTab("pattern-optimization");
-                      }}
-                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#FFD700]/20 focus:bg-[#FFD700]/20 focus:text-white"
-                    >
-                      <span className="w-3 h-3 rounded-full bg-[#FFD700] mr-3" />
-                      Pattern Optimization
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setActiveCategory("develop");
-                        setActiveTab("state-discovery");
-                      }}
-                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#4ECDC4]/20 focus:bg-[#4ECDC4]/20 focus:text-white"
-                    >
-                      <span className="w-3 h-3 rounded-full bg-[#4ECDC4] mr-3" />
-                      State Discovery
-                      <span className="ml-2 text-xs bg-amber-500 text-black px-1.5 py-0.5 rounded">Beta</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setActiveCategory("develop");
-                        setActiveTab("background-removal");
-                      }}
-                      className="cursor-pointer text-gray-300 hover:text-white hover:bg-[#9B59B6]/20 focus:bg-[#9B59B6]/20 focus:text-white"
-                    >
-                      <span className="w-3 h-3 rounded-full bg-[#9B59B6] mr-3" />
-                      Background Removal
-                      <span className="ml-2 text-xs bg-purple-500 text-white px-1.5 py-0.5 rounded">Experimental</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setActiveCategory("develop");
-                    setActiveTab("screenshot-annotation");
-                  }}
-                  className={`h-9 px-6 font-medium transition-colors rounded-md ${
-                    activeTab === "screenshot-annotation"
-                      ? "bg-[#FF6B35] text-white"
-                      : "text-gray-400 hover:text-white hover:bg-transparent"
-                  }`}
-                >
-                  Create Regions & Locations
-                </Button>
-              </div>
-
-              <TabsContent value="state-machine" className="flex-1 min-h-0 mt-0">
-                <StateStructure />
-              </TabsContent>
-              <TabsContent value="images" className="flex-1 min-h-0 overflow-auto mt-0">
-                <ImagesManager />
-              </TabsContent>
-              <TabsContent value="screenshot-annotation" className="flex-1 min-h-0 mt-0">
-                <ScreenshotAnnotationTab states={states} />
-              </TabsContent>
-              <TabsContent value="pattern-optimization" className="flex-1 min-h-0 overflow-hidden mt-0">
-                <PatternOptimizationSimplified />
-              </TabsContent>
-              <TabsContent value="image-extraction" className="flex-1 min-h-0 overflow-hidden mt-0">
-                <ImageExtractionTab />
-              </TabsContent>
-              <TabsContent value="screenshots" className="flex-1 min-h-0 overflow-auto mt-0">
-                <ScreenshotUploadTab
-                  states={states}
-                  onExport={setScreenshots}
-                />
-              </TabsContent>
-              <TabsContent value="state-discovery" className="flex-1 min-h-0 mt-0">
-                <StateDiscoveryTab />
-              </TabsContent>
-              <TabsContent value="background-removal" className="flex-1 min-h-0 mt-0">
-                <BackgroundRemovalTab />
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
-
-          {/* Verify Category - Testing & Verification tabs */}
-          <TabsContent value="verify" className="flex-1 min-h-0 mt-0 flex flex-col">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-              <TabsList className="w-full justify-start bg-[#27272A] border-b border-gray-700 rounded-none h-11 flex-shrink-0">
-                <TabsTrigger
-                  value="pattern-matching"
-                  className="data-[state=active]:bg-[#FF6B6B] data-[state=active]:text-white data-[state=inactive]:text-gray-400 font-medium px-6 hover:text-white transition-colors"
-                >
-                  Pattern Matching
-                </TabsTrigger>
-                <TabsTrigger
-                  value="integration-tests"
-                  className="data-[state=active]:bg-[#9B59B6] data-[state=active]:text-white data-[state=inactive]:text-gray-400 font-medium px-6 hover:text-white transition-colors"
-                  title="⚠️ This feature is in active development"
-                >
-                  <span>Integration Tests</span>
-                  <span className="ml-1 text-xs bg-amber-500 text-black px-1.5 py-0.5 rounded">Beta</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="semantic-analysis"
-                  className="data-[state=active]:bg-[#E91E63] data-[state=active]:text-white data-[state=inactive]:text-gray-400 font-medium px-6 hover:text-white transition-colors"
-                  title="⚠️ This feature is in active development"
-                >
-                  <span>Semantic Analysis</span>
-                  <span className="ml-1 text-xs bg-amber-500 text-black px-1.5 py-0.5 rounded">Beta</span>
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="pattern-matching" className="flex-1 min-h-0 overflow-hidden mt-0">
-                <PatternMatchingTest screenshots={screenshots} />
-              </TabsContent>
-              <TabsContent value="integration-tests" className="flex-1 min-h-0 overflow-hidden mt-0">
-                <ProcessTestRunner />
-              </TabsContent>
-              <TabsContent value="semantic-analysis" className="flex-1 min-h-0 overflow-hidden mt-0">
-                <SemanticAnalysisTab />
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
-
-          {/* Settings Category */}
-          <TabsContent value="settings" className="flex-1 min-h-0 mt-0 overflow-auto p-6">
-            <Tabs defaultValue="action-params" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 bg-gray-800">
-                <TabsTrigger value="action-params">Action Parameters</TabsTrigger>
-                <TabsTrigger value="app-settings">Application Settings</TabsTrigger>
-              </TabsList>
-              <TabsContent value="action-params" className="mt-6">
-                <ProjectSettingsComponent settings={settings} onUpdateSettings={updateSettings} />
-              </TabsContent>
-              <TabsContent value="app-settings" className="mt-6">
-                <SettingsTab />
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
-        </Tabs>
+        {/* Settings Category */}
+        {activeCategory === 'settings' && (
+          <div className="flex-1 min-h-0 overflow-auto p-6">
+            {activeTab === 'action-params' && (
+              <ProjectSettingsComponent settings={settings} onUpdateSettings={updateSettings} />
+            )}
+            {activeTab === 'app-settings' && <SettingsTab />}
+          </div>
+        )}
       </main>
 
       <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />

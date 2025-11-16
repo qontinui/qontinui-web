@@ -9,7 +9,7 @@ import type {
 export async function importSnapshot(
   request: ImportSnapshotRequest
 ): Promise<SnapshotRun> {
-  const response = await fetch('/api/snapshots/import', {
+  const response = await fetch('/api/v1/snapshots/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
@@ -36,7 +36,7 @@ export async function listSnapshots(params?: {
   if (params?.workflow_id) searchParams.set('workflow_id', params.workflow_id.toString());
   if (params?.tags) searchParams.set('tags', params.tags);
 
-  const response = await fetch(`/api/snapshots?${searchParams}`);
+  const response = await fetch(`/api/v1/snapshots?${searchParams}`);
 
   if (!response.ok) {
     throw new Error('Failed to fetch snapshots');
@@ -46,7 +46,7 @@ export async function listSnapshots(params?: {
 }
 
 export async function getSnapshot(runId: string): Promise<SnapshotRun> {
-  const response = await fetch(`/api/snapshots/${runId}`);
+  const response = await fetch(`/api/v1/snapshots/${runId}`);
 
   if (!response.ok) {
     throw new Error(`Snapshot ${runId} not found`);
@@ -60,7 +60,7 @@ export async function deleteSnapshot(
   deleteFiles: boolean = false
 ): Promise<void> {
   const response = await fetch(
-    `/api/snapshots/${runId}?delete_files=${deleteFiles}`,
+    `/api/v1/snapshots/${runId}?delete_files=${deleteFiles}`,
     { method: 'DELETE' }
   );
 

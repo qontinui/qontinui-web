@@ -4,17 +4,28 @@ from app.api.v1.endpoints import (
     admin,
     admin_ws,
     analytics,
+    analysis,
     annotations,
     auth,
+    automation,
+    automation_ws,
     background_removal,
     billing,
+    collaboration,
+    collaboration_ws,
     export,
+    feedback,
     images,
     integration_testing,
+    organizations,
     pattern_optimization,
     projects,
+    region_analysis,
     settings,
+    snapshots,
+    state_discovery,
     users,
+    videos,
 )
 
 api_router = APIRouter()
@@ -29,6 +40,7 @@ api_router.include_router(
     prefix="/integration-testing",
     tags=["integration-testing"],
 )
+api_router.include_router(snapshots.router, prefix="/snapshots", tags=["snapshots"])
 api_router.include_router(pattern_optimization.router, tags=["pattern-optimization"])
 api_router.include_router(background_removal.router, tags=["background-removal"])
 api_router.include_router(analytics.router, tags=["analytics"])
@@ -36,4 +48,14 @@ api_router.include_router(settings.router, prefix="/settings", tags=["settings"]
 api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
+api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
+api_router.include_router(automation_ws.router, prefix="/automation", tags=["automation-websockets"])
 api_router.include_router(annotations.router, prefix="/annotations", tags=["annotations"])
+api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
+api_router.include_router(region_analysis.router, prefix="/region-analysis", tags=["region-analysis"])
+api_router.include_router(feedback.router, tags=["feedback"])
+api_router.include_router(organizations.router, prefix="/organizations", tags=["organizations"])
+api_router.include_router(collaboration.router, prefix="/projects", tags=["collaboration"])
+api_router.include_router(collaboration_ws.router, tags=["collaboration-websockets"])
+api_router.include_router(state_discovery.router, prefix="/state-discovery", tags=["state-discovery"])
+api_router.include_router(videos.router, prefix="/videos", tags=["videos"])

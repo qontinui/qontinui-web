@@ -1,0 +1,43 @@
+# YOLO Dataset Configuration Example
+# Copy this file to data.yaml and update paths
+
+# Dataset root path
+path: /path/to/button_dataset
+
+# Train and validation image directories (relative to path)
+train: images/train
+val: images/val
+
+# Optional test set
+# test: images/test
+
+# Number of classes
+nc: 4
+
+# Class names (order must match category IDs in annotations)
+names:
+  - primary_button
+  - secondary_button
+  - icon_button
+  - text_button
+
+# Dataset structure should be:
+# button_dataset/
+# ├── images/
+# │   ├── train/
+# │   │   ├── img001.jpg
+# │   │   └── ...
+# │   └── val/
+# │       ├── img100.jpg
+# │       └── ...
+# └── labels/
+#     ├── train/
+#     │   ├── img001.txt
+#     │   └── ...
+#     └── val/
+#         ├── img100.txt
+#         └── ...
+#
+# Label format (one line per object):
+# <class_id> <x_center> <y_center> <width> <height>
+# All values normalized to [0, 1]

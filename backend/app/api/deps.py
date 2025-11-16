@@ -24,6 +24,9 @@ from app.auth.config import (
 )
 from app.db.session import get_async_db
 
+# Export database session getter (for backward compatibility with sync-style imports)
+get_db = get_async_db
+
 # Backward compatibility aliases
 get_current_user_async = current_active_user
 get_current_active_user_async = current_active_user

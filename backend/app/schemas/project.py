@@ -22,7 +22,7 @@ class ProjectBase(BaseSchema):
 
 
 class ProjectCreate(ProjectBase):
-    pass
+    organization_id: UUID | None = None
 
 
 class ProjectUpdate(BaseSchema):
@@ -34,6 +34,7 @@ class ProjectUpdate(BaseSchema):
 class ProjectInDBBase(ProjectBase, BaseORMSchema):
     id: UuidAsString  # Project ID (UUID in production database, serialized as string)
     owner_id: UuidAsString  # Owner UUID (serialized as string)
+    organization_id: UuidAsString | None = None  # Organization UUID (serialized as string)
     created_at: IsoDatetime  # Serializes to ISO 8601 format
     updated_at: IsoDatetime  # Serializes to ISO 8601 format
 

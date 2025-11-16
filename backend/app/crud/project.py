@@ -24,7 +24,11 @@ async def get_projects_by_owner(
 
 
 async def create_project(
-    db: AsyncSession, project: ProjectCreate, owner_id: UUID, subscription_tier: str
+    db: AsyncSession,
+    project: ProjectCreate,
+    owner_id: UUID,
+    subscription_tier: str,
+    organization_id: UUID | None = None,
 ) -> Project:
     # Check if user has reached config limit
     count_result = await db.execute(
@@ -48,6 +52,7 @@ async def create_project(
         description=project.description,
         configuration=project.configuration,
         owner_id=owner_id,
+        organization_id=organization_id,
     )
     db.add(db_project)
     await db.commit()

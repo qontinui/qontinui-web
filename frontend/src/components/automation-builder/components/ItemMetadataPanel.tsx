@@ -17,14 +17,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { Check, X } from 'lucide-react'
+import { Check, X, Users } from 'lucide-react'
 import type { LibraryItem } from '../types'
 import { isLinearWorkflow, getSuggestedMode } from '../types'
 import type { BuilderMode } from '../types'
+import { PermissionBadge } from './PermissionBadge'
+import type { PermissionLevel } from '@/types/collaboration'
 
 export interface ItemMetadataPanelProps {
   item: LibraryItem
   onUpdate: (item: LibraryItem) => void
+  currentPermission?: PermissionLevel
+  collaboratorCount?: number
+  onOpenShare?: () => void
   className?: string
 }
 
@@ -40,7 +45,14 @@ const WORKFLOW_CATEGORIES = [
   'Custom',
 ] as const
 
-export function ItemMetadataPanel({ item, onUpdate, className }: ItemMetadataPanelProps) {
+export function ItemMetadataPanel({
+  item,
+  onUpdate,
+  currentPermission,
+  collaboratorCount,
+  onOpenShare,
+  className
+}: ItemMetadataPanelProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [tempName, setTempName] = useState(item.name)
   const [tempDescription, setTempDescription] = useState(item.description || '')
@@ -116,7 +128,7 @@ export function ItemMetadataPanel({ item, onUpdate, className }: ItemMetadataPan
   return (
     <div className={className}>
       {/* Type Badge */}
-      <div className="mb-4">
+      <div className="mb-4 flex items-center justify-between gap-2">
         <span
           className={
             currentViewMode === 'sequential'
@@ -126,7 +138,36 @@ export function ItemMetadataPanel({ item, onUpdate, className }: ItemMetadataPan
         >
           {isLinear ? 'Sequential Workflow' : 'Graph Workflow'}
         </span>
+        {currentPermission && (
+          <PermissionBadge permission={currentPermission} size="sm" />
+        )}
       </div>
+
+      {/* Sharing Info */}
+      {(currentPermission || collaboratorCount) && (
+        <div className="mb-4 p-3 bg-gray-900/50 border border-gray-800 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <Users className="h-4 w-4" />
+              <span>
+                {collaboratorCount !== undefined && collaboratorCount > 0
+                  ? `${collaboratorCount} collaborator${collaboratorCount !== 1 ? 's' : ''}`
+                  : 'Not shared'}
+              </span>
+            </div>
+            {onOpenShare && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onOpenShare}
+                className="text-xs text-gray-400 hover:text-white h-auto py-1 px-2"
+              >
+                Manage
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Name Field */}
       <div className="mb-4">

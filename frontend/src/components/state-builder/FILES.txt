@@ -1,0 +1,94 @@
+Enhanced State Builder - File Listing
+=====================================
+
+Created: November 14, 2025
+Location: /home/user/qontinui-web/frontend/src/components/state-builder/
+
+Files:
+------
+1. EnhancedStateBuilder.tsx (44K)
+   - Main component with three-panel layout
+   - State navigator, canvas, and properties editor
+   - 1,266 lines of TypeScript/React code
+
+2. types.ts (6.3K)
+   - TypeScript type definitions
+   - 15+ interfaces and types
+   - Helper functions for complexity
+   - 350 lines of code
+
+3. state-utils.ts (16K)
+   - Helper functions for state analysis
+   - Validation, comparison, analytics
+   - Export/import utilities
+   - 520 lines of code
+
+4. index.ts (258 bytes)
+   - Module exports
+   - Clean API surface
+   - 13 lines of code
+
+Documentation:
+--------------
+5. README.md (8.8K)
+   - Complete feature documentation
+   - Usage instructions
+   - Architecture overview
+   - 339 lines
+
+6. QUICKSTART.md (6.7K)
+   - Quick start guide
+   - Common workflows
+   - Tips and tricks
+   - 309 lines
+
+7. USAGE_EXAMPLE.md (16K)
+   - Practical code examples
+   - Integration patterns
+   - Best practices
+   - 643 lines
+
+8. COMPONENT_SUMMARY.md (11K)
+   - Project overview
+   - Feature checklist
+   - Integration points
+   - 394 lines
+
+9. ARCHITECTURE.md (17K)
+   - Component structure diagrams
+   - Data flow visualization
+   - Technical architecture
+   - Performance strategy
+   - 479 lines
+
+Total:
+------
+- Code Files: 4 files (67K)
+- Documentation: 5 files (60K)
+- Total Size: 130K
+- Total Lines: ~4,313 lines
+
+Quick Start:
+------------
+1. Import: import { EnhancedStateBuilder } from '@/components/state-builder';
+2. Use: <EnhancedStateBuilder />
+3. Done! Component automatically integrates with AutomationContext
+
+Features:
+---------
+✅ Three-panel layout (Navigator | Canvas | Properties)
+✅ Search and filtering
+✅ Multi-select bulk operations
+✅ State templates
+✅ Complexity analysis
+✅ State validation
+✅ Export/import
+✅ Visual state canvas
+✅ Comprehensive properties editor
+
+Next Steps:
+-----------
+- Read QUICKSTART.md for immediate usage
+- Check USAGE_EXAMPLE.md for code patterns
+- Review ARCHITECTURE.md for technical details
+- Extend with custom features as needed

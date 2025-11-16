@@ -51,6 +51,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('[AuthContext] Is authenticated:', isAuth);
 
       if (isAuth) {
+        // Check if access token is expired - if so, try to refresh it first
+        if (authService.isAccessTokenExpired()) {
+          console.log('[AuthContext] Access token is expired, attempting refresh...');
+          const refreshSuccess = await authService.refreshAccessToken();
+
+          if (!refreshSuccess) {
+            console.log('[AuthContext] Token refresh failed, user needs to re-login');
+            authService.logout();
+            return;
+          }
+
+          console.log('[AuthContext] Token refresh successful');
+        }
+
         console.log('[AuthContext] Fetching current user...');
         const currentUser = await authService.getCurrentUser();
         console.log('[AuthContext] Current user:', currentUser);

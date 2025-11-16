@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Backend for qontinui-web"
 authors = ["Joshua Spinak <jspinak@hotmail.com>"]
 readme = "README.md"
-package-mode = false
+packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = "^3.12"
@@ -36,6 +36,7 @@ fastapi-users = {extras = ["sqlalchemy"], version = "^14.0.1"}
 boto3 = "^1.40.52"
 psutil = "^7.1.2"
 httpx = "^0.27.0"
+jinja2 = "^3.1.6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"

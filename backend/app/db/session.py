@@ -38,6 +38,10 @@ if "sslmode=require" in async_database_url:
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
     connect_args["ssl"] = ssl_context
+else:
+    # For local development without SSL (Docker PostgreSQL)
+    # asyncpg tries SSL by default, so we need to explicitly disable it
+    connect_args["ssl"] = False
 
 async_engine = create_async_engine(
     async_database_url,

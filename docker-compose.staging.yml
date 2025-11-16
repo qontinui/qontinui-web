@@ -1,0 +1,161 @@
+version: '3.8'
+
+# Staging environment docker-compose
+# This runs a complete staging stack including database, cache, and application
+
+services:
+  # PostgreSQL Database (staging)
+  postgres-staging:
+    image: postgres:16-alpine
+    container_name: qontinui-postgres-staging
+    environment:
+      POSTGRES_USER: qontinui_staging
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qontinui_staging_password}
+      POSTGRES_DB: qontinui_staging
+    ports:
+      - "5434:5432"  # Different port to not conflict with dev
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qontinui_staging"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - staging-network
+
+  # Redis Cache & Queue (staging)
+  redis-staging:
+    image: redis:7-alpine
+    container_name: qontinui-redis-staging
+    ports:
+      - "6381:6379"  # Different port to not conflict with dev
+    volumes:
+      - redis_staging_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - staging-network
+
+  # MinIO Object Storage (staging)
+  minio-staging:
+    image: minio/minio:latest
+    container_name: qontinui-minio-staging
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin_staging
+    ports:
+      - "9004:9000"  # API
+      - "9005:9001"  # Console
+    volumes:
+      - minio_staging_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - staging-network
+
+  # MinIO Client - Create bucket on startup
+  minio-client-staging:
+    image: minio/mc:latest
+    container_name: qontinui-minio-client-staging
+    depends_on:
+      - minio-staging
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      /usr/bin/mc alias set staging http://minio-staging:9000 minioadmin minioadmin_staging;
+      /usr/bin/mc mb staging/qontinui-staging --ignore-existing;
+      /usr/bin/mc anonymous set download staging/qontinui-staging;
+      exit 0;
+      "
+    networks:
+      - staging-network
+
+  # Backend API (staging)
+  backend-staging:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: qontinui-backend-staging
+    restart: unless-stopped
+    ports:
+      - "8002:8000"  # Port 8001 is used by qontinui-api dev
+    depends_on:
+      postgres-staging:
+        condition: service_healthy
+      redis-staging:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://qontinui_staging:${POSTGRES_PASSWORD:-qontinui_staging_password}@postgres-staging:5432/qontinui_staging
+      - REDIS_HOST=redis-staging
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_ENABLED=true
+      - SECRET_KEY=${SECRET_KEY:-staging-secret-key-change-me}
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - REFRESH_TOKEN_EXPIRE_DAYS=30
+      - REMEMBER_ME_TOKEN_EXPIRE_DAYS=90
+      - BACKEND_CORS_ORIGINS=["http://localhost:3002"]
+      - HOST=0.0.0.0
+      - PORT=8000
+      - RELOAD=False
+      - DEBUG=False
+      - ENVIRONMENT=staging
+      - FRONTEND_URL=http://localhost:3002
+      - STORAGE_BACKEND=minio
+      - STORAGE_BUCKET_NAME=qontinui-staging
+      - STORAGE_REGION=us-east-1
+      - STORAGE_ACCESS_KEY=minioadmin
+      - STORAGE_SECRET_KEY=minioadmin_staging
+      - STORAGE_ENDPOINT_URL=http://minio-staging:9000
+      - STORAGE_USE_SSL=false
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      - staging-network
+
+  # Background Worker (staging)
+  worker-staging:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: qontinui-worker-staging
+    restart: unless-stopped
+    command: python run_worker.py
+    depends_on:
+      postgres-staging:
+        condition: service_healthy
+      redis-staging:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://qontinui_staging:${POSTGRES_PASSWORD:-qontinui_staging_password}@postgres-staging:5432/qontinui_staging
+      - REDIS_HOST=redis-staging
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_ENABLED=true
+      - SECRET_KEY=${SECRET_KEY:-staging-secret-key-change-me}
+      - FRONTEND_URL=http://localhost:3002
+      - ENVIRONMENT=staging
+    networks:
+      - staging-network
+
+networks:
+  staging-network:
+    driver: bridge
+
+volumes:
+  postgres_staging_data:
+    driver: local
+  redis_staging_data:
+    driver: local
+  minio_staging_data:
+    driver: local
