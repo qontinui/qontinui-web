@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ProfileForm } from "@/components/profile/profile-form"
 import { AvatarUpload } from "@/components/profile/avatar-upload"
+import { AutomationStreamingCard } from "@/components/profile/automation-streaming-card"
 import { StorageUsageCard } from "@/components/profile/storage-usage-card"
 import { ActivityFeed } from "@/components/profile/activity-feed"
 import { ArrowLeft, Crown, Shield } from "lucide-react"
@@ -160,6 +161,8 @@ export default function ProfilePage() {
                 user={user}
                 onUpdate={handleUpdateProfile}
               />
+
+              <AutomationStreamingCard />
 
               <AvatarUpload
                 userName={user.full_name || user.username}
