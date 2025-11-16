@@ -4,7 +4,18 @@ import * as React from 'react';
 import { Lock, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
+import {
+  type PermissionLevel,
+  type ProjectWithPermissions,
+  hasPermission as checkPermission,
+  getPermissionLevel,
+} from '@/lib/permissions';
+import { useAuth } from '@/contexts/auth-context';
 
+/**
+ * Legacy permission type for backward compatibility
+ * Maps to new PermissionLevel system
+ */
 export type Permission =
   | 'view'
   | 'comment'
@@ -14,20 +25,36 @@ export type Permission =
   | 'admin'
   | 'manage_members';
 
-export type PermissionLevel = 'viewer' | 'commenter' | 'editor' | 'admin' | 'owner';
-
 interface PermissionGateProps {
   children: React.ReactNode;
-  requiredPermission: Permission | Permission[];
+
+  // New API - using project and required permission level
+  project?: ProjectWithPermissions;
+  requiredPermission?: PermissionLevel | Permission | Array<PermissionLevel | Permission>;
+
+  // Legacy API - for backward compatibility
   userPermissions?: Permission[];
-  userRole?: PermissionLevel;
+  userRole?: string;
+
+  // Display options
   fallback?: React.ReactNode;
   showMessage?: boolean;
   className?: string;
 }
 
-// Permission hierarchy
-const rolePermissions: Record<PermissionLevel, Permission[]> = {
+// Permission mapping for legacy support
+const permissionToLevel: Record<Permission, PermissionLevel> = {
+  view: 'view',
+  comment: 'comment',
+  edit: 'edit',
+  delete: 'admin',
+  share: 'admin',
+  admin: 'admin',
+  manage_members: 'owner',
+};
+
+// Legacy role permissions for backward compatibility
+const rolePermissions: Record<string, Permission[]> = {
   viewer: ['view'],
   commenter: ['view', 'comment'],
   editor: ['view', 'comment', 'edit'],
@@ -35,13 +62,15 @@ const rolePermissions: Record<PermissionLevel, Permission[]> = {
   owner: ['view', 'comment', 'edit', 'delete', 'share', 'admin', 'manage_members'],
 };
 
-const permissionMessages: Record<Permission, string> = {
+const permissionMessages: Record<string, string> = {
+  none: 'You need access to this project.',
   view: 'You need view permission to access this content.',
   comment: 'You need comment permission to add comments.',
   edit: 'You need edit permission to modify this content.',
   delete: 'You need delete permission to remove this content.',
   share: 'You need share permission to share this content.',
   admin: 'You need admin permission to perform this action.',
+  owner: 'You must be the project owner to perform this action.',
   manage_members: 'You need member management permission to perform this action.',
 };
 
@@ -49,13 +78,19 @@ const permissionMessages: Record<Permission, string> = {
  * PermissionGate component - Shows children only if user has required permission
  *
  * @example
- * // Using with specific permissions
+ * // New API - Using with project (recommended)
+ * <PermissionGate project={project} requiredPermission="edit">
+ *   <EditButton />
+ * </PermissionGate>
+ *
+ * @example
+ * // Legacy API - Using with specific permissions (still supported)
  * <PermissionGate requiredPermission="edit" userPermissions={['view', 'edit']}>
  *   <EditButton />
  * </PermissionGate>
  *
  * @example
- * // Using with role
+ * // Legacy API - Using with role (still supported)
  * <PermissionGate requiredPermission="edit" userRole="editor">
  *   <EditButton />
  * </PermissionGate>
@@ -63,8 +98,8 @@ const permissionMessages: Record<Permission, string> = {
  * @example
  * // With custom fallback
  * <PermissionGate
- *   requiredPermission={['edit', 'delete']}
- *   userRole="viewer"
+ *   project={project}
+ *   requiredPermission="admin"
  *   fallback={<LockedMessage />}
  * >
  *   <DangerZone />
@@ -72,6 +107,7 @@ const permissionMessages: Record<Permission, string> = {
  */
 export function PermissionGate({
   children,
+  project,
   requiredPermission,
   userPermissions,
   userRole,
@@ -79,28 +115,46 @@ export function PermissionGate({
   showMessage = false,
   className,
 }: PermissionGateProps) {
-  // Determine user's actual permissions
-  const actualPermissions = React.useMemo(() => {
-    if (userPermissions) {
-      return userPermissions;
-    }
-    if (userRole) {
-      return rolePermissions[userRole] || [];
-    }
-    return [];
-  }, [userPermissions, userRole]);
+  const { user: currentUser } = useAuth();
 
   // Check if user has required permission(s)
   const hasPermission = React.useMemo(() => {
+    // New API - using project
+    if (project && requiredPermission) {
+      const userLevel = getPermissionLevel(project, currentUser);
+      const required = Array.isArray(requiredPermission)
+        ? requiredPermission
+        : [requiredPermission];
+
+      // Convert permissions to levels and check
+      return required.every((perm) => {
+        const requiredLevel = typeof perm === 'string' && perm in permissionToLevel
+          ? permissionToLevel[perm as Permission]
+          : (perm as PermissionLevel);
+        return checkPermission(requiredLevel, userLevel);
+      });
+    }
+
+    // Legacy API - using userPermissions or userRole
+    const actualPermissions: Permission[] = userPermissions
+      ? userPermissions
+      : userRole && rolePermissions[userRole]
+      ? rolePermissions[userRole]
+      : [];
+
+    if (!requiredPermission) {
+      return false;
+    }
+
     const required = Array.isArray(requiredPermission)
       ? requiredPermission
       : [requiredPermission];
 
     // User must have ALL required permissions
     return required.every((permission) =>
-      actualPermissions.includes(permission)
+      actualPermissions.includes(permission as Permission)
     );
-  }, [requiredPermission, actualPermissions]);
+  }, [project, requiredPermission, userPermissions, userRole, currentUser]);
 
   // If user has permission, render children
   if (hasPermission) {
@@ -108,7 +162,7 @@ export function PermissionGate({
   }
 
   // If no permission and showMessage is true, show default message
-  if (showMessage) {
+  if (showMessage && requiredPermission) {
     const firstRequired = Array.isArray(requiredPermission)
       ? requiredPermission[0]
       : requiredPermission;
@@ -138,46 +192,84 @@ export function PermissionGate({
  * usePermission hook - Check permissions in components
  *
  * @example
- * const { hasPermission, checkPermission } = usePermission(userRole, userPermissions);
+ * // New API - using project (recommended)
+ * const { hasPermission, checkPermission } = usePermission(project);
+ * if (checkPermission('edit')) {
+ *   // Show edit UI
+ * }
  *
+ * @example
+ * // Legacy API - using role (still supported)
+ * const { hasPermission, checkPermission } = usePermission(undefined, userRole, userPermissions);
  * if (checkPermission('edit')) {
  *   // Show edit UI
  * }
  */
 export function usePermission(
-  userRole?: PermissionLevel,
+  project?: ProjectWithPermissions,
+  userRole?: string,
   userPermissions?: Permission[]
 ) {
+  const { user: currentUser } = useAuth();
+
+  // New API - using project
+  const projectPermissionLevel = React.useMemo(() => {
+    if (project) {
+      return getPermissionLevel(project, currentUser);
+    }
+    return 'none' as PermissionLevel;
+  }, [project, currentUser]);
+
+  // Legacy API - using userPermissions or userRole
   const actualPermissions = React.useMemo(() => {
     if (userPermissions) {
       return userPermissions;
     }
-    if (userRole) {
-      return rolePermissions[userRole] || [];
+    if (userRole && rolePermissions[userRole]) {
+      return rolePermissions[userRole];
     }
     return [];
   }, [userPermissions, userRole]);
 
-  const checkPermission = React.useCallback(
-    (permission: Permission | Permission[]) => {
+  const checkPermissionFn = React.useCallback(
+    (permission: Permission | Permission[] | PermissionLevel) => {
+      // New API - using project
+      if (project) {
+        const required = Array.isArray(permission) ? permission : [permission];
+        return required.every((perm) => {
+          const requiredLevel = typeof perm === 'string' && perm in permissionToLevel
+            ? permissionToLevel[perm as Permission]
+            : (perm as PermissionLevel);
+          return checkPermission(requiredLevel, projectPermissionLevel);
+        });
+      }
+
+      // Legacy API
       const required = Array.isArray(permission) ? permission : [permission];
-      return required.every((p) => actualPermissions.includes(p));
+      return required.every((p) => actualPermissions.includes(p as Permission));
     },
-    [actualPermissions]
+    [project, projectPermissionLevel, actualPermissions]
   );
 
   const hasAnyPermission = React.useCallback(
     (permissions: Permission[]) => {
+      if (project) {
+        return permissions.some((perm) => {
+          const requiredLevel = permissionToLevel[perm];
+          return checkPermission(requiredLevel, projectPermissionLevel);
+        });
+      }
       return permissions.some((p) => actualPermissions.includes(p));
     },
-    [actualPermissions]
+    [project, projectPermissionLevel, actualPermissions]
   );
 
   return {
     permissions: actualPermissions,
-    hasPermission: checkPermission,
+    permissionLevel: projectPermissionLevel,
+    hasPermission: checkPermissionFn,
     hasAnyPermission,
-    checkPermission,
+    checkPermission: checkPermissionFn,
   };
 }
 

@@ -72,8 +72,8 @@ if settings.ENVIRONMENT == "production":
     ]
     logger.info("Using hardcoded production CORS origins", origins=origins, environment=settings.ENVIRONMENT)
 elif settings.BACKEND_CORS_ORIGINS:
-    # Convert AnyHttpUrl objects to strings
-    origins = [str(origin) for origin in settings.BACKEND_CORS_ORIGINS]
+    # Convert AnyHttpUrl objects to strings and strip trailing slashes
+    origins = [str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS]
     logger.info("Using CORS origins from settings", origins=origins)
 else:
     origins = [
@@ -83,28 +83,16 @@ else:
         "http://localhost:3003",
         "http://localhost:3004",
         # Allow frontend on Windows to access WSL backend
+        # Note: WSL IP may change, consider using localhost instead
         "http://172.27.67.252:3001",
         "http://172.27.67.252:3000",
+        "http://172.24.89.15:3001",
+        "http://172.24.89.15:3000",
     ]
     logger.info("Using development CORS origins", origins=origins)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=[
-        "X-Total-Count",
-        "X-RateLimit-Limit",
-        "X-RateLimit-Remaining",
-        "X-RateLimit-Reset",
-        "X-Request-ID",
-    ],
-)
-
-# Add request ID tracking middleware (should be first for proper context binding)
-app.add_middleware(RequestIDMiddleware)
+# Add metrics tracking middleware
+app.add_middleware(MetricsMiddleware)
 
 # Add sliding window session middleware (before metrics for accurate activity tracking)
 if settings.SLIDING_WINDOW_ENABLED:
@@ -114,8 +102,24 @@ if settings.SLIDING_WINDOW_ENABLED:
         threshold_minutes=settings.SLIDING_WINDOW_THRESHOLD_MINUTES,
     )
 
-# Add metrics tracking middleware
-app.add_middleware(MetricsMiddleware)
+# Add request ID tracking middleware (should be first for proper context binding)
+app.add_middleware(RequestIDMiddleware)
+
+# CORS middleware must be added LAST so it executes FIRST (middleware order is reversed)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=[
+        "X-Total-Count",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+        "X-Request-ID",
+    ],
+)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

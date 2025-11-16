@@ -57,6 +57,12 @@ export type User = z.infer<typeof UserSchema>
 
 export const ProjectConfigurationSchema = z.record(z.unknown()).default({})
 
+/**
+ * Permission level enum matching backend PermissionLevel
+ * Backend: class PermissionLevel(str, Enum): VIEW, COMMENT, EDIT, ADMIN
+ */
+export const PermissionLevelSchema = z.enum(['none', 'view', 'comment', 'edit', 'admin', 'owner'])
+
 export const ProjectSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(255),
@@ -65,6 +71,7 @@ export const ProjectSchema = z.object({
   owner_id: z.string().uuid(),
   created_at: z.string().datetime(), // ISO 8601 datetime string
   updated_at: z.string().datetime(), // ISO 8601 datetime string
+  permission_level: PermissionLevelSchema.optional(), // User's permission level for this project
 })
 
 export type Project = z.infer<typeof ProjectSchema>

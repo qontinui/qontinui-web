@@ -12,7 +12,7 @@ from enum import Enum as PyEnum
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -61,7 +61,7 @@ class ProjectLock(Base):
     acquired_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     auto_release = Column(Boolean, default=True, nullable=False)
-    metadata = Column(JSON, nullable=True)
+    lock_metadata: Mapped[dict] = mapped_column("metadata", JSON, nullable=True)
 
     # Relationships
     project = relationship("Project", backref="locks")
@@ -110,7 +110,7 @@ class ProjectComment(Base):
     )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    metadata = Column(JSON, nullable=True)  # Additional metadata (attachments, reactions, etc.)
+    comment_metadata: Mapped[dict] = mapped_column("metadata", JSON, nullable=True)  # Additional metadata (attachments, reactions, etc.)
 
     # Relationships
     project = relationship("Project", backref="comments")
@@ -149,7 +149,7 @@ class ActivityLog(Base):
     resource_id = Column(String, nullable=False, index=True)
     resource_name = Column(String, nullable=True)  # Human-readable resource name
     changes = Column(JSON, nullable=True)  # Detailed change information
-    metadata = Column(JSON, nullable=True)  # Additional context
+    activity_metadata: Mapped[dict] = mapped_column("metadata", JSON, nullable=True)  # Additional context
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     # Relationships
@@ -166,7 +166,7 @@ class ActivityLog(Base):
         resource_id: str,
         resource_name: str = None,
         changes: dict = None,
-        metadata: dict = None,
+        activity_metadata: dict = None,
     ) -> "ActivityLog":
         """
         Factory method to create activity log entry.
@@ -179,7 +179,7 @@ class ActivityLog(Base):
             resource_id: ID of the resource
             resource_name: Human-readable name of the resource
             changes: Dictionary of changes made
-            metadata: Additional context
+            activity_metadata: Additional context
 
         Returns:
             ActivityLog instance
@@ -192,5 +192,5 @@ class ActivityLog(Base):
             resource_id=resource_id,
             resource_name=resource_name,
             changes=changes,
-            metadata=metadata,
+            activity_metadata=activity_metadata,
         )

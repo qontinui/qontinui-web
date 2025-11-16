@@ -8,7 +8,9 @@ import {
   Plus,
   Users,
   Loader2,
+  Settings,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -47,6 +49,7 @@ export function OrganizationSwitcher({
   className,
 }: OrganizationSwitcherProps) {
   const [open, setOpen] = React.useState(false);
+  const router = useRouter();
 
   const getInitials = (name: string) => {
     return name
@@ -133,6 +136,16 @@ export function OrganizationSwitcher({
           ))}
         </div>
         <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() => {
+            router.push('/organizations');
+            setOpen(false);
+          }}
+          className="cursor-pointer"
+        >
+          <Settings className="mr-2 h-4 w-4" />
+          <span>Manage Organizations</span>
+        </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => {
             onCreateOrganization();

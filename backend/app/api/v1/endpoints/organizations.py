@@ -22,6 +22,7 @@ from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.organization import (
     Organization,
     OrganizationInvitation,
+    PermissionLevel,
     TeamMember,
     TeamRole,
 )
@@ -39,7 +40,9 @@ from app.schemas.collaboration import (
     TeamMemberResponse,
     TeamMemberUpdate,
 )
+from app.schemas.project import Project
 from app.services.collaboration_service import collaboration_service
+from app.services.permission_service import permission_service
 
 logger = structlog.get_logger(__name__)
 
@@ -804,3 +807,64 @@ async def switch_organization(
         success=True,
         message=f"Switched to organization context"
     )
+
+
+# ============================================================================
+# Organization Projects
+# ============================================================================
+
+
+@router.get("/{organization_id}/projects", response_model=list[Project])
+async def list_organization_projects(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    organization_id: UUID,
+    current_user: User = Depends(get_current_active_user_async),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+) -> Any:
+    """
+    List all projects in an organization.
+
+    User must be a member of the organization to view its projects.
+    Returns all projects where organization_id matches, regardless of
+    individual project access permissions.
+    """
+    logger.info(
+        "list_org_projects_request",
+        user_id=current_user.id,
+        organization_id=organization_id,
+    )
+
+    # Verify user is a member of the organization
+    membership = await permission_service.check_organization_membership(
+        db, current_user.id, organization_id, "member"
+    )
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this organization",
+        )
+
+    # Get all accessible projects for this user
+    all_projects = await permission_service.get_user_accessible_projects(
+        db, current_user.id
+    )
+
+    # Filter to only projects in this organization
+    org_projects = [
+        p for p in all_projects if p.organization_id == organization_id
+    ]
+
+    # Apply pagination
+    paginated_projects = org_projects[skip : skip + limit]
+
+    logger.info(
+        "list_org_projects_response",
+        organization_id=organization_id,
+        project_count=len(paginated_projects),
+        total_org_projects=len(org_projects),
+    )
+
+    # Convert ORM objects to Pydantic models
+    return [Project.model_validate(project) for project in paginated_projects]
