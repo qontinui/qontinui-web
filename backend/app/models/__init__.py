@@ -12,8 +12,7 @@ from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
 from app.models.screenshot_input_association import ScreenshotInputAssociation
-from app.models.discovered_state import DiscoveredState
-from app.models.state_transition import StateTransition
+from app.models.recording import DiscoveredState, DiscoveredTransition
 from app.models.snapshot import SnapshotRun, Screenshot, Pattern
 from app.models.collaboration import (
     ActionType,
@@ -78,9 +77,9 @@ __all__ = [
     "AutomationLog",
     "ScreenshotInputAssociation",
     "AutomationVideo",
-    # State Discovery
+    # Recording & State Discovery
     "DiscoveredState",
-    "StateTransition",
+    "DiscoveredTransition",
     # Snapshots
     "SnapshotRun",
     "Screenshot",

@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     analytics,
     annotations,
     auth,
+    automation_ws,
     background_removal,
     billing,
     export,
@@ -15,6 +16,7 @@ from app.api.v1.endpoints import (
     projects,
     recordings,
     settings,
+    state_discovery,
     users,
 )
 
@@ -39,3 +41,5 @@ api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(admin_ws.router, prefix="/admin", tags=["admin-websockets"])
 api_router.include_router(annotations.router, prefix="/annotations", tags=["annotations"])
 api_router.include_router(recordings.router, prefix="/recordings", tags=["recordings"])
+api_router.include_router(automation_ws.router, tags=["automation-websockets"])
+api_router.include_router(state_discovery.router, prefix="/state-discovery", tags=["state-discovery"])

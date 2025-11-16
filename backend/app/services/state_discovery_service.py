@@ -519,3 +519,7 @@ class StateDiscoveryService:
         base_state["description"] = f"Merged state from {len(states)} similar states ({base_state['frame_count']} frames)"
 
         return base_state
+
+
+# Singleton instance
+state_discovery_service = StateDiscoveryService()

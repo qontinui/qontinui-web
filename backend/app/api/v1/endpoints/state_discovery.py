@@ -21,7 +21,7 @@ from app.schemas.state_discovery import (
     StateDiscoveryTriggerRequest,
     StateUpdateRequest,
 )
-from app.services.state_discovery_service import state_discovery_service
+from app.services.state_discovery_wrapper import state_discovery_service
 
 logger = structlog.get_logger(__name__)
 
