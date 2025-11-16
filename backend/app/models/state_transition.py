@@ -2,6 +2,7 @@
 State Transition Model
 
 Tracks transitions between discovered states triggered by input events.
+Unified model that supports BOTH automation sessions and recordings.
 """
 
 from datetime import datetime
@@ -10,11 +11,15 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
+    Integer,
     JSON,
     String,
+    Text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -25,12 +30,14 @@ if TYPE_CHECKING:
     from app.models.automation import AutomationInputEvent
     from app.models.automation_session import AutomationSession
     from app.models.discovered_state import DiscoveredState
+    from app.models.recording import Recording, RecordingInteraction
 
 
 class StateTransition(Base):
     """
     Represents a transition from one discovered state to another.
 
+    Supports discovery from BOTH automation sessions and recordings.
     Transitions are triggered by input events (clicks, keyboard input, etc.)
     and represent the flow through the application's state graph.
     """
@@ -43,12 +50,31 @@ class StateTransition(Base):
         server_default="gen_random_uuid()"
     )
 
-    # Foreign key to automation session
-    session_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("automation_sessions.id", ondelete="CASCADE"),
+    # Source type - identifies where this transition was discovered from
+    source_type: Mapped[str] = mapped_column(
+        String(50),
         nullable=False,
         index=True
+    )  # 'automation_session' | 'recording'
+
+    # Foreign keys for BOTH sources (only one should be set)
+    automation_session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("automation_sessions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
+    recording_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
+
+    # Legacy field for backward compatibility with automation sessions
+    session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=True
     )
 
     # Source state
@@ -67,7 +93,12 @@ class StateTransition(Base):
         index=True
     )
 
-    # Input event that triggered this transition
+    # Multi-state support (from recordings)
+    activate_state_ids: Mapped[list | None] = mapped_column(JSON, nullable=True, server_default="[]")
+    deactivate_state_ids: Mapped[list | None] = mapped_column(JSON, nullable=True, server_default="[]")
+    stays_visible: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
+
+    # Input event that triggered this transition (from automation sessions)
     trigger_event_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("automation_input_events.id", ondelete="SET NULL"),
@@ -75,16 +106,49 @@ class StateTransition(Base):
         index=True
     )
 
-    # Event type (for quick filtering)
-    event_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-
-    # Confidence score for this transition (0.0 to 1.0)
-    confidence: Mapped[float] = mapped_column(Float, nullable=False)
-
-    # When the transition occurred
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+    # Trigger interaction (from recordings)
+    trigger_interaction_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("recording_interactions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
     )
+
+    # Event/trigger type (for quick filtering)
+    event_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    trigger_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    trigger_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Confidence scores
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    clarity_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    consistency_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    completeness_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Timing
+    timestamp: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recommended_timeout_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recommended_retry_count: Mapped[int | None] = mapped_column(Integer, nullable=True, default=3)
+
+    # Generated workflow (from recordings)
+    workflow: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    workflow_name: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Position on canvas (from recordings)
+    position_x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    position_y: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # User review (from recordings)
+    user_edited: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
+    user_approved: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
+    user_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Conversion to actual transition (from recordings)
+    converted_to_transition_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Additional transition metadata (JSONB)
     transition_metadata: Mapped[dict] = mapped_column(
@@ -96,29 +160,48 @@ class StateTransition(Base):
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )
 
-    # Relationships
-    session: Mapped["AutomationSession"] = relationship(
+    # Relationships for BOTH sources
+    automation_session: Mapped["AutomationSession | None"] = relationship(
         "AutomationSession",
-        back_populates="state_transitions"
+        back_populates="state_transitions",
+        foreign_keys=[automation_session_id]
     )
-    from_state: Mapped["DiscoveredState"] = relationship(
+    recording: Mapped["Recording | None"] = relationship(
+        "Recording",
+        back_populates="state_transitions",
+        foreign_keys=[recording_id]
+    )
+    from_state: Mapped["DiscoveredState | None"] = relationship(
         "DiscoveredState",
         foreign_keys=[from_state_id],
         back_populates="outgoing_transitions"
     )
-    to_state: Mapped["DiscoveredState"] = relationship(
+    to_state: Mapped["DiscoveredState | None"] = relationship(
         "DiscoveredState",
         foreign_keys=[to_state_id],
         back_populates="incoming_transitions"
     )
-    trigger_event: Mapped["AutomationInputEvent"] = relationship(
+    trigger_event: Mapped["AutomationInputEvent | None"] = relationship(
         "AutomationInputEvent",
         foreign_keys=[trigger_event_id]
+    )
+    trigger_interaction: Mapped["RecordingInteraction | None"] = relationship(
+        "RecordingInteraction",
+        foreign_keys=[trigger_interaction_id]
+    )
+
+    # Table constraints
+    __table_args__ = (
+        CheckConstraint(
+            '(automation_session_id IS NOT NULL AND recording_id IS NULL AND source_type = \'automation_session\') OR '
+            '(automation_session_id IS NULL AND recording_id IS NOT NULL AND source_type = \'recording\')',
+            name='check_single_source'
+        ),
     )
 
     def __repr__(self) -> str:
         return (
             f"<StateTransition(id={self.id}, "
-            f"from={self.from_state_id}, to={self.to_state_id}, "
-            f"event_type='{self.event_type}')>"
+            f"source_type='{self.source_type}', "
+            f"from={self.from_state_id}, to={self.to_state_id})>"
         )
