@@ -24,6 +24,7 @@ import {
   Redo,
   Download,
   Upload,
+  Share2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { LibraryItem, BuilderMode } from '../types'
@@ -42,6 +43,7 @@ export interface EditorToolbarProps {
   onRedo?: () => void
   onExport?: () => void
   onImport?: () => void
+  onShare?: () => void
   canUndo?: boolean
   canRedo?: boolean
   isSaving?: boolean
@@ -61,6 +63,7 @@ export function EditorToolbar({
   onRedo,
   onExport,
   onImport,
+  onShare,
   canUndo = false,
   canRedo = false,
   isSaving = false,
@@ -168,6 +171,25 @@ export function EditorToolbar({
 
       {/* Right side - Secondary actions */}
       <div className="flex items-center gap-2">
+        {/* Share Button */}
+        {item && onShare && (
+          <Button
+            onClick={onShare}
+            size="sm"
+            variant="ghost"
+            className="text-gray-400 hover:text-white hover:bg-gray-800"
+            title="Share Project"
+          >
+            <Share2 className="w-4 h-4 mr-2" />
+            Share
+          </Button>
+        )}
+
+        {/* Divider */}
+        {item && onShare && (
+          <div className="h-6 w-px bg-gray-700 mx-1" />
+        )}
+
         {/* Import/Export */}
         {item && (
           <>

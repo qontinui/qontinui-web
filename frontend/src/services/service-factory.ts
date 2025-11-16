@@ -10,6 +10,11 @@ import { ProfileService } from './profile-service';
 import { AnalyticsService } from './analytics-service';
 import { BillingService } from './billing-service';
 import { ApiConfig } from './api-config';
+import { OrganizationService } from './collaboration/organization-service';
+import { ProjectCollaborationService } from './collaboration/project-collaboration-service';
+import { LockService } from './collaboration/lock-service';
+import { CommentService } from './collaboration/comment-service';
+import { ActivityService } from './collaboration/activity-service';
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -29,6 +34,11 @@ export class ServiceFactory {
   public readonly profileService: ProfileService;
   public readonly analyticsService: AnalyticsService;
   public readonly billingService: BillingService;
+  public readonly organizationService: OrganizationService;
+  public readonly projectCollaborationService: ProjectCollaborationService;
+  public readonly lockService: LockService;
+  public readonly commentService: CommentService;
+  public readonly activityService: ActivityService;
 
   private constructor() {
     // Initialize auth services in dependency order
@@ -45,6 +55,13 @@ export class ServiceFactory {
     this.profileService = new ProfileService(this.httpClient);
     this.analyticsService = new AnalyticsService(this.httpClient);
     this.billingService = new BillingService(this.httpClient);
+
+    // Initialize collaboration services
+    this.organizationService = new OrganizationService(this.httpClient);
+    this.projectCollaborationService = new ProjectCollaborationService(this.httpClient);
+    this.lockService = new LockService(this.httpClient);
+    this.commentService = new CommentService(this.httpClient);
+    this.activityService = new ActivityService(this.httpClient);
 
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
@@ -77,3 +94,8 @@ export const fileUploadService = factory.fileUploadService;
 export const profileService = factory.profileService;
 export const analyticsService = factory.analyticsService;
 export const billingService = factory.billingService;
+export const organizationService = factory.organizationService;
+export const projectCollaborationService = factory.projectCollaborationService;
+export const lockService = factory.lockService;
+export const commentService = factory.commentService;
+export const activityService = factory.activityService;
