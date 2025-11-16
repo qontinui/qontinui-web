@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { usePathname } from 'next/navigation';
 import { useTutorial } from './TutorialProvider';
 import { useTutorialStore } from '@/stores/tutorial-store';
 import type { Tutorial } from '@/types/tutorial';
@@ -48,7 +48,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
   enabled = true,
   delay = 1000,
 }) => {
-  const location = useLocation();
+  const pathname = usePathname();
   const { startTutorial } = useTutorial();
   const {
     dontShowTutorialsAgain,
@@ -161,13 +161,13 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
   const checkPageTriggers = useCallback(
     (tutorial: Tutorial): boolean => {
       // Check if tutorial is for current page
-      if (tutorial.targetPage && !location.pathname.includes(tutorial.targetPage)) {
+      if (tutorial.targetPage && !pathname.includes(tutorial.targetPage)) {
         return false;
       }
 
       return shouldTriggerTutorial(tutorial);
     },
-    [location.pathname, shouldTriggerTutorial]
+    [pathname, shouldTriggerTutorial]
   );
 
   const evaluateContextualTriggers = useCallback(
@@ -286,7 +286,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
         clearTimeout(timerRef.current);
       }
     };
-  }, [location.pathname, checkTriggers, delay]);
+  }, [pathname, checkTriggers, delay]);
 
   // Listen for custom tutorial trigger events
   useEffect(() => {

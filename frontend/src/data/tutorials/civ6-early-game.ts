@@ -727,7 +727,7 @@ REPEAT FOR EACH EARLY GAME TURN:
 ├─ Select Warrior (step 4 variant)
 ├─ Position Warrior (step 7 variant)
 └─ End Turn (step 7)
-```
+\`\`\`
 
 ## Testing Strategy
 

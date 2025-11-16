@@ -6,7 +6,7 @@
  */
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { usePathname } from 'next/navigation';
 import { useTutorialStore } from '@/stores/tutorial-store';
 import type {
   Tutorial,
@@ -71,7 +71,7 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({
   children,
   defaultMode = 'overlay',
 }) => {
-  const location = useLocation();
+  const pathname = usePathname();
   const [mode, setMode] = useState<TutorialMode>(defaultMode);
   const [targetElements, setTargetElements] = useState<Map<string, HTMLElement>>(
     new Map()
@@ -271,11 +271,11 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({
   // Handle route changes - close contextual tutorials when navigating away
   useEffect(() => {
     if (mode === 'contextual' && currentTutorial?.targetPage) {
-      if (!location.pathname.includes(currentTutorial.targetPage)) {
+      if (!pathname.includes(currentTutorial.targetPage)) {
         stopTutorial();
       }
     }
-  }, [location.pathname, mode, currentTutorial, stopTutorial]);
+  }, [pathname, mode, currentTutorial, stopTutorial]);
 
   // ============================================================================
   // Context Value
