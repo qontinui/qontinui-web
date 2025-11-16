@@ -22,7 +22,9 @@ import {
   MouseDownActionConfig,
   MouseUpActionConfig,
   DragActionConfig,
+  CustomDragActionConfig,
   ScrollActionConfig,
+  PathPoint,
 } from './configs/mouse-actions';
 
 import {
@@ -71,6 +73,7 @@ export type MouseActionType =
   | 'MOUSE_DOWN'
   | 'MOUSE_UP'
   | 'DRAG'
+  | 'CUSTOM_DRAG'
   | 'SCROLL';
 
 export type KeyboardActionType = 'TYPE' | 'KEY_PRESS' | 'KEY_DOWN' | 'KEY_UP' | 'HOTKEY';
@@ -115,6 +118,7 @@ export interface ActionConfigMap {
   MOUSE_DOWN: MouseDownActionConfig;
   MOUSE_UP: MouseUpActionConfig;
   DRAG: DragActionConfig;
+  CUSTOM_DRAG: CustomDragActionConfig;
   SCROLL: ScrollActionConfig;
 
   // Keyboard actions

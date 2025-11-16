@@ -16,7 +16,19 @@ import pytesseract
 import structlog
 from collections import Counter
 
+<<<<<<< Updated upstream
 from app.services.frame_analysis_service import FrameAnalysisService
+=======
+from app.models.automation import AutomationInputEvent
+from app.models.automation_screenshot import AutomationScreenshot
+from app.models.automation_session import AutomationSession
+from app.models.screenshot_input_association import ScreenshotInputAssociation
+from app.schemas.state_discovery import (
+    DiscoveredState,
+    StateDiscoveryResponse,
+    StateTransition,
+)
+>>>>>>> Stashed changes
 
 logger = structlog.get_logger(__name__)
 
