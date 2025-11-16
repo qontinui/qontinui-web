@@ -5,6 +5,8 @@ Provides real-time automation monitoring, log streaming, and session management.
 """
 
 import asyncio
+import base64
+import io
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 from uuid import UUID
@@ -12,18 +14,19 @@ from uuid import UUID
 import structlog
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from PIL import Image
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user_from_ws
-from app.models.automation import (
-    AutomationInputEvent,
-    AutomationScreenshot,
-    AutomationSession,
-    ScreenshotInputAssociation,
-)
+from app.models.automation import AutomationInputEvent
+from app.models.automation_log import AutomationLog
+from app.models.automation_screenshot import AutomationScreenshot
+from app.models.automation_session import AutomationSession
+from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.user import User
+from app.services.object_storage import object_storage
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -45,7 +48,8 @@ async def link_screenshots_to_input(
     """
     Link screenshots to an input event based on timestamp proximity.
 
-    Finds screenshots within ±2.5 seconds of the input event and creates associations.
+    Finds screenshots within ±2.5 seconds of the input event and sets
+    the before/after screenshot references on the input event.
 
     Args:
         db: Database session
@@ -69,33 +73,28 @@ async def link_screenshots_to_input(
     result = await db.execute(query)
     screenshots = result.scalars().all()
 
-    # Create associations
+    # Link the closest before/after screenshots
+    screenshot_before = None
+    screenshot_after = None
+
     for screenshot in screenshots:
         # Calculate time delta in milliseconds
         time_delta = (screenshot.timestamp - input_event.timestamp).total_seconds() * 1000
 
-        # Determine association type
+        # Find closest screenshot before the input event
         if time_delta < -100:  # More than 100ms before
-            association_type = "before"
+            if not screenshot_before or time_delta > (screenshot_before.timestamp - input_event.timestamp).total_seconds() * 1000:
+                screenshot_before = screenshot
+        # Find closest screenshot after the input event
         elif time_delta > 100:  # More than 100ms after
-            association_type = "after"
-        else:  # Within 100ms
-            association_type = "during"
+            if not screenshot_after or time_delta < (screenshot_after.timestamp - input_event.timestamp).total_seconds() * 1000:
+                screenshot_after = screenshot
 
-        # Create association
-        association = ScreenshotInputAssociation(
-            screenshot_id=screenshot.id,
-            input_event_id=input_event.id,
-            association_type=association_type,
-            time_delta_ms=int(time_delta),
-        )
-        db.add(association)
-
-        # Also update direct references if appropriate
-        if association_type == "before" and not input_event.screenshot_before_id:
-            input_event.screenshot_before_id = screenshot.id
-        elif association_type == "after" and not input_event.screenshot_after_id:
-            input_event.screenshot_after_id = screenshot.id
+    # Set the before/after screenshot references
+    if screenshot_before:
+        input_event.screenshot_before_id = screenshot_before.id
+    if screenshot_after:
+        input_event.screenshot_after_id = screenshot_after.id
 
     await db.commit()
 
@@ -205,6 +204,318 @@ async def handle_input_event(
         return {
             "type": "error",
             "message": f"Failed to process input event: {str(e)}",
+        }
+
+
+async def handle_log(
+    message: Dict[str, Any],
+    db: AsyncSession,
+    session_id: Optional[UUID] = None,
+) -> Dict[str, Any]:
+    """
+    Handle automation log message.
+
+    Creates AutomationLog record for automated execution logs.
+
+    Args:
+        message: Message data containing log details
+        db: Database session
+        session_id: Current automation session ID
+
+    Returns:
+        Response message
+    """
+    try:
+        if not session_id:
+            return {
+                "type": "error",
+                "message": "No active session. Start session first.",
+            }
+
+        # Extract log fields
+        log_level = message.get("level", "info")
+        log_message = message.get("message", "")
+        log_data = message.get("data", {})
+
+        if not log_message:
+            return {
+                "type": "error",
+                "message": "Missing required field: message",
+            }
+
+        # Parse timestamp
+        timestamp_str = message.get("timestamp")
+        if timestamp_str:
+            try:
+                log_timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                log_timestamp = datetime.utcnow()
+        else:
+            log_timestamp = datetime.utcnow()
+
+        # Get next sequence number for this session
+        query = select(AutomationLog).where(
+            AutomationLog.session_id == session_id
+        ).order_by(AutomationLog.sequence_number.desc()).limit(1)
+
+        result = await db.execute(query)
+        last_log = result.scalar_one_or_none()
+
+        sequence_number = (last_log.sequence_number + 1) if last_log else 1
+
+        # Create log record
+        automation_log = AutomationLog(
+            session_id=session_id,
+            sequence_number=sequence_number,
+            level=log_level,
+            message=log_message,
+            log_data=log_data,
+            timestamp=log_timestamp,
+        )
+
+        # Save to database
+        db.add(automation_log)
+        await db.commit()
+        await db.refresh(automation_log)
+
+        logger.info(
+            "automation_log_stored",
+            session_id=str(session_id),
+            level=log_level,
+            sequence=sequence_number,
+            log_id=str(automation_log.id),
+        )
+
+        return {
+            "type": "log_received",
+            "log_id": str(automation_log.id),
+            "sequence_number": sequence_number,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    except Exception as e:
+        logger.error("automation_log_error", error=str(e), error_type=type(e).__name__)
+        return {
+            "type": "error",
+            "message": f"Failed to process log: {str(e)}",
+        }
+
+
+async def handle_screenshot(
+    message: Dict[str, Any],
+    db: AsyncSession,
+    user_id: UUID,
+    session_id: Optional[UUID] = None,
+) -> Dict[str, Any]:
+    """
+    Handle screenshot upload and storage.
+
+    Decodes base64 image, uploads to S3, creates AutomationScreenshot record,
+    and optionally links to recent AutomationLog entries.
+
+    Args:
+        message: Message data containing screenshot details
+        db: Database session
+        user_id: User ID for storage path
+        session_id: Current automation session ID
+
+    Returns:
+        Response message
+    """
+    try:
+        if not session_id:
+            return {
+                "type": "error",
+                "message": "No active session. Start session first.",
+            }
+
+        # Extract screenshot fields
+        image_data_b64 = message.get("image")
+        screenshot_name = message.get("name", f"screenshot_{datetime.utcnow().timestamp()}")
+        metadata = message.get("metadata", {})
+
+        if not image_data_b64:
+            return {
+                "type": "error",
+                "message": "Missing required field: image",
+            }
+
+        # Parse timestamp
+        timestamp_str = message.get("timestamp")
+        if timestamp_str:
+            try:
+                screenshot_timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                screenshot_timestamp = datetime.utcnow()
+        else:
+            screenshot_timestamp = datetime.utcnow()
+
+        # Decode base64 image
+        try:
+            image_bytes = base64.b64decode(image_data_b64)
+        except Exception as e:
+            logger.error("screenshot_base64_decode_failed", error=str(e))
+            return {
+                "type": "error",
+                "message": "Failed to decode base64 image data",
+            }
+
+        # Get image dimensions using PIL
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            width, height = img.size
+            # Determine format and content type
+            img_format = img.format.lower() if img.format else "png"
+            content_type = f"image/{img_format}"
+        except Exception as e:
+            logger.error("screenshot_image_parse_failed", error=str(e))
+            return {
+                "type": "error",
+                "message": "Failed to parse image data",
+            }
+
+        # Generate S3 key: screenshots/{user_id}/sessions/{session_id}/{timestamp}_{name}.{format}
+        timestamp_str_safe = screenshot_timestamp.strftime("%Y%m%d_%H%M%S_%f")
+        s3_key = f"screenshots/{user_id}/sessions/{session_id}/{timestamp_str_safe}_{screenshot_name}.{img_format}"
+
+        # Upload to S3
+        try:
+            file_obj = io.BytesIO(image_bytes)
+            object_storage.backend.upload_file(
+                file_obj=file_obj,
+                key=s3_key,
+                content_type=content_type,
+                metadata={
+                    "user_id": str(user_id),
+                    "session_id": str(session_id),
+                    "screenshot_name": screenshot_name,
+                    "timestamp": screenshot_timestamp.isoformat(),
+                },
+            )
+
+            logger.info(
+                "screenshot_uploaded_to_s3",
+                user_id=str(user_id),
+                session_id=str(session_id),
+                s3_key=s3_key,
+                file_size=len(image_bytes),
+            )
+        except Exception as e:
+            logger.error(
+                "screenshot_s3_upload_failed",
+                user_id=str(user_id),
+                session_id=str(session_id),
+                error=str(e),
+            )
+            return {
+                "type": "error",
+                "message": f"Failed to upload screenshot: {str(e)}",
+            }
+
+        # Create AutomationScreenshot record
+        try:
+            screenshot = AutomationScreenshot(
+                session_id=session_id,
+                name=screenshot_name,
+                storage_path=s3_key,
+                width=width,
+                height=height,
+                content_type=content_type,
+                automation_metadata=metadata,
+                timestamp=screenshot_timestamp,
+            )
+
+            db.add(screenshot)
+            await db.commit()
+            await db.refresh(screenshot)
+
+            logger.info(
+                "screenshot_record_created",
+                screenshot_id=str(screenshot.id),
+                session_id=str(session_id),
+                name=screenshot_name,
+            )
+        except Exception as e:
+            logger.error(
+                "screenshot_record_creation_failed",
+                session_id=str(session_id),
+                error=str(e),
+            )
+            # Try to clean up S3 upload
+            try:
+                object_storage.delete_file(s3_key)
+            except Exception:
+                pass
+            return {
+                "type": "error",
+                "message": f"Failed to create screenshot record: {str(e)}",
+            }
+
+        # Link to recent AutomationLog entries (within ±5 seconds)
+        try:
+            time_window = timedelta(seconds=5)
+            start_time = screenshot_timestamp - time_window
+            end_time = screenshot_timestamp + time_window
+
+            # Query recent logs
+            query = select(AutomationLog).where(
+                AutomationLog.session_id == session_id,
+                AutomationLog.timestamp >= start_time,
+                AutomationLog.timestamp <= end_time,
+            ).order_by(AutomationLog.timestamp)
+
+            result = await db.execute(query)
+            recent_logs = result.scalars().all()
+
+            # Create associations for logs that represent user inputs
+            # (clicks, types, etc.)
+            association_count = 0
+            for log in recent_logs:
+                # Check if log represents a user input action
+                log_data = log.log_data or {}
+                action_type = log_data.get("action_type", "").upper()
+
+                # Link screenshots to action logs (CLICK, TYPE, etc.)
+                if action_type in ["CLICK", "TYPE", "DOUBLE_CLICK", "RIGHT_CLICK", "DRAG", "SCROLL"]:
+                    timestamp_diff_ms = int((screenshot.timestamp - log.timestamp).total_seconds() * 1000)
+
+                    association = ScreenshotInputAssociation(
+                        screenshot_id=screenshot.id,
+                        log_id=log.id,
+                        input_type=action_type.lower(),
+                        input_data=log_data,
+                        timestamp_diff_ms=timestamp_diff_ms,
+                    )
+                    db.add(association)
+                    association_count += 1
+
+            if association_count > 0:
+                await db.commit()
+                logger.info(
+                    "screenshot_associations_created",
+                    screenshot_id=str(screenshot.id),
+                    association_count=association_count,
+                )
+        except Exception as e:
+            logger.error(
+                "screenshot_association_failed",
+                screenshot_id=str(screenshot.id),
+                error=str(e),
+            )
+            # Don't fail the screenshot upload if association fails
+
+        return {
+            "type": "screenshot_received",
+            "screenshot_id": str(screenshot.id),
+            "s3_key": s3_key,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    except Exception as e:
+        logger.error("screenshot_error", error=str(e), error_type=type(e).__name__)
+        return {
+            "type": "error",
+            "message": f"Failed to process screenshot: {str(e)}",
         }
 
 
@@ -453,59 +764,22 @@ async def websocket_runner_endpoint(
 
                 elif message_type == "log":
                     # Handle automation log
-                    if not session_started:
-                        await websocket.send_json(
-                            {
-                                "type": "error",
-                                "message": "No active session. Start session first.",
-                            }
-                        )
-                        continue
-
-                    log_level = message.data.get("level", "info")
-                    log_message = message.data.get("message", "")
-
-                    logger.info(
-                        "automation_log",
-                        user_id=str(user.id),
-                        level=log_level,
-                        message=log_message,
+                    response = await handle_log(
+                        message.data,
+                        db,
+                        current_session_id,
                     )
-
-                    # Here you would typically store the log in the database
-                    # For now, just acknowledge receipt
-                    await websocket.send_json(
-                        {
-                            "type": "log_received",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
-                        }
-                    )
+                    await websocket.send_json(response)
 
                 elif message_type == "screenshot":
                     # Handle screenshot
-                    if not session_started:
-                        await websocket.send_json(
-                            {
-                                "type": "error",
-                                "message": "No active session. Start session first.",
-                            }
-                        )
-                        continue
-
-                    logger.info(
-                        "automation_screenshot",
-                        user_id=str(user.id),
-                        metadata=message.data.get("metadata", {}),
+                    response = await handle_screenshot(
+                        message.data,
+                        db,
+                        user.id,
+                        current_session_id,
                     )
-
-                    # Here you would typically store the screenshot in S3
-                    # For now, just acknowledge receipt
-                    await websocket.send_json(
-                        {
-                            "type": "screenshot_received",
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
-                        }
-                    )
+                    await websocket.send_json(response)
 
                 elif message_type == "input_event":
                     # Handle input event

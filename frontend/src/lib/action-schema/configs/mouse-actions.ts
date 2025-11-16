@@ -96,6 +96,62 @@ export interface DragActionConfig {
 }
 
 /**
+ * PathPoint - Single point in a custom drag path
+ */
+export interface PathPoint {
+  /** X coordinate */
+  x: number;
+
+  /** Y coordinate */
+  y: number;
+
+  /** Timestamp in seconds since drag start */
+  timestamp: number;
+}
+
+/**
+ * CUSTOM_DRAG - Replay a recorded drag path with precise timing
+ *
+ * This action executes a drag operation following a recorded path,
+ * maintaining the exact trajectory, timing, and velocity profile
+ * from the original manual drag.
+ *
+ * Use cases:
+ * - Complex game gestures (spell casting, drawing)
+ * - Precise UI interactions (curved drags, specific patterns)
+ * - Reproducing manual workflows exactly as performed
+ */
+export interface CustomDragActionConfig {
+  /**
+   * Drag path - either embedded points or path to JSON file
+   *
+   * Embedded: Array of PathPoint objects
+   * File: String path to captured drag JSON file
+   */
+  path: PathPoint[] | string;
+
+  /** Mouse button to use during drag */
+  mouseButton?: MouseButton;
+
+  /**
+   * Speed multiplier for playback
+   * - 1.0 = original speed (default)
+   * - 0.5 = half speed (slow motion)
+   * - 2.0 = double speed (fast forward)
+   */
+  speedMultiplier?: number;
+
+  /**
+   * Offset to apply to entire path
+   * Useful for repositioning a captured drag to a different location
+   */
+  startOffset?: Coordinates;
+
+  /** Verification after drag */
+  verify?: VerificationConfig;
+}
+
+/**
  * SCROLL - Scroll in a direction
  */
 export interface ScrollActionConfig {

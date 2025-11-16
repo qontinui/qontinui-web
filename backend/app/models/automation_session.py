@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, String, JSON, ForeignKey, Integer
+from sqlalchemy import DateTime, String, JSON, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -16,6 +16,10 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.automation_log import AutomationLog
     from app.models.automation_screenshot import AutomationScreenshot
+    from app.models.automation import AutomationInputEvent
+    from app.models.discovered_state import DiscoveredState
+    from app.models.state_transition import StateTransition
+    from app.models.user import User
 
 
 class AutomationSession(Base):
@@ -70,7 +74,25 @@ class AutomationSession(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # State Discovery tracking fields
+    state_discovery_status: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # pending, running, completed, failed
+    state_discovery_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    state_discovery_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    state_discovery_error: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+
     # Relationships
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="automation_sessions"
+    )
     logs: Mapped[list["AutomationLog"]] = relationship(
         "AutomationLog",
         back_populates="session",
@@ -79,6 +101,24 @@ class AutomationSession(Base):
     )
     screenshots: Mapped[list["AutomationScreenshot"]] = relationship(
         "AutomationScreenshot",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+    input_events: Mapped[list["AutomationInputEvent"]] = relationship(
+        "AutomationInputEvent",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+    discovered_states: Mapped[list["DiscoveredState"]] = relationship(
+        "DiscoveredState",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+    state_transitions: Mapped[list["StateTransition"]] = relationship(
+        "StateTransition",
         back_populates="session",
         cascade="all, delete-orphan",
         lazy="selectin"

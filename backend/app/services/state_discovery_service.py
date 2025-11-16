@@ -13,12 +13,10 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.automation import (
-    AutomationInputEvent,
-    AutomationScreenshot,
-    AutomationSession,
-    ScreenshotInputAssociation,
-)
+from app.models.automation import AutomationInputEvent
+from app.models.automation_screenshot import AutomationScreenshot
+from app.models.automation_session import AutomationSession
+from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.schemas.state_discovery import (
     DiscoveredState,
     StateDiscoveryResponse,
