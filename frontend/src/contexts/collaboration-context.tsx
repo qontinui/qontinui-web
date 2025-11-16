@@ -3,18 +3,28 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import type {
   Organization,
-  PermissionLevel,
   UserPresence,
   Lock,
   Comment,
   Activity,
   ResourceType,
 } from '@/types/collaboration';
-import { organizationService } from '@/services/organization-service';
-import { lockService } from '@/services/lock-service';
-import { commentService } from '@/services/comment-service';
-import { activityService } from '@/services/activity-service';
+import type { PermissionLevel } from '@/lib/permissions';
+import {
+  hasPermission,
+  canUserView,
+  canUserComment,
+  canUserEdit,
+  canUserAdmin,
+} from '@/lib/permissions';
+import {
+  organizationService,
+  lockService,
+  commentService,
+  activityService,
+} from '@/services/service-factory';
 import { websocketCollaborationService } from '@/services/websocket-collaboration-service';
+import { useAuth } from '@/contexts/auth-context';
 
 // ============================================================================
 // Context Types
@@ -28,9 +38,16 @@ interface CollaborationContextValue {
 
   // Project access
   projectAccess: PermissionLevel | null;
-  canEdit: boolean;
+  canView: boolean;
   canComment: boolean;
+  canEdit: boolean;
   canAdmin: boolean;
+
+  /**
+   * Check if user has a specific permission level
+   * @param required - The minimum permission level required
+   */
+  hasPermission: (required: PermissionLevel) => boolean;
 
   // Presence
   activeUsers: UserPresence[];
@@ -170,9 +187,17 @@ export function CollaborationProvider({
   // Permission Helpers
   // ============================================================================
 
-  const canEdit = projectAccess === 'edit' || projectAccess === 'admin' || projectAccess === 'owner';
-  const canComment = canEdit || projectAccess === 'comment';
-  const canAdmin = projectAccess === 'admin' || projectAccess === 'owner';
+  const canView = hasPermission('view', projectAccess || 'none');
+  const canComment = hasPermission('comment', projectAccess || 'none');
+  const canEdit = hasPermission('edit', projectAccess || 'none');
+  const canAdmin = hasPermission('admin', projectAccess || 'none');
+
+  /**
+   * Check if user has a specific permission level
+   */
+  const checkPermission = (required: PermissionLevel): boolean => {
+    return hasPermission(required, projectAccess || 'none');
+  };
 
   // ============================================================================
   // Lock Methods
@@ -336,9 +361,11 @@ export function CollaborationProvider({
 
     // Project access
     projectAccess,
-    canEdit,
+    canView,
     canComment,
+    canEdit,
     canAdmin,
+    hasPermission: checkPermission,
 
     // Presence
     activeUsers,

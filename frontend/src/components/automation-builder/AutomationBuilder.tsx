@@ -19,6 +19,7 @@ import { useAutomation } from '@/contexts/automation-context'
 import { toast } from 'sonner'
 import type { Workflow, Action, ActionType } from '@/lib/action-schema/action-types'
 import { getDefaultConfig } from '@/lib/action-schema/default-configs'
+import type { PermissionLevel } from '@/types/collaboration'
 
 // Import our new components
 import {
@@ -36,12 +37,15 @@ import {
   ItemMetadataPanel,
   EditorToolbar,
 } from './index'
+import { ShareProjectDialog } from './components/ShareProjectDialog'
+import { useProjectSharing } from './hooks/useProjectSharing'
 
 export function AutomationBuilder() {
   // State
   const [mode, setMode] = useState<BuilderMode>('sequential')
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null)
   const [selectedAction, setSelectedAction] = useState<Action | null>(null)
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
 
   // Context
   const { addWorkflow, updateWorkflow, deleteWorkflow } = useAutomation()
@@ -56,6 +60,32 @@ export function AutomationBuilder() {
   const { openConversion, ConversionDialog } = useFormatConversion({
     onModeChange: setMode,
   })
+  const {
+    collaborators,
+    organizations,
+    loading: sharingLoading,
+    addUser,
+    addOrganization,
+    changePermission,
+    revokeAccess,
+    generateShareLink,
+    getMyPermission,
+  } = useProjectSharing({
+    projectId: selectedItem?.id || null,
+    enabled: shareDialogOpen,
+  })
+
+  // Track current user's permission
+  const [myPermission, setMyPermission] = useState<PermissionLevel | undefined>(undefined)
+
+  // Load permission when item changes
+  useEffect(() => {
+    if (selectedItem?.id) {
+      getMyPermission().then(setMyPermission)
+    } else {
+      setMyPermission(undefined)
+    }
+  }, [selectedItem?.id, getMyPermission])
 
   /**
    * Handle item selection from library
@@ -248,6 +278,14 @@ export function AutomationBuilder() {
     [selectedItem, handleUpdateActions]
   )
 
+  /**
+   * Handle opening the share dialog
+   */
+  const handleShare = useCallback(() => {
+    if (!selectedItem) return
+    setShareDialogOpen(true)
+  }, [selectedItem])
+
   // Render the editor based on mode
   const renderEditor = () => {
     if (!selectedItem) {
@@ -339,6 +377,7 @@ export function AutomationBuilder() {
           onDelete={() => selectedItem && handleDeleteItem(selectedItem)}
           onDuplicate={handleDuplicateItem}
           onConvert={() => selectedItem && openConversion(selectedItem)}
+          onShare={handleShare}
         />
 
         {/* Editor Content */}
@@ -349,7 +388,13 @@ export function AutomationBuilder() {
       <div className="w-64 xl:w-72 2xl:w-80 flex-shrink-0 border-l border-gray-800 bg-[#27272A]/50 p-4 overflow-y-auto">
         {selectedItem && !selectedAction ? (
           // Show item metadata when no action is selected
-          <ItemMetadataPanel item={selectedItem} onUpdate={handleUpdateItem} />
+          <ItemMetadataPanel
+            item={selectedItem}
+            onUpdate={handleUpdateItem}
+            currentPermission={myPermission}
+            collaboratorCount={collaborators.length}
+            onOpenShare={handleShare}
+          />
         ) : (
           // Show action properties when an action is selected
           <ActionProperties action={selectedAction} onUpdateAction={handleUpdateAction} />
@@ -358,6 +403,23 @@ export function AutomationBuilder() {
 
       {/* Conversion Dialog */}
       <ConversionDialog />
+
+      {/* Share Dialog */}
+      {selectedItem && (
+        <ShareProjectDialog
+          open={shareDialogOpen}
+          onOpenChange={setShareDialogOpen}
+          projectId={selectedItem.id}
+          projectName={selectedItem.name}
+          collaborators={collaborators}
+          organizations={organizations}
+          onAddUser={addUser}
+          onAddOrganization={addOrganization}
+          onChangePermission={changePermission}
+          onRevoke={revokeAccess}
+          onGenerateLink={generateShareLink}
+        />
+      )}
     </div>
   )
 }

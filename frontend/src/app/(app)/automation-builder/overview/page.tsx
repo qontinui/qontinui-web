@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -106,7 +106,9 @@ interface ProblemArea {
 }
 
 // Generate mock data
+// TODO: Replace all mock data with real data from backend API
 function generateMockData() {
+  // TODO: Fetch real metrics from backend - GET /api/v1/workflows/metrics
   const metrics: WorkflowMetrics = {
     totalWorkflows: 47,
     totalActions: 324,
@@ -116,6 +118,7 @@ function generateMockData() {
     recentActivityCount: 23,
   };
 
+  // TODO: Fetch real folder/category data from backend - GET /api/v1/workflows/folders
   const folders: FolderData[] = [
     { name: 'Authentication', size: 12, fill: '#00D9FF', workflows: 12 },
     { name: 'User Management', size: 8, fill: '#BD00FF', workflows: 8 },
@@ -124,6 +127,7 @@ function generateMockData() {
     { name: 'Testing', size: 5, fill: '#FF6B6B', workflows: 5 },
   ];
 
+  // TODO: Fetch real tag data from backend - GET /api/v1/workflows/tags
   const tags: TagData[] = [
     { tag: 'login', count: 15, size: 32 },
     { tag: 'form', count: 12, size: 28 },
@@ -135,53 +139,58 @@ function generateMockData() {
     { tag: 'error-handling', count: 4, size: 12 },
   ];
 
+  // TODO: Fetch real activity feed from backend - GET /api/v1/workflows/activities
+  // TODO: Replace fixed timestamp with real activity timestamps from backend
+  const baseTimestamp = 1700000000000; // Fixed timestamp: Nov 14, 2023 (placeholder)
   const activities: ActivityItem[] = [
     {
       id: '1',
       type: 'modified',
       workflowName: 'User Login Flow',
-      timestamp: new Date(Date.now() - 1000 * 60 * 5),
+      timestamp: new Date(baseTimestamp - 1000 * 60 * 5),
       user: 'John Doe',
     },
     {
       id: '2',
       type: 'test_run',
       workflowName: 'Form Validation',
-      timestamp: new Date(Date.now() - 1000 * 60 * 15),
+      timestamp: new Date(baseTimestamp - 1000 * 60 * 15),
       status: 'success',
     },
     {
       id: '3',
       type: 'created',
       workflowName: 'Dashboard Navigation',
-      timestamp: new Date(Date.now() - 1000 * 60 * 30),
+      timestamp: new Date(baseTimestamp - 1000 * 60 * 30),
       user: 'Jane Smith',
     },
     {
       id: '4',
       type: 'test_run',
       workflowName: 'API Integration',
-      timestamp: new Date(Date.now() - 1000 * 60 * 45),
+      timestamp: new Date(baseTimestamp - 1000 * 60 * 45),
       status: 'failed',
     },
     {
       id: '5',
       type: 'modified',
       workflowName: 'Checkout Process',
-      timestamp: new Date(Date.now() - 1000 * 60 * 60),
+      timestamp: new Date(baseTimestamp - 1000 * 60 * 60),
       user: 'John Doe',
     },
     {
       id: '6',
       type: 'imported',
       workflowName: 'Payment Gateway',
-      timestamp: new Date(Date.now() - 1000 * 60 * 90),
+      timestamp: new Date(baseTimestamp - 1000 * 60 * 90),
       user: 'Admin',
     },
   ];
 
+  // TODO: Calculate real health score from backend - GET /api/v1/workflows/health
   const healthScore = 78;
 
+  // TODO: Fetch real workflow health recommendations from backend - GET /api/v1/workflows/recommendations
   const recommendations: HealthRecommendation[] = [
     {
       id: '1',
@@ -221,6 +230,7 @@ function generateMockData() {
     },
   ];
 
+  // TODO: Fetch real most active workflows from backend - GET /api/v1/workflows/most-active
   const activeWorkflows: ActiveWorkflow[] = [
     { id: '1', name: 'User Login Flow', folder: 'Authentication', executionCount: 1247, successRate: 98.5 },
     { id: '2', name: 'Form Validation', folder: 'Forms', executionCount: 892, successRate: 95.2 },
@@ -229,6 +239,7 @@ function generateMockData() {
     { id: '5', name: 'Checkout Process', folder: 'Forms', executionCount: 534, successRate: 93.7 },
   ];
 
+  // TODO: Fetch real problem areas from backend - GET /api/v1/workflows/problems
   const problemAreas: ProblemArea[] = [
     {
       id: '1',
@@ -260,16 +271,23 @@ function generateMockData() {
     },
   ];
 
+  // TODO: Fetch real workflow creation/modification timeline from backend - GET /api/v1/workflows/timeline
+  // TODO: Replace fixed date with real timeline dates from backend
   // Timeline data (last 30 days)
-  const timelineData = Array.from({ length: 30 }, (_, i) => ({
-    date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    }),
-    created: Math.floor(Math.random() * 5),
-    modified: Math.floor(Math.random() * 10 + 5),
-  }));
+  // Use deterministic values based on index to avoid hydration mismatches
+  const baseDate = 1700000000000; // Fixed timestamp: Nov 14, 2023 (placeholder)
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const timelineData = Array.from({ length: 30 }, (_, i) => {
+    const date = new Date(baseDate - (29 - i) * 24 * 60 * 60 * 1000);
+    // Use UTC methods to avoid timezone differences between server and client
+    return {
+      date: `${monthNames[date.getUTCMonth()]} ${date.getUTCDate()}`,
+      created: (i * 3) % 5, // Deterministic pattern: 0,3,1,4,2,0,3,1,4,2...
+      modified: 5 + ((i * 7) % 10), // Deterministic pattern: 5-14
+    };
+  });
 
+  // TODO: Fetch real workflow complexity distribution from backend - GET /api/v1/workflows/complexity
   // Complexity distribution
   const complexityData = [
     { range: '1-3', count: 15, fill: '#00FF88' },
@@ -279,12 +297,15 @@ function generateMockData() {
     { range: '15+', count: 1, fill: '#BD00FF' },
   ];
 
+  // TODO: Fetch real test coverage by folder from backend - GET /api/v1/workflows/test-coverage
   // Test coverage by folder
-  const testCoverageData = folders.map((folder) => ({
-    name: folder.name,
-    coverage: Math.floor(Math.random() * 30 + 70),
-    workflows: folder.workflows,
-  }));
+  const testCoverageData = [
+    { name: 'Authentication', coverage: 95, workflows: 12 },
+    { name: 'User Management', coverage: 80, workflows: 8 },
+    { name: 'Navigation', coverage: 91, workflows: 15 },
+    { name: 'Forms', coverage: 77, workflows: 7 },
+    { name: 'Testing', coverage: 71, workflows: 5 },
+  ];
 
   return {
     metrics,
@@ -418,7 +439,7 @@ function TagCloud({ tags }: { tags: TagData[] }) {
   );
 }
 
-function ActivityFeed({ activities }: { activities: ActivityItem[] }) {
+function ActivityFeed({ activities, isMounted }: { activities: ActivityItem[]; isMounted: boolean }) {
   const getActivityIcon = (type: string) => {
     switch (type) {
       case 'created':
@@ -494,7 +515,7 @@ function ActivityFeed({ activities }: { activities: ActivityItem[] }) {
                 <span className="text-[#00D9FF]">{activity.workflowName}</span>
               </p>
               <div className="flex items-center gap-2 mt-1">
-                <p className="text-xs text-gray-500">{getRelativeTime(activity.timestamp)}</p>
+                <p className="text-xs text-gray-500">{isMounted ? getRelativeTime(activity.timestamp) : '...'}</p>
                 {activity.user && (
                   <>
                     <span className="text-gray-600">•</span>
@@ -586,8 +607,13 @@ function HealthScoreGauge({ score }: { score: number }) {
 export default function AutomationBuilderOverviewPage() {
   const router = useRouter();
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
 
   const data = useMemo(() => generateMockData(), []);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleQuickAction = (action: string) => {
     switch (action) {
@@ -609,7 +635,7 @@ export default function AutomationBuilderOverviewPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white p-6">
+    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white p-6" suppressHydrationWarning>
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header Section */}
         <div className="flex items-start justify-between">
@@ -848,7 +874,7 @@ export default function AutomationBuilderOverviewPage() {
                             {workflow.folder}
                           </Badge>
                           <span className="text-xs text-gray-500">
-                            {workflow.executionCount.toLocaleString()} executions
+                            {workflow.executionCount.toLocaleString('en-US')} executions
                           </span>
                         </div>
                       </div>
@@ -928,7 +954,7 @@ export default function AutomationBuilderOverviewPage() {
                 <CardDescription>Last 24 hours</CardDescription>
               </CardHeader>
               <CardContent>
-                <ActivityFeed activities={data.activities} />
+                <ActivityFeed activities={data.activities} isMounted={isMounted} />
               </CardContent>
             </Card>
 

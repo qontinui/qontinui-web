@@ -16,7 +16,7 @@ import type {
   OrganizationCreate,
   InvitationCreate,
 } from '@/types/collaboration';
-import { organizationService } from '@/services/organization-service';
+import { organizationService } from '@/services/service-factory';
 
 // ============================================================================
 // Hook Return Type
@@ -130,8 +130,7 @@ export function useOrganization(): UseOrganizationReturn {
     setError(null);
 
     try {
-      const data: OrganizationCreate = { name, description };
-      const newOrg = await organizationService.createOrganization(data);
+      const newOrg = await organizationService.createOrganization(name, description);
 
       // Add to organizations list
       setOrganizations((prev) => [...prev, newOrg]);
@@ -162,10 +161,8 @@ export function useOrganization(): UseOrganizationReturn {
     setError(null);
 
     try {
-      const updatedOrg = await organizationService.updateOrganization(orgId, {
-        name,
-        description,
-      });
+      const updates = description !== undefined ? { name, description } : { name };
+      const updatedOrg = await organizationService.updateOrganization(orgId, updates);
 
       // Update in organizations list
       setOrganizations((prev) =>
@@ -225,8 +222,7 @@ export function useOrganization(): UseOrganizationReturn {
     setError(null);
 
     try {
-      const invitation: InvitationCreate = { email, role };
-      await organizationService.inviteMember(orgId, invitation);
+      await organizationService.inviteMember(orgId, email, role);
 
       // Reload members
       if (currentOrg && currentOrg.id === orgId) {

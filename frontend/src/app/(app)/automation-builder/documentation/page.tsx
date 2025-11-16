@@ -659,7 +659,7 @@ function DocumentationDashboard({ stats, workflows, onSelectWorkflow }: {
                     </div>
                     <div>
                       <p className="text-sm font-medium">{name}</p>
-                      <p className="text-xs text-gray-500">{Math.floor(Math.random() * 500 + 100)} views</p>
+                      <p className="text-xs text-gray-500">{[329, 552, 418, 267, 385][idx] || 200} views</p>
                     </div>
                   </div>
                   <ExternalLink className="size-4 text-gray-500" />
