@@ -150,11 +150,20 @@ class S3Backend(StorageBackend):
             elif error_code == "403":
                 # For MinIO, 403 on head_bucket often means bucket exists but has access restrictions
                 # We'll assume the bucket exists and continue
-                logger.warning(
-                    "bucket_access_restricted",
-                    bucket=self.bucket_name,
-                    message="Received 403 on head_bucket, assuming bucket exists",
-                )
+                # Only log in production - in development this is expected
+                from app.core.config import settings
+                if settings.ENVIRONMENT == "production":
+                    logger.warning(
+                        "bucket_access_restricted",
+                        bucket=self.bucket_name,
+                        message="Received 403 on head_bucket, assuming bucket exists"
+                    )
+                else:
+                    logger.debug(
+                        "bucket_access_restricted_dev",
+                        bucket=self.bucket_name,
+                        message="403 on head_bucket (expected in development)"
+                    )
             else:
                 logger.error(
                     "bucket_check_failed",
