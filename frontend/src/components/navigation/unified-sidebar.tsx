@@ -10,6 +10,7 @@ import { OrganizationSwitcher } from '@/components/collaboration/OrganizationSwi
 import { CreateOrganizationDialog } from '@/components/collaboration/CreateOrganizationDialog'
 import { useOrganization } from '@/contexts/organization-context'
 import { useSidebar } from '@/contexts/sidebar-context'
+import { useAuth } from '@/contexts/auth-context'
 import type { Organization } from '@/types/collaboration'
 
 interface NavItem {
@@ -20,6 +21,7 @@ interface NavItem {
   color: string
   children?: NavItem[]
   badge?: 'beta' | 'experimental'
+  adminOnly?: boolean
 }
 
 const navItems: NavItem[] = [
@@ -101,6 +103,7 @@ const navItems: NavItem[] = [
         icon: <Map size={22} />,
         route: '/admin/region-analysis',
         color: '#BD00FF',
+        adminOnly: true,
       },
     ],
   },
@@ -110,6 +113,7 @@ const navItems: NavItem[] = [
     icon: <Sparkles size={28} />,
     route: '/admin/analysis',
     color: '#00FF88',
+    adminOnly: true,
     children: [
       {
         id: 'extract-images',
@@ -117,6 +121,7 @@ const navItems: NavItem[] = [
         icon: <Scissors size={22} />,
         route: '/admin/analysis',
         color: '#FFA500',
+        adminOnly: true,
       },
       {
         id: 'optimize-patterns',
@@ -124,6 +129,7 @@ const navItems: NavItem[] = [
         icon: <Sparkles size={22} />,
         route: '/admin/analysis',
         color: '#FFD700',
+        adminOnly: true,
       },
       {
         id: 'discover-states',
@@ -132,6 +138,7 @@ const navItems: NavItem[] = [
         route: '/admin/analysis',
         color: '#4ECDC4',
         badge: 'beta',
+        adminOnly: true,
       },
       {
         id: 'remove-backgrounds',
@@ -140,6 +147,7 @@ const navItems: NavItem[] = [
         route: '/admin/analysis',
         color: '#9B59B6',
         badge: 'experimental',
+        adminOnly: true,
       },
     ],
   },
@@ -172,6 +180,7 @@ const navItems: NavItem[] = [
         route: '/admin/annotations',
         color: '#FF6B6B',
         badge: 'beta',
+        adminOnly: true,
       },
       {
         id: 'test-runner',
@@ -244,6 +253,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   className,
   projectId,
 }) => {
+  const { user } = useAuth()
   const { isCollapsed, setIsCollapsed } = useSidebar()
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(['workflows', 'structure', 'create', 'verify', 'settings'])
@@ -255,6 +265,19 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { currentOrganization, organizations, loading, switchOrganization } = useOrganization()
+
+  // Filter nav items based on admin status
+  const filterNavItems = (items: NavItem[]): NavItem[] => {
+    return items
+      .filter(item => !item.adminOnly || user?.is_superuser)
+      .map(item => ({
+        ...item,
+        children: item.children ? filterNavItems(item.children) : undefined
+      }))
+      .filter(item => !item.children || item.children.length > 0)
+  }
+
+  const visibleNavItems = filterNavItems(navItems)
 
   // Save collapse state to localStorage
   const toggleCollapse = () => {
@@ -438,8 +461,8 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin px-2 py-4 space-y-1">
-        {navItems.map((item, index) => {
-          const itemZIndex = navItems.length - index
+        {visibleNavItems.map((item, index) => {
+          const itemZIndex = visibleNavItems.length - index
           console.log('[NAV ITEM Z-INDEX]', { itemId: item.id, index, zIndex: itemZIndex })
           return (
           <div
