@@ -3,27 +3,37 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     admin_ws,
+    analysis,
     analytics,
     annotations,
     auth,
+    automation,
     automation_ws,
     background_removal,
     billing,
+    collaboration,
+    collaboration_ws,
     export,
+    feedback,
     images,
     integration_testing,
+    organizations,
     pattern_optimization,
     projects,
     recordings,
+    region_analysis,
     settings,
+    snapshots,
     state_discovery,
     users,
+    videos,
 )
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(organizations.router, prefix="/organizations", tags=["organizations"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(export.router, prefix="/projects", tags=["export"])
 api_router.include_router(images.router, prefix="/projects", tags=["images"])
@@ -43,3 +53,13 @@ api_router.include_router(annotations.router, prefix="/annotations", tags=["anno
 api_router.include_router(recordings.router, prefix="/recordings", tags=["recordings"])
 api_router.include_router(automation_ws.router, tags=["automation-websockets"])
 api_router.include_router(state_discovery.router, prefix="/state-discovery", tags=["state-discovery"])
+
+# Restored endpoints from main merge
+api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
+api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
+api_router.include_router(collaboration.router, prefix="/collaboration", tags=["collaboration"])
+api_router.include_router(collaboration_ws.router, prefix="/ws/collaboration", tags=["collaboration-websockets"])
+api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"])
+api_router.include_router(region_analysis.router, prefix="/region-analysis", tags=["region-analysis"])
+api_router.include_router(snapshots.router, prefix="/snapshots", tags=["snapshots"])
+api_router.include_router(videos.router, prefix="/videos", tags=["videos"])

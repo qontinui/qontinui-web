@@ -21,7 +21,13 @@ export class OrganizationService {
   async getOrganizations(): Promise<Organization[]> {
     const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations`);
     if (!response.ok) {
-      throw new Error('Failed to get organizations');
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[OrganizationService] Failed to get organizations:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+      });
+      throw new Error(`Failed to get organizations: ${response.status} ${response.statusText}`);
     }
     return response.json();
   }
