@@ -184,11 +184,14 @@ class Settings(BaseSettings):
         if v is None:
             # Get SECRET_KEY from values (already validated)
             secret_key = info.data.get("SECRET_KEY")
+            environment = info.data.get("ENVIRONMENT", "development")
             if secret_key:
-                warnings.warn(
-                    f"{info.field_name} not set, using SECRET_KEY as fallback. "
-                    "Consider setting unique secrets for production."
-                )
+                # Only warn in production - it's fine for development
+                if environment == "production":
+                    warnings.warn(
+                        f"{info.field_name} not set, using SECRET_KEY as fallback. "
+                        "Consider setting unique secrets for production."
+                    )
                 return secret_key
             raise ValueError(f"{info.field_name} or SECRET_KEY must be set")
         return v
