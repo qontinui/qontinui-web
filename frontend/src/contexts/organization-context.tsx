@@ -165,7 +165,15 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
 export function useOrganization() {
   const context = useContext(OrganizationContext);
   if (context === undefined) {
-    throw new Error('useOrganization must be used within an OrganizationProvider');
+    // Return default values instead of throwing - allows graceful degradation
+    return {
+      currentOrganization: null,
+      organizations: [],
+      loading: false,
+      switchOrganization: async () => {},
+      refreshOrganizations: async () => {},
+      createOrganization: async () => ({ id: '', name: '', description: null, created_at: '', updated_at: '', owner_id: '', member_count: 0, project_count: 0 }),
+    };
   }
   return context;
 }

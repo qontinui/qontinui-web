@@ -14,7 +14,7 @@ from app.api.v1.endpoints import (
     collaboration,
     collaboration_ws,
     export,
-    feedback,
+    # feedback,  # Disabled: missing FeedbackEmailComposer
     images,
     integration_testing,
     organizations,
@@ -59,7 +59,7 @@ api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"]
 api_router.include_router(automation.router, prefix="/automation", tags=["automation"])
 api_router.include_router(collaboration.router, prefix="/collaboration", tags=["collaboration"])
 api_router.include_router(collaboration_ws.router, prefix="/ws/collaboration", tags=["collaboration-websockets"])
-api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"])
+# api_router.include_router(feedback.router, prefix="/feedback", tags=["feedback"])  # Disabled: missing FeedbackEmailComposer
 api_router.include_router(region_analysis.router, prefix="/region-analysis", tags=["region-analysis"])
 api_router.include_router(snapshots.router, prefix="/snapshots", tags=["snapshots"])
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
