@@ -3,7 +3,7 @@
 // Horizontal icon popover for collapsed sidebar - updated icons v3
 import React, { useState, useEffect } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users, Shield, Variable, Store, FlaskConical, Layers, Smartphone } from 'lucide-react'
+import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CollapsedMenuPopover } from './collapsed-menu-popover'
 import { OrganizationSwitcher } from '@/components/collaboration/OrganizationSwitcher'
@@ -21,6 +21,7 @@ interface NavItem {
   color: string
   children?: NavItem[]
   badge?: 'beta' | 'experimental'
+  adminOnly?: boolean
 }
 
 const navItems: NavItem[] = [
@@ -32,17 +33,54 @@ const navItems: NavItem[] = [
     color: '#00D9FF',
   },
   {
-    id: 'workflows',
-    label: 'Workflows',
-    icon: <Workflow size={28} />,
-    route: '/automation-builder',
+    id: 'structure',
+    label: 'Structure',
+    icon: <Network size={28} />,
+    route: '/automation-builder/states',
+    color: '#BD00FF',
+    children: [
+      {
+        id: 'workflows',
+        label: 'Workflows',
+        icon: <Workflow size={22} />,
+        route: '/automation-builder',
+        color: '#BD00FF',
+      },
+      {
+        id: 'states',
+        label: 'States',
+        icon: <Network size={22} />,
+        route: '/automation-builder/states',
+        color: '#BD00FF',
+      },
+      {
+        id: 'images',
+        label: 'Images',
+        icon: <ImageIcon size={22} />,
+        route: '/automation-builder/images',
+        color: '#BD00FF',
+      },
+      {
+        id: 'screenshots',
+        label: 'Screenshots',
+        icon: <Camera size={22} />,
+        route: '/automation-builder/screenshots',
+        color: '#BD00FF',
+      },
+    ],
+  },
+  {
+    id: 'project-tools',
+    label: 'Project Tools',
+    icon: <Box size={28} />,
+    route: '/automation-builder/overview',
     color: '#00D9FF',
     children: [
       {
-        id: 'edit-workflows',
-        label: 'Edit Workflows',
-        icon: <Edit3 size={22} />,
-        route: '/automation-builder',
+        id: 'overview',
+        label: 'Overview',
+        icon: <LayoutDashboard size={22} />,
+        route: '/automation-builder/overview',
         color: '#00D9FF',
       },
       {
@@ -59,42 +97,12 @@ const navItems: NavItem[] = [
         route: '/automation-builder/components',
         color: '#00D9FF',
       },
-    ],
-  },
-  {
-    id: 'structure',
-    label: 'Structure',
-    icon: <Network size={28} />,
-    route: '/automation-builder?category=develop&tab=state-machine',
-    color: '#BD00FF',
-    children: [
       {
-        id: 'states',
-        label: 'States',
-        icon: <Network size={22} />,
-        route: '/automation-builder?category=develop&tab=state-machine',
-        color: '#BD00FF',
-      },
-      {
-        id: 'images',
-        label: 'Images',
-        icon: <ImageIcon size={22} />,
-        route: '/automation-builder?category=develop&tab=images',
-        color: '#BD00FF',
-      },
-      {
-        id: 'screenshots',
-        label: 'Screenshots',
-        icon: <Camera size={22} />,
-        route: '/automation-builder?category=develop&tab=screenshots',
-        color: '#BD00FF',
-      },
-      {
-        id: 'regions',
-        label: 'Regions',
-        icon: <Map size={22} />,
-        route: '/automation-builder?category=develop&tab=screenshot-annotation',
-        color: '#BD00FF',
+        id: 'documentation',
+        label: 'Documentation',
+        icon: <FileText size={22} />,
+        route: '/automation-builder/documentation',
+        color: '#00D9FF',
       },
     ],
   },
@@ -102,28 +110,28 @@ const navItems: NavItem[] = [
     id: 'create',
     label: 'Create',
     icon: <Sparkles size={28} />,
-    route: '/automation-builder?category=develop&tab=image-extraction',
+    route: '/automation-builder/image-extraction',
     color: '#00FF88',
     children: [
       {
         id: 'extract-images',
         label: 'Extract Images',
         icon: <Scissors size={22} />,
-        route: '/automation-builder?category=develop&tab=image-extraction',
+        route: '/automation-builder/image-extraction',
         color: '#FFA500',
       },
       {
         id: 'optimize-patterns',
         label: 'Optimize Patterns',
         icon: <Sparkles size={22} />,
-        route: '/automation-builder?category=develop&tab=pattern-optimization',
+        route: '/automation-builder/pattern-optimization',
         color: '#FFD700',
       },
       {
         id: 'discover-states',
         label: 'Discover States',
         icon: <Search size={22} />,
-        route: '/automation-builder?category=develop&tab=state-discovery',
+        route: '/automation-builder/state-discovery',
         color: '#4ECDC4',
         badge: 'beta',
       },
@@ -131,7 +139,7 @@ const navItems: NavItem[] = [
         id: 'remove-backgrounds',
         label: 'Remove Backgrounds',
         icon: <Eraser size={22} />,
-        route: '/automation-builder?category=develop&tab=background-removal',
+        route: '/automation-builder/background-removal',
         color: '#9B59B6',
         badge: 'experimental',
       },
@@ -141,28 +149,21 @@ const navItems: NavItem[] = [
     id: 'verify',
     label: 'Verify',
     icon: <CheckCircle2 size={28} />,
-    route: '/automation-builder?category=verify&tab=pattern-matching',
+    route: '/automation-builder/testing',
     color: '#FF6B6B',
     children: [
       {
         id: 'pattern-tests',
         label: 'Pattern Tests',
         icon: <Target size={22} />,
-        route: '/automation-builder?category=verify&tab=pattern-matching',
-        color: '#FF6B6B',
-      },
-      {
-        id: 'workflow-visualization',
-        label: 'Workflow Visualization',
-        icon: <Layers size={22} />,
-        route: '/workflow-viz',
+        route: '/automation-builder/testing',
         color: '#FF6B6B',
       },
       {
         id: 'integration-tests',
         label: 'Integration Tests',
         icon: <Globe size={22} />,
-        route: '/automation-builder?category=verify&tab=integration-tests',
+        route: '/integration-testing',
         color: '#FF6B6B',
         badge: 'beta',
       },
@@ -170,83 +171,47 @@ const navItems: NavItem[] = [
         id: 'semantic-analysis',
         label: 'Semantic Analysis',
         icon: <Scan size={22} />,
-        route: '/automation-builder?category=verify&tab=semantic-analysis',
-        color: '#FF6B6B',
-        badge: 'beta',
-      },
-      {
-        id: 'test-runner',
-        label: 'Test Runner',
-        icon: <CheckCircle2 size={22} />,
-        route: '/automation-builder/testing',
+        route: '/automation-builder/semantic-analysis',
         color: '#FF6B6B',
       },
     ],
   },
   {
-    id: 'software-testing',
-    label: 'Software Testing',
-    icon: <FlaskConical size={28} />,
-    route: '/testing',
-    color: '#00FF88',
+    id: 'project',
+    label: 'Project',
+    icon: <FileText size={28} />,
+    route: '/project-dashboard',
+    color: '#FFD700',
   },
   {
     id: 'analytics',
     label: 'Analytics',
     icon: <BarChart3 size={28} />,
-    route: '/automation-builder/analytics',
+    route: '/analytics',
     color: '#FFD700',
   },
   {
     id: 'settings',
     label: 'Settings',
     icon: <Settings size={28} />,
-    route: '/automation-builder?category=settings&tab=action-params',
+    route: '/automation-builder/settings',
     color: '#FFD700',
     children: [
       {
         id: 'automation-settings',
         label: 'Automation',
         icon: <Sliders size={22} />,
-        route: '/automation-builder?category=settings&tab=action-params',
+        route: '/automation-builder/settings',
         color: '#FFD700',
       },
       {
         id: 'application-settings',
-        label: 'Application',
+        label: 'Profile',
         icon: <Settings size={22} />,
-        route: '/automation-builder?category=settings&tab=app-settings',
-        color: '#FFD700',
-      },
-      {
-        id: 'variables',
-        label: 'Variables',
-        icon: <Variable size={22} />,
-        route: '/automation-builder/variables',
-        color: '#FFD700',
-      },
-      {
-        id: 'project-settings',
-        label: 'Project Settings',
-        icon: <FileText size={22} />,
-        route: '/automation-builder/settings',
+        route: '/profile',
         color: '#FFD700',
       },
     ],
-  },
-  {
-    id: 'documentation',
-    label: 'Documentation',
-    icon: <FileText size={28} />,
-    route: '/automation-builder/documentation',
-    color: '#4ECDC4',
-  },
-  {
-    id: 'marketplace',
-    label: 'Marketplace',
-    icon: <Store size={28} />,
-    route: '/marketplace',
-    color: '#00FF88',
   },
   {
     id: 'organizations',
@@ -258,46 +223,58 @@ const navItems: NavItem[] = [
   {
     id: 'admin',
     label: 'Admin',
-    icon: <Shield size={28} />,
+    icon: <Settings size={28} />,
     route: '/admin',
-    color: '#FF0080',
+    color: '#FF6B6B',
+    adminOnly: true,
     children: [
       {
-        id: 'admin-overview',
-        label: 'Overview',
+        id: 'admin-dashboard',
+        label: 'Dashboard',
         icon: <LayoutDashboard size={22} />,
         route: '/admin',
-        color: '#FF0080',
+        color: '#FF6B6B',
+        adminOnly: true,
+      },
+      {
+        id: 'admin-annotations',
+        label: 'Annotations',
+        icon: <Scan size={22} />,
+        route: '/admin/annotations',
+        color: '#FF6B6B',
+        adminOnly: true,
+      },
+      {
+        id: 'admin-screenshot-annotations',
+        label: 'Screenshot Annotations',
+        icon: <Camera size={22} />,
+        route: '/automation-builder/annotations',
+        color: '#FF6B6B',
+        adminOnly: true,
+      },
+      {
+        id: 'admin-analysis',
+        label: 'GUI Analysis',
+        icon: <Search size={22} />,
+        route: '/admin/analysis',
+        color: '#FF6B6B',
+        adminOnly: true,
+      },
+      {
+        id: 'admin-regions',
+        label: 'Region Analysis',
+        icon: <Map size={22} />,
+        route: '/admin/region-analysis',
+        color: '#FF6B6B',
+        adminOnly: true,
       },
       {
         id: 'admin-architecture',
         label: 'Architecture',
         icon: <Network size={22} />,
         route: '/admin/architecture',
-        color: '#FF0080',
-        children: [
-          {
-            id: 'admin-architecture-overall',
-            label: 'Qontinui Overall',
-            icon: <Layers size={18} />,
-            route: '/admin/architecture',
-            color: '#FF0080',
-          },
-          {
-            id: 'admin-architecture-screenshots',
-            label: 'Screenshots',
-            icon: <Camera size={18} />,
-            route: '/admin/architecture?view=screenshots',
-            color: '#FF0080',
-          },
-        ],
-      },
-      {
-        id: 'admin-mobile',
-        label: 'Mobile Admin',
-        icon: <Smartphone size={22} />,
-        route: '/admin/mobile',
-        color: '#FF0080',
+        color: '#FF6B6B',
+        adminOnly: true,
       },
     ],
   },
@@ -310,11 +287,12 @@ interface UnifiedSidebarProps {
 
 export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   className,
-  projectId: projectIdProp,
+  projectId,
 }) => {
+  const { user } = useAuth()
   const { isCollapsed, setIsCollapsed } = useSidebar()
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(['workflows', 'structure', 'create', 'verify', 'settings', 'admin'])
+    new Set(['workflows', 'structure', 'create', 'verify', 'settings'])
   )
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const [closeTimer, setCloseTimer] = useState<NodeJS.Timeout | null>(null)
@@ -322,21 +300,30 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { user } = useAuth()
-
-  // Get project ID from URL search params or prop
-  const projectId = projectIdProp ?? (searchParams.get('project') ? Number(searchParams.get('project')) : null)
   const { currentOrganization, organizations, loading, switchOrganization } = useOrganization()
+
+  // Filter nav items based on admin status
+  const filterNavItems = (items: NavItem[]): NavItem[] => {
+    return items
+      .filter(item => !item.adminOnly || user?.is_superuser)
+      .map(item => ({
+        ...item,
+        children: item.children ? filterNavItems(item.children) : undefined
+      }))
+      .filter(item => !item.children || item.children.length > 0)
+  }
+
+  const visibleNavItems = filterNavItems(navItems)
 
   // Save collapse state to localStorage
   const toggleCollapse = () => {
     const newState = !isCollapsed
     setIsCollapsed(newState)
     localStorage.setItem('unified-sidebar-collapsed', JSON.stringify(newState))
-
+    
     // Expand default sections when expanding sidebar
     if (!newState) {
-      setExpandedSections(new Set(['workflows', 'structure', 'create', 'verify', 'settings', 'admin']))
+      setExpandedSections(new Set(['workflows', 'structure', 'create', 'verify', 'settings']))
     }
   }
 
@@ -363,11 +350,25 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         const tabMatch = queryParams.get('tab') === currentParams.get('tab')
 
         const matches = baseMatch && categoryMatch && tabMatch
+        console.log('[ROUTE CHECK]', {
+          routeToCheck,
+          pathname,
+          basePath,
+          category: { expected: queryParams.get('category'), actual: currentParams.get('category') },
+          tab: { expected: queryParams.get('tab'), actual: currentParams.get('tab') },
+          matches
+        })
         return matches
       } else {
         // Route has no query params - it should only match if current path also has no query params
         const currentHasParams = searchParams.toString().length > 0
         const matches = pathname === routeToCheck && !currentHasParams
+        console.log('[ROUTE CHECK]', {
+          routeToCheck,
+          pathname,
+          currentHasParams,
+          matches
+        })
         return matches
       }
     }
@@ -375,16 +376,29 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     // If item has children, check if any child is active
     if (item.children && item.children.length > 0) {
       const childActive = item.children.some(child => checkRouteMatch(child.route))
+      console.log('[PARENT ACTIVE CHECK]', {
+        itemId: item.id,
+        itemLabel: item.label,
+        hasChildren: true,
+        childRoutes: item.children.map(c => c.route),
+        childActive
+      })
       return childActive
     }
 
     const active = checkRouteMatch(route)
+    console.log('[ITEM ACTIVE CHECK]', {
+      itemId: item.id,
+      itemLabel: item.label,
+      route,
+      active
+    })
     return active
   }
 
   const buildRoute = (route: string): string => {
     if (!projectId) return route
-
+    
     if (route.includes('?')) {
       return `${route}&project=${projectId}`
     } else {
@@ -443,15 +457,6 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       }
     : null
 
-  // Filter nav items based on user permissions
-  const filteredNavItems = navItems.filter((item) => {
-    // Show admin item only to superusers
-    if (item.id === 'admin') {
-      return user?.is_superuser === true
-    }
-    return true
-  })
-
   return (
     <div
       className={cn(
@@ -492,8 +497,9 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin px-2 py-4 space-y-1">
-        {filteredNavItems.map((item, index) => {
-          const itemZIndex = filteredNavItems.length - index
+        {visibleNavItems.map((item, index) => {
+          const itemZIndex = visibleNavItems.length - index
+          console.log('[NAV ITEM Z-INDEX]', { itemId: item.id, index, zIndex: itemZIndex })
           return (
           <div
             key={item.id}
@@ -510,15 +516,19 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 }
               }}
               onMouseEnter={() => {
+                console.log('[BUTTON] Mouse enter:', item.id, 'closeTimer exists:', !!closeTimer)
                 if (closeTimer) {
                   clearTimeout(closeTimer)
                   setCloseTimer(null)
+                  console.log('[BUTTON] Cleared close timer')
                 }
                 setHoveredItem(item.id)
               }}
               onMouseLeave={() => {
+                console.log('[BUTTON] Mouse leave:', item.id, 'setting timer for 300ms')
                 // Delay closing to allow mouse to move to popover
                 const timer = setTimeout(() => {
+                  console.log('[BUTTON] Timer expired, closing popover for:', item.id)
                   setHoveredItem(null)
                 }, 300)
                 setCloseTimer(timer)
@@ -639,7 +649,16 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
             )}
 
             {/* Children - Collapsed Sidebar Popover */}
-            {item.children && isCollapsed && hoveredItem === item.id && (
+            {item.children && isCollapsed && hoveredItem === item.id && (() => {
+              console.log('[POPOVER RENDER]', {
+                parentId: item.id,
+                parentLabel: item.label,
+                isCollapsed,
+                hoveredItem,
+                itemZIndex,
+                childrenCount: item.children?.length
+              })
+              return (
               <CollapsedMenuPopover
                 parentId={item.id}
                 parentColor={item.color}
@@ -647,13 +666,16 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 onNavigate={handleNavigation}
                 onClose={() => setHoveredItem(null)}
                 onClearTimer={() => {
+                  console.log('[CLEAR TIMER] Called, closeTimer exists:', !!closeTimer)
                   if (closeTimer) {
                     clearTimeout(closeTimer)
                     setCloseTimer(null)
+                    console.log('[CLEAR TIMER] Timer cleared successfully')
                   }
                 }}
               />
-            )}
+              )
+            })()}
           </div>
           )
         })}
