@@ -11,6 +11,7 @@ interface AuthContextType {
   register: (email: string, username: string, password: string, fullName?: string) => Promise<void>;
   logout: () => void;
   updateUser: (data: Partial<User>) => Promise<void>;
+  getAccessToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -218,8 +219,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const getAccessToken = async (): Promise<string | null> => {
+    try {
+      // Get the current access token from the token manager
+      const token = authService.tokenManager.getAccessToken();
+
+      if (!token) {
+        return null;
+      }
+
+      // Check if token is expired or expiring soon
+      const expiry = authService.tokenManager.getTokenExpiry();
+      if (expiry) {
+        const now = Date.now();
+        const timeUntilExpiry = expiry - now;
+
+        // If token expires in less than 1 minute, refresh it
+        if (timeUntilExpiry < 60000) {
+          console.log('[AuthContext] Token expiring soon, refreshing...');
+          await authService.refreshAccessToken();
+          return authService.tokenManager.getAccessToken();
+        }
+      }
+
+      return token;
+    } catch (error) {
+      console.error('[AuthContext] Failed to get access token:', error);
+      return null;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser, getAccessToken }}>
       {children}
     </AuthContext.Provider>
   );

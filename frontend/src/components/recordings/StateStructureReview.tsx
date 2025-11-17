@@ -30,7 +30,7 @@ import {
   CheckSquare,
   Square,
 } from 'lucide-react';
-import { RecordingService } from '@/services/recording-service';
+import { recordingService } from '@/services/service-factory';
 import { getConfidenceLevel, getConfidenceColor } from '@/types/recording';
 import type {
   DiscoveredStateStructure,
@@ -45,7 +45,6 @@ interface StateStructureReviewProps {
 
 export function StateStructureReview({ recordingId }: StateStructureReviewProps) {
   const router = useRouter();
-  const recordingService = new RecordingService();
 
   const [structure, setStructure] = useState<DiscoveredStateStructure | null>(null);
   const [loading, setLoading] = useState(true);

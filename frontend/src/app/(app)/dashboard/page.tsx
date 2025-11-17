@@ -139,12 +139,9 @@ export default function Dashboard() {
   const loading = projectsLoading
 
   const handleLogout = () => {
-    const warningMessage = "⚠️ WARNING: Make sure to Export or Save any unsaved work before logging out.\n\nDo you want to continue?"
-    if (confirm(warningMessage)) {
-      logout()
-      router.push('/')
-      toast.success("Logged out successfully")
-    }
+    logout()
+    router.push('/')
+    toast.success("Logged out successfully")
   }
 
   const handleNewProject = async () => {

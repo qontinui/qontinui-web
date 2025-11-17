@@ -20,13 +20,13 @@ interface UsageChartProps {
 
 export function UsageChart({ data }: UsageChartProps) {
   // Format data for chart
-  const chartData = data.map((item) => ({
+  const chartData = Array.isArray(data) ? data.map((item) => ({
     name: new Date(item.date).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
     }),
     value: item.api_calls,
-  }));
+  })) : [];
 
   return (
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">

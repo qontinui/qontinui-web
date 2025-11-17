@@ -24,7 +24,7 @@ import {
   Search,
   Filter,
 } from 'lucide-react';
-import { RecordingService } from '@/services/recording-service';
+import { recordingService } from '@/services/service-factory';
 import {
   RecordingStatusLabels,
   ProcessingPhaseLabels,
@@ -43,7 +43,6 @@ export function RecordingListPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { data: projects = [] } = useProjects();
-  const recordingService = new RecordingService();
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);

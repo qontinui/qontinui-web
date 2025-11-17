@@ -433,6 +433,175 @@ class ApiClient {
   isAuthenticated(): boolean {
     return authService.isAuthenticated();
   }
+
+  // ===== Automation & Screenshot Endpoints =====
+
+  /**
+   * List screenshots with filtering and pagination
+   */
+  async listScreenshots(params?: {
+    project_id?: string;
+    session_id?: string;
+    source?: 'manual' | 'runner' | 'api';
+    page?: number;
+    page_size?: number;
+  }): Promise<any> {
+    const queryParams = new URLSearchParams();
+    if (params?.project_id) queryParams.append('project_id', params.project_id);
+    if (params?.session_id) queryParams.append('session_id', params.session_id);
+    if (params?.source) queryParams.append('source', params.source);
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.page_size) queryParams.append('page_size', params.page_size.toString());
+
+    const url = `/automation/screenshots${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await this.fetchWithAuth(url);
+
+    if (!response.ok) {
+      throw new Error('Failed to list screenshots');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get a specific screenshot by ID
+   */
+  async getScreenshot(screenshotId: string): Promise<any> {
+    const response = await this.fetchWithAuth(`/automation/screenshots/${screenshotId}`);
+
+    if (!response.ok) {
+      throw new Error('Failed to get screenshot');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * List automation sessions
+   */
+  async listAutomationSessions(params?: {
+    project_id?: string;
+    status?: 'active' | 'completed' | 'failed' | 'disconnected';
+  }): Promise<any[]> {
+    const queryParams = new URLSearchParams();
+    if (params?.project_id) queryParams.append('project_id', params.project_id);
+    if (params?.status) queryParams.append('status', params.status);
+
+    const url = `/automation/sessions${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await this.fetchWithAuth(url);
+
+    if (!response.ok) {
+      throw new Error('Failed to list automation sessions');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get a specific automation session with statistics
+   */
+  async getAutomationSession(sessionId: string): Promise<any> {
+    const response = await this.fetchWithAuth(`/automation/sessions/${sessionId}`);
+
+    if (!response.ok) {
+      throw new Error('Failed to get automation session');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * List screenshots for a specific automation session
+   */
+  async listSessionScreenshots(
+    sessionId: string,
+    params?: { page?: number; page_size?: number }
+  ): Promise<any> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.page_size) queryParams.append('page_size', params.page_size.toString());
+
+    const url = `/automation/sessions/${sessionId}/screenshots${
+      queryParams.toString() ? `?${queryParams.toString()}` : ''
+    }`;
+    const response = await this.fetchWithAuth(url);
+
+    if (!response.ok) {
+      throw new Error('Failed to list session screenshots');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * List logs for a specific automation session
+   */
+  async listSessionLogs(
+    sessionId: string,
+    params?: { page?: number; page_size?: number }
+  ): Promise<any> {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.page_size) queryParams.append('page_size', params.page_size.toString());
+
+    const url = `/automation/sessions/${sessionId}/logs${
+      queryParams.toString() ? `?${queryParams.toString()}` : ''
+    }`;
+    const response = await this.fetchWithAuth(url);
+
+    if (!response.ok) {
+      throw new Error('Failed to list session logs');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get screenshot statistics
+   */
+  async getScreenshotStats(projectId?: string): Promise<any> {
+    const queryParams = new URLSearchParams();
+    if (projectId) queryParams.append('project_id', projectId);
+
+    const url = `/automation/stats/screenshots${
+      queryParams.toString() ? `?${queryParams.toString()}` : ''
+    }`;
+    const response = await this.fetchWithAuth(url);
+
+    if (!response.ok) {
+      throw new Error('Failed to get screenshot stats');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get automation session statistics
+   */
+  async getSessionStats(projectId?: string): Promise<any> {
+    const queryParams = new URLSearchParams();
+    if (projectId) queryParams.append('project_id', projectId);
+
+    const url = `/automation/stats/sessions${
+      queryParams.toString() ? `?${queryParams.toString()}` : ''
+    }`;
+    const response = await this.fetchWithAuth(url);
+
+    if (!response.ok) {
+      throw new Error('Failed to get session stats');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get WebSocket URL for runner connection
+   */
+  getRunnerWebSocketUrl(): string {
+    const wsProtocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
+    const url = API_BASE_URL.replace(/^https?:\/\//, '');
+    return `${wsProtocol}://${url}/api/v1/ws/automation/runner`;
+  }
 }
 
 export const apiClient = new ApiClient();
