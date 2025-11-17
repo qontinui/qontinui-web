@@ -147,6 +147,7 @@ const navItems: NavItem[] = [
         icon: <Scan size={22} />,
         route: '/automation-builder/annotations',
         color: '#BD00FF',
+        adminOnly: true,
       },
     ],
   },
@@ -156,6 +157,7 @@ const navItems: NavItem[] = [
     icon: <Sparkles size={28} />,
     route: '/automation-builder/image-extraction',
     color: '#00FF88',
+    adminOnly: true,
     children: [
       {
         id: 'extract-images',
@@ -163,6 +165,7 @@ const navItems: NavItem[] = [
         icon: <Scissors size={22} />,
         route: '/automation-builder/image-extraction',
         color: '#FFA500',
+        adminOnly: true,
       },
       {
         id: 'optimize-patterns',
@@ -170,6 +173,7 @@ const navItems: NavItem[] = [
         icon: <Sparkles size={22} />,
         route: '/automation-builder/pattern-optimization',
         color: '#FFD700',
+        adminOnly: true,
       },
       {
         id: 'discover-states',
@@ -178,6 +182,7 @@ const navItems: NavItem[] = [
         route: '/automation-builder/state-discovery',
         color: '#4ECDC4',
         badge: 'beta',
+        adminOnly: true,
       },
       {
         id: 'remove-backgrounds',
@@ -186,6 +191,7 @@ const navItems: NavItem[] = [
         route: '/automation-builder/background-removal',
         color: '#9B59B6',
         badge: 'experimental',
+        adminOnly: true,
       },
     ],
   },
@@ -216,6 +222,13 @@ const navItems: NavItem[] = [
         label: 'Semantic Analysis',
         icon: <Scan size={22} />,
         route: '/automation-builder/semantic-analysis',
+        color: '#FF6B6B',
+      },
+      {
+        id: 'test-runner',
+        label: 'Test Runner',
+        icon: <CheckCircle2 size={22} />,
+        route: '/automation-builder/testing',
         color: '#FF6B6B',
       },
     ],
