@@ -44,6 +44,8 @@ pyarrow = "^17.0.0"
 radon = "^6.0.1"
 scikit-learn = "^1.7.2"
 pytesseract = "^0.3.13"
+scipy = "^1.11.0"
+imagehash = "^4.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
