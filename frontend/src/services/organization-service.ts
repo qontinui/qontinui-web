@@ -1,6 +1,6 @@
 import { HttpClient } from './http-client';
 import { ApiConfig } from './api-config';
-import type { Organization, OrganizationCreate } from '@/types/collaboration';
+import type { Organization, OrganizationCreate, TeamMember, Invitation, InvitationCreate } from '@/types/collaboration';
 
 /**
  * OrganizationService
@@ -87,6 +87,94 @@ export class OrganizationService {
     });
     if (!response.ok) {
       throw new Error('Failed to delete organization');
+    }
+  }
+
+  /**
+   * Get members of an organization
+   */
+  async getMembers(organizationId: string): Promise<TeamMember[]> {
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${organizationId}/members`);
+    if (!response.ok) {
+      throw new Error('Failed to get organization members');
+    }
+    return response.json();
+  }
+
+  /**
+   * Add a member to an organization
+   */
+  async addMember(organizationId: string, userId: string, role: string): Promise<TeamMember> {
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${organizationId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, role }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to add member');
+    }
+    return response.json();
+  }
+
+  /**
+   * Update a member's role
+   */
+  async updateMemberRole(organizationId: string, memberId: string, role: string): Promise<TeamMember> {
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${organizationId}/members/${memberId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to update member role');
+    }
+    return response.json();
+  }
+
+  /**
+   * Remove a member from an organization
+   */
+  async removeMember(organizationId: string, memberId: string): Promise<void> {
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${organizationId}/members/${memberId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error('Failed to remove member');
+    }
+  }
+
+  /**
+   * Get invitations for an organization
+   */
+  async getInvitations(organizationId: string): Promise<Invitation[]> {
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${organizationId}/invitations`);
+    if (!response.ok) {
+      throw new Error('Failed to get invitations');
+    }
+    return response.json();
+  }
+
+  /**
+   * Send an invitation
+   */
+  async sendInvitation(organizationId: string, invitation: InvitationCreate): Promise<Invitation> {
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${organizationId}/invitations`, {
+      method: 'POST',
+      body: JSON.stringify(invitation),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to send invitation');
+    }
+    return response.json();
+  }
+
+  /**
+   * Revoke an invitation
+   */
+  async revokeInvitation(organizationId: string, invitationId: string): Promise<void> {
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${organizationId}/invitations/${invitationId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error('Failed to revoke invitation');
     }
   }
 }
