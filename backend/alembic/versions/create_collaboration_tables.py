@@ -15,7 +15,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'collaboration_001'
-down_revision = None  # Update this to point to your latest migration
+down_revision = 'e45f9b2c3d1a'
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """Add automation tables
 
 Revision ID: f9593625b747
-Revises: e45f9b2c3d1a
+Revises: collaboration_001
 Create Date: 2025-11-14 20:33:00.000000
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'f9593625b747'
-down_revision = 'e45f9b2c3d1a'
+down_revision = 'collaboration_001'
 branch_labels = None
 depends_on = None
 

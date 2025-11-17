@@ -1,7 +1,7 @@
 """Add snapshot tables for integration testing
 
 Revision ID: e45f9b2c3d1a
-Revises: 20a16db091c1
+Revises: 67c33a12bedb
 Create Date: 2025-11-13 14:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'e45f9b2c3d1a'
-down_revision = '20a16db091c1'
+down_revision = '67c33a12bedb'
 branch_labels = None
 depends_on = None
 
