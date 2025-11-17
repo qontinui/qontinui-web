@@ -13,16 +13,18 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Home, Shield, ArrowLeft } from 'lucide-react'
+import { Home, Shield, ArrowLeft, ChevronRight } from 'lucide-react'
 import { ArchitectureDiagram } from '@/components/admin/architecture/ArchitectureDiagram'
 import { ComponentDetailPanel } from '@/components/admin/architecture/ComponentDetailPanel'
 
 export type ComponentType = 'qontinui' | 'multistate' | 'qontinui-runner' | 'qontinui-web' | 'qontinui-api' | null
+export type ArchitectureLevel = 'root' | 'qontinui-web' | 'qontinui-api' | 'qontinui-runner' | 'qontinui' | 'multistate'
 
 export default function ArchitecturePage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const [selectedComponent, setSelectedComponent] = useState<ComponentType>(null)
+  const [currentLevel, setCurrentLevel] = useState<ArchitectureLevel>('root')
 
   // Protection
   useEffect(() => {
@@ -42,6 +44,36 @@ export default function ArchitecturePage() {
   if (!user?.is_superuser) {
     return null
   }
+
+  const handleDrillDown = (component: ComponentType) => {
+    if (component && ['qontinui-web', 'qontinui-api', 'qontinui-runner', 'qontinui', 'multistate'].includes(component)) {
+      setCurrentLevel(component as ArchitectureLevel)
+      setSelectedComponent(null)
+    }
+  }
+
+  const handleBreadcrumbClick = (level: ArchitectureLevel) => {
+    setCurrentLevel(level)
+    setSelectedComponent(null)
+  }
+
+  const getLevelTitle = (level: ArchitectureLevel): string => {
+    switch (level) {
+      case 'root': return 'Qontinui Ecosystem'
+      case 'qontinui-web': return 'Qontinui Web Architecture'
+      case 'qontinui-api': return 'Qontinui API Architecture'
+      case 'qontinui-runner': return 'Qontinui Runner Architecture'
+      case 'qontinui': return 'Qontinui Library Architecture'
+      case 'multistate': return 'MultiState Library Architecture'
+    }
+  }
+
+  const breadcrumbs = currentLevel === 'root'
+    ? [{ label: 'Qontinui Ecosystem', level: 'root' as ArchitectureLevel }]
+    : [
+        { label: 'Qontinui Ecosystem', level: 'root' as ArchitectureLevel },
+        { label: getLevelTitle(currentLevel), level: currentLevel }
+      ]
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -78,11 +110,33 @@ export default function ArchitecturePage() {
           </div>
         </div>
 
-        {/* Header */}
+        {/* Header with Breadcrumbs */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Qontinui Ecosystem Architecture</h1>
+          {/* Breadcrumb Navigation */}
+          <div className="flex items-center gap-2 mb-4 text-sm">
+            {breadcrumbs.map((crumb, index) => (
+              <div key={crumb.level} className="flex items-center gap-2">
+                {index > 0 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                <button
+                  onClick={() => handleBreadcrumbClick(crumb.level)}
+                  className={`hover:text-primary transition-colors ${
+                    index === breadcrumbs.length - 1
+                      ? 'text-foreground font-semibold'
+                      : 'text-muted-foreground hover:underline'
+                  }`}
+                  disabled={index === breadcrumbs.length - 1}
+                >
+                  {crumb.label}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <h1 className="text-3xl font-bold mb-2">{getLevelTitle(currentLevel)}</h1>
           <p className="text-muted-foreground">
-            Interactive visualization of the complete Qontinui automation platform
+            {currentLevel === 'root'
+              ? 'Interactive visualization of the complete Qontinui automation platform'
+              : 'Click on components to view details, or navigate back using breadcrumbs above'}
           </p>
         </div>
 
@@ -93,6 +147,8 @@ export default function ArchitecturePage() {
             <ArchitectureDiagram
               selectedComponent={selectedComponent}
               onComponentSelect={setSelectedComponent}
+              currentLevel={currentLevel}
+              onDrillDown={handleDrillDown}
             />
           </Card>
 
@@ -116,6 +172,14 @@ export default function ArchitecturePage() {
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-1">•</span>
                 <span><strong>Click</strong> on any component to view comprehensive details</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-primary mt-1">•</span>
+                <span><strong>Double-click</strong> on components to drill down into their architecture</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-primary mt-1">•</span>
+                <span><strong>Use breadcrumbs</strong> above to navigate back to higher levels</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-1">•</span>

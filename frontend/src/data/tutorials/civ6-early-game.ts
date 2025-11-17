@@ -719,7 +719,7 @@ You've created individual actions. Now it's time to **combine them into a comple
 
 Your automation should:
 
-\`\`\`
+\`\`\`text
 REPEAT FOR EACH EARLY GAME TURN:
 ├─ Select Settler with "!" (step 4)
 ├─ Toggle Strategic View (step 5)
@@ -727,7 +727,7 @@ REPEAT FOR EACH EARLY GAME TURN:
 ├─ Select Warrior (step 4 variant)
 ├─ Position Warrior (step 7 variant)
 └─ End Turn (step 7)
-```
+\`\`\`
 
 ## Testing Strategy
 

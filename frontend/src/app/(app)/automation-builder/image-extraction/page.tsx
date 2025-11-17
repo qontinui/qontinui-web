@@ -15,7 +15,12 @@
  */
 
 import { ImageExtractionTab } from '@/components/image-extraction/ImageExtractionTab'
+import { TabStateProvider } from '@/contexts/tab-state-context'
 
 export default function ImageExtractionPage() {
-  return <ImageExtractionTab />
+  return (
+    <TabStateProvider>
+      <ImageExtractionTab />
+    </TabStateProvider>
+  )
 }

@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { ArrowLeft, Play, Trash2, CheckCircle } from 'lucide-react';
-import { RecordingService } from '@/services/recording-service';
+import { recordingService } from '@/services/service-factory';
 import { ProcessingMonitor } from '@/components/recordings/ProcessingMonitor';
 import { StateStructureReview } from '@/components/recordings/StateStructureReview';
 import {
@@ -23,7 +23,6 @@ export default function RecordingDetailPage() {
   const params = useParams();
   const router = useRouter();
   const recordingId = params.id as string;
-  const recordingService = new RecordingService();
 
   const [recording, setRecording] = useState<Recording | null>(null);
   const [loading, setLoading] = useState(true);

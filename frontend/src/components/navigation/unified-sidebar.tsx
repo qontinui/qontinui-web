@@ -3,7 +3,7 @@
 // Horizontal icon popover for collapsed sidebar - updated icons v3
 import React, { useState, useEffect } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users } from 'lucide-react'
+import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users, Layers, Video, Smartphone, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CollapsedMenuPopover } from './collapsed-menu-popover'
 import { OrganizationSwitcher } from '@/components/collaboration/OrganizationSwitcher'
@@ -65,6 +65,13 @@ const navItems: NavItem[] = [
         label: 'Screenshots',
         icon: <Camera size={22} />,
         route: '/automation-builder/screenshots',
+        color: '#BD00FF',
+      },
+      {
+        id: 'recordings',
+        label: 'Recordings',
+        icon: <Video size={22} />,
+        route: '/recordings',
         color: '#BD00FF',
       },
     ],
@@ -143,6 +150,13 @@ const navItems: NavItem[] = [
         color: '#9B59B6',
         badge: 'experimental',
       },
+      {
+        id: 'screenshot-annotations',
+        label: 'Screenshot Annotations',
+        icon: <Camera size={22} />,
+        route: '/automation-builder/annotations',
+        color: '#00FF88',
+      },
     ],
   },
   {
@@ -182,6 +196,13 @@ const navItems: NavItem[] = [
         color: '#FF6B6B',
       },
     ],
+  },
+  {
+    id: 'runner',
+    label: 'Monitor',
+    icon: <Activity size={28} />,
+    route: '/monitor',
+    color: '#00D9FF',
   },
   {
     id: 'project',
@@ -252,14 +273,6 @@ const navItems: NavItem[] = [
         adminOnly: true,
       },
       {
-        id: 'admin-screenshot-annotations',
-        label: 'Screenshot Annotations',
-        icon: <Camera size={22} />,
-        route: '/automation-builder/annotations',
-        color: '#FF6B6B',
-        adminOnly: true,
-      },
-      {
         id: 'admin-analysis',
         label: 'GUI Analysis',
         icon: <Search size={22} />,
@@ -280,6 +293,14 @@ const navItems: NavItem[] = [
         label: 'Architecture',
         icon: <Network size={22} />,
         route: '/admin/architecture',
+        color: '#FF6B6B',
+        adminOnly: true,
+      },
+      {
+        id: 'admin-mobile',
+        label: 'Mobile Admin',
+        icon: <Smartphone size={22} />,
+        route: '/admin/mobile',
         color: '#FF6B6B',
         adminOnly: true,
       },

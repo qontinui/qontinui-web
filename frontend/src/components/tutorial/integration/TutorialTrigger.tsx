@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { usePathname } from 'next/navigation';
 import { useTutorial } from './TutorialProvider';
 import { useTutorialStore } from '@/stores/tutorial-store';
 import type { Tutorial } from '@/types/tutorial';
@@ -48,7 +48,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
   enabled = true,
   delay = 1000,
 }) => {
-  const location = useLocation();
+  const pathname = usePathname();
   const { startTutorial } = useTutorial();
   const {
     dontShowTutorialsAgain,
@@ -161,13 +161,13 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
   const checkPageTriggers = useCallback(
     (tutorial: Tutorial): boolean => {
       // Check if tutorial is for current page
-      if (tutorial.targetPage && !location.pathname.includes(tutorial.targetPage)) {
+      if (tutorial.targetPage && !pathname.includes(tutorial.targetPage)) {
         return false;
       }
 
       return shouldTriggerTutorial(tutorial);
     },
-    [location.pathname, shouldTriggerTutorial]
+    [pathname, shouldTriggerTutorial]
   );
 
   const evaluateContextualTriggers = useCallback(
@@ -176,24 +176,13 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
         return false;
       }
 
-      // Evaluate each contextual trigger
-      for (const trigger of tutorial.triggers.contextual) {
-        try {
-          // Create a safe evaluation function
-          // Note: In production, use a safer evaluation method
-          const conditionFunc = new Function('return ' + trigger.condition);
-          const result = conditionFunc();
-
-          if (result) {
-            return true;
-          }
-        } catch (error) {
-          console.error(
-            `Failed to evaluate trigger condition for ${tutorial.id}:`,
-            error
-          );
-        }
-      }
+      // TODO: Implement safe contextual trigger evaluation
+      // Currently disabled because it requires runtime context (user, page, etc.)
+      // that needs to be passed to the evaluation function.
+      // For now, contextual triggers are not evaluated.
+      console.debug(
+        `[TutorialTrigger] Contextual triggers not yet implemented for ${tutorial.id}`
+      );
 
       return false;
     },
@@ -286,7 +275,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
         clearTimeout(timerRef.current);
       }
     };
-  }, [location.pathname, checkTriggers, delay]);
+  }, [pathname, checkTriggers, delay]);
 
   // Listen for custom tutorial trigger events
   useEffect(() => {

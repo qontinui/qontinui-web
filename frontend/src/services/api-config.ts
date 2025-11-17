@@ -1,6 +1,7 @@
 export class ApiConfig {
   // Main API (authentication, users, projects)
-  static readonly API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  // Use empty string to make relative URLs that go through Next.js proxy
+  static readonly API_BASE_URL = '';
 
   // Qontinui automation API (pattern matching, state discovery, etc.)
   static readonly QONTINUI_API_URL = process.env.NEXT_PUBLIC_QONTINUI_API_URL || 'http://localhost:8001';
