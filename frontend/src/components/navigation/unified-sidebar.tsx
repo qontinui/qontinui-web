@@ -71,14 +71,14 @@ const navItems: NavItem[] = [
     id: 'structure',
     label: 'Structure',
     icon: <Network size={28} />,
-    route: '/admin/architecture',
+    route: '/automation-builder',
     color: '#BD00FF',
     children: [
       {
         id: 'states',
         label: 'States',
         icon: <Network size={22} />,
-        route: '/admin/architecture',
+        route: '/automation-builder',
         color: '#BD00FF',
       },
       {
