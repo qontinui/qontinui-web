@@ -1,4 +1,5 @@
 import { HttpClient } from './http-client';
+import { ApiConfig } from './api-config';
 import type { Organization, OrganizationCreate } from '@/types/collaboration';
 
 /**
@@ -6,22 +7,34 @@ import type { Organization, OrganizationCreate } from '@/types/collaboration';
  * Handles all organization-related API calls
  */
 export class OrganizationService {
-  constructor(private httpClient: HttpClient) {}
+  private httpClient: HttpClient;
+  private apiUrl: string;
+
+  constructor(httpClient: HttpClient) {
+    this.httpClient = httpClient;
+    this.apiUrl = ApiConfig.API_BASE_URL;
+  }
 
   /**
    * Get all organizations for the current user
    */
   async getOrganizations(): Promise<Organization[]> {
-    const response = await this.httpClient.get<Organization[]>('/organizations');
-    return response.data;
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations`);
+    if (!response.ok) {
+      throw new Error('Failed to get organizations');
+    }
+    return response.json();
   }
 
   /**
    * Get a specific organization by ID
    */
   async getOrganization(id: string): Promise<Organization> {
-    const response = await this.httpClient.get<Organization>(`/organizations/${id}`);
-    return response.data;
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${id}`);
+    if (!response.ok) {
+      throw new Error('Failed to get organization');
+    }
+    return response.json();
   }
 
   /**
@@ -32,8 +45,14 @@ export class OrganizationService {
       name,
       description,
     };
-    const response = await this.httpClient.post<Organization>('/organizations', payload);
-    return response.data;
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to create organization');
+    }
+    return response.json();
   }
 
   /**
@@ -43,14 +62,25 @@ export class OrganizationService {
     id: string,
     updates: { name?: string; description?: string }
   ): Promise<Organization> {
-    const response = await this.httpClient.patch<Organization>(`/organizations/${id}`, updates);
-    return response.data;
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to update organization');
+    }
+    return response.json();
   }
 
   /**
    * Delete an organization
    */
   async deleteOrganization(id: string): Promise<void> {
-    await this.httpClient.delete(`/organizations/${id}`);
+    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/organizations/${id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error('Failed to delete organization');
+    }
   }
 }
