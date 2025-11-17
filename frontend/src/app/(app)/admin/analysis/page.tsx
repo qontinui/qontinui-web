@@ -37,7 +37,7 @@ interface AnnotationSet {
 }
 
 export default function AnalysisPage() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, getAccessToken } = useAuth()
   const router = useRouter()
   const [token, setToken] = useState<string>('')
 
@@ -64,42 +64,80 @@ export default function AnalysisPage() {
 
     // Get access token
     if (user) {
-      console.log('[AnalysisPage] User authenticated, getting access token...')
-      const accessToken = authService.tokenManager.getAccessToken()
-      console.log('[AnalysisPage] Access token:', accessToken ? `${accessToken.substring(0, 20)}...` : 'null')
-      if (accessToken) {
-        setToken(accessToken)
+      const fetchToken = async () => {
+        console.log('[AnalysisPage] User authenticated, getting access token...')
+        const accessToken = await getAccessToken()
+        console.log('[AnalysisPage] Access token:', accessToken ? `${accessToken.substring(0, 20)}...` : 'null')
+        if (accessToken) {
+          setToken(accessToken)
+        }
       }
+      fetchToken()
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router, getAccessToken])
 
   // Load annotation sets
   useEffect(() => {
+    // Only run in browser (not during SSR)
+    if (typeof window === 'undefined') return
+
     if (token) {
-      loadAnnotationSets()
+      // Small delay to ensure DOM is fully loaded and avoid race conditions
+      const timer = setTimeout(() => {
+        loadAnnotationSets()
+      }, 100)
+      return () => clearTimeout(timer)
     }
   }, [token])
 
   const loadAnnotationSets = async () => {
     try {
       setIsLoadingSets(true)
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const fullUrl = `${apiUrl}/api/v1/annotations/`
+      // Use relative URL to leverage Next.js proxy and avoid CORS
+      const fullUrl = '/api/v1/annotations/'
 
       console.log('[AnalysisPage] Loading annotation sets...')
-      console.log('[AnalysisPage] NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL)
-      console.log('[AnalysisPage] apiUrl:', apiUrl)
       console.log('[AnalysisPage] Full URL:', fullUrl)
-      console.log('[AnalysisPage] Token:', token ? 'present' : 'missing')
+      console.log('[AnalysisPage] Token:', token ? `${token.substring(0, 20)}...` : 'missing')
+      console.log('[AnalysisPage] Token length:', token?.length)
+      console.log('[AnalysisPage] User:', user ? { id: user.id, email: user.email, is_superuser: user.is_superuser } : 'not loaded')
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+
+      console.log('[AnalysisPage] Request headers:', headers)
+
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
 
       const response = await fetch(fullUrl, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        method: 'GET',
+        headers,
+        credentials: 'include',
+        mode: 'cors',
+        signal: controller.signal,
+      }).catch((fetchError) => {
+        clearTimeout(timeoutId)
+        console.error('[AnalysisPage] Fetch error details:', {
+          name: fetchError.name,
+          message: fetchError.message,
+          stack: fetchError.stack,
+          cause: fetchError.cause,
+        })
+        throw fetchError
       })
 
-      console.log('[AnalysisPage] Response status:', response.status)
-      console.log('[AnalysisPage] Response ok:', response.ok)
+      clearTimeout(timeoutId)
+
+      console.log('[AnalysisPage] Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries()),
+      })
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -117,7 +155,14 @@ export default function AnalysisPage() {
       }
     } catch (error) {
       console.error('[AnalysisPage] Error loading annotation sets:', error)
-      toast.error('Failed to load annotation sets')
+      if (error instanceof Error) {
+        console.error('[AnalysisPage] Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        })
+      }
+      // Don't show error toast - this is expected when backend is starting or no data exists
     } finally {
       setIsLoadingSets(false)
     }

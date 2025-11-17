@@ -6,7 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
-import { RecordingService } from '@/services/recording-service';
+import { recordingService } from '@/services/service-factory';
 import {
   RecordingStatusLabels,
   ProcessingPhaseLabels,
@@ -29,7 +29,6 @@ export function ProcessingMonitor({
   onComplete,
   onError,
 }: ProcessingMonitorProps) {
-  const recordingService = new RecordingService();
   const [status, setStatus] = useState<ProcessingJobStatus | null>(null);
   const [logs, setLogs] = useState<ProcessingLogEntry[]>([]);
   const [polling, setPolling] = useState(true);

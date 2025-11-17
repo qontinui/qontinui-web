@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Upload, FileArchive, X, Check, AlertCircle, ArrowLeft } from 'lucide-react';
-import { RecordingService } from '@/services/recording-service';
+import { recordingService } from '@/services/service-factory';
 import type { UploadResponse, RecordingError } from '@/types/recording';
 
 interface UploadState {
@@ -57,8 +57,6 @@ export function RecordingUploadPage() {
 
   const [tagInput, setTagInput] = useState('');
   const [dragActive, setDragActive] = useState(false);
-
-  const recordingService = new RecordingService();
 
   // Handle drag and drop
   const handleDrag = useCallback((e: React.DragEvent) => {
