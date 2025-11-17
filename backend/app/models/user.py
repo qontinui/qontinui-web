@@ -75,3 +75,6 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     analytics_events = relationship(
         "AnalyticsEvent", back_populates="user", cascade="all, delete-orphan"
     )
+    automation_sessions = relationship(
+        "AutomationSession", back_populates="user", cascade="all, delete-orphan"
+    )

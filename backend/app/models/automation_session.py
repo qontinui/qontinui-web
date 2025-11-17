@@ -17,8 +17,6 @@ if TYPE_CHECKING:
     from app.models.automation_log import AutomationLog
     from app.models.automation_screenshot import AutomationScreenshot
     from app.models.automation import AutomationInputEvent
-    from app.models.discovered_state import DiscoveredState
-    from app.models.state_transition import StateTransition
     from app.models.user import User
 
 
@@ -107,18 +105,6 @@ class AutomationSession(Base):
     )
     input_events: Mapped[list["AutomationInputEvent"]] = relationship(
         "AutomationInputEvent",
-        back_populates="session",
-        cascade="all, delete-orphan",
-        lazy="selectin"
-    )
-    discovered_states: Mapped[list["DiscoveredState"]] = relationship(
-        "DiscoveredState",
-        back_populates="session",
-        cascade="all, delete-orphan",
-        lazy="selectin"
-    )
-    state_transitions: Mapped[list["StateTransition"]] = relationship(
-        "StateTransition",
         back_populates="session",
         cascade="all, delete-orphan",
         lazy="selectin"

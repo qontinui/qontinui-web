@@ -6,8 +6,30 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 # Sync engine only for Alembic migrations and init_db
 database_url_str = str(settings.DATABASE_URL)
+
+# Log database connection info (mask password)
+masked_url = database_url_str
+if "@" in database_url_str:
+    # Extract and mask password: postgresql://user:password@host:port/db
+    parts = database_url_str.split("@")
+    if ":" in parts[0]:
+        user_pass = parts[0].split("://")[1]
+        if ":" in user_pass:
+            user, password = user_pass.rsplit(":", 1)
+            masked_url = database_url_str.replace(f":{password}@", ":***@")
+
+logger.info(
+    "database_connection_config",
+    url=masked_url,
+    driver="psycopg2 (sync)",
+)
+
 sync_engine = create_engine(database_url_str)
 
 # Export as 'engine' for Alembic
@@ -38,6 +60,25 @@ if "sslmode=require" in async_database_url:
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
     connect_args["ssl"] = ssl_context
+
+# Log async database connection info (mask password)
+masked_async_url = async_database_url
+if "@" in async_database_url:
+    parts = async_database_url.split("@")
+    if ":" in parts[0]:
+        user_pass = parts[0].split("://")[1]
+        if ":" in user_pass:
+            user, password = user_pass.rsplit(":", 1)
+            masked_async_url = async_database_url.replace(f":{password}@", ":***@")
+
+logger.info(
+    "async_database_connection_config",
+    url=masked_async_url,
+    driver="asyncpg",
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
+)
 
 async_engine = create_async_engine(
     async_database_url,
