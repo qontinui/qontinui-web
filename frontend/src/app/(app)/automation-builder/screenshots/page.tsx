@@ -1,0 +1,23 @@
+'use client'
+
+/**
+ * Screenshot Upload Page
+ *
+ * Upload and manage screenshots for use in automation workflows.
+ * Allows users to:
+ * - Upload multiple screenshots at once
+ * - Capture screenshots directly from running applications
+ * - Organize screenshots by project or state
+ * - Preview uploaded screenshots
+ * - Extract patterns and elements from screenshots
+ * - Associate screenshots with states
+ */
+
+import { useAutomation } from '@/contexts/automation-context'
+import ScreenshotUploadTab from '@/components/ScreenshotTab/ScreenshotUploadTab'
+
+export default function ScreenshotsPage() {
+  const { states } = useAutomation()
+
+  return <ScreenshotUploadTab states={states} onExport={() => {}} />
+}
