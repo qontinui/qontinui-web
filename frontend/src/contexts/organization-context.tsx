@@ -46,7 +46,11 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
    * Load organizations on mount
    */
   useEffect(() => {
-    loadOrganizations();
+    // Don't block rendering - load organizations in background
+    loadOrganizations().catch((err) => {
+      console.warn('[Organization] Failed to initialize organizations:', err);
+      // Silently fail - user can continue without organizations
+    });
   }, []);
 
   /**

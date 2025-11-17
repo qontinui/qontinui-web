@@ -37,7 +37,8 @@ export default function AppLayout({
 }>) {
   return (
     <AuthProvider>
-      <OrganizationProvider>
+      {/* Temporarily disabled - causing 30s timeout on /organizations endpoint */}
+      {/* <OrganizationProvider> */}
         <SidebarProvider>
           <AutomationProvider>
             <AppLayoutContent>
@@ -45,7 +46,7 @@ export default function AppLayout({
             </AppLayoutContent>
           </AutomationProvider>
         </SidebarProvider>
-      </OrganizationProvider>
+      {/* </OrganizationProvider> */}
     </AuthProvider>
   );
 }
