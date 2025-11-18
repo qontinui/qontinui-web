@@ -8,11 +8,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from app.models.automation import (
-    AutomationInputEvent,
-    AutomationScreenshot,
-    AutomationSession,
-)
+from app.models.automation import AutomationInputEvent
+from app.models.automation_screenshot import AutomationScreenshot
+from app.models.automation_session import AutomationSession
 from app.models.user import User
 from app.services.state_discovery_service import state_discovery_service
 
