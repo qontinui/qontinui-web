@@ -6,13 +6,11 @@ This package contains all SQLAlchemy models for the application.
 
 from app.models.annotation import Annotation, AnnotationSet
 from app.models.audit_log import AuditLog
-from app.models.automation import (
-    AutomationInputEvent,
-    AutomationScreenshot,
-    AutomationSession,
-    ScreenshotInputAssociation,
-)
+from app.models.automation import AutomationInputEvent
+from app.models.automation_screenshot import AutomationScreenshot
+from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
+from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.collaboration import (
     ActionType,
     ActivityLog,
