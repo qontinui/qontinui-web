@@ -295,6 +295,24 @@ const navItems: NavItem[] = [
         route: '/admin/architecture',
         color: '#FF6B6B',
         adminOnly: true,
+        children: [
+          {
+            id: 'admin-architecture-overall',
+            label: 'Qontinui Overall',
+            icon: <Layers size={18} />,
+            route: '/admin/architecture',
+            color: '#FF6B6B',
+            adminOnly: true,
+          },
+          {
+            id: 'admin-architecture-screenshots',
+            label: 'Screenshots',
+            icon: <Camera size={18} />,
+            route: '/admin/architecture?view=screenshots',
+            color: '#FF6B6B',
+            adminOnly: true,
+          },
+        ],
       },
       {
         id: 'admin-mobile',

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -18,13 +18,22 @@ import { ArchitectureDiagram } from '@/components/admin/architecture/Architectur
 import { ComponentDetailPanel } from '@/components/admin/architecture/ComponentDetailPanel'
 
 export type ComponentType = 'qontinui' | 'multistate' | 'qontinui-runner' | 'qontinui-web' | 'qontinui-api' | null
-export type ArchitectureLevel = 'root' | 'qontinui-web' | 'qontinui-api' | 'qontinui-runner' | 'qontinui' | 'multistate'
+export type ArchitectureLevel = 'root' | 'qontinui-web' | 'qontinui-api' | 'qontinui-runner' | 'qontinui' | 'multistate' | 'screenshots'
 
 export default function ArchitecturePage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [selectedComponent, setSelectedComponent] = useState<ComponentType>(null)
   const [currentLevel, setCurrentLevel] = useState<ArchitectureLevel>('root')
+
+  // Handle view query parameter
+  useEffect(() => {
+    const view = searchParams.get('view')
+    if (view === 'screenshots') {
+      setCurrentLevel('screenshots')
+    }
+  }, [searchParams])
 
   // Protection
   useEffect(() => {
@@ -65,6 +74,7 @@ export default function ArchitecturePage() {
       case 'qontinui-runner': return 'Qontinui Runner Architecture'
       case 'qontinui': return 'Qontinui Library Architecture'
       case 'multistate': return 'MultiState Library Architecture'
+      case 'screenshots': return 'Screenshot Infrastructure'
     }
   }
 
@@ -91,6 +101,13 @@ export default function ArchitecturePage() {
             </Button>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant={currentLevel === 'screenshots' ? 'default' : 'outline'}
+              onClick={() => setCurrentLevel('screenshots')}
+              className="flex items-center gap-2"
+            >
+              📸 Screenshots
+            </Button>
             <Button
               variant="outline"
               onClick={() => router.push('/admin')}

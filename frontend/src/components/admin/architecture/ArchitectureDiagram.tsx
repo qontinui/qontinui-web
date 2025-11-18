@@ -189,6 +189,155 @@ const qontinuiWebComponents: Component[] = [
   },
 ]
 
+// Screenshot Infrastructure Architecture
+const screenshotComponents: Component[] = [
+  // User Upload Path (Top Left)
+  {
+    id: null,
+    name: 'Manual Upload',
+    x: 30,
+    y: 30,
+    width: 150,
+    height: 80,
+    color: '#06B6D4',
+    hoverColor: '#0891B2',
+    type: 'ui',
+    shortDesc: 'User file upload',
+    dependencies: [],
+    dependents: [],
+  },
+  // WebSocket Upload Path (Top Right)
+  {
+    id: null,
+    name: 'Runner WebSocket',
+    x: 420,
+    y: 30,
+    width: 150,
+    height: 80,
+    color: '#8B5CF6',
+    hoverColor: '#7C3AED',
+    type: 'api',
+    shortDesc: 'Real-time from runner',
+    dependencies: [],
+    dependents: [],
+  },
+  // Storage Layer (Middle)
+  {
+    id: null,
+    name: 'IndexedDB',
+    x: 30,
+    y: 150,
+    width: 130,
+    height: 70,
+    color: '#F59E0B',
+    hoverColor: '#D97706',
+    type: 'database',
+    shortDesc: 'Local browser storage',
+    dependencies: [],
+    dependents: [],
+  },
+  {
+    id: null,
+    name: 'S3/MinIO',
+    x: 190,
+    y: 150,
+    width: 130,
+    height: 70,
+    color: '#F59E0B',
+    hoverColor: '#D97706',
+    type: 'database',
+    shortDesc: 'Cloud object storage',
+    dependencies: [],
+    dependents: [],
+  },
+  {
+    id: null,
+    name: 'PostgreSQL',
+    x: 350,
+    y: 150,
+    width: 130,
+    height: 70,
+    color: '#F59E0B',
+    hoverColor: '#D97706',
+    type: 'database',
+    shortDesc: 'Metadata storage',
+    dependencies: [],
+    dependents: [],
+  },
+  // Usage/Processing (Bottom)
+  {
+    id: null,
+    name: 'Annotations',
+    x: 30,
+    y: 260,
+    width: 110,
+    height: 70,
+    color: '#10B981',
+    hoverColor: '#059669',
+    type: 'component',
+    shortDesc: 'Region/location marking',
+    dependencies: [],
+    dependents: [],
+  },
+  {
+    id: null,
+    name: 'State Discovery',
+    x: 160,
+    y: 260,
+    width: 110,
+    height: 70,
+    color: '#10B981',
+    hoverColor: '#059669',
+    type: 'component',
+    shortDesc: 'Pattern extraction',
+    dependencies: [],
+    dependents: [],
+  },
+  {
+    id: null,
+    name: 'Mock Execution',
+    x: 290,
+    y: 260,
+    width: 110,
+    height: 70,
+    color: '#10B981',
+    hoverColor: '#059669',
+    type: 'component',
+    shortDesc: 'Test automation',
+    dependencies: [],
+    dependents: [],
+  },
+  {
+    id: null,
+    name: 'Export/Download',
+    x: 420,
+    y: 260,
+    width: 110,
+    height: 70,
+    color: '#10B981',
+    hoverColor: '#059669',
+    type: 'component',
+    shortDesc: 'JSON/Python export',
+    dependencies: [],
+    dependents: [],
+  },
+  // Background Processing
+  {
+    id: null,
+    name: 'CV Analysis',
+    x: 210,
+    y: 370,
+    width: 140,
+    height: 70,
+    color: '#8B5CF6',
+    hoverColor: '#7C3AED',
+    type: 'service',
+    shortDesc: 'Computer vision tasks',
+    dependencies: [],
+    dependents: [],
+  },
+]
+
 // Architecture level mapping
 const architectureMap: Record<ArchitectureLevel, Component[]> = {
   root: rootComponents,
@@ -197,6 +346,7 @@ const architectureMap: Record<ArchitectureLevel, Component[]> = {
   'qontinui-runner': rootComponents, // Placeholder
   'qontinui': rootComponents, // Placeholder
   'multistate': rootComponents, // Placeholder
+  'screenshots': screenshotComponents,
 }
 
 interface Connection {
@@ -303,6 +453,100 @@ const qontinuiWebConnections: Connection[] = [
   },
 ]
 
+const screenshotConnections: Connection[] = [
+  // Manual Upload -> IndexedDB
+  {
+    from: 'Manual Upload',
+    to: 'IndexedDB',
+    fromPos: { x: 105, y: 110 },
+    toPos: { x: 95, y: 150 },
+    label: 'store local',
+  },
+  // Manual Upload -> S3
+  {
+    from: 'Manual Upload',
+    to: 'S3/MinIO',
+    fromPos: { x: 105, y: 110 },
+    toPos: { x: 255, y: 150 },
+    label: 'upload',
+  },
+  // Manual Upload -> PostgreSQL (metadata)
+  {
+    from: 'Manual Upload',
+    to: 'PostgreSQL',
+    fromPos: { x: 180, y: 70 },
+    toPos: { x: 415, y: 150 },
+    label: 'metadata',
+    dashed: true,
+  },
+  // Runner WebSocket -> S3
+  {
+    from: 'Runner WebSocket',
+    to: 'S3/MinIO',
+    fromPos: { x: 495, y: 110 },
+    toPos: { x: 320, y: 150 },
+    label: 'stream',
+  },
+  // Runner WebSocket -> PostgreSQL
+  {
+    from: 'Runner WebSocket',
+    to: 'PostgreSQL',
+    fromPos: { x: 495, y: 110 },
+    toPos: { x: 415, y: 150 },
+    label: 'metadata',
+    dashed: true,
+  },
+  // IndexedDB -> Annotations
+  {
+    from: 'IndexedDB',
+    to: 'Annotations',
+    fromPos: { x: 95, y: 220 },
+    toPos: { x: 85, y: 260 },
+    label: 'load',
+  },
+  // S3 -> State Discovery
+  {
+    from: 'S3/MinIO',
+    to: 'State Discovery',
+    fromPos: { x: 255, y: 220 },
+    toPos: { x: 215, y: 260 },
+    label: 'fetch',
+  },
+  // S3 -> Mock Execution
+  {
+    from: 'S3/MinIO',
+    to: 'Mock Execution',
+    fromPos: { x: 255, y: 220 },
+    toPos: { x: 345, y: 260 },
+    label: 'fetch',
+  },
+  // PostgreSQL -> Export
+  {
+    from: 'PostgreSQL',
+    to: 'Export/Download',
+    fromPos: { x: 415, y: 220 },
+    toPos: { x: 475, y: 260 },
+    label: 'query',
+  },
+  // S3 -> CV Analysis
+  {
+    from: 'S3/MinIO',
+    to: 'CV Analysis',
+    fromPos: { x: 255, y: 220 },
+    toPos: { x: 280, y: 370 },
+    label: 'process',
+  },
+  // CV Analysis -> PostgreSQL
+  {
+    from: 'CV Analysis',
+    to: 'PostgreSQL',
+    fromPos: { x: 350, y: 405 },
+    toPos: { x: 415, y: 220 },
+    label: 'results',
+    dashed: true,
+  },
+]
+
 const connectionMap: Record<ArchitectureLevel, Connection[]> = {
   root: rootConnections,
   'qontinui-web': qontinuiWebConnections,
@@ -310,6 +554,7 @@ const connectionMap: Record<ArchitectureLevel, Connection[]> = {
   'qontinui-runner': [],
   'qontinui': [],
   'multistate': [],
+  'screenshots': screenshotConnections,
 }
 
 export function ArchitectureDiagram({
