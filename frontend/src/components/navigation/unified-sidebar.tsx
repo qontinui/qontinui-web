@@ -3,7 +3,7 @@
 // Horizontal icon popover for collapsed sidebar - updated icons v3
 import React, { useState, useEffect } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users, Shield, Variable, Store, FlaskConical } from 'lucide-react'
+import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users, Shield, Variable, Store, FlaskConical, Layers, Smartphone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CollapsedMenuPopover } from './collapsed-menu-popover'
 import { OrganizationSwitcher } from '@/components/collaboration/OrganizationSwitcher'
@@ -267,6 +267,29 @@ const navItems: NavItem[] = [
         label: 'Architecture',
         icon: <Network size={22} />,
         route: '/admin/architecture',
+        color: '#FF0080',
+        children: [
+          {
+            id: 'admin-architecture-overall',
+            label: 'Qontinui Overall',
+            icon: <Layers size={18} />,
+            route: '/admin/architecture',
+            color: '#FF0080',
+          },
+          {
+            id: 'admin-architecture-screenshots',
+            label: 'Screenshots',
+            icon: <Camera size={18} />,
+            route: '/admin/architecture?view=screenshots',
+            color: '#FF0080',
+          },
+        ],
+      },
+      {
+        id: 'admin-mobile',
+        label: 'Mobile Admin',
+        icon: <Smartphone size={22} />,
+        route: '/admin/mobile',
         color: '#FF0080',
       },
     ],
