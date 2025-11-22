@@ -76,6 +76,11 @@ class CodeExecutionRequest(BaseModel):
         description="Whitelist of allowed imports",
     )
 
+    project_root: Optional[str] = Field(
+        default=None,
+        description="Project root directory for import resolution (file-based execution)",
+    )
+
     debug: bool = Field(default=False, description="Enable debug logging")
 
 
@@ -137,13 +142,14 @@ class CodeValidator:
     """Validates Python code for security concerns before execution."""
 
     @staticmethod
-    def validate_imports(code: str, allowed_imports: List[str]) -> None:
+    def validate_imports(code: str, allowed_imports: List[str], allow_project_imports: bool = False) -> None:
         """
         Validate that code only imports allowed modules.
 
         Args:
             code: Python code to validate
             allowed_imports: Whitelist of allowed module names
+            allow_project_imports: If True, allow imports from any non-blocked module (for project files)
 
         Raises:
             ValueError: If code imports blocked or non-whitelisted modules
@@ -161,7 +167,8 @@ class CodeValidator:
                         raise ValueError(
                             f"Import of blocked module '{module_name}' is not allowed"
                         )
-                    if module_name not in allowed_imports:
+                    # Skip whitelist check if project imports are allowed
+                    if not allow_project_imports and module_name not in allowed_imports:
                         raise ValueError(
                             f"Import of '{module_name}' is not whitelisted. "
                             f"Allowed imports: {', '.join(allowed_imports)}"
@@ -174,7 +181,8 @@ class CodeValidator:
                         raise ValueError(
                             f"Import from blocked module '{module_name}' is not allowed"
                         )
-                    if module_name not in allowed_imports:
+                    # Skip whitelist check if project imports are allowed
+                    if not allow_project_imports and module_name not in allowed_imports:
                         raise ValueError(
                             f"Import from '{module_name}' is not whitelisted. "
                             f"Allowed imports: {', '.join(allowed_imports)}"
@@ -259,6 +267,7 @@ class CodeExecutionService:
         context: ExecutionContext,
         inputs: Dict[str, Any],
         allowed_imports: List[str],
+        allow_imports: bool = False,
     ) -> Dict[str, Any]:
         """
         Create a restricted global namespace for code execution.
@@ -267,6 +276,7 @@ class CodeExecutionService:
             context: Execution context with action results and state
             inputs: Additional input variables
             allowed_imports: List of allowed module names
+            allow_imports: If True, enable __import__ for file-based execution
 
         Returns:
             Dict of safe globals for exec()
@@ -277,6 +287,10 @@ class CodeExecutionService:
             for k, v in __builtins__.items()
             if k not in BLOCKED_BUILTINS and not k.startswith("_")
         }
+
+        # Allow __import__ for file-based execution
+        if allow_imports:
+            safe_builtins["__import__"] = __builtins__["__import__"]
 
         # Add allowed imports
         allowed_modules = {}
@@ -325,16 +339,30 @@ class CodeExecutionService:
         """
         start_time = datetime.now()
 
+        # Track if we modified sys.path for cleanup
+        added_to_path = False
+        project_root = None
+
         try:
             # Validate code
-            CodeValidator.validate_imports(request.code, request.allowed_imports)
+            # Allow project imports if project_root is set (file-based execution)
+            allow_project_imports = request.project_root is not None
+            CodeValidator.validate_imports(request.code, request.allowed_imports, allow_project_imports)
             CodeValidator.validate_dangerous_patterns(request.code)
+
+            # Add project root to sys.path for import resolution (file-based execution)
+            if request.project_root:
+                project_root = request.project_root
+                if project_root not in sys.path:
+                    sys.path.insert(0, project_root)
+                    added_to_path = True
 
             # Create safe execution environment
             safe_globals = CodeExecutionService.create_safe_globals(
                 request.context,
                 request.inputs,
                 request.allowed_imports,
+                allow_imports=allow_project_imports,
             )
             safe_locals: Dict[str, Any] = {}
 
@@ -397,3 +425,8 @@ class CodeExecutionService:
                 traceback=traceback.format_exc(),
                 execution_time_ms=execution_time,
             )
+
+        finally:
+            # Clean up sys.path
+            if added_to_path and project_root and project_root in sys.path:
+                sys.path.remove(project_root)

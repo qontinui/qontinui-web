@@ -24,10 +24,10 @@ depends_on = None
 def upgrade() -> None:
     """Add performance indexes"""
 
-    # Index 1: Projects by user and creation date
-    # Speeds up: "SELECT * FROM projects WHERE user_id = ? ORDER BY created_at DESC"
+    # Index 1: Projects by owner and creation date
+    # Speeds up: "SELECT * FROM projects WHERE owner_id = ? ORDER BY created_at DESC"
     op.create_index(
-        "idx_projects_user_created", "projects", ["user_id", "created_at"], unique=False
+        "idx_projects_owner_created", "projects", ["owner_id", "created_at"], unique=False
     )
 
     # Index 2: Workflows by project, status, and creation date

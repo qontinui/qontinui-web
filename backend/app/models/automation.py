@@ -58,9 +58,9 @@ class AutomationInputEvent(Base):
         index=True,
     )
     event_type = Column(
-        Enum(InputEventType, name="input_event_type_enum", native_enum=False),
+        Enum(InputEventType, name="input_event_type_enum", native_enum=True),
         nullable=False,
-    )  # Validated enum: mouse.clicked, mouse.moved, mouse.dragged, keyboard.text_typed
+    )  # PostgreSQL enum: mouse.clicked, mouse.moved, mouse.dragged, keyboard.text_typed
     timestamp = Column(TIMESTAMP, nullable=False)
 
     # Mouse event fields

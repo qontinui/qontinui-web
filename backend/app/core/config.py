@@ -166,6 +166,17 @@ class Settings(BaseSettings):
         default=True, description="Use SSL for storage connections"
     )
 
+    # CloudFront CDN (optional, for production image delivery)
+    USE_CLOUDFRONT: bool = Field(
+        default=False, description="Use CloudFront CDN for image delivery"
+    )
+    CLOUDFRONT_DOMAIN: str | None = Field(
+        None, description="CloudFront distribution domain (e.g., d123abc.cloudfront.net)"
+    )
+    CLOUDFRONT_DISTRIBUTION_ID: str | None = Field(
+        None, description="CloudFront distribution ID (for cache invalidation)"
+    )
+
     # Background cleanup jobs
     CLEANUP_ENABLED: bool = Field(
         default=True,

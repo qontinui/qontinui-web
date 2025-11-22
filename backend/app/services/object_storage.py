@@ -169,6 +169,7 @@ class S3Backend(StorageBackend):
         key: str,
         content_type: str | None = None,
         metadata: dict | None = None,
+        cache_control: str | None = None,
     ) -> str:
         """Upload file to S3"""
         try:
@@ -185,6 +186,15 @@ class S3Backend(StorageBackend):
 
             if metadata:
                 extra_args["Metadata"] = {k: str(v) for k, v in metadata.items()}
+
+            # Add cache control header for better browser caching
+            # Images are immutable (UUID-based keys), so cache for 1 year
+            if cache_control:
+                extra_args["CacheControl"] = cache_control
+            elif content_type and content_type.startswith("image/"):
+                # Default: 1 year cache for images (31536000 seconds)
+                extra_args["CacheControl"] = "max-age=31536000, immutable"
+                logger.debug("adding_cache_control", key=key, cache_control=extra_args["CacheControl"])
 
             # Upload file
             self.client.upload_fileobj(
@@ -224,6 +234,31 @@ class S3Backend(StorageBackend):
         except ClientError as e:
             logger.error("delete_failed", key=key, error=str(e))
             return False
+
+    def get_cdn_url(self, key: str) -> str:
+        """
+        Get CDN URL for accessing an image.
+
+        Returns CloudFront URL if configured, otherwise falls back to presigned S3 URL.
+
+        CloudFront benefits:
+        - 10-20ms latency (vs 50-100ms S3 presigned)
+        - Edge caching (images served from nearest location)
+        - Free SSL/TLS
+        - Respects Cache-Control headers from S3
+
+        Args:
+            key: S3 object key (e.g., "images/abc123/thumb.webp")
+
+        Returns:
+            HTTPS URL for accessing the image
+        """
+        # Use CloudFront if configured
+        if settings.USE_CLOUDFRONT and settings.CLOUDFRONT_DOMAIN:
+            return f"https://{settings.CLOUDFRONT_DOMAIN}/{key}"
+
+        # Fallback to presigned S3 URL (7 days expiration for images)
+        return self.generate_presigned_url(key, expiration=7 * 24 * 3600)
 
     def generate_presigned_url(
         self, key: str, expiration: int = 3600, http_method: str = "GET"

@@ -24,7 +24,7 @@ def upgrade() -> None:
         sa.Column(
             "id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False
         ),
-        sa.Column("project_id", sa.Integer(), nullable=True),
+        sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("user_id", sa.UUID(), nullable=False),
         sa.Column("runner_version", sa.String(length=100), nullable=False),
         sa.Column("runner_os", sa.String(length=100), nullable=False),

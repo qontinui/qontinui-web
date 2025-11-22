@@ -369,11 +369,9 @@ async def upload_image(
         )
         # Don't fail the upload, but thumbnails won't be generated
 
-    # Step 11: Generate presigned URL for original image
+    # Step 11: Generate CDN URL for original image (CloudFront if enabled, else presigned S3 URL)
     try:
-        presigned_url = object_storage.generate_presigned_url(
-            original_key, expiration=PRESIGNED_URL_EXPIRATION
-        )
+        presigned_url = object_storage.get_cdn_url(original_key)
     except Exception as e:
         logger.error(
             "presigned_url_generation_failed",
@@ -581,11 +579,9 @@ async def refresh_presigned_url(
             detail="Failed to verify image existence",
         )
 
-    # Generate new presigned URL
+    # Generate new CDN URL (CloudFront if enabled, else presigned S3 URL)
     try:
-        presigned_url = object_storage.generate_presigned_url(
-            s3_key, expiration=PRESIGNED_URL_EXPIRATION
-        )
+        presigned_url = object_storage.get_cdn_url(s3_key)
     except Exception as e:
         logger.error(
             "presigned_url_generation_failed",

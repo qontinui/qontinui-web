@@ -16,7 +16,15 @@
  */
 export interface CodeBlockActionConfig {
   /**
-   * Python code to execute
+   * Code source type
+   * - 'inline': Execute code from 'code' field (Phase 1)
+   * - 'file': Execute code from external .py file (Phase 2)
+   * Default: 'inline'
+   */
+  codeSource?: 'inline' | 'file';
+
+  /**
+   * Python code to execute (when codeSource='inline')
    *
    * Available variables in scope:
    * - action_result: ActionResult from previous action
@@ -38,7 +46,47 @@ export interface CodeBlockActionConfig {
    * return {"price": price, "success": match is not None}
    * ```
    */
-  code: string;
+  code?: string;
+
+  /**
+   * Path to Python file to execute (when codeSource='file')
+   *
+   * Path is relative to project root directory.
+   * File must be within project directory (no parent directory access).
+   *
+   * Examples:
+   * - "scripts/civ6_utils.py"
+   * - "automation/unit_detector.py"
+   * - "lib/vision_helpers.py"
+   *
+   * Security:
+   * - Path traversal (../) is blocked
+   * - Absolute paths are blocked
+   * - Only .py files allowed
+   */
+  filePath?: string;
+
+  /**
+   * Function name to call from the file (when codeSource='file')
+   *
+   * If not specified, executes the entire file.
+   * If specified, calls the named function with inputs as kwargs.
+   *
+   * Example file (scripts/detector.py):
+   * ```python
+   * def detect_unit(image_region, unit_icons):
+   *     # ... detection logic
+   *     return {"unit": "settler", "confidence": 0.95}
+   * ```
+   *
+   * Action config:
+   * {
+   *   "filePath": "scripts/detector.py",
+   *   "functionName": "detect_unit",
+   *   "inputs": {"image_region": "unit_panel", "unit_icons": "icon_list"}
+   * }
+   */
+  functionName?: string;
 
   /**
    * Input mappings - connect workflow variables to code scope
