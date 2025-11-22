@@ -3,7 +3,6 @@
 from typing import Any
 
 import structlog
-
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -26,9 +25,11 @@ async def run_all_cleanup_tasks(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # Import cleanup tasks
     from app.worker.tasks.cleanup_tasks import (
+        archive_old_analytics_to_s3,
         cleanup_expired_device_sessions,
         cleanup_expired_sessions,
         cleanup_old_analytics_events,
+        cleanup_old_automation_data,
         cleanup_token_blacklist,
     )
 
@@ -36,6 +37,7 @@ async def run_all_cleanup_tasks(ctx: dict[str, Any]) -> dict[str, Any]:
         "status": "success",
         "tasks": {},
         "total_deleted": 0,
+        "total_archived": 0,
     }
 
     # Run each cleanup task
@@ -44,6 +46,8 @@ async def run_all_cleanup_tasks(ctx: dict[str, Any]) -> dict[str, Any]:
         ("device_sessions", cleanup_expired_device_sessions),
         ("analytics_events", cleanup_old_analytics_events),
         ("token_blacklist", cleanup_token_blacklist),
+        ("automation_data", cleanup_old_automation_data),
+        ("analytics_archive", archive_old_analytics_to_s3),
     ]
 
     for task_name, task_func in tasks:
@@ -51,10 +55,16 @@ async def run_all_cleanup_tasks(ctx: dict[str, Any]) -> dict[str, Any]:
             result = await task_func(ctx)
             results["tasks"][task_name] = result
 
-            # Aggregate total deletions
-            if result.get("status") == "success":
+            # Aggregate total deletions and archives
+            if result.get("status") in ("success", "partial_success"):
                 results["total_deleted"] += result.get("deleted_count", 0)
-            else:
+                results["total_deleted"] += result.get("total_records_deleted", 0)
+                results["total_deleted"] += result.get("events_deleted", 0)
+
+                results["total_archived"] += result.get("sessions_archived", 0)
+                results["total_archived"] += result.get("events_archived", 0)
+
+            if result.get("status") != "success":
                 # Mark overall status as partial success if any task fails
                 results["status"] = "partial_success"
 
@@ -75,6 +85,7 @@ async def run_all_cleanup_tasks(ctx: dict[str, Any]) -> dict[str, Any]:
         "run_all_cleanup_tasks_completed",
         status=results["status"],
         total_deleted=results["total_deleted"],
+        total_archived=results["total_archived"],
     )
 
     return results

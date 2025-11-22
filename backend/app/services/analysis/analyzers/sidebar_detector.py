@@ -10,19 +10,20 @@ Characteristics:
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,9 @@ class SidebarDetector(BaseAnalyzer):
 
         # Analyze each screenshot
         all_elements = []
-        for screenshot_idx, (img_color, img_gray) in enumerate(zip(images_color, images_gray)):
+        for screenshot_idx, (img_color, img_gray) in enumerate(
+            zip(images_color, images_gray)
+        ):
             elements = await self._analyze_screenshot(
                 img_color, img_gray, screenshot_idx, params
             )
@@ -107,7 +110,7 @@ class SidebarDetector(BaseAnalyzer):
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -115,7 +118,7 @@ class SidebarDetector(BaseAnalyzer):
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')
+            img = Image.open(BytesIO(data)).convert("L")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -124,7 +127,7 @@ class SidebarDetector(BaseAnalyzer):
         img_color: np.ndarray,
         img_gray: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedElement]:
         """Analyze a single screenshot for sidebars"""
         elements = []
@@ -137,14 +140,16 @@ class SidebarDetector(BaseAnalyzer):
         )
         if left_sidebar:
             bbox, confidence, metadata = left_sidebar
-            elements.append(DetectedElement(
-                bounding_box=bbox,
-                confidence=confidence,
-                label="Sidebar (Left)",
-                element_type="sidebar",
-                screenshot_index=screenshot_idx,
-                metadata=metadata,
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=bbox,
+                    confidence=confidence,
+                    label="Sidebar (Left)",
+                    element_type="sidebar",
+                    screenshot_index=screenshot_idx,
+                    metadata=metadata,
+                )
+            )
 
         # Check right edge if requested
         if params["check_both_edges"]:
@@ -154,14 +159,16 @@ class SidebarDetector(BaseAnalyzer):
             )
             if right_sidebar:
                 bbox, confidence, metadata = right_sidebar
-                elements.append(DetectedElement(
-                    bounding_box=bbox,
-                    confidence=confidence,
-                    label="Sidebar (Right)",
-                    element_type="sidebar",
-                    screenshot_index=screenshot_idx,
-                    metadata=metadata,
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=bbox,
+                        confidence=confidence,
+                        label="Sidebar (Right)",
+                        element_type="sidebar",
+                        screenshot_index=screenshot_idx,
+                        metadata=metadata,
+                    )
+                )
 
         return elements
 
@@ -171,7 +178,7 @@ class SidebarDetector(BaseAnalyzer):
         x_start: int,
         x_end: int,
         side: str,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> Tuple[BoundingBox, float, Dict[str, Any]] | None:
         """Detect sidebar in a specific edge region"""
         height, width = img_gray.shape
@@ -182,9 +189,7 @@ class SidebarDetector(BaseAnalyzer):
 
         # Apply edge detection
         edges = cv2.Canny(
-            edge_region,
-            params["edge_threshold_low"],
-            params["edge_threshold_high"]
+            edge_region, params["edge_threshold_low"], params["edge_threshold_high"]
         )
 
         # Find vertical line (sidebar boundary)
@@ -214,7 +219,9 @@ class SidebarDetector(BaseAnalyzer):
             sidebar_x = x_start + boundary_offset
 
         # Validate sidebar width
-        if not (params["min_sidebar_width"] <= sidebar_width <= params["max_sidebar_width"]):
+        if not (
+            params["min_sidebar_width"] <= sidebar_width <= params["max_sidebar_width"]
+        ):
             return None
 
         # Extract sidebar region
@@ -252,10 +259,7 @@ class SidebarDetector(BaseAnalyzer):
             return None
 
         bbox = BoundingBox(
-            x=int(sidebar_x),
-            y=0,
-            width=int(sidebar_width),
-            height=int(height)
+            x=int(sidebar_x), y=0, width=int(sidebar_width), height=int(height)
         )
 
         metadata = {
@@ -275,7 +279,7 @@ class SidebarDetector(BaseAnalyzer):
         # Smooth the projection
         kernel_size = 5
         kernel = np.ones(kernel_size) / kernel_size
-        smoothed = np.convolve(horizontal_projection, kernel, mode='same')
+        smoothed = np.convolve(horizontal_projection, kernel, mode="same")
 
         # Find peaks (item rows)
         threshold = np.mean(smoothed) * 0.8
@@ -293,7 +297,7 @@ class SidebarDetector(BaseAnalyzer):
         vertical_extent: int,
         total_height: int,
         num_items: int,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> float:
         """Calculate confidence score"""
         confidence = 0.5  # Base confidence
@@ -301,7 +305,9 @@ class SidebarDetector(BaseAnalyzer):
         # Width in typical range (180-250px)
         if 180 <= sidebar_width <= 250:
             confidence += 0.15
-        elif params["min_sidebar_width"] <= sidebar_width <= params["max_sidebar_width"]:
+        elif (
+            params["min_sidebar_width"] <= sidebar_width <= params["max_sidebar_width"]
+        ):
             confidence += 0.08
 
         # Spans most of screen height

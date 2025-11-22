@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Screenshot, ScreenshotRegion, ScreenshotLocation, SelectionMode } from '../../types/Screenshot';
 import { generateId } from '../../lib/utils';
 import { ZoomIn, ZoomOut, Maximize2, Move } from 'lucide-react';
+import { useProgressiveImage, getImageUrlForZoom } from './ProgressiveImage';
 
 interface ScreenshotCanvasProps {
   screenshot: Screenshot;
@@ -35,9 +36,24 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
   const [hoveredRegion, setHoveredRegion] = useState<ScreenshotRegion | null>(null);
   const [hoveredLocation, setHoveredLocation] = useState<ScreenshotLocation | null>(null);
 
+  // Progressive image loading based on zoom level
+  const effectiveZoom = scale * manualZoom;
+  const screenshotVariants = (screenshot as any).variants as {
+    thumb?: string;
+    medium?: string;
+    large?: string;
+    original: string;
+  } | undefined;
+
+  const { currentSrc, isLoading } = useProgressiveImage({
+    imageUrl: screenshot.imageData,
+    zoom: effectiveZoom,
+    variants: screenshotVariants,
+  });
+
   useEffect(() => {
     drawCanvas();
-  }, [screenshot, scale, manualZoom, offset, currentRect, hoveredRegion, hoveredLocation]);
+  }, [screenshot, scale, manualZoom, offset, currentRect, hoveredRegion, hoveredLocation, currentSrc]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -116,11 +132,20 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
     canvas.width = screenshot.width * effectiveScale;
     canvas.height = screenshot.height * effectiveScale;
 
-    // Draw image
+    // Draw image (using progressive loading)
     const img = new window.Image();
     img.onload = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      // Show loading indicator if higher quality is being loaded
+      if (isLoading) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(10, 10, 120, 30);
+        ctx.fillStyle = 'white';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('Loading higher quality...', 20, 30);
+      }
 
       // Draw existing regions
       screenshot.regions.forEach(region => {
@@ -223,7 +248,7 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
         );
       }
     };
-    img.src = screenshot.imageData;
+    img.src = currentSrc;
   };
 
   const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
@@ -400,6 +425,14 @@ const ScreenshotCanvas: React.FC<ScreenshotCanvasProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Image quality indicator */}
+          {screenshotVariants && (
+            <div className="bg-gray-700 text-white px-3 py-1 rounded text-sm">
+              {effectiveZoom > 4 ? 'Original' : effectiveZoom > 2 ? 'Large' : 'Medium'}
+              {isLoading && ' (Loading...)'}
+            </div>
+          )}
+
           <div className="bg-gray-800 text-white px-3 py-1 rounded text-sm">
             {Math.round(getEffectiveScale() * 100)}% | {screenshot.width} x {screenshot.height}px
           </div>

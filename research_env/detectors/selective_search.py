@@ -2,12 +2,15 @@
 Selective Search for object detection
 """
 
+import os
+import sys
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
-from typing import List, Dict, Any
+
 from .base_detector import BaseDetector
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
 
@@ -31,18 +34,18 @@ class SelectiveSearchDetector(BaseDetector):
             return []
 
         # Parameters
-        mode = params.get('mode', 'fast')
-        min_area = params.get('min_area', 100)
-        max_area = params.get('max_area', img.shape[0] * img.shape[1] * 0.9)
+        mode = params.get("mode", "fast")
+        min_area = params.get("min_area", 100)
+        max_area = params.get("max_area", img.shape[0] * img.shape[1] * 0.9)
 
         # Create selective search
         ss = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
         ss.setBaseImage(img)
 
         # Set mode
-        if mode == 'quality':
+        if mode == "quality":
             ss.switchToSelectiveSearchQuality()
-        elif mode == 'single':
+        elif mode == "single":
             ss.switchToSingleStrategy()
         else:  # fast
             ss.switchToSelectiveSearchFast()
@@ -70,12 +73,10 @@ class SelectiveSearchDetector(BaseDetector):
     def get_param_grid(self) -> List[Dict[str, Any]]:
         """Parameter grid for hyperparameter search"""
         return [
-            {'mode': 'fast', 'min_area': 100},
-            {'mode': 'fast', 'min_area': 200},
-            {'mode': 'fast', 'min_area': 50},
-
-            {'mode': 'quality', 'min_area': 100},
-            {'mode': 'quality', 'min_area': 200},
-
-            {'mode': 'single', 'min_area': 100},
+            {"mode": "fast", "min_area": 100},
+            {"mode": "fast", "min_area": 200},
+            {"mode": "fast", "min_area": 50},
+            {"mode": "quality", "min_area": 100},
+            {"mode": "quality", "min_area": 200},
+            {"mode": "single", "min_area": 100},
         ]

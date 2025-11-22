@@ -8,10 +8,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, JSON, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.db.base import Base
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from app.models.automation_session import AutomationSession
@@ -36,7 +35,7 @@ class AutomationLog(Base):
     session_id: Mapped[UUID] = mapped_column(
         ForeignKey("automation_sessions.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Sequence tracking for ordering logs
@@ -59,14 +58,13 @@ class AutomationLog(Base):
 
     # Relationships
     session: Mapped["AutomationSession"] = relationship(
-        "AutomationSession",
-        back_populates="logs"
+        "AutomationSession", back_populates="logs"
     )
     screenshot_associations: Mapped[list["ScreenshotInputAssociation"]] = relationship(
         "ScreenshotInputAssociation",
         back_populates="log",
         cascade="all, delete-orphan",
-        lazy="selectin"
+        lazy="selectin",
     )
 
     # Composite indexes for common queries

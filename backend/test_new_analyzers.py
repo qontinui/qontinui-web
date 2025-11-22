@@ -3,8 +3,8 @@
 Test script to verify new GUI element detector implementations
 """
 
-import sys
 import ast
+import sys
 from pathlib import Path
 
 # Add backend to path
@@ -12,11 +12,13 @@ backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
 
-def check_analyzer_structure(filepath: str, expected_name: str, expected_element_type: str):
+def check_analyzer_structure(
+    filepath: str, expected_name: str, expected_element_type: str
+):
     """Check if an analyzer file has the correct structure"""
     print(f"\nChecking {filepath}...")
 
-    with open(filepath, 'r') as f:
+    with open(filepath, "r") as f:
         content = f.read()
 
     # Parse the file
@@ -37,16 +39,16 @@ def check_analyzer_structure(filepath: str, expected_name: str, expected_element
             class_found = True
             # Check for required methods
             for item in node.body:
-                if isinstance(item, ast.AsyncFunctionDef) and item.name == 'analyze':
+                if isinstance(item, ast.AsyncFunctionDef) and item.name == "analyze":
                     has_analyze = True
                 elif isinstance(item, ast.FunctionDef):
-                    if item.name == 'analysis_type':
+                    if item.name == "analysis_type":
                         has_analysis_type = True
-                    elif item.name == 'name':
+                    elif item.name == "name":
                         has_name = True
 
     # Check for required imports
-    has_base_imports = 'from ..base import' in content
+    has_base_imports = "from ..base import" in content
     has_element_type = f'element_type="{expected_element_type}"' in content
 
     results = {
@@ -74,12 +76,36 @@ def main():
     print("=" * 60)
 
     analyzers = [
-        ("app/services/analysis/analyzers/input_field_detector.py", "input_field_detector", "input"),
-        ("app/services/analysis/analyzers/dropdown_detector.py", "dropdown_detector", "dropdown"),
-        ("app/services/analysis/analyzers/menu_bar_detector.py", "menu_bar_detector", "menu"),
-        ("app/services/analysis/analyzers/sidebar_detector.py", "sidebar_detector", "sidebar"),
-        ("app/services/analysis/analyzers/icon_button_detector.py", "icon_button_detector", "icon_button"),
-        ("app/services/analysis/analyzers/modal_dialog_detector.py", "modal_dialog_detector", "dialog"),
+        (
+            "app/services/analysis/analyzers/input_field_detector.py",
+            "input_field_detector",
+            "input",
+        ),
+        (
+            "app/services/analysis/analyzers/dropdown_detector.py",
+            "dropdown_detector",
+            "dropdown",
+        ),
+        (
+            "app/services/analysis/analyzers/menu_bar_detector.py",
+            "menu_bar_detector",
+            "menu",
+        ),
+        (
+            "app/services/analysis/analyzers/sidebar_detector.py",
+            "sidebar_detector",
+            "sidebar",
+        ),
+        (
+            "app/services/analysis/analyzers/icon_button_detector.py",
+            "icon_button_detector",
+            "icon_button",
+        ),
+        (
+            "app/services/analysis/analyzers/modal_dialog_detector.py",
+            "modal_dialog_detector",
+            "dialog",
+        ),
     ]
 
     results = []
@@ -105,10 +131,10 @@ def main():
     print("Checking Registration")
     print("=" * 60)
 
-    with open("app/services/analysis/analyzers/__init__.py", 'r') as f:
+    with open("app/services/analysis/analyzers/__init__.py", "r") as f:
         init_content = f.read()
 
-    with open("app/services/analysis/register.py", 'r') as f:
+    with open("app/services/analysis/register.py", "r") as f:
         register_content = f.read()
 
     registration_checks = {
@@ -118,12 +144,18 @@ def main():
         "SidebarDetector in __init__.py": "SidebarDetector" in init_content,
         "IconButtonDetector in __init__.py": "IconButtonDetector" in init_content,
         "ModalDialogDetector in __init__.py": "ModalDialogDetector" in init_content,
-        "InputFieldDetector registered": "analyzer_registry.register(InputFieldDetector)" in register_content,
-        "DropdownDetector registered": "analyzer_registry.register(DropdownDetector)" in register_content,
-        "MenuBarDetector registered": "analyzer_registry.register(MenuBarDetector)" in register_content,
-        "SidebarDetector registered": "analyzer_registry.register(SidebarDetector)" in register_content,
-        "IconButtonDetector registered": "analyzer_registry.register(IconButtonDetector)" in register_content,
-        "ModalDialogDetector registered": "analyzer_registry.register(ModalDialogDetector)" in register_content,
+        "InputFieldDetector registered": "analyzer_registry.register(InputFieldDetector)"
+        in register_content,
+        "DropdownDetector registered": "analyzer_registry.register(DropdownDetector)"
+        in register_content,
+        "MenuBarDetector registered": "analyzer_registry.register(MenuBarDetector)"
+        in register_content,
+        "SidebarDetector registered": "analyzer_registry.register(SidebarDetector)"
+        in register_content,
+        "IconButtonDetector registered": "analyzer_registry.register(IconButtonDetector)"
+        in register_content,
+        "ModalDialogDetector registered": "analyzer_registry.register(ModalDialogDetector)"
+        in register_content,
     }
 
     for check, passed in registration_checks.items():

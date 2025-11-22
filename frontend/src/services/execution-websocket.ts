@@ -17,6 +17,37 @@ import type { ExecutionEvent } from './backend-api';
 // ============================================================================
 
 /**
+ * WebSocket error classification codes
+ */
+export enum WebSocketErrorCode {
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  PROTOCOL_ERROR = 'PROTOCOL_ERROR',
+  AUTH_ERROR = 'AUTH_ERROR',
+  SERVER_ERROR = 'SERVER_ERROR',
+  TIMEOUT_ERROR = 'TIMEOUT_ERROR',
+}
+
+/**
+ * Classified error with metadata
+ */
+export interface ClassifiedError {
+  /** Error classification code */
+  code: WebSocketErrorCode;
+
+  /** Original error message */
+  message: string;
+
+  /** Timestamp when error occurred */
+  timestamp: Date;
+
+  /** Whether this error type is retryable */
+  retryable: boolean;
+
+  /** User-friendly error message */
+  userMessage?: string;
+}
+
+/**
  * WebSocket connection state
  */
 export type ConnectionState =
@@ -75,7 +106,7 @@ export interface WebSocketHandlers {
   onMessage?: (event: ExecutionEvent) => void;
 
   /** Called when an error occurs */
-  onError?: (error: Error) => void;
+  onError?: (error: ClassifiedError) => void;
 
   /** Called when connection state changes */
   onStateChange?: (state: ConnectionState) => void;
@@ -128,6 +159,7 @@ export class ExecutionWebSocket {
   private ws: WebSocket | null = null;
   private state: ConnectionState = 'disconnected';
   private reconnectAttempts = 0;
+  private maxReconnectAttempts: number;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private heartbeatTimeout: NodeJS.Timeout | null = null;
@@ -147,6 +179,7 @@ export class ExecutionWebSocket {
       authToken: config.authToken,
     };
     this.handlers = handlers;
+    this.maxReconnectAttempts = this.config.maxReconnectAttempts;
   }
 
   // ==========================================================================
@@ -351,11 +384,72 @@ export class ExecutionWebSocket {
   }
 
   /**
-   * Handle error
+   * Classify error type and determine retry strategy
+   */
+  private classifyError(error: Error): ClassifiedError {
+    let code = WebSocketErrorCode.SERVER_ERROR;
+    let retryable = true;
+    let userMessage: string | undefined;
+
+    const msg = error.message.toLowerCase();
+
+    // Classify based on error message patterns
+    if (msg.includes('network') || msg.includes('connection') || msg.includes('failed to fetch')) {
+      code = WebSocketErrorCode.NETWORK_ERROR;
+      userMessage = 'Network connection lost. Attempting to reconnect...';
+    } else if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') || msg.includes('forbidden')) {
+      code = WebSocketErrorCode.AUTH_ERROR;
+      retryable = false;
+      userMessage = 'Authentication failed. Please log in again.';
+    } else if (msg.includes('timeout')) {
+      code = WebSocketErrorCode.TIMEOUT_ERROR;
+      userMessage = 'Connection timed out. Retrying...';
+    } else if (msg.includes('protocol') || msg.includes('invalid') || msg.includes('parse')) {
+      code = WebSocketErrorCode.PROTOCOL_ERROR;
+      userMessage = 'Protocol error. Attempting to reconnect...';
+    } else {
+      userMessage = 'Server error occurred. Attempting to reconnect...';
+    }
+
+    return {
+      code,
+      message: error.message,
+      timestamp: new Date(),
+      retryable,
+      userMessage,
+    };
+  }
+
+  /**
+   * Handle error with classification and retry logic
    */
   private handleError(error: Error): void {
+    const classified = this.classifyError(error);
+
+    console.error(
+      `[ExecutionWebSocket] ${classified.code}:`,
+      classified.message,
+      `(retryable: ${classified.retryable})`
+    );
+
+    // Call error handler with classified error
     if (this.handlers.onError) {
-      this.handlers.onError(error);
+      this.handlers.onError(classified);
+    }
+
+    // Only attempt reconnection if error is retryable
+    if (classified.retryable && this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.scheduleReconnect();
+    } else if (!classified.retryable) {
+      // Non-retryable error (e.g., auth error) - mark as failed and stop reconnection
+      console.error('[ExecutionWebSocket] Non-retryable error - stopping reconnection');
+      this.setState('failed');
+
+      // Clear any pending reconnection attempts
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = null;
+      }
     }
   }
 

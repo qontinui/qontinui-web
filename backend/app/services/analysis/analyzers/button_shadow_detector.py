@@ -9,19 +9,20 @@ Detects buttons by finding shadows and depth effects:
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,21 +63,17 @@ class ButtonShadowDetector(BaseAnalyzer):
             "shadow_threshold": 20,  # Darkness threshold for shadows
             "min_shadow_area": 100,
             "max_shadow_offset": 10,  # Max shadow offset in pixels
-
             # Gradient detection for raised effects
             "gradient_threshold": 30,
             "detect_raised_buttons": True,
-
             # Border contrast detection
             "border_contrast_threshold": 40,
             "detect_border_effects": True,
-
             # Size constraints
             "min_button_width": 60,
             "max_button_width": 400,
             "min_button_height": 25,
             "max_button_height": 80,
-
             # Confidence thresholds
             "min_confidence": 0.5,
         }
@@ -133,7 +130,9 @@ class ButtonShadowDetector(BaseAnalyzer):
         images = []
         for data in screenshot_data:
             img = Image.open(BytesIO(data)).convert("RGB")
-            images.append(cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR))
+            images.append(
+                cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR)
+            )
         return images
 
     async def _analyze_screenshot(
@@ -200,7 +199,9 @@ class ButtonShadowDetector(BaseAnalyzer):
         h, w = img_gray.shape
 
         # Apply Gaussian blur to smooth out noise
-        blurred = cv2.GaussianBlur(img_gray, (params["shadow_blur_size"], params["shadow_blur_size"]), 0)
+        blurred = cv2.GaussianBlur(
+            img_gray, (params["shadow_blur_size"], params["shadow_blur_size"]), 0
+        )
 
         # Find dark regions (potential shadows)
         # Shadows are darker than surrounding area
@@ -213,7 +214,9 @@ class ButtonShadowDetector(BaseAnalyzer):
         shadow_mask = cv2.morphologyEx(shadow_mask, cv2.MORPH_CLOSE, kernel)
 
         # Find contours in shadow mask
-        contours, _ = cv2.findContours(shadow_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            shadow_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             # Get shadow bounding box
@@ -227,7 +230,10 @@ class ButtonShadowDetector(BaseAnalyzer):
             # Look for brighter region above/left of shadow (the actual button)
             # Shadows are typically offset slightly down and/or right
             search_offsets = [
-                (-params["max_shadow_offset"], -params["max_shadow_offset"]),  # Top-left
+                (
+                    -params["max_shadow_offset"],
+                    -params["max_shadow_offset"],
+                ),  # Top-left
                 (0, -params["max_shadow_offset"]),  # Top
                 (-params["max_shadow_offset"], 0),  # Left
             ]
@@ -241,21 +247,30 @@ class ButtonShadowDetector(BaseAnalyzer):
                     continue
 
                 # Extract the potential button region
-                button_region = img_gray[by:by+sh, bx:bx+sw]
-                shadow_region = img_gray[sy:sy+sh, sx:sx+sw]
+                button_region = img_gray[by : by + sh, bx : bx + sw]
+                shadow_region = img_gray[sy : sy + sh, sx : sx + sw]
 
                 # Button should be brighter than shadow
                 button_brightness = np.mean(button_region)
                 shadow_brightness = np.mean(shadow_region)
 
-                if button_brightness > shadow_brightness + params["shadow_threshold"] * 0.5:
+                if (
+                    button_brightness
+                    > shadow_brightness + params["shadow_threshold"] * 0.5
+                ):
                     # Check size constraints
-                    if not (params["min_button_width"] <= sw <= params["max_button_width"]):
+                    if not (
+                        params["min_button_width"] <= sw <= params["max_button_width"]
+                    ):
                         continue
-                    if not (params["min_button_height"] <= sh <= params["max_button_height"]):
+                    if not (
+                        params["min_button_height"] <= sh <= params["max_button_height"]
+                    ):
                         continue
 
-                    bbox = BoundingBox(x=int(bx), y=int(by), width=int(sw), height=int(sh))
+                    bbox = BoundingBox(
+                        x=int(bx), y=int(by), width=int(sw), height=int(sh)
+                    )
                     shadow_info = {
                         "type": "drop_shadow",
                         "shadow_offset_x": offset_x,
@@ -310,11 +325,11 @@ class ButtonShadowDetector(BaseAnalyzer):
             if h < 10:  # Too small to analyze gradient
                 continue
 
-            region = img_gray[y:y+h, x:x+w]
+            region = img_gray[y : y + h, x : x + w]
 
             # Analyze vertical gradient
-            top_third = region[:h//3, :]
-            bottom_third = region[2*h//3:, :]
+            top_third = region[: h // 3, :]
+            bottom_third = region[2 * h // 3 :, :]
 
             top_brightness = np.mean(top_third)
             bottom_brightness = np.mean(bottom_third)
@@ -354,7 +369,9 @@ class ButtonShadowDetector(BaseAnalyzer):
         edges = cv2.dilate(edges, kernel, iterations=1)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
@@ -379,7 +396,13 @@ class ButtonShadowDetector(BaseAnalyzer):
         return candidates
 
     def _analyze_border_contrast(
-        self, img_gray: np.ndarray, x: int, y: int, w: int, h: int, params: Dict[str, Any]
+        self,
+        img_gray: np.ndarray,
+        x: int,
+        y: int,
+        w: int,
+        h: int,
+        params: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
         Analyze border contrast to detect 3D effects
@@ -396,20 +419,18 @@ class ButtonShadowDetector(BaseAnalyzer):
 
         # Extract border regions (safely handling boundaries)
         top_border = img_gray[
-            max(0, y):min(h_img, y+border_width),
-            max(0, x):min(w_img, x+w)
+            max(0, y) : min(h_img, y + border_width), max(0, x) : min(w_img, x + w)
         ]
         bottom_border = img_gray[
-            max(0, y+h-border_width):min(h_img, y+h),
-            max(0, x):min(w_img, x+w)
+            max(0, y + h - border_width) : min(h_img, y + h),
+            max(0, x) : min(w_img, x + w),
         ]
         left_border = img_gray[
-            max(0, y):min(h_img, y+h),
-            max(0, x):min(w_img, x+border_width)
+            max(0, y) : min(h_img, y + h), max(0, x) : min(w_img, x + border_width)
         ]
         right_border = img_gray[
-            max(0, y):min(h_img, y+h),
-            max(0, x+w-border_width):min(w_img, x+w)
+            max(0, y) : min(h_img, y + h),
+            max(0, x + w - border_width) : min(w_img, x + w),
         ]
 
         # Calculate average brightness
@@ -423,8 +444,8 @@ class ButtonShadowDetector(BaseAnalyzer):
         left_right_diff = left_brightness - right_brightness
 
         has_3d_effect = (
-            top_bottom_diff > params["border_contrast_threshold"] * 0.3 and
-            left_right_diff > params["border_contrast_threshold"] * 0.3
+            top_bottom_diff > params["border_contrast_threshold"] * 0.3
+            and left_right_diff > params["border_contrast_threshold"] * 0.3
         )
 
         return {
@@ -458,7 +479,9 @@ class ButtonShadowDetector(BaseAnalyzer):
             for i, (existing_bbox, existing_info) in enumerate(merged):
                 if bbox.iou(existing_bbox) > 0.5:
                     # Merge - keep the one with more evidence
-                    existing_types = existing_info.get("detection_types", [existing_info["type"]])
+                    existing_types = existing_info.get(
+                        "detection_types", [existing_info["type"]]
+                    )
                     new_types = existing_types + [info["type"]]
 
                     # Use average bounding box
@@ -481,7 +504,16 @@ class ButtonShadowDetector(BaseAnalyzer):
                     break
 
             if not overlapped:
-                merged.append((bbox, {**info, "detection_types": [info["type"]], "num_detections": 1}))
+                merged.append(
+                    (
+                        bbox,
+                        {
+                            **info,
+                            "detection_types": [info["type"]],
+                            "num_detections": 1,
+                        },
+                    )
+                )
 
         return merged
 

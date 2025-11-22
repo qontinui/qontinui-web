@@ -2,17 +2,29 @@
 Annotation models for GUI element ground truth data
 """
 
-from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, ForeignKey, Boolean, Index
+import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from app.db.base import Base
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
-from app.db.base import Base
-from typing import Optional, Dict, Any, List
-import uuid
 
 
 class AnnotationSet(Base):
     """A set of annotations for a screenshot or multiple screenshots"""
+
     __tablename__ = "annotation_sets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -28,7 +40,9 @@ class AnnotationSet(Base):
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
     created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     # Notes about this annotation set
@@ -40,7 +54,9 @@ class AnnotationSet(Base):
     boundary_width = Column(Integer, default=5, nullable=False)
 
     # Relationships
-    annotations = relationship("Annotation", back_populates="annotation_set", cascade="all, delete-orphan")
+    annotations = relationship(
+        "Annotation", back_populates="annotation_set", cascade="all, delete-orphan"
+    )
     created_by = relationship("User")
 
     @property
@@ -70,10 +86,15 @@ class AnnotationSet(Base):
 
 class Annotation(Base):
     """Individual bounding box annotation"""
+
     __tablename__ = "annotations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    annotation_set_id = Column(UUID(as_uuid=True), ForeignKey("annotation_sets.id", ondelete="CASCADE"), nullable=False)
+    annotation_set_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("annotation_sets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
 
     # Screenshot index for multi-screenshot support
     # For single-screenshot sets, this is always 0
@@ -100,5 +121,5 @@ class Annotation(Base):
     annotation_set = relationship("AnnotationSet", back_populates="annotations")
 
     __table_args__ = (
-        Index('ix_annotations_set_screenshot', 'annotation_set_id', 'screenshot_index'),
+        Index("ix_annotations_set_screenshot", "annotation_set_id", "screenshot_index"),
     )

@@ -3,10 +3,9 @@ import sys
 
 sys.path.insert(0, "/home/jspinak/qontinui_parent_directory/qontinui-web/backend")
 
-from passlib.context import CryptContext
-
 from app.db.session import SessionLocal
 from app.models.user import User
+from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

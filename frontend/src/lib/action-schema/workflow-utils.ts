@@ -468,10 +468,9 @@ export function isLinearWorkflow(workflow: Workflow): boolean {
   for (const sourceId in workflow.connections) {
     const outputs = workflow.connections[sourceId];
 
-    // Check for error/success/parallel connections
+    // Check for error/success connections
     if (outputs.error && outputs.error.length > 0) return false;
     if (outputs.success && outputs.success.length > 0) return false;
-    if (outputs.parallel && outputs.parallel.length > 0) return false;
 
     // Check for multiple main outputs (branching)
     if (outputs.main) {

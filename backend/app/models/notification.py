@@ -1,0 +1,158 @@
+"""
+Notification models for collaboration event notifications.
+
+Includes:
+- Notification: System notifications for collaboration events
+- NotificationPreferences: User preferences for notification delivery
+"""
+
+from datetime import datetime
+from enum import Enum as PyEnum
+
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
+
+
+class NotificationType(str, PyEnum):
+    """Types of notifications."""
+
+    MENTION = "mention"
+    SHARE = "share"
+    COMMENT = "comment"
+    REPLY = "reply"
+    LOCK_RELEASED = "lock_released"
+    PROJECT_UPDATE = "project_update"
+    TEAM_INVITE = "team_invite"
+    ACCESS_GRANTED = "access_granted"
+    ACCESS_REVOKED = "access_revoked"
+
+
+class Notification(Base):
+    """
+    System notifications for collaboration events.
+
+    Stores in-app notifications for various collaboration activities like
+    mentions, shares, comments, and other project-related events.
+    """
+
+    __tablename__ = "notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    type = Column(Enum(NotificationType), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    resource_type = Column(String, nullable=True)  # workflow, state, comment, etc.
+    resource_id = Column(String, nullable=True)  # ID of the specific resource
+    actor_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )  # Who triggered the notification
+    read = Column(Boolean, default=False, nullable=False, index=True)
+    read_at = Column(DateTime, nullable=True)
+    notification_metadata: Mapped[dict] = mapped_column(
+        "metadata", JSON, nullable=True
+    )  # Additional context (deep links, etc.)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], backref="notifications")
+    actor = relationship("User", foreign_keys=[actor_id], backref="triggered_notifications")
+    project = relationship("Project", backref="notifications")
+
+    def mark_as_read(self) -> None:
+        """Mark notification as read."""
+        self.read = True
+        self.read_at = datetime.utcnow()
+
+    def mark_as_unread(self) -> None:
+        """Mark notification as unread."""
+        self.read = False
+        self.read_at = None
+
+
+class NotificationPreferences(Base):
+    """
+    User preferences for notification delivery.
+
+    Controls which notification types should trigger email or in-app notifications.
+    """
+
+    __tablename__ = "notification_preferences"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+
+    # Email notification preferences
+    email_mentions = Column(Boolean, default=True, nullable=False)
+    email_comments = Column(Boolean, default=True, nullable=False)
+    email_shares = Column(Boolean, default=True, nullable=False)
+    email_replies = Column(Boolean, default=True, nullable=False)
+    email_team_invites = Column(Boolean, default=True, nullable=False)
+
+    # In-app notification preferences
+    in_app_mentions = Column(Boolean, default=True, nullable=False)
+    in_app_comments = Column(Boolean, default=True, nullable=False)
+    in_app_shares = Column(Boolean, default=True, nullable=False)
+    in_app_replies = Column(Boolean, default=True, nullable=False)
+    in_app_team_invites = Column(Boolean, default=True, nullable=False)
+    in_app_project_updates = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    # Relationships
+    user = relationship("User", backref="notification_preferences", uselist=False)
+
+    @classmethod
+    def create_default(cls, user_id):
+        """Create default notification preferences for a user."""
+        return cls(user_id=user_id)
+
+    def should_send_email(self, notification_type: NotificationType) -> bool:
+        """Check if email should be sent for a notification type."""
+        mapping = {
+            NotificationType.MENTION: self.email_mentions,
+            NotificationType.COMMENT: self.email_comments,
+            NotificationType.SHARE: self.email_shares,
+            NotificationType.REPLY: self.email_replies,
+            NotificationType.TEAM_INVITE: self.email_team_invites,
+        }
+        return mapping.get(notification_type, False)
+
+    def should_send_in_app(self, notification_type: NotificationType) -> bool:
+        """Check if in-app notification should be sent for a notification type."""
+        mapping = {
+            NotificationType.MENTION: self.in_app_mentions,
+            NotificationType.COMMENT: self.in_app_comments,
+            NotificationType.SHARE: self.in_app_shares,
+            NotificationType.REPLY: self.in_app_replies,
+            NotificationType.TEAM_INVITE: self.in_app_team_invites,
+            NotificationType.PROJECT_UPDATE: self.in_app_project_updates,
+        }
+        return mapping.get(notification_type, True)

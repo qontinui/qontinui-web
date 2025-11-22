@@ -20,8 +20,8 @@ export interface AutomationRoute {
 
 export const automationBuilderRoutes: AutomationRoute[] = [
   {
-    name: 'Overview',
-    path: '/automation-builder/overview',
+    name: 'Dashboard',
+    path: '/dashboard',
     icon: LayoutDashboard,
     description: 'Dashboard and project overview',
   },

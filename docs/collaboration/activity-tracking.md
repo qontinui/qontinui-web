@@ -53,7 +53,7 @@ interface ActivityLog {
   changes?: any; // Detailed change information
   metadata?: any; // Additional context
   created_at: string;
-  
+
   // Populated relations
   user: {
     id: string;
@@ -116,7 +116,7 @@ export function ActivityFeed({ projectId }: { projectId: number }) {
       {activities.map(activity => (
         <ActivityItem key={activity.id} activity={activity} />
       ))}
-      
+
       {hasNextPage && (
         <Button onClick={() => fetchNextPage()}>
           Load More
@@ -328,7 +328,7 @@ const subscribeToActivity = (projectId: number) => {
     if (event.type === 'activity:new') {
       // Update UI with new activity
       addActivityToFeed(event.activity);
-      
+
       // Show notification
       if (event.activity.user_id !== currentUser.id) {
         showNotification(

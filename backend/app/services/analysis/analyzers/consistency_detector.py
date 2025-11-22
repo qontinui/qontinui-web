@@ -9,20 +9,21 @@ then bootstraps detection from these patterns.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
-from io import BytesIO
-from PIL import Image
-import numpy as np
-import cv2
 from collections import defaultdict
+from io import BytesIO
+from typing import Any, Dict, List, Tuple
+
+import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,15 +66,12 @@ class ConsistencyDetector(BaseAnalyzer):
             "min_candidate_area": 500,
             "max_candidate_area": 50000,
             "edge_threshold": 50,
-
             # Similarity matching
             "ssim_threshold": 0.7,  # SSIM similarity threshold for clustering
             "feature_match_threshold": 0.8,  # Feature matching threshold
-
             # Pattern consistency
             "min_cluster_size": 3,  # Minimum occurrences to consider a pattern
             "consistency_threshold": 0.75,  # How consistent cluster should be
-
             # Detection
             "pattern_match_threshold": 0.75,  # Threshold to match against patterns
             "nms_iou_threshold": 0.4,
@@ -122,7 +120,9 @@ class ConsistencyDetector(BaseAnalyzer):
             )
             all_elements.extend(elements)
 
-        avg_confidence = np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        avg_confidence = (
+            np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        )
 
         logger.info(
             f"Found {len(all_elements)} elements using pattern consistency "
@@ -147,7 +147,7 @@ class ConsistencyDetector(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
@@ -171,13 +171,17 @@ class ConsistencyDetector(BaseAnalyzer):
         edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
 
             area = w * h
-            if not (params["min_candidate_area"] <= area <= params["max_candidate_area"]):
+            if not (
+                params["min_candidate_area"] <= area <= params["max_candidate_area"]
+            ):
                 continue
 
             aspect_ratio = w / h if h > 0 else 0
@@ -185,7 +189,7 @@ class ConsistencyDetector(BaseAnalyzer):
                 continue
 
             # Extract region
-            region = img[y:y+h, x:x+w].copy()
+            region = img[y : y + h, x : x + w].copy()
 
             # Resize to standard size for comparison (64x32)
             region_resized = cv2.resize(region, (64, 32))
@@ -198,7 +202,7 @@ class ConsistencyDetector(BaseAnalyzer):
     def _cluster_similar_patterns(
         self,
         candidates: List[Tuple[BoundingBox, np.ndarray, int]],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[List[Tuple[BoundingBox, np.ndarray, int]]]:
         """
         Cluster candidates by visual similarity
@@ -235,9 +239,7 @@ class ConsistencyDetector(BaseAnalyzer):
 
         return clusters
 
-    def _compute_similarity(
-        self, region1: np.ndarray, region2: np.ndarray
-    ) -> float:
+    def _compute_similarity(self, region1: np.ndarray, region2: np.ndarray) -> float:
         """
         Compute visual similarity between two regions
 
@@ -284,7 +286,7 @@ class ConsistencyDetector(BaseAnalyzer):
     def _identify_button_patterns(
         self,
         clusters: List[List[Tuple[BoundingBox, np.ndarray, int]]],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """
         Identify which clusters represent button patterns
@@ -306,13 +308,15 @@ class ConsistencyDetector(BaseAnalyzer):
             # Count unique screenshots
             screenshot_indices = set(c[2] for c in cluster)
 
-            patterns.append({
-                "template": pattern_template,
-                "cluster_size": len(cluster),
-                "consistency": consistency,
-                "screenshot_count": len(screenshot_indices),
-                "cluster_idx": cluster_idx,
-            })
+            patterns.append(
+                {
+                    "template": pattern_template,
+                    "cluster_size": len(cluster),
+                    "consistency": consistency,
+                    "screenshot_count": len(screenshot_indices),
+                    "cluster_idx": cluster_idx,
+                }
+            )
 
         return patterns
 
@@ -361,7 +365,7 @@ class ConsistencyDetector(BaseAnalyzer):
         img: np.ndarray,
         screenshot_idx: int,
         patterns: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedElement]:
         """
         Detect buttons in screenshot using learned patterns
@@ -386,26 +390,29 @@ class ConsistencyDetector(BaseAnalyzer):
             # If good match, consider it a button
             if best_match and best_similarity >= params["pattern_match_threshold"]:
                 # Confidence based on similarity and pattern consistency
-                confidence = min(0.95,
-                    0.5 * best_similarity +
-                    0.3 * best_match["consistency"] +
-                    0.2 * min(1.0, best_match["cluster_size"] / 10)
+                confidence = min(
+                    0.95,
+                    0.5 * best_similarity
+                    + 0.3 * best_match["consistency"]
+                    + 0.2 * min(1.0, best_match["cluster_size"] / 10),
                 )
 
-                elements.append(DetectedElement(
-                    bounding_box=bbox,
-                    confidence=confidence,
-                    label=f"Button (Pattern {best_match['cluster_idx']})",
-                    element_type="button",
-                    screenshot_index=screenshot_idx,
-                    metadata={
-                        "method": "consistency",
-                        "pattern_idx": best_match["cluster_idx"],
-                        "pattern_cluster_size": best_match["cluster_size"],
-                        "similarity": float(best_similarity),
-                        "pattern_consistency": float(best_match["consistency"]),
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=bbox,
+                        confidence=confidence,
+                        label=f"Button (Pattern {best_match['cluster_idx']})",
+                        element_type="button",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "method": "consistency",
+                            "pattern_idx": best_match["cluster_idx"],
+                            "pattern_cluster_size": best_match["cluster_size"],
+                            "similarity": float(best_similarity),
+                            "pattern_consistency": float(best_match["consistency"]),
+                        },
+                    )
+                )
 
         # Apply NMS to remove duplicates
         elements = self._apply_nms(elements, params)
@@ -429,7 +436,8 @@ class ConsistencyDetector(BaseAnalyzer):
 
             # Remove overlapping elements
             elements = [
-                e for e in elements
+                e
+                for e in elements
                 if e.bounding_box.iou(best.bounding_box) < params["nms_iou_threshold"]
             ]
 

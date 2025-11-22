@@ -3,9 +3,6 @@
 from typing import Annotated
 
 import stripe
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.config import settings
 from app.models.subscription import SubscriptionTier
@@ -19,6 +16,8 @@ from app.schemas.subscription import (
 )
 from app.services.limit_checker import LimitChecker
 from app.services.stripe_service import StripeService
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

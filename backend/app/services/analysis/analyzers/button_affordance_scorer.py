@@ -15,19 +15,20 @@ to provide a single likelihood score for each candidate region.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,18 +73,15 @@ class ButtonAffordanceScorer(BaseAnalyzer):
             "edge_threshold1": 50,
             "edge_threshold2": 150,
             "min_region_area": 1500,
-
             # Size constraints
             "min_width": 60,
             "max_width": 400,
             "min_height": 25,
             "max_height": 80,
-
             # Aspect ratio
             "min_aspect_ratio": 1.5,
             "max_aspect_ratio": 6.0,
             "optimal_aspect_ratio": 3.0,
-
             # Feature weights (should sum to ~1.0)
             "weight_contrast": 0.20,
             "weight_color_uniformity": 0.15,
@@ -92,7 +90,6 @@ class ButtonAffordanceScorer(BaseAnalyzer):
             "weight_border": 0.15,
             "weight_size": 0.10,
             "weight_visual_prominence": 0.15,
-
             # Thresholds
             "min_affordance_score": 0.6,  # Minimum score to report as button
         }
@@ -149,7 +146,9 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         images = []
         for data in screenshot_data:
             img = Image.open(BytesIO(data)).convert("RGB")
-            images.append(cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR))
+            images.append(
+                cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR)
+            )
         return images
 
     async def _analyze_screenshot(
@@ -174,8 +173,8 @@ class ButtonAffordanceScorer(BaseAnalyzer):
             x, y, w, h = bbox.x, bbox.y, bbox.width, bbox.height
 
             # Extract region
-            region_gray = img_gray[y:y+h, x:x+w]
-            region_color = img_color[y:y+h, x:x+w]
+            region_gray = img_gray[y : y + h, x : x + w]
+            region_color = img_color[y : y + h, x : x + w]
 
             # Calculate all affordance features
             features = self._calculate_affordance_features(
@@ -218,14 +217,18 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         candidates = []
 
         # Apply Canny edge detection
-        edges = cv2.Canny(img_gray, params["edge_threshold1"], params["edge_threshold2"])
+        edges = cv2.Canny(
+            img_gray, params["edge_threshold1"], params["edge_threshold2"]
+        )
 
         # Dilate to connect nearby edges
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         edges = cv2.dilate(edges, kernel, iterations=1)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
@@ -241,10 +244,14 @@ class ButtonAffordanceScorer(BaseAnalyzer):
 
             # Filter by aspect ratio
             aspect_ratio = w / h if h > 0 else 0
-            if not (params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+            if not (
+                params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]
+            ):
                 continue
 
-            candidates.append(BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h)))
+            candidates.append(
+                BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h))
+            )
 
         return candidates
 
@@ -269,9 +276,7 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         features = {}
 
         # Feature 1: Contrast with background
-        features["contrast"] = self._score_contrast(
-            region_color, img_color, x, y, w, h
-        )
+        features["contrast"] = self._score_contrast(region_color, img_color, x, y, w, h)
 
         # Feature 2: Color uniformity
         features["color_uniformity"] = self._score_color_uniformity(region_color)
@@ -328,9 +333,9 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         # Mask out the region
         region_x = x - x1
         region_y = y - y1
-        if (0 <= region_y < background.shape[0] and 0 <= region_x < background.shape[1]):
+        if 0 <= region_y < background.shape[0] and 0 <= region_x < background.shape[1]:
             mask = np.ones(background.shape[:2], dtype=bool)
-            mask[region_y:region_y+h, region_x:region_x+w] = False
+            mask[region_y : region_y + h, region_x : region_x + w] = False
             bg_pixels = background[mask]
         else:
             bg_pixels = background.reshape(-1, 3)
@@ -420,18 +425,24 @@ class ButtonAffordanceScorer(BaseAnalyzer):
 
         Buttons have clear, defined borders
         """
-        if region_gray.size == 0 or region_gray.shape[0] < 5 or region_gray.shape[1] < 5:
+        if (
+            region_gray.size == 0
+            or region_gray.shape[0] < 5
+            or region_gray.shape[1] < 5
+        ):
             return 0.0
 
         h, w = region_gray.shape
 
         # Extract border pixels
-        border_pixels = np.concatenate([
-            region_gray[0, :],      # Top
-            region_gray[-1, :],     # Bottom
-            region_gray[:, 0],      # Left
-            region_gray[:, -1],     # Right
-        ])
+        border_pixels = np.concatenate(
+            [
+                region_gray[0, :],  # Top
+                region_gray[-1, :],  # Bottom
+                region_gray[:, 0],  # Left
+                region_gray[:, -1],  # Right
+            ]
+        )
 
         # Extract interior pixels (excluding border)
         interior = region_gray[2:-2, 2:-2]
@@ -450,7 +461,7 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         border_uniformity = max(0, 1.0 - (border_std / 40))
 
         # Combine both aspects
-        border_score = (min(1.0, border_contrast / 30) * 0.6 + border_uniformity * 0.4)
+        border_score = min(1.0, border_contrast / 30) * 0.6 + border_uniformity * 0.4
 
         return border_score
 
@@ -509,11 +520,15 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         affordance_score = 0.0
 
         affordance_score += features.get("contrast", 0) * params["weight_contrast"]
-        affordance_score += features.get("color_uniformity", 0) * params["weight_color_uniformity"]
+        affordance_score += (
+            features.get("color_uniformity", 0) * params["weight_color_uniformity"]
+        )
         affordance_score += features.get("shape", 0) * params["weight_shape"]
         affordance_score += features.get("position", 0) * params["weight_position"]
         affordance_score += features.get("border", 0) * params["weight_border"]
         affordance_score += features.get("size", 0) * params["weight_size"]
-        affordance_score += features.get("visual_prominence", 0) * params["weight_visual_prominence"]
+        affordance_score += (
+            features.get("visual_prominence", 0) * params["weight_visual_prominence"]
+        )
 
         return min(1.0, max(0.0, affordance_score))

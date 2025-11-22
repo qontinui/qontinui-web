@@ -3,10 +3,9 @@
 import asyncio
 
 import stripe
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.user import User
 from app.services.stripe.customer_service import StripeCustomerService
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class StripeCheckoutService:

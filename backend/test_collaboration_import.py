@@ -5,13 +5,21 @@ Run this to ensure all components are properly set up:
     python test_collaboration_import.py
 """
 
+
 def test_imports():
     """Test that all collaboration components can be imported."""
     print("Testing collaboration infrastructure imports...")
 
     # Test models
     try:
-        from app.models.collaboration import ProjectLock, ProjectComment, ActivityLog, ResourceType, ActionType
+        from app.models.collaboration import (
+            ActionType,
+            ActivityLog,
+            ProjectComment,
+            ProjectLock,
+            ResourceType,
+        )
+
         print("✓ Models imported successfully")
         print(f"  - ProjectLock: {ProjectLock.__tablename__}")
         print(f"  - ProjectComment: {ProjectComment.__tablename__}")
@@ -25,6 +33,7 @@ def test_imports():
     # Test WebSocket manager
     try:
         from app.services.websocket_manager import ConnectionManager, connection_manager
+
         print("✓ WebSocket manager imported successfully")
         print(f"  - ConnectionManager class available")
         print(f"  - Global connection_manager instance created")
@@ -36,6 +45,7 @@ def test_imports():
     # Test WebSocket endpoints
     try:
         from app.api.v1.endpoints import collaboration_ws
+
         print("✓ WebSocket endpoints imported successfully")
         print(f"  - Router: {collaboration_ws.router}")
     except Exception as e:
@@ -45,9 +55,14 @@ def test_imports():
     # Test CRUD operations
     try:
         from app.crud import collaboration
+
         print("✓ CRUD operations imported successfully")
         print(f"  - Available functions:")
-        funcs = [f for f in dir(collaboration) if not f.startswith('_') and callable(getattr(collaboration, f))]
+        funcs = [
+            f
+            for f in dir(collaboration)
+            if not f.startswith("_") and callable(getattr(collaboration, f))
+        ]
         for func in funcs[:5]:  # Show first 5
             print(f"    - {func}")
         if len(funcs) > 5:
@@ -59,10 +74,13 @@ def test_imports():
     # Test schemas
     try:
         from app.schemas.collaboration import (
-            LockRequest, LockResponse,
-            CommentCreate, CommentResponse,
-            ActivityLogResponse
+            ActivityLogResponse,
+            CommentCreate,
+            CommentResponse,
+            LockRequest,
+            LockResponse,
         )
+
         print("✓ Schemas imported successfully")
         print(f"  - Lock schemas available")
         print(f"  - Comment schemas available")
@@ -74,8 +92,13 @@ def test_imports():
     # Test API router integration
     try:
         from app.api.v1.api import api_router
+
         print("✓ API router integration successful")
-        routes = [route.path for route in api_router.routes if 'collaboration' in route.path.lower()]
+        routes = [
+            route.path
+            for route in api_router.routes
+            if "collaboration" in route.path.lower()
+        ]
         if routes:
             print(f"  - Collaboration routes registered:")
             for route in routes:
@@ -90,10 +113,15 @@ def test_imports():
     # Test database base class
     try:
         from app.db.base_class import Base
+
         # Check if collaboration models are imported
         print("✓ Database models registered with Alembic")
         tables = Base.metadata.tables.keys()
-        collab_tables = [t for t in tables if t in ['project_locks', 'project_comments', 'activity_logs']]
+        collab_tables = [
+            t
+            for t in tables
+            if t in ["project_locks", "project_comments", "activity_logs"]
+        ]
         if collab_tables:
             print(f"  - Collaboration tables: {collab_tables}")
         else:
@@ -109,12 +137,15 @@ def test_imports():
     print("2. Start the backend server:")
     print("   uvicorn app.main:app --reload")
     print("3. Connect to WebSocket:")
-    print("   ws://localhost:8000/api/v1/ws/projects/{project_id}/collaboration?token={jwt_token}")
+    print(
+        "   ws://localhost:8000/api/v1/ws/projects/{project_id}/collaboration?token={jwt_token}"
+    )
 
     return True
 
 
 if __name__ == "__main__":
     import sys
+
     success = test_imports()
     sys.exit(0 if success else 1)

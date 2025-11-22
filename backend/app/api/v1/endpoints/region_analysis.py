@@ -3,43 +3,45 @@ API endpoints for region analysis (inventory grids, minimaps, etc.)
 """
 
 import logging
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy import select, func, desc
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
-from app.api.deps import get_current_user_async, get_async_db
-from app.models.user import User
+from app.api.deps import get_async_db, get_current_user_async
 from app.models.annotation import AnnotationSet
 from app.models.region_result import (
+    DetectedRegionModel,
+    FusedRegionModel,
     RegionAnalysisJob,
     RegionAnalyzerResult,
-    DetectedRegionModel,
-    FusedRegionModel
 )
+from app.models.user import User
 from app.schemas.region_analysis import (
-    RegionAnalyzerListResponse,
-    RegionAnalyzerInfoSchema,
-    RegionAnalysisRequest,
-    QuickRegionAnalysisRequest,
-    RegionAnalysisResponse,
-    RegionJobSchema,
-    RegionJobDetailSchema,
-    RegionJobListResponse,
-    RegionAnalyzerResultSchema,
-    FusedRegionSchema,
     BoundingBoxSchema,
     DetectedRegionSchema,
-    GridMetadataSchema,
+    FusedRegionSchema,
     GridCellSchema,
+    GridMetadataSchema,
+    QuickRegionAnalysisRequest,
+    RegionAnalysisRequest,
+    RegionAnalysisResponse,
+    RegionAnalyzerInfoSchema,
+    RegionAnalyzerListResponse,
+    RegionAnalyzerResultSchema,
+    RegionJobDetailSchema,
+    RegionJobListResponse,
+    RegionJobSchema,
 )
-from app.services.region_analysis.orchestrator import RegionOrchestrator, region_analyzer_registry
-from app.services.region_analysis.base import RegionAnalysisInput
 from app.services.object_storage import object_storage
+from app.services.region_analysis.base import RegionAnalysisInput
+from app.services.region_analysis.orchestrator import (
+    RegionOrchestrator,
+    region_analyzer_registry,
+)
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +69,7 @@ async def list_region_analyzers(
 
         return RegionAnalyzerListResponse(
             analyzers=[RegionAnalyzerInfoSchema(**a) for a in analyzers],
-            total=len(analyzers)
+            total=len(analyzers),
         )
     except Exception as e:
         logger.error(f"Error listing region analyzers: {e}", exc_info=True)
@@ -105,19 +107,24 @@ async def run_region_analysis(
             raise HTTPException(status_code=404, detail="Annotation set not found")
 
         # Check user has access (must be owner or admin)
-        if annotation_set.created_by_id != str(current_user.id) and not current_user.is_superuser:
+        if (
+            annotation_set.created_by_id != str(current_user.id)
+            and not current_user.is_superuser
+        ):
             raise HTTPException(status_code=403, detail="Access denied")
 
         # Get screenshots metadata
         screenshots = annotation_set.screenshots or []
         if not screenshots:
             # Fall back to single screenshot mode
-            screenshots = [{
-                "name": annotation_set.screenshot_name,
-                "url": annotation_set.screenshot_url,
-                "width": annotation_set.image_width,
-                "height": annotation_set.image_height,
-            }]
+            screenshots = [
+                {
+                    "name": annotation_set.screenshot_name,
+                    "url": annotation_set.screenshot_url,
+                    "width": annotation_set.image_width,
+                    "height": annotation_set.image_height,
+                }
+            ]
 
         # Download screenshot data
         screenshot_data = []
@@ -129,7 +136,7 @@ async def run_region_analysis(
                 logger.error(f"Error downloading screenshot {screenshot['url']}: {e}")
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to download screenshot: {screenshot['name']}"
+                    detail=f"Failed to download screenshot: {screenshot['name']}",
                 )
 
         # Create region analysis input
@@ -137,7 +144,7 @@ async def run_region_analysis(
             annotation_set_id=request.annotation_set_id,
             screenshots=screenshots,
             screenshot_data=screenshot_data,
-            parameters=request.analyzer_configs or {}
+            parameters=request.analyzer_configs or {},
         )
 
         # Run region analysis
@@ -164,12 +171,14 @@ async def run_region_analysis(
             analyzer_results=[
                 _convert_region_analyzer_result(r) for r in results["analyzer_results"]
             ],
-            fused_regions=[
-                _convert_fused_region(r) for r in results.get("fused_regions", [])
-            ] if request.fuse_results else None,
+            fused_regions=(
+                [_convert_fused_region(r) for r in results.get("fused_regions", [])]
+                if request.fuse_results
+                else None
+            ),
             fusion_stats=results.get("fusion_stats"),
             analyzer_statistics=results["analyzer_statistics"],
-            status="completed"
+            status="completed",
         )
 
         return response
@@ -203,7 +212,7 @@ async def run_quick_region_analysis(
         request=full_request,
         background_tasks=BackgroundTasks(),
         db=db,
-        current_user=current_user
+        current_user=current_user,
     )
 
 
@@ -230,7 +239,9 @@ async def list_region_analysis_jobs(
 
         # Filter by annotation set
         if annotation_set_id:
-            query = query.where(RegionAnalysisJob.annotation_set_id == annotation_set_id)
+            query = query.where(
+                RegionAnalysisJob.annotation_set_id == annotation_set_id
+            )
 
         # Filter by status
         if status:
@@ -257,7 +268,7 @@ async def list_region_analysis_jobs(
             jobs=[RegionJobSchema.model_validate(job) for job in jobs],
             total=total,
             page=page,
-            page_size=page_size
+            page_size=page_size,
         )
 
     except Exception as e:
@@ -321,11 +332,15 @@ async def get_region_analysis_job(
                     label=region.label,
                     region_type=region.region_type,
                     screenshot_index=region.screenshot_index,
-                    grid_metadata=_convert_grid_metadata(region.grid_metadata) if region.grid_metadata else None,
-                    metadata=region.region_metadata or {}
+                    grid_metadata=(
+                        _convert_grid_metadata(region.grid_metadata)
+                        if region.grid_metadata
+                        else None
+                    ),
+                    metadata=region.region_metadata or {},
                 )
                 for region in job.fused_regions
-            ]
+            ],
         }
 
         return RegionJobDetailSchema(**job_dict)
@@ -374,29 +389,37 @@ async def delete_region_analysis_job(
 
 # Helper functions
 
+
 async def _save_region_analysis_to_db(
     db: AsyncSession,
     annotation_set: AnnotationSet,
     results: dict,
     request: RegionAnalysisRequest,
-    user: User
+    user: User,
 ) -> UUID:
     """Save region analysis results to database"""
     try:
         # Create region analysis job
         job = RegionAnalysisJob(
             annotation_set_id=annotation_set.id,
-            analyzers_used=request.analyzer_names or [a["analyzer_name"] for a in results["analyzer_results"]],
+            analyzers_used=request.analyzer_names
+            or [a["analyzer_name"] for a in results["analyzer_results"]],
             parameters=request.analyzer_configs,
             fusion_enabled=1 if request.fuse_results else 0,
-            fusion_config={"overlap_threshold": request.overlap_threshold} if request.fuse_results else None,
+            fusion_config=(
+                {"overlap_threshold": request.overlap_threshold}
+                if request.fuse_results
+                else None
+            ),
             status="completed",
             started_at=datetime.utcnow(),
             completed_at=datetime.utcnow(),
-            total_regions_found=sum(len(r["regions"]) for r in results["analyzer_results"]),
+            total_regions_found=sum(
+                len(r["regions"]) for r in results["analyzer_results"]
+            ),
             total_fused_regions=len(results.get("fused_regions", [])),
             analyzer_statistics=results["analyzer_statistics"],
-            created_by_id=user.id
+            created_by_id=user.id,
         )
         db.add(job)
         await db.flush()
@@ -418,7 +441,7 @@ async def _save_region_analysis_to_db(
                     region_type=region_data.get("region_type"),
                     screenshot_index=region_data.get("screenshot_index", 0),
                     grid_metadata=region_data.get("grid_metadata"),
-                    region_metadata=region_data.get("metadata")
+                    region_metadata=region_data.get("metadata"),
                 )
                 db.add(region)
 
@@ -442,13 +465,17 @@ def _convert_region_analyzer_result(result_dict: dict) -> RegionAnalyzerResultSc
                 label=region.get("label"),
                 region_type=region.get("region_type"),
                 screenshot_index=region.get("screenshot_index", 0),
-                grid_metadata=_convert_grid_metadata(region.get("grid_metadata")) if region.get("grid_metadata") else None,
-                metadata=region.get("metadata", {})
+                grid_metadata=(
+                    _convert_grid_metadata(region.get("grid_metadata"))
+                    if region.get("grid_metadata")
+                    else None
+                ),
+                metadata=region.get("metadata", {}),
             )
             for region in result_dict["regions"]
         ],
         confidence=result_dict["confidence"],
-        metadata=result_dict.get("metadata", {})
+        metadata=result_dict.get("metadata", {}),
     )
 
 
@@ -463,8 +490,12 @@ def _convert_fused_region(region_dict: dict) -> FusedRegionSchema:
         label=region_dict.get("label"),
         region_type=region_dict.get("region_type"),
         screenshot_index=region_dict.get("screenshot_index", 0),
-        grid_metadata=_convert_grid_metadata(region_dict.get("grid_metadata")) if region_dict.get("grid_metadata") else None,
-        metadata=region_dict.get("metadata", {})
+        grid_metadata=(
+            _convert_grid_metadata(region_dict.get("grid_metadata"))
+            if region_dict.get("grid_metadata")
+            else None
+        ),
+        metadata=region_dict.get("metadata", {}),
     )
 
 
@@ -478,5 +509,5 @@ def _convert_grid_metadata(grid_data: dict) -> GridMetadataSchema:
         cols=grid_data["cols"],
         cells=[GridCellSchema(**cell) for cell in grid_data["cells"]],
         cell_spacing=grid_data.get("cell_spacing"),
-        cell_size=grid_data.get("cell_size")
+        cell_size=grid_data.get("cell_size"),
     )

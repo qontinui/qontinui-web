@@ -349,9 +349,9 @@ def create_test_actions(count: int = 5) -> list[dict[str, Any]]:
         action_type = action_types[i % len(action_types)]
         action = {
             "type": action_type,
-            "pattern_id": str(uuid.uuid4())
-            if action_type in ["FIND", "CLICK"]
-            else None,
+            "pattern_id": (
+                str(uuid.uuid4()) if action_type in ["FIND", "CLICK"] else None
+            ),
             "text": f"test_text_{i}" if action_type == "TYPE" else None,
             "metadata": {
                 "step": i + 1,
@@ -396,26 +396,30 @@ def generate_mock_execution_result(
             "action_type": action["type"],
             "screenshot_path": f"execution_step_{i+1}.png",
             "action_location": [500 + i * 10, 300 + i * 10] if is_successful else None,
-            "action_region": {
-                "x": 100 + i * 20,
-                "y": 100 + i * 15,
-                "w": 150,
-                "h": 40,
-            }
-            if action["type"] in ["FIND", "CLICK"]
-            else None,
-            "success": is_successful,
-            "matches": [
+            "action_region": (
                 {
                     "x": 100 + i * 20,
                     "y": 100 + i * 15,
                     "w": 150,
                     "h": 40,
-                    "score": 0.95,
                 }
-            ]
-            if is_successful and action["type"] == "FIND"
-            else [],
+                if action["type"] in ["FIND", "CLICK"]
+                else None
+            ),
+            "success": is_successful,
+            "matches": (
+                [
+                    {
+                        "x": 100 + i * 20,
+                        "y": 100 + i * 15,
+                        "w": 150,
+                        "h": 40,
+                        "score": 0.95,
+                    }
+                ]
+                if is_successful and action["type"] == "FIND"
+                else []
+            ),
             "text": action.get("text"),
             "active_states": initial_states,
             "timestamp": (start_time.isoformat()),

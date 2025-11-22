@@ -66,6 +66,47 @@ export function getAllMigrations() {
   return migrationEngine.getMigrations();
 }
 
+/**
+ * Preview what migrations would be applied without actually applying them
+ *
+ * Shows users what will change before migration for transparency and confidence
+ *
+ * @param config - Configuration object with a version field
+ * @returns Preview information including migration steps and estimated changes
+ */
+export async function previewMigration(config: any) {
+  return migrationEngine.previewMigration(config);
+}
+
+/**
+ * Clear the migration cache
+ *
+ * Useful when migrations are updated or for testing
+ */
+export function clearMigrationCache(): void {
+  migrationEngine.clearCache();
+}
+
+/**
+ * Enable or disable migration result caching
+ *
+ * Caching improves performance for repeated imports of the same config
+ *
+ * @param enabled - true to enable caching, false to disable
+ */
+export function setMigrationCacheEnabled(enabled: boolean): void {
+  migrationEngine.setCacheEnabled(enabled);
+}
+
+/**
+ * Get migration cache statistics
+ *
+ * @returns Object with cache size and enabled status
+ */
+export function getMigrationCacheStats() {
+  return migrationEngine.getCacheStats();
+}
+
 // Re-export types for convenience
 export type { Migration, MigrationResult, MigrationContext, MigrationHistoryEntry } from './migration-types';
 export { MigrationEngine } from './migration-engine';

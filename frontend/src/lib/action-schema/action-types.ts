@@ -59,6 +59,11 @@ import {
   ScreenshotActionConfig,
 } from './configs/state-actions';
 
+import {
+  CodeBlockActionConfig,
+  CustomFunctionActionConfig,
+} from './configs/code-actions';
+
 // ============================================================================
 // Action Types
 // ============================================================================
@@ -89,13 +94,16 @@ export type DataActionType =
 
 export type StateActionType = 'GO_TO_STATE' | 'RUN_WORKFLOW' | 'SCREENSHOT';
 
+export type CodeActionType = 'CODE_BLOCK' | 'CUSTOM_FUNCTION';
+
 export type ActionType =
   | FindActionType
   | MouseActionType
   | KeyboardActionType
   | ControlFlowActionType
   | DataActionType
-  | StateActionType;
+  | StateActionType
+  | CodeActionType;
 
 // ============================================================================
 // Action Configuration Map
@@ -146,6 +154,10 @@ export interface ActionConfigMap {
   GO_TO_STATE: GoToStateActionConfig;
   RUN_WORKFLOW: RunWorkflowActionConfig;
   SCREENSHOT: ScreenshotActionConfig;
+
+  // Code actions
+  CODE_BLOCK: CodeBlockActionConfig;
+  CUSTOM_FUNCTION: CustomFunctionActionConfig;
 }
 
 // ============================================================================
@@ -233,9 +245,6 @@ export interface Connections {
 
     /** Success condition flow connections */
     success?: Connection[][];
-
-    /** Parallel execution branches */
-    parallel?: Connection[][];
   };
 }
 

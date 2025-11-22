@@ -11,19 +11,20 @@ Aggregates results with confidence weighting based on detection strength.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,22 +66,17 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             "enable_3d_detector": True,
             "enable_icon_detector": True,
             "enable_text_link_detector": True,
-
             # NMS parameters
             "nms_iou_threshold": 0.4,  # IOU threshold for non-maximum suppression
-
             # Flat design params
             "flat_min_saturation": 40,
             "flat_border_thickness": 1,
-
             # 3D design params
             "shadow_detection_threshold": 20,
             "gradient_detection_threshold": 30,
-
             # Icon params
             "icon_min_circularity": 0.6,
             "icon_size_range": (20, 80),
-
             # Text link params
             "text_aspect_ratio_range": (2.0, 8.0),
             "text_height_range": (12, 30),
@@ -103,7 +99,9 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             elements = await self._analyze_screenshot(img, screenshot_idx, params)
             all_elements.extend(elements)
 
-        avg_confidence = np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        avg_confidence = (
+            np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        )
 
         logger.info(
             f"Found {len(all_elements)} buttons with avg confidence {avg_confidence:.2f}"
@@ -131,15 +129,12 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
     async def _analyze_screenshot(
-        self,
-        img: np.ndarray,
-        screenshot_idx: int,
-        params: Dict[str, Any]
+        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
     ) -> List[DetectedElement]:
         """Analyze single screenshot using ensemble approach"""
 
@@ -148,29 +143,29 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         # Run each specialist detector
         if params["enable_flat_detector"]:
             flat_detections = self._detect_flat_buttons(img, params)
-            all_detections.extend([
-                (bbox, conf, "flat") for bbox, conf in flat_detections
-            ])
+            all_detections.extend(
+                [(bbox, conf, "flat") for bbox, conf in flat_detections]
+            )
 
         if params["enable_3d_detector"]:
             d3_detections = self._detect_3d_buttons(img, params)
-            all_detections.extend([
-                (bbox, conf, "3d") for bbox, conf in d3_detections
-            ])
+            all_detections.extend([(bbox, conf, "3d") for bbox, conf in d3_detections])
 
         if params["enable_icon_detector"]:
             icon_detections = self._detect_icon_buttons(img, params)
-            all_detections.extend([
-                (bbox, conf, "icon") for bbox, conf in icon_detections
-            ])
+            all_detections.extend(
+                [(bbox, conf, "icon") for bbox, conf in icon_detections]
+            )
 
         if params["enable_text_link_detector"]:
             text_detections = self._detect_text_link_buttons(img, params)
-            all_detections.extend([
-                (bbox, conf, "text_link") for bbox, conf in text_detections
-            ])
+            all_detections.extend(
+                [(bbox, conf, "text_link") for bbox, conf in text_detections]
+            )
 
-        logger.info(f"Screenshot {screenshot_idx}: {len(all_detections)} raw detections")
+        logger.info(
+            f"Screenshot {screenshot_idx}: {len(all_detections)} raw detections"
+        )
 
         # Apply non-maximum suppression
         final_detections = self._apply_nms(all_detections, params)
@@ -178,17 +173,19 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         # Convert to DetectedElement
         elements = []
         for bbox, conf, detector_type in final_detections:
-            elements.append(DetectedElement(
-                bounding_box=bbox,
-                confidence=conf,
-                label=f"Button ({detector_type})",
-                element_type="button",
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "ensemble",
-                    "detector": detector_type,
-                },
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=bbox,
+                    confidence=conf,
+                    label=f"Button ({detector_type})",
+                    element_type="button",
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "ensemble",
+                        "detector": detector_type,
+                    },
+                )
+            )
 
         return elements
 
@@ -235,7 +232,7 @@ class ButtonEnsembleDetector(BaseAnalyzer):
                 continue
 
             # Check for uniform color
-            region_hsv = hsv[y:y+h, x:x+w]
+            region_hsv = hsv[y : y + h, x : x + w]
             hue_std = np.std(region_hsv[:, :, 0])
             uniformity = max(0, 1 - (hue_std / 180))
 
@@ -243,7 +240,7 @@ class ButtonEnsembleDetector(BaseAnalyzer):
                 continue
 
             # Flat buttons have clean edges
-            edge_region = gray[max(0, y-2):y+h+2, max(0, x-2):x+w+2]
+            edge_region = gray[max(0, y - 2) : y + h + 2, max(0, x - 2) : x + w + 2]
             edges = cv2.Canny(edge_region, 50, 150)
             edge_density = np.sum(edges > 0) / edges.size
 
@@ -282,7 +279,9 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         edges = cv2.dilate(edges, kernel, iterations=1)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
@@ -296,13 +295,13 @@ class ButtonEnsembleDetector(BaseAnalyzer):
                 continue
 
             # Check for gradient (vertical gradient is common in 3D buttons)
-            region = gray[y:y+h, x:x+w]
+            region = gray[y : y + h, x : x + w]
             if region.size == 0:
                 continue
 
             # Calculate vertical gradient strength
-            top_brightness = np.mean(region[:h//3, :])
-            bottom_brightness = np.mean(region[2*h//3:, :])
+            top_brightness = np.mean(region[: h // 3, :])
+            bottom_brightness = np.mean(region[2 * h // 3 :, :])
             gradient_strength = abs(top_brightness - bottom_brightness)
 
             if gradient_strength < params["gradient_detection_threshold"]:
@@ -310,10 +309,15 @@ class ButtonEnsembleDetector(BaseAnalyzer):
 
             # Check for shadow below
             shadow_region_y = min(y + h, img.shape[0] - 3)
-            shadow_region = gray[shadow_region_y:min(shadow_region_y + 3, img.shape[0]), x:x+w]
+            shadow_region = gray[
+                shadow_region_y : min(shadow_region_y + 3, img.shape[0]), x : x + w
+            ]
 
             if shadow_region.size > 0:
-                shadow_darkness = np.mean(shadow_region) < np.mean(region) - params["shadow_detection_threshold"]
+                shadow_darkness = (
+                    np.mean(shadow_region)
+                    < np.mean(region) - params["shadow_detection_threshold"]
+                )
             else:
                 shadow_darkness = False
 
@@ -350,7 +354,9 @@ class ButtonEnsembleDetector(BaseAnalyzer):
         edges = cv2.Canny(gray, 50, 150)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         min_size, max_size = params["icon_size_range"]
 
@@ -371,13 +377,13 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             if perimeter == 0:
                 continue
 
-            circularity = 4 * np.pi * area / (perimeter ** 2)
+            circularity = 4 * np.pi * area / (perimeter**2)
 
             if circularity < params["icon_min_circularity"]:
                 continue
 
             # Check for icon-like content (moderate complexity)
-            region = edges[y:y+h, x:x+w]
+            region = edges[y : y + h, x : x + w]
             edge_density = np.sum(region > 0) / region.size
 
             if not (0.1 <= edge_density <= 0.5):
@@ -392,7 +398,9 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             w_pad = min(img.shape[1] - x_pad, w + 2 * padding)
             h_pad = min(img.shape[0] - y_pad, h + 2 * padding)
 
-            detections.append((BoundingBox(x=x_pad, y=y_pad, width=w_pad, height=h_pad), confidence))
+            detections.append(
+                (BoundingBox(x=x_pad, y=y_pad, width=w_pad, height=h_pad), confidence)
+            )
 
         return detections
 
@@ -438,7 +446,7 @@ class ButtonEnsembleDetector(BaseAnalyzer):
                 continue
 
             # Check for text-like patterns (horizontal strokes)
-            region_img = gray[y:y+h, x:x+w]
+            region_img = gray[y : y + h, x : x + w]
             horizontal_profile = np.mean(region_img, axis=1)
             profile_variance = np.var(horizontal_profile)
 
@@ -455,14 +463,14 @@ class ButtonEnsembleDetector(BaseAnalyzer):
             w_pad = min(img.shape[1] - x_pad, w + 2 * padding)
             h_pad = min(img.shape[0] - y_pad, h + 2 * padding)
 
-            detections.append((BoundingBox(x=x_pad, y=y_pad, width=w_pad, height=h_pad), confidence))
+            detections.append(
+                (BoundingBox(x=x_pad, y=y_pad, width=w_pad, height=h_pad), confidence)
+            )
 
         return detections
 
     def _apply_nms(
-        self,
-        detections: List[Tuple[BoundingBox, float, str]],
-        params: Dict[str, Any]
+        self, detections: List[Tuple[BoundingBox, float, str]], params: Dict[str, Any]
     ) -> List[Tuple[BoundingBox, float, str]]:
         """
         Apply non-maximum suppression to remove overlapping detections
@@ -482,7 +490,8 @@ class ButtonEnsembleDetector(BaseAnalyzer):
 
             # Remove overlapping detections
             detections = [
-                det for det in detections
+                det
+                for det in detections
                 if det[0].iou(best[0]) < params["nms_iou_threshold"]
             ]
 

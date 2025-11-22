@@ -6,12 +6,13 @@ noise and missing/occluded slots.
 """
 
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-import numpy as np
-import cv2
 from random import sample
+from typing import Any, Dict, List, Optional, Tuple
 
-from ..base import BaseRegionAnalyzer, DetectedRegion, BoundingBox, RegionType
+import cv2
+import numpy as np
+
+from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +76,7 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         return regions
 
     def _find_candidate_rectangles(
-        self,
-        gray: np.ndarray,
-        params: Dict[str, Any]
+        self, gray: np.ndarray, params: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """Find candidate rectangular regions that could be grid cells"""
         # Edge detection
@@ -88,7 +87,9 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         edges = cv2.dilate(edges, kernel, iterations=1)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         candidates = []
 
@@ -96,8 +97,10 @@ class RANSACGridDetector(BaseRegionAnalyzer):
             x, y, w, h = cv2.boundingRect(contour)
 
             # Size filter
-            if not (params["min_cell_size"] <= w <= params["max_cell_size"] and
-                    params["min_cell_size"] <= h <= params["max_cell_size"]):
+            if not (
+                params["min_cell_size"] <= w <= params["max_cell_size"]
+                and params["min_cell_size"] <= h <= params["max_cell_size"]
+            ):
                 continue
 
             # Calculate rectangularity
@@ -116,21 +119,21 @@ class RANSACGridDetector(BaseRegionAnalyzer):
             cx = x + w // 2
             cy = y + h // 2
 
-            candidates.append({
-                "x": x,
-                "y": y,
-                "width": w,
-                "height": h,
-                "cx": cx,
-                "cy": cy,
-            })
+            candidates.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "width": w,
+                    "height": h,
+                    "cx": cx,
+                    "cy": cy,
+                }
+            )
 
         return candidates
 
     def _ransac_grid_fitting(
-        self,
-        candidates: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, candidates: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Use RANSAC to fit grid models to candidate rectangles
@@ -194,9 +197,7 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         return best_models
 
     def _fit_grid_model(
-        self,
-        points: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, points: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
         Fit a grid model to a set of points
@@ -274,7 +275,7 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         self,
         candidates: List[Dict[str, Any]],
         model: Dict[str, Any],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """Count candidates that fit the grid model"""
         inliers = []
@@ -305,9 +306,7 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         return inliers
 
     def _model_to_region(
-        self,
-        model: Dict[str, Any],
-        params: Dict[str, Any]
+        self, model: Dict[str, Any], params: Dict[str, Any]
     ) -> Optional[DetectedRegion]:
         """Convert grid model to DetectedRegion"""
         rows = model["rows"]
@@ -332,14 +331,16 @@ class RANSACGridDetector(BaseRegionAnalyzer):
         cells = []
         for row in range(rows):
             for col in range(cols):
-                cells.append({
-                    "row": row,
-                    "col": col,
-                    "x": x_start + col * spacing_x,
-                    "y": y_start + row * spacing_y,
-                    "width": cell_width,
-                    "height": cell_height,
-                })
+                cells.append(
+                    {
+                        "row": row,
+                        "col": col,
+                        "x": x_start + col * spacing_x,
+                        "y": y_start + row * spacing_y,
+                        "width": cell_width,
+                        "height": cell_height,
+                    }
+                )
 
         confidence = model.get("confidence", 0.7)
         confidence = min(0.95, 0.5 + confidence * 0.45)
@@ -359,5 +360,5 @@ class RANSACGridDetector(BaseRegionAnalyzer):
                 "cells": cells,
                 "detector": "ransac_grid",
                 "method": "ransac_fitting",
-            }
+            },
         )

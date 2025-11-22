@@ -334,14 +334,12 @@ export function HandleTooltip({ data }: { data: HandleTooltipData }) {
     main: COLORS.main,
     error: COLORS.error,
     success: COLORS.success,
-    parallel: COLORS.parallel,
   };
 
   const typeLabels = {
     main: 'Main Flow',
     error: 'Error Handling',
     success: 'Success Condition',
-    parallel: 'Parallel Execution',
   };
 
   return (
@@ -386,14 +384,12 @@ export function EdgeTooltip({ data }: { data: EdgeTooltipData }) {
     main: COLORS.main,
     error: COLORS.error,
     success: COLORS.success,
-    parallel: COLORS.parallel,
   };
 
   const typeLabels = {
     main: 'Main Flow',
     error: 'Error Handling',
     success: 'Success Condition',
-    parallel: 'Parallel Execution',
   };
 
   return (

@@ -8,25 +8,27 @@ Performance: 100-500ms depending on image size
 Accuracy: 85-95% for clear text, lower for stylized/game fonts
 """
 
-from typing import List, Dict, Any, Optional
-import cv2
-import numpy as np
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Any, Dict, List, Optional
+
+import cv2
+import numpy as np
 from PIL import Image
 
 from ..base import (
     BaseRegionAnalyzer,
-    DetectedRegion,
-    RegionType,
-    RegionAnalysisType,
     BoundingBox,
+    DetectedRegion,
     RegionAnalysisInput,
     RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
 )
 
 try:
     import pytesseract
+
     TESSERACT_AVAILABLE = True
 except ImportError:
     TESSERACT_AVAILABLE = False
@@ -101,7 +103,8 @@ class OCRTextDetector(BaseRegionAnalyzer):
         # Calculate overall confidence
         overall_confidence = (
             sum(r.confidence for r in all_regions) / len(all_regions)
-            if all_regions else 0.0
+            if all_regions
+            else 0.0
         )
 
         return RegionAnalysisResult(
@@ -114,43 +117,48 @@ class OCRTextDetector(BaseRegionAnalyzer):
                 "level": self.level,
                 "merge_nearby": self.merge_nearby,
                 "total_text_regions": len(all_regions),
-            }
+            },
         )
 
-    def _detect_text_regions(self, image: np.ndarray, screenshot_index: int) -> List[DetectedRegion]:
+    def _detect_text_regions(
+        self, image: np.ndarray, screenshot_index: int
+    ) -> List[DetectedRegion]:
         """Detect text regions in a single image."""
         # Get OCR data
         data = pytesseract.image_to_data(
-            image,
-            output_type=pytesseract.Output.DICT,
-            config='--psm 11'  # Sparse text
+            image, output_type=pytesseract.Output.DICT, config="--psm 11"  # Sparse text
         )
 
         regions = []
-        n_boxes = len(data['text'])
+        n_boxes = len(data["text"])
 
         # Determine which level to use
         level_map = {
-            'word': 5,    # Word level
-            'line': 4,    # Line level
-            'block': 2,   # Block level
+            "word": 5,  # Word level
+            "line": 4,  # Line level
+            "block": 2,  # Block level
         }
         target_level = level_map.get(self.level, 5)
 
         for i in range(n_boxes):
             # Skip if below target level or low confidence
-            if data['level'][i] != target_level:
+            if data["level"][i] != target_level:
                 continue
 
-            conf = float(data['conf'][i])
+            conf = float(data["conf"][i])
             if conf < self.min_confidence:
                 continue
 
-            text = data['text'][i].strip()
+            text = data["text"][i].strip()
             if not text:
                 continue
 
-            x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
+            x, y, w, h = (
+                data["left"][i],
+                data["top"][i],
+                data["width"][i],
+                data["height"][i],
+            )
 
             # Skip very small regions
             if w < 5 or h < 5:
@@ -167,7 +175,7 @@ class OCRTextDetector(BaseRegionAnalyzer):
                     "ocr_confidence": conf,
                     "level": self.level,
                     "text_length": len(text),
-                }
+                },
             )
             regions.append(region)
 
@@ -177,7 +185,9 @@ class OCRTextDetector(BaseRegionAnalyzer):
 
         return regions
 
-    def _merge_nearby_regions(self, regions: List[DetectedRegion]) -> List[DetectedRegion]:
+    def _merge_nearby_regions(
+        self, regions: List[DetectedRegion]
+    ) -> List[DetectedRegion]:
         """Merge nearby text regions into larger blocks."""
         if not regions:
             return regions
@@ -214,22 +224,17 @@ class OCRTextDetector(BaseRegionAnalyzer):
         # Check vertical proximity
         box1_y2 = box1.y + box1.height
         box2_y2 = box2.y + box2.height
-        vertical_gap = min(
-            abs(box1_y2 - box2.y),
-            abs(box2_y2 - box1.y)
-        )
+        vertical_gap = min(abs(box1_y2 - box2.y), abs(box2_y2 - box1.y))
 
         # Check horizontal proximity
         box1_x2 = box1.x + box1.width
         box2_x2 = box2.x + box2.width
-        horizontal_gap = min(
-            abs(box1_x2 - box2.x),
-            abs(box2_x2 - box1.x)
-        )
+        horizontal_gap = min(abs(box1_x2 - box2.x), abs(box2_x2 - box1.x))
 
         # Merge if close vertically or horizontally aligned and close
-        return (vertical_gap <= self.merge_distance or
-                horizontal_gap <= self.merge_distance)
+        return (
+            vertical_gap <= self.merge_distance or horizontal_gap <= self.merge_distance
+        )
 
     def _merge_group(self, group: List[DetectedRegion]) -> DetectedRegion:
         """Merge a group of regions into one."""
@@ -260,5 +265,5 @@ class OCRTextDetector(BaseRegionAnalyzer):
                 "merged_count": len(group),
                 "level": "merged",
                 "text_length": len(combined_text),
-            }
+            },
         )

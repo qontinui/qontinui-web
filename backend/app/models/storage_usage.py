@@ -1,10 +1,9 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
-
 from app.db.base import Base
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 
 
 class StorageUsage(Base):
@@ -23,6 +22,7 @@ class StorageUsage(Base):
     project_id = Column(
         Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
     )
+    file_metadata = Column(JSONB, nullable=True, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

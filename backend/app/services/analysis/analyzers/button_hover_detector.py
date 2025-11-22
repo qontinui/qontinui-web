@@ -12,19 +12,20 @@ appearance on hover, which is a strong indicator of clickability.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,24 +65,19 @@ class ButtonHoverDetector(BaseAnalyzer):
             "min_color_change": 15,  # Minimum color difference to detect change
             "min_brightness_change": 10,  # Minimum brightness change
             "change_area_threshold": 0.3,  # % of region that must change
-
             # Morphological operations
             "morph_kernel_size": 5,  # For cleaning up difference mask
-
             # Size constraints (typical button dimensions)
             "min_width": 60,
             "max_width": 400,
             "min_height": 25,
             "max_height": 80,
             "min_area": 1500,
-
             # Shape constraints
             "min_aspect_ratio": 1.5,
             "max_aspect_ratio": 6.0,
-
             # Confidence thresholds
             "min_confidence": 0.6,  # Hover detection is high confidence
-
             # Comparison strategy
             "compare_all_pairs": False,  # If true, compare all pairs; else consecutive only
         }
@@ -124,18 +120,26 @@ class ButtonHoverDetector(BaseAnalyzer):
             for i in range(len(images_gray)):
                 for j in range(i + 1, len(images_gray)):
                     elements = await self._compare_screenshots(
-                        images_gray[i], images_color[i],
-                        images_gray[j], images_color[j],
-                        i, j, params
+                        images_gray[i],
+                        images_color[i],
+                        images_gray[j],
+                        images_color[j],
+                        i,
+                        j,
+                        params,
                     )
                     all_elements.extend(elements)
         else:
             # Compare consecutive screenshots only
             for i in range(len(images_gray) - 1):
                 elements = await self._compare_screenshots(
-                    images_gray[i], images_color[i],
-                    images_gray[i + 1], images_color[i + 1],
-                    i, i + 1, params
+                    images_gray[i],
+                    images_color[i],
+                    images_gray[i + 1],
+                    images_color[i + 1],
+                    i,
+                    i + 1,
+                    params,
                 )
                 all_elements.extend(elements)
 
@@ -156,8 +160,11 @@ class ButtonHoverDetector(BaseAnalyzer):
                 "method": "hover_detection",
                 "parameters": params,
                 "detector_type": "button_hover",
-                "num_comparisons": len(images_gray) - 1 if not params["compare_all_pairs"]
-                    else (len(images_gray) * (len(images_gray) - 1)) // 2,
+                "num_comparisons": (
+                    len(images_gray) - 1
+                    if not params["compare_all_pairs"]
+                    else (len(images_gray) * (len(images_gray) - 1)) // 2
+                ),
             },
         )
 
@@ -174,7 +181,9 @@ class ButtonHoverDetector(BaseAnalyzer):
         images = []
         for data in screenshot_data:
             img = Image.open(BytesIO(data)).convert("RGB")
-            images.append(cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR))
+            images.append(
+                cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR)
+            )
         return images
 
     async def _compare_screenshots(
@@ -221,12 +230,13 @@ class ButtonHoverDetector(BaseAnalyzer):
 
         # Step 3: Clean up the mask with morphological operations
         kernel = cv2.getStructuringElement(
-            cv2.MORPH_RECT,
-            (params["morph_kernel_size"], params["morph_kernel_size"])
+            cv2.MORPH_RECT, (params["morph_kernel_size"], params["morph_kernel_size"])
         )
 
         # Close small gaps
-        combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        combined_mask = cv2.morphologyEx(
+            combined_mask, cv2.MORPH_CLOSE, kernel, iterations=2
+        )
 
         # Remove small noise
         combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel)
@@ -255,15 +265,17 @@ class ButtonHoverDetector(BaseAnalyzer):
 
             # Step 6: Filter by aspect ratio
             aspect_ratio = w / h if h > 0 else 0
-            if not (params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+            if not (
+                params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]
+            ):
                 continue
 
             # Step 7: Analyze the change in this region
             change_info = self._analyze_region_change(
-                img1_color[y:y+h, x:x+w],
-                img2_color[y:y+h, x:x+w],
-                combined_mask[y:y+h, x:x+w],
-                params
+                img1_color[y : y + h, x : x + w],
+                img2_color[y : y + h, x : x + w],
+                combined_mask[y : y + h, x : x + w],
+                params,
             )
 
             # Check if enough of the region changed (not just edges)
@@ -281,11 +293,17 @@ class ButtonHoverDetector(BaseAnalyzer):
 
             # Create detected element
             # Use the screenshot index where the button is most prominent
-            screenshot_idx = idx1 if change_info["avg_brightness_1"] > change_info["avg_brightness_2"] else idx2
+            screenshot_idx = (
+                idx1
+                if change_info["avg_brightness_1"] > change_info["avg_brightness_2"]
+                else idx2
+            )
 
             elements.append(
                 DetectedElement(
-                    bounding_box=BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h)),
+                    bounding_box=BoundingBox(
+                        x=int(x), y=int(y), width=int(w), height=int(h)
+                    ),
                     confidence=confidence,
                     label="Button (hover detected)",
                     element_type="button",
@@ -429,14 +447,18 @@ class ButtonHoverDetector(BaseAnalyzer):
                     avg_bbox = BoundingBox(
                         x=(element.bounding_box.x + existing.bounding_box.x) // 2,
                         y=(element.bounding_box.y + existing.bounding_box.y) // 2,
-                        width=(element.bounding_box.width + existing.bounding_box.width) // 2,
-                        height=(element.bounding_box.height + existing.bounding_box.height) // 2,
+                        width=(element.bounding_box.width + existing.bounding_box.width)
+                        // 2,
+                        height=(
+                            element.bounding_box.height + existing.bounding_box.height
+                        )
+                        // 2,
                     )
 
                     # Create merged element with combined metadata
                     compared_screenshots = set(
-                        element.metadata.get("compared_screenshots", []) +
-                        existing.metadata.get("compared_screenshots", [])
+                        element.metadata.get("compared_screenshots", [])
+                        + existing.metadata.get("compared_screenshots", [])
                     )
 
                     merged_element = DetectedElement(
@@ -448,7 +470,8 @@ class ButtonHoverDetector(BaseAnalyzer):
                         metadata={
                             **best_element.metadata,
                             "compared_screenshots": sorted(compared_screenshots),
-                            "num_detections": existing.metadata.get("num_detections", 1) + 1,
+                            "num_detections": existing.metadata.get("num_detections", 1)
+                            + 1,
                         },
                     )
 

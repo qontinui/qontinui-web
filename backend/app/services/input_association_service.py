@@ -10,12 +10,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.automation_log import AutomationLog
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.screenshot_input_association import ScreenshotInputAssociation
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class InputAssociationService:

@@ -38,12 +38,14 @@ class ExportImportService:
         config = project.configuration or self._get_default_configuration()
 
         metadata = config.get("metadata", {})
-        metadata.update({
-            "name": project.name,
-            "description": project.description or "",
-            "author": user.username,
-            "modified": datetime.now(timezone.utc).isoformat(),
-        })
+        metadata.update(
+            {
+                "name": project.name,
+                "description": project.description or "",
+                "author": user.username,
+                "modified": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
         if "created" not in metadata:
             metadata["created"] = project.created_at.isoformat()
@@ -65,10 +67,7 @@ class ExportImportService:
         return config
 
     def import_project(
-        self,
-        project: Project,
-        config_data: dict[str, Any],
-        merge: bool = False
+        self, project: Project, config_data: dict[str, Any], merge: bool = False
     ) -> dict[str, Any]:
         """
         Import a JSON configuration into a project.
@@ -140,13 +139,14 @@ class ExportImportService:
                 workflow["actions"] = []
 
             for action in workflow["actions"]:
-                if not isinstance(action.get("position"), (list, tuple)) or len(action.get("position", [])) != 2:
+                if (
+                    not isinstance(action.get("position"), (list, tuple))
+                    or len(action.get("position", [])) != 2
+                ):
                     action["position"] = [0, 0]
 
     def _merge_configurations(
-        self,
-        existing: dict[str, Any],
-        new: dict[str, Any]
+        self, existing: dict[str, Any], new: dict[str, Any]
     ) -> dict[str, Any]:
         """
         Merge two configurations intelligently.
@@ -165,20 +165,16 @@ class ExportImportService:
         merged["metadata"]["modified"] = datetime.now(timezone.utc).isoformat()
 
         merged["images"] = self._merge_by_id(
-            existing.get("images", []),
-            new.get("images", [])
+            existing.get("images", []), new.get("images", [])
         )
         merged["workflows"] = self._merge_by_id(
-            existing.get("workflows", []),
-            new.get("workflows", [])
+            existing.get("workflows", []), new.get("workflows", [])
         )
         merged["states"] = self._merge_by_id(
-            existing.get("states", []),
-            new.get("states", [])
+            existing.get("states", []), new.get("states", [])
         )
         merged["transitions"] = self._merge_by_id(
-            existing.get("transitions", []),
-            new.get("transitions", [])
+            existing.get("transitions", []), new.get("transitions", [])
         )
 
         existing_categories = set(existing.get("categories", []))
@@ -186,16 +182,13 @@ class ExportImportService:
         merged["categories"] = sorted(list(existing_categories | new_categories))
 
         merged["settings"] = self._deep_merge_dicts(
-            existing.get("settings", {}),
-            new.get("settings", {})
+            existing.get("settings", {}), new.get("settings", {})
         )
 
         return merged
 
     def _merge_by_id(
-        self,
-        existing_items: list[dict[str, Any]],
-        new_items: list[dict[str, Any]]
+        self, existing_items: list[dict[str, Any]], new_items: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         """
         Merge two lists of items by ID, with new items overwriting existing ones.
@@ -213,9 +206,7 @@ class ExportImportService:
         return list(items_by_id.values())
 
     def _deep_merge_dicts(
-        self,
-        dict1: dict[str, Any],
-        dict2: dict[str, Any]
+        self, dict1: dict[str, Any], dict2: dict[str, Any]
     ) -> dict[str, Any]:
         """
         Deep merge two dictionaries recursively.

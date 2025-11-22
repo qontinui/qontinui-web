@@ -2,18 +2,30 @@
 Analysis Result models for storing GUI element analysis results
 """
 
-from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, ForeignKey, Float, Index
+import uuid
+from datetime import datetime
+
+from app.db.base import Base
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
-from app.db.base import Base
-import uuid
 
 
 class AnalysisJob(Base):
     """
     Analysis job - represents a full analysis run on an annotation set
     """
+
     __tablename__ = "analysis_jobs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -21,7 +33,7 @@ class AnalysisJob(Base):
         UUID(as_uuid=True),
         ForeignKey("annotation_sets.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Analysis configuration
@@ -50,14 +62,10 @@ class AnalysisJob(Base):
     annotation_set = relationship("AnnotationSet", foreign_keys=[annotation_set_id])
     created_by = relationship("User")
     analyzer_results = relationship(
-        "AnalyzerResult",
-        back_populates="analysis_job",
-        cascade="all, delete-orphan"
+        "AnalyzerResult", back_populates="analysis_job", cascade="all, delete-orphan"
     )
     fused_elements = relationship(
-        "FusedElement",
-        back_populates="analysis_job",
-        cascade="all, delete-orphan"
+        "FusedElement", back_populates="analysis_job", cascade="all, delete-orphan"
     )
 
 
@@ -65,6 +73,7 @@ class AnalyzerResult(Base):
     """
     Result from a single analyzer within an analysis job
     """
+
     __tablename__ = "analyzer_results"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -72,7 +81,7 @@ class AnalyzerResult(Base):
         UUID(as_uuid=True),
         ForeignKey("analysis_jobs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Analyzer info
@@ -94,7 +103,7 @@ class AnalyzerResult(Base):
     detected_elements = relationship(
         "DetectedElementModel",
         back_populates="analyzer_result",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
 
@@ -102,6 +111,7 @@ class DetectedElementModel(Base):
     """
     A single detected element from an analyzer
     """
+
     __tablename__ = "detected_elements"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -109,7 +119,7 @@ class DetectedElementModel(Base):
         UUID(as_uuid=True),
         ForeignKey("analyzer_results.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Bounding box
@@ -131,7 +141,11 @@ class DetectedElementModel(Base):
     analyzer_result = relationship("AnalyzerResult", back_populates="detected_elements")
 
     __table_args__ = (
-        Index('ix_detected_elements_analyzer_screenshot', 'analyzer_result_id', 'screenshot_index'),
+        Index(
+            "ix_detected_elements_analyzer_screenshot",
+            "analyzer_result_id",
+            "screenshot_index",
+        ),
     )
 
 
@@ -139,6 +153,7 @@ class FusedElement(Base):
     """
     Fused element from combining multiple analyzer results
     """
+
     __tablename__ = "fused_elements"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -146,7 +161,7 @@ class FusedElement(Base):
         UUID(as_uuid=True),
         ForeignKey("analysis_jobs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Bounding box (averaged from sources)
@@ -173,7 +188,9 @@ class FusedElement(Base):
     analysis_job = relationship("AnalysisJob", back_populates="fused_elements")
 
     __table_args__ = (
-        Index('ix_fused_elements_job_screenshot', 'analysis_job_id', 'screenshot_index'),
-        Index('ix_fused_elements_confidence', 'confidence'),
-        Index('ix_fused_elements_votes', 'votes'),
+        Index(
+            "ix_fused_elements_job_screenshot", "analysis_job_id", "screenshot_index"
+        ),
+        Index("ix_fused_elements_confidence", "confidence"),
+        Index("ix_fused_elements_votes", "votes"),
     )

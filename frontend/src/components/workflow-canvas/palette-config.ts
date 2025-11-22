@@ -13,7 +13,8 @@ import {
   Type, Command, RotateCw, X, GitMerge, AlertTriangle,
   Variable, SortAsc, Filter, MapPin, Minus, Text,
   Calculator, ArrowRight, Play, Camera, Timer, Hash,
-  EyeOff, Repeat, CornerDownRight, CornerRightDown
+  EyeOff, Repeat, CornerDownRight, CornerRightDown,
+  Code, FileCode
 } from 'lucide-react';
 
 // ============================================================================
@@ -26,7 +27,8 @@ export type NodeCategory =
   | 'keyboard'
   | 'controlFlow'
   | 'data'
-  | 'state';
+  | 'state'
+  | 'code';
 
 export interface CategoryInfo {
   id: NodeCategory;
@@ -85,6 +87,14 @@ export const CATEGORIES: Record<NodeCategory, CategoryInfo> = {
     color: '#8b5cf6', // violet-500
     icon: Navigation,
     order: 6,
+  },
+  code: {
+    id: 'code',
+    label: 'Code',
+    description: 'Python code execution and custom functions',
+    color: '#6366f1', // indigo-500
+    icon: Code,
+    order: 7,
   },
 };
 
@@ -429,6 +439,28 @@ export const NODE_METADATA: Record<ActionType, NodeMetadata> = {
     icon: Camera,
     keywords: ['screenshot', 'capture', 'image', 'screen', 'snap'],
     tags: ['capture', 'utility'],
+  },
+
+  // ========================================================================
+  // Code Actions
+  // ========================================================================
+  CODE_BLOCK: {
+    type: 'CODE_BLOCK',
+    displayName: 'Code Block',
+    description: 'Execute inline Python code with access to workflow context',
+    category: 'code',
+    icon: Code,
+    keywords: ['code', 'python', 'script', 'execute', 'run', 'inline', 'custom'],
+    tags: ['code', 'python', 'advanced'],
+  },
+  CUSTOM_FUNCTION: {
+    type: 'CUSTOM_FUNCTION',
+    displayName: 'Custom Function',
+    description: 'Execute pre-registered custom Python function',
+    category: 'code',
+    icon: FileCode,
+    keywords: ['function', 'custom', 'python', 'plugin', 'module', 'import'],
+    tags: ['code', 'python', 'plugin', 'advanced'],
   },
 };
 

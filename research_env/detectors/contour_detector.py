@@ -2,12 +2,15 @@
 Contour-based detection using adaptive thresholding
 """
 
+import os
+import sys
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
-from typing import List, Dict, Any
+
 from .base_detector import BaseDetector
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
 
@@ -36,12 +39,12 @@ class ContourDetector(BaseDetector):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # Parameters
-        block_size = params.get('block_size', 11)
-        c_value = params.get('c_value', 2)
-        min_area = params.get('min_area', 100)
-        max_area = params.get('max_area', img.shape[0] * img.shape[1] * 0.9)
-        use_otsu = params.get('use_otsu', False)
-        invert = params.get('invert', False)
+        block_size = params.get("block_size", 11)
+        c_value = params.get("c_value", 2)
+        min_area = params.get("min_area", 100)
+        max_area = params.get("max_area", img.shape[0] * img.shape[1] * 0.9)
+        use_otsu = params.get("use_otsu", False)
+        invert = params.get("invert", False)
 
         # Thresholding
         if use_otsu:
@@ -52,8 +55,12 @@ class ContourDetector(BaseDetector):
                 block_size += 1
 
             thresh = cv2.adaptiveThreshold(
-                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                cv2.THRESH_BINARY, block_size, c_value
+                gray,
+                255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY,
+                block_size,
+                c_value,
             )
 
         if invert:
@@ -81,14 +88,13 @@ class ContourDetector(BaseDetector):
         """Parameter grid for hyperparameter search"""
         return [
             # Adaptive threshold with different parameters
-            {'block_size': 11, 'c_value': 2, 'invert': False},
-            {'block_size': 11, 'c_value': 2, 'invert': True},
-            {'block_size': 15, 'c_value': 3, 'invert': False},
-            {'block_size': 15, 'c_value': 3, 'invert': True},
-            {'block_size': 21, 'c_value': 5, 'invert': False},
-            {'block_size': 21, 'c_value': 5, 'invert': True},
-
+            {"block_size": 11, "c_value": 2, "invert": False},
+            {"block_size": 11, "c_value": 2, "invert": True},
+            {"block_size": 15, "c_value": 3, "invert": False},
+            {"block_size": 15, "c_value": 3, "invert": True},
+            {"block_size": 21, "c_value": 5, "invert": False},
+            {"block_size": 21, "c_value": 5, "invert": True},
             # Otsu thresholding
-            {'use_otsu': True, 'invert': False},
-            {'use_otsu': True, 'invert': True},
+            {"use_otsu": True, "invert": False},
+            {"use_otsu": True, "invert": True},
         ]

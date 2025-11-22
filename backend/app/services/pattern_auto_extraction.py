@@ -22,6 +22,7 @@ else:
 try:
     import cv2
     import numpy as np
+
     CV2_AVAILABLE = True
 except ImportError:
     cv2 = None
@@ -154,7 +155,9 @@ class PatternAutoExtractor:
 
         return patterns
 
-    def _detect_input_fields(self, img: "np.ndarray", path: str) -> list[DetectedPattern]:
+    def _detect_input_fields(
+        self, img: "np.ndarray", path: str
+    ) -> list[DetectedPattern]:
         """
         Detect input field regions.
 

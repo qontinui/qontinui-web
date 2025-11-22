@@ -3,25 +3,22 @@ Auto-registration of analyzers
 """
 
 import logging
-from .orchestrator import analyzer_registry
-from .analyzers import (
-    # Stable Region
-    StableRegionVarianceAnalyzer,
-    StableRegionDifferenceAnalyzer,
-    # Pattern Match
-    PatternTemplateMatchAnalyzer,
-    PatternFeatureMatchAnalyzer,
-    # Single Shot
-    SingleShotEdgeAnalyzer,
-    SingleShotColorAnalyzer,
-    # Specialized GUI Element Detectors
-    InputFieldDetector,
+
+from .analyzers import (  # Stable Region; Pattern Match; Single Shot; Specialized GUI Element Detectors
     DropdownDetector,
-    MenuBarDetector,
-    SidebarDetector,
     IconButtonDetector,
+    InputFieldDetector,
+    MenuBarDetector,
     ModalDialogDetector,
+    PatternFeatureMatchAnalyzer,
+    PatternTemplateMatchAnalyzer,
+    SidebarDetector,
+    SingleShotColorAnalyzer,
+    SingleShotEdgeAnalyzer,
+    StableRegionDifferenceAnalyzer,
+    StableRegionVarianceAnalyzer,
 )
+from .orchestrator import analyzer_registry
 
 logger = logging.getLogger(__name__)
 

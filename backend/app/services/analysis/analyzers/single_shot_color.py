@@ -6,19 +6,20 @@ colored buttons, highlights, and distinct visual elements.
 """
 
 import logging
-from typing import Dict, Any, List
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,15 +100,12 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
     async def _analyze_screenshot(
-        self,
-        img: np.ndarray,
-        screenshot_idx: int,
-        params: Dict[str, Any]
+        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
     ) -> List[DetectedElement]:
         """Analyze a single screenshot"""
         elements = []
@@ -131,9 +129,7 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
 
             # Find contours
             contours, _ = cv2.findContours(
-                mask.astype(np.uint8) * 255,
-                cv2.RETR_EXTERNAL,
-                cv2.CHAIN_APPROX_SIMPLE
+                mask.astype(np.uint8) * 255, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
 
             for contour in contours:
@@ -145,11 +141,15 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
                 # Filter by size and aspect ratio
                 if not (params["min_area"] <= area <= params["max_area"]):
                     continue
-                if not (params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+                if not (
+                    params["min_aspect_ratio"]
+                    <= aspect_ratio
+                    <= params["max_aspect_ratio"]
+                ):
                     continue
 
                 # Calculate color distinctiveness (saturation)
-                region_hsv = hsv[y:y+h, x:x+w]
+                region_hsv = hsv[y : y + h, x : x + w]
                 mean_saturation = np.mean(region_hsv[:, :, 1])
 
                 if mean_saturation < params["saturation_threshold"]:
@@ -158,23 +158,29 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
                 # Confidence based on color distinctiveness
                 confidence = min(0.9, 0.4 + (mean_saturation / 255.0) * 0.5)
 
-                elements.append(DetectedElement(
-                    bounding_box=BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h)),
-                    confidence=confidence,
-                    label="Colored Element",
-                    element_type="colored_element",
-                    screenshot_index=screenshot_idx,
-                    metadata={
-                        "method": "color_segmentation",
-                        "color_idx": color_idx,
-                        "mean_saturation": float(mean_saturation),
-                        "area": int(area),
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=BoundingBox(
+                            x=int(x), y=int(y), width=int(w), height=int(h)
+                        ),
+                        confidence=confidence,
+                        label="Colored Element",
+                        element_type="colored_element",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "method": "color_segmentation",
+                            "color_idx": color_idx,
+                            "mean_saturation": float(mean_saturation),
+                            "area": int(area),
+                        },
+                    )
+                )
 
         return elements
 
-    def _find_dominant_colors(self, img: np.ndarray, num_colors: int) -> List[np.ndarray]:
+    def _find_dominant_colors(
+        self, img: np.ndarray, num_colors: int
+    ) -> List[np.ndarray]:
         """
         Find dominant colors using K-means clustering
 
@@ -220,17 +226,21 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
         sat_range = 50  # +/- saturation
         val_range = 50  # +/- value
 
-        lower = np.array([
-            max(0, color[0] - hue_range),
-            max(0, color[1] - sat_range),
-            max(0, color[2] - val_range)
-        ])
+        lower = np.array(
+            [
+                max(0, color[0] - hue_range),
+                max(0, color[1] - sat_range),
+                max(0, color[2] - val_range),
+            ]
+        )
 
-        upper = np.array([
-            min(180, color[0] + hue_range),
-            min(255, color[1] + sat_range),
-            min(255, color[2] + val_range)
-        ])
+        upper = np.array(
+            [
+                min(180, color[0] + hue_range),
+                min(255, color[1] + sat_range),
+                min(255, color[2] + val_range),
+            ]
+        )
 
         # Create mask
         mask = cv2.inRange(hsv, lower, upper)

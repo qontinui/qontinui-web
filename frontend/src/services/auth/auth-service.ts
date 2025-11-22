@@ -33,6 +33,13 @@ export class AuthService {
 
   /**
    * Login user with credentials
+   *
+   * HttpOnly Cookie Security (Migration Complete):
+   * - Backend sets access_token and refresh_token as HttpOnly cookies (XSS protection)
+   * - Backend returns tokens in response body for expiry calculation
+   * - Frontend stores ONLY expiry timestamps and auth flag (not actual tokens)
+   * - Browser automatically sends cookies with credentials: 'include'
+   * - Actual tokens never stored in localStorage (security best practice)
    */
   async login(credentials: LoginRequest): Promise<User> {
     const formData = new URLSearchParams();
@@ -54,7 +61,7 @@ export class AuthService {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: formData,
-      credentials: 'include',
+      credentials: 'include', // Critical: Allows cookies to be set
     });
 
     console.log('[AuthService] Login response status:', response.status);
@@ -66,6 +73,11 @@ export class AuthService {
     }
 
     const tokens: TokenResponse = await response.json();
+
+    // Store expiry timestamps and authentication state (not actual tokens)
+    // Backend sets HttpOnly cookies automatically
+    // TokenStorage.saveAccessToken() and saveRefreshToken() are now NO-OPs
+    // They only set the authentication flag for UI state management
     this.tokenManager.setTokens(tokens);
 
     return this.getCurrentUser();
@@ -95,42 +107,53 @@ export class AuthService {
 
   /**
    * Logout user
+   *
+   * HttpOnly Cookie Security (Migration Complete):
+   * - Always call logout endpoint to clear HttpOnly cookies on backend
+   * - Backend reads auth from cookie (not Authorization header)
+   * - Clear localStorage authentication state (not actual tokens - they're in cookies)
+   * - Browser automatically sends cookies for authentication
    */
   async logout(): Promise<void> {
     try {
-      const accessToken = this.tokenManager.getAccessToken();
-      if (accessToken) {
-        await fetch(ApiConfig.AUTH_LOGOUT, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-        });
-      }
+      // Always call logout endpoint to clear HttpOnly cookies
+      await fetch(ApiConfig.AUTH_LOGOUT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Critical: Sends access_token cookie for authentication
+      });
+
+      console.log('[AuthService] Logout successful, cookies cleared on backend');
     } catch (error) {
       console.error('[AuthService] Logout request failed:', error);
+      // Continue to clear local tokens even if backend request fails
     } finally {
+      // Clear authentication state from localStorage
+      // Note: Actual tokens are in HttpOnly cookies, cleared by backend
       this.tokenManager.clearTokens();
     }
   }
 
   /**
    * Get current authenticated user
+   *
+   * HttpOnly Cookie Security (Migration Complete):
+   * - Backend reads access_token from cookie for authentication
+   * - Browser automatically sends access_token cookie with credentials: 'include'
+   * - No Authorization header needed (tokens are in HttpOnly cookies)
    */
   async getCurrentUser(): Promise<User> {
-    const accessToken = this.tokenManager.getAccessToken();
     console.log('[AuthService] Getting current user from:', ApiConfig.USERS_ME);
-    console.log('[AuthService] Access token:', accessToken?.substring(0, 20) + '...');
+    console.log('[AuthService] Using HttpOnly cookie authentication');
 
     const response = await fetch(ApiConfig.USERS_ME, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      credentials: 'include',
+      credentials: 'include', // Critical: Sends access_token cookie for authentication
     });
 
     console.log('[AuthService] getCurrentUser response status:', response.status);

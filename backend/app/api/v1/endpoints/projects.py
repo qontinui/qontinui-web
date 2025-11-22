@@ -2,10 +2,8 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
+from app.core.error_codes import ErrorCode
 from app.crud.project import (
     create_project,
     delete_project,
@@ -13,6 +11,8 @@ from app.crud.project import (
     get_projects_by_owner,
     update_project,
 )
+from app.middleware.error_handler import forbidden_error, not_found_error
+from app.middleware.rate_limit import user_limiter
 from app.models.organization import PermissionLevel, TeamRole
 from app.models.user import User
 from app.schemas.project import Project, ProjectCreate, ProjectUpdate
@@ -20,6 +20,9 @@ from app.services.limit_checker import LimitChecker
 from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
 from app.services.storage_service import StorageService
+from app.utils.lock_utils import check_resource_lock, get_lock_info
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -27,7 +30,9 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[Project])
+@user_limiter.limit("100 per minute")
 async def read_projects(
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     skip: int = 0,
     limit: int = 100,
@@ -58,13 +63,15 @@ async def read_projects(
             db, current_user.id, organization_id, "member"
         )
         if not membership:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You are not a member of this organization",
+            raise forbidden_error(
+                "You are not a member of this organization",
+                ErrorCode.INSUFFICIENT_PERMISSIONS,
             )
 
     # Get all accessible projects using permission service
-    projects = await permission_service.get_user_accessible_projects(db, current_user.id)
+    projects = await permission_service.get_user_accessible_projects(
+        db, current_user.id
+    )
 
     # Filter by organization if specified
     if organization_id:
@@ -83,9 +90,64 @@ async def read_projects(
     return [Project.model_validate(project) for project in paginated_projects]
 
 
-@router.post("/", response_model=Project)
+@router.post(
+    "/",
+    response_model=Project,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {
+            "description": "Project created successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": 1,
+                        "name": "My Test Project",
+                        "description": "Project for testing automation",
+                        "owner_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "organization_id": "789e4567-e89b-12d3-a456-426614174000",
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                        "configuration": {},
+                    }
+                }
+            },
+        },
+        400: {
+            "description": "Invalid request data",
+            "content": {
+                "application/json": {"example": {"detail": "Project name is required"}}
+            },
+        },
+        401: {
+            "description": "Not authenticated",
+            "content": {
+                "application/json": {"example": {"detail": "Not authenticated"}}
+            },
+        },
+        403: {
+            "description": "Insufficient permissions",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "You do not have permission to create projects in this organization"
+                    }
+                }
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Too many requests. Please try again later."}
+                }
+            },
+        },
+    },
+)
+@user_limiter.limit("20 per minute")
 async def create_new_project(
     *,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     project_in: ProjectCreate,
     current_user: User = Depends(get_current_active_user_async),
@@ -115,9 +177,9 @@ async def create_new_project(
             db, current_user.id, organization_id, "member"
         )
         if not membership:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to create projects in this organization",
+            raise forbidden_error(
+                "You do not have permission to create projects in this organization",
+                ErrorCode.INSUFFICIENT_PERMISSIONS,
             )
     else:
         # Use user's personal organization
@@ -150,7 +212,52 @@ async def create_new_project(
     return project
 
 
-@router.get("/{project_id}", response_model=Project)
+@router.get(
+    "/{project_id}",
+    response_model=Project,
+    responses={
+        200: {
+            "description": "Project retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": 1,
+                        "name": "My Test Project",
+                        "description": "Project for testing automation",
+                        "owner_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "organization_id": "789e4567-e89b-12d3-a456-426614174000",
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                        "configuration": {
+                            "images": [],
+                            "settings": {},
+                        },
+                    }
+                }
+            },
+        },
+        401: {
+            "description": "Not authenticated",
+            "content": {
+                "application/json": {"example": {"detail": "Not authenticated"}}
+            },
+        },
+        403: {
+            "description": "Insufficient permissions",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Not enough permissions to view this project"}
+                }
+            },
+        },
+        404: {
+            "description": "Project not found",
+            "content": {
+                "application/json": {"example": {"detail": "Project not found"}}
+            },
+        },
+    },
+)
 async def read_project(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -164,19 +271,15 @@ async def read_project(
     """
     project = await get_project(db, project_id=project_id)
     if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
-        )
+        raise not_found_error("Project", "project")
 
     # Check if user has view access to this project
+    # Return 404 instead of 403 to prevent timing attacks that reveal project existence
     has_access = await permission_service.can_user_access_project(
         db, current_user.id, project_id, PermissionLevel.VIEW
     )
     if not has_access:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions to view this project",
-        )
+        raise not_found_error("Project", "project")
 
     return project
 
@@ -193,38 +296,96 @@ async def update_existing_project(
     Update a project.
 
     Requires edit permission on the project.
+    Checks if project is locked by another user before allowing updates.
     """
     # Check if user is in read-only mode
     is_read_only, reason = await LimitChecker.is_read_only(
         db, current_user.id, current_user.subscription_tier
     )
     if is_read_only:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Account is in read-only mode. {reason}. Upgrade your plan to continue editing.",
+        raise forbidden_error(
+            f"Account is in read-only mode. {reason}. Upgrade your plan to continue editing.",
+            ErrorCode.ACCOUNT_READ_ONLY,
         )
 
     project = await get_project(db, project_id=project_id)
     if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
-        )
+        raise not_found_error("Project", "project")
 
     # Check if user has edit access to this project
+    # Return 404 instead of 403 to prevent timing attacks that reveal project existence
     has_access = await permission_service.can_user_access_project(
         db, current_user.id, project_id, PermissionLevel.EDIT
     )
     if not has_access:
+        raise not_found_error("Project", "project")
+
+    # Check if project is locked by another user
+    can_modify, lock = await check_resource_lock(
+        db=db,
+        user_id=current_user.id,
+        project_id=project_id,
+        resource_type="project",
+        resource_id=str(project_id),
+    )
+
+    if not can_modify and lock:
+        # Project is locked by another user
+        lock_info = await get_lock_info(lock, db)
+        logger.warning(
+            "project_update_blocked_by_lock",
+            project_id=project_id,
+            user_id=current_user.id,
+            lock_holder=lock_info.get("locked_by_id"),
+        )
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions to edit this project",
+            status_code=status.HTTP_423_LOCKED,
+            detail={
+                "message": "Project is currently locked by another user",
+                "lock_info": lock_info,
+            },
         )
 
     project = await update_project(db, project, project_update)
     return project
 
 
-@router.delete("/{project_id}")
+@router.delete(
+    "/{project_id}",
+    status_code=status.HTTP_200_OK,
+    responses={
+        200: {
+            "description": "Project deleted successfully",
+            "content": {
+                "application/json": {
+                    "example": {"message": "Project deleted successfully"}
+                }
+            },
+        },
+        401: {
+            "description": "Not authenticated",
+            "content": {
+                "application/json": {"example": {"detail": "Not authenticated"}}
+            },
+        },
+        403: {
+            "description": "Insufficient permissions",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Not enough permissions to delete this project"
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Project not found",
+            "content": {
+                "application/json": {"example": {"detail": "Project not found"}}
+            },
+        },
+    },
+)
 async def delete_existing_project(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -246,19 +407,15 @@ async def delete_existing_project(
 
     project = await get_project(db, project_id=project_id)
     if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
-        )
+        raise not_found_error("Project", "project")
 
     # Check if user has admin access to this project
+    # Return 404 instead of 403 to prevent timing attacks that reveal project existence
     has_access = await permission_service.can_user_access_project(
         db, current_user.id, project_id, PermissionLevel.ADMIN
     )
     if not has_access:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions to delete this project",
-        )
+        raise not_found_error("Project", "project")
 
     # Get all image s3_keys from configuration
     config = project.configuration or {}
@@ -279,7 +436,9 @@ async def delete_existing_project(
                 logger.error("image_deletion_failed", s3_key=s3_key, error=str(e))
                 # Continue with other deletions
 
-    logger.info("project_images_deleted", project_id=project_id, deleted_count=deleted_count)
+    logger.info(
+        "project_images_deleted", project_id=project_id, deleted_count=deleted_count
+    )
 
     success = await delete_project(db, project_id=project_id)
     if not success:

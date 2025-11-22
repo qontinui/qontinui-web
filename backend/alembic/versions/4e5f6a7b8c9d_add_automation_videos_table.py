@@ -34,7 +34,9 @@ def upgrade() -> None:
         sa.Column("fps", sa.Integer(), nullable=True),
         sa.Column("quality", sa.String(), nullable=True),
         sa.Column("file_size_bytes", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
@@ -75,15 +77,11 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Remove automation_videos table."""
-    op.drop_index(
-        op.f("ix_automation_videos_s3_key"), table_name="automation_videos"
-    )
+    op.drop_index(op.f("ix_automation_videos_s3_key"), table_name="automation_videos")
     op.drop_index(
         op.f("ix_automation_videos_project_id"), table_name="automation_videos"
     )
-    op.drop_index(
-        op.f("ix_automation_videos_user_id"), table_name="automation_videos"
-    )
+    op.drop_index(op.f("ix_automation_videos_user_id"), table_name="automation_videos")
     op.drop_index(
         op.f("ix_automation_videos_session_id"), table_name="automation_videos"
     )

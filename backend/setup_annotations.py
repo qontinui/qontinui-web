@@ -13,9 +13,9 @@ from pathlib import Path
 backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
-from app.db.session import engine
 from app.db.base_class import Base
-from app.models.annotation import AnnotationSet, Annotation
+from app.db.session import engine
+from app.models.annotation import Annotation, AnnotationSet
 from sqlalchemy import inspect
 
 
@@ -77,12 +77,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--drop",
         action="store_true",
-        help="Drop existing annotation tables (⚠️  destroys data)"
+        help="Drop existing annotation tables (⚠️  destroys data)",
     )
     parser.add_argument(
         "--reset",
         action="store_true",
-        help="Drop and recreate annotation tables (⚠️  destroys data)"
+        help="Drop and recreate annotation tables (⚠️  destroys data)",
     )
 
     args = parser.parse_args()

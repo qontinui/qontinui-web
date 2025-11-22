@@ -1,18 +1,14 @@
 import time
 
-from fastapi import FastAPI
-from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.staticfiles import StaticFiles
-from slowapi.errors import RateLimitExceeded
-from starlette.exceptions import HTTPException as StarletteHTTPException
-
 from app.api.v1.api import api_router
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.db.session import SessionLocal
+from app.middleware.database_timing import (
+    DatabaseTimingMiddleware,
+    init_database_timing,
+)
 from app.middleware.error_handler import (
     AppError,
     app_exception_handler,
@@ -23,7 +19,15 @@ from app.middleware.error_handler import (
 from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.sliding_window_session import SlidingWindowSessionMiddleware
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -57,7 +61,16 @@ if settings.RATE_LIMIT_ENABLED:
 if settings.ENVIRONMENT == "production":
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["*"],  # Allow all hosts for now (ELB health checks use internal IPs)
+        allowed_hosts=[
+            "qontinui.io",
+            "www.qontinui.io",
+            "api.qontinui.io",  # API subdomain for backend
+            "qontinui.com",
+            "www.qontinui.com",
+            "app.qontinui.com",
+            "qontinui-prod-py.eba-km2u4s23.eu-central-1.elasticbeanstalk.com",  # ELB hostname
+            "*.elasticbeanstalk.com",  # ELB health checks
+        ],
     )
 
 # Set up CORS
@@ -70,7 +83,11 @@ if settings.ENVIRONMENT == "production":
         "https://app.qontinui.com",
         "https://www.qontinui.com",
     ]
-    logger.info("Using hardcoded production CORS origins", origins=origins, environment=settings.ENVIRONMENT)
+    logger.info(
+        "Using hardcoded production CORS origins",
+        origins=origins,
+        environment=settings.ENVIRONMENT,
+    )
 elif settings.BACKEND_CORS_ORIGINS:
     # Convert AnyHttpUrl objects to strings and strip trailing slashes
     origins = [str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS]
@@ -82,6 +99,9 @@ else:
         "http://localhost:3002",
         "http://localhost:3003",
         "http://localhost:3004",
+        "http://localhost:1420",  # qontinui-runner Tauri app
+        "tauri://localhost",  # Tauri custom protocol
+        "https://tauri.localhost",  # Tauri HTTPS protocol
         # Allow frontend on Windows to access WSL backend
         # Note: WSL IP may change, consider using localhost instead
         "http://172.27.67.252:3001",
@@ -90,6 +110,21 @@ else:
         "http://172.24.89.15:3000",
     ]
     logger.info("Using development CORS origins", origins=origins)
+
+# Add database query timing middleware (if enabled)
+if settings.ENABLE_QUERY_LOGGING:
+    app.add_middleware(DatabaseTimingMiddleware)
+    logger.info(
+        "database_timing_middleware_enabled",
+        slow_query_threshold_ms=settings.SLOW_QUERY_THRESHOLD_MS,
+        max_queries_per_request=settings.MAX_QUERIES_PER_REQUEST,
+    )
+
+# Add HTTP request logging middleware
+from app.middleware.logging_middleware import LoggingMiddleware
+
+app.add_middleware(LoggingMiddleware)
+logger.info("http_request_logging_enabled")
 
 # Add metrics tracking middleware
 app.add_middleware(MetricsMiddleware)
@@ -104,6 +139,10 @@ if settings.SLIDING_WINDOW_ENABLED:
 
 # Add request ID tracking middleware (should be first for proper context binding)
 app.add_middleware(RequestIDMiddleware)
+
+# Add security headers middleware (executes after CORS in request flow)
+app.add_middleware(SecurityHeadersMiddleware)
+logger.info("security_headers_middleware_enabled", environment=settings.ENVIRONMENT)
 
 # CORS middleware must be added LAST so it executes FIRST (middleware order is reversed)
 app.add_middleware(
@@ -140,6 +179,24 @@ async def startup_event():
         project=settings.PROJECT_NAME,
     )
 
+    # Initialize Sentry for error tracking
+    import os
+
+    from app.core.sentry_config import configure_sentry
+
+    sentry_dsn = os.getenv("SENTRY_DSN")
+    if sentry_dsn:
+        configure_sentry(
+            dsn=sentry_dsn,
+            environment=settings.ENVIRONMENT,
+            release=f"qontinui-backend@{settings.VERSION}",
+            traces_sample_rate=0.1 if settings.ENVIRONMENT == "production" else 0.0,
+            profiles_sample_rate=0.1 if settings.ENVIRONMENT == "production" else 0.0,
+        )
+        logger.info("sentry_configured", environment=settings.ENVIRONMENT)
+    else:
+        logger.info("sentry_not_configured", reason="SENTRY_DSN not set")
+
     # Initialize Redis connection (optional)
     if settings.REDIS_ENABLED:
         try:
@@ -171,6 +228,12 @@ async def startup_event():
         )
         # Re-raise to prevent app from starting with broken DB
         raise
+
+    # Initialize database query timing
+    if settings.ENABLE_QUERY_LOGGING:
+        from app.db.session import async_engine, sync_engine
+
+        init_database_timing(async_engine, sync_engine)
 
     # Initialize ARQ connection pool (optional, requires Redis)
     if settings.REDIS_ENABLED:
@@ -242,9 +305,8 @@ async def health_check():
 
     # Check async database connectivity
     try:
-        from sqlalchemy import text
-
         from app.db.session import AsyncSessionLocal
+        from sqlalchemy import text
 
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))

@@ -6,12 +6,13 @@ size similarity and spatial arrangement.
 """
 
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple
+
 import cv2
+import numpy as np
 from sklearn.cluster import DBSCAN, KMeans
 
-from ..base import BaseRegionAnalyzer, DetectedRegion, BoundingBox, RegionType
+from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +75,7 @@ class ContourGridDetector(BaseRegionAnalyzer):
         return grid_regions
 
     def _find_rectangular_contours(
-        self,
-        gray: np.ndarray,
-        params: Dict[str, Any]
+        self, gray: np.ndarray, params: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Find rectangular contours in the image
@@ -101,8 +100,10 @@ class ContourGridDetector(BaseRegionAnalyzer):
             x, y, w, h = cv2.boundingRect(contour)
 
             # Size filter
-            if not (params["min_cell_size"] <= w <= params["max_cell_size"] and
-                    params["min_cell_size"] <= h <= params["max_cell_size"]):
+            if not (
+                params["min_cell_size"] <= w <= params["max_cell_size"]
+                and params["min_cell_size"] <= h <= params["max_cell_size"]
+            ):
                 continue
 
             # Calculate rectangularity (how rectangular is the contour)
@@ -120,22 +121,22 @@ class ContourGridDetector(BaseRegionAnalyzer):
             # Calculate aspect ratio
             aspect_ratio = w / h if h > 0 else 0
 
-            rectangles.append({
-                "x": x,
-                "y": y,
-                "width": w,
-                "height": h,
-                "area": area,
-                "aspect_ratio": aspect_ratio,
-                "rectangularity": rectangularity,
-            })
+            rectangles.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "width": w,
+                    "height": h,
+                    "area": area,
+                    "aspect_ratio": aspect_ratio,
+                    "rectangularity": rectangularity,
+                }
+            )
 
         return rectangles
 
     def _cluster_by_size(
-        self,
-        rectangles: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, rectangles: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> List[List[Dict[str, Any]]]:
         """
         Cluster rectangles by similar size
@@ -163,9 +164,14 @@ class ContourGridDetector(BaseRegionAnalyzer):
 
             # Evaluate clusters
             for label in range(n_clusters):
-                cluster_rects = [rectangles[i] for i in range(len(rectangles)) if labels[i] == label]
+                cluster_rects = [
+                    rectangles[i] for i in range(len(rectangles)) if labels[i] == label
+                ]
 
-                if len(cluster_rects) >= params["min_grid_rows"] * params["min_grid_cols"]:
+                if (
+                    len(cluster_rects)
+                    >= params["min_grid_rows"] * params["min_grid_cols"]
+                ):
                     # Check size consistency
                     widths = [r["width"] for r in cluster_rects]
                     heights = [r["height"] for r in cluster_rects]
@@ -174,8 +180,13 @@ class ContourGridDetector(BaseRegionAnalyzer):
                         width_std = np.std(widths) / np.mean(widths)
                         height_std = np.std(heights) / np.mean(heights)
 
-                        if width_std < params["size_tolerance"] and height_std < params["size_tolerance"]:
-                            score = len(cluster_rects) * (1 - width_std) * (1 - height_std)
+                        if (
+                            width_std < params["size_tolerance"]
+                            and height_std < params["size_tolerance"]
+                        ):
+                            score = (
+                                len(cluster_rects) * (1 - width_std) * (1 - height_std)
+                            )
                             if score > best_score:
                                 best_score = score
 
@@ -190,16 +201,17 @@ class ContourGridDetector(BaseRegionAnalyzer):
             width_std = np.std(widths) / (np.mean(widths) + 1e-7)
             height_std = np.std(heights) / (np.mean(heights) + 1e-7)
 
-            if width_std < params["size_tolerance"] and height_std < params["size_tolerance"]:
+            if (
+                width_std < params["size_tolerance"]
+                and height_std < params["size_tolerance"]
+            ):
                 if rectangles not in best_clusters:
                     best_clusters.append(rectangles)
 
         return best_clusters if best_clusters else [rectangles]
 
     def _find_grid_arrangements(
-        self,
-        rectangles: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, rectangles: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> List[DetectedRegion]:
         """Find grid arrangements within a cluster of similar-sized rectangles"""
         if len(rectangles) < params["min_grid_rows"] * params["min_grid_cols"]:
@@ -223,7 +235,9 @@ class ContourGridDetector(BaseRegionAnalyzer):
             if label == -1:  # noise
                 continue
 
-            cluster_rects = [rectangles[i] for i in range(len(rectangles)) if labels[i] == label]
+            cluster_rects = [
+                rectangles[i] for i in range(len(rectangles)) if labels[i] == label
+            ]
 
             if len(cluster_rects) >= params["min_grid_rows"] * params["min_grid_cols"]:
                 # Check if cluster forms a grid
@@ -234,9 +248,7 @@ class ContourGridDetector(BaseRegionAnalyzer):
         return grid_regions
 
     def _extract_grid_structure(
-        self,
-        rectangles: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, rectangles: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> Optional[DetectedRegion]:
         """Extract grid structure from a cluster of rectangles"""
         if len(rectangles) < params["min_grid_rows"] * params["min_grid_cols"]:
@@ -254,7 +266,10 @@ class ContourGridDetector(BaseRegionAnalyzer):
         y_coords = sorted(set(y for x, y in positions))
 
         # Calculate spacing
-        if len(x_coords) < params["min_grid_cols"] or len(y_coords) < params["min_grid_rows"]:
+        if (
+            len(x_coords) < params["min_grid_cols"]
+            or len(y_coords) < params["min_grid_rows"]
+        ):
             return None
 
         x_diffs = [x_coords[i + 1] - x_coords[i] for i in range(len(x_coords) - 1)]
@@ -294,14 +309,16 @@ class ContourGridDetector(BaseRegionAnalyzer):
         cells = []
         for row in range(rows):
             for col in range(cols):
-                cells.append({
-                    "row": row,
-                    "col": col,
-                    "x": x_start + col * spacing_x,
-                    "y": y_start + row * spacing_y,
-                    "width": avg_width,
-                    "height": avg_height,
-                })
+                cells.append(
+                    {
+                        "row": row,
+                        "col": col,
+                        "x": x_start + col * spacing_x,
+                        "y": y_start + row * spacing_y,
+                        "width": avg_width,
+                        "height": avg_height,
+                    }
+                )
 
         # Calculate confidence based on grid completeness
         expected_cells = rows * cols
@@ -324,5 +341,5 @@ class ContourGridDetector(BaseRegionAnalyzer):
                 "cells": cells,
                 "detector": "contour_grid",
                 "method": "contour_clustering",
-            }
+            },
         )

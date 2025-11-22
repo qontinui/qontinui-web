@@ -5,6 +5,15 @@ import { ApiConfig } from '../api-config';
 /**
  * TokenRefreshService - Single Responsibility: Handle token refresh logic
  * Manages refresh token requests and prevents duplicate refresh attempts
+ *
+ * Token Refresh Strategy (Aligned with Backend):
+ * - Backend sliding window middleware handles proactive token refresh (5min threshold)
+ * - Frontend only refreshes reactively on 401 responses or explicit calls
+ * - This prevents race conditions where both frontend and backend try to refresh simultaneously
+ * - refreshAccessToken() should only be called:
+ *   1. In response to 401 errors (reactive refresh)
+ *   2. By explicit user actions (e.g., logout, manual refresh)
+ * - Do NOT call proactively based on token expiry time
  */
 export class TokenRefreshService {
   private tokenManager: TokenManager;
@@ -17,6 +26,19 @@ export class TokenRefreshService {
   /**
    * Refresh access token using refresh token
    * Prevents multiple simultaneous refresh attempts
+   *
+   * Token Refresh Strategy (Aligned with Backend):
+   * - This method should ONLY be called reactively (on 401 errors) or explicitly by user actions
+   * - Do NOT call proactively based on token expiry time
+   * - Backend sliding window middleware handles proactive refresh (5min threshold)
+   * - Calling this proactively creates race conditions with backend middleware
+   *
+   * HttpOnly Cookie Security (Migration Complete):
+   * - Backend reads refresh_token from cookie for authentication
+   * - Browser automatically sends refresh_token cookie with credentials: 'include'
+   * - No request body needed (tokens are in HttpOnly cookies)
+   * - Backend sets new access_token and refresh_token as HttpOnly cookies
+   * - Frontend stores ONLY expiry timestamps (not actual tokens)
    */
   async refreshAccessToken(): Promise<boolean> {
     console.log('[TokenRefreshService] refreshAccessToken called:', {
@@ -38,32 +60,35 @@ export class TokenRefreshService {
 
   /**
    * Perform the actual refresh operation
+   *
+   * HttpOnly Cookie Security (Migration Complete):
+   * - Backend reads refresh_token from cookie for authentication
+   * - Browser automatically sends refresh_token cookie with credentials: 'include'
+   * - Frontend stores ONLY expiry timestamps from response (not actual tokens)
+   * - Actual tokens never sent in request body or Authorization header
    */
   private async performRefresh(): Promise<boolean> {
-    const refreshToken = this.tokenManager.getRefreshToken();
-
-    if (!refreshToken) {
-      console.warn('[TokenRefreshService] No refresh token available - cannot refresh');
-      return false;
-    }
-
     try {
       console.log('[TokenRefreshService] Attempting to refresh token at:', ApiConfig.AUTH_REFRESH);
+      console.log('[TokenRefreshService] Using HttpOnly cookie authentication');
 
       const response = await fetch(ApiConfig.AUTH_REFRESH, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        credentials: 'include', // Critical: Sends refresh_token cookie for authentication
       });
 
       console.log('[TokenRefreshService] Token refresh response status:', response.status);
 
       if (response.ok) {
         const tokens: TokenResponse = await response.json();
-        console.log('[TokenRefreshService] ✅ Token refresh successful, setting new tokens');
+        console.log('[TokenRefreshService] ✅ Token refresh successful');
+
+        // Store expiry timestamps and authentication state (not actual tokens)
+        // Backend sets new HttpOnly cookies automatically
+        // TokenStorage.saveAccessToken() and saveRefreshToken() are now NO-OPs
         this.tokenManager.setTokens(tokens);
         return true;
       } else {

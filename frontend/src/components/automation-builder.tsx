@@ -1,27 +1,85 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import dynamic from "next/dynamic"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { AutomationBuilder as UnifiedAutomationBuilder } from "@/components/automation-builder/AutomationBuilder"
-import { StateStructure } from "@/components/state-machine"
-import { ImagesManager } from "@/components/images-manager"
-import ScreenshotUploadTab from "@/components/ScreenshotTab/ScreenshotUploadTab"
-import ScreenshotAnnotationTab from "@/components/screenshot-annotation/ScreenshotAnnotationTab"
-import { PatternMatchingTest } from "@/components/PatternMatching/PatternMatchingTest"
-import { ProcessTestRunner } from "@/components/IntegrationTests/ProcessTestRunner"
-import { PatternOptimizationSimplified } from "@/components/pattern-optimization/PatternOptimizationSimplified"
-import { SemanticAnalysisTab } from "@/components/SemanticAnalysis/SemanticAnalysisTab"
-import StateDiscoveryTab from "@/components/state-discovery/StateDiscoveryTab"
-import { ImageExtractionTab } from "@/components/image-extraction/ImageExtractionTab"
-import { BackgroundRemovalTab } from "@/components/background-removal/BackgroundRemovalTab"
 import { AuthDialog } from "@/components/auth-dialog"
 import { ProjectManager } from "@/components/project-manager"
-import { SettingsTab } from "@/components/settings/SettingsTab"
-import { ProjectSettingsComponent } from "@/components/project-settings"
 import { Save, Download, Upload, User, LogOut, FileCode, Edit2, Check, X, Plus, Home, ChevronDown } from "lucide-react"
+
+// Dynamic imports for large components with loading states
+const UnifiedAutomationBuilder = dynamic(
+  () => import("@/components/automation-builder/AutomationBuilder").then(mod => ({ default: mod.AutomationBuilder })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Automation Builder...</div> }
+)
+
+const StateStructure = dynamic(
+  () => import("@/components/state-machine").then(mod => ({ default: mod.StateStructure })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading State Machine...</div> }
+)
+
+const ImagesManager = dynamic(
+  () => import("@/components/images-manager").then(mod => ({ default: mod.ImagesManager })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Images Manager...</div> }
+)
+
+const ScreenshotUploadTab = dynamic(
+  () => import("@/components/ScreenshotTab/ScreenshotUploadTab"),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Screenshot Upload...</div> }
+)
+
+const ScreenshotAnnotationTab = dynamic(
+  () => import("@/components/screenshot-annotation/ScreenshotAnnotationTab"),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Screenshot Annotation...</div> }
+)
+
+const PatternMatchingTest = dynamic(
+  () => import("@/components/PatternMatching/PatternMatchingTest").then(mod => ({ default: mod.PatternMatchingTest })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Pattern Matching...</div> }
+)
+
+const ProcessTestRunner = dynamic(
+  () => import("@/components/IntegrationTests/ProcessTestRunner").then(mod => ({ default: mod.ProcessTestRunner })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Test Runner...</div> }
+)
+
+const PatternOptimizationSimplified = dynamic(
+  () => import("@/components/pattern-optimization/PatternOptimizationSimplified").then(mod => ({ default: mod.PatternOptimizationSimplified })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Pattern Optimization...</div> }
+)
+
+const SemanticAnalysisTab = dynamic(
+  () => import("@/components/SemanticAnalysis/SemanticAnalysisTab").then(mod => ({ default: mod.SemanticAnalysisTab })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Semantic Analysis...</div> }
+)
+
+const StateDiscoveryTab = dynamic(
+  () => import("@/components/state-discovery/StateDiscoveryTab"),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading State Discovery...</div> }
+)
+
+const ImageExtractionTab = dynamic(
+  () => import("@/components/image-extraction/ImageExtractionTab").then(mod => ({ default: mod.ImageExtractionTab })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Image Extraction...</div> }
+)
+
+const BackgroundRemovalTab = dynamic(
+  () => import("@/components/background-removal/BackgroundRemovalTab").then(mod => ({ default: mod.BackgroundRemovalTab })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Background Removal...</div> }
+)
+
+const SettingsTab = dynamic(
+  () => import("@/components/settings/SettingsTab").then(mod => ({ default: mod.SettingsTab })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Settings...</div> }
+)
+
+const ProjectSettingsComponent = dynamic(
+  () => import("@/components/project-settings").then(mod => ({ default: mod.ProjectSettingsComponent })),
+  { loading: () => <div className="flex items-center justify-center h-64">Loading Project Settings...</div> }
+)
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -354,6 +412,35 @@ function AutomationBuilderContent() {
     // This will be called by ProjectManager when loading a project
     // The automation context will handle updating all the state, including project name
     loadConfiguration(config)
+  }
+
+  // Check if we have a project - show empty state if not
+  const projectId = searchParams.get('project')
+  if (!projectId) {
+    return (
+      <div className="h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white flex items-center justify-center">
+        <div className="max-w-md text-center space-y-6">
+          <div className="w-24 h-24 bg-[#00D9FF]/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <FileCode className="w-12 h-12 text-[#00D9FF]" />
+          </div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
+            No Project Selected
+          </h1>
+          <p className="text-gray-400 text-lg">
+            Create a new project or select an existing one from your dashboard to start building automations.
+          </p>
+          <div className="flex justify-center pt-4">
+            <Button
+              onClick={() => router.push('/dashboard')}
+              className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium px-6"
+            >
+              <Home className="w-4 h-4 mr-2" />
+              Go to Dashboard
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

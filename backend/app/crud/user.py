@@ -1,12 +1,11 @@
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.security import get_password_hash, verify_password
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def get_user(db: AsyncSession, user_id: UUID) -> User | None:

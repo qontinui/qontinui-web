@@ -10,6 +10,8 @@ import { compareVersions, isValidVersion } from './version-utils';
 export class MigrationEngine {
   private migrations: Map<string, Migration> = new Map();
   private currentVersion: string;
+  private cache: Map<string, MigrationResult> = new Map();
+  private cacheEnabled: boolean = true;
 
   constructor(currentVersion: string) {
     if (!isValidVersion(currentVersion)) {
@@ -84,6 +86,22 @@ export class MigrationEngine {
       };
     }
 
+    // Check cache first
+    if (this.cacheEnabled) {
+      const cacheKey = this.getCacheKey(config);
+      const cached = this.cache.get(cacheKey);
+      if (cached) {
+        return {
+          ...cached,
+          config: structuredClone(cached.config),  // Return clone to prevent mutations
+          context: {
+            ...cached.context,
+            warnings: [...cached.context.warnings, 'Loaded from migration cache'],
+          },
+        };
+      }
+    }
+
     // Find migration path
     const path = this.findMigrationPath(configVersion, this.currentVersion);
 
@@ -154,11 +172,19 @@ export class MigrationEngine {
     // Add migration history to metadata
     this.addMigrationHistory(currentConfig, configVersion, path);
 
-    return {
+    const result: MigrationResult = {
       success: true,
       config: currentConfig,
       context,
     };
+
+    // Cache successful result
+    if (this.cacheEnabled && result.success) {
+      const cacheKey = this.getCacheKey(config);
+      this.cache.set(cacheKey, structuredClone(result));  // Store clone
+    }
+
+    return result;
   }
 
   /**
@@ -242,5 +268,130 @@ export class MigrationEngine {
    */
   getCurrentVersion(): string {
     return this.currentVersion;
+  }
+
+  /**
+   * Generate cache key for a config
+   * Uses version + content hash for uniqueness
+   */
+  private getCacheKey(config: any): string {
+    const version = config.version || 'unknown';
+    // Simple hash using JSON stringify (fast for small configs)
+    // For large configs, could use a proper hash function
+    const configStr = JSON.stringify(config);
+    const hash = this.simpleHash(configStr);
+    return `${version}-${hash}`;
+  }
+
+  /**
+   * Simple hash function for cache keys
+   */
+  private simpleHash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36);
+  }
+
+  /**
+   * Clear the migration cache
+   * Useful when migrations are updated or for testing
+   */
+  clearCache(): void {
+    this.cache.clear();
+  }
+
+  /**
+   * Enable or disable caching
+   */
+  setCacheEnabled(enabled: boolean): void {
+    this.cacheEnabled = enabled;
+    if (!enabled) {
+      this.clearCache();
+    }
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): { size: number; enabled: boolean } {
+    return {
+      size: this.cache.size,
+      enabled: this.cacheEnabled,
+    };
+  }
+
+  /**
+   * Preview what migrations would be applied without actually applying them
+   * Useful for showing users what will change before migration
+   */
+  async previewMigration(config: any): Promise<{
+    needsMigration: boolean;
+    currentVersion: string;
+    targetVersion: string;
+    migrationSteps: Array<{
+      from: string;
+      to: string;
+      description: string;
+    }>;
+    estimatedChanges: string[];
+  }> {
+    const configVersion = config.version;
+
+    // Check if migration is needed
+    if (!this.needsMigration(configVersion)) {
+      return {
+        needsMigration: false,
+        currentVersion: configVersion,
+        targetVersion: this.currentVersion,
+        migrationSteps: [],
+        estimatedChanges: [],
+      };
+    }
+
+    // Find migration path
+    const path = this.findMigrationPath(configVersion, this.currentVersion);
+
+    if (!path) {
+      return {
+        needsMigration: true,
+        currentVersion: configVersion,
+        targetVersion: this.currentVersion,
+        migrationSteps: [],
+        estimatedChanges: ['Error: No migration path found'],
+      };
+    }
+
+    // Build preview information
+    const migrationSteps = path.map(migration => ({
+      from: migration.fromVersion,
+      to: migration.toVersion,
+      description: migration.description,
+    }));
+
+    // Estimate changes by checking isApplicable for each migration
+    const estimatedChanges: string[] = [];
+    let previewConfig = structuredClone(config);
+
+    for (const migration of path) {
+      if (migration.isApplicable && !migration.isApplicable(previewConfig)) {
+        estimatedChanges.push(`${migration.fromVersion}→${migration.toVersion}: No changes (not applicable)`);
+      } else {
+        estimatedChanges.push(`${migration.fromVersion}→${migration.toVersion}: ${migration.description}`);
+      }
+      // Update version for next check
+      previewConfig.version = migration.toVersion;
+    }
+
+    return {
+      needsMigration: true,
+      currentVersion: configVersion,
+      targetVersion: this.currentVersion,
+      migrationSteps,
+      estimatedChanges,
+    };
   }
 }

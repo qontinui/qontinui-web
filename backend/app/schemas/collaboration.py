@@ -12,10 +12,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import EmailStr, Field, field_validator
-
 from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
-
+from pydantic import EmailStr, Field, field_validator
 
 # ============================================================================
 # Organization Schemas
@@ -25,8 +23,12 @@ from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 class OrganizationBase(BaseSchema):
     """Base organization schema with common fields."""
 
-    name: str = Field(..., min_length=1, max_length=255, description="Organization name")
-    description: str | None = Field(None, max_length=1000, description="Organization description")
+    name: str = Field(
+        ..., min_length=1, max_length=255, description="Organization name"
+    )
+    description: str | None = Field(
+        None, max_length=1000, description="Organization description"
+    )
 
 
 class OrganizationCreate(OrganizationBase):
@@ -37,7 +39,7 @@ class OrganizationCreate(OrganizationBase):
         min_length=3,
         max_length=63,
         pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$",
-        description="URL-friendly organization identifier"
+        description="URL-friendly organization identifier",
     )
 
 
@@ -116,7 +118,9 @@ class InvitationBase(BaseSchema):
     """Base invitation schema."""
 
     email: EmailStr = Field(..., description="Email address to invite")
-    role: str = Field(default="member", description="Role to assign: admin, member, viewer")
+    role: str = Field(
+        default="member", description="Role to assign: admin, member, viewer"
+    )
 
 
 class InvitationCreate(InvitationBase):
@@ -159,8 +163,7 @@ class ProjectShareBase(BaseSchema):
     """Base project sharing schema."""
 
     permission_level: str = Field(
-        default="view",
-        description="Permission level: view, comment, edit, admin"
+        default="view", description="Permission level: view, comment, edit, admin"
     )
 
 
@@ -168,7 +171,9 @@ class ProjectShareRequest(ProjectShareBase):
     """Schema for sharing a project."""
 
     user_id: UUID | None = Field(None, description="User ID to share with")
-    organization_id: UUID | None = Field(None, description="Organization ID to share with")
+    organization_id: UUID | None = Field(
+        None, description="Organization ID to share with"
+    )
     expires_at: datetime | None = Field(None, description="Optional expiration date")
 
     @field_validator("permission_level")
@@ -198,7 +203,9 @@ class CollaboratorResponse(ProjectShareBase, BaseORMSchema):
     email: str | None = Field(None, description="Collaborator email")
     full_name: str | None = Field(None, description="Collaborator full name")
     avatar_url: str | None = Field(None, description="Collaborator avatar URL")
-    organization_name: str | None = Field(None, description="Organization name if org access")
+    organization_name: str | None = Field(
+        None, description="Organization name if org access"
+    )
 
 
 class ProjectShareUpdate(BaseSchema):
@@ -216,14 +223,18 @@ class ProjectShareUpdate(BaseSchema):
 class LockBase(BaseSchema):
     """Base lock schema."""
 
-    resource_type: str = Field(..., description="Type: workflow, state, image, transition, action, project")
+    resource_type: str = Field(
+        ..., description="Type: workflow, state, image, transition, action, project"
+    )
     resource_id: str = Field(..., description="ID of the resource to lock")
 
 
 class LockRequest(LockBase):
     """Schema for acquiring a lock."""
 
-    duration_minutes: int | None = Field(5, ge=1, le=30, description="Lock duration in minutes (1-30)")
+    duration_minutes: int | None = Field(
+        5, ge=1, le=30, description="Lock duration in minutes (1-30)"
+    )
     metadata: dict[str, Any] | None = Field(None, description="Optional metadata")
 
 
@@ -247,7 +258,9 @@ class LockResponse(LockBase, BaseORMSchema):
 class LockExtendRequest(BaseSchema):
     """Schema for extending a lock."""
 
-    duration_minutes: int = Field(5, ge=1, le=30, description="Additional minutes to extend")
+    duration_minutes: int = Field(
+        5, ge=1, le=30, description="Additional minutes to extend"
+    )
 
 
 # ============================================================================
@@ -265,17 +278,23 @@ class CommentPosition(BaseSchema):
 class CommentBase(BaseSchema):
     """Base comment schema."""
 
-    content: str = Field(..., min_length=1, max_length=5000, description="Comment content")
+    content: str = Field(
+        ..., min_length=1, max_length=5000, description="Comment content"
+    )
     workflow_id: str | None = Field(None, description="Optional workflow ID")
     action_id: str | None = Field(None, description="Optional action/state ID")
-    position: CommentPosition | None = Field(None, description="Canvas position for visual comments")
+    position: CommentPosition | None = Field(
+        None, description="Canvas position for visual comments"
+    )
     mentions: list[UUID] | None = Field(None, description="List of mentioned user IDs")
 
 
 class CommentCreate(CommentBase):
     """Schema for creating a comment."""
 
-    parent_comment_id: UUID | None = Field(None, description="Parent comment ID for threading")
+    parent_comment_id: UUID | None = Field(
+        None, description="Parent comment ID for threading"
+    )
 
 
 class CommentUpdate(BaseSchema):
@@ -325,8 +344,12 @@ class ActivityLogResponse(BaseORMSchema):
     id: UUID
     project_id: int
     user_id: UUID
-    action_type: str = Field(..., description="Type of action: created, modified, deleted, etc.")
-    resource_type: str = Field(..., description="Type of resource: workflow, state, image, etc.")
+    action_type: str = Field(
+        ..., description="Type of action: created, modified, deleted, etc."
+    )
+    resource_type: str = Field(
+        ..., description="Type of resource: workflow, state, image, etc."
+    )
     resource_id: str
     resource_name: str | None = None
     changes: dict[str, Any] | None = None
@@ -359,7 +382,9 @@ class ActivityFilterParams(BaseSchema):
 class OrganizationSwitchRequest(BaseSchema):
     """Schema for switching current organization context."""
 
-    organization_id: UUID | None = Field(None, description="Organization to switch to, null for personal")
+    organization_id: UUID | None = Field(
+        None, description="Organization to switch to, null for personal"
+    )
 
 
 class OrganizationSwitchResponse(BaseSchema):

@@ -13,6 +13,7 @@ import { toast } from "sonner"
 import { useAutomation } from "@/contexts/automation-context"
 import { ImageDeletionDialog, type ImageUsageInfo } from "@/components/image-deletion-dialog"
 import { apiClient } from "@/lib/api-client"
+import { uploadScreenshotOffline } from "@/lib/offline-screenshot-upload"
 import { ImageUploadProgress, type UploadingImage } from "@/components/ImageUploadProgress"
 
 interface ImageAsset {
@@ -120,42 +121,58 @@ export function ImagesManager() {
             reader.readAsDataURL(file)
           })
 
-          // Upload to S3 via API
-          const result = await apiClient.uploadProjectImage(
-            projectId,
-            file,
-            (progress) => {
+          // Upload with offline-first support
+          const result = await uploadScreenshotOffline(file, projectId, {
+            name: file.name,
+            onProgress: (progress, status) => {
               setUploadProgress(prev => ({ ...prev, [file.name]: progress }))
               setUploadingFiles(prev =>
                 prev.map(f => f.name === file.name ? { ...f, progress } : f)
               )
             }
-          )
+          })
 
-          // Create ImageAsset with S3 data
+          // Create ImageAsset with local data (available immediately)
           const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, '')
           const imageAsset: ImageAsset = {
-            id: result.image_id,
+            id: result.screenshot.id,
             name: nameWithoutExtension,
-            url: result.url, // S3 presigned URL
-            size: result.size,
-            createdAt: new Date(result.created_at),
+            url: result.screenshot.url,
+            size: file.size,
+            createdAt: new Date(result.screenshot.createdAt),
             usageCount: 0,
             usedIn: [],
             source: 'uploaded',
             projectName: projectName,
             // S3 fields (matching ImageAsset type in context)
-            s3_key: result.s3_key,
-            url_expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+            s3_key: result.screenshot.s3Key,
+            url_expires_at: result.screenshot.urlExpiresAt,
           }
 
-          // Add to context
+          // Add to context immediately
           addImage(imageAsset)
 
           toast.success(`${file.name} uploaded`)
 
           // Remove from uploading list
           setUploadingFiles(prev => prev.filter(f => f.name !== file.name))
+
+          // Wait for server sync in background
+          result.whenSynced
+            .then((serverData) => {
+              // Update with server data when synced
+              const updatedAsset = {
+                ...imageAsset,
+                id: serverData.imageId,
+                url: serverData.url,
+                s3_key: serverData.s3Key,
+              }
+              addImage(updatedAsset)
+            })
+            .catch((error) => {
+              console.error('Sync failed for', file.name, error)
+              toast.warning(`${file.name} saved locally, will sync when online`)
+            })
 
           return { success: true, fileName: file.name }
         } catch (error: any) {

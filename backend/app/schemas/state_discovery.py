@@ -7,9 +7,8 @@ Provides Pydantic models for state discovery API responses.
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from pydantic import BaseModel, Field
 
 
 class StateTransition(BaseModel):
@@ -95,7 +94,11 @@ class StateDiscoveryStatus(BaseModel):
     """Status of a state discovery operation."""
 
     session_id: UUID = Field(..., description="Automation session ID")
-    status: str = Field(..., description="Discovery status (pending, processing, completed, failed)")
+    status: str = Field(
+        ..., description="Discovery status (pending, processing, completed, failed)"
+    )
     message: str | None = Field(None, description="Status message or error")
     started_at: IsoDatetime | None = Field(None, description="When discovery started")
-    completed_at: IsoDatetime | None = Field(None, description="When discovery completed")
+    completed_at: IsoDatetime | None = Field(
+        None, description="When discovery completed"
+    )

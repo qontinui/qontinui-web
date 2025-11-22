@@ -40,7 +40,7 @@ import {
   Repeat,
   Zap,
 } from 'lucide-react';
-import { hasConditionalLogic, hasLoops, hasParallelPaths } from '@/lib/workflow-validator';
+import { hasConditionalLogic, hasLoops } from '@/lib/workflow-validator';
 
 // ============================================================================
 // Workflow Properties Component
@@ -440,13 +440,6 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
                         Contains Loops
                       </Badge>
                     )}
-
-                    {hasParallelPaths(workflow) && (
-                      <Badge variant="outline" className="border-cyan-600 text-cyan-400">
-                        <Zap className="w-3 h-3 mr-1" />
-                        Parallel Execution
-                      </Badge>
-                    )}
                   </div>
                 </div>
 
@@ -456,9 +449,6 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({ classNam
                   </p>
                   <p>
                     <strong>Loops:</strong> May contain cycles - ensure proper exit conditions
-                  </p>
-                  <p>
-                    <strong>Parallel Execution:</strong> Multiple actions run simultaneously (read-only only)
                   </p>
                 </div>
               </div>

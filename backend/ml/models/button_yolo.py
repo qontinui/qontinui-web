@@ -5,11 +5,12 @@ Fine-tuned YOLOv8 or YOLOv5 for button detection and classification.
 Supports multi-class detection and ONNX export for fast inference.
 """
 
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-from typing import List, Dict, Any, Tuple, Optional
-from pathlib import Path
 
 
 class ButtonYOLO:
@@ -24,12 +25,14 @@ class ButtonYOLO:
         - ONNX export for fast inference
     """
 
-    def __init__(self,
-                 model_type: str = 'yolov8',
-                 model_size: str = 'n',  # n, s, m, l, x
-                 num_classes: int = 4,
-                 pretrained: bool = True,
-                 device: str = 'auto'):
+    def __init__(
+        self,
+        model_type: str = "yolov8",
+        model_size: str = "n",  # n, s, m, l, x
+        num_classes: int = 4,
+        pretrained: bool = True,
+        device: str = "auto",
+    ):
         """
         Initialize ButtonYOLO
 
@@ -45,17 +48,17 @@ class ButtonYOLO:
         self.num_classes = num_classes
 
         # Determine device
-        if device == 'auto':
-            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        if device == "auto":
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
 
         # Class names for button types
         self.class_names = [
-            'primary_button',
-            'secondary_button',
-            'icon_button',
-            'text_button'
+            "primary_button",
+            "secondary_button",
+            "icon_button",
+            "text_button",
         ][:num_classes]
 
         # Load model
@@ -63,9 +66,9 @@ class ButtonYOLO:
 
     def _load_model(self, pretrained: bool):
         """Load YOLO model"""
-        if self.model_type == 'yolov8':
+        if self.model_type == "yolov8":
             return self._load_yolov8(pretrained)
-        elif self.model_type == 'yolov5':
+        elif self.model_type == "yolov5":
             return self._load_yolov5(pretrained)
         else:
             raise ValueError(f"Unknown model type: {self.model_type}")
@@ -77,11 +80,11 @@ class ButtonYOLO:
 
             if pretrained:
                 # Load pretrained model
-                model_name = f'yolov8{self.model_size}.pt'
+                model_name = f"yolov8{self.model_size}.pt"
                 model = YOLO(model_name)
             else:
                 # Load architecture only
-                model_name = f'yolov8{self.model_size}.yaml'
+                model_name = f"yolov8{self.model_size}.yaml"
                 model = YOLO(model_name)
 
             # Modify for custom number of classes
@@ -98,11 +101,13 @@ class ButtonYOLO:
         """Load YOLOv5 model from torch hub"""
         try:
             if pretrained:
-                model = torch.hub.load('ultralytics/yolov5', f'yolov5{self.model_size}',
-                                      pretrained=True)
+                model = torch.hub.load(
+                    "ultralytics/yolov5", f"yolov5{self.model_size}", pretrained=True
+                )
             else:
-                model = torch.hub.load('ultralytics/yolov5', f'yolov5{self.model_size}',
-                                      pretrained=False)
+                model = torch.hub.load(
+                    "ultralytics/yolov5", f"yolov5{self.model_size}", pretrained=False
+                )
 
             # Set number of classes
             model.model[-1].nc = self.num_classes  # Modify detection head
@@ -113,12 +118,14 @@ class ButtonYOLO:
         except Exception as e:
             raise RuntimeError(f"Failed to load YOLOv5: {e}")
 
-    def train(self,
-              data_yaml: str,
-              epochs: int = 50,
-              batch_size: int = 16,
-              img_size: int = 640,
-              **kwargs) -> Dict[str, Any]:
+    def train(
+        self,
+        data_yaml: str,
+        epochs: int = 50,
+        batch_size: int = 16,
+        img_size: int = 640,
+        **kwargs,
+    ) -> Dict[str, Any]:
         """
         Train the YOLO model
 
@@ -132,13 +139,14 @@ class ButtonYOLO:
         Returns:
             Training results dictionary
         """
-        if self.model_type == 'yolov8':
+        if self.model_type == "yolov8":
             return self._train_yolov8(data_yaml, epochs, batch_size, img_size, **kwargs)
-        elif self.model_type == 'yolov5':
+        elif self.model_type == "yolov5":
             return self._train_yolov5(data_yaml, epochs, batch_size, img_size, **kwargs)
 
-    def _train_yolov8(self, data_yaml: str, epochs: int, batch_size: int,
-                      img_size: int, **kwargs) -> Dict[str, Any]:
+    def _train_yolov8(
+        self, data_yaml: str, epochs: int, batch_size: int, img_size: int, **kwargs
+    ) -> Dict[str, Any]:
         """Train YOLOv8 model"""
         results = self.model.train(
             data=data_yaml,
@@ -146,12 +154,13 @@ class ButtonYOLO:
             batch=batch_size,
             imgsz=img_size,
             device=self.device,
-            **kwargs
+            **kwargs,
         )
         return results
 
-    def _train_yolov5(self, data_yaml: str, epochs: int, batch_size: int,
-                      img_size: int, **kwargs) -> Dict[str, Any]:
+    def _train_yolov5(
+        self, data_yaml: str, epochs: int, batch_size: int, img_size: int, **kwargs
+    ) -> Dict[str, Any]:
         """Train YOLOv5 model - requires custom training loop"""
         # Note: YOLOv5 training typically done via train.py script
         # This is a simplified version
@@ -160,11 +169,13 @@ class ButtonYOLO:
             "Use YOLOv8 for integrated training or use external training script."
         )
 
-    def predict(self,
-                images: Any,
-                conf_threshold: float = 0.25,
-                iou_threshold: float = 0.45,
-                max_det: int = 100) -> List[Dict[str, Any]]:
+    def predict(
+        self,
+        images: Any,
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.45,
+        max_det: int = 100,
+    ) -> List[Dict[str, Any]]:
         """
         Run inference on images
 
@@ -177,13 +188,14 @@ class ButtonYOLO:
         Returns:
             List of detection dictionaries per image
         """
-        if self.model_type == 'yolov8':
+        if self.model_type == "yolov8":
             return self._predict_yolov8(images, conf_threshold, iou_threshold, max_det)
-        elif self.model_type == 'yolov5':
+        elif self.model_type == "yolov5":
             return self._predict_yolov5(images, conf_threshold, iou_threshold, max_det)
 
-    def _predict_yolov8(self, images: Any, conf: float, iou: float,
-                       max_det: int) -> List[Dict[str, Any]]:
+    def _predict_yolov8(
+        self, images: Any, conf: float, iou: float, max_det: int
+    ) -> List[Dict[str, Any]]:
         """Run YOLOv8 inference"""
         results = self.model.predict(
             images,
@@ -191,7 +203,7 @@ class ButtonYOLO:
             iou=iou,
             max_det=max_det,
             device=self.device,
-            verbose=False
+            verbose=False,
         )
 
         detections = []
@@ -206,11 +218,19 @@ class ButtonYOLO:
                     cls = int(boxes.cls[i].cpu())
 
                     detection = {
-                        'bbox': [float(box[0]), float(box[1]),
-                                float(box[2] - box[0]), float(box[3] - box[1])],  # x, y, w, h
-                        'confidence': conf_score,
-                        'class_id': cls,
-                        'class_name': self.class_names[cls] if cls < len(self.class_names) else f'class_{cls}'
+                        "bbox": [
+                            float(box[0]),
+                            float(box[1]),
+                            float(box[2] - box[0]),
+                            float(box[3] - box[1]),
+                        ],  # x, y, w, h
+                        "confidence": conf_score,
+                        "class_id": cls,
+                        "class_name": (
+                            self.class_names[cls]
+                            if cls < len(self.class_names)
+                            else f"class_{cls}"
+                        ),
                     }
                     image_detections.append(detection)
 
@@ -218,8 +238,9 @@ class ButtonYOLO:
 
         return detections
 
-    def _predict_yolov5(self, images: Any, conf: float, iou: float,
-                       max_det: int) -> List[Dict[str, Any]]:
+    def _predict_yolov5(
+        self, images: Any, conf: float, iou: float, max_det: int
+    ) -> List[Dict[str, Any]]:
         """Run YOLOv5 inference"""
         self.model.conf = conf
         self.model.iou = iou
@@ -232,23 +253,24 @@ class ButtonYOLO:
             image_detections = []
             for _, row in result.iterrows():
                 detection = {
-                    'bbox': [
-                        float(row['xmin']),
-                        float(row['ymin']),
-                        float(row['xmax'] - row['xmin']),
-                        float(row['ymax'] - row['ymin'])
+                    "bbox": [
+                        float(row["xmin"]),
+                        float(row["ymin"]),
+                        float(row["xmax"] - row["xmin"]),
+                        float(row["ymax"] - row["ymin"]),
                     ],
-                    'confidence': float(row['confidence']),
-                    'class_id': int(row['class']),
-                    'class_name': row['name']
+                    "confidence": float(row["confidence"]),
+                    "class_id": int(row["class"]),
+                    "class_name": row["name"],
                 }
                 image_detections.append(detection)
             detections.append(image_detections)
 
         return detections
 
-    def export_onnx(self, output_path: str, img_size: int = 640,
-                   simplify: bool = True) -> str:
+    def export_onnx(
+        self, output_path: str, img_size: int = 640, simplify: bool = True
+    ) -> str:
         """
         Export model to ONNX format
 
@@ -260,25 +282,24 @@ class ButtonYOLO:
         Returns:
             Path to exported ONNX model
         """
-        if self.model_type == 'yolov8':
+        if self.model_type == "yolov8":
             return self._export_yolov8_onnx(output_path, img_size, simplify)
-        elif self.model_type == 'yolov5':
+        elif self.model_type == "yolov5":
             return self._export_yolov5_onnx(output_path, img_size, simplify)
 
-    def _export_yolov8_onnx(self, output_path: str, img_size: int,
-                           simplify: bool) -> str:
+    def _export_yolov8_onnx(
+        self, output_path: str, img_size: int, simplify: bool
+    ) -> str:
         """Export YOLOv8 to ONNX"""
         self.model.export(
-            format='onnx',
-            imgsz=img_size,
-            simplify=simplify,
-            dynamic=False
+            format="onnx", imgsz=img_size, simplify=simplify, dynamic=False
         )
         # YOLOv8 saves with .onnx extension automatically
         return output_path
 
-    def _export_yolov5_onnx(self, output_path: str, img_size: int,
-                           simplify: bool) -> str:
+    def _export_yolov5_onnx(
+        self, output_path: str, img_size: int, simplify: bool
+    ) -> str:
         """Export YOLOv5 to ONNX"""
         try:
             import onnx
@@ -293,9 +314,9 @@ class ButtonYOLO:
                 dummy_input,
                 output_path,
                 opset_version=12,
-                input_names=['images'],
-                output_names=['output'],
-                dynamic_axes=None
+                input_names=["images"],
+                output_names=["output"],
+                dynamic_axes=None,
             )
 
             # Simplify if requested
@@ -314,27 +335,28 @@ class ButtonYOLO:
 
     def save(self, path: str):
         """Save model weights"""
-        if self.model_type == 'yolov8':
+        if self.model_type == "yolov8":
             self.model.save(path)
-        elif self.model_type == 'yolov5':
+        elif self.model_type == "yolov5":
             torch.save(self.model.state_dict(), path)
 
     def load(self, path: str):
         """Load model weights"""
-        if self.model_type == 'yolov8':
+        if self.model_type == "yolov8":
             from ultralytics import YOLO
+
             self.model = YOLO(path)
-        elif self.model_type == 'yolov5':
+        elif self.model_type == "yolov5":
             self.model.load_state_dict(torch.load(path, map_location=self.device))
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get model information"""
         return {
-            'model_type': self.model_type,
-            'model_size': self.model_size,
-            'num_classes': self.num_classes,
-            'class_names': self.class_names,
-            'device': self.device
+            "model_type": self.model_type,
+            "model_size": self.model_size,
+            "num_classes": self.num_classes,
+            "class_names": self.class_names,
+            "device": self.device,
         }
 
 
@@ -354,11 +376,11 @@ def create_button_yolo(config: Dict[str, Any]) -> ButtonYOLO:
         ButtonYOLO instance
     """
     model = ButtonYOLO(
-        model_type=config.get('model_type', 'yolov8'),
-        model_size=config.get('model_size', 'n'),
-        num_classes=config.get('num_classes', 4),
-        pretrained=config.get('pretrained', True),
-        device=config.get('device', 'auto')
+        model_type=config.get("model_type", "yolov8"),
+        model_size=config.get("model_size", "n"),
+        num_classes=config.get("num_classes", 4),
+        pretrained=config.get("pretrained", True),
+        device=config.get("device", "auto"),
     )
 
     print(f"Created ButtonYOLO: {model.get_model_info()}")
@@ -371,11 +393,11 @@ if __name__ == "__main__":
     print("Testing ButtonYOLO...\n")
 
     config = {
-        'model_type': 'yolov8',
-        'model_size': 'n',
-        'num_classes': 4,
-        'pretrained': False,  # Don't download for testing
-        'device': 'cpu'
+        "model_type": "yolov8",
+        "model_size": "n",
+        "num_classes": 4,
+        "pretrained": False,  # Don't download for testing
+        "device": "cpu",
     }
 
     try:

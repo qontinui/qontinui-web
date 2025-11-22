@@ -4,12 +4,15 @@ Automation models for qontinui-web backend.
 Provides models for automation input events.
 """
 
+import enum
 from datetime import datetime
 
+from app.db.base import Base
 from sqlalchemy import (
     TIMESTAMP,
     BigInteger,
     Column,
+    Enum,
     Float,
     ForeignKey,
     Index,
@@ -20,7 +23,22 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
-from app.db.base import Base
+
+class InputEventType(str, enum.Enum):
+    """
+    Valid input event types for automation.
+
+    These correspond to the types of user interactions captured during automation:
+    - Mouse clicks at specific coordinates
+    - Mouse movements without clicks
+    - Mouse drag operations from one point to another
+    - Keyboard text input
+    """
+
+    MOUSE_CLICKED = "mouse.clicked"
+    MOUSE_MOVED = "mouse.moved"
+    MOUSE_DRAGGED = "mouse.dragged"
+    KEYBOARD_TEXT_TYPED = "keyboard.text_typed"
 
 
 class AutomationInputEvent(Base):
@@ -39,7 +57,10 @@ class AutomationInputEvent(Base):
         nullable=False,
         index=True,
     )
-    event_type = Column(String(50), nullable=False)  # 'mouse.clicked', 'mouse.moved', 'mouse.dragged', 'keyboard.text_typed'
+    event_type = Column(
+        Enum(InputEventType, name="input_event_type_enum", native_enum=False),
+        nullable=False,
+    )  # Validated enum: mouse.clicked, mouse.moved, mouse.dragged, keyboard.text_typed
     timestamp = Column(TIMESTAMP, nullable=False)
 
     # Mouse event fields
@@ -85,13 +106,10 @@ class AutomationInputEvent(Base):
         "AutomationScreenshot",
         foreign_keys=[screenshot_after_id],
     )
-    screenshot_associations = relationship(
-        "ScreenshotInputAssociation",
-        back_populates="input_event",
-        cascade="all, delete-orphan",
-    )
 
     __table_args__ = (
-        Index("ix_automation_input_events_session_timestamp", "session_id", "timestamp"),
+        Index(
+            "ix_automation_input_events_session_timestamp", "session_id", "timestamp"
+        ),
         Index("ix_automation_input_events_event_type", "event_type"),
     )

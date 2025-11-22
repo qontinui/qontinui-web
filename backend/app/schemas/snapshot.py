@@ -16,7 +16,9 @@ class ScreenshotBase(BaseModel):
     width: int
     height: int
     state_hash: str
-    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="screenshot_metadata")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="screenshot_metadata"
+    )
 
 
 class ScreenshotCreate(ScreenshotBase):
@@ -40,7 +42,9 @@ class PatternBase(BaseModel):
     region: dict[str, Any]
     active_states: list[str]
     confidence: float
-    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="pattern_metadata")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="pattern_metadata"
+    )
 
 
 class PatternCreate(PatternBase):
@@ -61,7 +65,9 @@ class SnapshotRunBase(BaseModel):
     description: str | None = None
     states: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="run_metadata")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="run_metadata"
+    )
 
 
 class SnapshotRunCreate(SnapshotRunBase):

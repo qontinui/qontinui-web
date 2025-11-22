@@ -17,7 +17,11 @@ interface AutomationStreamingSettings {
   sessions_reset_at: string | null
 }
 
-export function AutomationStreamingCard() {
+interface AutomationStreamingCardProps {
+  context?: 'profile' | 'connect-runner'
+}
+
+export function AutomationStreamingCard({ context = 'profile' }: AutomationStreamingCardProps) {
   const [settings, setSettings] = useState<AutomationStreamingSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
@@ -29,19 +33,31 @@ export function AutomationStreamingCard() {
   const loadSettings = async () => {
     try {
       setLoading(true)
+      const token = localStorage.getItem("access_token")
+      console.log("[AutomationStreaming] Loading settings...")
+      console.log("[AutomationStreaming] Token exists:", !!token)
+      console.log("[AutomationStreaming] Token preview:", token?.substring(0, 20) + "...")
+
       const response = await fetch("/api/v1/users/me/automation-streaming", {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${token}`,
         },
       })
+
+      console.log("[AutomationStreaming] Response status:", response.status)
+      console.log("[AutomationStreaming] Response ok:", response.ok)
+
       if (response.ok) {
         const data = await response.json()
+        console.log("[AutomationStreaming] Settings loaded:", data)
         setSettings(data)
       } else {
+        const errorText = await response.text()
+        console.error("[AutomationStreaming] API error:", response.status, errorText)
         toast.error("Failed to load streaming settings")
       }
     } catch (error) {
-      console.error("Failed to load streaming settings:", error)
+      console.error("[AutomationStreaming] Exception:", error)
       toast.error("Failed to load streaming settings")
     } finally {
       setLoading(false)
@@ -55,7 +71,7 @@ export function AutomationStreamingCard() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
         },
         body: JSON.stringify({ enabled }),
       })
@@ -81,7 +97,7 @@ export function AutomationStreamingCard() {
       const response = await fetch("/api/v1/users/me/automation-streaming/reset-limit", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
         },
       })
 
@@ -138,7 +154,11 @@ export function AutomationStreamingCard() {
               <Wifi className="w-5 h-5 text-[#00D9FF]" />
               <CardTitle className="text-xl">Automation Streaming</CardTitle>
             </div>
-            <CardDescription>Real-time automation monitoring via WebSocket</CardDescription>
+            <CardDescription>
+              {context === 'connect-runner'
+                ? 'Enable streaming to send automation data from the runner to the web interface'
+                : 'Real-time automation monitoring via WebSocket'}
+            </CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <Label htmlFor="streaming-toggle" className="text-gray-400">

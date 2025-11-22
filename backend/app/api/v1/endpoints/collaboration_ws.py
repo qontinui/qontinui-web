@@ -11,11 +11,6 @@ from typing import Any, Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
-from pydantic import BaseModel, ValidationError
-from sqlalchemy import and_, delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_user_from_ws
 from app.crud.project import get_project
 from app.models.collaboration import (
@@ -28,6 +23,10 @@ from app.models.collaboration import (
 from app.models.user import User
 from app.services.websocket_manager import connection_manager
 from app.utils.authorization import verify_project_access
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import and_, delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -128,7 +127,9 @@ async def verify_project_access_ws(
     # Get project
     project = await get_project(db, project_id=project_id)
     if not project:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Project not found")
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION, reason="Project not found"
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found",
@@ -158,6 +159,9 @@ async def acquire_resource_lock(
     """
     Acquire a lock on a resource.
 
+    Uses SELECT FOR UPDATE to prevent race conditions when multiple users
+    attempt to acquire the same lock simultaneously.
+
     Args:
         db: Database session
         project_id: ID of the project
@@ -169,54 +173,87 @@ async def acquire_resource_lock(
     Returns:
         ProjectLock if acquired, None if resource already locked
     """
-    # Check for existing locks on this resource
-    result = await db.execute(
-        select(ProjectLock).where(
-            and_(
-                ProjectLock.project_id == int(project_id),
-                ProjectLock.resource_type == resource_type,
-                ProjectLock.resource_id == resource_id,
-                ProjectLock.expires_at > datetime.utcnow(),
+    try:
+        # Check for existing locks on this resource with row-level lock
+        # SELECT FOR UPDATE prevents race conditions by locking the row
+        result = await db.execute(
+            select(ProjectLock)
+            .where(
+                and_(
+                    ProjectLock.project_id == int(project_id),
+                    ProjectLock.resource_type == resource_type,
+                    ProjectLock.resource_id == resource_id,
+                )
             )
+            .with_for_update()
         )
-    )
-    existing_lock = result.scalar_one_or_none()
+        existing_lock = result.scalar_one_or_none()
 
-    if existing_lock:
-        # Check if lock belongs to this user
-        if existing_lock.user_id == user_id:
-            # Extend existing lock
-            existing_lock.extend_lock(minutes=duration_minutes)
+        if existing_lock:
+            # If lock expired, delete it atomically within transaction
+            if existing_lock.is_expired():
+                await db.delete(existing_lock)
+                await db.flush()  # Flush to ensure deletion is visible in this transaction
+                logger.info(
+                    "expired_lock_released_ws",
+                    project_id=project_id,
+                    lock_id=existing_lock.id,
+                )
+                # Continue to create new lock below
+                existing_lock = None
+            elif existing_lock.user_id == user_id:
+                # Extend existing lock for this user
+                existing_lock.extend_lock(minutes=duration_minutes)
+                await db.commit()
+                await db.refresh(existing_lock)
+                logger.info(
+                    "lock_extended_ws",
+                    project_id=project_id,
+                    user_id=str(user_id),
+                    resource_id=resource_id,
+                )
+                return existing_lock
+            else:
+                # Lock held by another user and not expired
+                logger.warning(
+                    "lock_acquisition_failed_ws",
+                    project_id=project_id,
+                    resource_id=resource_id,
+                    holder=str(existing_lock.user_id),
+                    requester=str(user_id),
+                )
+                await db.rollback()
+                return None
+
+        # Create new lock (either no lock existed or expired lock was deleted)
+        if existing_lock is None:
+            lock = ProjectLock(
+                project_id=int(project_id),
+                user_id=user_id,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                acquired_at=datetime.utcnow(),
+                expires_at=datetime.utcnow() + timedelta(minutes=duration_minutes),
+                auto_release=True,
+            )
+            db.add(lock)
             await db.commit()
-            await db.refresh(existing_lock)
-            return existing_lock
-        else:
-            # Resource is locked by another user
-            return None
+            await db.refresh(lock)
 
-    # Create new lock
-    lock = ProjectLock(
-        project_id=int(project_id),
-        user_id=user_id,
-        resource_type=resource_type,
-        resource_id=resource_id,
-        acquired_at=datetime.utcnow(),
-        expires_at=datetime.utcnow() + timedelta(minutes=duration_minutes),
-        auto_release=True,
-    )
-    db.add(lock)
-    await db.commit()
-    await db.refresh(lock)
+            logger.info(
+                "lock_acquired",
+                project_id=project_id,
+                user_id=str(user_id),
+                resource_type=resource_type.value,
+                resource_id=resource_id,
+            )
 
-    logger.info(
-        "lock_acquired",
-        project_id=project_id,
-        user_id=str(user_id),
-        resource_type=resource_type.value,
-        resource_id=resource_id,
-    )
+            return lock
 
-    return lock
+    except Exception as e:
+        logger.error("lock_acquisition_error_ws", error=str(e))
+        await db.rollback()
+        raise
 
 
 async def release_resource_lock(
@@ -476,6 +513,19 @@ async def collaboration_websocket(
             }
         )
 
+        # Send initial connection state (for sequence tracking)
+        connection_state = await connection_manager.get_connection_state(
+            project_id, user.id
+        )
+        if connection_state:
+            await websocket.send_json(
+                {
+                    "type": "connection_state",
+                    "state": connection_state,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+
         logger.info(
             "collaboration_ws_connected",
             project_id=project_id,
@@ -533,10 +583,94 @@ async def collaboration_websocket(
                         }
                     )
 
+                elif message_type == "ack":
+                    # Acknowledge message receipt
+                    sequence = message.data.get("sequence")
+
+                    if not sequence or not isinstance(sequence, int):
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "Missing or invalid sequence number",
+                            }
+                        )
+                        continue
+
+                    acknowledged = await connection_manager.acknowledge_message(
+                        project_id, user.id, sequence
+                    )
+
+                    if acknowledged:
+                        logger.debug(
+                            "collaboration_ws_ack_received",
+                            project_id=project_id,
+                            user_id=str(user.id),
+                            sequence=sequence,
+                        )
+
+                elif message_type == "resend":
+                    # Request message resend
+                    from_sequence = message.data.get("from_sequence")
+
+                    if not from_sequence or not isinstance(from_sequence, int):
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "Missing or invalid from_sequence",
+                            }
+                        )
+                        continue
+
+                    resent_count = await connection_manager.resend_messages(
+                        project_id, user.id, from_sequence
+                    )
+
+                    logger.info(
+                        "collaboration_ws_resend_requested",
+                        project_id=project_id,
+                        user_id=str(user.id),
+                        from_sequence=from_sequence,
+                        resent_count=resent_count,
+                    )
+
+                    # Send resend completion notification
+                    await websocket.send_json(
+                        {
+                            "type": "resend_complete",
+                            "from_sequence": from_sequence,
+                            "count": resent_count,
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                        }
+                    )
+
+                elif message_type == "sync_state":
+                    # Get current connection state
+                    state = await connection_manager.get_connection_state(
+                        project_id, user.id
+                    )
+
+                    if state:
+                        await websocket.send_json(
+                            {
+                                "type": "sync_state_response",
+                                "state": state,
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                            }
+                        )
+                    else:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "Connection state not found",
+                            }
+                        )
+
                 elif message_type == "cursor_move":
                     # Update cursor position
                     cursor_data = message.data
-                    await connection_manager.update_cursor(project_id, user.id, cursor_data)
+                    await connection_manager.update_cursor(
+                        project_id, user.id, cursor_data
+                    )
 
                     # Broadcast cursor movement
                     await connection_manager.broadcast(
@@ -582,7 +716,9 @@ async def collaboration_websocket(
 
                     if lock:
                         # Lock acquired
-                        await connection_manager.add_lock(project_id, user.id, resource_id)
+                        await connection_manager.add_lock(
+                            project_id, user.id, resource_id
+                        )
 
                         # Notify user
                         await websocket.send_json(
@@ -631,10 +767,14 @@ async def collaboration_websocket(
                         )
                         continue
 
-                    released = await release_resource_lock(db, project_id, user.id, resource_id)
+                    released = await release_resource_lock(
+                        db, project_id, user.id, resource_id
+                    )
 
                     if released:
-                        await connection_manager.remove_lock(project_id, user.id, resource_id)
+                        await connection_manager.remove_lock(
+                            project_id, user.id, resource_id
+                        )
 
                         # Notify user
                         await websocket.send_json(

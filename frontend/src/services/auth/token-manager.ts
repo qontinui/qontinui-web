@@ -117,17 +117,31 @@ export class TokenManager {
 
   /**
    * Check if we have a valid session
+   *
+   * HttpOnly Cookie Migration:
+   * - Tokens are now in HttpOnly cookies, not accessible to JavaScript
+   * - We use authentication state flag from localStorage for UI state
+   * - Actual validation happens on backend via cookie authentication
+   * - We also check token expiry to trigger proactive refresh
    */
   hasValidToken(): boolean {
-    const accessToken = this.storage.getAccessToken();
-    const refreshToken = this.storage.getRefreshToken();
+    // Check authentication state flag (set on login, cleared on logout)
+    const isAuthenticated = this.storage.isAuthenticated();
+
+    // Check token expiry for proactive refresh logic
     const expiry = this.storage.getTokenExpiry();
 
-    const hasAccessToken = !!accessToken;
-    const hasRefreshToken = !!refreshToken;
+    // Log validation state
+    this.validator.logValidation(isAuthenticated, isAuthenticated, expiry);
 
-    const isValid = this.validator.hasValidSession(hasAccessToken, hasRefreshToken, expiry);
-    this.validator.logValidation(hasAccessToken, hasRefreshToken, expiry);
+    // If not authenticated flag, definitely not valid
+    if (!isAuthenticated) {
+      return false;
+    }
+
+    // If authenticated flag is set, check expiry
+    // If access token is expired, we might need to refresh (but session is still valid)
+    const isValid = this.validator.hasValidSession(isAuthenticated, isAuthenticated, expiry);
 
     return isValid;
   }

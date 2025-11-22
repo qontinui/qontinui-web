@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -8,12 +9,31 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { authService } from "@/services/service-factory"
 import { LayoutDashboard, Users, FolderOpen, TrendingUp, Server, Home, Activity, Tag, Network, Smartphone } from "lucide-react"
-import OverviewTab from "@/components/admin/OverviewTab"
-import UsersTab from "@/components/admin/UsersTab"
-import ProjectsTab from "@/components/admin/ProjectsTab"
-import AnalyticsTab from "@/components/admin/AnalyticsTab"
-import SystemTab from "@/components/admin/SystemTab"
-import HealthDashboardTab from "@/components/admin/health/HealthDashboardTab"
+
+// Dynamic imports for admin tabs - these are loaded only when accessed
+const OverviewTab = dynamic(() => import("@/components/admin/OverviewTab"), {
+  loading: () => <div className="flex items-center justify-center h-64">Loading Overview...</div>
+})
+
+const UsersTab = dynamic(() => import("@/components/admin/UsersTab"), {
+  loading: () => <div className="flex items-center justify-center h-64">Loading Users...</div>
+})
+
+const ProjectsTab = dynamic(() => import("@/components/admin/ProjectsTab"), {
+  loading: () => <div className="flex items-center justify-center h-64">Loading Projects...</div>
+})
+
+const AnalyticsTab = dynamic(() => import("@/components/admin/AnalyticsTab"), {
+  loading: () => <div className="flex items-center justify-center h-64">Loading Analytics...</div>
+})
+
+const SystemTab = dynamic(() => import("@/components/admin/SystemTab"), {
+  loading: () => <div className="flex items-center justify-center h-64">Loading System Info...</div>
+})
+
+const HealthDashboardTab = dynamic(() => import("@/components/admin/health/HealthDashboardTab"), {
+  loading: () => <div className="flex items-center justify-center h-64">Loading Health Dashboard...</div>
+})
 
 export default function AdminDashboard() {
   const { user, loading: authLoading } = useAuth()

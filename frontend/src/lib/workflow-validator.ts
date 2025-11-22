@@ -74,10 +74,7 @@ export function validateWorkflowConnections(workflow: Workflow): WorkflowValidat
   // 3. Detect cycles (warn, not error)
   detectCycles(workflow, actionIndexMap, warnings);
 
-  // 4. Check parallel branches have only read-only actions
-  validateParallelBranches(workflow, errors);
-
-  // 5. Warn if no connections (will use sequential execution)
+  // 4. Warn if no connections (will use sequential execution)
   if (!workflow.connections || Object.keys(workflow.connections).length === 0) {
     warnings.push({
       type: 'warning',
@@ -254,42 +251,6 @@ function detectCycles(
 }
 
 /**
- * Validate that parallel branches only contain read-only actions
- */
-function validateParallelBranches(
-  workflow: Workflow,
-  errors: WorkflowValidationError[]
-): void {
-  Object.entries(workflow.connections).forEach(([actionId, outputs]) => {
-    const parallelConnections = outputs.parallel;
-    if (!parallelConnections) return;
-
-    parallelConnections.forEach((outputArray) => {
-      outputArray.forEach((targetIndex) => {
-        const targetAction = workflow.actions[targetIndex];
-        if (!targetAction || !targetAction.type) {
-          errors.push({
-            type: 'error',
-            message: `Parallel connection references invalid action at index ${targetIndex}`,
-            actionId,
-            connectionType: 'parallel'
-          });
-          return;
-        }
-        if (!isReadOnlyAction(targetAction.type)) {
-          errors.push({
-            type: 'error',
-            message: `Action "${targetAction.name || targetAction.id}" (${targetAction.type}) cannot be used in parallel branch - only read-only actions are allowed`,
-            actionId: targetAction.id,
-            connectionType: 'parallel'
-          });
-        }
-      });
-    });
-  });
-}
-
-/**
  * Check if workflow has conditional branching (success/error paths)
  */
 export function hasConditionalLogic(workflow: Workflow): boolean {
@@ -341,13 +302,4 @@ export function hasLoops(workflow: Workflow): boolean {
     }
     return false;
   });
-}
-
-/**
- * Check if workflow has parallel execution paths
- */
-export function hasParallelPaths(workflow: Workflow): boolean {
-  return Object.values(workflow.connections).some(
-    outputs => outputs.parallel && outputs.parallel.length > 0
-  );
 }

@@ -29,7 +29,6 @@ function isLinearWorkflow(workflow: Workflow): boolean {
     const outputs = workflow.connections[sourceId]
     if (outputs.error && outputs.error.length > 0) return false
     if (outputs.success && outputs.success.length > 0) return false
-    if (outputs.parallel && outputs.parallel.length > 0) return false
     if (outputs.main) {
       if (outputs.main.length > 1) return false
       if (outputs.main[0] && outputs.main[0].length > 1) return false

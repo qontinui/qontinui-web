@@ -3,43 +3,42 @@ API endpoints for GUI element analysis
 """
 
 import logging
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy import select, func, desc
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
-from app.api.deps import get_current_user_async, get_async_db
-from app.models.user import User
-from app.models.annotation import AnnotationSet
+from app.api.deps import get_async_db, get_current_user_async
 from app.models.analysis_result import (
     AnalysisJob,
     AnalyzerResult,
     DetectedElementModel,
-    FusedElement
+    FusedElement,
 )
+from app.models.annotation import AnnotationSet
+from app.models.user import User
 from app.schemas.analysis import (
-    AnalyzerListResponse,
-    AnalyzerInfoSchema,
-    AnalysisRequest,
-    QuickAnalysisRequest,
-    AnalysisResponse,
-    AnalysisJobSchema,
     AnalysisJobDetailSchema,
     AnalysisJobListResponse,
+    AnalysisJobSchema,
+    AnalysisRequest,
+    AnalysisResponse,
+    AnalyzerInfoSchema,
+    AnalyzerListResponse,
     AnalyzerResultSchema,
-    FusedElementSchema,
     BoundingBoxSchema,
     DetectedElementSchema,
+    FusedElementSchema,
+    QuickAnalysisRequest,
 )
 from app.services.analysis import AnalysisOrchestrator
 from app.services.analysis.base import AnalysisInput
 from app.services.analysis.orchestrator import analyzer_registry
 from app.services.analysis.progress import ProgressTracker
 from app.services.object_storage import object_storage
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +67,7 @@ async def list_analyzers(
         analyzers = analyzer_registry.list_analyzers()
 
         return AnalyzerListResponse(
-            analyzers=[AnalyzerInfoSchema(**a) for a in analyzers],
-            total=len(analyzers)
+            analyzers=[AnalyzerInfoSchema(**a) for a in analyzers], total=len(analyzers)
         )
     except Exception as e:
         logger.error(f"Error listing analyzers: {e}", exc_info=True)
@@ -107,19 +105,24 @@ async def run_analysis(
             raise HTTPException(status_code=404, detail="Annotation set not found")
 
         # Check user has access (must be owner or admin)
-        if annotation_set.created_by_id != str(current_user.id) and not current_user.is_superuser:
+        if (
+            annotation_set.created_by_id != str(current_user.id)
+            and not current_user.is_superuser
+        ):
             raise HTTPException(status_code=403, detail="Access denied")
 
         # Get screenshots metadata
         screenshots = annotation_set.screenshots or []
         if not screenshots:
             # Fall back to single screenshot mode
-            screenshots = [{
-                "name": annotation_set.screenshot_name,
-                "url": annotation_set.screenshot_url,
-                "width": annotation_set.image_width,
-                "height": annotation_set.image_height,
-            }]
+            screenshots = [
+                {
+                    "name": annotation_set.screenshot_name,
+                    "url": annotation_set.screenshot_url,
+                    "width": annotation_set.image_width,
+                    "height": annotation_set.image_height,
+                }
+            ]
 
         # Download screenshot data
         screenshot_data = []
@@ -128,9 +131,9 @@ async def run_analysis(
                 # Strip /uploads/ prefix if present to get the storage key
                 url = screenshot["url"]
                 if url.startswith("/uploads/"):
-                    key = url[len("/uploads/"):]
+                    key = url[len("/uploads/") :]
                 elif url.startswith("uploads/"):
-                    key = url[len("uploads/"):]
+                    key = url[len("uploads/") :]
                 else:
                     key = url
 
@@ -141,7 +144,7 @@ async def run_analysis(
                 logger.error(f"Error downloading screenshot {screenshot['url']}: {e}")
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to download screenshot: {screenshot['name']}"
+                    detail=f"Failed to download screenshot: {screenshot['name']}",
                 )
 
         # Create analysis input
@@ -149,11 +152,12 @@ async def run_analysis(
             annotation_set_id=request.annotation_set_id,
             screenshots=screenshots,
             screenshot_data=screenshot_data,
-            parameters=request.analyzer_configs or {}
+            parameters=request.analyzer_configs or {},
         )
 
         # Generate a temporary job ID for progress tracking
         import uuid
+
         temp_job_id = uuid.uuid4()
 
         # Run analysis
@@ -182,12 +186,14 @@ async def run_analysis(
             analyzer_results=[
                 _convert_analyzer_result(r) for r in results["analyzer_results"]
             ],
-            fused_elements=[
-                _convert_fused_element(e) for e in results.get("fused_elements", [])
-            ] if request.fuse_results else None,
+            fused_elements=(
+                [_convert_fused_element(e) for e in results.get("fused_elements", [])]
+                if request.fuse_results
+                else None
+            ),
             fusion_stats=results.get("fusion_stats"),
             analyzer_statistics=results["analyzer_statistics"],
-            status="completed"
+            status="completed",
         )
 
         # Clean up progress data after completion
@@ -224,7 +230,7 @@ async def run_quick_analysis(
         request=full_request,
         background_tasks=BackgroundTasks(),
         db=db,
-        current_user=current_user
+        current_user=current_user,
     )
 
 
@@ -278,7 +284,7 @@ async def list_analysis_jobs(
             jobs=[AnalysisJobSchema.model_validate(job) for job in jobs],
             total=total,
             page=page,
-            page_size=page_size
+            page_size=page_size,
         )
 
     except Exception as e:
@@ -342,10 +348,10 @@ async def get_analysis_job(
                     label=elem.label,
                     element_type=elem.element_type,
                     screenshot_index=elem.screenshot_index,
-                    metadata=elem.metadata or {}
+                    metadata=elem.metadata or {},
                 )
                 for elem in job.fused_elements
-            ]
+            ],
         }
 
         return AnalysisJobDetailSchema(**job_dict)
@@ -367,9 +373,7 @@ async def delete_analysis_job(
     Delete an analysis job and all its results
     """
     try:
-        result = await db.execute(
-            select(AnalysisJob).where(AnalysisJob.id == job_id)
-        )
+        result = await db.execute(select(AnalysisJob).where(AnalysisJob.id == job_id))
         job = result.scalar_one_or_none()
 
         if not job:
@@ -412,7 +416,7 @@ async def get_analysis_progress(
         if not progress:
             raise HTTPException(
                 status_code=404,
-                detail="Progress not found. Job may be completed or does not exist."
+                detail="Progress not found. Job may be completed or does not exist.",
             )
 
         return progress
@@ -426,29 +430,37 @@ async def get_analysis_progress(
 
 # Helper functions
 
+
 async def _save_analysis_to_db(
     db: AsyncSession,
     annotation_set: AnnotationSet,
     results: dict,
     request: AnalysisRequest,
-    user: User
+    user: User,
 ) -> UUID:
     """Save analysis results to database"""
     try:
         # Create analysis job
         job = AnalysisJob(
             annotation_set_id=annotation_set.id,
-            analyzers_used=request.analyzer_names or [a["analyzer_name"] for a in results["analyzer_results"]],
+            analyzers_used=request.analyzer_names
+            or [a["analyzer_name"] for a in results["analyzer_results"]],
             parameters=request.analyzer_configs,
             fusion_enabled=1 if request.fuse_results else 0,
-            fusion_config={"overlap_threshold": request.overlap_threshold} if request.fuse_results else None,
+            fusion_config=(
+                {"overlap_threshold": request.overlap_threshold}
+                if request.fuse_results
+                else None
+            ),
             status="completed",
             started_at=datetime.utcnow(),
             completed_at=datetime.utcnow(),
-            total_elements_found=sum(len(r["elements"]) for r in results["analyzer_results"]),
+            total_elements_found=sum(
+                len(r["elements"]) for r in results["analyzer_results"]
+            ),
             total_fused_elements=len(results.get("fused_elements", [])),
             analyzer_statistics=results["analyzer_statistics"],
-            created_by_id=user.id
+            created_by_id=user.id,
         )
         db.add(job)
         await db.flush()
@@ -469,7 +481,7 @@ async def _save_analysis_to_db(
                     label=elem_data.get("label"),
                     element_type=elem_data.get("element_type"),
                     screenshot_index=elem_data.get("screenshot_index", 0),
-                    element_metadata=elem_data.get("metadata")
+                    element_metadata=elem_data.get("metadata"),
                 )
                 db.add(elem)
 
@@ -494,12 +506,12 @@ def _convert_analyzer_result(result_dict: dict) -> AnalyzerResultSchema:
                 label=elem.get("label"),
                 element_type=elem.get("element_type"),
                 screenshot_index=elem.get("screenshot_index", 0),
-                metadata=elem.get("metadata", {})
+                metadata=elem.get("metadata", {}),
             )
             for elem in result_dict["elements"]
         ],
         confidence=result_dict["confidence"],
-        metadata=result_dict.get("metadata", {})
+        metadata=result_dict.get("metadata", {}),
     )
 
 
@@ -514,5 +526,5 @@ def _convert_fused_element(elem_dict: dict) -> FusedElementSchema:
         label=elem_dict.get("label"),
         element_type=elem_dict.get("element_type"),
         screenshot_index=elem_dict.get("screenshot_index", 0),
-        metadata=elem_dict.get("metadata", {})
+        metadata=elem_dict.get("metadata", {}),
     )

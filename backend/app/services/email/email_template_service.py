@@ -27,22 +27,26 @@ class EmailTemplateService:
             template_dir = backend_dir / "templates" / "emails"
 
         self.template_dir = Path(template_dir)
-        logger.info("template_dir_initialized", template_dir=str(self.template_dir), exists=self.template_dir.exists())
+        logger.info(
+            "template_dir_initialized",
+            template_dir=str(self.template_dir),
+            exists=self.template_dir.exists(),
+        )
         self.env = Environment(
             loader=FileSystemLoader(str(self.template_dir)),
             autoescape=True,  # Enable autoescaping for security
         )
 
-    def render_template(self, template_name: str, context: dict) -> tuple[str, str]:
+    def render_template(self, template_name: str, context: dict) -> str:
         """
-        Render both HTML and text versions of an email template.
+        Render HTML version of an email template.
 
         Args:
             template_name: Base name of template (e.g., "beta_welcome")
             context: Dictionary of variables to pass to template
 
         Returns:
-            Tuple of (html_content, text_content)
+            HTML content string
 
         Raises:
             TemplateNotFound: If template files don't exist
@@ -52,15 +56,12 @@ class EmailTemplateService:
             html_template = self.env.get_template(f"{template_name}.html")
             html_content = html_template.render(**context)
 
-            # Render text template
-            text_template = self.env.get_template(f"{template_name}.txt")
-            text_content = text_template.render(**context)
-
-            return (html_content, text_content)
+            return html_content
 
         except TemplateNotFound as e:
             logger.error(f"Template not found: {e}")
-            raise
+            # Return a simple fallback if template not found
+            return f"<html><body><h2>{context.get('title', 'Notification')}</h2><p>{context.get('message', '')}</p></body></html>"
 
     def template_exists(self, template_name: str) -> bool:
         """

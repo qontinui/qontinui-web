@@ -10,19 +10,20 @@ Characteristics:
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,9 @@ class DropdownDetector(BaseAnalyzer):
 
         # Analyze each screenshot
         all_elements = []
-        for screenshot_idx, (img_color, img_gray) in enumerate(zip(images_color, images_gray)):
+        for screenshot_idx, (img_color, img_gray) in enumerate(
+            zip(images_color, images_gray)
+        ):
             elements = await self._analyze_screenshot(
                 img_color, img_gray, screenshot_idx, arrow_templates, params
             )
@@ -109,7 +112,7 @@ class DropdownDetector(BaseAnalyzer):
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -117,7 +120,7 @@ class DropdownDetector(BaseAnalyzer):
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')
+            img = Image.open(BytesIO(data)).convert("L")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -146,7 +149,7 @@ class DropdownDetector(BaseAnalyzer):
         img_gray: np.ndarray,
         screenshot_idx: int,
         arrow_templates: List[np.ndarray],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedElement]:
         """Analyze a single screenshot for dropdowns"""
         elements = []
@@ -162,12 +165,15 @@ class DropdownDetector(BaseAnalyzer):
                 # Expand bounding box to include the full dropdown
                 # Arrow is typically on the right side
                 dropdown_x = max(0, x - 150)  # Expand left
-                dropdown_y = max(0, y - 5)    # Small vertical expansion
+                dropdown_y = max(0, y - 5)  # Small vertical expansion
                 dropdown_w = min(params["max_width"], x - dropdown_x + w + 10)
                 dropdown_h = min(params["max_height"], h + 10)
 
                 # Check if already detected
-                location_key = (dropdown_x // 10, dropdown_y // 10)  # Grid-based deduplication
+                location_key = (
+                    dropdown_x // 10,
+                    dropdown_y // 10,
+                )  # Grid-based deduplication
                 if location_key in detected_locations:
                     continue
                 detected_locations.add(location_key)
@@ -178,23 +184,25 @@ class DropdownDetector(BaseAnalyzer):
                 if not (params["min_height"] <= dropdown_h <= params["max_height"]):
                     continue
 
-                elements.append(DetectedElement(
-                    bounding_box=BoundingBox(
-                        x=int(dropdown_x),
-                        y=int(dropdown_y),
-                        width=int(dropdown_w),
-                        height=int(dropdown_h)
-                    ),
-                    confidence=confidence,
-                    label="Dropdown",
-                    element_type="dropdown",
-                    screenshot_index=screenshot_idx,
-                    metadata={
-                        "method": "template_matching",
-                        "arrow_detected": True,
-                        "template_size": template.shape[0],
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=BoundingBox(
+                            x=int(dropdown_x),
+                            y=int(dropdown_y),
+                            width=int(dropdown_w),
+                            height=int(dropdown_h),
+                        ),
+                        confidence=confidence,
+                        label="Dropdown",
+                        element_type="dropdown",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "method": "template_matching",
+                            "arrow_detected": True,
+                            "template_size": template.shape[0],
+                        },
+                    )
+                )
 
         # Also detect by shape (rectangular with right-side button-like region)
         shape_dropdowns = self._detect_by_shape(img_gray, params)
@@ -203,25 +211,24 @@ class DropdownDetector(BaseAnalyzer):
             location_key = (bbox.x // 10, bbox.y // 10)
             if location_key not in detected_locations:
                 detected_locations.add(location_key)
-                elements.append(DetectedElement(
-                    bounding_box=bbox,
-                    confidence=conf,
-                    label="Dropdown",
-                    element_type="dropdown",
-                    screenshot_index=screenshot_idx,
-                    metadata={
-                        "method": "shape_based",
-                        "arrow_detected": False,
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=bbox,
+                        confidence=conf,
+                        label="Dropdown",
+                        element_type="dropdown",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "method": "shape_based",
+                            "arrow_detected": False,
+                        },
+                    )
+                )
 
         return elements
 
     def _template_match_arrows(
-        self,
-        img_gray: np.ndarray,
-        template: np.ndarray,
-        threshold: float
+        self, img_gray: np.ndarray, template: np.ndarray, threshold: float
     ) -> List[Tuple[int, int, int, int, float]]:
         """Template match for dropdown arrows"""
         matches = []
@@ -244,9 +251,7 @@ class DropdownDetector(BaseAnalyzer):
         return matches
 
     def _non_max_suppression(
-        self,
-        matches: List[Tuple[int, int, int, int, float]],
-        iou_threshold: float
+        self, matches: List[Tuple[int, int, int, int, float]], iou_threshold: float
     ) -> List[Tuple[int, int, int, int, float]]:
         """Remove overlapping detections"""
         if not matches:
@@ -262,8 +267,7 @@ class DropdownDetector(BaseAnalyzer):
 
             # Remove overlapping matches
             matches = [
-                m for m in matches
-                if not self._boxes_overlap(current, m, iou_threshold)
+                m for m in matches if not self._boxes_overlap(current, m, iou_threshold)
             ]
 
         return keep
@@ -272,7 +276,7 @@ class DropdownDetector(BaseAnalyzer):
         self,
         box1: Tuple[int, int, int, int, float],
         box2: Tuple[int, int, int, int, float],
-        threshold: float
+        threshold: float,
     ) -> bool:
         """Check if two boxes overlap significantly"""
         x1, y1, w1, h1, _ = box1
@@ -296,22 +300,20 @@ class DropdownDetector(BaseAnalyzer):
         return iou >= threshold
 
     def _detect_by_shape(
-        self,
-        img_gray: np.ndarray,
-        params: Dict[str, Any]
+        self, img_gray: np.ndarray, params: Dict[str, Any]
     ) -> List[Tuple[BoundingBox, float]]:
         """Detect dropdowns by their rectangular shape"""
         dropdowns = []
 
         # Apply edge detection
         edges = cv2.Canny(
-            img_gray,
-            params["edge_threshold_low"],
-            params["edge_threshold_high"]
+            img_gray, params["edge_threshold_low"], params["edge_threshold_high"]
         )
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)

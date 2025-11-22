@@ -3,14 +3,11 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from "react";
+import dynamicImport from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { analyticsService } from "@/services/service-factory";
 import { Button } from "@/components/ui/button";
-import { MetricCard } from "@/components/analytics/metric-card";
-import { UsageChart } from "@/components/analytics/usage-chart";
-import { StorageBreakdown } from "@/components/analytics/storage-breakdown";
-import { ActivityTimeline } from "@/components/analytics/activity-timeline";
 import {
   ArrowLeft,
   Activity,
@@ -19,6 +16,23 @@ import {
   Clock,
 } from "lucide-react";
 import { toast } from "sonner";
+
+// Dynamic imports for analytics components (charts/visualizations)
+const MetricCard = dynamicImport(() => import("@/components/analytics/metric-card").then(mod => ({ default: mod.MetricCard })), {
+  loading: () => <div className="h-32 bg-gray-800/50 rounded-lg animate-pulse" />
+});
+
+const UsageChart = dynamicImport(() => import("@/components/analytics/usage-chart").then(mod => ({ default: mod.UsageChart })), {
+  loading: () => <div className="h-64 bg-gray-800/50 rounded-lg animate-pulse" />
+});
+
+const StorageBreakdown = dynamicImport(() => import("@/components/analytics/storage-breakdown").then(mod => ({ default: mod.StorageBreakdown })), {
+  loading: () => <div className="h-64 bg-gray-800/50 rounded-lg animate-pulse" />
+});
+
+const ActivityTimeline = dynamicImport(() => import("@/components/analytics/activity-timeline").then(mod => ({ default: mod.ActivityTimeline })), {
+  loading: () => <div className="h-96 bg-gray-800/50 rounded-lg animate-pulse" />
+});
 
 export default function AnalyticsPage() {
   const { user, loading: authLoading } = useAuth();

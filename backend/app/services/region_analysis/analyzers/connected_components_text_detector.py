@@ -9,20 +9,21 @@ Performance: 30-100ms
 Accuracy: 75-85% for clear text with good contrast
 """
 
-from typing import List, Dict, Any, Optional
+from io import BytesIO
+from typing import Any, Dict, List, Optional
+
 import cv2
 import numpy as np
-from io import BytesIO
 from PIL import Image
 
 from ..base import (
     BaseRegionAnalyzer,
-    DetectedRegion,
-    RegionType,
-    RegionAnalysisType,
     BoundingBox,
+    DetectedRegion,
     RegionAnalysisInput,
     RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
 )
 
 
@@ -105,7 +106,8 @@ class ConnectedComponentsTextDetector(BaseRegionAnalyzer):
         # Calculate overall confidence
         overall_confidence = (
             sum(r.confidence for r in all_regions) / len(all_regions)
-            if all_regions else 0.0
+            if all_regions
+            else 0.0
         )
 
         return RegionAnalysisResult(
@@ -118,28 +120,28 @@ class ConnectedComponentsTextDetector(BaseRegionAnalyzer):
                 "max_area": self.max_area,
                 "use_adaptive_threshold": self.use_adaptive_threshold,
                 "total_text_regions": len(all_regions),
-            }
+            },
         )
 
-    def _detect_text_regions(self, gray: np.ndarray, screenshot_index: int) -> List[DetectedRegion]:
+    def _detect_text_regions(
+        self, gray: np.ndarray, screenshot_index: int
+    ) -> List[DetectedRegion]:
         """Detect text regions in a grayscale image."""
         # Threshold the image
         if self.use_adaptive_threshold:
             # Adaptive threshold for varying lighting
             binary = cv2.adaptiveThreshold(
-                gray, 255,
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                cv2.THRESH_BINARY_INV,
-                11, 2
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
             )
         else:
             # Simple Otsu threshold
-            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            _, binary = cv2.threshold(
+                gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+            )
 
         # Morphological operations to connect text characters
         kernel = cv2.getStructuringElement(
-            cv2.MORPH_RECT,
-            (self.morph_kernel_size, self.morph_kernel_size)
+            cv2.MORPH_RECT, (self.morph_kernel_size, self.morph_kernel_size)
         )
 
         # Dilate to connect nearby text
@@ -166,12 +168,17 @@ class ConnectedComponentsTextDetector(BaseRegionAnalyzer):
 
             # Filter by aspect ratio
             aspect_ratio = w / h if h > 0 else 0
-            if aspect_ratio < self.min_aspect_ratio or aspect_ratio > self.max_aspect_ratio:
+            if (
+                aspect_ratio < self.min_aspect_ratio
+                or aspect_ratio > self.max_aspect_ratio
+            ):
                 continue
 
             # Calculate solidity (compactness)
             component_mask = (labels == label).astype(np.uint8) * 255
-            contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(
+                component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
 
             if not contours:
                 continue
@@ -191,7 +198,9 @@ class ConnectedComponentsTextDetector(BaseRegionAnalyzer):
 
             # Calculate confidence based on properties
             # Higher solidity and moderate aspect ratio = higher confidence
-            aspect_score = 1.0 - min(abs(aspect_ratio - 3.0) / 7.0, 1.0)  # Prefer ~3:1 ratio
+            aspect_score = 1.0 - min(
+                abs(aspect_ratio - 3.0) / 7.0, 1.0
+            )  # Prefer ~3:1 ratio
             solidity_score = solidity
             confidence = (aspect_score * 0.4 + solidity_score * 0.6) * 0.75
 
@@ -206,7 +215,7 @@ class ConnectedComponentsTextDetector(BaseRegionAnalyzer):
                     "aspect_ratio": float(aspect_ratio),
                     "solidity": float(solidity),
                     "detection_method": "connected_components",
-                }
+                },
             )
             detected_regions.append(detected_region)
 

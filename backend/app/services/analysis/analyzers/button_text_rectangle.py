@@ -11,27 +11,31 @@ High precision strategy - only reports high-confidence button detections.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 try:
     import pytesseract
+
     PYTESSERACT_AVAILABLE = True
 except ImportError:
     PYTESSERACT_AVAILABLE = False
     logger = logging.getLogger(__name__)
-    logger.warning("pytesseract not available - button_text_rectangle will have limited functionality")
+    logger.warning(
+        "pytesseract not available - button_text_rectangle will have limited functionality"
+    )
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,11 +55,44 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
 
     # Common button text patterns (lowercase)
     COMMON_BUTTON_TEXTS = {
-        "ok", "cancel", "submit", "save", "delete", "edit", "add", "remove",
-        "close", "confirm", "yes", "no", "next", "back", "previous", "continue",
-        "apply", "reset", "clear", "search", "login", "logout", "sign in",
-        "sign up", "register", "download", "upload", "send", "create", "update",
-        "done", "finish", "start", "stop", "pause", "play", "retry", "skip",
+        "ok",
+        "cancel",
+        "submit",
+        "save",
+        "delete",
+        "edit",
+        "add",
+        "remove",
+        "close",
+        "confirm",
+        "yes",
+        "no",
+        "next",
+        "back",
+        "previous",
+        "continue",
+        "apply",
+        "reset",
+        "clear",
+        "search",
+        "login",
+        "logout",
+        "sign in",
+        "sign up",
+        "register",
+        "download",
+        "upload",
+        "send",
+        "create",
+        "update",
+        "done",
+        "finish",
+        "start",
+        "stop",
+        "pause",
+        "play",
+        "retry",
+        "skip",
     }
 
     @property
@@ -80,20 +117,16 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
             "min_text_length": 1,
             "max_text_length": 20,  # Characters
             "max_words": 3,  # Buttons usually have 1-3 words
-
             # Padding constraints (pixels)
             "min_padding": 5,  # Minimum padding around text
             "max_padding": 30,  # Maximum padding around text
             "padding_symmetry_threshold": 0.3,  # How symmetric padding should be
-
             # Rectangle detection
             "edge_detection_threshold1": 50,
             "edge_detection_threshold2": 150,
-
             # Confidence thresholds
             "min_confidence": 0.6,
             "common_text_bonus": 0.2,  # Bonus for common button text
-
             # OCR settings
             "ocr_config": "--psm 11",  # Page segmentation mode: sparse text
         }
@@ -163,7 +196,9 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
         images = []
         for data in screenshot_data:
             img = Image.open(BytesIO(data)).convert("RGB")
-            images.append(cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR))
+            images.append(
+                cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR)
+            )
         return images
 
     async def _analyze_screenshot(
@@ -179,7 +214,9 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
         try:
             # Step 1: Perform OCR to detect text regions
             ocr_data = pytesseract.image_to_data(
-                img_gray, config=params["ocr_config"], output_type=pytesseract.Output.DICT
+                img_gray,
+                config=params["ocr_config"],
+                output_type=pytesseract.Output.DICT,
             )
 
             # Step 2: Process each detected text region
@@ -308,7 +345,9 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
 
         # Apply edge detection
         edges = cv2.Canny(
-            region, params["edge_detection_threshold1"], params["edge_detection_threshold2"]
+            region,
+            params["edge_detection_threshold1"],
+            params["edge_detection_threshold2"],
         )
 
         # Find contours
@@ -327,8 +366,12 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
             cx, cy, cw, ch = cv2.boundingRect(contour)
 
             # Check if this contour encloses the text
-            if not (cx <= text_x_rel and cy <= text_y_rel and
-                    cx + cw >= text_x_rel + text_w and cy + ch >= text_y_rel + text_h):
+            if not (
+                cx <= text_x_rel
+                and cy <= text_y_rel
+                and cx + cw >= text_x_rel + text_w
+                and cy + ch >= text_y_rel + text_h
+            ):
                 continue
 
             # Calculate padding
@@ -339,7 +382,9 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
 
             # Check if padding is in valid range
             paddings = [pad_left, pad_right, pad_top, pad_bottom]
-            if not all(params["min_padding"] <= p <= params["max_padding"] for p in paddings):
+            if not all(
+                params["min_padding"] <= p <= params["max_padding"] for p in paddings
+            ):
                 continue
 
             # Score based on padding symmetry and size
@@ -357,9 +402,7 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
             if score > best_score:
                 best_score = score
                 # Convert back to absolute coordinates
-                best_bbox = BoundingBox(
-                    x=x1 + cx, y=y1 + cy, width=cw, height=ch
-                )
+                best_bbox = BoundingBox(x=x1 + cx, y=y1 + cy, width=cw, height=ch)
                 best_padding = {
                     "left": pad_left,
                     "right": pad_right,
@@ -369,7 +412,9 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
 
         return best_bbox, best_padding
 
-    def _evaluate_padding(self, padding_info: Dict[str, int], params: Dict[str, Any]) -> float:
+    def _evaluate_padding(
+        self, padding_info: Dict[str, int], params: Dict[str, Any]
+    ) -> float:
         """
         Evaluate how consistent and appropriate the padding is
 

@@ -13,12 +13,16 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
-
 from app.api.deps import get_async_db, get_current_active_user_async
+from app.core.audit import audit_logger
+from app.core.error_codes import ErrorCode
+from app.middleware.error_handler import (
+    conflict_error,
+    forbidden_error,
+    not_found_error,
+    validation_error,
+)
+from app.middleware.rate_limit import user_limiter
 from app.models.organization import (
     Organization,
     OrganizationInvitation,
@@ -43,6 +47,10 @@ from app.schemas.collaboration import (
 from app.schemas.project import Project
 from app.services.collaboration_service import collaboration_service
 from app.services.permission_service import permission_service
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 logger = structlog.get_logger(__name__)
 
@@ -58,7 +66,9 @@ def generate_slug(name: str) -> str:
     return slug[:63]  # Max length
 
 
-async def ensure_slug_unique(db: AsyncSession, slug: str, org_id: UUID | None = None) -> str:
+async def ensure_slug_unique(
+    db: AsyncSession, slug: str, org_id: UUID | None = None
+) -> str:
     """Ensure slug is unique by appending number if necessary."""
     base_slug = slug
     counter = 1
@@ -90,9 +100,9 @@ def verify_organization_role(
         HTTPException if insufficient permissions
     """
     if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this organization",
+        raise forbidden_error(
+            "You are not a member of this organization",
+            ErrorCode.INSUFFICIENT_PERMISSIONS,
         )
 
     role_hierarchy = {"viewer": 0, "member": 1, "admin": 2, "owner": 3}
@@ -111,15 +121,23 @@ def verify_organization_role(
 # ============================================================================
 
 
-@router.post("/", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED
+)
+@user_limiter.limit("10 per minute")
 async def create_organization(
     *,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     organization_in: OrganizationCreate,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """Create a new organization."""
-    logger.info("create_organization_request", user_id=current_user.id, name=organization_in.name)
+    logger.info(
+        "create_organization_request",
+        user_id=current_user.id,
+        name=organization_in.name,
+    )
 
     # Generate slug
     slug = organization_in.slug or generate_slug(organization_in.name)
@@ -207,10 +225,7 @@ async def get_organization(
     organization = result.unique().scalar_one_or_none()
 
     if not organization:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Organization not found",
-        )
+        raise not_found_error("Organization", "organization")
 
     # Check membership
     result = await db.execute(
@@ -246,10 +261,7 @@ async def update_organization(
     organization = result.scalar_one_or_none()
 
     if not organization:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Organization not found",
-        )
+        raise not_found_error("Organization", "organization")
 
     # Check permissions
     result = await db.execute(
@@ -292,10 +304,7 @@ async def delete_organization(
     organization = result.scalar_one_or_none()
 
     if not organization:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Organization not found",
-        )
+        raise not_found_error("Organization", "organization")
 
     # Only owner can delete
     if organization.owner_id != current_user.id:
@@ -362,13 +371,18 @@ async def list_organization_members(
     return responses
 
 
-@router.post("/{organization_id}/members", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{organization_id}/members",
+    response_model=TeamMemberResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_team_member(
     *,
     db: AsyncSession = Depends(get_async_db),
     organization_id: UUID,
     member_in: TeamMemberCreate,
     current_user: User = Depends(get_current_active_user_async),
+    request: Request,
 ) -> Any:
     """Add a team member (admin only)."""
     # Check permissions
@@ -410,6 +424,18 @@ async def add_team_member(
     await db.commit()
     await db.refresh(member)
 
+    # Audit log: team member added
+    await audit_logger.log_team_membership_change(
+        db=db,
+        user_id=current_user.id,
+        action="add_member",
+        organization_id=organization_id,
+        target_user_id=member_in.user_id,
+        role=member_in.role,
+        request=request,
+    )
+    await db.commit()
+
     logger.info(
         "team_member_added",
         org_id=organization_id,
@@ -428,6 +454,7 @@ async def update_team_member(
     user_id: UUID,
     member_update: TeamMemberUpdate,
     current_user: User = Depends(get_current_active_user_async),
+    request: Request,
 ) -> Any:
     """Update team member role (admin only)."""
     # Check permissions
@@ -466,6 +493,9 @@ async def update_team_member(
             detail="Cannot modify organization owner",
         )
 
+    # Store old role for audit log
+    old_role = member.role
+
     # Update fields
     update_data = member_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -474,18 +504,34 @@ async def update_team_member(
     await db.commit()
     await db.refresh(member)
 
+    # Audit log: team member role changed
+    await audit_logger.log_team_membership_change(
+        db=db,
+        user_id=current_user.id,
+        action="change_role",
+        organization_id=organization_id,
+        target_user_id=user_id,
+        role=member.role,
+        old_role=old_role,
+        request=request,
+    )
+    await db.commit()
+
     logger.info("team_member_updated", org_id=organization_id, user_id=user_id)
 
     return TeamMemberResponse.model_validate(member)
 
 
-@router.delete("/{organization_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{organization_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def remove_team_member(
     *,
     db: AsyncSession = Depends(get_async_db),
     organization_id: UUID,
     user_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
+    request: Request,
 ) -> None:
     """Remove team member (admin only, or self)."""
     # Get member to remove
@@ -525,7 +571,22 @@ async def remove_team_member(
         membership = result.scalar_one_or_none()
         verify_organization_role(membership, "admin")
 
+    # Store role for audit log
+    removed_role = member.role
+
     await db.delete(member)
+    await db.commit()
+
+    # Audit log: team member removed
+    await audit_logger.log_team_membership_change(
+        db=db,
+        user_id=current_user.id,
+        action="remove_member",
+        organization_id=organization_id,
+        target_user_id=user_id,
+        role=removed_role,
+        request=request,
+    )
     await db.commit()
 
     logger.info("team_member_removed", org_id=organization_id, user_id=user_id)
@@ -536,7 +597,11 @@ async def remove_team_member(
 # ============================================================================
 
 
-@router.post("/{organization_id}/invitations", response_model=InvitationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{organization_id}/invitations",
+    response_model=InvitationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_invitation(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -564,15 +629,10 @@ async def create_invitation(
     organization = result.scalar_one_or_none()
 
     if not organization:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Organization not found",
-        )
+        raise not_found_error("Organization", "organization")
 
     # Check if user already a member
-    result = await db.execute(
-        select(User).filter(User.email == invitation_in.email)
-    )
+    result = await db.execute(select(User).filter(User.email == invitation_in.email))
     existing_user = result.scalar_one_or_none()
 
     if existing_user:
@@ -793,19 +853,21 @@ async def switch_organization(
     membership = result.scalar_one_or_none()
 
     if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this organization",
+        raise forbidden_error(
+            "You are not a member of this organization",
+            ErrorCode.INSUFFICIENT_PERMISSIONS,
         )
 
     # In a real implementation, this would update a session or JWT claim
     # For now, we just return success
-    logger.info("organization_switched", user_id=current_user.id, org_id=organization_id)
+    logger.info(
+        "organization_switched", user_id=current_user.id, org_id=organization_id
+    )
 
     return OrganizationSwitchResponse(
         current_organization_id=organization_id,
         success=True,
-        message=f"Switched to organization context"
+        message=f"Switched to organization context",
     )
 
 
@@ -841,9 +903,9 @@ async def list_organization_projects(
         db, current_user.id, organization_id, "member"
     )
     if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this organization",
+        raise forbidden_error(
+            "You are not a member of this organization",
+            ErrorCode.INSUFFICIENT_PERMISSIONS,
         )
 
     # Get all accessible projects for this user
@@ -852,9 +914,7 @@ async def list_organization_projects(
     )
 
     # Filter to only projects in this organization
-    org_projects = [
-        p for p in all_projects if p.organization_id == organization_id
-    ]
+    org_projects = [p for p in all_projects if p.organization_id == organization_id]
 
     # Apply pagination
     paginated_projects = org_projects[skip : skip + limit]

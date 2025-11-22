@@ -1,10 +1,9 @@
 from collections.abc import AsyncGenerator
 
+from app.core.config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
-
-from app.core.config import settings
 
 # Sync engine only for Alembic migrations and init_db
 database_url_str = str(settings.DATABASE_URL)
@@ -43,15 +42,71 @@ else:
     # asyncpg tries SSL by default, so we need to explicitly disable it
     connect_args["ssl"] = False
 
+# ============================================================================
+# OPTIMIZED CONNECTION POOL CONFIGURATION
+# ============================================================================
+
+# Get pool settings from environment or use defaults based on environment
+import os
+
+environment = getattr(settings, "ENVIRONMENT", "development")
+num_instances = int(os.getenv("APP_INSTANCE_COUNT", "1"))
+
+# Pool size configuration by environment
+if environment == "production":
+    base_pool_size = int(os.getenv("DB_POOL_SIZE", "10"))
+    base_max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "15"))
+    pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+    pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 minutes
+elif environment == "staging":
+    base_pool_size = int(os.getenv("DB_POOL_SIZE", "8"))
+    base_max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "12"))
+    pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+    pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+else:  # development
+    base_pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+    base_max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+    pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "10"))
+    pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "600"))  # 10 minutes
+
+# Divide pool size by number of instances (for auto-scaling)
+pool_size = max(base_pool_size // num_instances, 3)  # Minimum 3 per instance
+max_overflow = max(base_max_overflow // num_instances, 5)  # Minimum 5 overflow
+
+# Get pre_ping setting (default: True)
+pool_pre_ping = os.getenv("DB_POOL_PRE_PING", "true").lower() == "true"
+
 async_engine = create_async_engine(
     async_database_url,
     echo=settings.DEBUG if hasattr(settings, "DEBUG") else False,
     future=True,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    # Connection pool settings (optimized)
+    pool_size=pool_size,  # Core persistent connections
+    max_overflow=max_overflow,  # Additional connections when pool exhausted
+    pool_timeout=pool_timeout,  # Max seconds to wait for connection
+    pool_recycle=pool_recycle,  # Recycle connections after N seconds (prevents stale connections)
+    pool_pre_ping=pool_pre_ping,  # Test connection validity before checkout
+    pool_use_lifo=True,  # LIFO ordering for better connection locality
     connect_args=connect_args,
 )
+
+# Log pool configuration on startup
+import structlog
+
+logger = structlog.get_logger(__name__)
+logger.info(
+    "database_pool_configured",
+    environment=environment,
+    pool_size=pool_size,
+    max_overflow=max_overflow,
+    max_connections=pool_size + max_overflow,
+    pool_timeout=pool_timeout,
+    pool_recycle=pool_recycle,
+    pool_pre_ping=pool_pre_ping,
+    num_instances=num_instances,
+)
+
+# ============================================================================
 
 AsyncSessionLocal = async_sessionmaker(
     async_engine,

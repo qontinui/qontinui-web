@@ -3,11 +3,10 @@ Tests for organization service, specifically personal organization creation.
 """
 
 import pytest
-from sqlalchemy import select
-
 from app.models.organization import Organization, TeamMember, TeamRole
 from app.models.user import User
 from app.services.organization_service import organization_service
+from sqlalchemy import select
 
 
 @pytest.mark.asyncio
@@ -84,17 +83,12 @@ async def test_create_personal_organization_idempotency(async_db_session):
 
     # Verify only one organization exists for this user
     result = await async_db_session.execute(
-        select(Organization)
-        .join(TeamMember)
-        .filter(TeamMember.user_id == user.id)
+        select(Organization).join(TeamMember).filter(TeamMember.user_id == user.id)
     )
     orgs = result.scalars().all()
 
     # Should only have one personal org (idempotency check)
-    personal_orgs = [
-        org for org in orgs
-        if org.settings.get("is_personal") is True
-    ]
+    personal_orgs = [org for org in orgs if org.settings.get("is_personal") is True]
     assert len(personal_orgs) == 1
 
 
@@ -188,9 +182,7 @@ async def test_personal_organization_slug_uniqueness(async_db_session):
 
     # Verify both organizations exist
     result = await async_db_session.execute(
-        select(Organization).filter(
-            Organization.id.in_([org1.id, org2.id])
-        )
+        select(Organization).filter(Organization.id.in_([org1.id, org2.id]))
     )
     orgs = result.scalars().all()
     assert len(orgs) == 2

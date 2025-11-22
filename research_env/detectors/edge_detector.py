@@ -2,12 +2,15 @@
 Edge-based GUI element detection using Canny edge detection
 """
 
+import os
+import sys
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
-from typing import List, Dict, Any
+
 from .base_detector import BaseDetector
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
 
@@ -38,12 +41,12 @@ class EdgeBasedDetector(BaseDetector):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # Parameters
-        canny_low = params.get('canny_low', 50)
-        canny_high = params.get('canny_high', 150)
-        min_area = params.get('min_area', 100)
-        max_area = params.get('max_area', img.shape[0] * img.shape[1] * 0.9)
-        kernel_size = params.get('dilation_kernel', 3)
-        iterations = params.get('dilation_iterations', 1)
+        canny_low = params.get("canny_low", 50)
+        canny_high = params.get("canny_high", 150)
+        min_area = params.get("min_area", 100)
+        max_area = params.get("max_area", img.shape[0] * img.shape[1] * 0.9)
+        kernel_size = params.get("dilation_kernel", 3)
+        iterations = params.get("dilation_iterations", 1)
 
         # Edge detection
         edges = cv2.Canny(gray, canny_low, canny_high)
@@ -54,7 +57,9 @@ class EdgeBasedDetector(BaseDetector):
             edges = cv2.dilate(edges, kernel, iterations=iterations)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         # Convert contours to bounding boxes
         boxes = []
@@ -75,19 +80,16 @@ class EdgeBasedDetector(BaseDetector):
         """Parameter grid for hyperparameter search"""
         return [
             # Conservative - high thresholds
-            {'canny_low': 100, 'canny_high': 200, 'dilation_iterations': 0},
-            {'canny_low': 100, 'canny_high': 200, 'dilation_iterations': 1},
-
+            {"canny_low": 100, "canny_high": 200, "dilation_iterations": 0},
+            {"canny_low": 100, "canny_high": 200, "dilation_iterations": 1},
             # Moderate
-            {'canny_low': 50, 'canny_high': 150, 'dilation_iterations': 0},
-            {'canny_low': 50, 'canny_high': 150, 'dilation_iterations': 1},
-            {'canny_low': 50, 'canny_high': 150, 'dilation_iterations': 2},
-
+            {"canny_low": 50, "canny_high": 150, "dilation_iterations": 0},
+            {"canny_low": 50, "canny_high": 150, "dilation_iterations": 1},
+            {"canny_low": 50, "canny_high": 150, "dilation_iterations": 2},
             # Aggressive - low thresholds
-            {'canny_low': 30, 'canny_high': 100, 'dilation_iterations': 1},
-            {'canny_low': 30, 'canny_high': 100, 'dilation_iterations': 2},
-
+            {"canny_low": 30, "canny_high": 100, "dilation_iterations": 1},
+            {"canny_low": 30, "canny_high": 100, "dilation_iterations": 2},
             # Very aggressive
-            {'canny_low': 20, 'canny_high': 60, 'dilation_iterations': 2},
-            {'canny_low': 20, 'canny_high': 60, 'dilation_iterations': 3},
+            {"canny_low": 20, "canny_high": 60, "dilation_iterations": 2},
+            {"canny_low": 20, "canny_high": 60, "dilation_iterations": 3},
         ]

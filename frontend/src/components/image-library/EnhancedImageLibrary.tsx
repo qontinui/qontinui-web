@@ -75,8 +75,10 @@ import type {
 import { useImageOrganization } from './useImageOrganization';
 import { ImageUploadProgress, type UploadingImage } from '@/components/ImageUploadProgress';
 import { apiClient } from '@/lib/api-client';
+import { uploadScreenshotOffline } from '@/lib/offline-screenshot-upload';
 import { MaskEditor } from '@/components/mask-editor';
 import { ImageDeletionDialog, type ImageUsageInfo } from '@/components/image-deletion-dialog';
+import { LazyImage } from './LazyImage';
 
 // ============================================================================
 // Main Component
@@ -257,28 +259,33 @@ export function EnhancedImageLibrary() {
       }));
       setUploadingFiles(initialUploading);
 
-      // Upload files
+      // Upload files with offline-first support
       const uploadPromises = fileArray.map(async (file) => {
         try {
-          const result = await apiClient.uploadProjectImage(projectId, file, (progress) => {
-            setUploadingFiles((prev) =>
-              prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
-            );
+          // Upload immediately (works offline)
+          const result = await uploadScreenshotOffline(file, projectId, {
+            name: file.name,
+            onProgress: (progress, status) => {
+              setUploadingFiles((prev) =>
+                prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
+              );
+            }
           });
 
+          // Screenshot available immediately in UI
           const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, '');
           const imageAsset: ImageAsset = {
-            id: result.image_id,
+            id: result.screenshot.id,
             name: nameWithoutExtension,
-            url: result.url,
-            size: result.size,
-            createdAt: new Date(result.created_at),
+            url: result.screenshot.url,
+            size: file.size,
+            createdAt: new Date(result.screenshot.createdAt),
             usageCount: 0,
             usedIn: [],
             source: 'uploaded',
             projectName: projectName,
-            s3_key: result.s3_key,
-            url_expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            s3_key: result.screenshot.s3Key,
+            url_expires_at: result.screenshot.urlExpiresAt,
           };
 
           // Add folder assignment if a folder is selected
@@ -290,10 +297,28 @@ export function EnhancedImageLibrary() {
           toast.success(`${file.name} uploaded`);
 
           setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
+
+          // Wait for server sync in background
+          result.whenSynced
+            .then((serverData) => {
+              // Update with server data when synced
+              const updatedAsset = {
+                ...imageAsset,
+                id: serverData.imageId,
+                url: serverData.url,
+                s3_key: serverData.s3Key,
+              };
+              addImage(updatedAsset);
+            })
+            .catch((error) => {
+              console.error('Sync failed for', file.name, error);
+              toast.warning(`${file.name} saved locally, will sync when online`);
+            });
+
           return { success: true, fileName: file.name };
         } catch (error: any) {
           console.error(`Upload failed for ${file.name}:`, error);
-          toast.error(`Failed to upload ${file.name}`, {
+          toast.error(`Failed to save ${file.name}`, {
             description: error.message || 'Unknown error occurred',
           });
           setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
@@ -475,6 +500,22 @@ export function EnhancedImageLibrary() {
   // ============================================================================
   // Helper Functions
   // ============================================================================
+
+  /**
+   * Get the appropriate image URL based on context
+   * For grid/list view: use thumb for performance
+   * For detail view: use original
+   */
+  const getImageUrl = (image: ImageAsset, size: 'thumb' | 'medium' | 'original' = 'thumb'): string => {
+    // If the image has variants (new format), use them
+    if ((image as any).variants) {
+      const variants = (image as any).variants as Record<string, string>;
+      return variants[size] || variants.thumb || image.url;
+    }
+
+    // Fallback to legacy URL
+    return image.url;
+  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -841,6 +882,7 @@ export function EnhancedImageLibrary() {
               formatFileSize={formatFileSize}
               getSourceLabel={getSourceLabel}
               getSourceColor={getSourceColor}
+              getImageUrl={getImageUrl}
               dragActive={dragActive}
               onDrag={handleDrag}
               onDrop={handleDrop}
@@ -858,6 +900,7 @@ export function EnhancedImageLibrary() {
               formatFileSize={formatFileSize}
               getSourceLabel={getSourceLabel}
               getSourceColor={getSourceColor}
+              getImageUrl={getImageUrl}
             />
           )}
         </div>
@@ -874,6 +917,7 @@ export function EnhancedImageLibrary() {
               formatFileSize={formatFileSize}
               getSourceLabel={getSourceLabel}
               getSourceColor={getSourceColor}
+              getImageUrl={getImageUrl}
             />
           </div>
         )}
@@ -1304,8 +1348,8 @@ function CollectionsSidebar({
                     return (
                       <div key={imageId} className="aspect-square bg-gray-800 rounded overflow-hidden">
                         {image && (
-                          <img
-                            src={image.url}
+                          <LazyImage
+                            src={getImageUrl(image, 'thumb')}
                             alt={image.name}
                             className="w-full h-full object-cover"
                           />
@@ -1340,6 +1384,7 @@ interface ImageGridProps {
   formatFileSize: (bytes: number) => string;
   getSourceLabel: (source: string) => string;
   getSourceColor: (source: string) => string;
+  getImageUrl: (image: ImageAsset, size?: 'thumb' | 'medium' | 'original') => string;
   dragActive: boolean;
   onDrag: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
@@ -1357,6 +1402,7 @@ function ImageGrid({
   formatFileSize,
   getSourceLabel,
   getSourceColor,
+  getImageUrl,
   dragActive,
   onDrag,
   onDrop,
@@ -1423,8 +1469,8 @@ function ImageGrid({
 
               {/* Image Preview */}
               <div className="aspect-square bg-gray-800 rounded overflow-hidden relative mb-2">
-                <img
-                  src={image.url || '/placeholder.svg'}
+                <LazyImage
+                  src={getImageUrl(image, 'thumb')}
                   alt={image.name}
                   className="w-full h-full object-contain"
                 />
@@ -1510,6 +1556,7 @@ interface ImageListProps {
   formatFileSize: (bytes: number) => string;
   getSourceLabel: (source: string) => string;
   getSourceColor: (source: string) => string;
+  getImageUrl: (image: ImageAsset, size?: 'thumb' | 'medium' | 'original') => string;
 }
 
 function ImageList({
@@ -1522,6 +1569,7 @@ function ImageList({
   formatFileSize,
   getSourceLabel,
   getSourceColor,
+  getImageUrl,
 }: ImageListProps) {
   return (
     <ScrollArea className="flex-1">
@@ -1558,8 +1606,8 @@ function ImageList({
                 </td>
                 <td className="py-2">
                   <div className="w-10 h-10 bg-gray-800 rounded overflow-hidden">
-                    <img
-                      src={image.url || '/placeholder.svg'}
+                    <LazyImage
+                      src={getImageUrl(image, 'thumb')}
                       alt={image.name}
                       className="w-full h-full object-cover"
                     />
@@ -1623,6 +1671,7 @@ interface ImageDetailsPanelProps {
   formatFileSize: (bytes: number) => string;
   getSourceLabel: (source: string) => string;
   getSourceColor: (source: string) => string;
+  getImageUrl: (image: ImageAsset, size?: 'thumb' | 'medium' | 'original') => string;
 }
 
 function ImageDetailsPanel({
@@ -1634,6 +1683,7 @@ function ImageDetailsPanel({
   formatFileSize,
   getSourceLabel,
   getSourceColor,
+  getImageUrl,
 }: ImageDetailsPanelProps) {
   return (
     <div className="flex flex-col h-full">
@@ -1649,7 +1699,11 @@ function ImageDetailsPanel({
         <div className="p-4 space-y-4">
           {/* Preview */}
           <div className="aspect-square bg-gray-800 rounded-lg overflow-hidden">
-            <img src={image.url || '/placeholder.svg'} alt={image.name} className="w-full h-full object-contain" />
+            <LazyImage
+              src={getImageUrl(image, 'original')}
+              alt={image.name}
+              className="w-full h-full object-contain"
+            />
           </div>
 
           {/* Name */}

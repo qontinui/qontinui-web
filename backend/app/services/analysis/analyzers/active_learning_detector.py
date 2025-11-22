@@ -9,23 +9,24 @@ Starts with heuristic-based detection, then improves over time by:
 Uses a simple online learning approach with feature extraction.
 """
 
-import logging
-from typing import Dict, Any, List, Tuple, Optional
-from io import BytesIO
-from PIL import Image
-import numpy as np
-import cv2
 import json
+import logging
 import os
+from io import BytesIO
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,12 +87,10 @@ class ActiveLearningDetector(BaseAnalyzer):
             "min_aspect_ratio": 1.5,
             "max_aspect_ratio": 8.0,
             "edge_threshold": 50,
-
             # Learning params
             "use_learned_model": True,  # Whether to use learned patterns
             "confidence_boost": 0.2,  # Confidence boost from learned model
             "min_learned_confidence": 0.6,  # Min confidence for learned detections
-
             # Model persistence
             "model_path": "/tmp/active_learning_model.json",
         }
@@ -113,7 +112,9 @@ class ActiveLearningDetector(BaseAnalyzer):
             elements = await self._analyze_screenshot(img, screenshot_idx, params)
             all_elements.extend(elements)
 
-        avg_confidence = np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        avg_confidence = (
+            np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        )
 
         # Calculate model stats
         model_status = "initialized" if self.weights is not None else "heuristic_only"
@@ -143,22 +144,21 @@ class ActiveLearningDetector(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
     async def _analyze_screenshot(
-        self,
-        img: np.ndarray,
-        screenshot_idx: int,
-        params: Dict[str, Any]
+        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
     ) -> List[DetectedElement]:
         """Analyze single screenshot"""
 
         # Step 1: Heuristic baseline detection
         candidates = self._heuristic_detection(img, params)
 
-        logger.info(f"Screenshot {screenshot_idx}: {len(candidates)} heuristic candidates")
+        logger.info(
+            f"Screenshot {screenshot_idx}: {len(candidates)} heuristic candidates"
+        )
 
         # Step 2: If model is trained, apply learned patterns
         if params["use_learned_model"] and self.weights is not None:
@@ -167,17 +167,19 @@ class ActiveLearningDetector(BaseAnalyzer):
         # Convert to DetectedElement
         elements = []
         for bbox, confidence, method in candidates:
-            elements.append(DetectedElement(
-                bounding_box=bbox,
-                confidence=confidence,
-                label="Button (Adaptive)",
-                element_type="button",
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "active_learning",
-                    "detection_method": method,
-                },
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=bbox,
+                    confidence=confidence,
+                    label="Button (Adaptive)",
+                    element_type="button",
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "active_learning",
+                        "detection_method": method,
+                    },
+                )
+            )
 
         return elements
 
@@ -200,7 +202,9 @@ class ActiveLearningDetector(BaseAnalyzer):
         edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
@@ -210,7 +214,9 @@ class ActiveLearningDetector(BaseAnalyzer):
                 continue
 
             aspect_ratio = w / h if h > 0 else 0
-            if not (params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+            if not (
+                params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]
+            ):
                 continue
 
             # Basic confidence from shape properties
@@ -229,7 +235,7 @@ class ActiveLearningDetector(BaseAnalyzer):
         self,
         img: np.ndarray,
         candidates: List[Tuple[BoundingBox, float, str]],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[Tuple[BoundingBox, float, str]]:
         """
         Apply learned model to refine candidates
@@ -274,7 +280,7 @@ class ActiveLearningDetector(BaseAnalyzer):
         x, y, w, h = bbox.x, bbox.y, bbox.width, bbox.height
 
         # Extract region
-        region = img[y:y+h, x:x+w]
+        region = img[y : y + h, x : x + w]
 
         if region.size == 0:
             return np.zeros(20)  # Feature dimension
@@ -321,15 +327,18 @@ class ActiveLearningDetector(BaseAnalyzer):
         # 6. Shape features (4)
         # Rectangularity, compactness
         perimeter = 2 * (w + h)
-        compactness = (4 * np.pi * w * h) / (perimeter ** 2) if perimeter > 0 else 0
+        compactness = (4 * np.pi * w * h) / (perimeter**2) if perimeter > 0 else 0
         features.append(compactness)
 
         # Symmetry (horizontal)
-        left_half = region[:, :w//2]
-        right_half = region[:, w//2:]
+        left_half = region[:, : w // 2]
+        right_half = region[:, w // 2 :]
         if left_half.shape == right_half.shape and left_half.size > 0:
             right_flipped = np.fliplr(right_half)
-            symmetry = np.mean(np.abs(left_half.astype(float) - right_flipped.astype(float))) / 255.0
+            symmetry = (
+                np.mean(np.abs(left_half.astype(float) - right_flipped.astype(float)))
+                / 255.0
+            )
             features.append(1 - symmetry)  # Higher = more symmetric
         else:
             features.append(0.5)
@@ -403,10 +412,9 @@ class ActiveLearningDetector(BaseAnalyzer):
             self.bias = 0.0
 
         # Perform one epoch of SGD
-        examples = (
-            [(f, 1.0) for f, _ in self.positive_examples] +
-            [(f, 0.0) for f, _ in self.negative_examples]
-        )
+        examples = [(f, 1.0) for f, _ in self.positive_examples] + [
+            (f, 0.0) for f, _ in self.negative_examples
+        ]
 
         # Shuffle
         np.random.shuffle(examples)
@@ -441,7 +449,7 @@ class ActiveLearningDetector(BaseAnalyzer):
 
             os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
-            with open(model_path, 'w') as f:
+            with open(model_path, "w") as f:
                 json.dump(model_data, f)
 
             logger.info(f"Model saved to {model_path}")
@@ -458,7 +466,7 @@ class ActiveLearningDetector(BaseAnalyzer):
                 logger.info("No saved model found, starting fresh")
                 return
 
-            with open(model_path, 'r') as f:
+            with open(model_path, "r") as f:
                 model_data = json.load(f)
 
             if model_data["weights"] is not None:

@@ -6,19 +6,20 @@ using pixel-wise variance analysis.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,9 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
                 "method": "variance",
                 "parameters": params,
                 "mean_variance": float(np.mean(variance_map)),
-                "stable_pixel_percentage": float(np.sum(stability_mask) / stability_mask.size * 100),
+                "stable_pixel_percentage": float(
+                    np.sum(stability_mask) / stability_mask.size * 100
+                ),
             },
         )
 
@@ -114,7 +117,7 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
         """Load screenshots as grayscale numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')  # Convert to grayscale
+            img = Image.open(BytesIO(data)).convert("L")  # Convert to grayscale
             images.append(np.array(img, dtype=np.float32))
         return images
 
@@ -160,7 +163,7 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
             Cleaned binary mask
         """
         # Convert boolean to uint8
-        mask_uint8 = (mask.astype(np.uint8) * 255)
+        mask_uint8 = mask.astype(np.uint8) * 255
 
         # Gaussian blur to reduce noise
         blur_size = params["blur_kernel_size"]
@@ -196,7 +199,7 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
         elements = []
 
         # Convert to uint8 for findContours
-        mask_uint8 = (mask.astype(np.uint8) * 255)
+        mask_uint8 = mask.astype(np.uint8) * 255
 
         # Find contours
         contours, _ = cv2.findContours(
@@ -212,25 +215,33 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
             aspect_ratio = w / h if h > 0 else 0
 
             # Filter by size and aspect ratio
-            if (params["min_area"] <= area <= params["max_area"] and
-                params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+            if (
+                params["min_area"] <= area <= params["max_area"]
+                and params["min_aspect_ratio"]
+                <= aspect_ratio
+                <= params["max_aspect_ratio"]
+            ):
 
                 # Calculate confidence based on how stable the region is
-                region_mask = mask[y:y+h, x:x+w]
+                region_mask = mask[y : y + h, x : x + w]
                 stability = np.mean(region_mask)  # Percentage of stable pixels
 
-                elements.append(DetectedElement(
-                    bounding_box=BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h)),
-                    confidence=float(stability) * 0.9,  # Scale to 0-0.9 range
-                    label="Stable Region",
-                    element_type="stable",
-                    screenshot_index=0,
-                    metadata={
-                        "method": "variance",
-                        "area": int(area),
-                        "aspect_ratio": float(aspect_ratio),
-                        "stability": float(stability),
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=BoundingBox(
+                            x=int(x), y=int(y), width=int(w), height=int(h)
+                        ),
+                        confidence=float(stability) * 0.9,  # Scale to 0-0.9 range
+                        label="Stable Region",
+                        element_type="stable",
+                        screenshot_index=0,
+                        metadata={
+                            "method": "variance",
+                            "area": int(area),
+                            "aspect_ratio": float(aspect_ratio),
+                            "stability": float(stability),
+                        },
+                    )
+                )
 
         return elements

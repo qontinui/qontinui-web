@@ -2,28 +2,29 @@
 API endpoints for annotation management (admin only)
 """
 
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import desc, select, delete as sql_delete, func
-from sqlalchemy.orm import selectinload
 import io
-import structlog
-
-from app.api import deps
-from app.models.user import User
-from app.models.annotation import AnnotationSet, Annotation
-from app.schemas.annotation import (
-    AnnotationSetCreate,
-    AnnotationSetUpdate,
-    AnnotationSetResponse,
-    AnnotationCreate,
-    AnnotationUpdate,
-    AnnotationResponse,
-)
-from app.services.object_storage import object_storage
 import uuid
 from datetime import datetime
+from typing import List
+
+import structlog
+from app.api import deps
+from app.models.annotation import Annotation, AnnotationSet
+from app.models.user import User
+from app.schemas.annotation import (
+    AnnotationCreate,
+    AnnotationResponse,
+    AnnotationSetCreate,
+    AnnotationSetResponse,
+    AnnotationSetUpdate,
+    AnnotationUpdate,
+)
+from app.services.object_storage import object_storage
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy import delete as sql_delete
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 
@@ -46,7 +47,7 @@ async def upload_screenshot(
         filename=file.filename,
     )
     # Validate file type
-    if not file.content_type or not file.content_type.startswith('image/'):
+    if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
     try:
@@ -55,7 +56,7 @@ async def upload_screenshot(
         file_obj = io.BytesIO(content)
 
         # Generate unique filename
-        file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'png'
+        file_extension = file.filename.split(".")[-1] if "." in file.filename else "png"
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
         # Upload to S3/MinIO using the backend directly
@@ -79,8 +80,7 @@ async def upload_screenshot(
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to upload screenshot: {str(e)}"
+            status_code=500, detail=f"Failed to upload screenshot: {str(e)}"
         )
 
 
@@ -148,7 +148,7 @@ async def create_annotation_set(
         db.add(annotation)
 
     await db.commit()
-    await db.refresh(annotation_set, ['annotations'])
+    await db.refresh(annotation_set, ["annotations"])
     return annotation_set
 
 
@@ -198,7 +198,9 @@ async def update_annotation_set(
         annotation_set.boundary_width = annotation_set_in.boundary_width
     if annotation_set_in.screenshots is not None:
         # Convert screenshots to JSON
-        annotation_set.screenshots = [s.model_dump() for s in annotation_set_in.screenshots]
+        annotation_set.screenshots = [
+            s.model_dump() for s in annotation_set_in.screenshots
+        ]
 
     annotation_set.updated_at = datetime.utcnow()
 
@@ -206,7 +208,9 @@ async def update_annotation_set(
     if annotation_set_in.annotations is not None:
         # Delete existing annotations
         await db.execute(
-            sql_delete(Annotation).filter(Annotation.annotation_set_id == annotation_set_id)
+            sql_delete(Annotation).filter(
+                Annotation.annotation_set_id == annotation_set_id
+            )
         )
 
         # Add new annotations
@@ -228,7 +232,7 @@ async def update_annotation_set(
             db.add(annotation)
 
     await db.commit()
-    await db.refresh(annotation_set, ['annotations'])
+    await db.refresh(annotation_set, ["annotations"])
     return annotation_set
 
 
@@ -253,6 +257,7 @@ async def delete_annotation_set(
 
 # Individual annotation endpoints (for fine-grained control)
 
+
 @router.post("/{annotation_set_id}/annotations", response_model=AnnotationResponse)
 async def add_annotation(
     annotation_set_id: str,
@@ -273,12 +278,14 @@ async def add_annotation(
     if annotation_in.screenshot_index > max_screenshot_index:
         raise HTTPException(
             status_code=400,
-            detail=f"screenshot_index {annotation_in.screenshot_index} exceeds maximum {max_screenshot_index}"
+            detail=f"screenshot_index {annotation_in.screenshot_index} exceeds maximum {max_screenshot_index}",
         )
 
     # Get max order
     count_result = await db.execute(
-        select(func.count()).select_from(Annotation).filter(Annotation.annotation_set_id == annotation_set_id)
+        select(func.count())
+        .select_from(Annotation)
+        .filter(Annotation.annotation_set_id == annotation_set_id)
     )
     max_order = count_result.scalar()
 
@@ -327,7 +334,7 @@ async def update_annotation(
         if annotation_in.screenshot_index > max_screenshot_index:
             raise HTTPException(
                 status_code=400,
-                detail=f"screenshot_index {annotation_in.screenshot_index} exceeds maximum {max_screenshot_index}"
+                detail=f"screenshot_index {annotation_in.screenshot_index} exceeds maximum {max_screenshot_index}",
             )
         annotation.screenshot_index = annotation_in.screenshot_index
 
@@ -383,6 +390,7 @@ async def delete_annotation(
 
 # Export endpoints
 
+
 @router.get("/{annotation_set_id}/export/multi")
 async def export_annotation_set_multi(
     annotation_set_id: str,
@@ -427,37 +435,41 @@ async def export_annotation_set_multi(
 
     # Group annotations by screenshot_index
     from collections import defaultdict
+
     annotations_by_screenshot = defaultdict(list)
     for ann in annotation_set.annotations:
-        annotations_by_screenshot[ann.screenshot_index].append({
-            "id": ann.id,
-            "x": ann.x,
-            "y": ann.y,
-            "width": ann.width,
-            "height": ann.height,
-            "label": ann.label,
-            "description": ann.description,
-            "reason": ann.reason,
-            "extra_data": ann.extra_data,
-            "order": ann.order,
-        })
+        annotations_by_screenshot[ann.screenshot_index].append(
+            {
+                "id": ann.id,
+                "x": ann.x,
+                "y": ann.y,
+                "width": ann.width,
+                "height": ann.height,
+                "label": ann.label,
+                "description": ann.description,
+                "reason": ann.reason,
+                "extra_data": ann.extra_data,
+                "order": ann.order,
+            }
+        )
 
     # Build screenshots array with their annotations
     screenshots = []
     for i in range(annotation_set.screenshot_count):
         screenshot_data = annotation_set.get_screenshot(i)
         if screenshot_data:
-            screenshots.append({
-                "index": i,
-                "name": screenshot_data["name"],
-                "url": screenshot_data["url"],
-                "width": screenshot_data["width"],
-                "height": screenshot_data["height"],
-                "annotations": sorted(
-                    annotations_by_screenshot.get(i, []),
-                    key=lambda a: a["order"]
-                ),
-            })
+            screenshots.append(
+                {
+                    "index": i,
+                    "name": screenshot_data["name"],
+                    "url": screenshot_data["url"],
+                    "width": screenshot_data["width"],
+                    "height": screenshot_data["height"],
+                    "annotations": sorted(
+                        annotations_by_screenshot.get(i, []), key=lambda a: a["order"]
+                    ),
+                }
+            )
 
     return {
         "id": annotation_set.id,

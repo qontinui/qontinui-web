@@ -2,13 +2,12 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.project import Project
 from app.models.storage_usage import StorageUsage
 from app.models.subscription import Subscription
 from app.services.stripe_service import StripeService
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class LimitChecker:
@@ -41,12 +40,14 @@ class LimitChecker:
         return {
             "project_count": project_count or 0,
             "file_count": storage_result.file_count if storage_result else 0,
-            "storage_bytes": int(storage_result.total_bytes or 0)
-            if storage_result
-            else 0,
-            "storage_mb": round((storage_result.total_bytes or 0) / (1024 * 1024), 2)
-            if storage_result
-            else 0.0,
+            "storage_bytes": (
+                int(storage_result.total_bytes or 0) if storage_result else 0
+            ),
+            "storage_mb": (
+                round((storage_result.total_bytes or 0) / (1024 * 1024), 2)
+                if storage_result
+                else 0.0
+            ),
         }
 
     @staticmethod

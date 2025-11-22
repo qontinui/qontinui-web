@@ -8,48 +8,51 @@ Region analysis focuses on detecting larger functional areas of the UI
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 
 class RegionType(str, Enum):
     """Types of regions that can be detected"""
+
     INVENTORY_GRID = "inventory_grid"  # Grid-based inventory systems
-    MINIMAP = "minimap"                # Mini-maps in games
-    STATUS_BAR = "status_bar"          # Status/health bars
-    TOOLBAR = "toolbar"                # Tool/action bars
-    DIALOG = "dialog"                  # Dialog boxes/windows
-    MENU = "menu"                      # Menu areas
-    CHAT_PANEL = "chat_panel"          # Chat/message panels
-    SKILL_TREE = "skill_tree"          # Skill/ability trees
-    QUEST_LOG = "quest_log"            # Quest/mission panels
-    EQUIPMENT_PANEL = "equipment_panel" # Character equipment
-    TEXT_AREA = "text_area"            # Text regions (labels, captions, etc.)
-    WINDOW = "window"                  # Application windows with title bars
-    TITLE_BAR = "title_bar"            # Window title bars
-    CLOSE_BUTTON = "close_button"      # Window close buttons (X icon)
-    CUSTOM = "custom"                  # Extensibility for game-specific regions
+    MINIMAP = "minimap"  # Mini-maps in games
+    STATUS_BAR = "status_bar"  # Status/health bars
+    TOOLBAR = "toolbar"  # Tool/action bars
+    DIALOG = "dialog"  # Dialog boxes/windows
+    MENU = "menu"  # Menu areas
+    CHAT_PANEL = "chat_panel"  # Chat/message panels
+    SKILL_TREE = "skill_tree"  # Skill/ability trees
+    QUEST_LOG = "quest_log"  # Quest/mission panels
+    EQUIPMENT_PANEL = "equipment_panel"  # Character equipment
+    TEXT_AREA = "text_area"  # Text regions (labels, captions, etc.)
+    WINDOW = "window"  # Application windows with title bars
+    TITLE_BAR = "title_bar"  # Window title bars
+    CLOSE_BUTTON = "close_button"  # Window close buttons (X icon)
+    CUSTOM = "custom"  # Extensibility for game-specific regions
 
 
 class RegionAnalysisType(str, Enum):
     """Types of region analysis methods"""
-    TEMPLATE_MATCH = "template_match"    # Template matching for known regions
-    EDGE_DETECTION = "edge_detection"    # Edge-based region detection
-    COLOR_CLUSTERING = "color_clustering" # Color-based region segmentation
-    PATTERN_ANALYSIS = "pattern_analysis" # Pattern-based detection (grids, etc.)
-    ML_CLASSIFICATION = "ml_classification" # ML-based region classification
-    CUSTOM = "custom"                    # Extensibility for future methods
+
+    TEMPLATE_MATCH = "template_match"  # Template matching for known regions
+    EDGE_DETECTION = "edge_detection"  # Edge-based region detection
+    COLOR_CLUSTERING = "color_clustering"  # Color-based region segmentation
+    PATTERN_ANALYSIS = "pattern_analysis"  # Pattern-based detection (grids, etc.)
+    ML_CLASSIFICATION = "ml_classification"  # ML-based region classification
+    CUSTOM = "custom"  # Extensibility for future methods
 
 
 @dataclass
 class BoundingBox:
     """Represents a bounding box for a region"""
+
     x: int
     y: int
     width: int
     height: int
 
-    def iou(self, other: 'BoundingBox') -> float:
+    def iou(self, other: "BoundingBox") -> float:
         """Calculate Intersection over Union with another box"""
         # Calculate intersection
         x1 = max(self.x, other.x)
@@ -61,25 +64,24 @@ class BoundingBox:
             return 0.0
 
         intersection = (x2 - x1) * (y2 - y1)
-        union = (self.width * self.height +
-                 other.width * other.height - intersection)
+        union = self.width * self.height + other.width * other.height - intersection
 
         return intersection / union if union > 0 else 0.0
 
-    def overlaps(self, other: 'BoundingBox', threshold: float = 0.5) -> bool:
+    def overlaps(self, other: "BoundingBox", threshold: float = 0.5) -> bool:
         """Check if this box significantly overlaps with another"""
         return self.iou(other) >= threshold
 
-    def contains(self, other: 'BoundingBox') -> bool:
+    def contains(self, other: "BoundingBox") -> bool:
         """Check if this box completely contains another box"""
         return (
-            self.x <= other.x and
-            self.y <= other.y and
-            self.x + self.width >= other.x + other.width and
-            self.y + self.height >= other.y + other.height
+            self.x <= other.x
+            and self.y <= other.y
+            and self.x + self.width >= other.x + other.width
+            and self.y + self.height >= other.y + other.height
         )
 
-    def is_contained_by(self, other: 'BoundingBox') -> bool:
+    def is_contained_by(self, other: "BoundingBox") -> bool:
         """Check if this box is completely contained by another box"""
         return other.contains(self)
 
@@ -95,6 +97,7 @@ class BoundingBox:
 @dataclass
 class DetectedRegion:
     """Represents a detected region in a screenshot"""
+
     bounding_box: BoundingBox
     confidence: float  # 0.0 to 1.0
     region_type: RegionType
@@ -122,6 +125,7 @@ class DetectedRegion:
 @dataclass
 class RegionAnalysisResult:
     """Result from a region analysis method"""
+
     analyzer_type: RegionAnalysisType
     analyzer_name: str
     regions: List[DetectedRegion]
@@ -142,6 +146,7 @@ class RegionAnalysisResult:
 @dataclass
 class RegionAnalysisInput:
     """Input data for region analysis"""
+
     annotation_set_id: UUID
     screenshots: List[Dict[str, Any]]  # List of screenshot metadata
     screenshot_data: List[bytes]  # Actual image data

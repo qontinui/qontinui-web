@@ -2,12 +2,15 @@
 MSER (Maximally Stable Extremal Regions) based detection
 """
 
+import os
+import sys
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
-from typing import List, Dict, Any
+
 from .base_detector import BaseDetector
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
 
@@ -35,12 +38,12 @@ class MSERDetector(BaseDetector):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # Parameters
-        delta = params.get('delta', 5)
-        min_area = params.get('min_area', 60)
-        max_area_ratio = params.get('max_area', 0.25)
-        max_variation = params.get('max_variation', 0.25)
-        max_evolution = params.get('max_evolution', 200)
-        edge_blur_size = params.get('edge_blur_size', 5)
+        delta = params.get("delta", 5)
+        min_area = params.get("min_area", 60)
+        max_area_ratio = params.get("max_area", 0.25)
+        max_variation = params.get("max_variation", 0.25)
+        max_evolution = params.get("max_evolution", 200)
+        edge_blur_size = params.get("edge_blur_size", 5)
 
         max_area_pixels = int(img.shape[0] * img.shape[1] * max_area_ratio)
 
@@ -51,7 +54,7 @@ class MSERDetector(BaseDetector):
             _max_area=max_area_pixels,
             _max_variation=max_variation,
             _max_evolution=max_evolution,
-            _edge_blur_size=edge_blur_size
+            _edge_blur_size=edge_blur_size,
         )
 
         # Detect regions
@@ -73,18 +76,15 @@ class MSERDetector(BaseDetector):
         """Parameter grid for hyperparameter search"""
         return [
             # Conservative - larger stable regions
-            {'delta': 10, 'min_area': 100, 'max_variation': 0.15},
-            {'delta': 10, 'min_area': 60, 'max_variation': 0.15},
-
+            {"delta": 10, "min_area": 100, "max_variation": 0.15},
+            {"delta": 10, "min_area": 60, "max_variation": 0.15},
             # Moderate
-            {'delta': 5, 'min_area': 60, 'max_variation': 0.25},
-            {'delta': 5, 'min_area': 100, 'max_variation': 0.25},
-            {'delta': 5, 'min_area': 200, 'max_variation': 0.25},
-
+            {"delta": 5, "min_area": 60, "max_variation": 0.25},
+            {"delta": 5, "min_area": 100, "max_variation": 0.25},
+            {"delta": 5, "min_area": 200, "max_variation": 0.25},
             # Aggressive - smaller regions
-            {'delta': 3, 'min_area': 30, 'max_variation': 0.5},
-            {'delta': 3, 'min_area': 60, 'max_variation': 0.5},
-
+            {"delta": 3, "min_area": 30, "max_variation": 0.5},
+            {"delta": 3, "min_area": 60, "max_variation": 0.5},
             # Very aggressive
-            {'delta': 2, 'min_area': 20, 'max_variation': 0.75},
+            {"delta": 2, "min_area": 20, "max_variation": 0.75},
         ]

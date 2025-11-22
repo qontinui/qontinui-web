@@ -1,0 +1,130 @@
+name: Deploy Backend to Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy-production.yml'
+  workflow_dispatch:  # Manual trigger
+
+env:
+  AWS_REGION: eu-central-1
+  EB_APPLICATION_NAME: qontinui-backend
+  EB_ENVIRONMENT_NAME: qontinui-prod-py
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          poetry run alembic upgrade head
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          # Install EB CLI
+          pip install awsebcli
+
+          # Initialize EB (if not already)
+          eb init ${{ env.EB_APPLICATION_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --platform "Python 3.12" \
+            || true
+
+          # Deploy
+          eb deploy ${{ env.EB_ENVIRONMENT_NAME }} \
+            --timeout 15 \
+            --verbose
+
+      - name: Wait for deployment health check
+        run: sleep 30
+
+      - name: Health check
+        run: |
+          HEALTH_URL="http://${{ env.EB_ENVIRONMENT_NAME }}.eba-km2u4s23.${{ env.AWS_REGION }}.elasticbeanstalk.com/health"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL)
+
+          if [ $HTTP_CODE -eq 200 ]; then
+            echo "✅ Health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+      - name: Get deployment info
+        id: deployment
+        run: |
+          eb status ${{ env.EB_ENVIRONMENT_NAME }} --verbose
+
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "✅ Backend deployed successfully to production",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "✅ *Backend Production Deployment Successful*\n*Commit:* <${{ github.event.head_commit.url }}|${{ github.sha }}>\n*Author:* ${{ github.actor }}\n*Message:* ${{ github.event.head_commit.message }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "❌ Backend deployment to production failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "❌ *Backend Production Deployment Failed*\n*Commit:* <${{ github.event.head_commit.url }}|${{ github.sha }}>\n*Author:* ${{ github.actor }}\n*Message:* ${{ github.event.head_commit.message }}\n*Logs:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

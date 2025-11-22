@@ -7,28 +7,28 @@ Each detector should implement:
 """
 
 from .base_detector import BaseDetector, MultiScreenshotDetector
-from .edge_detector import EdgeBasedDetector
-from .contour_detector import ContourDetector
 from .color_detector import ColorClusterDetector
-from .template_detector import TemplateDetector
-from .selective_search import SelectiveSearchDetector
-from .mser_detector import MSERDetector
-from .hybrid_detector import HybridDetector
-from .sam2_detector import SAM2Detector
 from .consistency_detector import ConsistencyDetector
+from .contour_detector import ContourDetector
+from .edge_detector import EdgeBasedDetector
+from .hybrid_detector import HybridDetector
 from .mask_generator import MaskGenerator
+from .mser_detector import MSERDetector
+from .sam2_detector import SAM2Detector
+from .selective_search import SelectiveSearchDetector
+from .template_detector import TemplateDetector
 
 __all__ = [
-    'BaseDetector',
-    'MultiScreenshotDetector',
-    'EdgeBasedDetector',
-    'ContourDetector',
-    'ColorClusterDetector',
-    'TemplateDetector',
-    'SelectiveSearchDetector',
-    'MSERDetector',
-    'HybridDetector',
-    'SAM2Detector',
-    'ConsistencyDetector',
-    'MaskGenerator',
+    "BaseDetector",
+    "MultiScreenshotDetector",
+    "EdgeBasedDetector",
+    "ContourDetector",
+    "ColorClusterDetector",
+    "TemplateDetector",
+    "SelectiveSearchDetector",
+    "MSERDetector",
+    "HybridDetector",
+    "SAM2Detector",
+    "ConsistencyDetector",
+    "MaskGenerator",
 ]

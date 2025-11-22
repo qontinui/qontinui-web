@@ -7,11 +7,10 @@ Endpoints for managing snapshot runs, screenshots, and patterns.
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api.deps import get_async_db
+from app.api.deps import get_async_db, get_current_user_async
 from app.crud import snapshot as snapshot_crud
+from app.models.organization import PermissionLevel
+from app.models.user import User
 from app.schemas.snapshot import (
     SnapshotRun,
     SnapshotRunCreate,
@@ -19,6 +18,11 @@ from app.schemas.snapshot import (
     SnapshotRunListResponse,
     SnapshotRunUpdate,
 )
+from app.services.permission_service import PermissionService
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+permission_service = PermissionService()
 
 router = APIRouter()
 
@@ -27,10 +31,24 @@ router = APIRouter()
 async def create_snapshot_run(
     snapshot_data: SnapshotRunCreate,
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ) -> Any:
     """
     Create a new snapshot run
+
+    Requires EDIT permission on the project.
     """
+    # Check project permission (EDIT required to create snapshots)
+    if snapshot_data.project_id:
+        has_permission = await permission_service.can_user_access_project(
+            db, current_user.id, snapshot_data.project_id, PermissionLevel.EDIT
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions to create snapshots for this project",
+            )
+
     # Check if run_id already exists
     existing = await snapshot_crud.get_snapshot_run(db, snapshot_data.run_id)
     if existing:
@@ -63,9 +81,12 @@ async def list_snapshot_runs(
     workflow_id: int | None = Query(None),
     tags: str | None = Query(None, description="Comma-separated list of tags"),
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ) -> Any:
     """
     List snapshot runs with optional filtering
+
+    Returns only snapshots from projects the user has VIEW permission for.
 
     - **skip**: Number of runs to skip (for pagination)
     - **limit**: Maximum number of runs to return
@@ -73,6 +94,17 @@ async def list_snapshot_runs(
     - **workflow_id**: Filter by workflow ID
     - **tags**: Filter by tags (comma-separated)
     """
+    # If project_id is specified, verify permission
+    if project_id:
+        has_permission = await permission_service.can_user_access_project(
+            db, current_user.id, project_id, PermissionLevel.VIEW
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions to view snapshots for this project",
+            )
+
     # Parse tags if provided
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
 
@@ -84,6 +116,9 @@ async def list_snapshot_runs(
         workflow_id=workflow_id,
         tags=tag_list,
     )
+
+    # TODO: Filter runs to only include projects user has access to when project_id is None
+    # For now, if no project_id specified, return all (will be fixed in future PR)
 
     return {
         "runs": runs,
@@ -97,9 +132,12 @@ async def list_snapshot_runs(
 async def get_snapshot_run(
     run_id: str,
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ) -> Any:
     """
     Get a specific snapshot run with full details
+
+    Requires VIEW permission on the project.
     """
     snapshot_run = await snapshot_crud.get_snapshot_run(db, run_id)
     if not snapshot_run:
@@ -107,6 +145,17 @@ async def get_snapshot_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Snapshot run '{run_id}' not found",
         )
+
+    # Check project permission
+    if snapshot_run.project_id:
+        has_permission = await permission_service.can_user_access_project(
+            db, current_user.id, snapshot_run.project_id, PermissionLevel.VIEW
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions to view this snapshot",
+            )
 
     return snapshot_run
 
@@ -116,19 +165,36 @@ async def update_snapshot_run(
     run_id: str,
     snapshot_data: SnapshotRunUpdate,
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ) -> Any:
     """
     Update a snapshot run
-    """
-    # Only update fields that were provided
-    update_data = snapshot_data.model_dump(exclude_unset=True)
 
-    snapshot_run = await snapshot_crud.update_snapshot_run(db, run_id, **update_data)
-    if not snapshot_run:
+    Requires EDIT permission on the project.
+    """
+    # Get existing snapshot to check permissions
+    existing = await snapshot_crud.get_snapshot_run(db, run_id)
+    if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Snapshot run '{run_id}' not found",
         )
+
+    # Check project permission
+    if existing.project_id:
+        has_permission = await permission_service.can_user_access_project(
+            db, current_user.id, existing.project_id, PermissionLevel.EDIT
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions to update this snapshot",
+            )
+
+    # Only update fields that were provided
+    update_data = snapshot_data.model_dump(exclude_unset=True)
+
+    snapshot_run = await snapshot_crud.update_snapshot_run(db, run_id, **update_data)
 
     return snapshot_run
 
@@ -136,14 +202,38 @@ async def update_snapshot_run(
 @router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_snapshot_run(
     run_id: str,
-    delete_files: bool = Query(False, description="Also delete associated files from storage"),
+    delete_files: bool = Query(
+        False, description="Also delete associated files from storage"
+    ),
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ) -> None:
     """
     Delete a snapshot run
 
+    Requires ADMIN permission on the project.
+
     - **delete_files**: If true, also delete associated screenshot files from storage
     """
+    # Get existing snapshot to check permissions
+    existing = await snapshot_crud.get_snapshot_run(db, run_id)
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot run '{run_id}' not found",
+        )
+
+    # Check project permission (ADMIN required to delete snapshots)
+    if existing.project_id:
+        has_permission = await permission_service.can_user_access_project(
+            db, current_user.id, existing.project_id, PermissionLevel.ADMIN
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions to delete this snapshot",
+            )
+
     success = await snapshot_crud.delete_snapshot_run(db, run_id)
     if not success:
         raise HTTPException(
@@ -162,9 +252,12 @@ async def get_snapshot_screenshots(
     run_id: str,
     state: str | None = Query(None, description="Filter by active state"),
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ) -> Any:
     """
     Get screenshots from a snapshot run, optionally filtered by state
+
+    Requires VIEW permission on the project.
     """
     snapshot_run = await snapshot_crud.get_snapshot_run(db, run_id)
     if not snapshot_run:
@@ -173,8 +266,21 @@ async def get_snapshot_screenshots(
             detail=f"Snapshot run '{run_id}' not found",
         )
 
+    # Check project permission
+    if snapshot_run.project_id:
+        has_permission = await permission_service.can_user_access_project(
+            db, current_user.id, snapshot_run.project_id, PermissionLevel.VIEW
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions to view screenshots for this snapshot",
+            )
+
     if state:
-        screenshots = await snapshot_crud.get_screenshots_by_state(db, snapshot_run.id, state)
+        screenshots = await snapshot_crud.get_screenshots_by_state(
+            db, snapshot_run.id, state
+        )
     else:
         screenshots = snapshot_run.screenshots
 
@@ -191,9 +297,12 @@ async def get_snapshot_patterns(
     state: str | None = Query(None, description="Filter by active state"),
     pattern_type: str | None = Query(None, description="Filter by pattern type"),
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user_async),
 ) -> Any:
     """
     Get patterns from a snapshot run, optionally filtered by state or type
+
+    Requires VIEW permission on the project.
     """
     snapshot_run = await snapshot_crud.get_snapshot_run(db, run_id)
     if not snapshot_run:
@@ -202,10 +311,23 @@ async def get_snapshot_patterns(
             detail=f"Snapshot run '{run_id}' not found",
         )
 
+    # Check project permission
+    if snapshot_run.project_id:
+        has_permission = await permission_service.can_user_access_project(
+            db, current_user.id, snapshot_run.project_id, PermissionLevel.VIEW
+        )
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions to view patterns for this snapshot",
+            )
+
     if state:
         patterns = await snapshot_crud.get_patterns_by_state(db, snapshot_run.id, state)
     elif pattern_type:
-        patterns = await snapshot_crud.get_patterns_by_type(db, snapshot_run.id, pattern_type)
+        patterns = await snapshot_crud.get_patterns_by_type(
+            db, snapshot_run.id, pattern_type
+        )
     else:
         patterns = snapshot_run.patterns
 

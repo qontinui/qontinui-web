@@ -6,9 +6,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from pydantic import BaseModel, Field
 
 
 # Automation Session schemas
@@ -38,6 +37,7 @@ class AutomationSession(BaseORMSchema, AutomationSessionBase):
 
 class AutomationSessionWithStats(AutomationSession):
     """Session with basic statistics"""
+
     log_count: int
     screenshot_count: int
 
@@ -104,6 +104,7 @@ class ScreenshotInputAssociation(BaseORMSchema, ScreenshotInputAssociationBase):
 # Timeline Event schema (for merged logs and screenshots)
 class TimelineEvent(BaseModel):
     """A timeline event that can be either a log or a screenshot"""
+
     event_type: str  # "log" or "screenshot"
     timestamp: IsoDatetime
     id: UUID
@@ -112,6 +113,7 @@ class TimelineEvent(BaseModel):
 
 class SessionTimeline(BaseModel):
     """Session with chronological timeline of events"""
+
     session: AutomationSession
     timeline: list[TimelineEvent]
     total_events: int
@@ -120,6 +122,7 @@ class SessionTimeline(BaseModel):
 # Image Recognition Statistics schemas
 class ImageRecognitionStats(BaseModel):
     """Statistics for a specific image"""
+
     image_id: str
     total_attempts: int
     successful: int
@@ -130,6 +133,7 @@ class ImageRecognitionStats(BaseModel):
 
 class ImageRecognitionReport(BaseModel):
     """Image recognition report for a session"""
+
     session_id: UUID
     total_attempts: int
     successful: int
@@ -141,6 +145,7 @@ class ImageRecognitionReport(BaseModel):
 # Screenshot with inputs schema
 class ScreenshotWithInputs(BaseModel):
     """Screenshot with all associated input events"""
+
     screenshot: AutomationScreenshot
     inputs: list[dict[str, Any]]  # Input events with timestamps and metadata
 
@@ -156,6 +161,7 @@ class AutomationSessionListResponse(BaseModel):
 # Monitoring Event schemas (for WebSocket monitoring)
 class MonitoringLogEvent(BaseModel):
     """Log event for monitoring WebSocket"""
+
     id: UUID
     sequence_number: int
     level: str
@@ -166,6 +172,7 @@ class MonitoringLogEvent(BaseModel):
 
 class MonitoringScreenshotEvent(BaseModel):
     """Screenshot event for monitoring WebSocket"""
+
     id: UUID
     name: str
     presigned_url: str
@@ -177,6 +184,7 @@ class MonitoringScreenshotEvent(BaseModel):
 
 class MonitoringEvent(BaseModel):
     """Wrapper for all monitoring events"""
+
     type: str  # "log" or "screenshot"
     data: MonitoringLogEvent | MonitoringScreenshotEvent
     timestamp: IsoDatetime

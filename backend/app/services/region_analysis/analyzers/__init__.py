@@ -51,17 +51,18 @@ Example analyzer structure:
             )
 """
 
+from .color_quantization_detector import ColorQuantizationDetector
+from .contour_grid_detector import ContourGridDetector
+from .corner_clustering_detector import CornerClusteringDetector
+from .frequency_analysis_detector import FrequencyAnalysisDetector
+
 # Inventory Grid Detection Analyzers
 from .grid_pattern_detector import GridPatternDetector
-from .corner_clustering_detector import CornerClusteringDetector
-from .template_grid_detector import TemplateGridDetector
 from .hough_grid_detector import HoughGridDetector
-from .texture_uniformity_detector import TextureUniformityDetector
-from .contour_grid_detector import ContourGridDetector
-from .slot_border_detector import SlotBorderDetector
 from .ransac_grid_detector import RANSACGridDetector
-from .frequency_analysis_detector import FrequencyAnalysisDetector
-from .color_quantization_detector import ColorQuantizationDetector
+from .slot_border_detector import SlotBorderDetector
+from .template_grid_detector import TemplateGridDetector
+from .texture_uniformity_detector import TextureUniformityDetector
 
 __all__ = [
     "GridPatternDetector",

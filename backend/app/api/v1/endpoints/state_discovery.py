@@ -9,9 +9,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.user import User
 from app.schemas.state_discovery import (
@@ -20,6 +17,8 @@ from app.schemas.state_discovery import (
     StateDiscoveryTriggerRequest,
 )
 from app.services.state_discovery_service import state_discovery_service
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

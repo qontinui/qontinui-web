@@ -5,11 +5,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
-
 from app.api.deps import get_async_db, get_current_user_async
 from app.models.project import Project
 from app.models.user import User
@@ -25,6 +20,10 @@ from app.schemas.health import (
 )
 from app.services.auth_analytics_service import auth_analytics_service
 from app.services.health_service import health_service
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -249,12 +248,12 @@ async def get_all_projects(
                 owner_id=str(project.owner_id),
                 owner_username=project.owner.username,
                 owner_email=project.owner.email,
-                created_at=project.created_at.isoformat()
-                if project.created_at
-                else None,
-                updated_at=project.updated_at.isoformat()
-                if project.updated_at
-                else None,
+                created_at=(
+                    project.created_at.isoformat() if project.created_at else None
+                ),
+                updated_at=(
+                    project.updated_at.isoformat() if project.updated_at else None
+                ),
                 state_count=state_count,
                 transition_count=transition_count,
             )
@@ -295,20 +294,24 @@ async def get_project_details(
     # Add images from the general image library
     for image_asset in config.get("images", []):
         if image_asset:
-            image_library.append({
-                "source": "image_library",
-                "image": image_asset,
-            })
+            image_library.append(
+                {
+                    "source": "image_library",
+                    "image": image_asset,
+                }
+            )
 
     # Add images from states
     for state in states:
         if "image" in state and state["image"]:
-            image_library.append({
-                "source": "state",
-                "state_id": state.get("id"),
-                "state_name": state.get("name"),
-                "image": state["image"],
-            })
+            image_library.append(
+                {
+                    "source": "state",
+                    "state_id": state.get("id"),
+                    "state_name": state.get("name"),
+                    "image": state["image"],
+                }
+            )
 
     return {
         "id": str(project.id),

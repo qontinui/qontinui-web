@@ -1,7 +1,6 @@
 """Email composer classes - handle specific email types."""
 
 import structlog
-
 from app.core.config import settings
 from app.models.user import User
 from app.services.email.email_template_service import EmailTemplateService

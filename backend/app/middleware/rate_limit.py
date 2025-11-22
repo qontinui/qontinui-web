@@ -1,16 +1,52 @@
 import time
 
+from app.core.config import settings
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+# Determine storage backend based on configuration
+# Use Redis if enabled for scalable, persistent rate limiting across instances
+# Fall back to memory storage for development/testing when Redis is disabled
+if settings.REDIS_ENABLED:
+    storage_uri = (
+        f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    )
+else:
+    storage_uri = "memory://"
+
+
+def get_user_identifier(request: Request) -> str:
+    """
+    Get user ID for authenticated requests, IP for anonymous.
+
+    This enables per-user rate limiting for authenticated users while
+    falling back to IP-based limiting for anonymous requests.
+
+    Returns:
+        str: "user:{user_id}" for authenticated users, "ip:{ip_address}" for anonymous
+    """
+    user = getattr(request.state, "user", None)
+    if user:
+        return f"user:{user.id}"
+    return f"ip:{request.client.host}"
+
+
 # Create limiter instance
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://",
+    storage_uri=storage_uri,
+    headers_enabled=True,
+)
+
+# Create user-aware limiter with higher limits for authenticated users
+user_limiter = Limiter(
+    key_func=get_user_identifier,
+    default_limits=["1000 per hour", "100 per minute"],
+    storage_uri=storage_uri,
     headers_enabled=True,
 )
 
@@ -37,11 +73,11 @@ async def rate_limit_exceeded_handler(
 auth_limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["5 per minute", "20 per hour"],
-    storage_uri="memory://",
+    storage_uri=storage_uri,
 )
 
 api_limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["100 per minute", "1000 per hour"],
-    storage_uri="memory://",
+    storage_uri=storage_uri,
 )

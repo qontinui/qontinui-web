@@ -7,10 +7,9 @@ Models for storing snapshot runs and associated screenshots for integration test
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.db.base import Base
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -25,7 +24,9 @@ class SnapshotRun(Base):
     __tablename__ = "snapshot_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    run_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    run_id: Mapped[str] = mapped_column(
+        String(255), unique=True, index=True, nullable=False
+    )
     run_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Optional project association
@@ -45,12 +46,14 @@ class SnapshotRun(Base):
         DateTime(timezone=True),
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
-        nullable=False
+        nullable=False,
     )
 
     # JSON fields for flexible storage
     states: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
-    run_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    run_metadata: Mapped[dict] = mapped_column(
+        "metadata", JSON, default=dict, nullable=False
+    )
     tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     # Summary statistics (denormalized for performance)
@@ -66,13 +69,13 @@ class SnapshotRun(Base):
         "Screenshot",
         back_populates="snapshot_run",
         cascade="all, delete-orphan",
-        lazy="selectin"
+        lazy="selectin",
     )
     patterns: Mapped[list["Pattern"]] = relationship(
         "Pattern",
         back_populates="snapshot_run",
         cascade="all, delete-orphan",
-        lazy="selectin"
+        lazy="selectin",
     )
 
     def __repr__(self) -> str:
@@ -90,9 +93,7 @@ class Screenshot(Base):
 
     # Foreign key to snapshot run
     snapshot_run_id: Mapped[int] = mapped_column(
-        ForeignKey("snapshot_runs.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
+        ForeignKey("snapshot_runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Screenshot data
@@ -108,13 +109,19 @@ class Screenshot(Base):
     state_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
 
     # Optional metadata (using mapped name to avoid SQLAlchemy reserved word)
-    screenshot_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    screenshot_metadata: Mapped[dict] = mapped_column(
+        "metadata", JSON, default=dict, nullable=False
+    )
 
     # Relationships
-    snapshot_run: Mapped["SnapshotRun"] = relationship("SnapshotRun", back_populates="screenshots")
+    snapshot_run: Mapped["SnapshotRun"] = relationship(
+        "SnapshotRun", back_populates="screenshots"
+    )
 
     def __repr__(self) -> str:
-        return f"<Screenshot(path='{self.screenshot_path}', states={self.active_states})>"
+        return (
+            f"<Screenshot(path='{self.screenshot_path}', states={self.active_states})>"
+        )
 
 
 class Pattern(Base):
@@ -128,13 +135,13 @@ class Pattern(Base):
 
     # Foreign key to snapshot run
     snapshot_run_id: Mapped[int] = mapped_column(
-        ForeignKey("snapshot_runs.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
+        ForeignKey("snapshot_runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Pattern identification
-    pattern_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    pattern_id: Mapped[str] = mapped_column(
+        String(255), unique=True, index=True, nullable=False
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
 
@@ -148,13 +155,17 @@ class Pattern(Base):
     active_states: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     # Confidence score
-    confidence: Mapped[float] = mapped_column(Integer, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
 
     # Optional metadata (using mapped name to avoid SQLAlchemy reserved word)
-    pattern_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    pattern_metadata: Mapped[dict] = mapped_column(
+        "metadata", JSON, default=dict, nullable=False
+    )
 
     # Relationships
-    snapshot_run: Mapped["SnapshotRun"] = relationship("SnapshotRun", back_populates="patterns")
+    snapshot_run: Mapped["SnapshotRun"] = relationship(
+        "SnapshotRun", back_populates="patterns"
+    )
 
     def __repr__(self) -> str:
         return f"<Pattern(name='{self.name}', type='{self.type}', confidence={self.confidence})>"

@@ -1,8 +1,10 @@
+import secrets
 from datetime import datetime, timedelta
 from enum import Enum
-import secrets
 
+from app.db.base import Base
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     Column,
@@ -10,15 +12,12 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-
-from app.db.base import Base
 
 
 class TeamRole(str, Enum):
@@ -49,7 +48,9 @@ class Organization(Base):
 
     __tablename__ = "organizations"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+    )
     name = Column(String, nullable=False, index=True)
     slug = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -98,9 +99,13 @@ class TeamMember(Base):
 
     __tablename__ = "team_members"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+    )
     organization_id = Column(
-        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
     )
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
@@ -148,9 +153,13 @@ class OrganizationInvitation(Base):
 
     __tablename__ = "organization_invitations"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+    )
     organization_id = Column(
-        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
     )
     email = Column(String, nullable=False)
     role = Column(String, default=TeamRole.MEMBER.value, nullable=False)
@@ -180,7 +189,9 @@ class OrganizationInvitation(Base):
     )
 
     def __repr__(self):
-        return f"<OrganizationInvitation(org={self.organization_id}, email={self.email})>"
+        return (
+            f"<OrganizationInvitation(org={self.organization_id}, email={self.email})>"
+        )
 
     @staticmethod
     def generate_token():
@@ -214,7 +225,9 @@ class ProjectAccessControl(Base):
 
     __tablename__ = "project_access_control"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+    )
     project_id = Column(
         Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
@@ -222,7 +235,9 @@ class ProjectAccessControl(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     organization_id = Column(
-        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
     )
     permission_level = Column(
         String, default=PermissionLevel.VIEW.value, nullable=False
@@ -257,10 +272,13 @@ class ProjectAccessControl(Base):
         Index("idx_project_access_project", "project_id"),
         Index("idx_project_access_user", "user_id"),
         Index("idx_project_access_org", "organization_id"),
+        Index("idx_project_access_expires_at", "expires_at"),
     )
 
     def __repr__(self):
-        target = f"user={self.user_id}" if self.user_id else f"org={self.organization_id}"
+        target = (
+            f"user={self.user_id}" if self.user_id else f"org={self.organization_id}"
+        )
         return f"<ProjectAccessControl(project={self.project_id}, {target}, level={self.permission_level})>"
 
     @property

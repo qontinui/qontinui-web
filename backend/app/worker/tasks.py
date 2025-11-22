@@ -162,8 +162,193 @@ async def send_password_reset_email_task(
         return {"status": "error", "error": str(e), "to_email": to_email}
 
 
-# Image processing is now handled by the qontinui library via the
-# /api/v1/background-removal endpoint. No background task needed.
+async def process_uploaded_image(
+    ctx: dict[str, Any],
+    s3_key: str,
+    user_id: str,
+    project_id: str,
+    image_id: str,
+) -> dict[str, Any]:
+    """
+    Process uploaded image in background: generate thumbnails and upload to S3.
+
+    This task runs asynchronously after image upload to generate thumbnail
+    variants without blocking the upload response.
+
+    Args:
+        ctx: ARQ context (contains redis, job_id, etc.)
+        s3_key: S3 key of the original uploaded image
+        user_id: User ID who uploaded the image
+        project_id: Project ID the image belongs to
+        image_id: Unique image identifier
+
+    Returns:
+        Dict with status, variant keys, and processing info
+    """
+    logger.info(
+        "processing_uploaded_image",
+        s3_key=s3_key,
+        user_id=user_id,
+        project_id=project_id,
+        image_id=image_id,
+    )
+
+    try:
+        from app.db.session import AsyncSessionLocal
+        from app.services.image_processing_service import ImageProcessingService
+        from app.services.object_storage import object_storage
+        from app.services.storage_service import StorageService
+
+        # Step 1: Download original image from S3
+        logger.debug("downloading_original_from_s3", s3_key=s3_key)
+        try:
+            original_bytes = object_storage.download_file(s3_key)
+        except Exception as e:
+            logger.error(
+                "s3_download_failed",
+                s3_key=s3_key,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return {
+                "status": "failed",
+                "error": f"Failed to download original image: {str(e)}",
+                "s3_key": s3_key,
+            }
+
+        # Step 2: Generate thumbnails
+        logger.debug("generating_thumbnails", image_id=image_id)
+        try:
+            thumbnails = ImageProcessingService.generate_thumbnails(original_bytes)
+            logger.info(
+                "thumbnails_generated",
+                image_id=image_id,
+                variants=list(thumbnails.keys()),
+            )
+        except Exception as e:
+            logger.error(
+                "thumbnail_generation_failed",
+                image_id=image_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return {
+                "status": "failed",
+                "error": f"Failed to generate thumbnails: {str(e)}",
+                "s3_key": s3_key,
+            }
+
+        # Step 3: Upload thumbnails to S3
+        variant_keys = {}
+        total_thumbnail_size = 0
+
+        for variant_name, thumbnail_bytes in thumbnails.items():
+            # Construct S3 key: images/{user_id}/{project_id}/{image_id}_{variant}.webp
+            variant_key = (
+                f"images/{user_id}/{project_id}/{image_id}_{variant_name}.webp"
+            )
+
+            try:
+                # Upload thumbnail
+                import io
+
+                file_obj = io.BytesIO(thumbnail_bytes)
+                object_storage.backend.upload_file(
+                    file_obj=file_obj,
+                    key=variant_key,
+                    content_type="image/webp",
+                    metadata={
+                        "user_id": user_id,
+                        "project_id": project_id,
+                        "image_id": image_id,
+                        "variant": variant_name,
+                        "original_s3_key": s3_key,
+                    },
+                )
+
+                variant_keys[variant_name] = variant_key
+                total_thumbnail_size += len(thumbnail_bytes)
+
+                logger.debug(
+                    "thumbnail_uploaded",
+                    variant=variant_name,
+                    key=variant_key,
+                    size_bytes=len(thumbnail_bytes),
+                )
+
+            except Exception as e:
+                logger.error(
+                    "thumbnail_upload_failed",
+                    variant=variant_name,
+                    key=variant_key,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                # Continue with other variants even if one fails
+                continue
+
+        # Step 4: Update storage_usage metadata with variant paths
+        async with AsyncSessionLocal() as db:
+            try:
+                metadata = {
+                    "variants": variant_keys,
+                    "processing_status": "completed",
+                    "image_id": image_id,
+                    "thumbnail_size_bytes": total_thumbnail_size,
+                }
+
+                updated = await StorageService.update_metadata(
+                    db=db,
+                    file_path=s3_key,
+                    user_id=UUID(user_id),
+                    metadata=metadata,
+                )
+
+                if not updated:
+                    logger.warning(
+                        "storage_metadata_update_failed",
+                        s3_key=s3_key,
+                        reason="record_not_found",
+                    )
+
+            except Exception as e:
+                logger.error(
+                    "storage_metadata_update_failed",
+                    s3_key=s3_key,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                # Don't fail the whole task if metadata update fails
+
+        logger.info(
+            "image_processing_completed",
+            s3_key=s3_key,
+            image_id=image_id,
+            variants_count=len(variant_keys),
+            total_thumbnail_size=total_thumbnail_size,
+        )
+
+        return {
+            "status": "completed",
+            "s3_key": s3_key,
+            "image_id": image_id,
+            "variants": variant_keys,
+            "thumbnail_size_bytes": total_thumbnail_size,
+        }
+
+    except Exception as e:
+        logger.exception(
+            "image_processing_failed",
+            s3_key=s3_key,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        return {
+            "status": "failed",
+            "error": str(e),
+            "s3_key": s3_key,
+            "image_id": image_id,
+        }
 
 
 async def cleanup_old_data_task(
@@ -187,11 +372,10 @@ async def cleanup_old_data_task(
     try:
         from datetime import datetime, timedelta
 
-        from sqlalchemy import delete
-
         from app.db.session import AsyncSessionLocal
         from app.models.audit_log import AuditLog
         from app.models.usage_metric import UsageMetric
+        from sqlalchemy import delete
 
         cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
         audit_logs_deleted = 0
@@ -257,13 +441,12 @@ async def send_analytics_report_task(
     try:
         from datetime import datetime
 
-        from sqlalchemy import select
-
         from app.core.config import settings
         from app.db.session import AsyncSessionLocal
         from app.models.user import User
         from app.services.analytics_service import analytics_service
         from app.services.email.email_transport_service import EmailTransportService
+        from sqlalchemy import select
 
         # Determine days based on report type
         days_map = {"daily": 1, "weekly": 7, "monthly": 30}
@@ -419,6 +602,7 @@ __all__ = [
     "send_email_task",
     "send_verification_email_task",
     "send_password_reset_email_task",
+    "process_uploaded_image",
     "cleanup_old_data_task",
     "send_analytics_report_task",
 ]

@@ -17,7 +17,9 @@ class AdminUserData(BaseModel):
     is_verified: bool
     created_at: str = Field(..., description="ISO 8601 datetime string")
     project_count: int = Field(..., ge=0)
-    subscription_tier: str = Field(..., description="Subscription tier: free, hobby, or pro")
+    subscription_tier: str = Field(
+        ..., description="Subscription tier: free, hobby, or pro"
+    )
     last_login: Optional[str] = Field(None, description="ISO 8601 datetime string")
     email_verified: bool = Field(
         default=False, description="Email verification status (alias for is_verified)"

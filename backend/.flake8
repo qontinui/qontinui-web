@@ -1,0 +1,26 @@
+[flake8]
+max-line-length = 88
+extend-ignore = E203, E266, E501, W503
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    .tox,
+    build,
+    dist,
+    *.egg-info,
+    .eggs,
+    alembic/versions,
+    migrations/versions,
+    backup_migrations,
+    .elasticbeanstalk,
+    .ebextensions,
+    .platform,
+    node_modules
+per-file-ignores =
+    __init__.py:F401
+    app/main.py:E402
+max-complexity = 10
+docstring-convention = google

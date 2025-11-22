@@ -1,10 +1,9 @@
 from datetime import datetime
 
+from app.db.base import Base
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
 
 
 class User(SQLAlchemyBaseUserTableUUID, Base):
@@ -55,24 +54,19 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         Boolean,
         default=False,  # Disabled by default for all users
         nullable=False,
-        index=True
+        index=True,
     )
 
     automation_sessions_limit: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True,  # NULL = unlimited (for paid users)
-        default=None
+        Integer, nullable=True, default=None  # NULL = unlimited (for paid users)
     )
 
     automation_sessions_used: Mapped[int] = mapped_column(
-        Integer,
-        default=0,
-        nullable=False
+        Integer, default=0, nullable=False
     )
 
     automation_sessions_reset_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True
+        DateTime(timezone=True), nullable=True
     )
 
     # Relationships
@@ -86,7 +80,10 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         "StorageUsage", back_populates="user", cascade="all, delete-orphan"
     )
     audit_logs = relationship(
-        "AuditLog", back_populates="user", cascade="all, delete-orphan"
+        "AuditLog",
+        back_populates="user",
+        foreign_keys="AuditLog.user_id",
+        cascade="all, delete-orphan"
     )
     subscription = relationship(
         "Subscription",
@@ -102,4 +99,16 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     automation_sessions = relationship(
         "AutomationSession", back_populates="user", cascade="all, delete-orphan"
+    )
+    runner_tokens = relationship(
+        "RunnerToken", back_populates="user", cascade="all, delete-orphan"
+    )
+    runner_connections = relationship(
+        "RunnerConnection", back_populates="user", cascade="all, delete-orphan"
+    )
+    project_versions = relationship(
+        "ProjectVersion", back_populates="created_by_user", cascade="all, delete-orphan"
+    )
+    edit_commands = relationship(
+        "EditCommand", back_populates="user", cascade="all, delete-orphan"
     )

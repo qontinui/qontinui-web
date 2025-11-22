@@ -2,16 +2,18 @@
 Pydantic schemas for annotation API
 """
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict, field_serializer
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 # Screenshot schema for multi-screenshot support
 
+
 class Screenshot(BaseModel):
     """Individual screenshot metadata"""
+
     name: str
     url: str
     width: int = Field(..., gt=0)
@@ -19,6 +21,7 @@ class Screenshot(BaseModel):
 
 
 # Annotation schemas
+
 
 class AnnotationBase(BaseModel):
     x: int = Field(..., ge=0)
@@ -29,7 +32,11 @@ class AnnotationBase(BaseModel):
     description: Optional[str] = None
     reason: Optional[str] = None
     extra_data: Optional[Dict[str, Any]] = None
-    screenshot_index: int = Field(default=0, ge=0, description="Index of the screenshot this annotation belongs to")
+    screenshot_index: int = Field(
+        default=0,
+        ge=0,
+        description="Index of the screenshot this annotation belongs to",
+    )
 
 
 class AnnotationCreate(AnnotationBase):
@@ -45,7 +52,9 @@ class AnnotationUpdate(BaseModel):
     description: Optional[str] = None
     reason: Optional[str] = None
     extra_data: Optional[Dict[str, Any]] = None
-    screenshot_index: Optional[int] = Field(None, ge=0, description="Index of the screenshot this annotation belongs to")
+    screenshot_index: Optional[int] = Field(
+        None, ge=0, description="Index of the screenshot this annotation belongs to"
+    )
 
 
 class AnnotationResponse(AnnotationBase):
@@ -55,7 +64,7 @@ class AnnotationResponse(AnnotationBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_validator('id', 'annotation_set_id', mode='before')
+    @field_validator("id", "annotation_set_id", mode="before")
     @classmethod
     def convert_uuid_to_str(cls, v):
         """Convert UUID objects to strings before validation"""
@@ -66,27 +75,32 @@ class AnnotationResponse(AnnotationBase):
 
 # Annotation Set schemas
 
+
 class AnnotationSetBase(BaseModel):
     screenshot_name: str
     screenshot_url: str
     image_width: int = Field(..., gt=0)
     image_height: int = Field(..., gt=0)
     notes: Optional[str] = None
-    boundary_width: int = Field(default=5, ge=0, le=50, description="Boundary tolerance in pixels for matching")
-    screenshots: Optional[List[Screenshot]] = Field(None, description="Array of screenshots for multi-screenshot support")
+    boundary_width: int = Field(
+        default=5, ge=0, le=50, description="Boundary tolerance in pixels for matching"
+    )
+    screenshots: Optional[List[Screenshot]] = Field(
+        None, description="Array of screenshots for multi-screenshot support"
+    )
 
 
 class AnnotationSetCreate(AnnotationSetBase):
     annotations: Optional[List[AnnotationCreate]] = None
 
-    @field_validator('annotations')
+    @field_validator("annotations")
     @classmethod
     def validate_screenshot_indices(cls, v, info):
         """Validate that annotation screenshot_index values are consistent with screenshots array"""
         if v is None:
             return v
 
-        screenshots = info.data.get('screenshots')
+        screenshots = info.data.get("screenshots")
         max_index = len(screenshots) - 1 if screenshots else 0
 
         for annotation in v:
@@ -103,18 +117,22 @@ class AnnotationSetUpdate(BaseModel):
     screenshot_name: Optional[str] = None
     screenshot_url: Optional[str] = None
     notes: Optional[str] = None
-    boundary_width: Optional[int] = Field(None, ge=0, le=50, description="Boundary tolerance in pixels")
-    screenshots: Optional[List[Screenshot]] = Field(None, description="Array of screenshots for multi-screenshot support")
+    boundary_width: Optional[int] = Field(
+        None, ge=0, le=50, description="Boundary tolerance in pixels"
+    )
+    screenshots: Optional[List[Screenshot]] = Field(
+        None, description="Array of screenshots for multi-screenshot support"
+    )
     annotations: Optional[List[AnnotationCreate]] = None
 
-    @field_validator('annotations')
+    @field_validator("annotations")
     @classmethod
     def validate_screenshot_indices(cls, v, info):
         """Validate that annotation screenshot_index values are consistent with screenshots array"""
         if v is None:
             return v
 
-        screenshots = info.data.get('screenshots')
+        screenshots = info.data.get("screenshots")
         max_index = len(screenshots) - 1 if screenshots else 0
 
         for annotation in v:
@@ -136,7 +154,7 @@ class AnnotationSetResponse(AnnotationSetBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_validator('id', 'created_by_id', mode='before')
+    @field_validator("id", "created_by_id", mode="before")
     @classmethod
     def convert_uuid_to_str(cls, v):
         """Convert UUID objects to strings before validation"""

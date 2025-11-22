@@ -5,15 +5,15 @@ Provides unified interface for running inference with trained models.
 Supports batch processing, preprocessing, and post-processing.
 """
 
-import torch
-import numpy as np
-from PIL import Image
 from pathlib import Path
-from typing import List, Dict, Any, Union, Optional, Tuple
-import cv2
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import cv2
+import numpy as np
+import torch
 from models.button_cnn import ButtonCNN
 from models.button_yolo import ButtonYOLO
+from PIL import Image
 
 
 class ButtonDetectorInference:
@@ -29,12 +29,14 @@ class ButtonDetectorInference:
         - Post-processing (NMS, confidence filtering)
     """
 
-    def __init__(self,
-                 model_path: str,
-                 model_type: str = 'mobilenet_v3',
-                 device: str = 'auto',
-                 confidence_threshold: float = 0.5,
-                 nms_threshold: float = 0.45):
+    def __init__(
+        self,
+        model_path: str,
+        model_type: str = "mobilenet_v3",
+        device: str = "auto",
+        confidence_threshold: float = 0.5,
+        nms_threshold: float = 0.45,
+    ):
         """
         Initialize inference engine
 
@@ -51,8 +53,8 @@ class ButtonDetectorInference:
         self.nms_threshold = nms_threshold
 
         # Determine device
-        if device == 'auto':
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if device == "auto":
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
 
@@ -64,23 +66,24 @@ class ButtonDetectorInference:
 
         # Class names
         self.class_names = [
-            'primary_button',
-            'secondary_button',
-            'icon_button',
-            'text_button'
+            "primary_button",
+            "secondary_button",
+            "icon_button",
+            "text_button",
         ]
 
     def _load_model(self):
         """Load trained model from checkpoint"""
-        if self.model_type in ['yolov8', 'yolov5']:
+        if self.model_type in ["yolov8", "yolov5"]:
             # Load YOLO model
             from models.button_yolo import ButtonYOLO
+
             model = ButtonYOLO(
                 model_type=self.model_type,
-                model_size='n',  # Will be overridden by checkpoint
+                model_size="n",  # Will be overridden by checkpoint
                 num_classes=4,
                 pretrained=False,
-                device=str(self.device)
+                device=str(self.device),
             )
             model.load(str(self.model_path))
             return model
@@ -90,25 +93,30 @@ class ButtonDetectorInference:
             checkpoint = torch.load(self.model_path, map_location=self.device)
 
             # Get model config from checkpoint
-            config = checkpoint.get('config', {})
+            config = checkpoint.get("config", {})
 
             from models.button_cnn import create_button_cnn
-            model = create_button_cnn({
-                'architecture': self.model_type,
-                'num_button_types': config.get('num_classes', 4),
-                'pretrained': False,
-                'dropout': config.get('dropout', 0.3)
-            })
+
+            model = create_button_cnn(
+                {
+                    "architecture": self.model_type,
+                    "num_button_types": config.get("num_classes", 4),
+                    "pretrained": False,
+                    "dropout": config.get("dropout", 0.3),
+                }
+            )
 
             # Load state dict
-            model.load_state_dict(checkpoint['model_state_dict'])
+            model.load_state_dict(checkpoint["model_state_dict"])
             model = model.to(self.device)
 
             return model
 
-    def preprocess_image(self,
-                        image: Union[str, Path, Image.Image, np.ndarray],
-                        target_size: Tuple[int, int] = (224, 224)) -> torch.Tensor:
+    def preprocess_image(
+        self,
+        image: Union[str, Path, Image.Image, np.ndarray],
+        target_size: Tuple[int, int] = (224, 224),
+    ) -> torch.Tensor:
         """
         Preprocess image for inference
 
@@ -121,9 +129,9 @@ class ButtonDetectorInference:
         """
         # Load image if path
         if isinstance(image, (str, Path)):
-            image = Image.open(image).convert('RGB')
+            image = Image.open(image).convert("RGB")
         elif isinstance(image, np.ndarray):
-            image = Image.fromarray(image).convert('RGB')
+            image = Image.fromarray(image).convert("RGB")
 
         # Resize
         image = image.resize(target_size)
@@ -137,10 +145,12 @@ class ButtonDetectorInference:
 
         return image_tensor
 
-    def preprocess_region(self,
-                         image: np.ndarray,
-                         bbox: List[int],
-                         target_size: Tuple[int, int] = (224, 224)) -> torch.Tensor:
+    def preprocess_region(
+        self,
+        image: np.ndarray,
+        bbox: List[int],
+        target_size: Tuple[int, int] = (224, 224),
+    ) -> torch.Tensor:
         """
         Extract and preprocess image region
 
@@ -162,7 +172,7 @@ class ButtonDetectorInference:
         h = max(1, min(h, height - y))
 
         # Extract region
-        region = image[y:y+h, x:x+w]
+        region = image[y : y + h, x : x + w]
 
         # Convert to PIL Image for easier processing
         region_pil = Image.fromarray(region)
@@ -170,9 +180,9 @@ class ButtonDetectorInference:
         return self.preprocess_image(region_pil, target_size)
 
     @torch.no_grad()
-    def predict_classification(self,
-                              image: Union[str, Path, Image.Image, np.ndarray, torch.Tensor]
-                              ) -> Dict[str, Any]:
+    def predict_classification(
+        self, image: Union[str, Path, Image.Image, np.ndarray, torch.Tensor]
+    ) -> Dict[str, Any]:
         """
         Run classification inference on single image/region
 
@@ -196,26 +206,32 @@ class ButtonDetectorInference:
         image_tensor = image_tensor.to(self.device)
 
         # Inference
-        predictions = self.model.predict(image_tensor, threshold=self.confidence_threshold)
+        predictions = self.model.predict(
+            image_tensor, threshold=self.confidence_threshold
+        )
 
         # Extract results
-        is_button = predictions['is_button'][0].item()
-        button_type_id = predictions['button_type'][0].item()
-        confidence = predictions['confidence'][0].item()
-        button_type_probs = predictions['button_type_probs'][0].cpu().numpy()
+        is_button = predictions["is_button"][0].item()
+        button_type_id = predictions["button_type"][0].item()
+        confidence = predictions["confidence"][0].item()
+        button_type_probs = predictions["button_type_probs"][0].cpu().numpy()
 
         return {
-            'is_button': bool(is_button),
-            'button_type': self.class_names[button_type_id] if button_type_id < len(self.class_names) else f'class_{button_type_id}',
-            'button_type_id': int(button_type_id),
-            'confidence': float(confidence),
-            'probabilities': button_type_probs.tolist()
+            "is_button": bool(is_button),
+            "button_type": (
+                self.class_names[button_type_id]
+                if button_type_id < len(self.class_names)
+                else f"class_{button_type_id}"
+            ),
+            "button_type_id": int(button_type_id),
+            "confidence": float(confidence),
+            "probabilities": button_type_probs.tolist(),
         }
 
     @torch.no_grad()
-    def predict_detection(self,
-                         image: Union[str, Path, Image.Image, np.ndarray]
-                         ) -> List[Dict[str, Any]]:
+    def predict_detection(
+        self, image: Union[str, Path, Image.Image, np.ndarray]
+    ) -> List[Dict[str, Any]]:
         """
         Run detection inference on full image (YOLO)
 
@@ -234,15 +250,15 @@ class ButtonDetectorInference:
             detections = self.model.predict(
                 image,
                 conf_threshold=self.confidence_threshold,
-                iou_threshold=self.nms_threshold
+                iou_threshold=self.nms_threshold,
             )
             return detections[0] if detections else []
         else:
             raise ValueError("Detection mode requires YOLO model")
 
-    def predict_regions(self,
-                       image: np.ndarray,
-                       regions: List[List[int]]) -> List[Dict[str, Any]]:
+    def predict_regions(
+        self, image: np.ndarray, regions: List[List[int]]
+    ) -> List[Dict[str, Any]]:
         """
         Predict button types for multiple regions in an image
 
@@ -261,26 +277,36 @@ class ButtonDetectorInference:
             region_tensor = region_tensor.to(self.device)
 
             # Predict
-            pred = self.model.predict(region_tensor, threshold=self.confidence_threshold)
+            pred = self.model.predict(
+                region_tensor, threshold=self.confidence_threshold
+            )
 
             # Extract results
-            is_button = pred['is_button'][0].item()
-            button_type_id = pred['button_type'][0].item()
-            confidence = pred['confidence'][0].item()
+            is_button = pred["is_button"][0].item()
+            button_type_id = pred["button_type"][0].item()
+            confidence = pred["confidence"][0].item()
 
-            predictions.append({
-                'bbox': bbox,
-                'is_button': bool(is_button),
-                'button_type': self.class_names[button_type_id] if button_type_id < len(self.class_names) else f'class_{button_type_id}',
-                'button_type_id': int(button_type_id),
-                'confidence': float(confidence)
-            })
+            predictions.append(
+                {
+                    "bbox": bbox,
+                    "is_button": bool(is_button),
+                    "button_type": (
+                        self.class_names[button_type_id]
+                        if button_type_id < len(self.class_names)
+                        else f"class_{button_type_id}"
+                    ),
+                    "button_type_id": int(button_type_id),
+                    "confidence": float(confidence),
+                }
+            )
 
         return predictions
 
-    def predict_batch(self,
-                     images: List[Union[str, Path, Image.Image, np.ndarray]],
-                     batch_size: int = 32) -> List[Dict[str, Any]]:
+    def predict_batch(
+        self,
+        images: List[Union[str, Path, Image.Image, np.ndarray]],
+        batch_size: int = 32,
+    ) -> List[Dict[str, Any]]:
         """
         Run batch inference on multiple images
 
@@ -295,7 +321,7 @@ class ButtonDetectorInference:
 
         # Process in batches
         for i in range(0, len(images), batch_size):
-            batch = images[i:i + batch_size]
+            batch = images[i : i + batch_size]
 
             # Preprocess batch
             batch_tensors = []
@@ -307,26 +333,34 @@ class ButtonDetectorInference:
             batch_tensor = torch.cat(batch_tensors, dim=0).to(self.device)
 
             # Inference
-            predictions = self.model.predict(batch_tensor, threshold=self.confidence_threshold)
+            predictions = self.model.predict(
+                batch_tensor, threshold=self.confidence_threshold
+            )
 
             # Extract results
             for j in range(len(batch)):
-                is_button = predictions['is_button'][j].item()
-                button_type_id = predictions['button_type'][j].item()
-                confidence = predictions['confidence'][j].item()
+                is_button = predictions["is_button"][j].item()
+                button_type_id = predictions["button_type"][j].item()
+                confidence = predictions["confidence"][j].item()
 
-                all_predictions.append({
-                    'is_button': bool(is_button),
-                    'button_type': self.class_names[button_type_id] if button_type_id < len(self.class_names) else f'class_{button_type_id}',
-                    'button_type_id': int(button_type_id),
-                    'confidence': float(confidence)
-                })
+                all_predictions.append(
+                    {
+                        "is_button": bool(is_button),
+                        "button_type": (
+                            self.class_names[button_type_id]
+                            if button_type_id < len(self.class_names)
+                            else f"class_{button_type_id}"
+                        ),
+                        "button_type_id": int(button_type_id),
+                        "confidence": float(confidence),
+                    }
+                )
 
         return all_predictions
 
-    def apply_nms(self,
-                 detections: List[Dict[str, Any]],
-                 iou_threshold: float = None) -> List[Dict[str, Any]]:
+    def apply_nms(
+        self, detections: List[Dict[str, Any]], iou_threshold: float = None
+    ) -> List[Dict[str, Any]]:
         """
         Apply Non-Maximum Suppression to detections
 
@@ -344,8 +378,8 @@ class ButtonDetectorInference:
             iou_threshold = self.nms_threshold
 
         # Convert to numpy arrays
-        boxes = np.array([d['bbox'] for d in detections])  # [x, y, w, h]
-        scores = np.array([d['confidence'] for d in detections])
+        boxes = np.array([d["bbox"] for d in detections])  # [x, y, w, h]
+        scores = np.array([d["confidence"] for d in detections])
 
         # Convert [x, y, w, h] to [x1, y1, x2, y2]
         x1 = boxes[:, 0]
@@ -379,10 +413,12 @@ class ButtonDetectorInference:
 
         return [detections[i] for i in keep]
 
-    def visualize_predictions(self,
-                            image: np.ndarray,
-                            predictions: List[Dict[str, Any]],
-                            save_path: Optional[str] = None) -> np.ndarray:
+    def visualize_predictions(
+        self,
+        image: np.ndarray,
+        predictions: List[Dict[str, Any]],
+        save_path: Optional[str] = None,
+    ) -> np.ndarray:
         """
         Visualize predictions on image
 
@@ -397,13 +433,13 @@ class ButtonDetectorInference:
         vis_image = image.copy()
 
         for pred in predictions:
-            if not pred.get('is_button', True):
+            if not pred.get("is_button", True):
                 continue
 
-            bbox = pred['bbox']
+            bbox = pred["bbox"]
             x, y, w, h = bbox
-            confidence = pred['confidence']
-            class_name = pred.get('button_type', 'button')
+            confidence = pred["confidence"]
+            class_name = pred.get("button_type", "button")
 
             # Draw bounding box
             color = (0, 255, 0)  # Green
@@ -422,7 +458,9 @@ class ButtonDetectorInference:
             cv2.rectangle(vis_image, (x, y - text_h - 5), (x + text_w, y), color, -1)
 
             # Draw text
-            cv2.putText(vis_image, label, (x, y - 5), font, font_scale, (0, 0, 0), thickness)
+            cv2.putText(
+                vis_image, label, (x, y - 5), font, font_scale, (0, 0, 0), thickness
+            )
 
         # Save if path provided
         if save_path:
@@ -431,9 +469,9 @@ class ButtonDetectorInference:
         return vis_image
 
 
-def create_inference_engine(model_path: str,
-                           model_type: str = 'mobilenet_v3',
-                           **kwargs) -> ButtonDetectorInference:
+def create_inference_engine(
+    model_path: str, model_type: str = "mobilenet_v3", **kwargs
+) -> ButtonDetectorInference:
     """
     Factory function to create inference engine
 
@@ -446,9 +484,7 @@ def create_inference_engine(model_path: str,
         ButtonDetectorInference instance
     """
     return ButtonDetectorInference(
-        model_path=model_path,
-        model_type=model_type,
-        **kwargs
+        model_path=model_path, model_type=model_type, **kwargs
     )
 
 
@@ -461,9 +497,7 @@ if __name__ == "__main__":
     try:
         model_path = "checkpoints/best.pt"
         inference = create_inference_engine(
-            model_path=model_path,
-            model_type='mobilenet_v3',
-            confidence_threshold=0.5
+            model_path=model_path, model_type="mobilenet_v3", confidence_threshold=0.5
         )
 
         print("Inference engine created successfully!")
@@ -471,4 +505,6 @@ if __name__ == "__main__":
         print(f"Model type: {inference.model_type}")
 
     except FileNotFoundError:
-        print(f"Model checkpoint not found. Train a model first using train_button_detector.py")
+        print(
+            f"Model checkpoint not found. Train a model first using train_button_detector.py"
+        )

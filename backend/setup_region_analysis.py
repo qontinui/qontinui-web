@@ -13,13 +13,13 @@ from pathlib import Path
 backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
-from app.db.session import engine
 from app.db.base_class import Base
+from app.db.session import engine
 from app.models.region_result import (
-    RegionAnalysisJob,
-    RegionAnalyzerResult,
     DetectedRegionModel,
     FusedRegionModel,
+    RegionAnalysisJob,
+    RegionAnalyzerResult,
 )
 from sqlalchemy import inspect
 
@@ -98,16 +98,18 @@ def drop_region_analysis_tables():
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Manage region analysis database tables")
+    parser = argparse.ArgumentParser(
+        description="Manage region analysis database tables"
+    )
     parser.add_argument(
         "--drop",
         action="store_true",
-        help="Drop existing region analysis tables (⚠️  destroys data)"
+        help="Drop existing region analysis tables (⚠️  destroys data)",
     )
     parser.add_argument(
         "--reset",
         action="store_true",
-        help="Drop and recreate region analysis tables (⚠️  destroys data)"
+        help="Drop and recreate region analysis tables (⚠️  destroys data)",
     )
 
     args = parser.parse_args()

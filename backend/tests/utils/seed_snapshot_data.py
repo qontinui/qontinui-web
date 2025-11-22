@@ -8,9 +8,8 @@ import asyncio
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.crud import snapshot as snapshot_crud
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def create_test_snapshots(db: AsyncSession) -> list[str]:
@@ -46,7 +45,7 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
             width=1920,
             height=1080,
             state_hash=f"hash_login_{i+1}",
-            metadata={"step": i+1},
+            metadata={"step": i + 1},
         )
 
     # Add patterns to snapshot 1
@@ -87,11 +86,11 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
             snapshot_run_id=snapshot2.id,
             screenshot_path=f"test_settings_screenshot_{i+1}.png",
             active_states=[state],
-            timestamp=datetime.utcnow() - timedelta(hours=2, minutes=i*10),
+            timestamp=datetime.utcnow() - timedelta(hours=2, minutes=i * 10),
             width=1920,
             height=1080,
             state_hash=f"hash_settings_{i+1}",
-            metadata={"step": i+1},
+            metadata={"step": i + 1},
         )
 
     # Add patterns to snapshot 2
@@ -124,20 +123,29 @@ async def create_test_snapshots(db: AsyncSession) -> list[str]:
     )
 
     # Add screenshots to snapshot 3
-    states_list = ["login", "login", "dashboard", "dashboard",
-                   "dashboard", "settings", "settings", "dashboard",
-                   "dashboard", "login"]
+    states_list = [
+        "login",
+        "login",
+        "dashboard",
+        "dashboard",
+        "dashboard",
+        "settings",
+        "settings",
+        "dashboard",
+        "dashboard",
+        "login",
+    ]
     for i in range(10):
         await snapshot_crud.add_screenshot(
             db=db,
             snapshot_run_id=snapshot3.id,
             screenshot_path=f"test_complete_screenshot_{i+1}.png",
             active_states=[states_list[i]],
-            timestamp=datetime.utcnow() - timedelta(hours=1, minutes=i*5),
+            timestamp=datetime.utcnow() - timedelta(hours=1, minutes=i * 5),
             width=1920,
             height=1080,
             state_hash=f"hash_complete_{i+1}",
-            metadata={"step": i+1},
+            metadata={"step": i + 1},
         )
 
     # Add patterns to snapshot 3

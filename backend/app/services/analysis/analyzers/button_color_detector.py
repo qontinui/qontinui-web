@@ -9,19 +9,20 @@ Detects buttons by analyzing color consistency:
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,12 +43,12 @@ class ButtonColorDetector(BaseAnalyzer):
     # Common button colors in HSV space
     # Format: (name, H_min, H_max, S_min, V_min)
     COMMON_BUTTON_COLORS = [
-        ("blue", 100, 130, 50, 50),      # Blue buttons (primary actions)
-        ("green", 40, 80, 50, 50),       # Green buttons (success, confirm)
-        ("red", 0, 10, 50, 50),          # Red buttons (danger, delete)
-        ("red2", 170, 180, 50, 50),      # Red (wraps around hue)
-        ("orange", 10, 25, 50, 50),      # Orange buttons (warnings)
-        ("purple", 130, 160, 50, 50),    # Purple buttons
+        ("blue", 100, 130, 50, 50),  # Blue buttons (primary actions)
+        ("green", 40, 80, 50, 50),  # Green buttons (success, confirm)
+        ("red", 0, 10, 50, 50),  # Red buttons (danger, delete)
+        ("red2", 170, 180, 50, 50),  # Red (wraps around hue)
+        ("orange", 10, 25, 50, 50),  # Orange buttons (warnings)
+        ("purple", 130, 160, 50, 50),  # Purple buttons
     ]
 
     @property
@@ -71,25 +72,20 @@ class ButtonColorDetector(BaseAnalyzer):
             # K-means clustering parameters
             "num_clusters": 8,  # Number of color clusters
             "kmeans_attempts": 3,
-
             # Color uniformity parameters
             "min_color_uniformity": 0.7,  # How uniform the color should be
             "check_common_colors": True,
-
             # Contrast parameters
             "min_contrast": 30,  # Minimum contrast with background
-
             # Size constraints
             "min_width": 60,
             "max_width": 400,
             "min_height": 25,
             "max_height": 80,
             "min_area": 1500,  # Minimum button area
-
             # Shape constraints
             "min_aspect_ratio": 1.5,  # Buttons are typically wider than tall
             "max_aspect_ratio": 6.0,
-
             # Confidence thresholds
             "min_confidence": 0.5,
         }
@@ -146,7 +142,9 @@ class ButtonColorDetector(BaseAnalyzer):
         images = []
         for data in screenshot_data:
             img = Image.open(BytesIO(data)).convert("RGB")
-            images.append(cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR))
+            images.append(
+                cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR)
+            )
         return images
 
     async def _analyze_screenshot(
@@ -189,11 +187,15 @@ class ButtonColorDetector(BaseAnalyzer):
 
                 # Step 4: Filter by aspect ratio
                 aspect_ratio = w_rect / h_rect if h_rect > 0 else 0
-                if not (params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+                if not (
+                    params["min_aspect_ratio"]
+                    <= aspect_ratio
+                    <= params["max_aspect_ratio"]
+                ):
                     continue
 
                 # Step 5: Analyze color uniformity within this region
-                region = img_color[y:y+h_rect, x:x+w_rect]
+                region = img_color[y : y + h_rect, x : x + w_rect]
                 color_info = self._analyze_region_color(region, params)
 
                 if color_info["uniformity"] < params["min_color_uniformity"]:
@@ -366,12 +368,17 @@ class ButtonColorDetector(BaseAnalyzer):
         # Mask out the button region from background
         button_x_in_bg = x - x1
         button_y_in_bg = y - y1
-        if (button_y_in_bg >= 0 and button_x_in_bg >= 0 and
-            button_y_in_bg + h <= background.shape[0] and
-            button_x_in_bg + w <= background.shape[1]):
+        if (
+            button_y_in_bg >= 0
+            and button_x_in_bg >= 0
+            and button_y_in_bg + h <= background.shape[0]
+            and button_x_in_bg + w <= background.shape[1]
+        ):
             # Set button region to zero (will be excluded from mean calculation)
             mask = np.ones(background.shape[:2], dtype=bool)
-            mask[button_y_in_bg:button_y_in_bg+h, button_x_in_bg:button_x_in_bg+w] = False
+            mask[
+                button_y_in_bg : button_y_in_bg + h, button_x_in_bg : button_x_in_bg + w
+            ] = False
             background_pixels = background[mask]
         else:
             background_pixels = background.reshape(-1, 3)

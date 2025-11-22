@@ -20,11 +20,10 @@ from typing import BinaryIO
 
 import boto3
 import structlog
+from app.core.config import settings
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
-
-from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -154,7 +153,7 @@ class S3Backend(StorageBackend):
                 logger.warning(
                     "bucket_access_restricted",
                     bucket=self.bucket_name,
-                    message="Received 403 on head_bucket, assuming bucket exists"
+                    message="Received 403 on head_bucket, assuming bucket exists",
                 )
             else:
                 logger.error(
@@ -303,19 +302,20 @@ class LocalBackend(StorageBackend):
             file_path = self._get_file_path(key)
 
             # Write file to disk
-            with open(file_path, 'wb') as f:
+            with open(file_path, "wb") as f:
                 shutil.copyfileobj(file_obj, f)
 
             # Store metadata as separate JSON file if provided
             if metadata:
-                metadata_path = file_path.with_suffix(file_path.suffix + '.meta.json')
+                metadata_path = file_path.with_suffix(file_path.suffix + ".meta.json")
                 import json
+
                 metadata_with_type = {
-                    'content_type': content_type,
-                    'uploaded_at': datetime.utcnow().isoformat(),
-                    **metadata
+                    "content_type": content_type,
+                    "uploaded_at": datetime.utcnow().isoformat(),
+                    **metadata,
                 }
-                with open(metadata_path, 'w') as f:
+                with open(metadata_path, "w") as f:
                     json.dump(metadata_with_type, f)
 
             logger.info("file_uploaded_locally", key=key, path=str(file_path))
@@ -337,7 +337,7 @@ class LocalBackend(StorageBackend):
             if not file_path.exists():
                 raise FileNotFoundError(f"File not found: {key}")
 
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 return f.read()
 
         except FileNotFoundError:
@@ -360,7 +360,7 @@ class LocalBackend(StorageBackend):
             if file_path.exists():
                 file_path.unlink()
                 # Also delete metadata file if it exists
-                metadata_path = file_path.with_suffix(file_path.suffix + '.meta.json')
+                metadata_path = file_path.with_suffix(file_path.suffix + ".meta.json")
                 if metadata_path.exists():
                     metadata_path.unlink()
                 logger.info("file_deleted_locally", key=key)
@@ -398,16 +398,17 @@ class LocalBackend(StorageBackend):
             stat = file_path.stat()
 
             # Try to load metadata from .meta.json file
-            metadata_path = file_path.with_suffix(file_path.suffix + '.meta.json')
+            metadata_path = file_path.with_suffix(file_path.suffix + ".meta.json")
             extra_metadata = {}
             content_type = None
 
             if metadata_path.exists():
                 import json
-                with open(metadata_path, 'r') as f:
+
+                with open(metadata_path, "r") as f:
                     meta = json.load(f)
-                    content_type = meta.pop('content_type', None)
-                    meta.pop('uploaded_at', None)  # Remove internal fields
+                    content_type = meta.pop("content_type", None)
+                    meta.pop("uploaded_at", None)  # Remove internal fields
                     extra_metadata = meta
 
             # Guess content type if not in metadata
@@ -654,9 +655,7 @@ class ObjectStorageService:
             )
             raise
 
-    def delete_project_images(
-        self, user_id: str | int, project_id: str | int
-    ) -> int:
+    def delete_project_images(self, user_id: str | int, project_id: str | int) -> int:
         """
         Delete all images for a project
 
