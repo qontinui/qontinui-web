@@ -24,6 +24,9 @@ export { ContinueActionProperties } from "./control-flow/ContinueActionPropertie
 export { IfActionProperties } from "./control-flow/IfActionProperties"
 export { LoopActionProperties } from "./control-flow/LoopActionProperties"
 
+// Import Code Execution components
+export { CodeBlockActionProperties } from "./code-execution/CodeBlockActionProperties"
+
 // Register components with the registry
 import { FindActionProperties } from "./FindActionProperties"
 import { FindStateImageProperties } from "./FindStateImageProperties"
@@ -43,6 +46,9 @@ import { BreakActionProperties } from "./control-flow/BreakActionProperties"
 import { ContinueActionProperties } from "./control-flow/ContinueActionProperties"
 import { IfActionProperties } from "./control-flow/IfActionProperties"
 import { LoopActionProperties } from "./control-flow/LoopActionProperties"
+
+// Import Code Execution components
+import { CodeBlockActionProperties } from "./code-execution/CodeBlockActionProperties"
 
 // Register all action types with their components
 actionConfigRegistry.register("FIND", FindActionProperties, "FIND")
@@ -64,3 +70,6 @@ actionConfigRegistry.register("BREAK", BreakActionProperties, "BREAK")
 actionConfigRegistry.register("CONTINUE", ContinueActionProperties, "CONTINUE")
 actionConfigRegistry.register("IF", IfActionProperties, "IF")
 actionConfigRegistry.register("LOOP", LoopActionProperties, "LOOP")
+
+// Register Code Execution components
+actionConfigRegistry.register("CODE_BLOCK", CodeBlockActionProperties, "CODE_BLOCK")

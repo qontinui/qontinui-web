@@ -1,4 +1,4 @@
-"""Add snapshot tables for integration testing
+"""Add snapshot tables for integration testing.
 
 Revision ID: e45f9b2c3d1a
 Revises: 20a16db091c1
@@ -18,13 +18,14 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add snapshot_runs, screenshots, and patterns tables."""
     # Create snapshot_runs table
     op.create_table(
         "snapshot_runs",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("run_id", sa.String(length=255), nullable=False),
         sa.Column("run_name", sa.String(length=255), nullable=False),
-        sa.Column("project_id", sa.Integer(), nullable=True),
+        sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("workflow_id", sa.Integer(), nullable=True),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -121,6 +122,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove snapshot_runs, screenshots, and patterns tables."""
     # Drop tables in reverse order
     op.drop_index(op.f("ix_patterns_type"), table_name="patterns")
     op.drop_index(op.f("ix_patterns_snapshot_run_id"), table_name="patterns")

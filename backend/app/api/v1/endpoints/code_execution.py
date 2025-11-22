@@ -267,3 +267,246 @@ workflow_state['total'] = result""",
     }
 
     return examples
+
+
+# ==============================================================================
+# Phase 2: File-based Code Execution Endpoints
+# ==============================================================================
+
+@router.get("/files/list", response_model=dict)
+async def list_python_files(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.current_active_user),
+    directory: str = ".",
+    project_id: str | None = None,
+) -> dict:
+    """
+    List all Python files in project directory.
+
+    Args:
+        directory: Directory to search (relative to project root)
+        project_id: Project ID for scoping file access
+
+    Returns:
+        {
+            "files": ["scripts/detector.py", "lib/utils.py", ...],
+            "count": 2
+        }
+    """
+    from app.services.file_loader import PythonFileLoader
+    from pathlib import Path
+    import os
+
+    # TODO: Get project root from project_id when project model is available
+    # For now, use a default project directory
+    # Support TEST_PROJECT_ROOT for testing
+    if os.getenv("TEST_PROJECT_ROOT"):
+        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
+    else:
+        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+
+    try:
+        loader = PythonFileLoader(project_root=project_root)
+        files = loader.list_python_files(directory=directory)
+
+        return {"files": files, "count": len(files)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list files: {str(e)}",
+        )
+
+
+@router.post("/files/validate", response_model=dict)
+async def validate_file_path(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.current_active_user),
+    file_path: str,
+    project_id: str | None = None,
+) -> dict:
+    """
+    Validate a file path for security and accessibility.
+
+    Checks:
+    - Path is within project directory
+    - No directory traversal (..)
+    - File exists and is readable
+    - File has .py extension
+
+    Args:
+        file_path: Relative path to validate
+        project_id: Project ID for scoping file access
+
+    Returns:
+        {
+            "valid": true,
+            "absolute_path": "/path/to/project/scripts/detector.py",
+            "exists": true,
+            "size_bytes": 1234
+        }
+    """
+    from app.services.file_loader import FilePathValidator
+    from pathlib import Path
+    import os
+
+    # TODO: Get project root from project_id
+    # Support TEST_PROJECT_ROOT for testing
+    if os.getenv("TEST_PROJECT_ROOT"):
+        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
+    else:
+        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+
+    try:
+        validator = FilePathValidator()
+        absolute_path = validator.validate_path(file_path, project_root=project_root)
+
+        return {
+            "valid": True,
+            "absolute_path": str(absolute_path),
+            "exists": absolute_path.exists(),
+            "size_bytes": absolute_path.stat().st_size if absolute_path.exists() else 0,
+        }
+
+    except HTTPException as e:
+        return {
+            "valid": False,
+            "error": e.detail,
+            "status_code": e.status_code,
+        }
+
+
+@router.post("/files/load", response_model=dict)
+async def load_file_content(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.current_active_user),
+    file_path: str,
+    project_id: str | None = None,
+    use_cache: bool = True,
+) -> dict:
+    """
+    Load content of a Python file.
+
+    Args:
+        file_path: Relative path to file
+        project_id: Project ID
+        use_cache: Whether to use cached content
+
+    Returns:
+        {
+            "content": "def detect_unit():\\n    ...",
+            "path": "scripts/detector.py",
+            "size_bytes": 1234,
+            "cached": false
+        }
+    """
+    from app.services.file_loader import PythonFileLoader
+    from pathlib import Path
+    import os
+
+    # TODO: Get project root from project_id
+    # Support TEST_PROJECT_ROOT for testing
+    if os.getenv("TEST_PROJECT_ROOT"):
+        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
+    else:
+        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+
+    try:
+        loader = PythonFileLoader(project_root=project_root)
+        content = loader.load_file(file_path, use_cache=use_cache)
+
+        return {
+            "content": content,
+            "path": file_path,
+            "size_bytes": len(content),
+            "cached": use_cache and file_path in loader._cache,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load file: {str(e)}",
+        )
+
+
+@router.post("/files/execute", response_model=CodeExecutionResult)
+async def execute_file_code(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.current_active_user),
+    file_path: str,
+    function_name: str | None = None,
+    context: dict | None = None,
+    inputs: dict | None = None,
+    timeout: int = 30,
+    project_id: str | None = None,
+) -> CodeExecutionResult:
+    """
+    Execute code from a Python file.
+
+    If function_name is provided, calls that function with inputs as kwargs.
+    Otherwise, executes the entire file.
+
+    Args:
+        file_path: Relative path to Python file
+        function_name: Optional function name to call
+        context: Execution context (action_result, variables, etc.)
+        inputs: Input variables for the function
+        timeout: Execution timeout in seconds
+        project_id: Project ID
+
+    Returns:
+        CodeExecutionResult with execution status and result
+    """
+    from app.services.file_loader import PythonFileLoader
+    from pathlib import Path
+    import os
+
+    # TODO: Get project root from project_id
+    # Support TEST_PROJECT_ROOT for testing
+    if os.getenv("TEST_PROJECT_ROOT"):
+        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
+    else:
+        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+
+    try:
+        # Load file content
+        loader = PythonFileLoader(project_root=project_root)
+        code = loader.load_file(file_path)
+
+        # If function name specified, wrap code to call function
+        if function_name:
+            # Prepare input kwargs
+            input_kwargs = inputs or {}
+            kwargs_str = ", ".join(f"{k}={repr(v)}" for k, v in input_kwargs.items())
+
+            # Wrap code to call function
+            wrapped_code = f"{code}\n\nresult = {function_name}({kwargs_str})"
+            code = wrapped_code
+
+        # Execute code using existing service with import resolution
+        request = CodeExecutionRequest(
+            code=code,
+            context=context or {},
+            inputs=inputs or {},
+            timeout=timeout,
+            project_root=str(project_root),  # Enable import resolution for file-based code
+        )
+
+        result = CodeExecutionService.execute_code(request)
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"File execution failed: {str(e)}",
+        )

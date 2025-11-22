@@ -1,7 +1,7 @@
 """add_automation_streaming_fields
 
 Revision ID: 3dc9c2bf5574
-Revises: collaboration_001
+Revises: 63e5da6dd826
 Create Date: 2025-11-16 14:56:10.210449
 
 This migration adds automation streaming fields to the users table to support
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "3dc9c2bf5574"
-down_revision: str | None = "collaboration_001"
+down_revision: str | None = "63e5da6dd826"  # merge_migration_branches
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

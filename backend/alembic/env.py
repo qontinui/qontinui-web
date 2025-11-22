@@ -14,7 +14,11 @@ config = context.config
 
 # Override sqlalchemy.url with DATABASE_URL from environment if present
 if os.getenv("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
+    database_url = os.getenv("DATABASE_URL")
+    # Replace asyncpg driver with psycopg2 for synchronous Alembic operations
+    if "postgresql+asyncpg://" in database_url:
+        database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
+    config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

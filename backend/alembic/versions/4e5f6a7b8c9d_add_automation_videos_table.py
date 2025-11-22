@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("session_id", sa.String(), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("project_id", sa.Integer(), nullable=True),
+        sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("s3_key", sa.String(), nullable=False),
         sa.Column("duration_seconds", sa.Integer(), nullable=True),
         sa.Column("fps", sa.Integer(), nullable=True),
