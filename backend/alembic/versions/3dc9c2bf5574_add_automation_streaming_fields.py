@@ -22,49 +22,32 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Add automation streaming fields to users table."""
-    # Add automation_streaming_enabled column
-    op.add_column(
-        "users",
-        sa.Column(
-            "automation_streaming_enabled",
-            sa.Boolean(),
-            nullable=False,
-            server_default="false",
-        ),
-    )
+    # Use IF NOT EXISTS to handle production database that may already have these columns
+    op.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS automation_streaming_enabled BOOLEAN NOT NULL DEFAULT false
+    """)
 
-    # Add automation_sessions_limit column (nullable = unlimited)
-    op.add_column(
-        "users",
-        sa.Column("automation_sessions_limit", sa.Integer(), nullable=True),
-    )
+    op.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS automation_sessions_limit INTEGER
+    """)
 
-    # Add automation_sessions_used column
-    op.add_column(
-        "users",
-        sa.Column(
-            "automation_sessions_used",
-            sa.Integer(),
-            nullable=False,
-            server_default="0",
-        ),
-    )
+    op.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS automation_sessions_used INTEGER NOT NULL DEFAULT 0
+    """)
 
-    # Add automation_sessions_reset_at column
-    op.add_column(
-        "users",
-        sa.Column(
-            "automation_sessions_reset_at", sa.DateTime(timezone=True), nullable=True
-        ),
-    )
+    op.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS automation_sessions_reset_at TIMESTAMP WITH TIME ZONE
+    """)
 
-    # Create index on automation_streaming_enabled for fast lookups
-    op.create_index(
-        op.f("ix_users_automation_streaming_enabled"),
-        "users",
-        ["automation_streaming_enabled"],
-        unique=False,
-    )
+    # Create index if not exists
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS ix_users_automation_streaming_enabled
+        ON users (automation_streaming_enabled)
+    """)
 
 
 def downgrade() -> None:
