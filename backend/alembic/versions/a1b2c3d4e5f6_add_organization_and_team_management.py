@@ -1,4 +1,4 @@
-"""add_organization_and_team_management
+"""add_organization_and_team_management.
 
 Revision ID: a1b2c3d4e5f6
 Revises: 63e5da6dd826
@@ -13,7 +13,6 @@ This migration adds organization and team management capabilities:
 
 import secrets
 from collections.abc import Sequence
-from datetime import datetime, timedelta
 
 import sqlalchemy as sa
 from alembic import op
@@ -27,7 +26,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def generate_slug(name: str, suffix: str = "") -> str:
-    """Generate a URL-safe slug from a name"""
+    """Generate a URL-safe slug from a name."""
     slug = name.lower().replace(" ", "-")
     # Remove non-alphanumeric characters except hyphens
     slug = "".join(c for c in slug if c.isalnum() or c == "-")
@@ -41,6 +40,7 @@ def generate_slug(name: str, suffix: str = "") -> str:
 
 
 def upgrade() -> None:
+    """Add organization and team management tables and migrate existing data."""
     # Create organizations table
     op.create_table(
         "organizations",
@@ -141,7 +141,7 @@ def upgrade() -> None:
             server_default=sa.text("gen_random_uuid()"),
             nullable=False,
         ),
-        sa.Column("project_id", sa.Integer(), nullable=False),
+        sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column(
@@ -282,6 +282,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove organization and team management tables."""
     # Drop tables in reverse order
     op.drop_index("idx_project_access_org", table_name="project_access_control")
     op.drop_index("idx_project_access_user", table_name="project_access_control")
