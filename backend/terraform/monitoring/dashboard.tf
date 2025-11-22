@@ -68,7 +68,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/RDS", "CPUUtilization", { stat = "Average", label = "CPU %" }, { DBInstanceIdentifier = data.aws_db_instance.main.id }]
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", data.aws_db_instance.main.id, { stat = "Average", label = "CPU %" }]
           ]
           period = 300
           stat   = "Average"
@@ -88,7 +88,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/RDS", "DatabaseConnections", { stat = "Average", label = "Connections" }, { DBInstanceIdentifier = data.aws_db_instance.main.id }]
+            ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", data.aws_db_instance.main.id, { stat = "Average", label = "Connections" }]
           ]
           period = 300
           stat   = "Average"
@@ -102,7 +102,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/RDS", "FreeStorageSpace", { stat = "Average", label = "Free Storage" }, { DBInstanceIdentifier = data.aws_db_instance.main.id }]
+            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", data.aws_db_instance.main.id, { stat = "Average", label = "Free Storage" }]
           ]
           period = 300
           stat   = "Average"
@@ -121,8 +121,8 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/RDS", "ReadIOPS", { stat = "Average", label = "Read IOPS" }, { DBInstanceIdentifier = data.aws_db_instance.main.id }],
-            [".", "WriteIOPS", { stat = "Average", label = "Write IOPS" }, { DBInstanceIdentifier = data.aws_db_instance.main.id }]
+            ["AWS/RDS", "ReadIOPS", "DBInstanceIdentifier", data.aws_db_instance.main.id, { stat = "Average", label = "Read IOPS" }],
+            [".", "WriteIOPS", ".", ".", { stat = "Average", label = "Write IOPS" }]
           ]
           period = 300
           stat   = "Average"
@@ -136,8 +136,8 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/RDS", "ReadLatency", { stat = "Average", label = "Read Latency" }, { DBInstanceIdentifier = data.aws_db_instance.main.id }],
-            [".", "WriteLatency", { stat = "Average", label = "Write Latency" }, { DBInstanceIdentifier = data.aws_db_instance.main.id }]
+            ["AWS/RDS", "ReadLatency", "DBInstanceIdentifier", data.aws_db_instance.main.id, { stat = "Average", label = "Read Latency" }],
+            [".", "WriteLatency", ".", ".", { stat = "Average", label = "Write Latency" }]
           ]
           period = 300
           stat   = "Average"
