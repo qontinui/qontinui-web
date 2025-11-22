@@ -159,7 +159,7 @@ async def validate_code(
 
 @router.get("/allowed-imports", response_model=dict)
 async def get_allowed_imports(
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.current_active_user),
 ) -> dict:
     """
     Get list of allowed imports for code execution.
@@ -190,7 +190,7 @@ async def get_allowed_imports(
 
 @router.get("/examples", response_model=dict)
 async def get_code_examples(
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.current_active_user),
 ) -> dict:
     """
     Get example code snippets for common use cases.
