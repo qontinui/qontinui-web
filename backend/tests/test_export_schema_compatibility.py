@@ -21,16 +21,16 @@ sys.path.insert(0, str(qontinui_path))
 # Import qontinui Pydantic schemas
 from qontinui.config.schema import (
     Action,
-    FindActionConfig,
-    Workflow,
     ClickActionConfig,
+    CoordinatesTarget,
+    FindActionConfig,
+    ImageTarget,
+    RegionTarget,
+    TargetConfig,
+    TextTarget,
     TypeActionConfig,
     WaitActionConfig,
-    TargetConfig,
-    ImageTarget,
-    TextTarget,
-    CoordinatesTarget,
-    RegionTarget,
+    Workflow,
     get_typed_config,
 )
 
@@ -48,13 +48,10 @@ class TestFindActionExport:
                 "target": {
                     "type": "image",
                     "imageId": "img_login_btn",
-                    "searchOptions": {
-                        "similarity": 0.9,
-                        "timeout": 5000
-                    }
+                    "searchOptions": {"similarity": 0.9, "timeout": 5000},
                 }
             },
-            "position": [100, 100]
+            "position": [100, 100],
         }
 
         # Validate with Pydantic
@@ -80,15 +77,10 @@ class TestFindActionExport:
                 "target": {
                     "type": "text",
                     "text": "Submit",
-                    "searchOptions": {
-                        "similarity": 0.85
-                    },
-                    "textOptions": {
-                        "ocrEngine": "TESSERACT",
-                        "caseSensitive": False
-                    }
+                    "searchOptions": {"similarity": 0.85},
+                    "textOptions": {"ocrEngine": "TESSERACT", "caseSensitive": False},
                 }
-            }
+            },
         }
 
         action = Action.model_validate(action_data)
@@ -106,14 +98,8 @@ class TestFindActionExport:
             "id": "action_3",
             "type": "FIND",
             "config": {
-                "target": {
-                    "type": "coordinates",
-                    "coordinates": {
-                        "x": 500,
-                        "y": 300
-                    }
-                }
-            }
+                "target": {"type": "coordinates", "coordinates": {"x": 500, "y": 300}}
+            },
         }
 
         action = Action.model_validate(action_data)
@@ -134,9 +120,9 @@ class TestFindActionExport:
                     "type": "stateString",
                     "stateId": "state_1",
                     "stringIds": ["str_1", "str_2"],
-                    "useAll": False
+                    "useAll": False,
                 }
-            }
+            },
         }
 
         action = Action.model_validate(action_data)
@@ -160,11 +146,9 @@ class TestFindActionExport:
                 "target": {
                     "type": "image",
                     "imageId": "img_with_options",
-                    "searchOptions": {
-                        "similarity": 0.9
-                    }
+                    "searchOptions": {"similarity": 0.9},
                 }
-            }
+            },
         }
 
         action = Action.model_validate(action_data)
@@ -179,24 +163,16 @@ class TestFindActionExport:
             "id": "action_5b",
             "type": "FIND",
             "config": {
-                "target": {
-                    "type": "image",
-                    "imageId": "img_no_options"
-                },
+                "target": {"type": "image", "imageId": "img_no_options"},
                 "searchOptions": {
                     "similarity": 0.95,
                     "timeout": 10000,
-                    "searchRegions": [
-                        {"x": 0, "y": 0, "width": 500, "height": 500}
-                    ],
+                    "searchRegions": [{"x": 0, "y": 0, "width": 500, "height": 500}],
                     "strategy": "FIRST",
                     "maxMatchesToActOn": 1,
-                    "polling": {
-                        "interval": 500,
-                        "maxAttempts": 20
-                    }
-                }
-            }
+                    "polling": {"interval": 500, "maxAttempts": 20},
+                },
+            },
         }
 
         action = Action.model_validate(action_data)
@@ -213,11 +189,7 @@ class TestFindActionExport:
 
     def test_find_action_missing_target_fails(self):
         """Test that FIND action without target fails validation."""
-        action_data = {
-            "id": "action_bad",
-            "type": "FIND",
-            "config": {}
-        }
+        action_data = {"id": "action_bad", "type": "FIND", "config": {}}
 
         with pytest.raises(Exception):  # Should raise validation error
             action = Action.model_validate(action_data)
@@ -238,33 +210,22 @@ class TestWorkflowExport:
                 {
                     "id": "action_1",
                     "type": "FIND",
-                    "config": {
-                        "target": {
-                            "type": "image",
-                            "imageId": "img_1"
-                        }
-                    },
-                    "position": [100, 100]
+                    "config": {"target": {"type": "image", "imageId": "img_1"}},
+                    "position": [100, 100],
                 },
                 {
                     "id": "action_2",
                     "type": "CLICK",
-                    "config": {
-                        "target": {
-                            "type": "currentPosition"
-                        }
-                    },
-                    "position": [200, 100]
-                }
+                    "config": {"target": {"type": "currentPosition"}},
+                    "position": [200, 100],
+                },
             ],
             "connections": {
                 "action_1": {
                     "main": [[{"action": "action_2", "type": "main", "index": 0}]]
                 },
-                "action_2": {
-                    "main": []
-                }
-            }
+                "action_2": {"main": []},
+            },
         }
 
         workflow = Workflow.model_validate(workflow_data)
@@ -288,9 +249,9 @@ class TestWorkflowExport:
                 "author": "Test Author",
                 "description": "Automated login workflow",
                 "created": "2025-01-01T00:00:00Z",
-                "updated": "2025-01-02T00:00:00Z"
+                "updated": "2025-01-02T00:00:00Z",
             },
-            "tags": ["login", "authentication"]
+            "tags": ["login", "authentication"],
         }
 
         workflow = Workflow.model_validate(workflow_data)
@@ -308,17 +269,10 @@ class TestWorkflowExport:
             "actions": [],
             "connections": {},
             "variables": {
-                "local": {
-                    "username": "testuser",
-                    "counter": 0
-                },
-                "process": {
-                    "session_id": "abc123"
-                },
-                "global": {
-                    "api_key": "secret"
-                }
-            }
+                "local": {"username": "testuser", "counter": 0},
+                "process": {"session_id": "abc123"},
+                "global": {"api_key": "secret"},
+            },
         }
 
         workflow = Workflow.model_validate(workflow_data)
@@ -340,8 +294,8 @@ class TestWorkflowExport:
                 "retryCount": 3,
                 "continueOnError": True,
                 "parallelExecution": False,
-                "maxParallelActions": 1
-            }
+                "maxParallelActions": 1,
+            },
         }
 
         workflow = Workflow.model_validate(workflow_data)
@@ -357,7 +311,7 @@ class TestWorkflowExport:
             "name": "Default Format Workflow",
             "version": "1.0.0",
             "actions": [],
-            "connections": {}
+            "connections": {},
         }
 
         workflow = Workflow.model_validate(workflow_data)
@@ -371,7 +325,7 @@ class TestWorkflowExport:
             "version": "1.0.0",
             "format": "sequential",  # Invalid - only 'graph' is allowed
             "actions": [],
-            "connections": {}
+            "connections": {},
         }
 
         with pytest.raises(Exception):  # Should raise validation error
@@ -384,7 +338,7 @@ class TestWorkflowExport:
             "name": "No Connections Workflow",
             "version": "1.0.0",
             "format": "graph",
-            "actions": []
+            "actions": [],
             # Missing connections field
         }
 
@@ -401,13 +355,10 @@ class TestActionConfigExport:
             "id": "click_1",
             "type": "CLICK",
             "config": {
-                "target": {
-                    "type": "image",
-                    "imageId": "img_button"
-                },
+                "target": {"type": "image", "imageId": "img_button"},
                 "mouseButton": "LEFT",
-                "numberOfClicks": 1
-            }
+                "numberOfClicks": 1,
+            },
         }
 
         action = Action.model_validate(action_data)
@@ -422,10 +373,7 @@ class TestActionConfigExport:
         action_data = {
             "id": "type_1",
             "type": "TYPE",
-            "config": {
-                "text": "Hello, World!",
-                "typeDelay": 50
-            }
+            "config": {"text": "Hello, World!", "typeDelay": 50},
         }
 
         action = Action.model_validate(action_data)
@@ -439,10 +387,7 @@ class TestActionConfigExport:
         action_data = {
             "id": "wait_1",
             "type": "WAIT",
-            "config": {
-                "waitFor": "time",
-                "duration": 2000
-            }
+            "config": {"waitFor": "time", "duration": 2000},
         }
 
         action = Action.model_validate(action_data)
@@ -458,13 +403,10 @@ class TestActionConfigExport:
             "type": "WAIT",
             "config": {
                 "waitFor": "target",
-                "target": {
-                    "type": "image",
-                    "imageId": "img_loading"
-                },
+                "target": {"type": "image", "imageId": "img_loading"},
                 "maxWaitTime": 30000,
-                "checkInterval": 500
-            }
+                "checkInterval": 500,
+            },
         }
 
         action = Action.model_validate(action_data)
@@ -495,69 +437,51 @@ class TestCompleteConfigExport:
                         "target": {
                             "type": "image",
                             "imageId": "img_username_field",
-                            "searchOptions": {
-                                "similarity": 0.9,
-                                "timeout": 5000
-                            }
+                            "searchOptions": {"similarity": 0.9, "timeout": 5000},
                         }
                     },
-                    "position": [100, 100]
+                    "position": [100, 100],
                 },
                 {
                     "id": "click_username",
                     "type": "CLICK",
                     "name": "Click Username Field",
                     "config": {
-                        "target": {
-                            "type": "currentPosition"
-                        },
+                        "target": {"type": "currentPosition"},
                         "mouseButton": "LEFT",
-                        "numberOfClicks": 1
+                        "numberOfClicks": 1,
                     },
-                    "position": [200, 100]
+                    "position": [200, 100],
                 },
                 {
                     "id": "type_username",
                     "type": "TYPE",
                     "name": "Type Username",
-                    "config": {
-                        "text": "testuser",
-                        "interval": 50
-                    },
-                    "position": [300, 100]
+                    "config": {"text": "testuser", "interval": 50},
+                    "position": [300, 100],
                 },
                 {
                     "id": "find_password",
                     "type": "FIND",
                     "name": "Find Password Field",
                     "config": {
-                        "target": {
-                            "type": "image",
-                            "imageId": "img_password_field"
-                        }
+                        "target": {"type": "image", "imageId": "img_password_field"}
                     },
-                    "position": [100, 200]
+                    "position": [100, 200],
                 },
                 {
                     "id": "click_password",
                     "type": "CLICK",
                     "name": "Click Password Field",
-                    "config": {
-                        "target": {
-                            "type": "currentPosition"
-                        }
-                    },
-                    "position": [200, 200]
+                    "config": {"target": {"type": "currentPosition"}},
+                    "position": [200, 200],
                 },
                 {
                     "id": "type_password",
                     "type": "TYPE",
                     "name": "Type Password",
-                    "config": {
-                        "text": "password123",
-                        "interval": 50
-                    },
-                    "position": [300, 200]
+                    "config": {"text": "password123", "interval": 50},
+                    "position": [300, 200],
                 },
                 {
                     "id": "find_submit",
@@ -569,22 +493,18 @@ class TestCompleteConfigExport:
                             "text": "Login",
                             "textOptions": {
                                 "ocrEngine": "TESSERACT",
-                                "caseSensitive": False
-                            }
+                                "caseSensitive": False,
+                            },
                         }
                     },
-                    "position": [100, 300]
+                    "position": [100, 300],
                 },
                 {
                     "id": "click_submit",
                     "type": "CLICK",
                     "name": "Click Submit Button",
-                    "config": {
-                        "target": {
-                            "type": "currentPosition"
-                        }
-                    },
-                    "position": [200, 300]
+                    "config": {"target": {"type": "currentPosition"}},
+                    "position": [200, 300],
                 },
                 {
                     "id": "wait_dashboard",
@@ -592,15 +512,12 @@ class TestCompleteConfigExport:
                     "name": "Wait for Dashboard",
                     "config": {
                         "waitFor": "target",
-                        "target": {
-                            "type": "image",
-                            "imageId": "img_dashboard"
-                        },
+                        "target": {"type": "image", "imageId": "img_dashboard"},
                         "maxWaitTime": 10000,
-                        "checkInterval": 500
+                        "checkInterval": 500,
                     },
-                    "position": [300, 300]
-                }
+                    "position": [300, 300],
+                },
             ],
             "connections": {
                 "find_username": {
@@ -627,26 +544,15 @@ class TestCompleteConfigExport:
                 "click_submit": {
                     "main": [[{"action": "wait_dashboard", "type": "main", "index": 0}]]
                 },
-                "wait_dashboard": {
-                    "main": []
-                }
+                "wait_dashboard": {"main": []},
             },
             "metadata": {
                 "author": "Test Suite",
                 "description": "Complete login automation workflow",
-                "created": "2025-01-01T00:00:00Z"
+                "created": "2025-01-01T00:00:00Z",
             },
-            "variables": {
-                "local": {
-                    "username": "testuser",
-                    "password": "password123"
-                }
-            },
-            "settings": {
-                "timeout": 30000,
-                "retryCount": 3,
-                "continueOnError": False
-            }
+            "variables": {"local": {"username": "testuser", "password": "password123"}},
+            "settings": {"timeout": 30000, "retryCount": 3, "continueOnError": False},
         }
 
         # Validate the entire workflow
@@ -679,16 +585,11 @@ class TestCompleteConfigExport:
                     {
                         "id": "action_1",
                         "type": "WAIT",
-                        "config": {
-                            "waitFor": "time",
-                            "duration": 1000
-                        },
-                        "position": [100, 100]
+                        "config": {"waitFor": "time", "duration": 1000},
+                        "position": [100, 100],
                     }
                 ],
-                "connections": {
-                    "action_1": {"main": []}
-                }
+                "connections": {"action_1": {"main": []}},
             },
             {
                 "id": "workflow_2",
@@ -699,17 +600,12 @@ class TestCompleteConfigExport:
                     {
                         "id": "action_2",
                         "type": "WAIT",
-                        "config": {
-                            "waitFor": "time",
-                            "duration": 2000
-                        },
-                        "position": [200, 200]
+                        "config": {"waitFor": "time", "duration": 2000},
+                        "position": [200, 200],
                     }
                 ],
-                "connections": {
-                    "action_2": {"main": []}
-                }
-            }
+                "connections": {"action_2": {"main": []}},
+            },
         ]
 
         # Validate each workflow
@@ -734,10 +630,10 @@ class TestBackwardCompatibility:
                     "imageId": "img_1",  # camelCase
                     "searchOptions": {
                         "similarity": 0.9,
-                        "maxMatchesToActOn": 3  # camelCase
-                    }
+                        "maxMatchesToActOn": 3,  # camelCase
+                    },
                 }
-            }
+            },
         }
 
         action = Action.model_validate(action_data)
@@ -756,10 +652,10 @@ class TestBackwardCompatibility:
                     "image_id": "img_2",  # snake_case
                     "search_options": {
                         "similarity": 0.85,
-                        "max_matches_to_act_on": 5  # snake_case
-                    }
+                        "max_matches_to_act_on": 5,  # snake_case
+                    },
                 }
-            }
+            },
         }
 
         action = Action.model_validate(action_data)
@@ -776,10 +672,7 @@ class TestEdgeCases:
         action_data = {
             "id": "minimal",
             "type": "WAIT",
-            "config": {
-                "waitFor": "time",
-                "duration": 1000
-            }
+            "config": {"waitFor": "time", "duration": 1000},
         }
 
         action = Action.model_validate(action_data)
@@ -794,7 +687,7 @@ class TestEdgeCases:
             "version": "1.0.0",
             "format": "graph",
             "actions": [],
-            "connections": {}
+            "connections": {},
         }
 
         workflow = Workflow.model_validate(workflow_data)
@@ -810,10 +703,10 @@ class TestEdgeCases:
                 "target": {
                     "type": "image",
                     "imageId": "img_1",
-                    "searchOptions": None  # Optional field
+                    "searchOptions": None,  # Optional field
                 }
             },
-            "position": None  # Optional field
+            "position": None,  # Optional field
         }
 
         action = Action.model_validate(action_data)

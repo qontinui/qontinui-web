@@ -12,6 +12,7 @@
 
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { toast } from 'sonner';
 import type { Workflow } from '@/lib/action-schema/action-types';
 import {
   backendAPI,
@@ -23,6 +24,10 @@ import {
   type ExecutionRecord,
   type ExecutionStatus,
 } from '@/services/backend-api';
+import {
+  type ClassifiedError,
+  WebSocketErrorCode,
+} from '@/services/execution-websocket';
 
 // ============================================================================
 // Types
@@ -101,6 +106,9 @@ export interface ExecutionState {
   streamCleanup: (() => void) | null;
   isStreaming: boolean;
 
+  // Polling
+  pollTimeoutId: NodeJS.Timeout | null;
+
   // History
   executionHistory: ExecutionRecord[];
 
@@ -132,6 +140,7 @@ export interface ExecutionActions {
   addExecutionEvent: (event: ExecutionEvent) => void;
   setExecutionStatus: (status: ExecutionStatusDetail) => void;
   updateVariables: (variables: Record<string, any>) => void;
+  processExecutionEvent: (event: ExecutionEvent) => void;
 
   // History
   loadExecutionHistory: (workflowId: string, limit?: number) => Promise<void>;
@@ -157,6 +166,70 @@ export interface ExecutionActions {
 export type ExecutionStore = ExecutionState & ExecutionActions;
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Handle WebSocket error with user-friendly toast notifications
+ */
+function handleWebSocketError(error: ClassifiedError | Error): void {
+  // Check if error is already classified
+  if ('code' in error && 'retryable' in error) {
+    const classified = error as ClassifiedError;
+
+    // Show user-friendly toast based on error type
+    switch (classified.code) {
+      case WebSocketErrorCode.NETWORK_ERROR:
+        toast.warning(classified.userMessage || 'Network connection lost. Attempting to reconnect...', {
+          description: 'Check your internet connection',
+        });
+        break;
+
+      case WebSocketErrorCode.AUTH_ERROR:
+        toast.error(classified.userMessage || 'Authentication failed. Please log in again.', {
+          description: 'Your session may have expired',
+          action: {
+            label: 'Log in',
+            onClick: () => window.location.href = '/login',
+          },
+        });
+        break;
+
+      case WebSocketErrorCode.TIMEOUT_ERROR:
+        toast.warning(classified.userMessage || 'Connection timed out. Retrying...', {
+          description: 'Server is not responding',
+        });
+        break;
+
+      case WebSocketErrorCode.PROTOCOL_ERROR:
+        toast.error(classified.userMessage || 'Protocol error. Attempting to reconnect...', {
+          description: 'Please refresh the page if issue persists',
+        });
+        break;
+
+      case WebSocketErrorCode.SERVER_ERROR:
+      default:
+        if (classified.retryable) {
+          toast.warning(classified.userMessage || 'Server error occurred. Attempting to reconnect...', {
+            description: 'Please wait while we reconnect',
+          });
+        } else {
+          toast.error(classified.userMessage || 'Server error occurred', {
+            description: 'Please try again later',
+          });
+        }
+        break;
+    }
+  } else {
+    // Fallback for unclassified errors
+    const rawError = error as Error;
+    toast.error('Execution stream error', {
+      description: rawError.message,
+    });
+  }
+}
+
+// ============================================================================
 // Initial State
 // ============================================================================
 
@@ -169,6 +242,8 @@ const initialState: ExecutionState = {
 
   streamCleanup: null,
   isStreaming: false,
+
+  pollTimeoutId: null,
 
   executionHistory: [],
 
@@ -297,6 +372,9 @@ export const useExecutionStore = create<ExecutionStore>()(
             streamCleanup();
           }
 
+          // Stop polling
+          get().stopPolling();
+
           // Cancel on backend
           await backendAPI.cancelExecution(currentExecution.executionId);
 
@@ -306,6 +384,7 @@ export const useExecutionStore = create<ExecutionStore>()(
             isExecuting: false,
             streamCleanup: null,
             isStreaming: false,
+            pollTimeoutId: null,
           });
 
           console.log('[ExecutionStore] Execution cancelled');
@@ -324,6 +403,9 @@ export const useExecutionStore = create<ExecutionStore>()(
           streamCleanup();
         }
 
+        // Stop polling
+        get().stopPolling();
+
         set({
           currentExecution: null,
           executionStatus: null,
@@ -332,6 +414,7 @@ export const useExecutionStore = create<ExecutionStore>()(
           isExecuting: false,
           streamCleanup: null,
           isStreaming: false,
+          pollTimeoutId: null,
           currentVariables: {},
         });
       },
@@ -395,6 +478,7 @@ export const useExecutionStore = create<ExecutionStore>()(
         ) {
           set({ isExecuting: false });
           get().stopStreaming();
+          get().stopPolling();
 
           // Add to history
           if (status.endTime) {
@@ -528,6 +612,8 @@ export const useExecutionStore = create<ExecutionStore>()(
           (error) => {
             console.error('[ExecutionStore] Stream error:', error);
             set({ lastError: error });
+            // Show user-friendly error notification
+            handleWebSocketError(error);
           },
           () => {
             console.log('[ExecutionStore] Stream closed');
@@ -547,14 +633,24 @@ export const useExecutionStore = create<ExecutionStore>()(
       },
 
       // ========================================================================
-      // Polling (fallback)
+      // Polling (fallback with exponential backoff)
       // ========================================================================
 
       startPolling: (executionId: string) => {
-        const pollInterval = setInterval(async () => {
+        let pollInterval = 1000; // Start at 1s
+        const maxInterval = 10000; // Max 10s
+        let lastStatus: ExecutionStatus | null = null;
+
+        const poll = async () => {
           try {
             const status = await backendAPI.getExecutionStatus(executionId);
             get().setExecutionStatus(status);
+
+            // Reset interval if status changed
+            if (status.status !== lastStatus) {
+              pollInterval = 1000;
+              lastStatus = status.status;
+            }
 
             // Stop polling if execution completed
             if (
@@ -562,23 +658,34 @@ export const useExecutionStore = create<ExecutionStore>()(
               status.status === 'failed' ||
               status.status === 'cancelled'
             ) {
-              clearInterval(pollInterval);
+              get().stopPolling();
+              return;
             }
+
+            // Exponential backoff (1.5x multiplier)
+            pollInterval = Math.min(pollInterval * 1.5, maxInterval);
+
+            // Schedule next poll
+            const timeoutId = setTimeout(poll, pollInterval);
+            set({ pollTimeoutId: timeoutId });
           } catch (error) {
             console.error('[ExecutionStore] Polling error:', error);
-            clearInterval(pollInterval);
+            // On error, backoff more aggressively (2x multiplier)
+            pollInterval = Math.min(pollInterval * 2, maxInterval);
+            const timeoutId = setTimeout(poll, pollInterval);
+            set({ pollTimeoutId: timeoutId });
           }
-        }, 1000); // Poll every second
+        };
 
-        // Store interval for cleanup
-        (get() as any).pollInterval = pollInterval;
+        // Start first poll immediately
+        poll();
       },
 
       stopPolling: () => {
-        const pollInterval = (get() as any).pollInterval;
-        if (pollInterval) {
-          clearInterval(pollInterval);
-          delete (get() as any).pollInterval;
+        const timeoutId = get().pollTimeoutId;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          set({ pollTimeoutId: null });
         }
       },
 

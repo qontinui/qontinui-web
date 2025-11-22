@@ -5,27 +5,29 @@ Base classes and interfaces for analysis modules
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 
 class AnalysisType(str, Enum):
     """Types of analysis methods"""
+
     STABLE_REGION = "stable_region"  # Type 1: Elements stable across screenshots
     PATTERN_MATCH = "pattern_match"  # Type 2: Same pattern in different positions
-    SINGLE_SHOT = "single_shot"      # Type 3: ML/CV analysis of single screenshots
-    CUSTOM = "custom"                # Extensibility for future methods
+    SINGLE_SHOT = "single_shot"  # Type 3: ML/CV analysis of single screenshots
+    CUSTOM = "custom"  # Extensibility for future methods
 
 
 @dataclass
 class BoundingBox:
     """Represents a detected element bounding box"""
+
     x: int
     y: int
     width: int
     height: int
 
-    def iou(self, other: 'BoundingBox') -> float:
+    def iou(self, other: "BoundingBox") -> float:
         """Calculate Intersection over Union with another box"""
         # Calculate intersection
         x1 = max(self.x, other.x)
@@ -37,12 +39,11 @@ class BoundingBox:
             return 0.0
 
         intersection = (x2 - x1) * (y2 - y1)
-        union = (self.width * self.height +
-                 other.width * other.height - intersection)
+        union = self.width * self.height + other.width * other.height - intersection
 
         return intersection / union if union > 0 else 0.0
 
-    def overlaps(self, other: 'BoundingBox', threshold: float = 0.5) -> bool:
+    def overlaps(self, other: "BoundingBox", threshold: float = 0.5) -> bool:
         """Check if this box significantly overlaps with another"""
         return self.iou(other) >= threshold
 
@@ -50,6 +51,7 @@ class BoundingBox:
 @dataclass
 class DetectedElement:
     """Represents a detected GUI element"""
+
     bounding_box: BoundingBox
     confidence: float  # 0.0 to 1.0
     label: Optional[str] = None
@@ -77,6 +79,7 @@ class DetectedElement:
 @dataclass
 class AnalysisResult:
     """Result from an analysis method"""
+
     analyzer_type: AnalysisType
     analyzer_name: str
     elements: List[DetectedElement]
@@ -97,6 +100,7 @@ class AnalysisResult:
 @dataclass
 class AnalysisInput:
     """Input data for analysis"""
+
     annotation_set_id: UUID
     screenshots: List[Dict[str, Any]]  # List of screenshot metadata
     screenshot_data: List[bytes]  # Actual image data

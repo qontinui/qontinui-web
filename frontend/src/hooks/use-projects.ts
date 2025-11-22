@@ -51,22 +51,11 @@ export function useProjects() {
     queryKey: projectKeys.lists(),
     queryFn: async () => {
       try {
-        console.log('[useProjects] Fetching projects...')
         const data = await projectService.getProjects()
-        console.log('[useProjects] Raw data from service:', data)
-
-        // Log sample project to see datetime format
-        if (data && data.length > 0) {
-          console.log('[useProjects] Sample project:', data[0])
-          console.log('[useProjects] Sample created_at:', data[0].created_at)
-          console.log('[useProjects] Sample created_at type:', typeof data[0].created_at)
-        }
-
         const parsed = parseApi(ProjectsArraySchema, data, 'projects list')
-        console.log('[useProjects] ✅ Parsed data successfully:', parsed)
         return parsed
       } catch (error) {
-        console.error('[useProjects] ❌ Error in queryFn:', error)
+        console.error('[useProjects] Error fetching projects:', error)
         throw error
       }
     },

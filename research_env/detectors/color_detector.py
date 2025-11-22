@@ -2,12 +2,15 @@
 Color-based detection using k-means clustering and color segmentation
 """
 
+import os
+import sys
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
-from typing import List, Dict, Any
+
 from .base_detector import BaseDetector
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
 
@@ -32,10 +35,10 @@ class ColorClusterDetector(BaseDetector):
             return []
 
         # Parameters
-        n_clusters = params.get('n_clusters', 8)
-        min_area = params.get('min_area', 100)
-        max_area = params.get('max_area', img.shape[0] * img.shape[1] * 0.9)
-        use_hsv = params.get('use_hsv', False)
+        n_clusters = params.get("n_clusters", 8)
+        min_area = params.get("min_area", 100)
+        max_area = params.get("max_area", img.shape[0] * img.shape[1] * 0.9)
+        use_hsv = params.get("use_hsv", False)
 
         # Convert color space
         if use_hsv:
@@ -48,7 +51,9 @@ class ColorClusterDetector(BaseDetector):
 
         # K-means clustering
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.2)
-        _, labels, centers = cv2.kmeans(pixels, n_clusters, None, criteria, 10, cv2.KMEANS_PP_CENTERS)
+        _, labels, centers = cv2.kmeans(
+            pixels, n_clusters, None, criteria, 10, cv2.KMEANS_PP_CENTERS
+        )
 
         # Reshape labels back to image
         labels = labels.reshape(img.shape[:2])
@@ -59,7 +64,9 @@ class ColorClusterDetector(BaseDetector):
             mask = (labels == cluster_id).astype(np.uint8) * 255
 
             # Find contours in this cluster
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(
+                mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
 
             for contour in contours:
                 x, y, w, h = cv2.boundingRect(contour)
@@ -77,14 +84,13 @@ class ColorClusterDetector(BaseDetector):
     def get_param_grid(self) -> List[Dict[str, Any]]:
         """Parameter grid for hyperparameter search"""
         return [
-            {'n_clusters': 4, 'use_hsv': False},
-            {'n_clusters': 6, 'use_hsv': False},
-            {'n_clusters': 8, 'use_hsv': False},
-            {'n_clusters': 10, 'use_hsv': False},
-            {'n_clusters': 12, 'use_hsv': False},
-
-            {'n_clusters': 4, 'use_hsv': True},
-            {'n_clusters': 6, 'use_hsv': True},
-            {'n_clusters': 8, 'use_hsv': True},
-            {'n_clusters': 10, 'use_hsv': True},
+            {"n_clusters": 4, "use_hsv": False},
+            {"n_clusters": 6, "use_hsv": False},
+            {"n_clusters": 8, "use_hsv": False},
+            {"n_clusters": 10, "use_hsv": False},
+            {"n_clusters": 12, "use_hsv": False},
+            {"n_clusters": 4, "use_hsv": True},
+            {"n_clusters": 6, "use_hsv": True},
+            {"n_clusters": 8, "use_hsv": True},
+            {"n_clusters": 10, "use_hsv": True},
         ]

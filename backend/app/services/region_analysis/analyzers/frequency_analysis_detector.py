@@ -6,13 +6,14 @@ extracting grid spacing from frequency domain peaks.
 """
 
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple
+
 import cv2
-from scipy.fft import fft2, ifft2, fftshift, ifftshift
+import numpy as np
+from scipy.fft import fft2, fftshift, ifft2, ifftshift
 from scipy.ndimage import maximum_filter
 
-from ..base import BaseRegionAnalyzer, DetectedRegion, BoundingBox, RegionType
+from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
 
 logger = logging.getLogger(__name__)
 
@@ -68,16 +69,12 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
             return []
 
         # Locate grid regions using the detected parameters
-        regions = self._locate_grid_regions(
-            analysis_img, gray, grid_params, params
-        )
+        regions = self._locate_grid_regions(analysis_img, gray, grid_params, params)
 
         return regions
 
     def _frequency_analysis(
-        self,
-        image: np.ndarray,
-        params: Dict[str, Any]
+        self, image: np.ndarray, params: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
         Perform 2D FFT to detect periodic patterns
@@ -110,8 +107,10 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
         # Exclude DC component (center)
         center_y, center_x = h // 2, w // 2
         mask_size = 10
-        magnitude[center_y - mask_size:center_y + mask_size,
-                   center_x - mask_size:center_x + mask_size] = 0
+        magnitude[
+            center_y - mask_size : center_y + mask_size,
+            center_x - mask_size : center_x + mask_size,
+        ] = 0
 
         # Find local maxima
         local_max = maximum_filter(magnitude, size=10)
@@ -145,8 +144,12 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
             return None
 
         # Find dominant frequencies
-        x_frequencies = [(period, strength) for axis, period, strength in frequencies if axis == "x"]
-        y_frequencies = [(period, strength) for axis, period, strength in frequencies if axis == "y"]
+        x_frequencies = [
+            (period, strength) for axis, period, strength in frequencies if axis == "x"
+        ]
+        y_frequencies = [
+            (period, strength) for axis, period, strength in frequencies if axis == "y"
+        ]
 
         if not x_frequencies or not y_frequencies:
             return None
@@ -170,7 +173,7 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
         edge_img: np.ndarray,
         gray_img: np.ndarray,
         grid_params: Dict[str, Any],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedRegion]:
         """Locate actual grid regions using detected spacing"""
         spacing_x = grid_params["spacing_x"]
@@ -182,10 +185,15 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
 
         # Use edge-based template
         template = np.zeros((template_size_y, template_size_x), dtype=np.uint8)
-        cv2.rectangle(template, (2, 2), (template_size_x - 3, template_size_y - 3), 255, 2)
+        cv2.rectangle(
+            template, (2, 2), (template_size_x - 3, template_size_y - 3), 255, 2
+        )
 
         # Template matching
-        if edge_img.shape[0] >= template_size_y and edge_img.shape[1] >= template_size_x:
+        if (
+            edge_img.shape[0] >= template_size_y
+            and edge_img.shape[1] >= template_size_x
+        ):
             result = cv2.matchTemplate(edge_img, template, cv2.TM_CCOEFF_NORMED)
             threshold = 0.3
 
@@ -210,7 +218,7 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
         spacing_x: int,
         spacing_y: int,
         img_shape: Tuple[int, int],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedRegion]:
         """Extract grid structure from template matches"""
         if len(matches) < params["min_grid_rows"] * params["min_grid_cols"]:
@@ -230,7 +238,10 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
             expected_x = x_min + grid_x * spacing_x
             expected_y = y_min + grid_y * spacing_y
 
-            if abs(x - expected_x) < spacing_x * 0.3 and abs(y - expected_y) < spacing_y * 0.3:
+            if (
+                abs(x - expected_x) < spacing_x * 0.3
+                and abs(y - expected_y) < spacing_y * 0.3
+            ):
                 if (grid_x, grid_y) not in grid_positions:
                     grid_positions[(grid_x, grid_y)] = (x, y)
 
@@ -258,14 +269,16 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
         cells = []
         for row in range(rows):
             for col in range(cols):
-                cells.append({
-                    "row": row,
-                    "col": col,
-                    "x": x_start + col * spacing_x,
-                    "y": y_start + row * spacing_y,
-                    "width": spacing_x,
-                    "height": spacing_y,
-                })
+                cells.append(
+                    {
+                        "row": row,
+                        "col": col,
+                        "x": x_start + col * spacing_x,
+                        "y": y_start + row * spacing_y,
+                        "width": spacing_x,
+                        "height": spacing_y,
+                    }
+                )
 
         # Calculate confidence
         expected_cells = rows * cols
@@ -287,7 +300,7 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
                 "cells": cells,
                 "detector": "frequency_analysis",
                 "method": "fft",
-            }
+            },
         )
 
         return [region]

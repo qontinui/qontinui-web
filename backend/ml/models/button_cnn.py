@@ -5,21 +5,34 @@ Lightweight model (< 5M parameters) for button detection and classification.
 Supports pretrained backbones from ImageNet.
 """
 
+from typing import Any, Dict, Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
-from typing import Dict, Any, Optional
 
 
 class ConvBlock(nn.Module):
     """Convolutional block with BatchNorm and ReLU"""
 
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int = 3,
-                 stride: int = 1, padding: int = 1):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int = 3,
+        stride: int = 1,
+        padding: int = 1,
+    ):
         super(ConvBlock, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size,
-                             stride=stride, padding=padding, bias=False)
+        self.conv = nn.Conv2d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=False,
+        )
         self.bn = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU(inplace=True)
 
@@ -43,11 +56,13 @@ class ButtonCNN(nn.Module):
         - 'efficientnet_b0': EfficientNet-B0 (pretrained available)
     """
 
-    def __init__(self,
-                 num_button_types: int = 4,  # primary, secondary, icon, text
-                 architecture: str = 'custom',
-                 pretrained: bool = True,
-                 dropout: float = 0.3):
+    def __init__(
+        self,
+        num_button_types: int = 4,  # primary, secondary, icon, text
+        architecture: str = "custom",
+        pretrained: bool = True,
+        dropout: float = 0.3,
+    ):
         """
         Initialize ButtonCNN
 
@@ -62,11 +77,11 @@ class ButtonCNN(nn.Module):
         self.num_button_types = num_button_types
         self.architecture = architecture
 
-        if architecture == 'custom':
+        if architecture == "custom":
             self._build_custom_architecture(dropout)
-        elif architecture == 'mobilenet_v3':
+        elif architecture == "mobilenet_v3":
             self._build_mobilenet_architecture(pretrained, dropout)
-        elif architecture == 'efficientnet_b0':
+        elif architecture == "efficientnet_b0":
             self._build_efficientnet_architecture(pretrained, dropout)
         else:
             raise ValueError(f"Unknown architecture: {architecture}")
@@ -75,11 +90,11 @@ class ButtonCNN(nn.Module):
         """Build lightweight custom CNN architecture"""
         # Feature extractor - 4 conv blocks
         self.features = nn.Sequential(
-            ConvBlock(3, 32, kernel_size=3, stride=2, padding=1),   # 112x112
+            ConvBlock(3, 32, kernel_size=3, stride=2, padding=1),  # 112x112
             ConvBlock(32, 64, kernel_size=3, stride=2, padding=1),  # 56x56
-            ConvBlock(64, 128, kernel_size=3, stride=2, padding=1), # 28x28
-            ConvBlock(128, 256, kernel_size=3, stride=2, padding=1),# 14x14
-            nn.AdaptiveAvgPool2d((1, 1))  # Global pooling
+            ConvBlock(64, 128, kernel_size=3, stride=2, padding=1),  # 28x28
+            ConvBlock(128, 256, kernel_size=3, stride=2, padding=1),  # 14x14
+            nn.AdaptiveAvgPool2d((1, 1)),  # Global pooling
         )
 
         feature_dim = 256
@@ -90,7 +105,7 @@ class ButtonCNN(nn.Module):
             nn.Linear(feature_dim, 128),
             nn.ReLU(inplace=True),
             nn.Dropout(dropout),
-            nn.Linear(128, 2)  # Binary: [not_button, is_button]
+            nn.Linear(128, 2),  # Binary: [not_button, is_button]
         )
 
         self.button_type_head = nn.Sequential(
@@ -98,7 +113,7 @@ class ButtonCNN(nn.Module):
             nn.Linear(feature_dim, 128),
             nn.ReLU(inplace=True),
             nn.Dropout(dropout),
-            nn.Linear(128, self.num_button_types)
+            nn.Linear(128, self.num_button_types),
         )
 
         self.confidence_head = nn.Sequential(
@@ -106,7 +121,7 @@ class ButtonCNN(nn.Module):
             nn.Linear(feature_dim, 64),
             nn.ReLU(inplace=True),
             nn.Linear(64, 1),
-            nn.Sigmoid()  # Confidence between 0 and 1
+            nn.Sigmoid(),  # Confidence between 0 and 1
         )
 
     def _build_mobilenet_architecture(self, pretrained: bool, dropout: float):
@@ -130,7 +145,7 @@ class ButtonCNN(nn.Module):
             nn.Linear(feature_dim, 128),
             nn.Hardswish(inplace=True),
             nn.Dropout(dropout),
-            nn.Linear(128, 2)
+            nn.Linear(128, 2),
         )
 
         self.button_type_head = nn.Sequential(
@@ -138,7 +153,7 @@ class ButtonCNN(nn.Module):
             nn.Linear(feature_dim, 128),
             nn.Hardswish(inplace=True),
             nn.Dropout(dropout),
-            nn.Linear(128, self.num_button_types)
+            nn.Linear(128, self.num_button_types),
         )
 
         self.confidence_head = nn.Sequential(
@@ -146,7 +161,7 @@ class ButtonCNN(nn.Module):
             nn.Linear(feature_dim, 64),
             nn.Hardswish(inplace=True),
             nn.Linear(64, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
     def _build_efficientnet_architecture(self, pretrained: bool, dropout: float):
@@ -170,7 +185,7 @@ class ButtonCNN(nn.Module):
             nn.Linear(feature_dim, 256),
             nn.SiLU(inplace=True),
             nn.Dropout(dropout),
-            nn.Linear(256, 2)
+            nn.Linear(256, 2),
         )
 
         self.button_type_head = nn.Sequential(
@@ -178,7 +193,7 @@ class ButtonCNN(nn.Module):
             nn.Linear(feature_dim, 256),
             nn.SiLU(inplace=True),
             nn.Dropout(dropout),
-            nn.Linear(256, self.num_button_types)
+            nn.Linear(256, self.num_button_types),
         )
 
         self.confidence_head = nn.Sequential(
@@ -186,7 +201,7 @@ class ButtonCNN(nn.Module):
             nn.Linear(feature_dim, 128),
             nn.SiLU(inplace=True),
             nn.Linear(128, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
@@ -206,7 +221,7 @@ class ButtonCNN(nn.Module):
         features = self.features(x)
 
         # Global pooling if not already done
-        if self.architecture == 'custom':
+        if self.architecture == "custom":
             features = features.view(features.size(0), -1)
         else:
             features = self.avgpool(features)
@@ -218,9 +233,9 @@ class ButtonCNN(nn.Module):
         confidence = self.confidence_head(features)
 
         return {
-            'is_button': is_button,
-            'button_type': button_type,
-            'confidence': confidence
+            "is_button": is_button,
+            "button_type": button_type,
+            "confidence": confidence,
         }
 
     def predict(self, x: torch.Tensor, threshold: float = 0.5) -> Dict[str, Any]:
@@ -242,21 +257,21 @@ class ButtonCNN(nn.Module):
             outputs = self.forward(x)
 
             # Process is_button predictions
-            is_button_probs = F.softmax(outputs['is_button'], dim=1)
+            is_button_probs = F.softmax(outputs["is_button"], dim=1)
             is_button = is_button_probs[:, 1] > threshold  # Index 1 is "is_button"
 
             # Process button_type predictions
-            button_type_probs = F.softmax(outputs['button_type'], dim=1)
+            button_type_probs = F.softmax(outputs["button_type"], dim=1)
             button_type = torch.argmax(button_type_probs, dim=1)
 
             # Get confidence scores
-            confidence = outputs['confidence'].squeeze(1)
+            confidence = outputs["confidence"].squeeze(1)
 
             return {
-                'is_button': is_button,
-                'button_type': button_type,
-                'confidence': confidence,
-                'button_type_probs': button_type_probs
+                "is_button": is_button,
+                "button_type": button_type,
+                "confidence": confidence,
+                "button_type_probs": button_type_probs,
             }
 
     def count_parameters(self) -> int:
@@ -289,10 +304,10 @@ def create_button_cnn(config: Dict[str, Any]) -> ButtonCNN:
         ButtonCNN instance
     """
     model = ButtonCNN(
-        num_button_types=config.get('num_button_types', 4),
-        architecture=config.get('architecture', 'custom'),
-        pretrained=config.get('pretrained', True),
-        dropout=config.get('dropout', 0.3)
+        num_button_types=config.get("num_button_types", 4),
+        architecture=config.get("architecture", "custom"),
+        pretrained=config.get("pretrained", True),
+        dropout=config.get("dropout", 0.3),
     )
 
     print(f"Created ButtonCNN with {model.count_parameters():,} parameters")
@@ -304,14 +319,16 @@ if __name__ == "__main__":
     # Test model creation and forward pass
     print("Testing ButtonCNN architectures...\n")
 
-    for arch in ['custom', 'mobilenet_v3', 'efficientnet_b0']:
+    for arch in ["custom", "mobilenet_v3", "efficientnet_b0"]:
         print(f"Architecture: {arch}")
-        model = create_button_cnn({
-            'architecture': arch,
-            'num_button_types': 4,
-            'pretrained': False,  # Don't download weights for testing
-            'dropout': 0.3
-        })
+        model = create_button_cnn(
+            {
+                "architecture": arch,
+                "num_button_types": 4,
+                "pretrained": False,  # Don't download weights for testing
+                "dropout": 0.3,
+            }
+        )
 
         # Test forward pass
         dummy_input = torch.randn(2, 3, 224, 224)

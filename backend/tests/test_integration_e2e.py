@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any
 
 import pytest
+from app.main import app
 from fastapi.testclient import TestClient
 from tests.utils.integration_test_helpers import (
     cleanup_test_data,
@@ -28,8 +29,6 @@ from tests.utils.integration_test_helpers import (
     import_test_snapshot,
     verify_execution_result,
 )
-
-from app.main import app
 
 # Create test client
 client = TestClient(app)

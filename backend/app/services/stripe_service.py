@@ -1,9 +1,8 @@
 """Stripe service - delegates to refactored architecture."""
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.user import User
 from app.services.stripe.stripe_facade import stripe_facade
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class StripeService:

@@ -6,12 +6,13 @@ background colors, then detects grid structure within segmented areas.
 """
 
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple
+
 import cv2
+import numpy as np
 from sklearn.cluster import KMeans
 
-from ..base import BaseRegionAnalyzer, DetectedRegion, BoundingBox, RegionType
+from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
 
 logger = logging.getLogger(__name__)
 
@@ -62,17 +63,13 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         # Detect grid structure in each region
         grid_regions = []
         for region_mask in color_regions:
-            grids = self._detect_grid_in_region(
-                color_img, region_mask, params
-            )
+            grids = self._detect_grid_in_region(color_img, region_mask, params)
             grid_regions.extend(grids)
 
         return grid_regions
 
     def _quantize_colors(
-        self,
-        image: np.ndarray,
-        params: Dict[str, Any]
+        self, image: np.ndarray, params: Dict[str, Any]
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Perform color quantization using K-means
@@ -87,10 +84,7 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
 
         # Apply K-means
         kmeans = KMeans(
-            n_clusters=params["n_colors"],
-            random_state=42,
-            n_init=10,
-            max_iter=100
+            n_clusters=params["n_colors"], random_state=42, n_init=10, max_iter=100
         )
         labels = kmeans.fit_predict(pixels)
 
@@ -103,9 +97,7 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         return quantized, labels
 
     def _find_color_regions(
-        self,
-        labels: np.ndarray,
-        params: Dict[str, Any]
+        self, labels: np.ndarray, params: Dict[str, Any]
     ) -> List[np.ndarray]:
         """
         Find contiguous regions for each color cluster
@@ -142,10 +134,7 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         return regions
 
     def _detect_grid_in_region(
-        self,
-        image: np.ndarray,
-        region_mask: np.ndarray,
-        params: Dict[str, Any]
+        self, image: np.ndarray, region_mask: np.ndarray, params: Dict[str, Any]
     ) -> List[DetectedRegion]:
         """Detect grid structure within a color-segmented region"""
         # Apply mask to image
@@ -169,10 +158,7 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         return []
 
     def _find_rectangles_in_region(
-        self,
-        gray: np.ndarray,
-        mask: np.ndarray,
-        params: Dict[str, Any]
+        self, gray: np.ndarray, mask: np.ndarray, params: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """Find rectangular structures in the masked region"""
         # Edge detection on masked region
@@ -194,8 +180,10 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
             x, y, w, h = cv2.boundingRect(contour)
 
             # Size filter
-            if not (params["min_cell_size"] <= w <= params["max_cell_size"] and
-                    params["min_cell_size"] <= h <= params["max_cell_size"]):
+            if not (
+                params["min_cell_size"] <= w <= params["max_cell_size"]
+                and params["min_cell_size"] <= h <= params["max_cell_size"]
+            ):
                 continue
 
             # Check rectangularity
@@ -210,19 +198,19 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
             if rectangularity < 0.7:
                 continue
 
-            rectangles.append({
-                "x": x,
-                "y": y,
-                "width": w,
-                "height": h,
-            })
+            rectangles.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "width": w,
+                    "height": h,
+                }
+            )
 
         return rectangles
 
     def _extract_grid_from_rectangles(
-        self,
-        rectangles: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, rectangles: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> Optional[DetectedRegion]:
         """Extract grid structure from rectangles"""
         if len(rectangles) < params["min_grid_rows"] * params["min_grid_cols"]:
@@ -237,15 +225,19 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         y_positions = sorted(set(r["y"] for r in rectangles))
 
         # Check if we have enough positions for a grid
-        if len(x_positions) < params["min_grid_cols"] or \
-           len(y_positions) < params["min_grid_rows"]:
+        if (
+            len(x_positions) < params["min_grid_cols"]
+            or len(y_positions) < params["min_grid_rows"]
+        ):
             return None
 
         # Calculate spacing
-        x_diffs = [x_positions[i + 1] - x_positions[i]
-                   for i in range(len(x_positions) - 1)]
-        y_diffs = [y_positions[i + 1] - y_positions[i]
-                   for i in range(len(y_positions) - 1)]
+        x_diffs = [
+            x_positions[i + 1] - x_positions[i] for i in range(len(x_positions) - 1)
+        ]
+        y_diffs = [
+            y_positions[i + 1] - y_positions[i] for i in range(len(y_positions) - 1)
+        ]
 
         if not x_diffs or not y_diffs:
             return None
@@ -281,14 +273,16 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
         cells = []
         for row in range(rows):
             for col in range(cols):
-                cells.append({
-                    "row": row,
-                    "col": col,
-                    "x": x_start + col * spacing_x,
-                    "y": y_start + row * spacing_y,
-                    "width": avg_width,
-                    "height": avg_height,
-                })
+                cells.append(
+                    {
+                        "row": row,
+                        "col": col,
+                        "x": x_start + col * spacing_x,
+                        "y": y_start + row * spacing_y,
+                        "width": avg_width,
+                        "height": avg_height,
+                    }
+                )
 
         # Calculate confidence
         expected_cells = rows * cols
@@ -311,5 +305,5 @@ class ColorQuantizationDetector(BaseRegionAnalyzer):
                 "cells": cells,
                 "detector": "color_quantization",
                 "method": "kmeans_segmentation",
-            }
+            },
         )

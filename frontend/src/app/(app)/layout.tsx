@@ -5,8 +5,11 @@ import { AuthProvider } from "@/contexts/auth-context";
 import { AutomationProvider } from "@/contexts/automation-context";
 import { OrganizationProvider } from "@/contexts/organization-context";
 import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
-import { OfflineIndicator } from "@/components/offline-indicator";
+import { OfflineIndicator } from "@/components/offline/OfflineIndicator";
+import { SyncQueueViewer } from "@/components/offline/SyncQueueViewer";
+import { AppInitializer } from "@/components/offline/AppInitializer";
 import { OnboardingTour } from "@/components/onboarding-tour";
+import { SessionTimeoutWarning } from "@/components/session-timeout-warning";
 import { UnifiedSidebar } from "@/components/navigation";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +28,9 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <OfflineIndicator />
+      <SyncQueueViewer />
       <OnboardingTour />
+      <SessionTimeoutWarning />
     </div>
   )
 }
@@ -40,9 +45,11 @@ export default function AppLayout({
       <OrganizationProvider>
         <SidebarProvider>
           <AutomationProvider>
-            <AppLayoutContent>
-              {children}
-            </AppLayoutContent>
+            <AppInitializer>
+              <AppLayoutContent>
+                {children}
+              </AppLayoutContent>
+            </AppInitializer>
           </AutomationProvider>
         </SidebarProvider>
       </OrganizationProvider>

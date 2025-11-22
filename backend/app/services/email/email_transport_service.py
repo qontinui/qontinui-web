@@ -6,9 +6,8 @@ from email.mime.text import MIMEText
 import aiosmtplib
 import boto3
 import structlog
-from botocore.exceptions import BotoCoreError, ClientError
-
 from app.core.config import settings
+from botocore.exceptions import BotoCoreError, ClientError
 
 logger = structlog.get_logger(__name__)
 
@@ -22,18 +21,18 @@ class EmailTransportService:
         if settings.USE_SES_API:
             try:
                 # Initialize boto3 SES client (will use IAM role in AWS, env vars locally)
-                self.ses_client = boto3.client('ses', region_name=settings.AWS_REGION)
+                self.ses_client = boto3.client("ses", region_name=settings.AWS_REGION)
                 logger.info(
                     "ses_client_initialized",
                     region=settings.AWS_REGION,
-                    use_ses_api=True
+                    use_ses_api=True,
                 )
             except Exception as e:
                 logger.warning(
                     "ses_client_init_failed",
                     error=str(e),
                     error_type=type(e).__name__,
-                    message="Will fallback to SMTP if available"
+                    message="Will fallback to SMTP if available",
                 )
 
     async def send_email(
@@ -54,22 +53,27 @@ class EmailTransportService:
         # Try SES API first (preferred method)
         if settings.USE_SES_API and self.ses_client:
             try:
-                return await self._send_via_ses_api(to_email, subject, text_body, html_body)
+                return await self._send_via_ses_api(
+                    to_email, subject, text_body, html_body
+                )
             except Exception as e:
                 logger.warning(
                     "ses_api_failed_trying_smtp",
                     to_email=to_email,
                     error=str(e),
-                    error_type=type(e).__name__
+                    error_type=type(e).__name__,
                 )
                 # Continue to SMTP fallback
 
         # Fallback to SMTP if SES API not available or failed
         if settings.SMTP_HOST:
             try:
-                return await self._send_via_smtp(to_email, subject, text_body, html_body)
+                return await self._send_via_smtp(
+                    to_email, subject, text_body, html_body
+                )
             except Exception as e:
                 import traceback
+
                 logger.error(
                     "smtp_send_failed",
                     to_email=to_email,
@@ -85,7 +89,7 @@ class EmailTransportService:
         # No email transport configured
         logger.warning(
             "no_email_transport_configured",
-            message="Neither SES API nor SMTP configured, skipping email send"
+            message="Neither SES API nor SMTP configured, skipping email send",
         )
         logger.info("would_send_email", to_email=to_email, subject=subject)
         return False
@@ -112,7 +116,7 @@ class EmailTransportService:
             "ses_api_send_start",
             to_email=to_email,
             subject=subject,
-            region=settings.AWS_REGION
+            region=settings.AWS_REGION,
         )
 
         # Build the email body
@@ -135,7 +139,7 @@ class EmailTransportService:
                 "ses_api_send_success",
                 to_email=to_email,
                 subject=subject,
-                message_id=response.get("MessageId")
+                message_id=response.get("MessageId"),
             )
             return True
 
@@ -146,7 +150,7 @@ class EmailTransportService:
                 subject=subject,
                 error=str(e),
                 error_type=type(e).__name__,
-                region=settings.AWS_REGION
+                region=settings.AWS_REGION,
             )
             raise
 
@@ -172,7 +176,7 @@ class EmailTransportService:
             "smtp_send_start",
             to_email=to_email,
             subject=subject,
-            smtp_host=settings.SMTP_HOST
+            smtp_host=settings.SMTP_HOST,
         )
 
         message = self._create_message(to_email, subject, text_body, html_body)

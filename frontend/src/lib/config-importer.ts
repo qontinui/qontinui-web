@@ -49,7 +49,7 @@ export interface ImportResult {
 }
 
 export class ConfigImporter {
-  private readonly SUPPORTED_VERSION = '2.0.0';
+  private readonly SUPPORTED_VERSION = '2.0.1';
 
   /**
    * Import a Qontinui configuration from JSON

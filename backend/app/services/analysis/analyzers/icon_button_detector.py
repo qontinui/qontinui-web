@@ -10,19 +10,20 @@ Characteristics:
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,9 @@ class IconButtonDetector(BaseAnalyzer):
 
         # Analyze each screenshot
         all_elements = []
-        for screenshot_idx, (img_color, img_gray) in enumerate(zip(images_color, images_gray)):
+        for screenshot_idx, (img_color, img_gray) in enumerate(
+            zip(images_color, images_gray)
+        ):
             elements = await self._analyze_screenshot(
                 img_color, img_gray, screenshot_idx, icon_templates, params
             )
@@ -108,7 +111,7 @@ class IconButtonDetector(BaseAnalyzer):
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -116,7 +119,7 @@ class IconButtonDetector(BaseAnalyzer):
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')
+            img = Image.open(BytesIO(data)).convert("L")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -155,9 +158,9 @@ class IconButtonDetector(BaseAnalyzer):
             y2 = size // 2
             y3 = size - spacing - bar_height
 
-            template[y1:y1+bar_height, 4:size-4] = 255
-            template[y2-bar_height//2:y2+bar_height//2, 4:size-4] = 255
-            template[y3:y3+bar_height, 4:size-4] = 255
+            template[y1 : y1 + bar_height, 4 : size - 4] = 255
+            template[y2 - bar_height // 2 : y2 + bar_height // 2, 4 : size - 4] = 255
+            template[y3 : y3 + bar_height, 4 : size - 4] = 255
 
             templates.append(template)
 
@@ -216,8 +219,8 @@ class IconButtonDetector(BaseAnalyzer):
             margin = size // 4
 
             # Draw X
-            cv2.line(template, (margin, margin), (size-margin, size-margin), 255, 2)
-            cv2.line(template, (size-margin, margin), (margin, size-margin), 255, 2)
+            cv2.line(template, (margin, margin), (size - margin, size - margin), 255, 2)
+            cv2.line(template, (size - margin, margin), (margin, size - margin), 255, 2)
 
             templates.append(template)
 
@@ -251,7 +254,7 @@ class IconButtonDetector(BaseAnalyzer):
         img_gray: np.ndarray,
         screenshot_idx: int,
         icon_templates: Dict[str, List[np.ndarray]],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedElement]:
         """Analyze a single screenshot for icon buttons"""
         elements = []
@@ -287,18 +290,22 @@ class IconButtonDetector(BaseAnalyzer):
                     if params["detect_in_header"] and y < params["header_height"]:
                         final_confidence = min(0.95, confidence + 0.1)
 
-                    elements.append(DetectedElement(
-                        bounding_box=BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h)),
-                        confidence=final_confidence,
-                        label=f"{icon_type.title()} Icon",
-                        element_type="icon_button",
-                        screenshot_index=screenshot_idx,
-                        metadata={
-                            "method": "template_matching",
-                            "icon_type": icon_type,
-                            "in_header": y < params["header_height"],
-                        },
-                    ))
+                    elements.append(
+                        DetectedElement(
+                            bounding_box=BoundingBox(
+                                x=int(x), y=int(y), width=int(w), height=int(h)
+                            ),
+                            confidence=final_confidence,
+                            label=f"{icon_type.title()} Icon",
+                            element_type="icon_button",
+                            screenshot_index=screenshot_idx,
+                            metadata={
+                                "method": "template_matching",
+                                "icon_type": icon_type,
+                                "in_header": y < params["header_height"],
+                            },
+                        )
+                    )
 
         # Also detect by shape (small square regions with high edge density)
         shape_icons = self._detect_by_shape(img_gray, params)
@@ -306,25 +313,24 @@ class IconButtonDetector(BaseAnalyzer):
             location_key = (bbox.x // 5, bbox.y // 5)
             if location_key not in detected_locations:
                 detected_locations.add(location_key)
-                elements.append(DetectedElement(
-                    bounding_box=bbox,
-                    confidence=conf,
-                    label="Icon Button",
-                    element_type="icon_button",
-                    screenshot_index=screenshot_idx,
-                    metadata={
-                        "method": "shape_based",
-                        "icon_type": "unknown",
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=bbox,
+                        confidence=conf,
+                        label="Icon Button",
+                        element_type="icon_button",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "method": "shape_based",
+                            "icon_type": "unknown",
+                        },
+                    )
+                )
 
         return elements
 
     def _template_match_icons(
-        self,
-        img_gray: np.ndarray,
-        template: np.ndarray,
-        threshold: float
+        self, img_gray: np.ndarray, template: np.ndarray, threshold: float
     ) -> List[Tuple[int, int, int, int, float]]:
         """Template match for icons"""
         matches = []
@@ -347,9 +353,7 @@ class IconButtonDetector(BaseAnalyzer):
         return matches
 
     def _non_max_suppression(
-        self,
-        matches: List[Tuple[int, int, int, int, float]],
-        iou_threshold: float
+        self, matches: List[Tuple[int, int, int, int, float]], iou_threshold: float
     ) -> List[Tuple[int, int, int, int, float]]:
         """Remove overlapping detections"""
         if not matches:
@@ -362,8 +366,7 @@ class IconButtonDetector(BaseAnalyzer):
             current = matches.pop(0)
             keep.append(current)
             matches = [
-                m for m in matches
-                if not self._boxes_overlap(current, m, iou_threshold)
+                m for m in matches if not self._boxes_overlap(current, m, iou_threshold)
             ]
 
         return keep
@@ -372,7 +375,7 @@ class IconButtonDetector(BaseAnalyzer):
         self,
         box1: Tuple[int, int, int, int, float],
         box2: Tuple[int, int, int, int, float],
-        threshold: float
+        threshold: float,
     ) -> bool:
         """Check if two boxes overlap"""
         x1, y1, w1, h1, _ = box1
@@ -395,9 +398,7 @@ class IconButtonDetector(BaseAnalyzer):
         return iou >= threshold
 
     def _detect_by_shape(
-        self,
-        img_gray: np.ndarray,
-        params: Dict[str, Any]
+        self, img_gray: np.ndarray, params: Dict[str, Any]
     ) -> List[Tuple[BoundingBox, float]]:
         """Detect icon buttons by shape (small, square regions)"""
         icons = []
@@ -406,7 +407,9 @@ class IconButtonDetector(BaseAnalyzer):
         edges = cv2.Canny(img_gray, 50, 150)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)

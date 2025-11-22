@@ -4,9 +4,9 @@ Progress tracking for analysis jobs
 
 import json
 import logging
-from typing import Dict, Any, Optional
-from uuid import UUID
 from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -112,11 +112,13 @@ class ProgressTracker:
         if analyzer_name not in progress["analyzer_progress"]:
             progress["analyzer_progress"][analyzer_name] = {}
 
-        progress["analyzer_progress"][analyzer_name].update({
-            "progress": progress_percent,
-            "message": message,
-            "updated_at": datetime.utcnow().isoformat(),
-        })
+        progress["analyzer_progress"][analyzer_name].update(
+            {
+                "progress": progress_percent,
+                "message": message,
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+        )
         progress["updated_at"] = datetime.utcnow().isoformat()
 
         await self._set_progress(job_id, progress)
@@ -140,12 +142,14 @@ class ProgressTracker:
             return
 
         progress["completed_analyzers"] += 1
-        progress["analyzer_progress"][analyzer_name].update({
-            "status": "completed",
-            "progress": 100.0,
-            "elements_found": elements_found,
-            "completed_at": datetime.utcnow().isoformat(),
-        })
+        progress["analyzer_progress"][analyzer_name].update(
+            {
+                "status": "completed",
+                "progress": 100.0,
+                "elements_found": elements_found,
+                "completed_at": datetime.utcnow().isoformat(),
+            }
+        )
         progress["updated_at"] = datetime.utcnow().isoformat()
 
         # Check if all analyzers are done
@@ -178,11 +182,13 @@ class ProgressTracker:
             return
 
         progress["completed_analyzers"] += 1
-        progress["analyzer_progress"][analyzer_name].update({
-            "status": "error",
-            "error": error,
-            "failed_at": datetime.utcnow().isoformat(),
-        })
+        progress["analyzer_progress"][analyzer_name].update(
+            {
+                "status": "error",
+                "error": error,
+                "failed_at": datetime.utcnow().isoformat(),
+            }
+        )
         progress["updated_at"] = datetime.utcnow().isoformat()
 
         await self._set_progress(job_id, progress)
@@ -228,11 +234,13 @@ class ProgressTracker:
             return
 
         progress["status"] = "completed"
-        progress["fusion"].update({
-            "status": "completed",
-            "fused_elements": fused_elements,
-            "completed_at": datetime.utcnow().isoformat(),
-        })
+        progress["fusion"].update(
+            {
+                "status": "completed",
+                "fused_elements": fused_elements,
+                "completed_at": datetime.utcnow().isoformat(),
+            }
+        )
         progress["completed_at"] = datetime.utcnow().isoformat()
         progress["updated_at"] = datetime.utcnow().isoformat()
 

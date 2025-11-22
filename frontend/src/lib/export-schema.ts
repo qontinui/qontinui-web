@@ -1,13 +1,16 @@
 /**
  * Qontinui Automation Configuration Schema
- * Version 2.0.0
+ * Version 2.0.1
  *
  * This defines the structure for exported automation configurations
  * that can be consumed by the Qontinui runner.
  *
- * BREAKING CHANGE: Replaced 'processes' with 'workflows' in graph format.
- * All workflows are now in unified graph format, with viewMode metadata
- * to indicate sequential vs graph visualization preference.
+ * CHANGELOG v2.0.1:
+ * - Removed 'parallel' connection type (GUI automation is sequential)
+ *
+ * CHANGELOG v2.0.0:
+ * - Replaced 'processes' with 'workflows' in graph format
+ * - All workflows now in unified graph format with viewMode metadata
  */
 
 export interface QontinuiConfig {
@@ -57,7 +60,6 @@ export interface ActionOutputs {
   main?: Connection[][]; // Main output connections
   success?: Connection[][]; // Success path connections
   error?: Connection[][]; // Error path connections
-  parallel?: Connection[][]; // Parallel execution connections
   // Conditional branches for IF actions
   true?: Connection[][];
   false?: Connection[][];

@@ -13,9 +13,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.collaboration import (
     ActionType,
     ActivityLog,
@@ -31,8 +28,12 @@ from app.models.organization import (
 )
 from app.models.project import Project
 from app.models.user import User
+from app.services.distributed_lock_service import distributed_lock_service
 from app.services.email.email_template_service import EmailTemplateService
 from app.services.email.email_transport_service import EmailTransportService
+from app.services.permission_service import permission_service
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -44,6 +45,8 @@ class CollaborationService:
         """Initialize collaboration service."""
         self.email_transport = EmailTransportService()
         self.email_templates = EmailTemplateService()
+        self.use_distributed_locks = True  # Enable distributed locks by default
+        self.permission_service = permission_service  # Use centralized permission service
 
     # ========================================================================
     # Access Control
@@ -59,6 +62,9 @@ class CollaborationService:
         """
         Check if user has required access to a project.
 
+        DEPRECATED: Use permission_service.can_user_access_project() directly instead.
+        This method now delegates to PermissionService for consistency.
+
         Args:
             db: Database session
             user_id: User ID to check
@@ -69,73 +75,28 @@ class CollaborationService:
             True if user has access, False otherwise
         """
         try:
-            # Check if user is project owner
-            result = await db.execute(
-                select(Project).filter(
-                    and_(Project.id == project_id, Project.owner_id == user_id)
+            # Map string permission to PermissionLevel enum
+            from app.models.organization import PermissionLevel
+
+            permission_map = {
+                "view": PermissionLevel.VIEW,
+                "comment": PermissionLevel.COMMENT,
+                "edit": PermissionLevel.EDIT,
+                "admin": PermissionLevel.ADMIN,
+            }
+
+            required_level = permission_map.get(required_permission.lower())
+            if not required_level:
+                logger.warning(
+                    "invalid_permission_level",
+                    required_permission=required_permission,
                 )
+                return False
+
+            # Delegate to centralized PermissionService
+            return await self.permission_service.can_user_access_project(
+                db, user_id, project_id, required_level
             )
-            if result.scalar_one_or_none():
-                logger.info("access_granted_owner", user_id=user_id, project_id=project_id)
-                return True
-
-            # Check direct user access
-            result = await db.execute(
-                select(ProjectAccessControl).filter(
-                    and_(
-                        ProjectAccessControl.project_id == project_id,
-                        ProjectAccessControl.user_id == user_id,
-                    )
-                )
-            )
-            access = result.scalar_one_or_none()
-
-            if access and not access.is_expired:
-                has_permission = self._check_permission_level(
-                    access.permission_level, required_permission
-                )
-                if has_permission:
-                    logger.info(
-                        "access_granted_direct",
-                        user_id=user_id,
-                        project_id=project_id,
-                        permission=access.permission_level,
-                    )
-                    return True
-
-            # Check organization access
-            result = await db.execute(
-                select(ProjectAccessControl)
-                .join(
-                    TeamMember,
-                    TeamMember.organization_id == ProjectAccessControl.organization_id,
-                )
-                .filter(
-                    and_(
-                        ProjectAccessControl.project_id == project_id,
-                        TeamMember.user_id == user_id,
-                    )
-                )
-            )
-            org_access = result.scalar_one_or_none()
-
-            if org_access and not org_access.is_expired:
-                has_permission = self._check_permission_level(
-                    org_access.permission_level, required_permission
-                )
-                if has_permission:
-                    logger.info(
-                        "access_granted_organization",
-                        user_id=user_id,
-                        project_id=project_id,
-                        permission=org_access.permission_level,
-                    )
-                    return True
-
-            logger.warning(
-                "access_denied", user_id=user_id, project_id=project_id, required=required_permission
-            )
-            return False
 
         except Exception as e:
             logger.error(
@@ -149,6 +110,8 @@ class CollaborationService:
     def _check_permission_level(self, current: str, required: str) -> bool:
         """
         Check if current permission level satisfies required level.
+
+        DEPRECATED: Use PermissionService._check_permission_level() instead.
 
         Permission hierarchy: view < comment < edit < admin
 
@@ -168,6 +131,9 @@ class CollaborationService:
         """
         Get user's permission level for a project.
 
+        DEPRECATED: Use permission_service.get_user_permission_level() directly instead.
+        This method now delegates to PermissionService for consistency.
+
         Args:
             db: Database session
             user_id: User ID
@@ -176,47 +142,26 @@ class CollaborationService:
         Returns:
             Permission level string or None if no access
         """
-        # Check if owner
-        result = await db.execute(
-            select(Project).filter(
-                and_(Project.id == project_id, Project.owner_id == user_id)
+        try:
+            # Delegate to centralized PermissionService
+            level = await self.permission_service.get_user_permission_level(
+                db, user_id, project_id
             )
-        )
-        if result.scalar_one_or_none():
-            return "admin"
 
-        # Check direct access
-        result = await db.execute(
-            select(ProjectAccessControl).filter(
-                and_(
-                    ProjectAccessControl.project_id == project_id,
-                    ProjectAccessControl.user_id == user_id,
-                )
-            )
-        )
-        access = result.scalar_one_or_none()
-        if access and not access.is_expired:
-            return access.permission_level
+            if level is None:
+                return None
 
-        # Check org access
-        result = await db.execute(
-            select(ProjectAccessControl)
-            .join(
-                TeamMember,
-                TeamMember.organization_id == ProjectAccessControl.organization_id,
-            )
-            .filter(
-                and_(
-                    ProjectAccessControl.project_id == project_id,
-                    TeamMember.user_id == user_id,
-                )
-            )
-        )
-        org_access = result.scalar_one_or_none()
-        if org_access and not org_access.is_expired:
-            return org_access.permission_level
+            # Convert PermissionLevel enum to string for backward compatibility
+            return level.value
 
-        return None
+        except Exception as e:
+            logger.error(
+                "get_permission_level_failed",
+                error=str(e),
+                user_id=user_id,
+                project_id=project_id,
+            )
+            return None
 
     # ========================================================================
     # Lock Management
@@ -248,79 +193,90 @@ class CollaborationService:
             ProjectLock if acquired, None if resource is locked by another user
         """
         try:
-            # Check for existing lock
+            # Use SELECT FOR UPDATE to prevent race conditions
+            # This ensures atomic check-and-create/update operations
             result = await db.execute(
-                select(ProjectLock).filter(
+                select(ProjectLock)
+                .filter(
                     and_(
                         ProjectLock.project_id == project_id,
                         ProjectLock.resource_type == ResourceType(resource_type),
                         ProjectLock.resource_id == resource_id,
                     )
                 )
+                .with_for_update()
             )
             existing_lock = result.scalar_one_or_none()
 
             if existing_lock:
-                # If lock expired, delete it
+                # If lock expired, delete it atomically within transaction
                 if existing_lock.is_expired():
                     await db.delete(existing_lock)
-                    await db.commit()
+                    await db.flush()  # Flush to ensure deletion is visible in this transaction
                     logger.info("expired_lock_released", lock_id=existing_lock.id)
+                    # Continue to create new lock below
+                    existing_lock = None
                 elif existing_lock.user_id == user_id:
                     # Extend existing lock
                     existing_lock.extend_lock(duration_minutes)
                     await db.commit()
                     await db.refresh(existing_lock)
-                    logger.info("lock_extended", lock_id=existing_lock.id, user_id=user_id)
+                    logger.info(
+                        "lock_extended", lock_id=existing_lock.id, user_id=user_id
+                    )
                     return existing_lock
                 else:
-                    # Lock held by another user
-                    logger.warning(
-                        "lock_acquisition_failed",
-                        project_id=project_id,
-                        resource_id=resource_id,
-                        holder=existing_lock.user_id,
-                        requester=user_id,
-                    )
-                    return None
+                    # Lock held by another user - check if it's really not expired
+                    # (double check within the locked transaction)
+                    if not existing_lock.is_expired():
+                        logger.warning(
+                            "lock_acquisition_failed",
+                            project_id=project_id,
+                            resource_id=resource_id,
+                            holder=existing_lock.user_id,
+                            requester=user_id,
+                        )
+                        await db.rollback()
+                        return None
 
-            # Create new lock
-            duration_minutes = min(duration_minutes, 30)  # Max 30 minutes
-            expires_at = datetime.utcnow() + timedelta(minutes=duration_minutes)
+            # Create new lock (either no lock existed or expired lock was deleted)
+            if existing_lock is None:
+                duration_minutes = min(duration_minutes, 30)  # Max 30 minutes
+                expires_at = datetime.utcnow() + timedelta(minutes=duration_minutes)
 
-            lock = ProjectLock(
-                project_id=project_id,
-                user_id=user_id,
-                resource_type=ResourceType(resource_type),
-                resource_id=resource_id,
-                expires_at=expires_at,
-                metadata=metadata,
-            )
+                lock = ProjectLock(
+                    project_id=project_id,
+                    user_id=user_id,
+                    resource_type=ResourceType(resource_type),
+                    resource_id=resource_id,
+                    expires_at=expires_at,
+                    metadata=metadata,
+                )
 
-            db.add(lock)
-            await db.commit()
-            await db.refresh(lock)
+                db.add(lock)
+                await db.commit()
+                await db.refresh(lock)
 
-            logger.info(
-                "lock_acquired",
-                lock_id=lock.id,
-                user_id=user_id,
-                project_id=project_id,
-                resource_type=resource_type,
-                resource_id=resource_id,
-            )
+                logger.info(
+                    "lock_acquired",
+                    lock_id=lock.id,
+                    user_id=user_id,
+                    project_id=project_id,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                )
 
-            # Track activity
-            await self.track_activity(
-                db,
-                project_id,
-                user_id,
-                ActionType.LOCKED.value,
-                resource_type,
-                resource_id,
-            )
+                # Track activity
+                await self.track_activity(
+                    db,
+                    project_id,
+                    user_id,
+                    ActionType.LOCKED.value,
+                    resource_type,
+                    resource_id,
+                )
 
-            return lock
+                return lock
 
         except Exception as e:
             logger.error("lock_acquisition_error", error=str(e))
@@ -350,7 +306,9 @@ class CollaborationService:
             lock = result.scalar_one_or_none()
 
             if not lock:
-                logger.warning("lock_not_found_or_unauthorized", lock_id=lock_id, user_id=user_id)
+                logger.warning(
+                    "lock_not_found_or_unauthorized", lock_id=lock_id, user_id=user_id
+                )
                 return False
 
             # Track activity
@@ -445,6 +403,235 @@ class CollaborationService:
 
         return lock
 
+    async def acquire_resource_lock(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        project_id: int,
+        resource_type: str,
+        resource_id: str,
+        duration_minutes: int = 5,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        Acquire a lock on a project resource using distributed locks.
+
+        This is the preferred method for acquiring locks. It uses Redis when available
+        for better performance and scalability, with automatic fallback to PostgreSQL.
+
+        Args:
+            db: Database session
+            user_id: User requesting lock
+            project_id: Project ID
+            resource_type: Type of resource (workflow, state, etc.)
+            resource_id: ID of specific resource
+            duration_minutes: Lock duration in minutes (default 5, max 30)
+            metadata: Optional metadata
+
+        Returns:
+            Lock info dict if acquired, None if resource is locked by another user
+        """
+        if self.use_distributed_locks:
+            try:
+                lock_info = await distributed_lock_service.acquire_lock(
+                    db=db,
+                    user_id=user_id,
+                    project_id=project_id,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    duration_minutes=duration_minutes,
+                    metadata=metadata,
+                )
+
+                if lock_info:
+                    # Track activity
+                    await self.track_activity(
+                        db,
+                        project_id,
+                        user_id,
+                        ActionType.LOCKED.value,
+                        resource_type,
+                        resource_id,
+                    )
+
+                return lock_info
+
+            except Exception as e:
+                logger.error("distributed_lock_error", error=str(e))
+                # Fall back to regular lock acquisition
+                logger.warning("falling_back_to_regular_lock")
+                return await self._lock_to_dict(
+                    await self.acquire_project_lock(
+                        db,
+                        user_id,
+                        project_id,
+                        resource_type,
+                        resource_id,
+                        duration_minutes,
+                        metadata,
+                    )
+                )
+        else:
+            # Use original PostgreSQL-only implementation
+            return await self._lock_to_dict(
+                await self.acquire_project_lock(
+                    db,
+                    user_id,
+                    project_id,
+                    resource_type,
+                    resource_id,
+                    duration_minutes,
+                    metadata,
+                )
+            )
+
+    async def release_resource_lock(
+        self,
+        db: AsyncSession,
+        lock_id: UUID,
+        user_id: UUID,
+        project_id: int,
+        resource_type: str,
+        resource_id: str,
+    ) -> bool:
+        """
+        Release a resource lock using distributed locks.
+
+        This is the preferred method for releasing locks.
+
+        Args:
+            db: Database session
+            lock_id: Lock ID to release
+            user_id: User releasing the lock
+            project_id: Project ID
+            resource_type: Resource type
+            resource_id: Resource ID
+
+        Returns:
+            True if released, False otherwise
+        """
+        if self.use_distributed_locks:
+            try:
+                success = await distributed_lock_service.release_lock(
+                    db=db,
+                    lock_id=lock_id,
+                    user_id=user_id,
+                    project_id=project_id,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                )
+
+                if success:
+                    # Track activity
+                    await self.track_activity(
+                        db,
+                        project_id,
+                        user_id,
+                        ActionType.UNLOCKED.value,
+                        resource_type,
+                        resource_id,
+                    )
+
+                return success
+
+            except Exception as e:
+                logger.error("distributed_unlock_error", error=str(e))
+                # Fall back to regular unlock
+                return await self.release_project_lock(db, lock_id, user_id)
+        else:
+            # Use original PostgreSQL-only implementation
+            return await self.release_project_lock(db, lock_id, user_id)
+
+    async def refresh_resource_lock(
+        self,
+        db: AsyncSession,
+        lock_id: UUID,
+        user_id: UUID,
+        project_id: int,
+        resource_type: str,
+        resource_id: str,
+        duration_minutes: int = 5,
+    ) -> bool:
+        """
+        Refresh/extend a lock's expiration time (heartbeat).
+
+        Frontend should call this every 4 minutes for 5-minute locks to prevent
+        lock expiration during active editing.
+
+        Args:
+            db: Database session
+            lock_id: Lock ID to refresh
+            user_id: User owning the lock
+            project_id: Project ID
+            resource_type: Resource type
+            resource_id: Resource ID
+            duration_minutes: New duration in minutes (default 5)
+
+        Returns:
+            True if refreshed, False if lock not found or not owned by user
+        """
+        if self.use_distributed_locks:
+            try:
+                return await distributed_lock_service.refresh_lock(
+                    db=db,
+                    lock_id=lock_id,
+                    user_id=user_id,
+                    project_id=project_id,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    duration_minutes=duration_minutes,
+                )
+            except Exception as e:
+                logger.error("distributed_lock_refresh_error", error=str(e))
+                return False
+        else:
+            # Fallback to DB-only refresh
+            try:
+                result = await db.execute(
+                    select(ProjectLock).filter(
+                        and_(ProjectLock.id == lock_id, ProjectLock.user_id == user_id)
+                    )
+                )
+                lock = result.scalar_one_or_none()
+
+                if not lock:
+                    return False
+
+                lock.extend_lock(duration_minutes)
+                await db.commit()
+                logger.info(
+                    "lock_refreshed", lock_id=str(lock_id), user_id=str(user_id)
+                )
+                return True
+
+            except Exception as e:
+                logger.error("lock_refresh_error", error=str(e))
+                await db.rollback()
+                return False
+
+    def _lock_to_dict(self, lock: ProjectLock | None) -> dict[str, Any] | None:
+        """
+        Convert ProjectLock model to dict format for API consistency.
+
+        Args:
+            lock: ProjectLock model or None
+
+        Returns:
+            Dict with lock info or None
+        """
+        if not lock:
+            return None
+
+        return {
+            "lock_id": str(lock.id),
+            "user_id": str(lock.user_id),
+            "project_id": lock.project_id,
+            "resource_type": lock.resource_type.value,
+            "resource_id": lock.resource_id,
+            "expires_at": lock.expires_at.isoformat(),
+            "backend": "postgresql",
+        }
+
     # ========================================================================
     # Activity Tracking
     # ========================================================================
@@ -529,7 +716,9 @@ class CollaborationService:
             # Generate invitation URL
             from app.core.config import settings
 
-            invitation_url = f"{settings.FRONTEND_URL}/invitations/accept?token={invitation.token}"
+            invitation_url = (
+                f"{settings.FRONTEND_URL}/invitations/accept?token={invitation.token}"
+            )
 
             # Render email template
             html_body = self.email_templates.render_template(
@@ -615,7 +804,9 @@ class CollaborationService:
             )
 
             if success:
-                logger.info("project_share_email_sent", email=to_email, project=project_name)
+                logger.info(
+                    "project_share_email_sent", email=to_email, project=project_name
+                )
             else:
                 logger.error("project_share_email_failed", email=to_email)
 

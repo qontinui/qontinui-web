@@ -6,19 +6,20 @@ areas with minimal changes.
 """
 
 import logging
-from typing import Dict, Any, List
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,7 +103,9 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
                 "method": "difference",
                 "parameters": params,
                 "mean_difference": float(np.mean(diff_map)),
-                "stable_pixel_percentage": float(np.sum(stability_mask) / stability_mask.size * 100),
+                "stable_pixel_percentage": float(
+                    np.sum(stability_mask) / stability_mask.size * 100
+                ),
             },
         )
 
@@ -110,7 +113,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
         """Load screenshots as grayscale numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')
+            img = Image.open(BytesIO(data)).convert("L")
             images.append(np.array(img, dtype=np.float32))
         return images
 
@@ -145,7 +148,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
 
         # Compute differences between consecutive frames
         for i in range(len(images) - 1):
-            diff = np.abs(images[i+1] - images[i])
+            diff = np.abs(images[i + 1] - images[i])
             differences.append(diff)
 
         # Accumulate using specified method
@@ -166,7 +169,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
 
     def _clean_mask(self, mask: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
         """Clean up binary mask using morphological operations"""
-        mask_uint8 = (mask.astype(np.uint8) * 255)
+        mask_uint8 = mask.astype(np.uint8) * 255
 
         kernel_size = params["morph_kernel_size"]
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
@@ -185,7 +188,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
         """Find connected components in mask and create bounding boxes"""
         elements = []
 
-        mask_uint8 = (mask.astype(np.uint8) * 255)
+        mask_uint8 = mask.astype(np.uint8) * 255
 
         contours, _ = cv2.findContours(
             mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
@@ -197,24 +200,32 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
             area = w * h
             aspect_ratio = w / h if h > 0 else 0
 
-            if (params["min_area"] <= area <= params["max_area"] and
-                params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+            if (
+                params["min_area"] <= area <= params["max_area"]
+                and params["min_aspect_ratio"]
+                <= aspect_ratio
+                <= params["max_aspect_ratio"]
+            ):
 
-                region_mask = mask[y:y+h, x:x+w]
+                region_mask = mask[y : y + h, x : x + w]
                 stability = np.mean(region_mask)
 
-                elements.append(DetectedElement(
-                    bounding_box=BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h)),
-                    confidence=float(stability) * 0.85,
-                    label="Stable Region",
-                    element_type="stable",
-                    screenshot_index=0,
-                    metadata={
-                        "method": "difference",
-                        "area": int(area),
-                        "aspect_ratio": float(aspect_ratio),
-                        "stability": float(stability),
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=BoundingBox(
+                            x=int(x), y=int(y), width=int(w), height=int(h)
+                        ),
+                        confidence=float(stability) * 0.85,
+                        label="Stable Region",
+                        element_type="stable",
+                        screenshot_index=0,
+                        metadata={
+                            "method": "difference",
+                            "area": int(area),
+                            "aspect_ratio": float(aspect_ratio),
+                            "stability": float(stability),
+                        },
+                    )
+                )
 
         return elements

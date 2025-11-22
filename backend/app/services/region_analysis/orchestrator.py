@@ -2,13 +2,18 @@
 Region Analysis Orchestrator - Manages the region analysis pipeline
 """
 
-import logging
-from typing import List, Dict, Any, Optional, Type
-from uuid import UUID
 import asyncio
+import logging
+from typing import Any, Dict, List, Optional, Type
+from uuid import UUID
 
-from .base import BaseRegionAnalyzer, RegionAnalysisInput, RegionAnalysisResult, RegionAnalysisType
-from .fusion import RegionFusion, FusedRegion
+from .base import (
+    BaseRegionAnalyzer,
+    RegionAnalysisInput,
+    RegionAnalysisResult,
+    RegionAnalysisType,
+)
+from .fusion import FusedRegion, RegionFusion
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +71,19 @@ class RegionAnalyzerRegistry:
         result = []
         for name, analyzer_class in self._analyzers.items():
             instance = analyzer_class()
-            result.append({
-                "name": name,
-                "type": instance.analysis_type.value,
-                "version": instance.version,
-                "supports_multi_screenshot": instance.supports_multi_screenshot,
-                "required_screenshots": instance.required_screenshots,
-                "supported_region_types": [rt.value for rt in instance.supported_region_types],
-                "default_parameters": instance.get_default_parameters(),
-            })
+            result.append(
+                {
+                    "name": name,
+                    "type": instance.analysis_type.value,
+                    "version": instance.version,
+                    "supports_multi_screenshot": instance.supports_multi_screenshot,
+                    "required_screenshots": instance.required_screenshots,
+                    "supported_region_types": [
+                        rt.value for rt in instance.supported_region_types
+                    ],
+                    "default_parameters": instance.get_default_parameters(),
+                }
+            )
         return result
 
 
@@ -172,26 +181,21 @@ class RegionOrchestrator:
         response = {
             "annotation_set_id": str(input_data.annotation_set_id),
             "analyzer_results": [r.to_dict() for r in results],
-            "analyzer_statistics": self.fusion_system.get_analyzer_statistics(
-                results
-            ),
+            "analyzer_statistics": self.fusion_system.get_analyzer_statistics(results),
         }
 
         # Fuse results if requested
         if fuse_results and len(results) > 0:
-            fused_regions = await self.fusion_system.fuse(
-                results, overlap_threshold
-            )
+            fused_regions = await self.fusion_system.fuse(results, overlap_threshold)
             response["fused_regions"] = [r.to_dict() for r in fused_regions]
             response["fusion_stats"] = {
                 "total_regions": len(fused_regions),
                 "avg_confidence": (
                     sum(r.confidence for r in fused_regions) / len(fused_regions)
-                    if fused_regions else 0.0
+                    if fused_regions
+                    else 0.0
                 ),
-                "multi_vote_regions": len(
-                    [r for r in fused_regions if r.votes > 1]
-                ),
+                "multi_vote_regions": len([r for r in fused_regions if r.votes > 1]),
                 "region_type_counts": self._count_region_types(fused_regions),
             }
 
@@ -218,7 +222,7 @@ class RegionOrchestrator:
             if isinstance(result, Exception):
                 logger.error(
                     f"Region analyzer {analyzers[i].name} failed: {result}",
-                    exc_info=result
+                    exc_info=result,
                 )
             else:
                 valid_results.append(result)
@@ -235,10 +239,7 @@ class RegionOrchestrator:
                 result = await analyzer.analyze(input_data)
                 results.append(result)
             except Exception as e:
-                logger.error(
-                    f"Region analyzer {analyzer.name} failed: {e}",
-                    exc_info=e
-                )
+                logger.error(f"Region analyzer {analyzer.name} failed: {e}", exc_info=e)
 
         return results
 

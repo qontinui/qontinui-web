@@ -11,19 +11,20 @@ Characteristics:
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,9 @@ class ModalDialogDetector(BaseAnalyzer):
 
         # Analyze each screenshot
         all_elements = []
-        for screenshot_idx, (img_color, img_gray) in enumerate(zip(images_color, images_gray)):
+        for screenshot_idx, (img_color, img_gray) in enumerate(
+            zip(images_color, images_gray)
+        ):
             elements = await self._analyze_screenshot(
                 img_color, img_gray, screenshot_idx, params
             )
@@ -110,7 +113,7 @@ class ModalDialogDetector(BaseAnalyzer):
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -118,7 +121,7 @@ class ModalDialogDetector(BaseAnalyzer):
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')
+            img = Image.open(BytesIO(data)).convert("L")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -127,7 +130,7 @@ class ModalDialogDetector(BaseAnalyzer):
         img_color: np.ndarray,
         img_gray: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedElement]:
         """Analyze a single screenshot for modal dialogs"""
         elements = []
@@ -136,9 +139,7 @@ class ModalDialogDetector(BaseAnalyzer):
 
         # Apply edge detection
         edges = cv2.Canny(
-            img_gray,
-            params["edge_threshold_low"],
-            params["edge_threshold_high"]
+            img_gray, params["edge_threshold_low"], params["edge_threshold_high"]
         )
 
         # Dilate to connect edges
@@ -146,7 +147,9 @@ class ModalDialogDetector(BaseAnalyzer):
         edges = cv2.dilate(edges, kernel, iterations=2)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
@@ -174,11 +177,17 @@ class ModalDialogDetector(BaseAnalyzer):
             y_offset = abs(center_y - screen_center_y) / height
 
             # Modals are typically centered
-            is_centered = (x_offset <= params["center_tolerance"] and
-                          y_offset <= params["center_tolerance"])
+            is_centered = (
+                x_offset <= params["center_tolerance"]
+                and y_offset <= params["center_tolerance"]
+            )
 
             # Extract dialog region
-            dialog_region = img_gray[y:y+h, x:x+w] if y+h <= height and x+w <= width else None
+            dialog_region = (
+                img_gray[y : y + h, x : x + w]
+                if y + h <= height and x + w <= width
+                else None
+            )
             if dialog_region is None or dialog_region.size == 0:
                 continue
 
@@ -199,28 +208,39 @@ class ModalDialogDetector(BaseAnalyzer):
 
             # Calculate confidence
             confidence = self._calculate_confidence(
-                is_centered, has_title_bar, has_buttons, has_overlay, w, h, width, height
+                is_centered,
+                has_title_bar,
+                has_buttons,
+                has_overlay,
+                w,
+                h,
+                width,
+                height,
             )
 
             if confidence < 0.55:
                 continue
 
-            elements.append(DetectedElement(
-                bounding_box=BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h)),
-                confidence=confidence,
-                label="Modal Dialog",
-                element_type="dialog",
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "modal_dialog_detection",
-                    "is_centered": bool(is_centered),
-                    "has_title_bar": bool(has_title_bar),
-                    "has_buttons": bool(has_buttons),
-                    "has_overlay": bool(has_overlay),
-                    "center_offset_x": float(x_offset),
-                    "center_offset_y": float(y_offset),
-                },
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=BoundingBox(
+                        x=int(x), y=int(y), width=int(w), height=int(h)
+                    ),
+                    confidence=confidence,
+                    label="Modal Dialog",
+                    element_type="dialog",
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "modal_dialog_detection",
+                        "is_centered": bool(is_centered),
+                        "has_title_bar": bool(has_title_bar),
+                        "has_buttons": bool(has_buttons),
+                        "has_overlay": bool(has_overlay),
+                        "center_offset_x": float(x_offset),
+                        "center_offset_y": float(y_offset),
+                    },
+                )
+            )
 
         return elements
 
@@ -251,7 +271,9 @@ class ModalDialogDetector(BaseAnalyzer):
         edges = cv2.Canny(button_region, 50, 150)
 
         # Find contours (potential buttons)
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         # Look for 1-3 rectangular regions (buttons)
         button_count = 0
@@ -273,7 +295,7 @@ class ModalDialogDetector(BaseAnalyzer):
         dialog_x: int,
         dialog_y: int,
         dialog_w: int,
-        dialog_h: int
+        dialog_h: int,
     ) -> bool:
         """Detect if there's a semi-transparent overlay around dialog"""
         h, w = img_gray.shape
@@ -288,7 +310,7 @@ class ModalDialogDetector(BaseAnalyzer):
 
         # Right region
         if dialog_x + dialog_w < w - 50:
-            right_region = img_gray[:, dialog_x + dialog_w:]
+            right_region = img_gray[:, dialog_x + dialog_w :]
             samples.append(np.mean(right_region))
 
         # Top region
@@ -298,7 +320,7 @@ class ModalDialogDetector(BaseAnalyzer):
 
         # Bottom region
         if dialog_y + dialog_h < h - 50:
-            bottom_region = img_gray[dialog_y + dialog_h:, :]
+            bottom_region = img_gray[dialog_y + dialog_h :, :]
             samples.append(np.mean(bottom_region))
 
         if not samples:
@@ -306,7 +328,9 @@ class ModalDialogDetector(BaseAnalyzer):
 
         # Check if background is darker than dialog (overlay effect)
         background_brightness = np.mean(samples)
-        dialog_brightness = np.mean(img_gray[dialog_y:dialog_y+dialog_h, dialog_x:dialog_x+dialog_w])
+        dialog_brightness = np.mean(
+            img_gray[dialog_y : dialog_y + dialog_h, dialog_x : dialog_x + dialog_w]
+        )
 
         # Background should be 10-30% darker if there's an overlay
         return dialog_brightness > background_brightness * 1.1
@@ -320,7 +344,7 @@ class ModalDialogDetector(BaseAnalyzer):
         w: int,
         h: int,
         screen_w: int,
-        screen_h: int
+        screen_h: int,
     ) -> float:
         """Calculate confidence score"""
         confidence = 0.5  # Base confidence

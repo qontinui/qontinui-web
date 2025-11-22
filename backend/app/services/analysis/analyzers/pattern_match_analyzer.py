@@ -6,18 +6,19 @@ Examples: "OK" buttons in dialogs, close icons, common UI widgets.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,7 @@ class PatternMatchAnalyzer(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
@@ -126,22 +127,21 @@ class PatternMatchAnalyzer(BaseAnalyzer):
             button_positions = self._detect_button_patterns(img)
 
             for pos in button_positions:
-                elements.append(DetectedElement(
-                    bounding_box=BoundingBox(
-                        x=pos[0],
-                        y=pos[1],
-                        width=pos[2],
-                        height=pos[3]
-                    ),
-                    confidence=0.82,
-                    label="Button",
-                    element_type="button",
-                    screenshot_index=screenshot_idx,
-                    metadata={
-                        "analysis": "pattern_match",
-                        "pattern_type": "button",
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=BoundingBox(
+                            x=pos[0], y=pos[1], width=pos[2], height=pos[3]
+                        ),
+                        confidence=0.82,
+                        label="Button",
+                        element_type="button",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "analysis": "pattern_match",
+                            "pattern_type": "button",
+                        },
+                    )
+                )
 
         return elements
 
@@ -169,9 +169,7 @@ class PatternMatchAnalyzer(BaseAnalyzer):
 
         return positions
 
-    def _compute_similarity(
-        self, region1: np.ndarray, region2: np.ndarray
-    ) -> float:
+    def _compute_similarity(self, region1: np.ndarray, region2: np.ndarray) -> float:
         """
         Compute similarity between two image regions
 
@@ -186,9 +184,6 @@ class PatternMatchAnalyzer(BaseAnalyzer):
             return 0.0
 
         # Simple normalized cross-correlation as example
-        correlation = np.corrcoef(
-            region1.flatten(),
-            region2.flatten()
-        )[0, 1]
+        correlation = np.corrcoef(region1.flatten(), region2.flatten())[0, 1]
 
         return max(0.0, correlation)

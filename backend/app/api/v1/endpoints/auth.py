@@ -9,15 +9,18 @@ import uuid as uuid_lib
 from datetime import datetime, timedelta
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, EmailStr
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import current_active_user, get_async_db
 from app.auth.config import auth_backend, fastapi_users
 from app.core.config import settings
+from app.core.error_codes import ErrorCode
 from app.core.security import verify_password
 from app.crud.user import get_user_by_email
+from app.middleware.error_handler import (
+    not_found_error,
+    unauthorized_error,
+    validation_error,
+)
+from app.middleware.rate_limit import auth_limiter
 from app.models.device_session import DeviceSession
 from app.models.user import User
 from app.schemas.device_session import DeviceSessionSummary, DeviceSessionUpdate
@@ -25,8 +28,12 @@ from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.auth.password_service import password_service
 from app.services.auth.user_management_service import user_management_service
 from app.services.auth_analytics_service import auth_analytics_service
+from app.services.cookie_service import cookie_service
 from app.services.device_fingerprint_service import device_fingerprint_service
 from app.services.device_session_service import device_session_service
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -34,13 +41,10 @@ router = APIRouter()
 
 # ===== FASTAPI-USERS ROUTERS =====
 
-# Register auth routes (login, logout)
-# NOTE: We include the full auth router but will override /jwt/login below
-router.include_router(
-    fastapi_users.get_auth_router(auth_backend),
-    prefix="/jwt",
-    tags=["auth"],
-)
+# NOTE: We use custom auth routes (login, logout, refresh) below instead of
+# fastapi-users auto-generated routes because we need HttpOnly cookie support.
+# The custom transport (CookieOrBearerTransport) is used by the authentication
+# dependency system, but not for route generation.
 
 # Register user registration route
 router.include_router(
@@ -70,9 +74,8 @@ router.include_router(
 
 # ===== CUSTOM ENDPOINTS (NOT PROVIDED BY FASTAPI-USERS) =====
 
-from fastapi.security import OAuth2PasswordRequestForm
-
 from app.core.security import create_access_token, create_refresh_token
+from fastapi.security import OAuth2PasswordRequestForm
 
 
 class TokenResponse(BaseModel):
@@ -94,9 +97,11 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/jwt/login", response_model=TokenResponse, tags=["auth"])
+@auth_limiter.limit("5 per minute")
 async def login(
     *,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     form_data: OAuth2PasswordRequestForm = Depends(),
     remember_me: bool = False,
@@ -107,6 +112,11 @@ async def login(
     Uses the same authentication as fastapi-users but returns refresh token.
     Also tracks device fingerprints for security.
 
+    Tokens are set as HttpOnly cookies for XSS protection and also returned
+    in response body for backward compatibility during migration.
+
+    Rate limited to 5 attempts per minute to prevent brute force attacks.
+
     Args:
         remember_me: If True, issues 90-day refresh token; if False, 30-day token
     """
@@ -115,16 +125,14 @@ async def login(
 
     user = await authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="LOGIN_BAD_CREDENTIALS",
+        raise unauthorized_error(
+            "Invalid username/email or password", ErrorCode.LOGIN_BAD_CREDENTIALS
         )
 
     # Check if user is active
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="LOGIN_USER_NOT_VERIFIED",
+        raise unauthorized_error(
+            "User account is not verified", ErrorCode.LOGIN_USER_NOT_VERIFIED
         )
 
     # Generate device fingerprint
@@ -230,19 +238,31 @@ async def login(
         else settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
     )
 
+    # Set HttpOnly cookies for secure token storage (XSS protection)
+    cookie_service.set_auth_cookies(
+        response=response,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        remember_me=remember_me,
+    )
+
     # Log remember_me usage for audit trail
     logger.info(
         "user_logged_in",
         user_id=str(user.id),
         email=user.email,
         remember_me=remember_me,
-        refresh_token_days=settings.REMEMBER_ME_TOKEN_EXPIRE_DAYS
-        if remember_me
-        else settings.REFRESH_TOKEN_EXPIRE_DAYS,
+        refresh_token_days=(
+            settings.REMEMBER_ME_TOKEN_EXPIRE_DAYS
+            if remember_me
+            else settings.REFRESH_TOKEN_EXPIRE_DAYS
+        ),
         device_fingerprint=fingerprint,
         is_new_device=is_new_device,
+        cookies_set=True,
     )
 
+    # BACKWARD COMPATIBILITY: Also return tokens in body during migration
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -252,14 +272,44 @@ async def login(
     )
 
 
+@router.post("/jwt/logout", tags=["auth"])
+async def logout(
+    *,
+    response: Response,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+):
+    """
+    Logout user and clear authentication cookies.
+
+    Clears HttpOnly cookies containing access and refresh tokens.
+    """
+    # Clear authentication cookies
+    cookie_service.clear_auth_cookies(response)
+
+    logger.info(
+        "user_logged_out",
+        user_id=str(current_user.id),
+        email=current_user.email,
+        cookies_cleared=True,
+    )
+
+    return {"detail": "Successfully logged out"}
+
+
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None  # Optional for backward compatibility
     extend_session: bool = False
 
 
 @router.post("/jwt/refresh", response_model=TokenResponse)
+@auth_limiter.limit("10 per minute")
 async def refresh_token(
-    *, db: AsyncSession = Depends(get_async_db), request: RefreshTokenRequest
+    *,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_async_db),
+    body: RefreshTokenRequest | None = None,
 ):
     """
     Refresh access token using refresh token.
@@ -267,10 +317,29 @@ async def refresh_token(
     Returns new access and refresh tokens (token rotation).
     Preserves the long_lived status from the original refresh token.
 
+    Reads refresh token from HttpOnly cookie (preferred) or request body (backward compatibility).
+    Sets new tokens as HttpOnly cookies in response.
+
+    Rate limited to 10 attempts per minute to prevent token abuse.
+
     Args:
-        request.refresh_token: Current refresh token
-        request.extend_session: If True, resets absolute expiry to current time + MAX_SESSION_DAYS
+        body.refresh_token: Current refresh token (optional, read from cookie if not provided)
+        body.extend_session: If True, resets absolute expiry to current time + MAX_SESSION_DAYS
     """
+    # Try to read refresh token from cookie first (preferred method)
+    refresh_token_value = request.cookies.get("refresh_token")
+
+    # Fallback to request body for backward compatibility
+    if not refresh_token_value and body and body.refresh_token:
+        refresh_token_value = body.refresh_token
+
+    if not refresh_token_value:
+        raise unauthorized_error(
+            "No refresh token provided (cookie or body)", ErrorCode.TOKEN_MISSING
+        )
+
+    # Get extend_session flag from request body if provided
+    extend_session = body.extend_session if body else False
     import uuid
 
     from app.core.security import (
@@ -288,13 +357,10 @@ async def refresh_token(
     from app.services.auth.token_blacklist_service import token_blacklist_service
 
     # Decode and validate the refresh token using the dedicated function
-    payload = decode_refresh_token(request.refresh_token)
+    payload = decode_refresh_token(refresh_token_value)
 
     if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
+        raise unauthorized_error("Invalid refresh token", ErrorCode.TOKEN_INVALID)
 
     user_id: str = payload.get("sub")
     token_type = payload.get("type")
@@ -303,33 +369,23 @@ async def refresh_token(
     is_long_lived = payload.get("long_lived", False)
 
     if not user_id or token_type != "refresh" or not token_jti:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
+        raise unauthorized_error("Invalid refresh token", ErrorCode.TOKEN_INVALID)
 
     # Check if token is blacklisted
     if await token_blacklist_service.is_blacklisted(token_jti):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked",
-        )
+        raise unauthorized_error("Token has been revoked", ErrorCode.TOKEN_REVOKED)
 
     # Get user from database to ensure they still exist and are active
     user = await get_user(db, user_id=uuid.UUID(user_id))
     if not user or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
-        )
+        raise unauthorized_error("User not found or inactive", ErrorCode.USER_NOT_FOUND)
 
     # Check session activity if sliding window is enabled
     if settings.SLIDING_WINDOW_ENABLED:
         # Check if session has exceeded absolute maximum
         if await is_session_expired(db, token_jti):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session expired. Please log in again.",
+            raise unauthorized_error(
+                "Session expired. Please log in again.", ErrorCode.SESSION_EXPIRED
             )
 
         # Update last activity
@@ -382,13 +438,23 @@ async def refresh_token(
         else settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
     )
 
+    # Set new tokens as HttpOnly cookies
+    cookie_service.set_auth_cookies(
+        response=response,
+        access_token=access_token,
+        refresh_token=new_refresh_token,
+        remember_me=is_long_lived,
+    )
+
     logger.info(
         "token_refreshed",
         user_id=str(user.id),
         long_lived=is_long_lived,
-        extend_session=request.extend_session,
+        extend_session=extend_session,
+        cookies_set=True,
     )
 
+    # BACKWARD COMPATIBILITY: Also return tokens in body during migration
     return TokenResponse(
         access_token=access_token,
         refresh_token=new_refresh_token,
@@ -409,11 +475,17 @@ class BetaSignupResponse(BaseModel):
 
 
 @router.post("/beta-signup", response_model=BetaSignupResponse)
+@auth_limiter.limit("3 per hour")
 async def beta_signup(
-    *, db: AsyncSession = Depends(get_async_db), signup_request: BetaSignupRequest
+    *,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    signup_request: BetaSignupRequest,
 ):
     """
     Custom beta signup endpoint for creating beta users with temporary passwords.
+
+    Rate limited to 3 attempts per hour to prevent abuse.
 
     This endpoint:
     1. Creates a user with a temporary password
@@ -668,9 +740,8 @@ async def verify_device(
     device_session = await device_session_service.verify_device_by_token(db, token)
 
     if not device_session:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired verification token",
+        raise validation_error(
+            "Invalid or expired verification token", error_code=ErrorCode.TOKEN_INVALID
         )
 
     logger.info(
@@ -686,6 +757,115 @@ async def verify_device(
     }
 
 
+class ChangePasswordRequest(BaseModel):
+    """Request to change user password."""
+
+    current_password: str
+    new_password: str
+
+
+class ChangePasswordResponse(BaseModel):
+    """Response for password change request."""
+
+    success: bool
+    message: str
+
+
+@router.post("/change-password", response_model=ChangePasswordResponse, tags=["auth"])
+@auth_limiter.limit("5 per hour")
+async def change_password(
+    *,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    password_data: ChangePasswordRequest,
+):
+    """
+    Change user password (self-service for authenticated users).
+
+    Requires current password verification. After successful password change,
+    all existing sessions are invalidated for security.
+
+    Rate limited to 5 attempts per hour to prevent abuse.
+
+    Args:
+        password_data: Current and new passwords
+
+    Returns:
+        Success message if password changed
+    """
+    # Verify current password
+    if not verify_password(
+        password_data.current_password, current_user.hashed_password
+    ):
+        raise unauthorized_error(
+            "Current password is incorrect", ErrorCode.LOGIN_BAD_CREDENTIALS
+        )
+
+    # Validate new password strength
+    if len(password_data.new_password) < 8:
+        raise validation_error(
+            "New password must be at least 8 characters long",
+            "new_password",
+            ErrorCode.INVALID_PASSWORD,
+        )
+
+    # Check if new password is different from current
+    if verify_password(password_data.new_password, current_user.hashed_password):
+        raise validation_error(
+            "New password must be different from current password",
+            "new_password",
+            ErrorCode.INVALID_PASSWORD,
+        )
+
+    # Hash and update password
+    from app.core.security import get_password_hash
+
+    current_user.hashed_password = get_password_hash(password_data.new_password)
+    await db.commit()
+
+    # Invalidate all existing sessions for security
+    # Users will need to log in again with the new password
+    if settings.REDIS_ENABLED:
+        from app.services.auth.token_blacklist_service import token_blacklist_service
+
+        # Get all device sessions for this user
+        user_sessions = await device_session_service.get_user_device_sessions(
+            db, current_user.id
+        )
+
+        # Revoke all device sessions
+        for session in user_sessions:
+            await device_session_service.revoke_device_session(db, session)
+
+        logger.info(
+            "password_changed_sessions_revoked",
+            user_id=str(current_user.id),
+            sessions_revoked=len(user_sessions),
+        )
+
+    # Track password change event
+    await auth_analytics_service.track_event(
+        db=db,
+        event_name="password_changed",
+        user_id=current_user.id,
+        properties={
+            "subscription_tier": current_user.subscription_tier,
+        },
+    )
+
+    logger.info(
+        "user_password_changed",
+        user_id=str(current_user.id),
+        email=current_user.email,
+    )
+
+    return ChangePasswordResponse(
+        success=True,
+        message="Password changed successfully. Please log in again with your new password.",
+    )
+
+
 class ResendDeviceVerificationRequest(BaseModel):
     """Request to resend device verification email."""
 
@@ -693,14 +873,18 @@ class ResendDeviceVerificationRequest(BaseModel):
 
 
 @router.post("/resend-device-verification", tags=["auth"])
+@auth_limiter.limit("3 per 5 minutes")
 async def resend_device_verification(
     *,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     request_data: ResendDeviceVerificationRequest,
 ):
     """
     Resend device verification email.
+
+    Rate limited to 3 attempts per 5 minutes to prevent email spam.
 
     Args:
         request_data: Contains device_id to resend verification for
@@ -740,9 +924,11 @@ async def resend_device_verification(
         db=db,
         device_session=device_session,
         user_email=current_user.email,
-        username=current_user.username
-        if hasattr(current_user, "username")
-        else current_user.email,
+        username=(
+            current_user.username
+            if hasattr(current_user, "username")
+            else current_user.email
+        ),
     )
 
     return {

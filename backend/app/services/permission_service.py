@@ -18,10 +18,6 @@ from typing import List, Optional
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.models.organization import (
     Organization,
     PermissionLevel,
@@ -30,6 +26,9 @@ from app.models.organization import (
     TeamRole,
 )
 from app.models.project import Project
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 
@@ -189,7 +188,8 @@ class PermissionService:
                 .outerjoin(
                     TeamMember,
                     and_(
-                        TeamMember.organization_id == ProjectAccessControl.organization_id,
+                        TeamMember.organization_id
+                        == ProjectAccessControl.organization_id,
                         TeamMember.user_id == user_id,
                     ),
                 )
@@ -288,45 +288,67 @@ class PermissionService:
             current_time = datetime.utcnow()
 
             # Get owned projects
+            # Use selectinload to avoid N+1 queries when accessing project.owner
             owned_result = await db.execute(
-                select(Project).where(Project.owner_id == user_id)
+                select(Project)
+                .where(Project.owner_id == user_id)
+                .options(selectinload(Project.owner))
             )
             owned_projects = list(owned_result.scalars().all())
+            logger.info(
+                "get_owned_projects",
+                user_id=user_id,
+                owned_count=len(owned_projects),
+                project_ids=[str(p.id) for p in owned_projects],
+            )
 
             # Get projects with direct access or organization access
             # Use a single query with joins for efficiency
-            shared_result = await db.execute(
-                select(Project)
-                .join(
-                    ProjectAccessControl,
-                    ProjectAccessControl.project_id == Project.id,
-                )
-                .outerjoin(
-                    TeamMember,
-                    and_(
-                        TeamMember.organization_id == ProjectAccessControl.organization_id,
-                        TeamMember.user_id == user_id,
-                    ),
-                )
-                .where(
-                    and_(
-                        # Not owned by user (already got those)
-                        Project.owner_id != user_id,
-                        # Has direct access OR organization access
-                        or_(
-                            ProjectAccessControl.user_id == user_id,
+            # Wrap in try-except to ensure owned projects are returned even if this fails
+            shared_projects = []
+            try:
+                # Use selectinload to avoid N+1 queries when accessing project.owner
+                shared_result = await db.execute(
+                    select(Project)
+                    .join(
+                        ProjectAccessControl,
+                        ProjectAccessControl.project_id == Project.id,
+                    )
+                    .outerjoin(
+                        TeamMember,
+                        and_(
+                            TeamMember.organization_id
+                            == ProjectAccessControl.organization_id,
                             TeamMember.user_id == user_id,
                         ),
-                        # Not expired
-                        or_(
-                            ProjectAccessControl.expires_at.is_(None),
-                            ProjectAccessControl.expires_at > current_time,
-                        ),
                     )
+                    .where(
+                        and_(
+                            # Not owned by user (already got those)
+                            Project.owner_id != user_id,
+                            # Has direct access OR organization access
+                            or_(
+                                ProjectAccessControl.user_id == user_id,
+                                TeamMember.user_id == user_id,
+                            ),
+                            # Not expired
+                            or_(
+                                ProjectAccessControl.expires_at.is_(None),
+                                ProjectAccessControl.expires_at > current_time,
+                            ),
+                        )
+                    )
+                    .distinct()
+                    .options(selectinload(Project.owner))
                 )
-                .distinct()
-            )
-            shared_projects = list(shared_result.scalars().all())
+                shared_projects = list(shared_result.scalars().all())
+            except Exception as shared_error:
+                logger.warning(
+                    "get_shared_projects_failed",
+                    error=str(shared_error),
+                    user_id=user_id,
+                    message="Returning only owned projects",
+                )
 
             # Combine and deduplicate
             all_projects = owned_projects + shared_projects
@@ -362,7 +384,7 @@ class PermissionService:
         Get user's personal organization.
 
         Every user has a personal organization created during user registration.
-        The personal organization has a slug ending in '-personal'.
+        The personal organization has 'is_personal': true in its settings.
 
         Args:
             db: Database session
@@ -377,15 +399,18 @@ class PermissionService:
             ...     print(f"Personal org: {org.name}")
         """
         try:
+            # Query for all organizations owned by user
             result = await db.execute(
-                select(Organization).where(
-                    and_(
-                        Organization.owner_id == user_id,
-                        Organization.slug.like("%-personal%"),
-                    )
-                )
+                select(Organization).where(Organization.owner_id == user_id)
             )
-            personal_org = result.scalar_one_or_none()
+            user_orgs = result.scalars().all()
+
+            # Filter for personal organization in Python
+            personal_org = None
+            for org in user_orgs:
+                if org.settings and org.settings.get("is_personal") is True:
+                    personal_org = org
+                    break
 
             if personal_org:
                 logger.debug(

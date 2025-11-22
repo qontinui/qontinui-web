@@ -8,11 +8,10 @@ Provides functionality for:
 """
 
 import structlog
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.organization import Organization, TeamMember, TeamRole
 from app.models.user import User
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -129,9 +128,7 @@ class OrganizationService:
             email_prefix = user.email.split("@")[0]
             return f"{email_prefix}'s Projects"
 
-    async def _generate_unique_slug(
-        self, db: AsyncSession, base_slug: str
-    ) -> str:
+    async def _generate_unique_slug(self, db: AsyncSession, base_slug: str) -> str:
         """
         Generate a unique slug by appending numbers if necessary.
 

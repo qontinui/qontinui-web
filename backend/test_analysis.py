@@ -11,29 +11,28 @@ Usage:
     poetry run python test_analysis.py --generate-test-data
 """
 
-import sys
 import asyncio
 import json
-import time
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-from uuid import UUID
 import statistics
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from uuid import UUID
 
 # Add backend to path
 backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.db.session import AsyncSessionLocal
 from app.models.annotation import AnnotationSet
 from app.models.user import User
-from app.services.analysis import AnalysisOrchestrator, AnalysisInput
+from app.services.analysis import AnalysisInput, AnalysisOrchestrator
 from app.services.analysis.orchestrator import analyzer_registry
 from app.services.object_storage import download_file
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AnalysisEvaluator:
@@ -44,9 +43,7 @@ class AnalysisEvaluator:
         self.results = []
 
     async def get_test_annotation_sets(
-        self,
-        db: AsyncSession,
-        limit: int = 5
+        self, db: AsyncSession, limit: int = 5
     ) -> List[AnnotationSet]:
         """Get annotation sets for testing"""
         query = select(AnnotationSet).limit(limit)
@@ -54,25 +51,27 @@ class AnalysisEvaluator:
         return list(result.scalars().all())
 
     async def evaluate_single_set(
-        self,
-        annotation_set: AnnotationSet,
-        db: AsyncSession
+        self, annotation_set: AnnotationSet, db: AsyncSession
     ) -> Dict[str, Any]:
         """Evaluate all analyzers on a single annotation set"""
 
         print(f"\n{'='*80}")
         print(f"Evaluating Annotation Set: {annotation_set.id}")
         print(f"Name: {annotation_set.name}")
-        print(f"Screenshots: {len(annotation_set.screenshots or [annotation_set.screenshot_url])}")
+        print(
+            f"Screenshots: {len(annotation_set.screenshots or [annotation_set.screenshot_url])}"
+        )
         print(f"{'='*80}")
 
         # Get screenshots
-        screenshots = annotation_set.screenshots or [{
-            "name": annotation_set.screenshot_name,
-            "url": annotation_set.screenshot_url,
-            "width": annotation_set.image_width,
-            "height": annotation_set.image_height,
-        }]
+        screenshots = annotation_set.screenshots or [
+            {
+                "name": annotation_set.screenshot_name,
+                "url": annotation_set.screenshot_url,
+                "width": annotation_set.image_width,
+                "height": annotation_set.image_height,
+            }
+        ]
 
         # Download screenshot data
         screenshot_data = []
@@ -100,7 +99,7 @@ class AnalysisEvaluator:
             "analyzers": {},
             "fusion_results": None,
             "performance": {},
-            "statistics": {}
+            "statistics": {},
         }
 
         # Test each analyzer individually with default parameters
@@ -112,7 +111,7 @@ class AnalysisEvaluator:
                     annotation_set_id=UUID(str(annotation_set.id)),
                     screenshots=screenshots,
                     screenshot_data=screenshot_data,
-                    parameters={}
+                    parameters={},
                 )
 
                 start_time = time.time()
@@ -120,7 +119,7 @@ class AnalysisEvaluator:
                     input_data=analysis_input,
                     analyzer_names=[analyzer_name],
                     parallel=False,
-                    fuse_results=False
+                    fuse_results=False,
                 )
                 elapsed = time.time() - start_time
 
@@ -137,26 +136,28 @@ class AnalysisEvaluator:
                 stats = {
                     "elements_detected": len(elements),
                     "execution_time_ms": int(elapsed * 1000),
-                    "avg_confidence": statistics.mean(confidences) if confidences else 0,
+                    "avg_confidence": (
+                        statistics.mean(confidences) if confidences else 0
+                    ),
                     "min_confidence": min(confidences) if confidences else 0,
                     "max_confidence": max(confidences) if confidences else 0,
                     "avg_bbox_area": statistics.mean(bbox_areas) if bbox_areas else 0,
-                    "element_types": self._count_element_types(elements)
+                    "element_types": self._count_element_types(elements),
                 }
 
                 evaluation_result["analyzers"][analyzer_name] = {
                     "result": analyzer_result,
-                    "statistics": stats
+                    "statistics": stats,
                 }
 
-                print(f"  ✓ Detected {len(elements)} elements in {stats['execution_time_ms']}ms")
+                print(
+                    f"  ✓ Detected {len(elements)} elements in {stats['execution_time_ms']}ms"
+                )
                 print(f"    Avg confidence: {stats['avg_confidence']:.3f}")
 
             except Exception as e:
                 print(f"  ❌ Failed: {e}")
-                evaluation_result["analyzers"][analyzer_name] = {
-                    "error": str(e)
-                }
+                evaluation_result["analyzers"][analyzer_name] = {"error": str(e)}
 
         # Test fusion with all analyzers
         print(f"\n🔀 Testing fusion with all analyzers...")
@@ -165,7 +166,7 @@ class AnalysisEvaluator:
                 annotation_set_id=UUID(str(annotation_set.id)),
                 screenshots=screenshots,
                 screenshot_data=screenshot_data,
-                parameters={}
+                parameters={},
             )
 
             start_time = time.time()
@@ -174,7 +175,7 @@ class AnalysisEvaluator:
                 analyzer_names=analyzer_names,
                 parallel=True,
                 fuse_results=True,
-                overlap_threshold=0.5
+                overlap_threshold=0.5,
             )
             elapsed = time.time() - start_time
 
@@ -184,16 +185,22 @@ class AnalysisEvaluator:
                 "total_fused_elements": len(fused_elements),
                 "execution_time_ms": int(elapsed * 1000),
                 "multi_vote_elements": sum(1 for e in fused_elements if e["votes"] > 1),
-                "avg_votes": statistics.mean([e["votes"] for e in fused_elements]) if fused_elements else 0,
-                "analyzer_agreement": self._calculate_agreement(fused_elements)
+                "avg_votes": (
+                    statistics.mean([e["votes"] for e in fused_elements])
+                    if fused_elements
+                    else 0
+                ),
+                "analyzer_agreement": self._calculate_agreement(fused_elements),
             }
 
             evaluation_result["fusion_results"] = {
                 "elements": fused_elements,
-                "statistics": fusion_stats
+                "statistics": fusion_stats,
             }
 
-            print(f"  ✓ Fused {len(fused_elements)} elements in {fusion_stats['execution_time_ms']}ms")
+            print(
+                f"  ✓ Fused {len(fused_elements)} elements in {fusion_stats['execution_time_ms']}ms"
+            )
             print(f"    Multi-vote elements: {fusion_stats['multi_vote_elements']}")
 
         except Exception as e:
@@ -202,7 +209,8 @@ class AnalysisEvaluator:
 
         # Overall statistics
         successful_analyzers = [
-            name for name, result in evaluation_result["analyzers"].items()
+            name
+            for name, result in evaluation_result["analyzers"].items()
             if "error" not in result
         ]
 
@@ -215,11 +223,17 @@ class AnalysisEvaluator:
                 for result in evaluation_result["analyzers"].values()
                 if "statistics" in result
             ),
-            "avg_execution_time_ms": statistics.mean([
-                result["statistics"]["execution_time_ms"]
-                for result in evaluation_result["analyzers"].values()
-                if "statistics" in result
-            ]) if successful_analyzers else 0
+            "avg_execution_time_ms": (
+                statistics.mean(
+                    [
+                        result["statistics"]["execution_time_ms"]
+                        for result in evaluation_result["analyzers"].values()
+                        if "statistics" in result
+                    ]
+                )
+                if successful_analyzers
+                else 0
+            ),
         }
 
         return evaluation_result
@@ -246,19 +260,17 @@ class AnalysisEvaluator:
             "vote_distribution": vote_distribution,
             "unanimous_elements": vote_distribution.get(
                 max(vote_distribution.keys()) if vote_distribution else 0, 0
-            )
+            ),
         }
 
     async def run_evaluation(
-        self,
-        annotation_set_ids: Optional[List[str]] = None,
-        max_sets: int = 5
+        self, annotation_set_ids: Optional[List[str]] = None, max_sets: int = 5
     ) -> Dict[str, Any]:
         """Run full evaluation across multiple annotation sets"""
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("AUTONOMOUS ANALYSIS EVALUATION")
-        print("="*80)
+        print("=" * 80)
 
         async with AsyncSessionLocal() as db:
             # Get annotation sets
@@ -272,7 +284,9 @@ class AnalysisEvaluator:
                     if ann_set:
                         annotation_sets.append(ann_set)
             else:
-                annotation_sets = await self.get_test_annotation_sets(db, limit=max_sets)
+                annotation_sets = await self.get_test_annotation_sets(
+                    db, limit=max_sets
+                )
 
             if not annotation_sets:
                 print("❌ No annotation sets found for testing")
@@ -294,7 +308,7 @@ class AnalysisEvaluator:
                 "summary": summary,
                 "detailed_results": all_results,
                 "evaluation_timestamp": datetime.utcnow().isoformat(),
-                "total_annotation_sets_tested": len(all_results)
+                "total_annotation_sets_tested": len(all_results),
             }
 
     def _generate_summary(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -329,40 +343,50 @@ class AnalysisEvaluator:
                     "total_elements_detected": sum(detections),
                     "avg_execution_time_ms": statistics.mean(execution_times),
                     "avg_confidence": statistics.mean(confidences),
-                    "success_rate": len(detections) / len(results)
+                    "success_rate": len(detections) / len(results),
                 }
 
         return {
             "total_sets_evaluated": len(results),
             "analyzer_performance": analyzer_summary,
-            "best_detector": max(
-                analyzer_summary.items(),
-                key=lambda x: x[1]["avg_elements_detected"]
-            )[0] if analyzer_summary else None,
-            "fastest_analyzer": min(
-                analyzer_summary.items(),
-                key=lambda x: x[1]["avg_execution_time_ms"]
-            )[0] if analyzer_summary else None
+            "best_detector": (
+                max(
+                    analyzer_summary.items(),
+                    key=lambda x: x[1]["avg_elements_detected"],
+                )[0]
+                if analyzer_summary
+                else None
+            ),
+            "fastest_analyzer": (
+                min(
+                    analyzer_summary.items(),
+                    key=lambda x: x[1]["avg_execution_time_ms"],
+                )[0]
+                if analyzer_summary
+                else None
+            ),
         }
 
     def save_report(self, results: Dict[str, Any], output_file: str):
         """Save evaluation report to file"""
         output_path = Path(output_file)
 
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             json.dump(results, f, indent=2)
 
         print(f"\n✅ Report saved to: {output_path}")
 
         # Also save a human-readable summary
-        summary_path = output_path.with_suffix('.txt')
-        with open(summary_path, 'w') as f:
-            f.write("="*80 + "\n")
+        summary_path = output_path.with_suffix(".txt")
+        with open(summary_path, "w") as f:
+            f.write("=" * 80 + "\n")
             f.write("ANALYSIS EVALUATION SUMMARY\n")
-            f.write("="*80 + "\n\n")
+            f.write("=" * 80 + "\n\n")
 
             summary = results.get("summary", {})
-            f.write(f"Total Annotation Sets Tested: {summary.get('total_sets_evaluated', 0)}\n")
+            f.write(
+                f"Total Annotation Sets Tested: {summary.get('total_sets_evaluated', 0)}\n"
+            )
             f.write(f"Best Detector: {summary.get('best_detector', 'N/A')}\n")
             f.write(f"Fastest Analyzer: {summary.get('fastest_analyzer', 'N/A')}\n\n")
 
@@ -371,9 +395,13 @@ class AnalysisEvaluator:
 
             for analyzer_name, stats in summary.get("analyzer_performance", {}).items():
                 f.write(f"\n{analyzer_name}:\n")
-                f.write(f"  Avg Elements Detected: {stats['avg_elements_detected']:.2f}\n")
+                f.write(
+                    f"  Avg Elements Detected: {stats['avg_elements_detected']:.2f}\n"
+                )
                 f.write(f"  Total Elements: {stats['total_elements_detected']}\n")
-                f.write(f"  Avg Execution Time: {stats['avg_execution_time_ms']:.0f}ms\n")
+                f.write(
+                    f"  Avg Execution Time: {stats['avg_execution_time_ms']:.0f}ms\n"
+                )
                 f.write(f"  Avg Confidence: {stats['avg_confidence']:.3f}\n")
                 f.write(f"  Success Rate: {stats['success_rate']*100:.1f}%\n")
 
@@ -389,25 +417,25 @@ async def main():
         "--annotation-set-id",
         type=str,
         action="append",
-        help="Specific annotation set ID to test (can be specified multiple times)"
+        help="Specific annotation set ID to test (can be specified multiple times)",
     )
     parser.add_argument(
         "--max-sets",
         type=int,
         default=5,
-        help="Maximum number of annotation sets to test (default: 5)"
+        help="Maximum number of annotation sets to test (default: 5)",
     )
     parser.add_argument(
         "--output",
         type=str,
         default=f"evaluation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-        help="Output file for evaluation report"
+        help="Output file for evaluation report",
     )
     parser.add_argument(
         "--iterations",
         type=int,
         default=1,
-        help="Number of evaluation iterations to run"
+        help="Number of evaluation iterations to run",
     )
 
     args = parser.parse_args()
@@ -421,21 +449,20 @@ async def main():
             print(f"{'#'*80}")
 
         results = await evaluator.run_evaluation(
-            annotation_set_ids=args.annotation_set_id,
-            max_sets=args.max_sets
+            annotation_set_ids=args.annotation_set_id, max_sets=args.max_sets
         )
 
         # Save report
         if args.iterations > 1:
-            output_file = args.output.replace('.json', f'_iter{iteration+1}.json')
+            output_file = args.output.replace(".json", f"_iter{iteration+1}.json")
         else:
             output_file = args.output
 
         evaluator.save_report(results, output_file)
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("EVALUATION COMPLETE")
-    print("="*80)
+    print("=" * 80)
 
 
 if __name__ == "__main__":

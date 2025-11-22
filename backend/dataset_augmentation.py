@@ -8,10 +8,11 @@ Includes rotation, scaling, color jitter, noise, blur, and resolution simulation
 import json
 import random
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
+
+import cv2
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
-import cv2
 
 
 class DatasetAugmenter:
@@ -29,7 +30,7 @@ class DatasetAugmenter:
         self.output_dir = Path(output_dir)
 
         # Create output structure
-        for split in ['train', 'val', 'test']:
+        for split in ["train", "val", "test"]:
             (self.output_dir / "images" / split).mkdir(parents=True, exist_ok=True)
         (self.output_dir / "annotations").mkdir(parents=True, exist_ok=True)
 
@@ -43,17 +44,18 @@ class DatasetAugmenter:
         if not annotation_file.exists():
             return None
 
-        with open(annotation_file, 'r') as f:
+        with open(annotation_file, "r") as f:
             return json.load(f)
 
     def save_dataset(self, dataset: Dict, split: str):
         """Save COCO format dataset."""
         annotation_file = self.output_dir / "annotations" / f"{split}.json"
-        with open(annotation_file, 'w') as f:
+        with open(annotation_file, "w") as f:
             json.dump(dataset, f, indent=2)
 
-    def rotate_image(self, image: Image.Image, angle: float,
-                    annotations: List[Dict]) -> Tuple[Image.Image, List[Dict]]:
+    def rotate_image(
+        self, image: Image.Image, angle: float, annotations: List[Dict]
+    ) -> Tuple[Image.Image, List[Dict]]:
         """
         Rotate image and update bounding boxes.
 
@@ -84,8 +86,12 @@ class DatasetAugmenter:
         rotation_matrix[1, 2] += (new_height / 2) - center[1]
 
         # Rotate image
-        rotated = cv2.warpAffine(img_cv, rotation_matrix, (new_width, new_height),
-                                borderValue=(255, 255, 255))
+        rotated = cv2.warpAffine(
+            img_cv,
+            rotation_matrix,
+            (new_width, new_height),
+            borderValue=(255, 255, 255),
+        )
 
         # Convert back to PIL
         rotated_pil = Image.fromarray(cv2.cvtColor(rotated, cv2.COLOR_BGR2RGB))
@@ -93,15 +99,10 @@ class DatasetAugmenter:
         # Update annotations
         new_annotations = []
         for ann in annotations:
-            x, y, w, h = ann['bbox']
+            x, y, w, h = ann["bbox"]
 
             # Get box corners
-            corners = np.array([
-                [x, y],
-                [x + w, y],
-                [x + w, y + h],
-                [x, y + h]
-            ])
+            corners = np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]])
 
             # Add ones for affine transformation
             corners_homogeneous = np.hstack([corners, np.ones((4, 1))])
@@ -122,14 +123,15 @@ class DatasetAugmenter:
             # Only keep if box is valid
             if new_w > 10 and new_h > 10:
                 new_ann = ann.copy()
-                new_ann['bbox'] = [new_x, new_y, new_w, new_h]
-                new_ann['area'] = new_w * new_h
+                new_ann["bbox"] = [new_x, new_y, new_w, new_h]
+                new_ann["area"] = new_w * new_h
                 new_annotations.append(new_ann)
 
         return rotated_pil, new_annotations
 
-    def scale_image(self, image: Image.Image, scale_factor: float,
-                   annotations: List[Dict]) -> Tuple[Image.Image, List[Dict]]:
+    def scale_image(
+        self, image: Image.Image, scale_factor: float, annotations: List[Dict]
+    ) -> Tuple[Image.Image, List[Dict]]:
         """
         Scale image and update bounding boxes.
 
@@ -151,22 +153,27 @@ class DatasetAugmenter:
         # Update annotations
         new_annotations = []
         for ann in annotations:
-            x, y, w, h = ann['bbox']
+            x, y, w, h = ann["bbox"]
 
             new_ann = ann.copy()
-            new_ann['bbox'] = [
+            new_ann["bbox"] = [
                 int(x * scale_factor),
                 int(y * scale_factor),
                 int(w * scale_factor),
-                int(h * scale_factor)
+                int(h * scale_factor),
             ]
-            new_ann['area'] = int(new_ann['bbox'][2] * new_ann['bbox'][3])
+            new_ann["area"] = int(new_ann["bbox"][2] * new_ann["bbox"][3])
             new_annotations.append(new_ann)
 
         return scaled, new_annotations
 
-    def color_jitter(self, image: Image.Image, brightness: float = 0.2,
-                    contrast: float = 0.2, saturation: float = 0.2) -> Image.Image:
+    def color_jitter(
+        self,
+        image: Image.Image,
+        brightness: float = 0.2,
+        contrast: float = 0.2,
+        saturation: float = 0.2,
+    ) -> Image.Image:
         """
         Apply color jittering.
 
@@ -232,7 +239,9 @@ class DatasetAugmenter:
         """
         return image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
 
-    def simulate_resolution(self, image: Image.Image, scale: float = 0.5) -> Image.Image:
+    def simulate_resolution(
+        self, image: Image.Image, scale: float = 0.5
+    ) -> Image.Image:
         """
         Simulate different screen resolutions by downscaling and upscaling.
 
@@ -255,8 +264,9 @@ class DatasetAugmenter:
 
         return upscaled
 
-    def flip_horizontal(self, image: Image.Image,
-                       annotations: List[Dict]) -> Tuple[Image.Image, List[Dict]]:
+    def flip_horizontal(
+        self, image: Image.Image, annotations: List[Dict]
+    ) -> Tuple[Image.Image, List[Dict]]:
         """
         Flip image horizontally and update bounding boxes.
 
@@ -273,16 +283,17 @@ class DatasetAugmenter:
         # Update annotations
         new_annotations = []
         for ann in annotations:
-            x, y, w, h = ann['bbox']
+            x, y, w, h = ann["bbox"]
 
             new_ann = ann.copy()
-            new_ann['bbox'] = [width - x - w, y, w, h]
+            new_ann["bbox"] = [width - x - w, y, w, h]
             new_annotations.append(new_ann)
 
         return flipped, new_annotations
 
-    def augment_image(self, image_path: str, annotations: List[Dict],
-                     augmentation_config: Dict) -> List[Tuple[Image.Image, List[Dict], str]]:
+    def augment_image(
+        self, image_path: str, annotations: List[Dict], augmentation_config: Dict
+    ) -> List[Tuple[Image.Image, List[Dict], str]]:
         """
         Apply augmentation pipeline to a single image.
 
@@ -298,59 +309,62 @@ class DatasetAugmenter:
         results = []
 
         # Original
-        results.append((image.copy(), annotations.copy(), 'original'))
+        results.append((image.copy(), annotations.copy(), "original"))
 
         # Horizontal flip
-        if augmentation_config.get('flip_horizontal', True):
+        if augmentation_config.get("flip_horizontal", True):
             flipped, flipped_anns = self.flip_horizontal(image, annotations)
-            results.append((flipped, flipped_anns, 'flip_h'))
+            results.append((flipped, flipped_anns, "flip_h"))
 
         # Rotation
-        if augmentation_config.get('rotation', True):
-            angles = augmentation_config.get('rotation_angles', [-10, -5, 5, 10])
+        if augmentation_config.get("rotation", True):
+            angles = augmentation_config.get("rotation_angles", [-10, -5, 5, 10])
             for angle in angles:
                 rotated, rotated_anns = self.rotate_image(image, angle, annotations)
-                results.append((rotated, rotated_anns, f'rot_{angle}'))
+                results.append((rotated, rotated_anns, f"rot_{angle}"))
 
         # Scaling
-        if augmentation_config.get('scaling', True):
-            scales = augmentation_config.get('scale_factors', [0.9, 1.1])
+        if augmentation_config.get("scaling", True):
+            scales = augmentation_config.get("scale_factors", [0.9, 1.1])
             for scale in scales:
                 scaled, scaled_anns = self.scale_image(image, scale, annotations)
-                results.append((scaled, scaled_anns, f'scale_{scale}'))
+                results.append((scaled, scaled_anns, f"scale_{scale}"))
 
         # Color jittering
-        if augmentation_config.get('color_jitter', True):
-            for i in range(augmentation_config.get('color_jitter_count', 2)):
+        if augmentation_config.get("color_jitter", True):
+            for i in range(augmentation_config.get("color_jitter_count", 2)):
                 jittered = self.color_jitter(image.copy())
-                results.append((jittered, annotations.copy(), f'color_jitter_{i}'))
+                results.append((jittered, annotations.copy(), f"color_jitter_{i}"))
 
         # Noise
-        if augmentation_config.get('noise', True):
-            noise_levels = augmentation_config.get('noise_levels', [0.01, 0.02])
+        if augmentation_config.get("noise", True):
+            noise_levels = augmentation_config.get("noise_levels", [0.01, 0.02])
             for i, level in enumerate(noise_levels):
                 noisy = self.add_noise(image.copy(), level)
-                results.append((noisy, annotations.copy(), f'noise_{i}'))
+                results.append((noisy, annotations.copy(), f"noise_{i}"))
 
         # Blur
-        if augmentation_config.get('blur', True):
-            blur_radii = augmentation_config.get('blur_radii', [1.0, 2.0])
+        if augmentation_config.get("blur", True):
+            blur_radii = augmentation_config.get("blur_radii", [1.0, 2.0])
             for i, radius in enumerate(blur_radii):
                 blurred = self.add_blur(image.copy(), radius)
-                results.append((blurred, annotations.copy(), f'blur_{i}'))
+                results.append((blurred, annotations.copy(), f"blur_{i}"))
 
         # Resolution simulation
-        if augmentation_config.get('resolution', True):
-            res_scales = augmentation_config.get('resolution_scales', [0.5, 0.7])
+        if augmentation_config.get("resolution", True):
+            res_scales = augmentation_config.get("resolution_scales", [0.5, 0.7])
             for i, scale in enumerate(res_scales):
                 sim_res = self.simulate_resolution(image.copy(), scale)
-                results.append((sim_res, annotations.copy(), f'res_{i}'))
+                results.append((sim_res, annotations.copy(), f"res_{i}"))
 
         return results
 
-    def augment_dataset(self, split: str = 'train',
-                       augmentation_config: Optional[Dict] = None,
-                       max_augmentations_per_image: int = None) -> Dict[str, int]:
+    def augment_dataset(
+        self,
+        split: str = "train",
+        augmentation_config: Optional[Dict] = None,
+        max_augmentations_per_image: int = None,
+    ) -> Dict[str, int]:
         """
         Augment entire dataset.
 
@@ -364,19 +378,19 @@ class DatasetAugmenter:
         """
         if augmentation_config is None:
             augmentation_config = {
-                'flip_horizontal': True,
-                'rotation': True,
-                'rotation_angles': [-5, 5],
-                'scaling': True,
-                'scale_factors': [0.9, 1.1],
-                'color_jitter': True,
-                'color_jitter_count': 2,
-                'noise': True,
-                'noise_levels': [0.01],
-                'blur': True,
-                'blur_radii': [1.0],
-                'resolution': True,
-                'resolution_scales': [0.6]
+                "flip_horizontal": True,
+                "rotation": True,
+                "rotation_angles": [-5, 5],
+                "scaling": True,
+                "scale_factors": [0.9, 1.1],
+                "color_jitter": True,
+                "color_jitter_count": 2,
+                "noise": True,
+                "noise_levels": [0.01],
+                "blur": True,
+                "blur_radii": [1.0],
+                "resolution": True,
+                "resolution_scales": [0.6],
             }
 
         # Load dataset
@@ -387,31 +401,31 @@ class DatasetAugmenter:
 
         # Create output dataset
         output_dataset = {
-            'info': dataset['info'].copy(),
-            'licenses': dataset['licenses'].copy(),
-            'categories': dataset['categories'].copy(),
-            'images': [],
-            'annotations': []
+            "info": dataset["info"].copy(),
+            "licenses": dataset["licenses"].copy(),
+            "categories": dataset["categories"].copy(),
+            "images": [],
+            "annotations": [],
         }
 
         stats = {
-            'original_images': len(dataset['images']),
-            'augmented_images': 0,
-            'total_images': 0,
-            'original_annotations': len(dataset['annotations']),
-            'augmented_annotations': 0,
-            'total_annotations': 0
+            "original_images": len(dataset["images"]),
+            "augmented_images": 0,
+            "total_images": 0,
+            "original_annotations": len(dataset["annotations"]),
+            "augmented_annotations": 0,
+            "total_annotations": 0,
         }
 
         print(f"Augmenting {split} dataset...")
 
-        for img_idx, image_info in enumerate(dataset['images']):
+        for img_idx, image_info in enumerate(dataset["images"]):
             # Get image annotations
-            image_id = image_info['id']
-            anns = [a for a in dataset['annotations'] if a['image_id'] == image_id]
+            image_id = image_info["id"]
+            anns = [a for a in dataset["annotations"] if a["image_id"] == image_id]
 
             # Get image path
-            image_path = self.input_dir / "images" / split / image_info['file_name']
+            image_path = self.input_dir / "images" / split / image_info["file_name"]
 
             if not image_path.exists():
                 print(f"Warning: Image not found: {image_path}")
@@ -422,7 +436,9 @@ class DatasetAugmenter:
 
             # Limit number of augmentations if specified
             if max_augmentations_per_image:
-                augmented = augmented[:max_augmentations_per_image + 1]  # +1 for original
+                augmented = augmented[
+                    : max_augmentations_per_image + 1
+                ]  # +1 for original
 
             # Save augmented images
             for aug_idx, (aug_image, aug_anns, aug_type) in enumerate(augmented):
@@ -436,31 +452,33 @@ class DatasetAugmenter:
 
                 # Create new image info
                 new_image_info = image_info.copy()
-                new_image_info['id'] = new_image_id
-                new_image_info['file_name'] = new_filename
-                new_image_info['width'] = aug_image.size[0]
-                new_image_info['height'] = aug_image.size[1]
-                new_image_info['augmentation'] = aug_type
-                new_image_info['source_image_id'] = image_id
+                new_image_info["id"] = new_image_id
+                new_image_info["file_name"] = new_filename
+                new_image_info["width"] = aug_image.size[0]
+                new_image_info["height"] = aug_image.size[1]
+                new_image_info["augmentation"] = aug_type
+                new_image_info["source_image_id"] = image_id
 
-                output_dataset['images'].append(new_image_info)
+                output_dataset["images"].append(new_image_info)
 
                 # Create new annotations
                 for ann in aug_anns:
                     new_ann = ann.copy()
-                    new_ann['id'] = self.annotation_id_offset + len(output_dataset['annotations'])
-                    new_ann['image_id'] = new_image_id
+                    new_ann["id"] = self.annotation_id_offset + len(
+                        output_dataset["annotations"]
+                    )
+                    new_ann["image_id"] = new_image_id
 
-                    output_dataset['annotations'].append(new_ann)
+                    output_dataset["annotations"].append(new_ann)
 
-                if aug_type == 'original':
-                    stats['total_images'] += 1
-                    stats['total_annotations'] += len(aug_anns)
+                if aug_type == "original":
+                    stats["total_images"] += 1
+                    stats["total_annotations"] += len(aug_anns)
                 else:
-                    stats['augmented_images'] += 1
-                    stats['augmented_annotations'] += len(aug_anns)
-                    stats['total_images'] += 1
-                    stats['total_annotations'] += len(aug_anns)
+                    stats["augmented_images"] += 1
+                    stats["augmented_annotations"] += len(aug_anns)
+                    stats["total_images"] += 1
+                    stats["total_annotations"] += len(aug_anns)
 
             if (img_idx + 1) % 100 == 0:
                 print(f"  Processed {img_idx + 1}/{len(dataset['images'])} images")
@@ -476,16 +494,29 @@ def main():
     """CLI interface for dataset augmentation."""
     import argparse
 
-    parser = argparse.ArgumentParser(description='Augment button detection dataset')
-    parser.add_argument('--input-dir', type=str, required=True,
-                       help='Input dataset directory')
-    parser.add_argument('--output-dir', type=str, required=True,
-                       help='Output directory for augmented dataset')
-    parser.add_argument('--split', type=str, default='train',
-                       choices=['train', 'val', 'test'],
-                       help='Dataset split to augment (default: train)')
-    parser.add_argument('--max-augmentations', type=int, default=None,
-                       help='Maximum augmentations per image (default: all)')
+    parser = argparse.ArgumentParser(description="Augment button detection dataset")
+    parser.add_argument(
+        "--input-dir", type=str, required=True, help="Input dataset directory"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        required=True,
+        help="Output directory for augmented dataset",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="train",
+        choices=["train", "val", "test"],
+        help="Dataset split to augment (default: train)",
+    )
+    parser.add_argument(
+        "--max-augmentations",
+        type=int,
+        default=None,
+        help="Maximum augmentations per image (default: all)",
+    )
 
     args = parser.parse_args()
 
@@ -493,21 +524,25 @@ def main():
     augmenter = DatasetAugmenter(args.input_dir, args.output_dir)
 
     # Augment dataset
-    stats = augmenter.augment_dataset(args.split, max_augmentations_per_image=args.max_augmentations)
+    stats = augmenter.augment_dataset(
+        args.split, max_augmentations_per_image=args.max_augmentations
+    )
 
     # Print statistics
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("AUGMENTATION STATISTICS")
-    print("="*60)
+    print("=" * 60)
     print(f"Original images: {stats['original_images']}")
     print(f"Augmented images: {stats['augmented_images']}")
     print(f"Total images: {stats['total_images']}")
-    print(f"Augmentation factor: {stats['total_images'] / stats['original_images']:.2f}x")
+    print(
+        f"Augmentation factor: {stats['total_images'] / stats['original_images']:.2f}x"
+    )
     print(f"\nOriginal annotations: {stats['original_annotations']}")
     print(f"Augmented annotations: {stats['augmented_annotations']}")
     print(f"Total annotations: {stats['total_annotations']}")
     print(f"\nDataset saved to: {args.output_dir}")
-    print("="*60)
+    print("=" * 60)
 
 
 if __name__ == "__main__":

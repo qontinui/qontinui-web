@@ -51,6 +51,8 @@ import {
   Settings,
   Zap,
   Box,
+  Code,
+  FileCode,
   LucideIcon,
 } from 'lucide-react';
 import { ActionType } from '@/lib/action-schema/action-types';
@@ -113,6 +115,10 @@ const ACTION_ICONS: Record<ActionType, LucideIcon> = {
   GO_TO_STATE: Zap,
   RUN_WORKFLOW: Play,
   SCREENSHOT: Camera,
+
+  // Code Actions
+  CODE_BLOCK: Code,
+  CUSTOM_FUNCTION: FileCode,
 };
 
 /**

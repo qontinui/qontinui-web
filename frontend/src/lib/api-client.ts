@@ -14,6 +14,47 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 // Re-export types for backwards compatibility
 export type { User, Project, UserUpdate, ProjectCreate, ProjectUpdate };
 
+// Image types
+export interface ImageUploadResponse {
+  image_id: string;
+  variants: {
+    original: string;
+    thumb: string;
+    medium: string;
+    large: string;
+  };
+  presigned_urls: {
+    original: string;
+    thumb: string;
+    medium: string;
+    large: string;
+  };
+  status: 'processing' | 'completed';
+  job_id?: string;
+  // Legacy fields for backward compatibility
+  s3_key?: string;
+  url?: string;
+  size?: number;
+  created_at?: string;
+}
+
+export interface ImageProcessingStatus {
+  status: 'processing' | 'completed' | 'failed';
+  variants?: {
+    original: string;
+    thumb: string;
+    medium: string;
+    large: string;
+  };
+  presigned_urls?: {
+    original: string;
+    thumb: string;
+    medium: string;
+    large: string;
+  };
+  error?: string;
+}
+
 /**
  * ApiClient - Single Responsibility: Handle HTTP requests with authentication
  * Manages API communication, retry logic, and token refresh
@@ -32,37 +73,17 @@ class ApiClient {
       ...options.headers as Record<string, string>,
     };
 
-    // Proactively check if token is expired and refresh if needed
-    // This prevents 401 errors and ensures smooth operation
-    if (authService.isAuthenticated() && attempt === 1) {
-      const expiry = authService.tokenManager.getTokenExpiry();
-      if (expiry) {
-        const timeUntilExpiry = this.tokenValidator.getTimeUntilExpiry(expiry);
-
-        console.log('[ApiClient] Token expiry check:', {
-          expiryTime: new Date(expiry).toISOString(),
-          now: new Date().toISOString(),
-          timeUntilExpiry: `${Math.floor(timeUntilExpiry / 1000)}s`,
-          willRefresh: this.tokenValidator.isTokenExpiringSoon(expiry, 60000),
-        });
-
-        // If token expires within 1 minute, refresh it proactively
-        if (this.tokenValidator.isTokenExpiringSoon(expiry, 60000)) {
-          console.warn('[ApiClient] ⏰ Access token expiring soon, refreshing proactively...');
-          const refreshed = await this.refreshAccessToken();
-          console.log('[ApiClient] Proactive refresh result:', refreshed);
-          if (!refreshed) {
-            console.error('[ApiClient] ❌ Proactive refresh FAILED - user will be logged out');
-          }
-        }
-      }
-    }
-
-    const accessToken = authService.isAuthenticated() ? authService.tokenManager.getAccessToken() : null;
-
-    if (accessToken) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-    }
+    // Token Refresh Strategy (Aligned with Backend):
+    // - Backend sliding window middleware handles proactive token refresh (5min threshold)
+    // - Frontend only refreshes reactively on 401 responses
+    // - This prevents race conditions where both frontend and backend try to refresh simultaneously
+    // - Backend sets new tokens via X-New-Access-Token and X-New-Refresh-Token headers
+    //
+    // HttpOnly Cookie Security:
+    // - Tokens are stored in HttpOnly cookies (XSS protection)
+    // - Browser automatically sends cookies with credentials: 'include'
+    // - No Authorization header needed
+    console.debug('[ApiClient] Using HttpOnly cookie authentication');
 
     // Add CSRF token for state-changing requests
     const csrfToken = csrfService.getToken();
@@ -243,10 +264,8 @@ class ApiClient {
 
       xhr.open('POST', `${API_BASE_URL}/api/v1${url}`);
 
-      const accessToken = authService.isAuthenticated() ? authService.tokenManager.getAccessToken() : null;
-      if (accessToken) {
-        xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
-      }
+      // HttpOnly Cookie Security: Enable credentials to send cookies
+      xhr.withCredentials = true;
 
       const csrfToken = csrfService.getToken();
       if (csrfToken) {
@@ -259,17 +278,12 @@ class ApiClient {
   }
 
   // S3 Image Storage Methods
+
   async uploadProjectImage(
     projectId: number,
     file: File,
     onProgress?: (progress: number) => void
-  ): Promise<{
-    image_id: string;
-    s3_key: string;
-    url: string;
-    size: number;
-    created_at: string;
-  }> {
+  ): Promise<ImageUploadResponse> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       const formData = new FormData();
@@ -310,10 +324,8 @@ class ApiClient {
 
       xhr.open('POST', `${API_BASE_URL}/api/v1/images/projects/${projectId}/images/upload`);
 
-      const accessToken = authService.isAuthenticated() ? authService.tokenManager.getAccessToken() : null;
-      if (accessToken) {
-        xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
-      }
+      // HttpOnly Cookie Security: Enable credentials to send cookies
+      xhr.withCredentials = true;
 
       const csrfToken = csrfService.getToken();
       if (csrfToken) {
@@ -323,6 +335,62 @@ class ApiClient {
       xhr.timeout = 60000; // 60 seconds for file uploads
       xhr.send(formData);
     });
+  }
+
+  async getImageUrl(
+    projectId: string,
+    imageId: string,
+    size: 'thumb' | 'medium' | 'large' | 'original' = 'medium'
+  ): Promise<string> {
+    const response = await this.fetchWithAuth(
+      `/images/projects/${projectId}/images/${imageId}/url?size=${size}`,
+      {
+        method: 'GET',
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to get image URL: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.url;
+  }
+
+  async pollImageProcessingStatus(
+    projectId: string,
+    imageId: string,
+    maxAttempts: number = 30
+  ): Promise<ImageProcessingStatus> {
+    let attempts = 0;
+    const pollInterval = 1000; // 1 second
+
+    while (attempts < maxAttempts) {
+      const response = await this.fetchWithAuth(
+        `/images/projects/${projectId}/images/${imageId}/status`,
+        {
+          method: 'GET',
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to get processing status: ${response.status} - ${errorText}`);
+      }
+
+      const status: ImageProcessingStatus = await response.json();
+
+      if (status.status === 'completed' || status.status === 'failed') {
+        return status;
+      }
+
+      // Wait before next poll
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      attempts++;
+    }
+
+    throw new Error('Image processing timeout - exceeded maximum polling attempts');
   }
 
   async deleteProjectImage(projectId: number, s3Key: string): Promise<void> {

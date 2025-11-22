@@ -9,24 +9,26 @@ Performance: 100-300ms
 Accuracy: 80-90% for standard window layouts
 """
 
-from typing import List, Dict, Any, Optional, Tuple
+from io import BytesIO
+from typing import Any, Dict, List, Optional, Tuple
+
 import cv2
 import numpy as np
-from io import BytesIO
 from PIL import Image
 
 from ..base import (
     BaseRegionAnalyzer,
-    DetectedRegion,
-    RegionType,
-    RegionAnalysisType,
     BoundingBox,
+    DetectedRegion,
     RegionAnalysisInput,
     RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
 )
 
 try:
     import pytesseract
+
     TESSERACT_AVAILABLE = True
 except ImportError:
     TESSERACT_AVAILABLE = False
@@ -112,7 +114,8 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
         # Calculate overall confidence
         overall_confidence = (
             sum(r.confidence for r in all_regions) / len(all_regions)
-            if all_regions else 0.0
+            if all_regions
+            else 0.0
         )
 
         return RegionAnalysisResult(
@@ -123,12 +126,18 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
             metadata={
                 "use_ocr": self.use_ocr,
                 "detect_close_button": self.detect_close_button,
-                "total_title_bars": len([r for r in all_regions if r.region_type == RegionType.TITLE_BAR]),
-                "total_close_buttons": len([r for r in all_regions if r.region_type == RegionType.CLOSE_BUTTON]),
-            }
+                "total_title_bars": len(
+                    [r for r in all_regions if r.region_type == RegionType.TITLE_BAR]
+                ),
+                "total_close_buttons": len(
+                    [r for r in all_regions if r.region_type == RegionType.CLOSE_BUTTON]
+                ),
+            },
         )
 
-    def _detect_title_bars(self, gray: np.ndarray, color: np.ndarray, screenshot_index: int) -> List[DetectedRegion]:
+    def _detect_title_bars(
+        self, gray: np.ndarray, color: np.ndarray, screenshot_index: int
+    ) -> List[DetectedRegion]:
         """Detect title bars in an image."""
         detected_regions = []
 
@@ -141,7 +150,7 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
             # Extract title text if enabled
             title_text = None
             if self.extract_title_text:
-                roi = color[y:y+h, x:x+w]
+                roi = color[y : y + h, x : x + w]
                 title_text = self._extract_title_text(roi)
 
             # Detect close button if enabled
@@ -172,7 +181,9 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
                 bounding_box=BoundingBox(x, y, w, h),
                 confidence=confidence,
                 region_type=RegionType.TITLE_BAR,
-                label=title_text if title_text else f"title_bar_{len(detected_regions)}",
+                label=(
+                    title_text if title_text else f"title_bar_{len(detected_regions)}"
+                ),
                 screenshot_index=screenshot_index,
                 metadata=metadata,
             )
@@ -185,7 +196,7 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
                         close_button_bbox[0],
                         close_button_bbox[1],
                         close_button_bbox[2],
-                        close_button_bbox[3]
+                        close_button_bbox[3],
                     ),
                     confidence=confidence * 0.9,
                     region_type=RegionType.CLOSE_BUTTON,
@@ -194,13 +205,15 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
                     metadata={
                         "parent_title_bar": len(detected_regions) - 1,
                         "detection_method": "pattern_matching",
-                    }
+                    },
                 )
                 detected_regions.append(close_btn)
 
         return detected_regions
 
-    def _find_horizontal_bars(self, gray: np.ndarray) -> List[Tuple[int, int, int, int]]:
+    def _find_horizontal_bars(
+        self, gray: np.ndarray
+    ) -> List[Tuple[int, int, int, int]]:
         """Find horizontal bar-like regions that could be title bars."""
         candidates = []
 
@@ -212,7 +225,9 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
         horizontal = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
         # Find contours
-        contours, _ = cv2.findContours(horizontal, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            horizontal, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
@@ -233,7 +248,9 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
 
         return candidates
 
-    def _has_content_below(self, gray: np.ndarray, x: int, y: int, w: int, h: int) -> bool:
+    def _has_content_below(
+        self, gray: np.ndarray, x: int, y: int, w: int, h: int
+    ) -> bool:
         """Check if there's significant content below the potential title bar."""
         # Sample region below
         below_y = y + h
@@ -242,7 +259,9 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
         if below_height < 20:
             return False
 
-        below_region = gray[below_y:below_y+below_height, x:min(x+w, gray.shape[1])]
+        below_region = gray[
+            below_y : below_y + below_height, x : min(x + w, gray.shape[1])
+        ]
 
         # Check if there's variation (content) in the region below
         std_dev = np.std(below_region)
@@ -258,9 +277,9 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
             gray_roi = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
 
             # Try both normal and inverted
-            text1 = pytesseract.image_to_string(gray_roi, config='--psm 7').strip()
+            text1 = pytesseract.image_to_string(gray_roi, config="--psm 7").strip()
             _, inverted = cv2.threshold(gray_roi, 127, 255, cv2.THRESH_BINARY_INV)
-            text2 = pytesseract.image_to_string(inverted, config='--psm 7').strip()
+            text2 = pytesseract.image_to_string(inverted, config="--psm 7").strip()
 
             # Return longer text (more likely to be correct)
             text = text1 if len(text1) > len(text2) else text2
@@ -274,8 +293,9 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
 
         return None
 
-    def _detect_close_button(self, gray: np.ndarray, title_x: int, title_y: int,
-                            title_w: int, title_h: int) -> Optional[Tuple[int, int, int, int]]:
+    def _detect_close_button(
+        self, gray: np.ndarray, title_x: int, title_y: int, title_w: int, title_h: int
+    ) -> Optional[Tuple[int, int, int, int]]:
         """Detect close button (X icon) in the title bar."""
         # Close button is typically in the top-right corner of the title bar
         # Expected size is roughly square, about 70-100% of title bar height
@@ -296,7 +316,9 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
             return None
 
         # Extract search region
-        search_region = gray[search_y:search_y+search_h, search_x:search_x+search_w]
+        search_region = gray[
+            search_y : search_y + search_h, search_x : search_x + search_w
+        ]
 
         # Look for X-pattern or high contrast square region
         # Method 1: Template matching for X pattern
@@ -313,7 +335,9 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
 
         # Method 2: Look for square regions with high edge density (borders)
         edges = cv2.Canny(search_region, 50, 150)
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
@@ -338,14 +362,21 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
 
         # Draw X
         thickness = max(1, width // 10)
-        cv2.line(pattern, (0, 0), (width-1, height-1), 255, thickness)
-        cv2.line(pattern, (width-1, 0), (0, height-1), 255, thickness)
+        cv2.line(pattern, (0, 0), (width - 1, height - 1), 255, thickness)
+        cv2.line(pattern, (width - 1, 0), (0, height - 1), 255, thickness)
 
         return pattern
 
-    def _calculate_title_bar_confidence(self, gray: np.ndarray, x: int, y: int,
-                                        w: int, h: int, title_text: Optional[str],
-                                        close_button: Optional[Tuple]) -> float:
+    def _calculate_title_bar_confidence(
+        self,
+        gray: np.ndarray,
+        x: int,
+        y: int,
+        w: int,
+        h: int,
+        title_text: Optional[str],
+        close_button: Optional[Tuple],
+    ) -> float:
         """Calculate confidence that this is a title bar."""
         confidence = 0.5  # Base confidence
 
@@ -358,7 +389,7 @@ class WindowTitleBarDetector(BaseRegionAnalyzer):
             confidence += 0.2
 
         # Check horizontal uniformity (title bars often have uniform background)
-        roi = gray[y:y+h, x:x+w]
+        roi = gray[y : y + h, x : x + w]
         row_means = np.mean(roi, axis=1)
         row_std = np.std(row_means)
         if row_std < 10:  # Uniform rows

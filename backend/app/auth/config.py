@@ -4,23 +4,112 @@ import uuid
 from typing import Optional
 
 import structlog
-from fastapi import Depends, Request
-from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
-from fastapi_users import exceptions
+from app.core.config import settings
+from app.db.session import get_async_db
+from app.models.user import User
+from fastapi import Depends, Request, Response
+from fastapi.security import HTTPBearer, OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security.http import HTTPAuthorizationCredentials
+from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, exceptions
 from fastapi_users.authentication import (
     AuthenticationBackend,
     BearerTransport,
     JWTStrategy,
 )
+from fastapi_users.authentication.transport import (
+    Transport,
+    TransportLogoutNotSupportedError,
+)
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.db.session import get_async_db
-from app.models.user import User
-
 logger = structlog.get_logger(__name__)
+
+
+# ===== CUSTOM COOKIE + BEARER TRANSPORT =====
+
+
+class CookieOrBearerScheme(OAuth2PasswordBearer):
+    """
+    Custom OAuth2 scheme that reads tokens from cookies OR Authorization header.
+
+    This scheme is used by fastapi-users to extract tokens from requests.
+    It first tries to read from the access_token cookie, then falls back to
+    the Authorization header for backward compatibility.
+    """
+
+    def __init__(self, tokenUrl: str, cookie_name: str = "access_token"):
+        super().__init__(tokenUrl=tokenUrl, auto_error=False)
+        self.cookie_name = cookie_name
+
+    async def __call__(self, request: Request) -> Optional[str]:
+        """
+        Extract token from cookie or Authorization header.
+
+        This method is called by fastapi-users to get the token from the request.
+
+        Priority:
+        1. access_token cookie (preferred for XSS protection)
+        2. Authorization header (backward compatibility)
+        """
+        logger.info(
+            "cookie_or_bearer_scheme_called",
+            cookies=list(request.cookies.keys()),
+            has_auth_header=bool(request.headers.get("Authorization")),
+        )
+
+        # Try cookie first (preferred method)
+        token = request.cookies.get(self.cookie_name)
+
+        if token:
+            logger.info("auth_token_from_cookie", token_length=len(token))
+            return token
+
+        # Fallback to Authorization header for backward compatibility
+        # Call the parent OAuth2PasswordBearer's __call__ method
+        token = await super().__call__(request)
+
+        if token:
+            logger.info("auth_token_from_header", token_length=len(token))
+            return token
+
+        logger.warning("no_auth_token_found", path=request.url.path)
+        return None
+
+
+class CookieOrBearerTransport(Transport):
+    """
+    Custom transport that supports both HttpOnly cookies and Authorization header.
+
+    Reads access token from:
+    1. Cookie (preferred for XSS protection)
+    2. Authorization header (backward compatibility)
+
+    This provides a gradual migration path from localStorage to HttpOnly cookies.
+    """
+
+    scheme: CookieOrBearerScheme
+
+    def __init__(
+        self, cookie_name: str = "access_token", tokenUrl: str = "api/v1/auth/jwt/login"
+    ):
+        self.cookie_name = cookie_name
+        self.scheme = CookieOrBearerScheme(tokenUrl=tokenUrl, cookie_name=cookie_name)
+
+    async def get_login_response(self, token: str) -> Response:
+        """
+        Return response with token.
+
+        Note: Tokens are set as cookies in the login endpoint itself.
+        This method is required by the Transport interface.
+        """
+        # Return a simple success response
+        # Actual cookies are set in the custom login endpoint
+        return Response(content={"detail": "Login successful"}, status_code=200)
+
+    async def get_logout_response(self) -> Response:
+        """Return logout response."""
+        raise TransportLogoutNotSupportedError()
 
 
 # ===== USER DATABASE =====
@@ -169,12 +258,56 @@ async def get_user_manager(user_db=Depends(get_user_db)):
 
 # ===== AUTHENTICATION BACKEND =====
 
-bearer_transport = BearerTransport(tokenUrl="api/v1/auth/jwt/login")
+# Use custom transport that supports both cookies and bearer tokens
+cookie_or_bearer_transport = CookieOrBearerTransport(
+    cookie_name="access_token", tokenUrl="api/v1/auth/jwt/login"
+)
+
+
+class DebugJWTStrategy(JWTStrategy):
+    """JWT Strategy with debug logging to track validation failures."""
+
+    async def read_token(self, token: str | None, user_manager):
+        """Override to add debug logging for JWT validation."""
+        if token is None:
+            logger.warning("jwt_read_token_none")
+            return None
+
+        try:
+            # First decode the JWT to see what's in it
+            import jwt as pyjwt
+
+            decoded = pyjwt.decode(token, options={"verify_signature": False})
+            logger.info(
+                "jwt_decoded_payload",
+                sub=decoded.get("sub"),
+                type=decoded.get("type"),
+                has_device_fp=("device_fp" in decoded),
+                all_claims=list(decoded.keys()),
+            )
+
+            # Now try fastapi-users' validation
+            logger.info("jwt_decode_attempt", token_length=len(token))
+            result = await super().read_token(token, user_manager)
+            logger.info(
+                "jwt_decode_result",
+                user_id=str(result) if result else None,
+                result_type=type(result).__name__,
+            )
+            return result
+        except Exception as e:
+            logger.error(
+                "jwt_decode_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                token_preview=token[:50] if token else None,
+            )
+            raise
 
 
 def get_jwt_strategy() -> JWTStrategy:
-    """Get JWT authentication strategy."""
-    return JWTStrategy(
+    """Get JWT authentication strategy with debug logging."""
+    return DebugJWTStrategy(
         secret=settings.ACCESS_SECRET_KEY,
         lifetime_seconds=settings.ACCESS_TOKEN_EXPIRE_SECONDS,
     )
@@ -182,7 +315,7 @@ def get_jwt_strategy() -> JWTStrategy:
 
 auth_backend = AuthenticationBackend(
     name="jwt",
-    transport=bearer_transport,
+    transport=cookie_or_bearer_transport,
     get_strategy=get_jwt_strategy,
 )
 

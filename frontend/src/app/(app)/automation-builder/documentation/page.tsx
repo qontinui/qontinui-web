@@ -1199,7 +1199,7 @@ export default function DocumentationPage() {
               onEdit={() => router.push(`/automation-builder?workflow=${selectedWorkflow.id}`)}
               onRun={() => console.log('Run workflow')}
               onViewTests={() => router.push(`/automation-builder/testing?workflow=${selectedWorkflow.id}`)}
-              onViewMetrics={() => router.push(`/automation-builder/overview?workflow=${selectedWorkflow.id}`)}
+              onViewMetrics={() => router.push(`/automation-builder/analytics?workflow=${selectedWorkflow.id}`)}
             />
           </div>
         )}

@@ -7,9 +7,10 @@ Allows for validation and correction of automated predictions.
 
 import json
 import sys
-from pathlib import Path
-from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
 import cv2
 import numpy as np
 from PIL import Image
@@ -30,15 +31,15 @@ class DatasetLabeler:
         self.annotations_dir = self.output_dir / "annotations"
 
         # Create directories
-        for split in ['train', 'val', 'test']:
+        for split in ["train", "val", "test"]:
             (self.images_dir / split).mkdir(parents=True, exist_ok=True)
         self.annotations_dir.mkdir(parents=True, exist_ok=True)
 
         # Dataset structure
         self.datasets = {
-            'train': self._init_coco_dataset(),
-            'val': self._init_coco_dataset(),
-            'test': self._init_coco_dataset()
+            "train": self._init_coco_dataset(),
+            "val": self._init_coco_dataset(),
+            "test": self._init_coco_dataset(),
         }
 
         self.image_id = 1
@@ -47,23 +48,17 @@ class DatasetLabeler:
     def _init_coco_dataset(self) -> Dict:
         """Initialize COCO format dataset."""
         return {
-            'info': {
-                'description': 'Labeled Button Detection Dataset',
-                'version': '1.0',
-                'year': 2025,
-                'contributor': 'QontinUI',
-                'date_created': datetime.now().isoformat()
+            "info": {
+                "description": "Labeled Button Detection Dataset",
+                "version": "1.0",
+                "year": 2025,
+                "contributor": "QontinUI",
+                "date_created": datetime.now().isoformat(),
             },
-            'licenses': [],
-            'images': [],
-            'annotations': [],
-            'categories': [
-                {
-                    'id': 1,
-                    'name': 'button',
-                    'supercategory': 'ui_element'
-                }
-            ]
+            "licenses": [],
+            "images": [],
+            "annotations": [],
+            "categories": [{"id": 1, "name": "button", "supercategory": "ui_element"}],
         }
 
     def detect_buttons_opencv(self, image_path: str) -> List[Dict]:
@@ -88,7 +83,9 @@ class DatasetLabeler:
         edges = cv2.Canny(gray, 50, 150)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         candidates = []
 
@@ -105,20 +102,22 @@ class DatasetLabeler:
                 continue
 
             # Calculate confidence based on edge strength
-            roi = edges[y:y+h, x:x+w]
+            roi = edges[y : y + h, x : x + w]
             edge_density = np.sum(roi > 0) / (w * h)
 
             # Check if it has button-like characteristics
             if edge_density > 0.1 and edge_density < 0.8:
-                candidates.append({
-                    'bbox': [x, y, w, h],
-                    'confidence': float(edge_density),
-                    'area': w * h,
-                    'aspect_ratio': aspect_ratio
-                })
+                candidates.append(
+                    {
+                        "bbox": [x, y, w, h],
+                        "confidence": float(edge_density),
+                        "area": w * h,
+                        "aspect_ratio": aspect_ratio,
+                    }
+                )
 
         # Sort by confidence
-        candidates.sort(key=lambda x: x['confidence'], reverse=True)
+        candidates.sort(key=lambda x: x["confidence"], reverse=True)
 
         return candidates[:20]  # Return top 20 candidates
 
@@ -162,7 +161,9 @@ class DatasetLabeler:
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
             # Find contours
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(
+                mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
 
             for contour in contours:
                 x, y, w, h = cv2.boundingRect(contour)
@@ -175,17 +176,21 @@ class DatasetLabeler:
                 if aspect_ratio < 0.5 or aspect_ratio > 6:
                     continue
 
-                candidates.append({
-                    'bbox': [x, y, w, h],
-                    'confidence': 0.6,
-                    'area': w * h,
-                    'aspect_ratio': aspect_ratio,
-                    'method': 'color'
-                })
+                candidates.append(
+                    {
+                        "bbox": [x, y, w, h],
+                        "confidence": 0.6,
+                        "area": w * h,
+                        "aspect_ratio": aspect_ratio,
+                        "method": "color",
+                    }
+                )
 
         return candidates
 
-    def merge_detections(self, detections: List[Dict], iou_threshold: float = 0.5) -> List[Dict]:
+    def merge_detections(
+        self, detections: List[Dict], iou_threshold: float = 0.5
+    ) -> List[Dict]:
         """
         Merge overlapping detections using Non-Maximum Suppression.
 
@@ -200,8 +205,8 @@ class DatasetLabeler:
             return []
 
         # Convert to numpy arrays
-        boxes = np.array([d['bbox'] for d in detections])
-        scores = np.array([d.get('confidence', 0.5) for d in detections])
+        boxes = np.array([d["bbox"] for d in detections])
+        scores = np.array([d.get("confidence", 0.5) for d in detections])
 
         # Convert [x, y, w, h] to [x1, y1, x2, y2]
         boxes_xyxy = boxes.copy()
@@ -232,8 +237,12 @@ class DatasetLabeler:
             h = np.maximum(0, yy2 - yy1)
             intersection = w * h
 
-            current_area = (current_box[2] - current_box[0]) * (current_box[3] - current_box[1])
-            other_areas = (other_boxes[:, 2] - other_boxes[:, 0]) * (other_boxes[:, 3] - other_boxes[:, 1])
+            current_area = (current_box[2] - current_box[0]) * (
+                current_box[3] - current_box[1]
+            )
+            other_areas = (other_boxes[:, 2] - other_boxes[:, 0]) * (
+                other_boxes[:, 3] - other_boxes[:, 1]
+            )
             union = current_area + other_areas - intersection
 
             iou = intersection / union
@@ -243,8 +252,9 @@ class DatasetLabeler:
 
         return [detections[i] for i in keep_indices]
 
-    def label_image(self, image_path: str, split: str = 'train',
-                   auto_detect: bool = True) -> Dict:
+    def label_image(
+        self, image_path: str, split: str = "train", auto_detect: bool = True
+    ) -> Dict:
         """
         Label a single image.
 
@@ -277,17 +287,17 @@ class DatasetLabeler:
 
             # Convert to annotations
             for detection in merged_detections:
-                x, y, w, h = detection['bbox']
+                x, y, w, h = detection["bbox"]
 
                 annotation = {
-                    'id': self.annotation_id,
-                    'image_id': self.image_id,
-                    'category_id': 1,
-                    'bbox': [int(x), int(y), int(w), int(h)],
-                    'area': int(w * h),
-                    'iscrowd': 0,
-                    'confidence': detection.get('confidence', 0.5),
-                    'needs_review': True
+                    "id": self.annotation_id,
+                    "image_id": self.image_id,
+                    "category_id": 1,
+                    "bbox": [int(x), int(y), int(w), int(h)],
+                    "area": int(w * h),
+                    "iscrowd": 0,
+                    "confidence": detection.get("confidence", 0.5),
+                    "needs_review": True,
                 }
                 annotations.append(annotation)
                 self.annotation_id += 1
@@ -299,23 +309,21 @@ class DatasetLabeler:
 
         # Create image info
         image_info = {
-            'id': self.image_id,
-            'file_name': filename,
-            'width': img_width,
-            'height': img_height,
-            'date_captured': datetime.now().isoformat(),
-            'source_path': str(image_path)
+            "id": self.image_id,
+            "file_name": filename,
+            "width": img_width,
+            "height": img_height,
+            "date_captured": datetime.now().isoformat(),
+            "source_path": str(image_path),
         }
 
         self.image_id += 1
 
-        return {
-            'image': image_info,
-            'annotations': annotations
-        }
+        return {"image": image_info, "annotations": annotations}
 
-    def label_directory(self, input_dir: str, split: str = 'train',
-                       pattern: str = "*.png") -> Dict[str, int]:
+    def label_directory(
+        self, input_dir: str, split: str = "train", pattern: str = "*.png"
+    ) -> Dict[str, int]:
         """
         Label all images in a directory.
 
@@ -332,27 +340,27 @@ class DatasetLabeler:
 
         print(f"Found {len(image_files)} images to label")
 
-        stats = {'images': 0, 'annotations': 0}
+        stats = {"images": 0, "annotations": 0}
 
         for i, image_file in enumerate(image_files):
             print(f"\nProcessing {i+1}/{len(image_files)}: {image_file.name}")
 
             result = self.label_image(str(image_file), split)
 
-            self.datasets[split]['images'].append(result['image'])
-            self.datasets[split]['annotations'].extend(result['annotations'])
+            self.datasets[split]["images"].append(result["image"])
+            self.datasets[split]["annotations"].extend(result["annotations"])
 
-            stats['images'] += 1
-            stats['annotations'] += len(result['annotations'])
+            stats["images"] += 1
+            stats["annotations"] += len(result["annotations"])
 
         return stats
 
     def export_coco(self, output_file: Optional[str] = None):
         """Export dataset in COCO format."""
-        for split in ['train', 'val', 'test']:
-            if self.datasets[split]['images']:
+        for split in ["train", "val", "test"]:
+            if self.datasets[split]["images"]:
                 out_file = output_file or self.annotations_dir / f"{split}.json"
-                with open(out_file, 'w') as f:
+                with open(out_file, "w") as f:
                     json.dump(self.datasets[split], f, indent=2)
                 print(f"Exported {split} annotations to {out_file}")
 
@@ -361,24 +369,27 @@ class DatasetLabeler:
         out_dir = Path(output_dir) if output_dir else self.output_dir / "yolo"
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        for split in ['train', 'val', 'test']:
+        for split in ["train", "val", "test"]:
             labels_dir = out_dir / split / "labels"
             labels_dir.mkdir(parents=True, exist_ok=True)
 
-            for image_info in self.datasets[split]['images']:
-                image_id = image_info['id']
-                img_width = image_info['width']
-                img_height = image_info['height']
+            for image_info in self.datasets[split]["images"]:
+                image_id = image_info["id"]
+                img_width = image_info["width"]
+                img_height = image_info["height"]
 
                 # Get annotations for this image
-                anns = [a for a in self.datasets[split]['annotations']
-                       if a['image_id'] == image_id]
+                anns = [
+                    a
+                    for a in self.datasets[split]["annotations"]
+                    if a["image_id"] == image_id
+                ]
 
                 # Write YOLO format label file
                 label_file = labels_dir / f"{Path(image_info['file_name']).stem}.txt"
-                with open(label_file, 'w') as f:
+                with open(label_file, "w") as f:
                     for ann in anns:
-                        x, y, w, h = ann['bbox']
+                        x, y, w, h = ann["bbox"]
                         # Convert to YOLO format (normalized center coordinates)
                         x_center = (x + w / 2) / img_width
                         y_center = (y + h / 2) / img_height
@@ -401,46 +412,49 @@ class DatasetLabeler:
         out_dir = Path(output_dir) if output_dir else self.output_dir / "pascal_voc"
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        for split in ['train', 'val', 'test']:
+        for split in ["train", "val", "test"]:
             annotations_dir = out_dir / split / "Annotations"
             annotations_dir.mkdir(parents=True, exist_ok=True)
 
-            for image_info in self.datasets[split]['images']:
-                image_id = image_info['id']
+            for image_info in self.datasets[split]["images"]:
+                image_id = image_info["id"]
 
                 # Create XML structure
-                annotation = ET.Element('annotation')
+                annotation = ET.Element("annotation")
 
-                filename = ET.SubElement(annotation, 'filename')
-                filename.text = image_info['file_name']
+                filename = ET.SubElement(annotation, "filename")
+                filename.text = image_info["file_name"]
 
-                size = ET.SubElement(annotation, 'size')
-                width = ET.SubElement(size, 'width')
-                width.text = str(image_info['width'])
-                height = ET.SubElement(size, 'height')
-                height.text = str(image_info['height'])
-                depth = ET.SubElement(size, 'depth')
-                depth.text = '3'
+                size = ET.SubElement(annotation, "size")
+                width = ET.SubElement(size, "width")
+                width.text = str(image_info["width"])
+                height = ET.SubElement(size, "height")
+                height.text = str(image_info["height"])
+                depth = ET.SubElement(size, "depth")
+                depth.text = "3"
 
                 # Get annotations for this image
-                anns = [a for a in self.datasets[split]['annotations']
-                       if a['image_id'] == image_id]
+                anns = [
+                    a
+                    for a in self.datasets[split]["annotations"]
+                    if a["image_id"] == image_id
+                ]
 
                 for ann in anns:
-                    x, y, w, h = ann['bbox']
+                    x, y, w, h = ann["bbox"]
 
-                    obj = ET.SubElement(annotation, 'object')
-                    name = ET.SubElement(obj, 'name')
-                    name.text = 'button'
+                    obj = ET.SubElement(annotation, "object")
+                    name = ET.SubElement(obj, "name")
+                    name.text = "button"
 
-                    bndbox = ET.SubElement(obj, 'bndbox')
-                    xmin = ET.SubElement(bndbox, 'xmin')
+                    bndbox = ET.SubElement(obj, "bndbox")
+                    xmin = ET.SubElement(bndbox, "xmin")
                     xmin.text = str(x)
-                    ymin = ET.SubElement(bndbox, 'ymin')
+                    ymin = ET.SubElement(bndbox, "ymin")
                     ymin.text = str(y)
-                    xmax = ET.SubElement(bndbox, 'xmax')
+                    xmax = ET.SubElement(bndbox, "xmax")
                     xmax.text = str(x + w)
-                    ymax = ET.SubElement(bndbox, 'ymax')
+                    ymax = ET.SubElement(bndbox, "ymax")
                     ymax.text = str(y + h)
 
                 # Write XML file
@@ -455,19 +469,33 @@ def main():
     """CLI interface for dataset labeling."""
     import argparse
 
-    parser = argparse.ArgumentParser(description='Label button detection dataset')
-    parser.add_argument('--input-dir', type=str, required=True,
-                       help='Input directory with images')
-    parser.add_argument('--output-dir', type=str, default='datasets/labeled',
-                       help='Output directory (default: datasets/labeled)')
-    parser.add_argument('--split', type=str, default='train',
-                       choices=['train', 'val', 'test'],
-                       help='Dataset split (default: train)')
-    parser.add_argument('--pattern', type=str, default='*.png',
-                       help='File pattern (default: *.png)')
-    parser.add_argument('--export-format', type=str, default='coco',
-                       choices=['coco', 'yolo', 'pascal_voc', 'all'],
-                       help='Export format (default: coco)')
+    parser = argparse.ArgumentParser(description="Label button detection dataset")
+    parser.add_argument(
+        "--input-dir", type=str, required=True, help="Input directory with images"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="datasets/labeled",
+        help="Output directory (default: datasets/labeled)",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="train",
+        choices=["train", "val", "test"],
+        help="Dataset split (default: train)",
+    )
+    parser.add_argument(
+        "--pattern", type=str, default="*.png", help="File pattern (default: *.png)"
+    )
+    parser.add_argument(
+        "--export-format",
+        type=str,
+        default="coco",
+        choices=["coco", "yolo", "pascal_voc", "all"],
+        help="Export format (default: coco)",
+    )
 
     args = parser.parse_args()
 
@@ -478,24 +506,26 @@ def main():
     stats = labeler.label_directory(args.input_dir, args.split, args.pattern)
 
     # Export in requested format
-    if args.export_format == 'coco' or args.export_format == 'all':
+    if args.export_format == "coco" or args.export_format == "all":
         labeler.export_coco()
 
-    if args.export_format == 'yolo' or args.export_format == 'all':
+    if args.export_format == "yolo" or args.export_format == "all":
         labeler.export_yolo()
 
-    if args.export_format == 'pascal_voc' or args.export_format == 'all':
+    if args.export_format == "pascal_voc" or args.export_format == "all":
         labeler.export_pascal_voc()
 
     # Print statistics
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("LABELING STATISTICS")
-    print("="*60)
+    print("=" * 60)
     print(f"Images labeled: {stats['images']}")
     print(f"Annotations created: {stats['annotations']}")
-    print(f"Average annotations per image: {stats['annotations'] / max(1, stats['images']):.2f}")
+    print(
+        f"Average annotations per image: {stats['annotations'] / max(1, stats['images']):.2f}"
+    )
     print(f"\nDataset saved to: {args.output_dir}")
-    print("="*60)
+    print("=" * 60)
 
 
 if __name__ == "__main__":

@@ -32,15 +32,26 @@ Usage:
     regions = results["fused_regions"]
 """
 
+# Import registration (triggers auto-registration)
+from . import register
+
 # Import base classes and data structures
 from .base import (
-    RegionType,
-    RegionAnalysisType,
+    BaseRegionAnalyzer,
     BoundingBox,
     DetectedRegion,
-    RegionAnalysisResult,
     RegionAnalysisInput,
-    BaseRegionAnalyzer,
+    RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
+)
+
+# Import fusion
+from .fusion import (
+    FusedRegion,
+    RegionFusion,
+    RegionFusionStrategy,
+    WeightedVotingRegionFusion,
 )
 
 # Import orchestration
@@ -49,17 +60,6 @@ from .orchestrator import (
     RegionOrchestrator,
     region_analyzer_registry,
 )
-
-# Import fusion
-from .fusion import (
-    FusedRegion,
-    RegionFusionStrategy,
-    WeightedVotingRegionFusion,
-    RegionFusion,
-)
-
-# Import registration (triggers auto-registration)
-from . import register
 
 __all__ = [
     # Base types

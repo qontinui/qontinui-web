@@ -2,13 +2,15 @@
 Mask Generator - Generates pixel-level masks for GUI elements across screenshots
 """
 
+import os
+import sys
+from typing import Dict, List, Optional, Tuple
+
 import cv2
 import numpy as np
-from typing import List, Dict, Tuple, Optional
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from evaluator import BBox, MultiScreenshotDataset, MultiScreenshotAnnotation
+from evaluator import BBox, MultiScreenshotAnnotation, MultiScreenshotDataset
 
 
 class MaskGenerator:
@@ -28,7 +30,7 @@ class MaskGenerator:
         dataset: MultiScreenshotDataset,
         stability_threshold: float = 0.9,
         edge_weight: float = 0.3,
-        output_dir: Optional[str] = None
+        output_dir: Optional[str] = None,
     ) -> Dict[str, np.ndarray]:
         """
         Generate pixel-level masks for all annotated elements in the dataset
@@ -54,10 +56,7 @@ class MaskGenerator:
         # Generate mask for each annotation
         for annotation in dataset.annotations:
             mask = self._generate_mask_for_annotation(
-                annotation,
-                screenshot_images,
-                stability_threshold,
-                edge_weight
+                annotation, screenshot_images, stability_threshold, edge_weight
             )
 
             if mask is not None:
@@ -66,7 +65,9 @@ class MaskGenerator:
                 # Save mask to file if output_dir provided
                 if output_dir:
                     os.makedirs(output_dir, exist_ok=True)
-                    mask_path = os.path.join(output_dir, f"{annotation.element_id}_mask.png")
+                    mask_path = os.path.join(
+                        output_dir, f"{annotation.element_id}_mask.png"
+                    )
                     cv2.imwrite(mask_path, mask)
 
         return masks
@@ -76,7 +77,7 @@ class MaskGenerator:
         annotation: MultiScreenshotAnnotation,
         screenshot_images: Dict[int, np.ndarray],
         stability_threshold: float = 0.9,
-        edge_weight: float = 0.3
+        edge_weight: float = 0.3,
     ) -> Optional[np.ndarray]:
         """
         Generate a pixel-level mask for a specific annotated element
@@ -109,7 +110,7 @@ class MaskGenerator:
             img = screenshot_images[screenshot_id]
 
             # Extract region
-            region = img[bbox.y1:bbox.y2, bbox.x1:bbox.x2]
+            region = img[bbox.y1 : bbox.y2, bbox.x1 : bbox.x2]
 
             if region.size == 0:
                 continue
@@ -130,14 +131,14 @@ class MaskGenerator:
         aligned_regions = []
         for region in regions:
             if region.shape[:2] != (ref_height, ref_width):
-                region = cv2.resize(region, (ref_width, ref_height), interpolation=cv2.INTER_LINEAR)
+                region = cv2.resize(
+                    region, (ref_width, ref_height), interpolation=cv2.INTER_LINEAR
+                )
             aligned_regions.append(region)
 
         # Compute pixel stability
         stability_map = self._compute_pixel_stability(
-            aligned_regions,
-            stability_threshold,
-            edge_weight
+            aligned_regions, stability_threshold, edge_weight
         )
 
         return stability_map
@@ -147,7 +148,7 @@ class MaskGenerator:
         bbox: BBox,
         screenshots: List[np.ndarray],
         stability_threshold: float = 0.9,
-        edge_weight: float = 0.3
+        edge_weight: float = 0.3,
     ) -> np.ndarray:
         """
         Generate a pixel-level mask for a bounding box across multiple screenshots
@@ -182,9 +183,7 @@ class MaskGenerator:
 
         # Compute pixel stability
         stability_map = self._compute_pixel_stability(
-            regions,
-            stability_threshold,
-            edge_weight
+            regions, stability_threshold, edge_weight
         )
 
         return stability_map
@@ -193,7 +192,7 @@ class MaskGenerator:
         self,
         regions: List[np.ndarray],
         stability_threshold: float = 0.9,
-        edge_weight: float = 0.3
+        edge_weight: float = 0.3,
     ) -> np.ndarray:
         """
         Compute pixel-level stability map for a set of image regions
@@ -215,7 +214,11 @@ class MaskGenerator:
         edge_regions = []
 
         for region in regions:
-            gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY) if len(region.shape) == 3 else region
+            gray = (
+                cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+                if len(region.shape) == 3
+                else region
+            )
             gray_regions.append(gray)
 
             # Compute edges
@@ -238,10 +241,14 @@ class MaskGenerator:
         edge_count = np.sum(edge_stack > 0, axis=0) / len(regions)
 
         # Combine pixel stability and edge stability
-        combined_stability = (1.0 - edge_weight) * pixel_stability + edge_weight * edge_count
+        combined_stability = (
+            1.0 - edge_weight
+        ) * pixel_stability + edge_weight * edge_count
 
         # Threshold to create binary mask
-        stability_mask = (combined_stability >= stability_threshold).astype(np.uint8) * 255
+        stability_mask = (combined_stability >= stability_threshold).astype(
+            np.uint8
+        ) * 255
 
         # Clean up the mask with morphological operations
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
@@ -265,11 +272,7 @@ class MaskGenerator:
                 - num_components: Number of connected components
         """
         if mask is None or mask.size == 0:
-            return {
-                'coverage': 0.0,
-                'compactness': 0.0,
-                'num_components': 0
-            }
+            return {"coverage": 0.0, "compactness": 0.0, "num_components": 0}
 
         # Coverage: fraction of bbox area covered by mask
         total_pixels = mask.shape[0] * mask.shape[1]
@@ -277,7 +280,9 @@ class MaskGenerator:
         coverage = stable_pixels / total_pixels if total_pixels > 0 else 0.0
 
         # Connected components
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+            mask, connectivity=8
+        )
         num_components = num_labels - 1  # Exclude background
 
         # Compactness: ratio of area to perimeter
@@ -286,22 +291,22 @@ class MaskGenerator:
         if contours:
             total_area = sum(cv2.contourArea(c) for c in contours)
             total_perimeter = sum(cv2.arcLength(c, True) for c in contours)
-            compactness = (4 * np.pi * total_area) / (total_perimeter ** 2) if total_perimeter > 0 else 0.0
+            compactness = (
+                (4 * np.pi * total_area) / (total_perimeter**2)
+                if total_perimeter > 0
+                else 0.0
+            )
         else:
             compactness = 0.0
 
         return {
-            'coverage': coverage,
-            'compactness': min(compactness, 1.0),  # Cap at 1.0
-            'num_components': num_components
+            "coverage": coverage,
+            "compactness": min(compactness, 1.0),  # Cap at 1.0
+            "num_components": num_components,
         }
 
     def visualize_mask(
-        self,
-        image: np.ndarray,
-        mask: np.ndarray,
-        bbox: BBox,
-        output_path: str
+        self, image: np.ndarray, mask: np.ndarray, bbox: BBox, output_path: str
     ):
         """
         Create a visualization of the mask overlaid on the image
@@ -313,11 +318,15 @@ class MaskGenerator:
             output_path: Path to save visualization
         """
         # Extract region
-        region = image[bbox.y1:bbox.y2, bbox.x1:bbox.x2].copy()
+        region = image[bbox.y1 : bbox.y2, bbox.x1 : bbox.x2].copy()
 
         # Resize mask if needed
         if mask.shape[:2] != region.shape[:2]:
-            mask = cv2.resize(mask, (region.shape[1], region.shape[0]), interpolation=cv2.INTER_NEAREST)
+            mask = cv2.resize(
+                mask,
+                (region.shape[1], region.shape[0]),
+                interpolation=cv2.INTER_NEAREST,
+            )
 
         # Create colored overlay (stable pixels in green)
         overlay = region.copy()

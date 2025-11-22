@@ -2,10 +2,11 @@
 Base detector class that all detectors inherit from
 """
 
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, TYPE_CHECKING
-import sys
 import os
+import sys
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any, Dict, List
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
 
@@ -48,7 +49,9 @@ class BaseDetector(ABC):
         return [{}]  # Default: no parameters
 
     @staticmethod
-    def merge_overlapping_boxes(boxes: List[BBox], iou_threshold: float = 0.5) -> List[BBox]:
+    def merge_overlapping_boxes(
+        boxes: List[BBox], iou_threshold: float = 0.5
+    ) -> List[BBox]:
         """Merge highly overlapping boxes"""
         if not boxes:
             return []
@@ -65,7 +68,7 @@ class BaseDetector(ABC):
 
             # Find all boxes that overlap significantly
             group = [box1]
-            for j, box2 in enumerate(boxes[i+1:], start=i+1):
+            for j, box2 in enumerate(boxes[i + 1 :], start=i + 1):
                 if j in used:
                     continue
 
@@ -97,8 +100,13 @@ class BaseDetector(ABC):
         return merged
 
     @staticmethod
-    def filter_boxes_by_size(boxes: List[BBox], min_area: int = 100, max_area: int = None,
-                            min_width: int = 5, min_height: int = 5) -> List[BBox]:
+    def filter_boxes_by_size(
+        boxes: List[BBox],
+        min_area: int = 100,
+        max_area: int = None,
+        min_width: int = 5,
+        min_height: int = 5,
+    ) -> List[BBox]:
         """Filter boxes by size constraints"""
         filtered = []
         for box in boxes:
@@ -159,7 +167,9 @@ class MultiScreenshotDetector(ABC):
         self.params = {}
 
     @abstractmethod
-    def detect_multi(self, dataset: 'MultiScreenshotDataset', **params) -> Dict[int, List[BBox]]:
+    def detect_multi(
+        self, dataset: "MultiScreenshotDataset", **params
+    ) -> Dict[int, List[BBox]]:
         """
         Detect GUI elements across multiple screenshots
 

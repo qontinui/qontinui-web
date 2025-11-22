@@ -51,6 +51,7 @@ import { CustomEdge } from './CustomEdge';
 import { DefaultNode } from './nodes/DefaultNode';
 import { GRID_CONFIG, ZOOM_CONFIG, COLORS, getConnectionColor, getConnectionStyle } from './canvas-config';
 import { ControlFlowNodes } from './nodes/ControlFlowNodes';
+import { CodeBlockNode, CustomFunctionNode } from './nodes/CodeNodes';
 import './WorkflowCanvas.css';
 
 // ============================================================================
@@ -104,6 +105,10 @@ const nodeTypes = {
   TRY_CATCH: ControlFlowNodes.TRY_CATCH,
   BREAK: ControlFlowNodes.BREAK,
   CONTINUE: ControlFlowNodes.CONTINUE,
+
+  // Code execution nodes
+  CODE_BLOCK: CodeBlockNode,
+  CUSTOM_FUNCTION: CustomFunctionNode,
 };
 
 const edgeTypes = {

@@ -2,18 +2,30 @@
 Region Analysis Result models for storing specialized region detection results
 """
 
-from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, ForeignKey, Float, Index
+import uuid
+from datetime import datetime
+
+from app.db.base import Base
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
-from app.db.base import Base
-import uuid
 
 
 class RegionAnalysisJob(Base):
     """
     Region analysis job - represents a full region analysis run on an annotation set
     """
+
     __tablename__ = "region_analysis_jobs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -21,7 +33,7 @@ class RegionAnalysisJob(Base):
         UUID(as_uuid=True),
         ForeignKey("annotation_sets.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Analysis configuration
@@ -52,12 +64,10 @@ class RegionAnalysisJob(Base):
     analyzer_results = relationship(
         "RegionAnalyzerResult",
         back_populates="analysis_job",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
     fused_regions = relationship(
-        "FusedRegionModel",
-        back_populates="analysis_job",
-        cascade="all, delete-orphan"
+        "FusedRegionModel", back_populates="analysis_job", cascade="all, delete-orphan"
     )
 
 
@@ -65,6 +75,7 @@ class RegionAnalyzerResult(Base):
     """
     Result from a single region analyzer within an analysis job
     """
+
     __tablename__ = "region_analyzer_results"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -72,7 +83,7 @@ class RegionAnalyzerResult(Base):
         UUID(as_uuid=True),
         ForeignKey("region_analysis_jobs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Analyzer info
@@ -92,7 +103,7 @@ class RegionAnalyzerResult(Base):
     detected_regions = relationship(
         "DetectedRegionModel",
         back_populates="analyzer_result",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
 
@@ -101,6 +112,7 @@ class DetectedRegionModel(Base):
     A single detected region from an analyzer
     Includes full grid structure metadata for inventory grids, etc.
     """
+
     __tablename__ = "detected_regions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -108,7 +120,7 @@ class DetectedRegionModel(Base):
         UUID(as_uuid=True),
         ForeignKey("region_analyzer_results.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Bounding box
@@ -138,11 +150,17 @@ class DetectedRegionModel(Base):
     region_metadata = Column(JSON)
 
     # Relationships
-    analyzer_result = relationship("RegionAnalyzerResult", back_populates="detected_regions")
+    analyzer_result = relationship(
+        "RegionAnalyzerResult", back_populates="detected_regions"
+    )
 
     __table_args__ = (
-        Index('ix_detected_regions_analyzer_screenshot', 'analyzer_result_id', 'screenshot_index'),
-        Index('ix_detected_regions_type', 'region_type'),
+        Index(
+            "ix_detected_regions_analyzer_screenshot",
+            "analyzer_result_id",
+            "screenshot_index",
+        ),
+        Index("ix_detected_regions_type", "region_type"),
     )
 
 
@@ -151,6 +169,7 @@ class FusedRegionModel(Base):
     Fused region from combining multiple analyzer results
     Includes full grid structure from fusion
     """
+
     __tablename__ = "fused_regions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -158,7 +177,7 @@ class FusedRegionModel(Base):
         UUID(as_uuid=True),
         ForeignKey("region_analysis_jobs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Bounding box (averaged from sources)
@@ -189,8 +208,8 @@ class FusedRegionModel(Base):
     analysis_job = relationship("RegionAnalysisJob", back_populates="fused_regions")
 
     __table_args__ = (
-        Index('ix_fused_regions_job_screenshot', 'analysis_job_id', 'screenshot_index'),
-        Index('ix_fused_regions_confidence', 'confidence'),
-        Index('ix_fused_regions_votes', 'votes'),
-        Index('ix_fused_regions_type', 'region_type'),
+        Index("ix_fused_regions_job_screenshot", "analysis_job_id", "screenshot_index"),
+        Index("ix_fused_regions_confidence", "confidence"),
+        Index("ix_fused_regions_votes", "votes"),
+        Index("ix_fused_regions_type", "region_type"),
     )

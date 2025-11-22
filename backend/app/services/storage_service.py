@@ -1,11 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
+from app.models.storage_usage import StorageUsage
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.storage_usage import StorageUsage
 
 
 class StorageQuotaExceeded(HTTPException):
@@ -47,6 +46,7 @@ class StorageService:
         file_size_bytes: int,
         file_type: str,
         project_id: str | None = None,
+        metadata: dict | None = None,
     ) -> StorageUsage:
         """
         Track a file upload in the storage_usage table.
@@ -58,6 +58,7 @@ class StorageService:
             file_size_bytes: Size of the file in bytes
             file_type: Type of file (e.g., "image", "screenshot", "export")
             project_id: Optional project ID the file belongs to
+            metadata: Optional metadata dictionary (stored as JSONB)
 
         Returns:
             The created StorageUsage record
@@ -68,6 +69,7 @@ class StorageService:
             file_size=file_size_bytes,
             file_type=file_type,
             project_id=project_id,
+            file_metadata=metadata or {},
             created_at=datetime.utcnow(),
         )
         db.add(storage_record)
@@ -201,3 +203,38 @@ class StorageService:
         rows = result.all()
 
         return {row.file_type: int(row.total_bytes) for row in rows}
+
+    @staticmethod
+    async def update_metadata(
+        db: AsyncSession,
+        file_path: str,
+        user_id: UUID,
+        metadata: dict,
+    ) -> bool:
+        """
+        Update metadata for a storage record.
+
+        Args:
+            db: Database session
+            file_path: Path of the file
+            user_id: ID of the user (for security check)
+            metadata: New metadata dictionary to merge with existing
+
+        Returns:
+            True if updated, False if not found
+        """
+        result = await db.execute(
+            select(StorageUsage).filter(
+                StorageUsage.file_path == file_path, StorageUsage.user_id == user_id
+            )
+        )
+        record = result.scalar_one_or_none()
+
+        if record:
+            # Merge metadata (update existing keys, add new ones)
+            current_metadata = record.file_metadata or {}
+            current_metadata.update(metadata)
+            record.file_metadata = current_metadata
+            await db.commit()
+            return True
+        return False

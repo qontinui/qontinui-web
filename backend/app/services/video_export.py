@@ -15,6 +15,7 @@ from typing import Any
 try:
     import cv2
     import numpy as np
+
     CV2_AVAILABLE = True
 except ImportError:
     cv2 = None
@@ -432,7 +433,9 @@ class VideoExporter:
         """
         if not CV2_AVAILABLE:
             logger.error("OpenCV not available - video export disabled")
-            raise RuntimeError("Video export requires OpenCV (cv2) which is not available")
+            raise RuntimeError(
+                "Video export requires OpenCV (cv2) which is not available"
+            )
 
         try:
             start_time = datetime.now()

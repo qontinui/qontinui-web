@@ -3,8 +3,8 @@
 Verify that the research environment is set up correctly
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 
@@ -22,9 +22,9 @@ def check_python_version():
 def check_dependencies():
     """Check required dependencies"""
     deps = {
-        'cv2': 'opencv-python',
-        'numpy': 'numpy',
-        'PIL': 'pillow',
+        "cv2": "opencv-python",
+        "numpy": "numpy",
+        "PIL": "pillow",
     }
 
     all_ok = True
@@ -39,6 +39,7 @@ def check_dependencies():
     # Check for contrib
     try:
         import cv2.ximgproc
+
         print("✓ opencv-contrib-python (selective search)")
     except AttributeError:
         print("⚠ opencv-contrib-python not found - Selective search will not work")
@@ -47,13 +48,17 @@ def check_dependencies():
     # Check for SAM2 (optional)
     try:
         import torch
+
         print("✓ torch (SAM2 support)")
         try:
             from sam2.build_sam import build_sam2
+
             print("✓ SAM2 installed")
         except ImportError:
             print("⚠ SAM2 not installed (optional)")
-            print("  Install with: pip install git+https://github.com/facebookresearch/segment-anything-2.git")
+            print(
+                "  Install with: pip install git+https://github.com/facebookresearch/segment-anything-2.git"
+            )
     except ImportError:
         print("⚠ torch not installed - SAM2 will not be available")
 
@@ -62,7 +67,7 @@ def check_dependencies():
 
 def check_directories():
     """Check directory structure"""
-    dirs = ['screenshots', 'annotations', 'results', 'detectors']
+    dirs = ["screenshots", "annotations", "results", "detectors"]
     all_ok = True
 
     for dir_name in dirs:
@@ -70,7 +75,7 @@ def check_directories():
         if path.exists():
             print(f"✓ {dir_name}/ exists")
         else:
-            if dir_name == 'results':
+            if dir_name == "results":
                 path.mkdir(exist_ok=True)
                 print(f"✓ {dir_name}/ created")
             else:
@@ -82,12 +87,14 @@ def check_directories():
 
 def check_screenshots():
     """Check for screenshots"""
-    screenshot_dir = Path('screenshots')
+    screenshot_dir = Path("screenshots")
     if not screenshot_dir.exists():
         print("✗ No screenshots directory")
         return False
 
-    screenshots = list(screenshot_dir.glob('*.png')) + list(screenshot_dir.glob('*.jpg'))
+    screenshots = list(screenshot_dir.glob("*.png")) + list(
+        screenshot_dir.glob("*.jpg")
+    )
     if screenshots:
         print(f"✓ Found {len(screenshots)} screenshot(s)")
         for s in screenshots:
@@ -101,12 +108,12 @@ def check_screenshots():
 
 def check_annotations():
     """Check for annotations"""
-    annotation_dir = Path('annotations')
+    annotation_dir = Path("annotations")
     if not annotation_dir.exists():
         print("✗ No annotations directory")
         return False
 
-    annotations = list(annotation_dir.glob('*_annotations.json'))
+    annotations = list(annotation_dir.glob("*_annotations.json"))
     if annotations:
         print(f"✓ Found {len(annotations)} annotation(s)")
         for a in annotations:
@@ -119,9 +126,9 @@ def check_annotations():
 
 
 def main():
-    print("="*60)
+    print("=" * 60)
     print("GUI Element Detection - Setup Verification")
-    print("="*60)
+    print("=" * 60)
     print()
 
     print("Checking Python...")
@@ -144,7 +151,7 @@ def main():
     annotations_ok = check_annotations()
     print()
 
-    print("="*60)
+    print("=" * 60)
     if python_ok and deps_ok and dirs_ok:
         print("✓ Core setup complete")
         print()
@@ -169,7 +176,7 @@ def main():
         print()
         print("Please fix the issues above and run this script again.")
 
-    print("="*60)
+    print("=" * 60)
 
 
 if __name__ == "__main__":

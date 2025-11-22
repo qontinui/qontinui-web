@@ -197,12 +197,6 @@ export function canConvertToProcess(workflow: Workflow): {
       return true
     }
 
-    // Check for parallel execution
-    if (outputs.parallel && outputs.parallel.length > 0) {
-      warnings.push('Parallel execution will be converted to sequential')
-      return true
-    }
-
     return false
   })
 

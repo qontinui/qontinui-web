@@ -2,15 +2,17 @@
 Pydantic schemas for region analysis API
 """
 
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict, Any, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # Base schemas for request/response
 class BoundingBoxSchema(BaseModel):
     """Bounding box coordinates"""
+
     x: int
     y: int
     width: int
@@ -19,6 +21,7 @@ class BoundingBoxSchema(BaseModel):
 
 class GridCellSchema(BaseModel):
     """Individual cell in a grid structure"""
+
     x: int
     y: int
     width: int
@@ -27,6 +30,7 @@ class GridCellSchema(BaseModel):
 
 class GridMetadataSchema(BaseModel):
     """Grid structure metadata for inventory grids, skill bars, etc."""
+
     rows: int
     cols: int
     cells: List[GridCellSchema]
@@ -36,6 +40,7 @@ class GridMetadataSchema(BaseModel):
 
 class DetectedRegionSchema(BaseModel):
     """Schema for a detected region"""
+
     bounding_box: BoundingBoxSchema
     confidence: float = Field(ge=0.0, le=1.0)
     label: Optional[str] = None
@@ -47,6 +52,7 @@ class DetectedRegionSchema(BaseModel):
 
 class RegionAnalyzerResultSchema(BaseModel):
     """Schema for results from a single region analyzer"""
+
     analyzer_name: str
     regions: List[DetectedRegionSchema]
     confidence: float
@@ -55,6 +61,7 @@ class RegionAnalyzerResultSchema(BaseModel):
 
 class FusedRegionSchema(BaseModel):
     """Schema for a fused region from multiple analyzers"""
+
     bounding_box: BoundingBoxSchema
     confidence: float
     sources: List[str]
@@ -69,6 +76,7 @@ class FusedRegionSchema(BaseModel):
 
 class RegionAnalyzerInfoSchema(BaseModel):
     """Information about an available region analyzer"""
+
     name: str
     version: str
     supported_region_types: List[str]
@@ -78,6 +86,7 @@ class RegionAnalyzerInfoSchema(BaseModel):
 # Request schemas
 class RegionAnalysisRequest(BaseModel):
     """Request to run region analysis on an annotation set"""
+
     annotation_set_id: UUID
     analyzer_names: Optional[List[str]] = None  # None = all analyzers
     analyzer_configs: Optional[Dict[str, Dict[str, Any]]] = None
@@ -89,6 +98,7 @@ class RegionAnalysisRequest(BaseModel):
 
 class QuickRegionAnalysisRequest(BaseModel):
     """Quick region analysis request (no DB storage)"""
+
     annotation_set_id: UUID
     analyzers: Optional[List[str]] = None
     fuse_results: bool = True
@@ -97,6 +107,7 @@ class QuickRegionAnalysisRequest(BaseModel):
 # Response schemas
 class RegionAnalysisResponse(BaseModel):
     """Response from running region analysis"""
+
     analysis_job_id: Optional[UUID] = None  # None if not saved to DB
     annotation_set_id: UUID
     analyzer_results: List[RegionAnalyzerResultSchema]
@@ -109,6 +120,7 @@ class RegionAnalysisResponse(BaseModel):
 
 class RegionJobSchema(BaseModel):
     """Schema for a stored region analysis job"""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -130,11 +142,13 @@ class RegionJobSchema(BaseModel):
 
 class RegionJobDetailSchema(RegionJobSchema):
     """Detailed region analysis job with regions"""
+
     fused_regions: List[FusedRegionSchema]
 
 
 class RegionJobListResponse(BaseModel):
     """Response for listing region analysis jobs"""
+
     jobs: List[RegionJobSchema]
     total: int
     page: int
@@ -144,12 +158,14 @@ class RegionJobListResponse(BaseModel):
 # Utility schemas
 class RegionAnalyzerListResponse(BaseModel):
     """Response listing available region analyzers"""
+
     analyzers: List[RegionAnalyzerInfoSchema]
     total: int
 
 
 class RegionAnalysisStatistics(BaseModel):
     """Statistics about region analysis results"""
+
     total_jobs: int
     total_regions_detected: int
     avg_confidence: float

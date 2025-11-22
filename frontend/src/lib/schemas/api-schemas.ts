@@ -274,12 +274,8 @@ export function parseApi<T>(
   data: unknown,
   context?: string
 ): T {
-  console.log(`[parseApi] Parsing${context ? ` ${context}` : ''}...`)
-  console.log('[parseApi] Raw data:', data)
-
   try {
     const result = schema.parse(data)
-    console.log('[parseApi] ✅ Validation successful, parsed data:', result)
     return result
   } catch (error) {
     if (error instanceof z.ZodError) {

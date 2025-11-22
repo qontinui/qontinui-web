@@ -69,7 +69,7 @@ export class CommentService {
    */
   async getComments(projectId: string, workflowId?: string): Promise<Comment[]> {
     const url = new URL(`${this.apiUrl}/api/v1/projects/${projectId}/comments`);
-    
+
     if (workflowId) {
       url.searchParams.set('workflow_id', workflowId);
     }
@@ -315,7 +315,7 @@ export class CommentService {
    */
   async getUnresolvedComments(projectId: string, workflowId?: string): Promise<Comment[]> {
     const url = new URL(`${this.apiUrl}/api/v1/projects/${projectId}/comments/unresolved`);
-    
+
     if (workflowId) {
       url.searchParams.set('workflow_id', workflowId);
     }

@@ -2,12 +2,12 @@
 Decision Fusion System - Combines results from multiple analyzers
 """
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-from collections import defaultdict
 import logging
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
-from .base import AnalysisResult, DetectedElement, BoundingBox, AnalysisType
+from .base import AnalysisResult, AnalysisType, BoundingBox, DetectedElement
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FusedElement:
     """An element with combined confidence from multiple analyzers"""
+
     bounding_box: BoundingBox
     confidence: float  # Combined confidence
     sources: List[str]  # Which analyzers detected this
@@ -49,9 +50,7 @@ class FusionStrategy:
     """Base class for fusion strategies"""
 
     def fuse(
-        self,
-        results: List[AnalysisResult],
-        overlap_threshold: float = 0.5
+        self, results: List[AnalysisResult], overlap_threshold: float = 0.5
     ) -> List[FusedElement]:
         """
         Combine results from multiple analyzers
@@ -90,9 +89,7 @@ class WeightedVotingFusion(FusionStrategy):
         }
 
     def fuse(
-        self,
-        results: List[AnalysisResult],
-        overlap_threshold: float = 0.5
+        self, results: List[AnalysisResult], overlap_threshold: float = 0.5
     ) -> List[FusedElement]:
         """Combine results using weighted voting"""
 
@@ -114,9 +111,7 @@ class WeightedVotingFusion(FusionStrategy):
             for group in element_groups:
                 # Check if element overlaps with any element in the group
                 if any(
-                    element.bounding_box.overlaps(
-                        e.bounding_box, overlap_threshold
-                    )
+                    element.bounding_box.overlaps(e.bounding_box, overlap_threshold)
                     for e, _ in group
                 ):
                     group.append((element, result))
@@ -149,29 +144,45 @@ class WeightedVotingFusion(FusionStrategy):
             for elem, result in group
         )
 
-        avg_x = sum(
-            elem.bounding_box.x * elem.confidence *
-            self.weights.get(result.analyzer_type, 1.0)
-            for elem, result in group
-        ) / total_weight
+        avg_x = (
+            sum(
+                elem.bounding_box.x
+                * elem.confidence
+                * self.weights.get(result.analyzer_type, 1.0)
+                for elem, result in group
+            )
+            / total_weight
+        )
 
-        avg_y = sum(
-            elem.bounding_box.y * elem.confidence *
-            self.weights.get(result.analyzer_type, 1.0)
-            for elem, result in group
-        ) / total_weight
+        avg_y = (
+            sum(
+                elem.bounding_box.y
+                * elem.confidence
+                * self.weights.get(result.analyzer_type, 1.0)
+                for elem, result in group
+            )
+            / total_weight
+        )
 
-        avg_width = sum(
-            elem.bounding_box.width * elem.confidence *
-            self.weights.get(result.analyzer_type, 1.0)
-            for elem, result in group
-        ) / total_weight
+        avg_width = (
+            sum(
+                elem.bounding_box.width
+                * elem.confidence
+                * self.weights.get(result.analyzer_type, 1.0)
+                for elem, result in group
+            )
+            / total_weight
+        )
 
-        avg_height = sum(
-            elem.bounding_box.height * elem.confidence *
-            self.weights.get(result.analyzer_type, 1.0)
-            for elem, result in group
-        ) / total_weight
+        avg_height = (
+            sum(
+                elem.bounding_box.height
+                * elem.confidence
+                * self.weights.get(result.analyzer_type, 1.0)
+                for elem, result in group
+            )
+            / total_weight
+        )
 
         fused_box = BoundingBox(
             x=int(avg_x),
@@ -183,8 +194,7 @@ class WeightedVotingFusion(FusionStrategy):
         # Collect sources and confidences
         sources = [result.analyzer_name for _, result in group]
         source_confidences = {
-            result.analyzer_name: elem.confidence
-            for elem, result in group
+            result.analyzer_name: elem.confidence for elem, result in group
         }
 
         # Calculate combined confidence
@@ -205,8 +215,7 @@ class WeightedVotingFusion(FusionStrategy):
 
         most_common_label = max(set(labels), key=labels.count) if labels else None
         most_common_type = (
-            max(set(element_types), key=element_types.count)
-            if element_types else None
+            max(set(element_types), key=element_types.count) if element_types else None
         )
 
         # Get screenshot index (should be same for all in group)
@@ -256,9 +265,7 @@ class DecisionFusion:
         self.min_votes = min_votes
 
     async def fuse(
-        self,
-        results: List[AnalysisResult],
-        overlap_threshold: float = 0.5
+        self, results: List[AnalysisResult], overlap_threshold: float = 0.5
     ) -> List[FusedElement]:
         """
         Combine results from multiple analyzers
@@ -282,9 +289,9 @@ class DecisionFusion:
 
         # Filter by confidence and votes
         filtered = [
-            elem for elem in fused_elements
-            if elem.confidence >= self.min_confidence
-            and elem.votes >= self.min_votes
+            elem
+            for elem in fused_elements
+            if elem.confidence >= self.min_confidence and elem.votes >= self.min_votes
         ]
 
         logger.info(
@@ -294,9 +301,7 @@ class DecisionFusion:
 
         return filtered
 
-    def get_analyzer_statistics(
-        self, results: List[AnalysisResult]
-    ) -> Dict[str, Any]:
+    def get_analyzer_statistics(self, results: List[AnalysisResult]) -> Dict[str, Any]:
         """
         Get statistics about analyzer performance
 

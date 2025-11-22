@@ -42,7 +42,6 @@ export const COLORS = {
   main: '#00D9FF', // Cyan - normal flow
   error: '#FF4444', // Red - error handling
   success: '#00FF88', // Green - success condition
-  parallel: '#BD00FF', // Purple - parallel execution
 
   // State colors
   idle: '#666666',
@@ -183,13 +182,12 @@ export function hexToRgba(hex: string, alpha: number = 1): string {
  * Get color for a connection type
  */
 export function getConnectionColor(
-  type: 'main' | 'error' | 'success' | 'parallel'
+  type: 'main' | 'error' | 'success'
 ): string {
   const colorMap = {
     main: COLORS.main,
     error: COLORS.error,
     success: COLORS.success,
-    parallel: COLORS.parallel,
   };
 
   return colorMap[type] || COLORS.main;

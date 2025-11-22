@@ -19,9 +19,7 @@ export class ProjectService {
   }
 
   async getProjects(): Promise<Project[]> {
-    console.log('[ProjectService] Fetching projects from:', `${this.apiUrl}/api/v1/projects/`);
     const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/projects/`);
-    console.log('[ProjectService] Response status:', response.status);
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       console.error('[ProjectService] Failed to get projects:', {
@@ -32,7 +30,6 @@ export class ProjectService {
       throw new Error(`Failed to get projects: ${response.statusText}`);
     }
     const projects = await response.json();
-    console.log('[ProjectService] Retrieved projects:', projects.length, 'projects');
     return projects;
   }
 

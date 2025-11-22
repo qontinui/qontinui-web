@@ -6,11 +6,12 @@ morphological operations and edge detection.
 """
 
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-import numpy as np
-import cv2
+from typing import Any, Dict, List, Optional, Tuple
 
-from ..base import BaseRegionAnalyzer, DetectedRegion, BoundingBox, RegionType
+import cv2
+import numpy as np
+
+from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +75,7 @@ class SlotBorderDetector(BaseRegionAnalyzer):
         return grid_regions
 
     def _detect_borders(
-        self,
-        gray: np.ndarray,
-        params: Dict[str, Any]
+        self, gray: np.ndarray, params: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Detect rectangular borders in the image
@@ -108,8 +107,10 @@ class SlotBorderDetector(BaseRegionAnalyzer):
             x, y, w, h = cv2.boundingRect(contour)
 
             # Size filter
-            if not (params["min_cell_size"] <= w <= params["max_cell_size"] and
-                    params["min_cell_size"] <= h <= params["max_cell_size"]):
+            if not (
+                params["min_cell_size"] <= w <= params["max_cell_size"]
+                and params["min_cell_size"] <= h <= params["max_cell_size"]
+            ):
                 continue
 
             # Calculate border properties
@@ -140,23 +141,23 @@ class SlotBorderDetector(BaseRegionAnalyzer):
             if not (4 <= len(approx) <= 8):  # Allow some tolerance
                 continue
 
-            borders.append({
-                "x": x,
-                "y": y,
-                "width": w,
-                "height": h,
-                "area": area,
-                "fill_ratio": fill_ratio,
-                "aspect_ratio": aspect_ratio,
-                "corners": len(approx),
-            })
+            borders.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "width": w,
+                    "height": h,
+                    "area": area,
+                    "fill_ratio": fill_ratio,
+                    "aspect_ratio": aspect_ratio,
+                    "corners": len(approx),
+                }
+            )
 
         return borders
 
     def _group_by_size(
-        self,
-        borders: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, borders: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> List[List[Dict[str, Any]]]:
         """Group borders by similar size"""
         if not borders:
@@ -180,15 +181,17 @@ class SlotBorderDetector(BaseRegionAnalyzer):
             ref_height = border["height"]
 
             # Find similar sized borders
-            for j, other in enumerate(borders_sorted[i + 1:], start=i + 1):
+            for j, other in enumerate(borders_sorted[i + 1 :], start=i + 1):
                 if j in used:
                     continue
 
                 width_diff = abs(other["width"] - ref_width) / ref_width
                 height_diff = abs(other["height"] - ref_height) / ref_height
 
-                if (width_diff < params["size_tolerance"] and
-                    height_diff < params["size_tolerance"]):
+                if (
+                    width_diff < params["size_tolerance"]
+                    and height_diff < params["size_tolerance"]
+                ):
                     group.append(other)
                     used.add(j)
 
@@ -198,9 +201,7 @@ class SlotBorderDetector(BaseRegionAnalyzer):
         return groups
 
     def _extract_grid_pattern(
-        self,
-        borders: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, borders: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> List[DetectedRegion]:
         """Extract grid pattern from grouped borders"""
         if len(borders) < params["min_grid_rows"] * params["min_grid_cols"]:
@@ -215,10 +216,12 @@ class SlotBorderDetector(BaseRegionAnalyzer):
         avg_height = int(np.mean([b["height"] for b in borders]))
 
         # Find grid spacing
-        x_spacings = [x_positions[i + 1] - x_positions[i]
-                      for i in range(len(x_positions) - 1)]
-        y_spacings = [y_positions[i + 1] - y_positions[i]
-                      for i in range(len(y_positions) - 1)]
+        x_spacings = [
+            x_positions[i + 1] - x_positions[i] for i in range(len(x_positions) - 1)
+        ]
+        y_spacings = [
+            y_positions[i + 1] - y_positions[i] for i in range(len(y_positions) - 1)
+        ]
 
         if not x_spacings or not y_spacings:
             return []
@@ -251,8 +254,11 @@ class SlotBorderDetector(BaseRegionAnalyzer):
             expected_x = x_min + grid_x * spacing_x
             expected_y = y_min + grid_y * spacing_y
 
-            if (abs(border["x"] - expected_x) < spacing_x * params["spacing_tolerance"] and
-                abs(border["y"] - expected_y) < spacing_y * params["spacing_tolerance"]):
+            if (
+                abs(border["x"] - expected_x) < spacing_x * params["spacing_tolerance"]
+                and abs(border["y"] - expected_y)
+                < spacing_y * params["spacing_tolerance"]
+            ):
                 grid_map[(grid_x, grid_y)] = border
 
         if len(grid_map) < params["min_grid_rows"] * params["min_grid_cols"]:
@@ -279,14 +285,16 @@ class SlotBorderDetector(BaseRegionAnalyzer):
         cells = []
         for row in range(rows):
             for col in range(cols):
-                cells.append({
-                    "row": row,
-                    "col": col,
-                    "x": x_start + col * spacing_x,
-                    "y": y_start + row * spacing_y,
-                    "width": avg_width,
-                    "height": avg_height,
-                })
+                cells.append(
+                    {
+                        "row": row,
+                        "col": col,
+                        "x": x_start + col * spacing_x,
+                        "y": y_start + row * spacing_y,
+                        "width": avg_width,
+                        "height": avg_height,
+                    }
+                )
 
         # Calculate confidence
         expected_cells = rows * cols
@@ -309,7 +317,7 @@ class SlotBorderDetector(BaseRegionAnalyzer):
                 "cells": cells,
                 "detector": "slot_border",
                 "method": "border_detection",
-            }
+            },
         )
 
         return [region]

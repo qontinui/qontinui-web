@@ -15,15 +15,14 @@ from typing import Any
 
 import psutil
 import structlog
-from redis.exceptions import RedisError
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.config.redis_config import RedisConfig
 from app.core.config import settings
 from app.models.audit_log import AuditLog
 from app.models.device_session import DeviceSession
 from app.models.session_activity import SessionActivity
+from redis.exceptions import RedisError
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -125,9 +124,9 @@ class HealthService:
                 "uptime_seconds": uptime_seconds,
                 "uptime_hours": round(uptime_seconds / 3600, 2),
                 "memory_used_mb": round(memory_used / (1024 * 1024), 2),
-                "memory_total_mb": round(memory_total / (1024 * 1024), 2)
-                if memory_total > 0
-                else None,
+                "memory_total_mb": (
+                    round(memory_total / (1024 * 1024), 2) if memory_total > 0 else None
+                ),
                 "memory_percent": round(memory_percent, 2),
                 "connected_clients": connected_clients,
                 "ops_per_second": ops_per_second,
@@ -299,9 +298,12 @@ class HealthService:
                 recommendations.append(
                     {
                         "type": "failed_logins",
-                        "severity": "warning"
-                        if failed_logins_24h < self.THRESHOLDS["failed_logins_critical"]
-                        else "critical",
+                        "severity": (
+                            "warning"
+                            if failed_logins_24h
+                            < self.THRESHOLDS["failed_logins_critical"]
+                            else "critical"
+                        ),
                         "message": f"{failed_logins_24h} failed login attempts in 24h - consider implementing rate limiting",
                     }
                 )
@@ -310,9 +312,11 @@ class HealthService:
                 recommendations.append(
                     {
                         "type": "new_devices",
-                        "severity": "warning"
-                        if new_devices_24h < self.THRESHOLDS["new_devices_critical"]
-                        else "critical",
+                        "severity": (
+                            "warning"
+                            if new_devices_24h < self.THRESHOLDS["new_devices_critical"]
+                            else "critical"
+                        ),
                         "message": f"{new_devices_24h} new devices registered in 24h - review for unusual activity",
                     }
                 )
@@ -321,10 +325,12 @@ class HealthService:
                 recommendations.append(
                     {
                         "type": "device_mismatches",
-                        "severity": "warning"
-                        if device_mismatches_24h
-                        < self.THRESHOLDS["device_mismatches_critical"]
-                        else "critical",
+                        "severity": (
+                            "warning"
+                            if device_mismatches_24h
+                            < self.THRESHOLDS["device_mismatches_critical"]
+                            else "critical"
+                        ),
                         "message": f"{device_mismatches_24h} device mismatches in 24h - possible token theft attempts",
                     }
                 )
@@ -459,9 +465,11 @@ class HealthService:
                 "avg_session_age_hours": avg_session_age_hours,
                 "sessions_expiring_soon": expiring_soon,
                 "sessions_active_last_hour": active_last_hour,
-                "activity_rate": round((active_last_hour / total_active * 100), 2)
-                if total_active > 0
-                else 0.0,
+                "activity_rate": (
+                    round((active_last_hour / total_active * 100), 2)
+                    if total_active > 0
+                    else 0.0
+                ),
             }
 
         except Exception as e:
@@ -595,7 +603,9 @@ class HealthService:
                 checked_out = pool.checked_out_connections
                 active = checked_out
                 idle = pool_size - checked_out
-                pool_usage_percent = (active / pool_size * 100) if pool_size > 0 else 0.0
+                pool_usage_percent = (
+                    (active / pool_size * 100) if pool_size > 0 else 0.0
+                )
                 pool_stats_available = True
             except Exception as pool_error:
                 # Pool statistics not available in this environment (e.g., AWS with async pools)

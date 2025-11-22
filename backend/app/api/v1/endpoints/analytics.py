@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.user import User
 from app.services.analytics_service import analytics_service
 from app.services.metrics_service import metrics_service
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

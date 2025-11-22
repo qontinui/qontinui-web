@@ -1,12 +1,11 @@
 from uuid import UUID
 
-from fastapi import HTTPException, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.stripe_service import StripeService
+from fastapi import HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def get_project(db: AsyncSession, project_id: str) -> Project | None:
@@ -67,6 +66,9 @@ async def update_project(
 
     for field, value in update_data.items():
         setattr(project, field, value)
+
+    # Increment version on every update
+    project.version += 1
 
     db.add(project)
     await db.commit()

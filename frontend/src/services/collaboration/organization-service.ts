@@ -113,7 +113,7 @@ export class OrganizationService {
     }
 
     const organization = await response.json();
-    
+
     // Update current organization if it's the one being updated
     if (this.currentOrganization?.id === id) {
       this.currentOrganization = organization;

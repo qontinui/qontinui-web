@@ -6,20 +6,21 @@ More robust to scale and rotation than template matching.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
-from io import BytesIO
-from PIL import Image
-import numpy as np
-import cv2
 from collections import defaultdict
+from io import BytesIO
+from typing import Any, Dict, List, Tuple
+
+import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
         """Load screenshots as grayscale numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')
+            img = Image.open(BytesIO(data)).convert("L")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -146,7 +147,7 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
         self,
         images: List[np.ndarray],
         features_per_image: List[Tuple[List, np.ndarray]],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """
         Find clusters of matched features that represent recurring patterns
@@ -184,33 +185,33 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
 
                 # Cluster matches spatially
                 clusters_i = self._cluster_keypoints(
-                    [kp1[m.queryIdx] for m in good_matches],
-                    params
+                    [kp1[m.queryIdx] for m in good_matches], params
                 )
 
                 clusters_j = self._cluster_keypoints(
-                    [kp2[m.trainIdx] for m in good_matches],
-                    params
+                    [kp2[m.trainIdx] for m in good_matches], params
                 )
 
                 # Record pattern clusters
                 for cluster_i, cluster_j in zip(clusters_i, clusters_j):
-                    if (len(cluster_i) >= params["min_cluster_size"] and
-                        len(cluster_j) >= params["min_cluster_size"]):
+                    if (
+                        len(cluster_i) >= params["min_cluster_size"]
+                        and len(cluster_j) >= params["min_cluster_size"]
+                    ):
 
-                        pattern_clusters.append({
-                            "screenshot_i": i,
-                            "screenshot_j": j,
-                            "keypoints_i": cluster_i,
-                            "keypoints_j": cluster_j,
-                            "num_matches": len(cluster_i),
-                        })
+                        pattern_clusters.append(
+                            {
+                                "screenshot_i": i,
+                                "screenshot_j": j,
+                                "keypoints_i": cluster_i,
+                                "keypoints_j": cluster_j,
+                                "num_matches": len(cluster_i),
+                            }
+                        )
 
         return pattern_clusters
 
-    def _cluster_keypoints(
-        self, keypoints: List, params: Dict[str, Any]
-    ) -> List[List]:
+    def _cluster_keypoints(self, keypoints: List, params: Dict[str, Any]) -> List[List]:
         """
         Cluster keypoints spatially
 
@@ -260,7 +261,7 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
             # Create elements for both screenshots in the match
             for screenshot_idx, keypoints_key in [
                 (cluster["screenshot_i"], "keypoints_i"),
-                (cluster["screenshot_j"], "keypoints_j")
+                (cluster["screenshot_j"], "keypoints_j"),
             ]:
                 keypoints = cluster[keypoints_key]
 
@@ -280,22 +281,21 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
                 # Confidence based on number of matches
                 confidence = min(0.9, 0.5 + (cluster["num_matches"] / 20.0))
 
-                elements.append(DetectedElement(
-                    bounding_box=BoundingBox(
-                        x=int(x_min),
-                        y=int(y_min),
-                        width=width,
-                        height=height
-                    ),
-                    confidence=confidence,
-                    label="Recurring Pattern",
-                    element_type="pattern",
-                    screenshot_index=screenshot_idx,
-                    metadata={
-                        "method": "feature_matching",
-                        "pattern_id": cluster_idx,
-                        "num_features": len(keypoints),
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=BoundingBox(
+                            x=int(x_min), y=int(y_min), width=width, height=height
+                        ),
+                        confidence=confidence,
+                        label="Recurring Pattern",
+                        element_type="pattern",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "method": "feature_matching",
+                            "pattern_id": cluster_idx,
+                            "num_features": len(keypoints),
+                        },
+                    )
+                )
 
         return elements

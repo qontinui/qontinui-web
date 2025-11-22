@@ -9,20 +9,21 @@ Performance: 40-120ms
 Accuracy: 75-85% for text with clear boundaries
 """
 
-from typing import List, Dict, Any, Optional
+from io import BytesIO
+from typing import Any, Dict, List, Optional
+
 import cv2
 import numpy as np
-from io import BytesIO
 from PIL import Image
 
 from ..base import (
     BaseRegionAnalyzer,
-    DetectedRegion,
-    RegionType,
-    RegionAnalysisType,
     BoundingBox,
+    DetectedRegion,
     RegionAnalysisInput,
     RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
 )
 
 

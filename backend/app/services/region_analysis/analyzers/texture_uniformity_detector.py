@@ -6,13 +6,14 @@ and Local Binary Patterns (LBP).
 """
 
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple
+
 import cv2
+import numpy as np
 from scipy import ndimage
 from sklearn.cluster import DBSCAN
 
-from ..base import BaseRegionAnalyzer, DetectedRegion, BoundingBox, RegionType
+from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +76,7 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         return grid_regions
 
     def _compute_lbp(
-        self,
-        gray: np.ndarray,
-        radius: int = 3,
-        n_points: int = 24
+        self, gray: np.ndarray, radius: int = 3, n_points: int = 24
     ) -> np.ndarray:
         """
         Compute Local Binary Pattern
@@ -106,22 +104,22 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
                     if 0 <= y1 < h - 1 and 0 <= x1 < w - 1:
                         # Interpolate
                         fx, fy = x - x1, y - y1
-                        val = (1 - fx) * (1 - fy) * gray[y1, x1] + \
-                              fx * (1 - fy) * gray[y1, x2] + \
-                              (1 - fx) * fy * gray[y2, x1] + \
-                              fx * fy * gray[y2, x2]
+                        val = (
+                            (1 - fx) * (1 - fy) * gray[y1, x1]
+                            + fx * (1 - fy) * gray[y1, x2]
+                            + (1 - fx) * fy * gray[y2, x1]
+                            + fx * fy * gray[y2, x2]
+                        )
 
                         if val >= center:
-                            code |= (1 << p)
+                            code |= 1 << p
 
                 lbp[i, j] = code % 256  # Keep in uint8 range
 
         return lbp
 
     def _compute_texture_map(
-        self,
-        gray: np.ndarray,
-        params: Dict[str, Any]
+        self, gray: np.ndarray, params: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Compute texture features for sliding windows
@@ -141,8 +139,8 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         for y in range(0, h - window_size, stride):
             for x in range(0, w - window_size, stride):
                 # Extract window
-                window_gray = gray[y:y + window_size, x:x + window_size]
-                window_lbp = lbp[y:y + window_size, x:x + window_size]
+                window_gray = gray[y : y + window_size, x : x + window_size]
+                window_lbp = lbp[y : y + window_size, x : x + window_size]
 
                 # Compute texture features
                 # 1. LBP histogram
@@ -157,23 +155,23 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
                 edges = cv2.Canny(window_gray, 50, 150)
                 edge_density = np.sum(edges > 0) / (window_size * window_size)
 
-                windows.append({
-                    "x": x,
-                    "y": y,
-                    "width": window_size,
-                    "height": window_size,
-                    "lbp_hist": lbp_hist,
-                    "variance": variance,
-                    "mean": mean,
-                    "edge_density": edge_density,
-                })
+                windows.append(
+                    {
+                        "x": x,
+                        "y": y,
+                        "width": window_size,
+                        "height": window_size,
+                        "lbp_hist": lbp_hist,
+                        "variance": variance,
+                        "mean": mean,
+                        "edge_density": edge_density,
+                    }
+                )
 
         return windows
 
     def _find_uniform_texture_regions(
-        self,
-        texture_map: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, texture_map: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> List[List[Dict[str, Any]]]:
         """
         Find groups of windows with similar texture
@@ -213,7 +211,10 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
 
             # Add similar windows
             for j in range(n):
-                if j not in visited and similarity[i, j] > params["texture_similarity_threshold"]:
+                if (
+                    j not in visited
+                    and similarity[i, j] > params["texture_similarity_threshold"]
+                ):
                     cluster.append(texture_map[j])
                     visited.add(j)
 
@@ -226,7 +227,7 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         self,
         uniform_regions: List[List[Dict[str, Any]]],
         img_shape: Tuple[int, int],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedRegion]:
         """Cluster uniform texture regions into grid structures"""
         grid_regions = []
@@ -237,7 +238,9 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
 
             # Use DBSCAN to find spatially contiguous groups
             window_size = params["window_size"]
-            clustering = DBSCAN(eps=window_size * 1.5, min_samples=params["min_grid_rows"])
+            clustering = DBSCAN(
+                eps=window_size * 1.5, min_samples=params["min_grid_rows"]
+            )
             labels = clustering.fit_predict(positions)
 
             # Process each spatial cluster
@@ -245,9 +248,14 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
                 if label == -1:  # noise
                     continue
 
-                cluster_windows = [cluster[i] for i in range(len(cluster)) if labels[i] == label]
+                cluster_windows = [
+                    cluster[i] for i in range(len(cluster)) if labels[i] == label
+                ]
 
-                if len(cluster_windows) >= params["min_grid_rows"] * params["min_grid_cols"]:
+                if (
+                    len(cluster_windows)
+                    >= params["min_grid_rows"] * params["min_grid_cols"]
+                ):
                     grid_region = self._extract_grid_from_windows(
                         cluster_windows, params
                     )
@@ -257,9 +265,7 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         return grid_regions
 
     def _extract_grid_from_windows(
-        self,
-        windows: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        self, windows: List[Dict[str, Any]], params: Dict[str, Any]
     ) -> Optional[DetectedRegion]:
         """Extract grid structure from uniform texture windows"""
         if len(windows) < params["min_grid_rows"] * params["min_grid_cols"]:
@@ -272,12 +278,19 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         x_positions = sorted(set(x for x, y in positions))
         y_positions = sorted(set(y for x, y in positions))
 
-        if len(x_positions) < params["min_grid_cols"] or len(y_positions) < params["min_grid_rows"]:
+        if (
+            len(x_positions) < params["min_grid_cols"]
+            or len(y_positions) < params["min_grid_rows"]
+        ):
             return None
 
         # Calculate spacing
-        x_diffs = [x_positions[i + 1] - x_positions[i] for i in range(len(x_positions) - 1)]
-        y_diffs = [y_positions[i + 1] - y_positions[i] for i in range(len(y_positions) - 1)]
+        x_diffs = [
+            x_positions[i + 1] - x_positions[i] for i in range(len(x_positions) - 1)
+        ]
+        y_diffs = [
+            y_positions[i + 1] - y_positions[i] for i in range(len(y_positions) - 1)
+        ]
 
         if not x_diffs or not y_diffs:
             return None
@@ -286,8 +299,10 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         spacing_y = int(np.median(y_diffs))
 
         # Verify spacing is consistent
-        if max(x_diffs) - min(x_diffs) > spacing_x * 0.3 or \
-           max(y_diffs) - min(y_diffs) > spacing_y * 0.3:
+        if (
+            max(x_diffs) - min(x_diffs) > spacing_x * 0.3
+            or max(y_diffs) - min(y_diffs) > spacing_y * 0.3
+        ):
             return None
 
         # Calculate grid dimensions
@@ -304,14 +319,16 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         cells = []
         for row in range(rows):
             for col in range(cols):
-                cells.append({
-                    "row": row,
-                    "col": col,
-                    "x": x_start + col * spacing_x,
-                    "y": y_start + row * spacing_y,
-                    "width": window_size,
-                    "height": window_size,
-                })
+                cells.append(
+                    {
+                        "row": row,
+                        "col": col,
+                        "x": x_start + col * spacing_x,
+                        "y": y_start + row * spacing_y,
+                        "width": window_size,
+                        "height": window_size,
+                    }
+                )
 
         # Calculate confidence based on texture uniformity
         confidence = min(0.9, 0.5 + (len(windows) / (rows * cols)) * 0.4)
@@ -331,5 +348,5 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
                 "cells": cells,
                 "detector": "texture_uniformity",
                 "method": "lbp_texture",
-            }
+            },
         )

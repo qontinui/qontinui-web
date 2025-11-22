@@ -5,16 +5,16 @@ Stores screenshots captured during automation sessions with metadata.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, JSON
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.db.base import Base
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from app.models.automation_session import AutomationSession
+    from app.models.project import Project
     from app.models.screenshot_input_association import ScreenshotInputAssociation
 
 
@@ -36,7 +36,12 @@ class AutomationScreenshot(Base):
     session_id: Mapped[UUID] = mapped_column(
         ForeignKey("automation_sessions.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
+    )
+
+    # Optional foreign key to project (for cross-referencing with project data)
+    project_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     # Screenshot identification
@@ -72,14 +77,16 @@ class AutomationScreenshot(Base):
 
     # Relationships
     session: Mapped["AutomationSession"] = relationship(
-        "AutomationSession",
-        back_populates="screenshots"
+        "AutomationSession", back_populates="screenshots"
+    )
+    project: Mapped[Optional["Project"]] = relationship(
+        "Project", foreign_keys=[project_id]
     )
     input_associations: Mapped[list["ScreenshotInputAssociation"]] = relationship(
         "ScreenshotInputAssociation",
         back_populates="screenshot",
         cascade="all, delete-orphan",
-        lazy="selectin"
+        lazy="selectin",
     )
 
     def __repr__(self) -> str:

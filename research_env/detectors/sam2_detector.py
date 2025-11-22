@@ -8,12 +8,15 @@ For CPU: pip install torch torchvision
 For GPU: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 """
 
+import os
+import sys
+from typing import Any, Dict, List, Optional
+
 import cv2
 import numpy as np
-from typing import List, Dict, Any, Optional
+
 from .base_detector import BaseDetector
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
 
@@ -30,9 +33,9 @@ class SAM2Detector(BaseDetector):
     def _try_load_sam2(self):
         """Try to load SAM2 model"""
         try:
-            from sam2.build_sam import build_sam2
-            from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
             import torch
+            from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
+            from sam2.build_sam import build_sam2
 
             self.sam_available = True
 
@@ -54,7 +57,9 @@ class SAM2Detector(BaseDetector):
 
             if checkpoint_path is None:
                 print("SAM2 checkpoint not found. Will skip SAM2 detection.")
-                print("Download from: https://github.com/facebookresearch/segment-anything-2")
+                print(
+                    "Download from: https://github.com/facebookresearch/segment-anything-2"
+                )
                 self.sam_available = False
                 return
 
@@ -67,7 +72,9 @@ class SAM2Detector(BaseDetector):
 
         except ImportError as e:
             print(f"SAM2 not available: {e}")
-            print("Install with: pip install git+https://github.com/facebookresearch/segment-anything-2.git")
+            print(
+                "Install with: pip install git+https://github.com/facebookresearch/segment-anything-2.git"
+            )
             self.sam_available = False
         except Exception as e:
             print(f"Error loading SAM2: {e}")
@@ -95,14 +102,14 @@ class SAM2Detector(BaseDetector):
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         # Parameters
-        points_per_side = params.get('points_per_side', 32)
-        pred_iou_thresh = params.get('pred_iou_thresh', 0.88)
-        stability_score_thresh = params.get('stability_score_thresh', 0.95)
-        min_area = params.get('min_area', 100)
-        max_area = params.get('max_area', img.shape[0] * img.shape[1] * 0.9)
+        points_per_side = params.get("points_per_side", 32)
+        pred_iou_thresh = params.get("pred_iou_thresh", 0.88)
+        stability_score_thresh = params.get("stability_score_thresh", 0.95)
+        min_area = params.get("min_area", 100)
+        max_area = params.get("max_area", img.shape[0] * img.shape[1] * 0.9)
 
         # Update mask generator parameters
-        if hasattr(self, 'mask_generator'):
+        if hasattr(self, "mask_generator"):
             self.mask_generator.points_per_side = points_per_side
             self.mask_generator.pred_iou_thresh = pred_iou_thresh
             self.mask_generator.stability_score_thresh = stability_score_thresh
@@ -114,7 +121,7 @@ class SAM2Detector(BaseDetector):
                 # Convert masks to bounding boxes
                 boxes = []
                 for mask_data in masks:
-                    segmentation = mask_data['segmentation']
+                    segmentation = mask_data["segmentation"]
 
                     # Get bounding box from segmentation
                     y_indices, x_indices = np.where(segmentation)
@@ -127,7 +134,7 @@ class SAM2Detector(BaseDetector):
                     area = (x2 - x1) * (y2 - y1)
                     if area >= min_area and area <= max_area:
                         # Use predicted_iou as confidence
-                        confidence = mask_data.get('predicted_iou', 1.0)
+                        confidence = mask_data.get("predicted_iou", 1.0)
                         box = BBox(x1, y1, x2, y2, confidence=confidence)
                         boxes.append(box)
 
@@ -150,18 +157,47 @@ class SAM2Detector(BaseDetector):
 
         return [
             # Conservative - high quality
-            {'points_per_side': 32, 'pred_iou_thresh': 0.90, 'stability_score_thresh': 0.95},
-            {'points_per_side': 32, 'pred_iou_thresh': 0.88, 'stability_score_thresh': 0.95},
-
+            {
+                "points_per_side": 32,
+                "pred_iou_thresh": 0.90,
+                "stability_score_thresh": 0.95,
+            },
+            {
+                "points_per_side": 32,
+                "pred_iou_thresh": 0.88,
+                "stability_score_thresh": 0.95,
+            },
             # Moderate
-            {'points_per_side': 32, 'pred_iou_thresh': 0.86, 'stability_score_thresh': 0.90},
-            {'points_per_side': 48, 'pred_iou_thresh': 0.88, 'stability_score_thresh': 0.92},
-            {'points_per_side': 24, 'pred_iou_thresh': 0.88, 'stability_score_thresh': 0.92},
-
+            {
+                "points_per_side": 32,
+                "pred_iou_thresh": 0.86,
+                "stability_score_thresh": 0.90,
+            },
+            {
+                "points_per_side": 48,
+                "pred_iou_thresh": 0.88,
+                "stability_score_thresh": 0.92,
+            },
+            {
+                "points_per_side": 24,
+                "pred_iou_thresh": 0.88,
+                "stability_score_thresh": 0.92,
+            },
             # Aggressive - more detections
-            {'points_per_side': 64, 'pred_iou_thresh': 0.80, 'stability_score_thresh': 0.85},
-            {'points_per_side': 48, 'pred_iou_thresh': 0.82, 'stability_score_thresh': 0.88},
-
+            {
+                "points_per_side": 64,
+                "pred_iou_thresh": 0.80,
+                "stability_score_thresh": 0.85,
+            },
+            {
+                "points_per_side": 48,
+                "pred_iou_thresh": 0.82,
+                "stability_score_thresh": 0.88,
+            },
             # Very aggressive
-            {'points_per_side': 64, 'pred_iou_thresh': 0.75, 'stability_score_thresh': 0.80},
+            {
+                "points_per_side": 64,
+                "pred_iou_thresh": 0.75,
+                "stability_score_thresh": 0.80,
+            },
         ]

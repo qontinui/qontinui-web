@@ -3,13 +3,14 @@
 // Horizontal icon popover for collapsed sidebar - updated icons v3
 import React, { useState, useEffect } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users } from 'lucide-react'
+import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CollapsedMenuPopover } from './collapsed-menu-popover'
 import { OrganizationSwitcher } from '@/components/collaboration/OrganizationSwitcher'
 import { CreateOrganizationDialog } from '@/components/collaboration/CreateOrganizationDialog'
 import { useOrganization } from '@/contexts/organization-context'
 import { useSidebar } from '@/contexts/sidebar-context'
+import { useAuth } from '@/contexts/auth-context'
 import type { Organization } from '@/types/collaboration'
 
 interface NavItem {
@@ -27,7 +28,7 @@ const navItems: NavItem[] = [
     id: 'dashboard',
     label: 'Dashboard',
     icon: <LayoutDashboard size={28} />,
-    route: '/automation-builder/overview',
+    route: '/dashboard',
     color: '#00D9FF',
   },
   {
@@ -226,6 +227,29 @@ const navItems: NavItem[] = [
     route: '/organizations',
     color: '#00D9FF',
   },
+  {
+    id: 'admin',
+    label: 'Admin',
+    icon: <Shield size={28} />,
+    route: '/admin',
+    color: '#FF0080',
+    children: [
+      {
+        id: 'admin-overview',
+        label: 'Overview',
+        icon: <LayoutDashboard size={22} />,
+        route: '/admin',
+        color: '#FF0080',
+      },
+      {
+        id: 'admin-architecture',
+        label: 'Architecture',
+        icon: <Network size={22} />,
+        route: '/admin/architecture',
+        color: '#FF0080',
+      },
+    ],
+  },
 ]
 
 interface UnifiedSidebarProps {
@@ -235,11 +259,11 @@ interface UnifiedSidebarProps {
 
 export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   className,
-  projectId,
+  projectId: projectIdProp,
 }) => {
   const { isCollapsed, setIsCollapsed } = useSidebar()
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(['workflows', 'structure', 'create', 'verify', 'settings'])
+    new Set(['workflows', 'structure', 'create', 'verify', 'settings', 'admin'])
   )
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const [closeTimer, setCloseTimer] = useState<NodeJS.Timeout | null>(null)
@@ -247,6 +271,10 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { user } = useAuth()
+
+  // Get project ID from URL search params or prop
+  const projectId = projectIdProp ?? (searchParams.get('project') ? Number(searchParams.get('project')) : null)
   const { currentOrganization, organizations, loading, switchOrganization } = useOrganization()
 
   // Save collapse state to localStorage
@@ -254,10 +282,10 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     const newState = !isCollapsed
     setIsCollapsed(newState)
     localStorage.setItem('unified-sidebar-collapsed', JSON.stringify(newState))
-    
+
     // Expand default sections when expanding sidebar
     if (!newState) {
-      setExpandedSections(new Set(['workflows', 'structure', 'create', 'verify', 'settings']))
+      setExpandedSections(new Set(['workflows', 'structure', 'create', 'verify', 'settings', 'admin']))
     }
   }
 
@@ -284,25 +312,11 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         const tabMatch = queryParams.get('tab') === currentParams.get('tab')
 
         const matches = baseMatch && categoryMatch && tabMatch
-        console.log('[ROUTE CHECK]', {
-          routeToCheck,
-          pathname,
-          basePath,
-          category: { expected: queryParams.get('category'), actual: currentParams.get('category') },
-          tab: { expected: queryParams.get('tab'), actual: currentParams.get('tab') },
-          matches
-        })
         return matches
       } else {
         // Route has no query params - it should only match if current path also has no query params
         const currentHasParams = searchParams.toString().length > 0
         const matches = pathname === routeToCheck && !currentHasParams
-        console.log('[ROUTE CHECK]', {
-          routeToCheck,
-          pathname,
-          currentHasParams,
-          matches
-        })
         return matches
       }
     }
@@ -310,29 +324,16 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     // If item has children, check if any child is active
     if (item.children && item.children.length > 0) {
       const childActive = item.children.some(child => checkRouteMatch(child.route))
-      console.log('[PARENT ACTIVE CHECK]', {
-        itemId: item.id,
-        itemLabel: item.label,
-        hasChildren: true,
-        childRoutes: item.children.map(c => c.route),
-        childActive
-      })
       return childActive
     }
 
     const active = checkRouteMatch(route)
-    console.log('[ITEM ACTIVE CHECK]', {
-      itemId: item.id,
-      itemLabel: item.label,
-      route,
-      active
-    })
     return active
   }
 
   const buildRoute = (route: string): string => {
     if (!projectId) return route
-    
+
     if (route.includes('?')) {
       return `${route}&project=${projectId}`
     } else {
@@ -391,6 +392,15 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       }
     : null
 
+  // Filter nav items based on user permissions
+  const filteredNavItems = navItems.filter((item) => {
+    // Show admin item only to superusers
+    if (item.id === 'admin') {
+      return user?.is_superuser === true
+    }
+    return true
+  })
+
   return (
     <div
       className={cn(
@@ -431,9 +441,8 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin px-2 py-4 space-y-1">
-        {navItems.map((item, index) => {
-          const itemZIndex = navItems.length - index
-          console.log('[NAV ITEM Z-INDEX]', { itemId: item.id, index, zIndex: itemZIndex })
+        {filteredNavItems.map((item, index) => {
+          const itemZIndex = filteredNavItems.length - index
           return (
           <div
             key={item.id}
@@ -450,19 +459,15 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 }
               }}
               onMouseEnter={() => {
-                console.log('[BUTTON] Mouse enter:', item.id, 'closeTimer exists:', !!closeTimer)
                 if (closeTimer) {
                   clearTimeout(closeTimer)
                   setCloseTimer(null)
-                  console.log('[BUTTON] Cleared close timer')
                 }
                 setHoveredItem(item.id)
               }}
               onMouseLeave={() => {
-                console.log('[BUTTON] Mouse leave:', item.id, 'setting timer for 300ms')
                 // Delay closing to allow mouse to move to popover
                 const timer = setTimeout(() => {
-                  console.log('[BUTTON] Timer expired, closing popover for:', item.id)
                   setHoveredItem(null)
                 }, 300)
                 setCloseTimer(timer)
@@ -583,16 +588,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
             )}
 
             {/* Children - Collapsed Sidebar Popover */}
-            {item.children && isCollapsed && hoveredItem === item.id && (() => {
-              console.log('[POPOVER RENDER]', {
-                parentId: item.id,
-                parentLabel: item.label,
-                isCollapsed,
-                hoveredItem,
-                itemZIndex,
-                childrenCount: item.children?.length
-              })
-              return (
+            {item.children && isCollapsed && hoveredItem === item.id && (
               <CollapsedMenuPopover
                 parentId={item.id}
                 parentColor={item.color}
@@ -600,16 +596,13 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 onNavigate={handleNavigation}
                 onClose={() => setHoveredItem(null)}
                 onClearTimer={() => {
-                  console.log('[CLEAR TIMER] Called, closeTimer exists:', !!closeTimer)
                   if (closeTimer) {
                     clearTimeout(closeTimer)
                     setCloseTimer(null)
-                    console.log('[CLEAR TIMER] Timer cleared successfully')
                   }
                 }}
               />
-              )
-            })()}
+            )}
           </div>
           )
         })}

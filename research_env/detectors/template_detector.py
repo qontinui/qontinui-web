@@ -2,12 +2,15 @@
 Template-based detection using corner detection and pattern matching
 """
 
+import os
+import sys
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
-from typing import List, Dict, Any
+
 from .base_detector import BaseDetector
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
 
@@ -35,12 +38,12 @@ class TemplateDetector(BaseDetector):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # Parameters
-        quality_level = params.get('quality_level', 0.01)
-        min_distance = params.get('min_distance', 10)
-        block_size = params.get('block_size', 3)
-        expansion = params.get('expansion', 20)
-        min_area = params.get('min_area', 100)
-        max_area = params.get('max_area', img.shape[0] * img.shape[1] * 0.9)
+        quality_level = params.get("quality_level", 0.01)
+        min_distance = params.get("min_distance", 10)
+        block_size = params.get("block_size", 3)
+        expansion = params.get("expansion", 20)
+        min_area = params.get("min_area", 100)
+        max_area = params.get("max_area", img.shape[0] * img.shape[1] * 0.9)
 
         # Detect corners
         corners = cv2.goodFeaturesToTrack(
@@ -48,7 +51,7 @@ class TemplateDetector(BaseDetector):
             maxCorners=1000,
             qualityLevel=quality_level,
             minDistance=min_distance,
-            blockSize=block_size
+            blockSize=block_size,
         )
 
         if corners is None or len(corners) == 0:
@@ -81,7 +84,9 @@ class TemplateDetector(BaseDetector):
         dilated = cv2.dilate(corner_mask, kernel, iterations=2)
 
         # Find contours
-        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
@@ -100,18 +105,15 @@ class TemplateDetector(BaseDetector):
         """Parameter grid for hyperparameter search"""
         return [
             # High quality - fewer corners
-            {'quality_level': 0.05, 'min_distance': 20, 'expansion': 15},
-            {'quality_level': 0.05, 'min_distance': 15, 'expansion': 20},
-
+            {"quality_level": 0.05, "min_distance": 20, "expansion": 15},
+            {"quality_level": 0.05, "min_distance": 15, "expansion": 20},
             # Moderate quality
-            {'quality_level': 0.01, 'min_distance': 10, 'expansion': 20},
-            {'quality_level': 0.01, 'min_distance': 10, 'expansion': 25},
-            {'quality_level': 0.01, 'min_distance': 15, 'expansion': 20},
-
+            {"quality_level": 0.01, "min_distance": 10, "expansion": 20},
+            {"quality_level": 0.01, "min_distance": 10, "expansion": 25},
+            {"quality_level": 0.01, "min_distance": 15, "expansion": 20},
             # Lower quality - more corners
-            {'quality_level': 0.005, 'min_distance': 10, 'expansion': 20},
-            {'quality_level': 0.001, 'min_distance': 10, 'expansion': 25},
-
+            {"quality_level": 0.005, "min_distance": 10, "expansion": 20},
+            {"quality_level": 0.001, "min_distance": 10, "expansion": 25},
             # Very aggressive
-            {'quality_level': 0.001, 'min_distance': 5, 'expansion': 30},
+            {"quality_level": 0.001, "min_distance": 5, "expansion": 30},
         ]

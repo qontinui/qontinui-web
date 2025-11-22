@@ -15,21 +15,22 @@ For production, could use actual Graph Neural Networks (GNNs).
 """
 
 import logging
-from typing import Dict, Any, List, Tuple, Optional, Set
-from io import BytesIO
-from PIL import Image
-import numpy as np
-import cv2
 from dataclasses import dataclass
 from enum import Enum
+from io import BytesIO
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 class RelationType(str, Enum):
     """Types of spatial relationships between UI elements"""
+
     ABOVE = "above"
     BELOW = "below"
     LEFT = "left"
@@ -50,6 +52,7 @@ class RelationType(str, Enum):
 @dataclass
 class UINode:
     """Represents a UI element node in the graph"""
+
     id: int
     bbox: BoundingBox
     features: np.ndarray
@@ -60,6 +63,7 @@ class UINode:
 @dataclass
 class UIEdge:
     """Represents a relationship between UI elements"""
+
     source_id: int
     target_id: int
     relation_type: RelationType
@@ -106,16 +110,13 @@ class GraphNeuralDetector(BaseAnalyzer):
             "min_node_area": 200,
             "max_node_area": 50000,
             "edge_threshold": 50,
-
             # Relationship thresholds
             "alignment_threshold": 5,  # pixels for alignment
             "proximity_threshold": 50,  # pixels for proximity
-
             # Graph patterns
             "button_group_bonus": 0.2,  # Confidence boost for button groups
             "form_action_bonus": 0.15,  # Bonus for buttons below inputs
             "centered_bonus": 0.1,  # Bonus for centered elements
-
             # Propagation
             "propagation_iterations": 3,
             "propagation_alpha": 0.3,
@@ -138,7 +139,9 @@ class GraphNeuralDetector(BaseAnalyzer):
             elements = await self._analyze_screenshot(img, screenshot_idx, params)
             all_elements.extend(elements)
 
-        avg_confidence = np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        avg_confidence = (
+            np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        )
 
         logger.info(
             f"Found {len(all_elements)} elements using graph analysis "
@@ -161,15 +164,12 @@ class GraphNeuralDetector(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
     async def _analyze_screenshot(
-        self,
-        img: np.ndarray,
-        screenshot_idx: int,
-        params: Dict[str, Any]
+        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
     ) -> List[DetectedElement]:
         """Analyze single screenshot using graph approach"""
 
@@ -197,23 +197,23 @@ class GraphNeuralDetector(BaseAnalyzer):
         for node in nodes:
             # Filter by confidence and type
             if node.node_type == "button" and node.confidence > 0.5:
-                elements.append(DetectedElement(
-                    bounding_box=node.bbox,
-                    confidence=node.confidence,
-                    label="Button (Graph)",
-                    element_type="button",
-                    screenshot_index=screenshot_idx,
-                    metadata={
-                        "method": "graph_neural",
-                        "node_id": node.id,
-                    },
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=node.bbox,
+                        confidence=node.confidence,
+                        label="Button (Graph)",
+                        element_type="button",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "method": "graph_neural",
+                            "node_id": node.id,
+                        },
+                    )
+                )
 
         return elements
 
-    def _extract_nodes(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[UINode]:
+    def _extract_nodes(self, img: np.ndarray, params: Dict[str, Any]) -> List[UINode]:
         """
         Extract candidate UI element nodes from image
         """
@@ -229,7 +229,9 @@ class GraphNeuralDetector(BaseAnalyzer):
         edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
@@ -243,21 +245,21 @@ class GraphNeuralDetector(BaseAnalyzer):
             # Extract visual features
             features = self._extract_node_features(img, bbox)
 
-            nodes.append(UINode(
-                id=node_id,
-                bbox=bbox,
-                features=features,
-                node_type=None,  # Unknown initially
-                confidence=0.5,
-            ))
+            nodes.append(
+                UINode(
+                    id=node_id,
+                    bbox=bbox,
+                    features=features,
+                    node_type=None,  # Unknown initially
+                    confidence=0.5,
+                )
+            )
 
             node_id += 1
 
         return nodes
 
-    def _extract_node_features(
-        self, img: np.ndarray, bbox: BoundingBox
-    ) -> np.ndarray:
+    def _extract_node_features(self, img: np.ndarray, bbox: BoundingBox) -> np.ndarray:
         """
         Extract visual features for a node
 
@@ -265,7 +267,7 @@ class GraphNeuralDetector(BaseAnalyzer):
         """
         x, y, w, h = bbox.x, bbox.y, bbox.width, bbox.height
 
-        region = img[y:y+h, x:x+w]
+        region = img[y : y + h, x : x + w]
 
         if region.size == 0:
             return np.zeros(10)
@@ -314,12 +316,14 @@ class GraphNeuralDetector(BaseAnalyzer):
                 )
 
                 for relation_type, strength in relations:
-                    edges.append(UIEdge(
-                        source_id=node1.id,
-                        target_id=node2.id,
-                        relation_type=relation_type,
-                        strength=strength,
-                    ))
+                    edges.append(
+                        UIEdge(
+                            source_id=node1.id,
+                            target_id=node2.id,
+                            relation_type=relation_type,
+                            strength=strength,
+                        )
+                    )
 
         return edges
 
@@ -337,16 +341,14 @@ class GraphNeuralDetector(BaseAnalyzer):
         x2, y2, w2, h2 = bbox2.x, bbox2.y, bbox2.width, bbox2.height
 
         # Compute centers
-        cx1, cy1 = x1 + w1/2, y1 + h1/2
-        cx2, cy2 = x2 + w2/2, y2 + h2/2
+        cx1, cy1 = x1 + w1 / 2, y1 + h1 / 2
+        cx2, cy2 = x2 + w2 / 2, y2 + h2 / 2
 
         # Check containment
-        if (x1 <= x2 and y1 <= y2 and
-            x1 + w1 >= x2 + w2 and y1 + h1 >= y2 + h2):
+        if x1 <= x2 and y1 <= y2 and x1 + w1 >= x2 + w2 and y1 + h1 >= y2 + h2:
             relations.append((RelationType.CONTAINS, 1.0))
 
-        elif (x2 <= x1 and y2 <= y1 and
-              x2 + w2 >= x1 + w1 and y2 + h2 >= y1 + h1):
+        elif x2 <= x1 and y2 <= y1 and x2 + w2 >= x1 + w1 and y2 + h2 >= y1 + h1:
             relations.append((RelationType.CONTAINED_BY, 1.0))
 
         # Check alignment
@@ -357,7 +359,7 @@ class GraphNeuralDetector(BaseAnalyzer):
             relations.append((RelationType.ALIGNED_VERTICAL, 1.0))
 
         # Check directional relationships (if close enough)
-        distance = np.sqrt((cx2 - cx1)**2 + (cy2 - cy1)**2)
+        distance = np.sqrt((cx2 - cx1) ** 2 + (cy2 - cy1) ** 2)
 
         if distance < params["proximity_threshold"]:
             # Above/Below
@@ -383,7 +385,7 @@ class GraphNeuralDetector(BaseAnalyzer):
         nodes: List[UINode],
         edges: List[UIEdge],
         img: np.ndarray,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[UINode]:
         """
         Apply graph-based reasoning to classify nodes and adjust confidence
@@ -458,7 +460,7 @@ class GraphNeuralDetector(BaseAnalyzer):
         node: UINode,
         nodes: List[UINode],
         edges: List[UIEdge],
-        alignment_type: RelationType
+        alignment_type: RelationType,
     ) -> int:
         """
         Count how many button-like nodes are aligned with this node
@@ -490,7 +492,7 @@ class GraphNeuralDetector(BaseAnalyzer):
         node: UINode,
         nodes: List[UINode],
         edges: List[UIEdge],
-        direction: RelationType
+        direction: RelationType,
     ) -> int:
         """
         Count elements in a specific direction from this node
@@ -520,10 +522,7 @@ class GraphNeuralDetector(BaseAnalyzer):
         return abs(center_x - img_center_x) < threshold
 
     def _propagate_confidence(
-        self,
-        nodes: List[UINode],
-        edges: List[UIEdge],
-        params: Dict[str, Any]
+        self, nodes: List[UINode], edges: List[UIEdge], params: Dict[str, Any]
     ) -> List[UINode]:
         """
         Propagate confidence through graph
@@ -549,17 +548,16 @@ class GraphNeuralDetector(BaseAnalyzer):
 
                     if neighbor and neighbor.node_type == node.node_type:
                         # Weight by edge strength
-                        neighbor_confidences.append(
-                            neighbor.confidence * edge.strength
-                        )
+                        neighbor_confidences.append(neighbor.confidence * edge.strength)
 
                 # Update confidence (weighted average)
                 if neighbor_confidences:
                     avg_neighbor_conf = np.mean(neighbor_confidences)
                     new_conf = (
-                        (1 - params["propagation_alpha"]) * node.confidence +
-                        params["propagation_alpha"] * avg_neighbor_conf
-                    )
+                        1 - params["propagation_alpha"]
+                    ) * node.confidence + params[
+                        "propagation_alpha"
+                    ] * avg_neighbor_conf
                     new_confidences[node.id] = new_conf
                 else:
                     new_confidences[node.id] = node.confidence

@@ -11,36 +11,36 @@ This script autonomously:
 6. Runs until perfect detection is achieved or max iterations reached
 """
 
+import json
 import os
 import sys
-import json
 import time
-from pathlib import Path
-from typing import List, Dict, Tuple, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
 import cv2
 import numpy as np
-
-from evaluator import (
-    Evaluator,
-    BBox,
-    EvaluationResult,
-    compare_methods,
-    load_multi_screenshot_dataset,
-    MultiScreenshotDataset,
-    MultiScreenshotEvaluator,
-)
 from detectors import (
-    EdgeBasedDetector,
-    ContourDetector,
     ColorClusterDetector,
-    TemplateDetector,
-    MSERDetector,
-    SelectiveSearchDetector,
+    ContourDetector,
+    EdgeBasedDetector,
     HybridDetector,
+    MSERDetector,
     SAM2Detector,
+    SelectiveSearchDetector,
+    TemplateDetector,
 )
 from detectors.consistency_detector import ConsistencyDetector
+from evaluator import (
+    BBox,
+    EvaluationResult,
+    Evaluator,
+    MultiScreenshotDataset,
+    MultiScreenshotEvaluator,
+    compare_methods,
+    load_multi_screenshot_dataset,
+)
 
 
 class ResearchNotes:
@@ -52,7 +52,7 @@ class ResearchNotes:
 
         # Create or load existing notes
         if os.path.exists(notes_file):
-            with open(notes_file, 'r') as f:
+            with open(notes_file, "r") as f:
                 self.existing_notes = f.read()
         else:
             self.existing_notes = ""
@@ -76,18 +76,22 @@ Achieve 100% precision and 100% recall in detecting GUI elements from screenshot
 ---
 
 """
-        with open(self.notes_file, 'w') as f:
+        with open(self.notes_file, "w") as f:
             f.write(header)
 
-    def add_iteration_notes(self, iteration: int, results: List[EvaluationResult], insights: str):
+    def add_iteration_notes(
+        self, iteration: int, results: List[EvaluationResult], insights: str
+    ):
         """Add notes for an iteration"""
-        with open(self.notes_file, 'a') as f:
+        with open(self.notes_file, "a") as f:
             f.write(f"\n## Iteration {iteration}\n")
             f.write(f"**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
 
             # Best result
             if results:
-                best = max(results, key=lambda r: (r.is_perfect(), r.f1, -r.processing_time))
+                best = max(
+                    results, key=lambda r: (r.is_perfect(), r.f1, -r.processing_time)
+                )
                 f.write(f"### Best Method: {best.method_name}\n")
                 f.write(f"- Precision: {best.precision:.2%}\n")
                 f.write(f"- Recall: {best.recall:.2%}\n")
@@ -110,19 +114,21 @@ Achieve 100% precision and 100% recall in detecting GUI elements from screenshot
 
             for result in sorted(results, key=lambda r: r.f1, reverse=True):
                 perfect = "✓" if result.is_perfect() else "✗"
-                f.write(f"| {result.method_name} | {result.precision:.2%} | {result.recall:.2%} | {result.f1:.2%} | {result.processing_time:.3f}s | {perfect} |\n")
+                f.write(
+                    f"| {result.method_name} | {result.precision:.2%} | {result.recall:.2%} | {result.f1:.2%} | {result.processing_time:.3f}s | {perfect} |\n"
+                )
 
             f.write("\n---\n")
 
     def add_finding(self, finding: str):
         """Add a general finding"""
         self.findings.append(finding)
-        with open(self.notes_file, 'a') as f:
+        with open(self.notes_file, "a") as f:
             f.write(f"\n**Finding:** {finding}\n")
 
     def add_success_notes(self, winning_method: str, result: EvaluationResult):
         """Add notes when perfect detection is achieved"""
-        with open(self.notes_file, 'a') as f:
+        with open(self.notes_file, "a") as f:
             f.write(f"\n{'='*80}\n")
             f.write(f"# 🎉 SUCCESS - Perfect Detection Achieved!\n")
             f.write(f"{'='*80}\n\n")
@@ -138,8 +144,13 @@ Achieve 100% precision and 100% recall in detecting GUI elements from screenshot
 class ResearchEnvironment:
     """Main research environment for autonomous experimentation"""
 
-    def __init__(self, screenshots_dir: str = "screenshots", annotations_dir: str = "annotations",
-                 results_dir: str = "results", max_iterations: int = 50):
+    def __init__(
+        self,
+        screenshots_dir: str = "screenshots",
+        annotations_dir: str = "annotations",
+        results_dir: str = "results",
+        max_iterations: int = 50,
+    ):
         self.screenshots_dir = Path(screenshots_dir)
         self.annotations_dir = Path(annotations_dir)
         self.results_dir = Path(results_dir)
@@ -201,32 +212,34 @@ class ResearchEnvironment:
         self.ground_truth_file = annotation_files[0]
         print(f"📝 Loading ground truth from: {self.ground_truth_file.name}")
 
-        with open(self.ground_truth_file, 'r') as f:
+        with open(self.ground_truth_file, "r") as f:
             data = json.load(f)
 
         # Detect format version to determine single vs multi-screenshot mode
-        format_version = data.get('format_version', '1.0')
+        format_version = data.get("format_version", "1.0")
 
-        if format_version == '2.0':
+        if format_version == "2.0":
             # Multi-screenshot mode
             print("📊 Multi-screenshot mode detected (format v2.0)")
             self.multi_screenshot_mode = True
 
             # Load multi-screenshot dataset
             self.multi_screenshot_dataset = load_multi_screenshot_dataset(
-                str(self.ground_truth_file),
-                str(self.screenshots_dir)
+                str(self.ground_truth_file), str(self.screenshots_dir)
             )
 
             # Initialize multi-screenshot evaluator
             self.boundary_width = self.multi_screenshot_dataset.boundary_width
             self.multi_screenshot_evaluator = MultiScreenshotEvaluator(
-                iou_threshold=0.5,
-                boundary_width=self.boundary_width
+                iou_threshold=0.5, boundary_width=self.boundary_width
             )
 
-            print(f"✓ Loaded {len(self.multi_screenshot_dataset.screenshots)} screenshots")
-            print(f"✓ Loaded {len(self.multi_screenshot_dataset.annotations)} cross-screenshot annotations")
+            print(
+                f"✓ Loaded {len(self.multi_screenshot_dataset.screenshots)} screenshots"
+            )
+            print(
+                f"✓ Loaded {len(self.multi_screenshot_dataset.annotations)} cross-screenshot annotations"
+            )
             if self.boundary_width > 0:
                 print(f"✓ Boundary tolerance: {self.boundary_width} pixels")
 
@@ -239,24 +252,28 @@ class ResearchEnvironment:
 
             # Load boxes
             self.ground_truth_boxes = []
-            for ann in data['annotations']:
-                bbox = ann['bbox']
-                self.ground_truth_boxes.append(BBox(
-                    x1=bbox[0],
-                    y1=bbox[1],
-                    x2=bbox[2],
-                    y2=bbox[3],
-                    label=ann.get('label', '')
-                ))
+            for ann in data["annotations"]:
+                bbox = ann["bbox"]
+                self.ground_truth_boxes.append(
+                    BBox(
+                        x1=bbox[0],
+                        y1=bbox[1],
+                        x2=bbox[2],
+                        y2=bbox[3],
+                        label=ann.get("label", ""),
+                    )
+                )
 
             # Load boundary_width (default to 0 for backwards compatibility)
-            self.boundary_width = data.get('boundary_width', 0)
+            self.boundary_width = data.get("boundary_width", 0)
 
             # Re-initialize evaluator with boundary_width
-            self.evaluator = Evaluator(iou_threshold=0.5, boundary_width=self.boundary_width)
+            self.evaluator = Evaluator(
+                iou_threshold=0.5, boundary_width=self.boundary_width
+            )
 
             # Find annotated screenshot
-            screenshot_name = data['screenshot']
+            screenshot_name = data["screenshot"]
             self.annotated_screenshot = self.screenshots_dir / screenshot_name
 
             if not self.annotated_screenshot.exists():
@@ -269,14 +286,26 @@ class ResearchEnvironment:
                 print(f"✓ Boundary tolerance: {self.boundary_width} pixels")
 
             # Load all other screenshots
-            self.test_screenshots = [f for f in self.screenshots_dir.glob("*.png") if f != self.annotated_screenshot]
-            self.test_screenshots.extend([f for f in self.screenshots_dir.glob("*.jpg") if f != self.annotated_screenshot])
+            self.test_screenshots = [
+                f
+                for f in self.screenshots_dir.glob("*.png")
+                if f != self.annotated_screenshot
+            ]
+            self.test_screenshots.extend(
+                [
+                    f
+                    for f in self.screenshots_dir.glob("*.jpg")
+                    if f != self.annotated_screenshot
+                ]
+            )
 
             print(f"✓ Found {len(self.test_screenshots)} additional test screenshots")
 
             return True
 
-    def test_detector(self, detector, image_path: str, params: Dict) -> Tuple[List[BBox], float]:
+    def test_detector(
+        self, detector, image_path: str, params: Dict
+    ) -> Tuple[List[BBox], float]:
         """Test a detector with given parameters"""
         start_time = time.time()
         try:
@@ -308,7 +337,9 @@ class ResearchEnvironment:
 
             for i, params in enumerate(param_grid):
                 # Test on annotated screenshot
-                boxes, proc_time = self.test_detector(detector, str(self.annotated_screenshot), params)
+                boxes, proc_time = self.test_detector(
+                    detector, str(self.annotated_screenshot), params
+                )
 
                 # Evaluate
                 method_name = f"{detector.name} [{i+1}]"
@@ -316,15 +347,17 @@ class ResearchEnvironment:
                     method_name=method_name,
                     ground_truth=self.ground_truth_boxes,
                     predictions=boxes,
-                    processing_time=proc_time
+                    processing_time=proc_time,
                 )
 
                 results.append(result)
 
                 # Print summary
                 status = "✓" if result.is_perfect() else "✗"
-                print(f"   {status} Config {i+1}: P={result.precision:.2%} R={result.recall:.2%} "
-                      f"F1={result.f1:.2%} ({proc_time:.3f}s)")
+                print(
+                    f"   {status} Config {i+1}: P={result.precision:.2%} R={result.recall:.2%} "
+                    f"F1={result.f1:.2%} ({proc_time:.3f}s)"
+                )
 
                 # Track best
                 if self.best_result is None or result.f1 > self.best_result.f1:
@@ -362,7 +395,9 @@ class ResearchEnvironment:
                 # Test on multi-screenshot dataset
                 start_time = time.time()
                 try:
-                    predictions = detector.detect_multi(self.multi_screenshot_dataset, **params)
+                    predictions = detector.detect_multi(
+                        self.multi_screenshot_dataset, **params
+                    )
                     proc_time = time.time() - start_time
                 except Exception as e:
                     print(f"   ⚠ Error in {detector.name} config {i+1}: {e}")
@@ -374,22 +409,29 @@ class ResearchEnvironment:
                     method_name=method_name,
                     dataset=self.multi_screenshot_dataset,
                     predictions=predictions,
-                    processing_time=proc_time
+                    processing_time=proc_time,
                 )
 
                 # Aggregate results across screenshots
-                aggregated_result = self.multi_screenshot_evaluator.aggregate_results(per_screenshot_results)
+                aggregated_result = self.multi_screenshot_evaluator.aggregate_results(
+                    per_screenshot_results
+                )
 
                 if aggregated_result:
                     results.append(aggregated_result)
 
                     # Print summary
                     status = "✓" if aggregated_result.is_perfect() else "✗"
-                    print(f"   {status} Config {i+1}: P={aggregated_result.precision:.2%} R={aggregated_result.recall:.2%} "
-                          f"F1={aggregated_result.f1:.2%} ({proc_time:.3f}s)")
+                    print(
+                        f"   {status} Config {i+1}: P={aggregated_result.precision:.2%} R={aggregated_result.recall:.2%} "
+                        f"F1={aggregated_result.f1:.2%} ({proc_time:.3f}s)"
+                    )
 
                     # Track best
-                    if self.best_result is None or aggregated_result.f1 > self.best_result.f1:
+                    if (
+                        self.best_result is None
+                        or aggregated_result.f1 > self.best_result.f1
+                    ):
                         self.best_result = aggregated_result
                         self.best_params = params
                         self.best_detector = detector.name
@@ -404,16 +446,19 @@ class ResearchEnvironment:
 
     def _save_result(self, result: EvaluationResult, detector_name: str, params: Dict):
         """Save a result to file"""
-        result_file = self.results_dir / f"result_{detector_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        result_file = (
+            self.results_dir
+            / f"result_{detector_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
 
         data = {
-            'detector': detector_name,
-            'parameters': params,
-            'result': result.to_dict(),
-            'timestamp': datetime.now().isoformat()
+            "detector": detector_name,
+            "parameters": params,
+            "result": result.to_dict(),
+            "timestamp": datetime.now().isoformat(),
         }
 
-        with open(result_file, 'w') as f:
+        with open(result_file, "w") as f:
             json.dump(data, f, indent=2)
 
     def generate_insights(self, results: List[EvaluationResult]) -> str:
@@ -426,7 +471,9 @@ class ResearchEnvironment:
         # Check for perfect results
         perfect_results = [r for r in results if r.is_perfect()]
         if perfect_results:
-            insights.append(f"✓ {len(perfect_results)} method(s) achieved perfect detection!")
+            insights.append(
+                f"✓ {len(perfect_results)} method(s) achieved perfect detection!"
+            )
             return "\n".join(insights)
 
         # Analyze precision vs recall
@@ -443,9 +490,13 @@ class ResearchEnvironment:
         avg_fn = sum(r.false_negatives for r in results) / len(results)
 
         if avg_fp > avg_fn:
-            insights.append("- More false positives than false negatives → Try stricter filters")
+            insights.append(
+                "- More false positives than false negatives → Try stricter filters"
+            )
         elif avg_fn > avg_fp:
-            insights.append("- More false negatives than false positives → Try more aggressive detection")
+            insights.append(
+                "- More false negatives than false positives → Try more aggressive detection"
+            )
 
         # Best detector types
         best_3 = sorted(results, key=lambda r: r.f1, reverse=True)[:3]
@@ -466,7 +517,9 @@ class ResearchEnvironment:
         best = max(results, key=lambda r: r.f1)
 
         print(f"\n🔍 Refining strategy based on iteration {iteration}...")
-        print(f"   Best so far: {best.method_name} (P={best.precision:.2%}, R={best.recall:.2%})")
+        print(
+            f"   Best so far: {best.method_name} (P={best.precision:.2%}, R={best.recall:.2%})"
+        )
 
         # Strategy: Focus on best-performing detector types in next iteration
         # This would involve creating custom parameter grids based on performance
@@ -476,13 +529,15 @@ class ResearchEnvironment:
 
     def run(self):
         """Main research loop"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("GUI ELEMENT DETECTION RESEARCH ENVIRONMENT")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         # Load ground truth
         if not self.load_ground_truth():
-            print("\n❌ Cannot proceed without ground truth. Please create annotations first.")
+            print(
+                "\n❌ Cannot proceed without ground truth. Please create annotations first."
+            )
             print("   Use the web-based annotation tool at /admin/annotations")
             return
 
@@ -490,9 +545,13 @@ class ResearchEnvironment:
         if self.multi_screenshot_mode:
             total_annotations = len(self.multi_screenshot_dataset.annotations)
             total_screenshots = len(self.multi_screenshot_dataset.screenshots)
-            print(f"\n🎯 Goal: Detect all {total_annotations} elements across {total_screenshots} screenshots with 100% precision and recall")
+            print(
+                f"\n🎯 Goal: Detect all {total_annotations} elements across {total_screenshots} screenshots with 100% precision and recall"
+            )
         else:
-            print(f"\n🎯 Goal: Detect all {len(self.ground_truth_boxes)} elements with 100% precision and recall")
+            print(
+                f"\n🎯 Goal: Detect all {len(self.ground_truth_boxes)} elements with 100% precision and recall"
+            )
 
         print(f"📊 Max iterations: {self.max_iterations}\n")
 
@@ -521,7 +580,9 @@ class ResearchEnvironment:
             perfect_results = [r for r in results if r.is_perfect()]
             if perfect_results:
                 best_perfect = min(perfect_results, key=lambda r: r.processing_time)
-                print(f"\n🎉 SUCCESS! Perfect detection achieved in iteration {iteration}")
+                print(
+                    f"\n🎉 SUCCESS! Perfect detection achieved in iteration {iteration}"
+                )
                 print(f"   Method: {best_perfect.method_name}")
                 print(f"   Time: {best_perfect.processing_time:.3f}s")
 
@@ -579,13 +640,25 @@ def main():
     """Main entry point"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Autonomous GUI Element Detection Research")
-    parser.add_argument('--screenshots', default='screenshots', help='Screenshots directory')
-    parser.add_argument('--annotations', default='annotations', help='Annotations directory')
-    parser.add_argument('--results', default='results', help='Results output directory')
-    parser.add_argument('--max-iterations', type=int, default=50, help='Maximum iterations')
-    parser.add_argument('--continue', dest='continue_research', action='store_true',
-                       help='Continue from previous run')
+    parser = argparse.ArgumentParser(
+        description="Autonomous GUI Element Detection Research"
+    )
+    parser.add_argument(
+        "--screenshots", default="screenshots", help="Screenshots directory"
+    )
+    parser.add_argument(
+        "--annotations", default="annotations", help="Annotations directory"
+    )
+    parser.add_argument("--results", default="results", help="Results output directory")
+    parser.add_argument(
+        "--max-iterations", type=int, default=50, help="Maximum iterations"
+    )
+    parser.add_argument(
+        "--continue",
+        dest="continue_research",
+        action="store_true",
+        help="Continue from previous run",
+    )
 
     args = parser.parse_args()
 
@@ -593,7 +666,7 @@ def main():
         screenshots_dir=args.screenshots,
         annotations_dir=args.annotations,
         results_dir=args.results,
-        max_iterations=args.max_iterations
+        max_iterations=args.max_iterations,
     )
 
     env.run()

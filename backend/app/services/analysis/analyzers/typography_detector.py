@@ -13,20 +13,21 @@ then expands to button boundaries.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple, Optional
-from io import BytesIO
-from PIL import Image
-import numpy as np
-import cv2
 import re
+from io import BytesIO
+from typing import Any, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,32 +71,61 @@ class TypographyDetector(BaseAnalyzer):
             "min_text_area": 100,
             "max_text_area": 5000,
             "text_aspect_ratio_range": (1.5, 10.0),
-
             # Typography characteristics
             "bold_stroke_ratio": 0.15,  # Stroke width ratio indicating bold
             "min_stroke_width": 2,
             "max_stroke_width": 8,
-
             # Button text patterns
             "button_keywords": [
-                "submit", "save", "cancel", "delete", "add", "create", "new",
-                "update", "edit", "confirm", "ok", "yes", "no", "apply",
-                "login", "signup", "register", "sign in", "sign up",
-                "search", "find", "go", "send", "share", "post",
-                "upload", "download", "import", "export",
-                "next", "previous", "back", "continue", "finish",
-                "buy", "purchase", "checkout", "pay",
-                "close", "dismiss", "accept", "reject",
+                "submit",
+                "save",
+                "cancel",
+                "delete",
+                "add",
+                "create",
+                "new",
+                "update",
+                "edit",
+                "confirm",
+                "ok",
+                "yes",
+                "no",
+                "apply",
+                "login",
+                "signup",
+                "register",
+                "sign in",
+                "sign up",
+                "search",
+                "find",
+                "go",
+                "send",
+                "share",
+                "post",
+                "upload",
+                "download",
+                "import",
+                "export",
+                "next",
+                "previous",
+                "back",
+                "continue",
+                "finish",
+                "buy",
+                "purchase",
+                "checkout",
+                "pay",
+                "close",
+                "dismiss",
+                "accept",
+                "reject",
             ],
-
             # Case patterns (regex)
             "all_caps_pattern": r"^[A-Z\s]+$",
             "title_case_pattern": r"^[A-Z][a-z]*(\s[A-Z][a-z]*)*$",
-
             # Expansion for button boundaries
             "boundary_expansion_pixels": 10,
             "min_button_padding": 6,
-
             # Validation
             "min_button_area": 500,
             "max_button_area": 40000,
@@ -118,7 +148,9 @@ class TypographyDetector(BaseAnalyzer):
             elements = await self._analyze_screenshot(img, screenshot_idx, params)
             all_elements.extend(elements)
 
-        avg_confidence = np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        avg_confidence = (
+            np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        )
 
         logger.info(
             f"Found {len(all_elements)} button text regions with "
@@ -141,22 +173,21 @@ class TypographyDetector(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
     async def _analyze_screenshot(
-        self,
-        img: np.ndarray,
-        screenshot_idx: int,
-        params: Dict[str, Any]
+        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
     ) -> List[DetectedElement]:
         """Analyze single screenshot for button text"""
 
         # Detect text regions
         text_regions = self._detect_text_regions(img, params)
 
-        logger.info(f"Screenshot {screenshot_idx}: Found {len(text_regions)} text regions")
+        logger.info(
+            f"Screenshot {screenshot_idx}: Found {len(text_regions)} text regions"
+        )
 
         elements = []
         for text_bbox in text_regions:
@@ -179,23 +210,25 @@ class TypographyDetector(BaseAnalyzer):
             if not self._validate_button(img, button_bbox, params):
                 continue
 
-            elements.append(DetectedElement(
-                bounding_box=button_bbox,
-                confidence=confidence,
-                label="Button (Typography)",
-                element_type="button",
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "typography",
-                    **typo_features,
-                    "text_bbox": {
-                        "x": text_bbox.x,
-                        "y": text_bbox.y,
-                        "width": text_bbox.width,
-                        "height": text_bbox.height,
+            elements.append(
+                DetectedElement(
+                    bounding_box=button_bbox,
+                    confidence=confidence,
+                    label="Button (Typography)",
+                    element_type="button",
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "typography",
+                        **typo_features,
+                        "text_bbox": {
+                            "x": text_bbox.x,
+                            "y": text_bbox.y,
+                            "width": text_bbox.width,
+                            "height": text_bbox.height,
+                        },
                     },
-                },
-            ))
+                )
+            )
 
         return elements
 
@@ -248,7 +281,7 @@ class TypographyDetector(BaseAnalyzer):
         x, y, w, h = bbox.x, bbox.y, bbox.width, bbox.height
 
         # Extract text region
-        region = img[y:y+h, x:x+w]
+        region = img[y : y + h, x : x + w]
         if region.size == 0:
             return None
 
@@ -315,7 +348,9 @@ class TypographyDetector(BaseAnalyzer):
         avg_stroke_width = avg_distance * 2
 
         # Check if in valid range
-        if not (params["min_stroke_width"] <= avg_stroke_width <= params["max_stroke_width"]):
+        if not (
+            params["min_stroke_width"] <= avg_stroke_width <= params["max_stroke_width"]
+        ):
             return None
 
         # Bold if stroke width is above threshold
@@ -433,7 +468,9 @@ class TypographyDetector(BaseAnalyzer):
         h_expanded = min(img.shape[0] - y_expanded, h + 2 * expansion)
 
         # Try to refine by finding uniform color region
-        expanded_region = img[y_expanded:y_expanded+h_expanded, x_expanded:x_expanded+w_expanded]
+        expanded_region = img[
+            y_expanded : y_expanded + h_expanded, x_expanded : x_expanded + w_expanded
+        ]
 
         if expanded_region.size > 0:
             # Check if region has uniform background
@@ -448,7 +485,9 @@ class TypographyDetector(BaseAnalyzer):
                 w_expanded = min(img.shape[1] - x_expanded, w + 2 * expansion)
                 h_expanded = min(img.shape[0] - y_expanded, h + 2 * expansion)
 
-        return BoundingBox(x=x_expanded, y=y_expanded, width=w_expanded, height=h_expanded)
+        return BoundingBox(
+            x=x_expanded, y=y_expanded, width=w_expanded, height=h_expanded
+        )
 
     def _validate_button(
         self, img: np.ndarray, bbox: BoundingBox, params: Dict[str, Any]

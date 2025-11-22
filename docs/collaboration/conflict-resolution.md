@@ -40,10 +40,10 @@ const editWithLock = async (resourceId: string) => {
   try {
     // Acquire exclusive lock
     const lock = await acquireLock(projectId, 'workflow', resourceId);
-    
+
     // Edit resource
     const result = await editResource(resourceId);
-    
+
     return result;
   } finally {
     // Always release lock
@@ -129,7 +129,7 @@ class ConflictDetector {
   ): Promise<boolean> {
     const response = await fetch(`/api/v1/resources/${resourceId}/version`);
     const { version: serverVersion } = await response.json();
-    
+
     return serverVersion !== localVersion;
   }
 
@@ -216,7 +216,7 @@ const saveFirstWriteWins = async (resource: VersionedResource) => {
 ```typescript
 /**
  * Perform three-way merge
- * 
+ *
  * @param base - Common ancestor version
  * @param local - User's local changes
  * @param remote - Server's current version
@@ -303,7 +303,7 @@ export function ConflictResolutionDialog({
 
   const handleResolve = () => {
     let resolvedData;
-    
+
     switch (resolution) {
       case 'local':
         resolvedData = conflict.local_data;

@@ -75,6 +75,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
     controlFlow: true,
     data: false,
     state: false,
+    code: false,
   });
 
   const categories = useMemo(() => getCategoriesOrdered(), []);

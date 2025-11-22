@@ -9,12 +9,54 @@ Features:
 - Pretty console logs in development
 - Correlation IDs for request tracking
 - Integration with Sentry for error tracking
+- Automatic sanitization of sensitive data
 """
 
 import logging
 import sys
 
 import structlog
+from app.core.log_sanitizer import sanitize_log_data
+
+
+def sanitize_event_dict(logger, method_name, event_dict):
+    """
+    Structlog processor that sanitizes sensitive data from log events.
+
+    This processor runs before the final renderer and ensures that
+    sensitive fields like passwords, tokens, and secrets are redacted.
+
+    Args:
+        logger: The logger instance
+        method_name: The name of the logging method called
+        event_dict: The event dictionary to process
+
+    Returns:
+        dict: Sanitized event dictionary
+    """
+    # Extract the event message - don't sanitize it as it's usually safe
+    event_message = event_dict.get("event", "")
+
+    # Sanitize all other key-value pairs in the event dict
+    # Skip special keys that structlog uses internally
+    skip_keys = {"event", "timestamp", "level", "logger", "exc_info", "stack_info"}
+
+    sanitized_dict = {"event": event_message}
+
+    for key, value in event_dict.items():
+        if key in skip_keys:
+            # Keep special keys as-is
+            sanitized_dict[key] = value
+        elif isinstance(value, dict):
+            # Recursively sanitize nested dictionaries
+            sanitized_dict[key] = sanitize_log_data(value)
+        else:
+            # Sanitize individual values
+            from app.core.log_sanitizer import sanitize_value
+
+            sanitized_dict[key] = sanitize_value(key, value)
+
+    return sanitized_dict
 
 
 def configure_logging(environment: str = "development") -> None:
@@ -36,6 +78,8 @@ def configure_logging(environment: str = "development") -> None:
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
+        # Add sanitization processor BEFORE rendering
+        sanitize_event_dict,
     ]
 
     if environment == "production":

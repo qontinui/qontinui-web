@@ -11,19 +11,20 @@ Requires video input or sequential screenshots with interaction events.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple, Optional
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,20 +71,16 @@ class TemporalAnalyzer(BaseAnalyzer):
         return {
             # Interaction events (optional)
             "interaction_events": None,  # List of {type, timestamp, x, y}
-
             # Change detection
             "min_change_threshold": 10,  # Minimum pixel difference
             "change_area_threshold": 50,  # Minimum changed area (pixels)
             "temporal_window": 5,  # Frames to look back
-
             # Hover detection
             "hover_color_change_threshold": 20,  # Color change indicating hover
             "hover_duration_frames": 2,  # Min frames for hover state
-
             # Animation detection
             "animation_variance_threshold": 15,  # Variance indicating animation
             "transition_detection": True,  # Detect CSS transitions
-
             # Element validation
             "min_element_area": 400,
             "max_element_area": 50000,
@@ -112,9 +109,7 @@ class TemporalAnalyzer(BaseAnalyzer):
         logger.info(f"Detected {len(change_regions)} regions with temporal changes")
 
         # Filter and validate as interactive elements
-        elements = self._validate_interactive_elements(
-            images, change_regions, params
-        )
+        elements = self._validate_interactive_elements(images, change_regions, params)
 
         avg_confidence = np.mean([e.confidence for e in elements]) if elements else 0.0
 
@@ -140,7 +135,7 @@ class TemporalAnalyzer(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
@@ -192,10 +187,7 @@ class TemporalAnalyzer(BaseAnalyzer):
 
         # Threshold to get binary mask
         _, mask = cv2.threshold(
-            diff,
-            params["min_change_threshold"],
-            255,
-            cv2.THRESH_BINARY
+            diff, params["min_change_threshold"], 255, cv2.THRESH_BINARY
         )
 
         # Clean up noise
@@ -215,9 +207,7 @@ class TemporalAnalyzer(BaseAnalyzer):
 
         # Find contours
         contours, _ = cv2.findContours(
-            diff_mask,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
+            diff_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
 
         for contour in contours:
@@ -230,15 +220,17 @@ class TemporalAnalyzer(BaseAnalyzer):
                 continue
 
             # Calculate change intensity
-            change_pixels = cv2.countNonZero(diff_mask[y:y+h, x:x+w])
+            change_pixels = cv2.countNonZero(diff_mask[y : y + h, x : x + w])
             change_density = change_pixels / area if area > 0 else 0
 
-            regions.append({
-                "bbox": BoundingBox(x=x, y=y, width=w, height=h),
-                "frame_idx": frame_idx,
-                "area": area,
-                "change_density": change_density,
-            })
+            regions.append(
+                {
+                    "bbox": BoundingBox(x=x, y=y, width=w, height=h),
+                    "frame_idx": frame_idx,
+                    "area": area,
+                    "change_density": change_density,
+                }
+            )
 
         return regions
 
@@ -295,7 +287,7 @@ class TemporalAnalyzer(BaseAnalyzer):
         self,
         images: List[np.ndarray],
         change_regions: List[Dict[str, Any]],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedElement]:
         """
         Validate that changed regions are interactive elements
@@ -317,32 +309,33 @@ class TemporalAnalyzer(BaseAnalyzer):
                 continue
 
             # Calculate confidence based on change characteristics
-            confidence = self._calculate_temporal_confidence(cluster, change_type, params)
+            confidence = self._calculate_temporal_confidence(
+                cluster, change_type, params
+            )
 
             # Use first frame for screenshot index
             screenshot_idx = cluster["frame_indices"][0]
 
-            elements.append(DetectedElement(
-                bounding_box=bbox,
-                confidence=confidence,
-                label=f"Interactive ({change_type})",
-                element_type="interactive",
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "temporal",
-                    "change_type": change_type,
-                    "num_frames_changed": len(cluster["frame_indices"]),
-                    "frame_indices": cluster["frame_indices"],
-                },
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=bbox,
+                    confidence=confidence,
+                    label=f"Interactive ({change_type})",
+                    element_type="interactive",
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "temporal",
+                        "change_type": change_type,
+                        "num_frames_changed": len(cluster["frame_indices"]),
+                        "frame_indices": cluster["frame_indices"],
+                    },
+                )
+            )
 
         return elements
 
     def _analyze_change_pattern(
-        self,
-        images: List[np.ndarray],
-        cluster: Dict[str, Any],
-        params: Dict[str, Any]
+        self, images: List[np.ndarray], cluster: Dict[str, Any], params: Dict[str, Any]
     ) -> Optional[str]:
         """
         Analyze what type of change occurred
@@ -361,7 +354,7 @@ class TemporalAnalyzer(BaseAnalyzer):
             if idx < len(images):
                 img = images[idx]
                 x, y, w, h = bbox.x, bbox.y, bbox.width, bbox.height
-                region = img[y:y+h, x:x+w]
+                region = img[y : y + h, x : x + w]
                 regions.append(region)
 
         if not regions:
@@ -447,10 +440,7 @@ class TemporalAnalyzer(BaseAnalyzer):
         return np.var(areas)
 
     def _calculate_temporal_confidence(
-        self,
-        cluster: Dict[str, Any],
-        change_type: str,
-        params: Dict[str, Any]
+        self, cluster: Dict[str, Any], change_type: str, params: Dict[str, Any]
     ) -> float:
         """
         Calculate confidence based on temporal characteristics

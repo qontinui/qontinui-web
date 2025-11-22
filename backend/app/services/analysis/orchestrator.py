@@ -2,12 +2,12 @@
 Analysis Orchestrator - Manages the analysis pipeline
 """
 
-import logging
-from typing import List, Dict, Any, Optional, Type, Callable
-from uuid import UUID
 import asyncio
+import logging
+from typing import Any, Callable, Dict, List, Optional, Type
+from uuid import UUID
 
-from .base import BaseAnalyzer, AnalysisInput, AnalysisResult, AnalysisType
+from .base import AnalysisInput, AnalysisResult, AnalysisType, BaseAnalyzer
 from .fusion import DecisionFusion, FusedElement
 from .progress import ProgressTracker
 
@@ -21,9 +21,7 @@ class AnalyzerRegistry:
         self._analyzers: Dict[str, Type[BaseAnalyzer]] = {}
         self._instances: Dict[str, BaseAnalyzer] = {}
 
-    def register(
-        self, analyzer_class: Type[BaseAnalyzer], name: Optional[str] = None
-    ):
+    def register(self, analyzer_class: Type[BaseAnalyzer], name: Optional[str] = None):
         """
         Register an analyzer class
 
@@ -67,14 +65,16 @@ class AnalyzerRegistry:
         result = []
         for name, analyzer_class in self._analyzers.items():
             instance = analyzer_class()
-            result.append({
-                "name": name,
-                "type": instance.analysis_type.value,
-                "version": instance.version,
-                "supports_multi_screenshot": instance.supports_multi_screenshot,
-                "required_screenshots": instance.required_screenshots,
-                "default_parameters": instance.get_default_parameters(),
-            })
+            result.append(
+                {
+                    "name": name,
+                    "type": instance.analysis_type.value,
+                    "version": instance.version,
+                    "supports_multi_screenshot": instance.supports_multi_screenshot,
+                    "required_screenshots": instance.required_screenshots,
+                    "default_parameters": instance.get_default_parameters(),
+                }
+            )
         return result
 
 
@@ -165,9 +165,7 @@ class AnalysisOrchestrator:
             if analyzer.validate_input(input_data):
                 valid_analyzers.append(analyzer)
             else:
-                logger.warning(
-                    f"Analyzer {analyzer.name} validation failed, skipping"
-                )
+                logger.warning(f"Analyzer {analyzer.name} validation failed, skipping")
 
         if not valid_analyzers:
             if job_id:
@@ -181,7 +179,9 @@ class AnalysisOrchestrator:
             if parallel:
                 results = await self._run_parallel(valid_analyzers, input_data, job_id)
             else:
-                results = await self._run_sequential(valid_analyzers, input_data, job_id)
+                results = await self._run_sequential(
+                    valid_analyzers, input_data, job_id
+                )
 
             logger.info(f"Analysis complete. Got {len(results)} results")
         except Exception as e:
@@ -193,9 +193,7 @@ class AnalysisOrchestrator:
         response = {
             "annotation_set_id": str(input_data.annotation_set_id),
             "analyzer_results": [r.to_dict() for r in results],
-            "analyzer_statistics": self.fusion_system.get_analyzer_statistics(
-                results
-            ),
+            "analyzer_statistics": self.fusion_system.get_analyzer_statistics(results),
         }
 
         # Fuse results if requested
@@ -204,19 +202,16 @@ class AnalysisOrchestrator:
             if job_id:
                 await self.progress_tracker.update_fusion_start(job_id, total_elements)
 
-            fused_elements = await self.fusion_system.fuse(
-                results, overlap_threshold
-            )
+            fused_elements = await self.fusion_system.fuse(results, overlap_threshold)
             response["fused_elements"] = [e.to_dict() for e in fused_elements]
             response["fusion_stats"] = {
                 "total_elements": len(fused_elements),
                 "avg_confidence": (
                     sum(e.confidence for e in fused_elements) / len(fused_elements)
-                    if fused_elements else 0.0
+                    if fused_elements
+                    else 0.0
                 ),
-                "multi_vote_elements": len(
-                    [e for e in fused_elements if e.votes > 1]
-                ),
+                "multi_vote_elements": len([e for e in fused_elements if e.votes > 1]),
             }
 
             if job_id:
@@ -227,9 +222,13 @@ class AnalysisOrchestrator:
         return response
 
     async def _run_parallel(
-        self, analyzers: List[BaseAnalyzer], input_data: AnalysisInput, job_id: Optional[UUID] = None
+        self,
+        analyzers: List[BaseAnalyzer],
+        input_data: AnalysisInput,
+        job_id: Optional[UUID] = None,
     ) -> List[AnalysisResult]:
         """Run analyzers in parallel"""
+
         async def run_with_progress(analyzer: BaseAnalyzer):
             if job_id:
                 await self.progress_tracker.update_analyzer_start(job_id, analyzer.name)
@@ -256,8 +255,7 @@ class AnalysisOrchestrator:
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 logger.error(
-                    f"Analyzer {analyzers[i].name} failed: {result}",
-                    exc_info=result
+                    f"Analyzer {analyzers[i].name} failed: {result}", exc_info=result
                 )
             else:
                 valid_results.append(result)
@@ -265,7 +263,10 @@ class AnalysisOrchestrator:
         return valid_results
 
     async def _run_sequential(
-        self, analyzers: List[BaseAnalyzer], input_data: AnalysisInput, job_id: Optional[UUID] = None
+        self,
+        analyzers: List[BaseAnalyzer],
+        input_data: AnalysisInput,
+        job_id: Optional[UUID] = None,
     ) -> List[AnalysisResult]:
         """Run analyzers sequentially"""
         results = []
@@ -282,10 +283,7 @@ class AnalysisOrchestrator:
                         job_id, analyzer.name, len(result.elements)
                     )
             except Exception as e:
-                logger.error(
-                    f"Analyzer {analyzer.name} failed: {e}",
-                    exc_info=e
-                )
+                logger.error(f"Analyzer {analyzer.name} failed: {e}", exc_info=e)
                 if job_id:
                     await self.progress_tracker.update_analyzer_error(
                         job_id, analyzer.name, str(e)

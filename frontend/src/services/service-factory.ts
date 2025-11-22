@@ -9,6 +9,7 @@ import { FileUploadService } from './file-upload-service';
 import { ProfileService } from './profile-service';
 import { AnalyticsService } from './analytics-service';
 import { BillingService } from './billing-service';
+import { RunnerService } from './runner-service';
 import { ApiConfig } from './api-config';
 import { OrganizationService } from './collaboration/organization-service';
 import { ProjectCollaborationService } from './collaboration/project-collaboration-service';
@@ -34,6 +35,7 @@ export class ServiceFactory {
   public readonly profileService: ProfileService;
   public readonly analyticsService: AnalyticsService;
   public readonly billingService: BillingService;
+  public readonly runnerService: RunnerService;
   public readonly organizationService: OrganizationService;
   public readonly projectCollaborationService: ProjectCollaborationService;
   public readonly lockService: LockService;
@@ -55,6 +57,7 @@ export class ServiceFactory {
     this.profileService = new ProfileService(this.httpClient);
     this.analyticsService = new AnalyticsService(this.httpClient);
     this.billingService = new BillingService(this.httpClient);
+    this.runnerService = new RunnerService(this.httpClient);
 
     // Initialize collaboration services
     this.organizationService = new OrganizationService(this.httpClient);
@@ -94,6 +97,7 @@ export const fileUploadService = factory.fileUploadService;
 export const profileService = factory.profileService;
 export const analyticsService = factory.analyticsService;
 export const billingService = factory.billingService;
+export const runnerService = factory.runnerService;
 export const organizationService = factory.organizationService;
 export const projectCollaborationService = factory.projectCollaborationService;
 export const lockService = factory.lockService;

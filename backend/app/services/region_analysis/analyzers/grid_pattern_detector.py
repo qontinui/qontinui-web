@@ -6,23 +6,24 @@ identifying grid structures with uniform spacing.
 """
 
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-import numpy as np
+from io import BytesIO
+from typing import Any, Dict, List, Optional, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 from scipy import signal
 from scipy.ndimage import maximum_filter
 
 from ..base import (
     BaseRegionAnalyzer,
-    DetectedRegion,
     BoundingBox,
-    RegionType,
-    RegionAnalysisType,
+    DetectedRegion,
     RegionAnalysisInput,
     RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
 )
-from io import BytesIO
-from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,8 @@ class GridPatternDetector(BaseRegionAnalyzer):
         # Calculate overall confidence
         overall_confidence = (
             sum(r.confidence for r in all_regions) / len(all_regions)
-            if all_regions else 0.0
+            if all_regions
+            else 0.0
         )
 
         return RegionAnalysisResult(
@@ -123,9 +125,7 @@ class GridPatternDetector(BaseRegionAnalyzer):
         return regions
 
     def _find_grid_spacing(
-        self,
-        image: np.ndarray,
-        params: Dict[str, Any]
+        self, image: np.ndarray, params: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
         Use autocorrelation to find grid spacing
@@ -153,13 +153,15 @@ class GridPatternDetector(BaseRegionAnalyzer):
         mask_size = 20
         autocorr_masked = autocorr.copy()
         autocorr_masked[
-            center_y - mask_size:center_y + mask_size,
-            center_x - mask_size:center_x + mask_size
+            center_y - mask_size : center_y + mask_size,
+            center_x - mask_size : center_x + mask_size,
         ] = 0
 
         # Find local maxima
         local_max = maximum_filter(autocorr_masked, size=10)
-        peaks = (autocorr_masked == local_max) & (autocorr_masked > params["autocorr_threshold"])
+        peaks = (autocorr_masked == local_max) & (
+            autocorr_masked > params["autocorr_threshold"]
+        )
 
         # Get peak coordinates
         peak_coords = np.argwhere(peaks)
@@ -172,8 +174,10 @@ class GridPatternDetector(BaseRegionAnalyzer):
         for y, x in peak_coords:
             dy = abs(y - center_y)
             dx = abs(x - center_x)
-            if params["min_cell_size"] <= dx <= params["max_cell_size"] or \
-               params["min_cell_size"] <= dy <= params["max_cell_size"]:
+            if (
+                params["min_cell_size"] <= dx <= params["max_cell_size"]
+                or params["min_cell_size"] <= dy <= params["max_cell_size"]
+            ):
                 distances.append((dx, dy, autocorr[y, x]))
 
         if not distances:
@@ -208,7 +212,7 @@ class GridPatternDetector(BaseRegionAnalyzer):
         gray_img: np.ndarray,
         grid_info: Dict[str, Any],
         params: Dict[str, Any],
-        screenshot_index: int
+        screenshot_index: int,
     ) -> List[DetectedRegion]:
         """Locate actual grid regions in the image"""
         regions = []
@@ -237,7 +241,12 @@ class GridPatternDetector(BaseRegionAnalyzer):
             if len(points) >= params["min_grid_rows"] * params["min_grid_cols"]:
                 # Find grid bounds and structure
                 grid_region = self._extract_grid_structure(
-                    points, spacing_x, spacing_y, gray_img.shape, params, screenshot_index
+                    points,
+                    spacing_x,
+                    spacing_y,
+                    gray_img.shape,
+                    params,
+                    screenshot_index,
                 )
 
                 if grid_region:
@@ -252,7 +261,7 @@ class GridPatternDetector(BaseRegionAnalyzer):
         spacing_y: int,
         img_shape: Tuple[int, int],
         params: Dict[str, Any],
-        screenshot_index: int
+        screenshot_index: int,
     ) -> Optional[DetectedRegion]:
         """Extract grid structure from detected points"""
         if not points:
@@ -294,14 +303,16 @@ class GridPatternDetector(BaseRegionAnalyzer):
         cells = []
         for row in range(rows):
             for col in range(cols):
-                cells.append({
-                    "row": row,
-                    "col": col,
-                    "x": x_start + col * spacing_x,
-                    "y": y_start + row * spacing_y,
-                    "width": spacing_x,
-                    "height": spacing_y,
-                })
+                cells.append(
+                    {
+                        "row": row,
+                        "col": col,
+                        "x": x_start + col * spacing_x,
+                        "y": y_start + row * spacing_y,
+                        "width": spacing_x,
+                        "height": spacing_y,
+                    }
+                )
 
         # Calculate confidence based on grid completeness
         expected_cells = rows * cols
@@ -325,5 +336,5 @@ class GridPatternDetector(BaseRegionAnalyzer):
                 "cells": cells,
                 "detector": "grid_pattern",
                 "method": "autocorrelation",
-            }
+            },
         )

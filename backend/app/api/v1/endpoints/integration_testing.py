@@ -10,19 +10,16 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
-from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field
-
-from app.services.pattern_auto_extraction import (
-    PatternAutoExtractor,
-)
+from app.services.pattern_auto_extraction import PatternAutoExtractor
 from app.services.pdf_report import PDFReportOptions, generate_pdf_report
 from app.services.video_export import (
     VideoExportOptions,
     VideoQuality,
     create_execution_video,
 )
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 

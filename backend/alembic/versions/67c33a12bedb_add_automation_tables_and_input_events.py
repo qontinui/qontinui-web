@@ -10,16 +10,16 @@ This migration creates the complete automation infrastructure:
 - automation_input_events: Input events (mouse, keyboard) with detailed tracking
 - screenshot_input_associations: Many-to-many linking between screenshots and events
 """
+
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-
 # revision identifiers, used by Alembic.
-revision: str = '67c33a12bedb'
-down_revision: Union[str, None] = 'd703626068d7'
+revision: str = "67c33a12bedb"
+down_revision: Union[str, None] = "d703626068d7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -36,15 +36,25 @@ def upgrade() -> None:
     # Create automation_sessions table (if it doesn't exist)
     if "automation_sessions" not in existing_tables:
         op.create_table(
-        "automation_sessions",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("user_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("workflow_name", sa.String(255), nullable=False),
-        sa.Column("status", sa.String(50), nullable=False),
-        sa.Column("started_at", sa.TIMESTAMP(), nullable=False, server_default=sa.func.now()),
-        sa.Column("ended_at", sa.TIMESTAMP(), nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+            "automation_sessions",
+            sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
+            sa.Column("user_id", UUID(as_uuid=True), nullable=False),
+            sa.Column("workflow_name", sa.String(255), nullable=False),
+            sa.Column("status", sa.String(50), nullable=False),
+            sa.Column(
+                "started_at",
+                sa.TIMESTAMP(),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+            sa.Column("ended_at", sa.TIMESTAMP(), nullable=True),
+            sa.Column(
+                "created_at",
+                sa.TIMESTAMP(),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+            sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         )
 
         # Create indexes for automation_sessions
@@ -72,14 +82,21 @@ def upgrade() -> None:
     # Create automation_screenshots table (if it doesn't exist)
     if "automation_screenshots" not in existing_tables:
         op.create_table(
-        "automation_screenshots",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("session_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("s3_key", sa.String(512), nullable=False),
-        sa.Column("timestamp", sa.TIMESTAMP(), nullable=False),
-        sa.Column("screenshot_metadata", JSONB, nullable=True, server_default="{}"),
-        sa.Column("created_at", sa.TIMESTAMP(), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(["session_id"], ["automation_sessions.id"], ondelete="CASCADE"),
+            "automation_screenshots",
+            sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
+            sa.Column("session_id", UUID(as_uuid=True), nullable=False),
+            sa.Column("s3_key", sa.String(512), nullable=False),
+            sa.Column("timestamp", sa.TIMESTAMP(), nullable=False),
+            sa.Column("screenshot_metadata", JSONB, nullable=True, server_default="{}"),
+            sa.Column(
+                "created_at",
+                sa.TIMESTAMP(),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+            sa.ForeignKeyConstraint(
+                ["session_id"], ["automation_sessions.id"], ondelete="CASCADE"
+            ),
         )
 
         # Create indexes for automation_screenshots
@@ -102,34 +119,55 @@ def upgrade() -> None:
     # Create automation_input_events table (if it doesn't exist)
     if "automation_input_events" not in existing_tables:
         op.create_table(
-        "automation_input_events",
-        sa.Column("id", sa.BigInteger(), primary_key=True, nullable=False, autoincrement=True),
-        sa.Column("session_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("event_type", sa.String(50), nullable=False),
-        sa.Column("timestamp", sa.TIMESTAMP(), nullable=False),
-        # Mouse event fields
-        sa.Column("mouse_x", sa.Integer(), nullable=True),
-        sa.Column("mouse_y", sa.Integer(), nullable=True),
-        sa.Column("mouse_button", sa.String(20), nullable=True),
-        # Drag event fields
-        sa.Column("drag_from_x", sa.Integer(), nullable=True),
-        sa.Column("drag_from_y", sa.Integer(), nullable=True),
-        sa.Column("drag_to_x", sa.Integer(), nullable=True),
-        sa.Column("drag_to_y", sa.Integer(), nullable=True),
-        sa.Column("drag_duration", sa.Float(), nullable=True),
-        sa.Column("drag_path_points", JSONB, nullable=True),
-        sa.Column("drag_avg_speed", sa.Float(), nullable=True),
-        sa.Column("drag_max_speed", sa.Float(), nullable=True),
-        # Keyboard event fields
-        sa.Column("text_typed", sa.Text(), nullable=True),
-        sa.Column("character_count", sa.Integer(), nullable=True),
-        # Screenshot references
-        sa.Column("screenshot_before_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("screenshot_after_id", UUID(as_uuid=True), nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(["session_id"], ["automation_sessions.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["screenshot_before_id"], ["automation_screenshots.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["screenshot_after_id"], ["automation_screenshots.id"], ondelete="SET NULL"),
+            "automation_input_events",
+            sa.Column(
+                "id",
+                sa.BigInteger(),
+                primary_key=True,
+                nullable=False,
+                autoincrement=True,
+            ),
+            sa.Column("session_id", UUID(as_uuid=True), nullable=False),
+            sa.Column("event_type", sa.String(50), nullable=False),
+            sa.Column("timestamp", sa.TIMESTAMP(), nullable=False),
+            # Mouse event fields
+            sa.Column("mouse_x", sa.Integer(), nullable=True),
+            sa.Column("mouse_y", sa.Integer(), nullable=True),
+            sa.Column("mouse_button", sa.String(20), nullable=True),
+            # Drag event fields
+            sa.Column("drag_from_x", sa.Integer(), nullable=True),
+            sa.Column("drag_from_y", sa.Integer(), nullable=True),
+            sa.Column("drag_to_x", sa.Integer(), nullable=True),
+            sa.Column("drag_to_y", sa.Integer(), nullable=True),
+            sa.Column("drag_duration", sa.Float(), nullable=True),
+            sa.Column("drag_path_points", JSONB, nullable=True),
+            sa.Column("drag_avg_speed", sa.Float(), nullable=True),
+            sa.Column("drag_max_speed", sa.Float(), nullable=True),
+            # Keyboard event fields
+            sa.Column("text_typed", sa.Text(), nullable=True),
+            sa.Column("character_count", sa.Integer(), nullable=True),
+            # Screenshot references
+            sa.Column("screenshot_before_id", UUID(as_uuid=True), nullable=True),
+            sa.Column("screenshot_after_id", UUID(as_uuid=True), nullable=True),
+            sa.Column(
+                "created_at",
+                sa.TIMESTAMP(),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+            sa.ForeignKeyConstraint(
+                ["session_id"], ["automation_sessions.id"], ondelete="CASCADE"
+            ),
+            sa.ForeignKeyConstraint(
+                ["screenshot_before_id"],
+                ["automation_screenshots.id"],
+                ondelete="SET NULL",
+            ),
+            sa.ForeignKeyConstraint(
+                ["screenshot_after_id"],
+                ["automation_screenshots.id"],
+                ondelete="SET NULL",
+            ),
         )
 
         # Create indexes for automation_input_events
@@ -157,15 +195,30 @@ def upgrade() -> None:
     # Create screenshot_input_associations table (many-to-many) (if it doesn't exist)
     if "screenshot_input_associations" not in existing_tables:
         op.create_table(
-        "screenshot_input_associations",
-        sa.Column("id", sa.BigInteger(), primary_key=True, nullable=False, autoincrement=True),
-        sa.Column("screenshot_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("input_event_id", sa.BigInteger(), nullable=False),
-        sa.Column("association_type", sa.String(20), nullable=False),
-        sa.Column("time_delta_ms", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(["screenshot_id"], ["automation_screenshots.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["input_event_id"], ["automation_input_events.id"], ondelete="CASCADE"),
+            "screenshot_input_associations",
+            sa.Column(
+                "id",
+                sa.BigInteger(),
+                primary_key=True,
+                nullable=False,
+                autoincrement=True,
+            ),
+            sa.Column("screenshot_id", UUID(as_uuid=True), nullable=False),
+            sa.Column("input_event_id", sa.BigInteger(), nullable=False),
+            sa.Column("association_type", sa.String(20), nullable=False),
+            sa.Column("time_delta_ms", sa.Integer(), nullable=True),
+            sa.Column(
+                "created_at",
+                sa.TIMESTAMP(),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+            sa.ForeignKeyConstraint(
+                ["screenshot_id"], ["automation_screenshots.id"], ondelete="CASCADE"
+            ),
+            sa.ForeignKeyConstraint(
+                ["input_event_id"], ["automation_input_events.id"], ondelete="CASCADE"
+            ),
         )
 
         # Create indexes for screenshot_input_associations

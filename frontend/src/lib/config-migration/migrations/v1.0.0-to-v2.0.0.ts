@@ -11,6 +11,7 @@
  */
 
 import type { Migration, MigrationContext } from '../migration-types';
+import { validateConfig, validateWorkflows } from '../validation-schemas';
 
 export const migrationV1ToV2: Migration = {
   fromVersion: '1.0.0',
@@ -102,23 +103,20 @@ export const migrationV1ToV2: Migration = {
   },
 
   validate(config: any): boolean {
-    // Validate that all workflows are in v2.0.0 format
-    for (const workflow of config.workflows || []) {
-      // Must have graph format
-      if (workflow.format !== 'graph') {
-        return false;
-      }
-      // Must have connections object
-      if (!workflow.connections || typeof workflow.connections !== 'object') {
-        return false;
-      }
-      // All actions must have positions
-      for (const action of workflow.actions || []) {
-        if (!action.position || !Array.isArray(action.position) || action.position.length !== 2) {
-          return false;
-        }
-      }
+    // Use Zod schema validation for strict type checking
+    const schemaResult = validateConfig(config, '2.0.0');
+    if (!schemaResult.success) {
+      console.error('v1→v2 migration validation errors:', schemaResult.errors);
+      return false;
     }
+
+    // Additional workflow-specific validation
+    const workflowResult = validateWorkflows(config);
+    if (!workflowResult.success) {
+      console.error('v1→v2 workflow validation errors:', workflowResult.errors);
+      return false;
+    }
+
     return true;
   },
 };

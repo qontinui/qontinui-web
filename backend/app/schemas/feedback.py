@@ -11,7 +11,9 @@ class FeedbackSubmission(BaseModel):
     message: str = Field(
         ..., min_length=10, max_length=2000, description="Feedback message"
     )
-    page_url: str | None = Field(None, max_length=500, description="Page URL where feedback was submitted")
+    page_url: str | None = Field(
+        None, max_length=500, description="Page URL where feedback was submitted"
+    )
 
 
 class FeedbackResponse(BaseModel):

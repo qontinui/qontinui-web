@@ -13,8 +13,8 @@ from pathlib import Path
 backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
-from app.db.session import engine
 from app.db.base_class import Base
+from app.db.session import engine
 from app.models.analysis_result import (
     AnalysisJob,
     AnalyzerResult,
@@ -102,12 +102,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--drop",
         action="store_true",
-        help="Drop existing analysis tables (⚠️  destroys data)"
+        help="Drop existing analysis tables (⚠️  destroys data)",
     )
     parser.add_argument(
         "--reset",
         action="store_true",
-        help="Drop and recreate analysis tables (⚠️  destroys data)"
+        help="Drop and recreate analysis tables (⚠️  destroys data)",
     )
 
     args = parser.parse_args()

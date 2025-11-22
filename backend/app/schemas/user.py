@@ -1,9 +1,8 @@
 import uuid
 
+from app.schemas.base import IsoDatetime
 from fastapi_users import schemas
 from pydantic import BaseModel, ConfigDict, EmailStr
-
-from app.schemas.base import IsoDatetime
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -108,3 +107,20 @@ class AutomationStreamingToggle(BaseModel):
     """Request model for toggling automation streaming"""
 
     enabled: bool
+
+
+# Runner connection schemas
+class RunnerConnectionInfo(BaseModel):
+    """Connection information for qontinui-runner desktop app"""
+
+    version: str
+    url: str
+    token: str
+    userId: str
+    projectId: int | None = None
+    createdAt: IsoDatetime
+    backendUrl: str  # HTTP(S) URL for REST API calls
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )

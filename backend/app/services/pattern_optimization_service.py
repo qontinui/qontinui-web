@@ -6,7 +6,6 @@ from typing import Any, Optional
 
 import numpy as np
 import structlog
-
 from app.utils.image_utils import ImageProcessor
 
 logger = structlog.get_logger(__name__)

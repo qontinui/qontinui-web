@@ -10,9 +10,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.automation import AutomationInputEvent
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
@@ -22,6 +19,8 @@ from app.schemas.state_discovery import (
     StateDiscoveryResponse,
     StateTransition,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -159,7 +158,9 @@ class StateDiscoveryService:
             curr_screenshot = screenshots[i]
 
             # Calculate time gap
-            time_gap = (curr_screenshot.timestamp - prev_screenshot.timestamp).total_seconds()
+            time_gap = (
+                curr_screenshot.timestamp - prev_screenshot.timestamp
+            ).total_seconds()
 
             # If gap is large enough, create new state
             if time_gap >= state_threshold:

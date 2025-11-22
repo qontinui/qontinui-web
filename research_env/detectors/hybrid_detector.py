@@ -2,15 +2,18 @@
 Hybrid detector combining multiple detection strategies
 """
 
+import os
+import sys
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
-from typing import List, Dict, Any
+
 from .base_detector import BaseDetector
-from .edge_detector import EdgeBasedDetector
 from .contour_detector import ContourDetector
+from .edge_detector import EdgeBasedDetector
 from .mser_detector import MSERDetector
-import sys
-import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from evaluator import BBox
 
@@ -35,29 +38,29 @@ class HybridDetector(BaseDetector):
             consensus_threshold: Minimum overlap to keep (default: 2)
             merge_threshold: IoU threshold for merging (default: 0.7)
         """
-        use_edge = params.get('use_edge', True)
-        use_contour = params.get('use_contour', True)
-        use_mser = params.get('use_mser', True)
-        consensus_threshold = params.get('consensus_threshold', 2)
-        merge_threshold = params.get('merge_threshold', 0.7)
+        use_edge = params.get("use_edge", True)
+        use_contour = params.get("use_contour", True)
+        use_mser = params.get("use_mser", True)
+        consensus_threshold = params.get("consensus_threshold", 2)
+        merge_threshold = params.get("merge_threshold", 0.7)
 
         all_boxes = []
 
         # Run each detector
         if use_edge:
-            edge_params = params.get('edge_params', {})
+            edge_params = params.get("edge_params", {})
             edge_boxes = self.edge_detector.detect(image_path, **edge_params)
-            all_boxes.extend([(box, 'edge') for box in edge_boxes])
+            all_boxes.extend([(box, "edge") for box in edge_boxes])
 
         if use_contour:
-            contour_params = params.get('contour_params', {})
+            contour_params = params.get("contour_params", {})
             contour_boxes = self.contour_detector.detect(image_path, **contour_params)
-            all_boxes.extend([(box, 'contour') for box in contour_boxes])
+            all_boxes.extend([(box, "contour") for box in contour_boxes])
 
         if use_mser:
-            mser_params = params.get('mser_params', {})
+            mser_params = params.get("mser_params", {})
             mser_boxes = self.mser_detector.detect(image_path, **mser_params)
-            all_boxes.extend([(box, 'mser') for box in mser_boxes])
+            all_boxes.extend([(box, "mser") for box in mser_boxes])
 
         if not all_boxes:
             return []
@@ -77,12 +80,16 @@ class HybridDetector(BaseDetector):
                 final_boxes.append(merged)
 
         # Final merge of very similar boxes
-        final_boxes = self.merge_overlapping_boxes(final_boxes, iou_threshold=merge_threshold)
+        final_boxes = self.merge_overlapping_boxes(
+            final_boxes, iou_threshold=merge_threshold
+        )
         final_boxes = self.remove_contained_boxes(final_boxes)
 
         return final_boxes
 
-    def _group_overlapping_boxes(self, boxes: List[BBox], iou_threshold: float) -> List[List[BBox]]:
+    def _group_overlapping_boxes(
+        self, boxes: List[BBox], iou_threshold: float
+    ) -> List[List[BBox]]:
         """Group boxes that overlap significantly"""
         if not boxes:
             return []
@@ -97,7 +104,7 @@ class HybridDetector(BaseDetector):
             group = [box1]
             used.add(i)
 
-            for j, box2 in enumerate(boxes[i+1:], start=i+1):
+            for j, box2 in enumerate(boxes[i + 1 :], start=i + 1):
                 if j in used:
                     continue
 
@@ -140,16 +147,56 @@ class HybridDetector(BaseDetector):
         """Parameter grid for hyperparameter search"""
         return [
             # All methods, different consensus levels
-            {'use_edge': True, 'use_contour': True, 'use_mser': True, 'consensus_threshold': 2},
-            {'use_edge': True, 'use_contour': True, 'use_mser': True, 'consensus_threshold': 3},
-            {'use_edge': True, 'use_contour': True, 'use_mser': True, 'consensus_threshold': 1},
-
+            {
+                "use_edge": True,
+                "use_contour": True,
+                "use_mser": True,
+                "consensus_threshold": 2,
+            },
+            {
+                "use_edge": True,
+                "use_contour": True,
+                "use_mser": True,
+                "consensus_threshold": 3,
+            },
+            {
+                "use_edge": True,
+                "use_contour": True,
+                "use_mser": True,
+                "consensus_threshold": 1,
+            },
             # Pairs of methods
-            {'use_edge': True, 'use_contour': True, 'use_mser': False, 'consensus_threshold': 2},
-            {'use_edge': True, 'use_contour': False, 'use_mser': True, 'consensus_threshold': 2},
-            {'use_edge': False, 'use_contour': True, 'use_mser': True, 'consensus_threshold': 2},
-
+            {
+                "use_edge": True,
+                "use_contour": True,
+                "use_mser": False,
+                "consensus_threshold": 2,
+            },
+            {
+                "use_edge": True,
+                "use_contour": False,
+                "use_mser": True,
+                "consensus_threshold": 2,
+            },
+            {
+                "use_edge": False,
+                "use_contour": True,
+                "use_mser": True,
+                "consensus_threshold": 2,
+            },
             # Different merge thresholds
-            {'use_edge': True, 'use_contour': True, 'use_mser': True, 'consensus_threshold': 2, 'merge_threshold': 0.5},
-            {'use_edge': True, 'use_contour': True, 'use_mser': True, 'consensus_threshold': 2, 'merge_threshold': 0.8},
+            {
+                "use_edge": True,
+                "use_contour": True,
+                "use_mser": True,
+                "consensus_threshold": 2,
+                "merge_threshold": 0.5,
+            },
+            {
+                "use_edge": True,
+                "use_contour": True,
+                "use_mser": True,
+                "consensus_threshold": 2,
+                "merge_threshold": 0.8,
+            },
         ]

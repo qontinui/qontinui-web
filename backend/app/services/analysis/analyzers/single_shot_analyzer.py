@@ -6,18 +6,19 @@ Can work with ML models like YOLO, Faster R-CNN, or classical CV techniques.
 """
 
 import logging
-from typing import Dict, Any, List
 from io import BytesIO
-from PIL import Image
+from typing import Any, Dict, List
+
 import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,9 +78,7 @@ class SingleShotAnalyzer(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, img in enumerate(images):
-            elements = await self._analyze_screenshot(
-                img, screenshot_idx, params
-            )
+            elements = await self._analyze_screenshot(img, screenshot_idx, params)
             all_elements.extend(elements)
 
         logger.info(f"Found {len(all_elements)} elements across all screenshots")
@@ -100,15 +99,12 @@ class SingleShotAnalyzer(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
     async def _analyze_screenshot(
-        self,
-        image: np.ndarray,
-        screenshot_idx: int,
-        params: Dict[str, Any]
+        self, image: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
     ) -> List[DetectedElement]:
         """Analyze a single screenshot"""
 
@@ -120,9 +116,7 @@ class SingleShotAnalyzer(BaseAnalyzer):
             return await self._ml_analysis(image, screenshot_idx, params)
         elif backend == "hybrid":
             # Combine both approaches
-            classical = await self._classical_cv_analysis(
-                image, screenshot_idx, params
-            )
+            classical = await self._classical_cv_analysis(image, screenshot_idx, params)
             ml = await self._ml_analysis(image, screenshot_idx, params)
             return classical + ml
         else:
@@ -130,10 +124,7 @@ class SingleShotAnalyzer(BaseAnalyzer):
             return await self._classical_cv_analysis(image, screenshot_idx, params)
 
     async def _classical_cv_analysis(
-        self,
-        image: np.ndarray,
-        screenshot_idx: int,
-        params: Dict[str, Any]
+        self, image: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
     ) -> List[DetectedElement]:
         """
         Classical computer vision analysis
@@ -152,48 +143,54 @@ class SingleShotAnalyzer(BaseAnalyzer):
         if params.get("detect_buttons", True):
             buttons = self._detect_buttons_cv(image)
             for bbox in buttons:
-                elements.append(DetectedElement(
-                    bounding_box=bbox,
-                    confidence=0.7,
-                    label="Button",
-                    element_type="button",
-                    screenshot_index=screenshot_idx,
-                    metadata={"method": "classical_cv", "detector": "edge_based"},
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=bbox,
+                        confidence=0.7,
+                        label="Button",
+                        element_type="button",
+                        screenshot_index=screenshot_idx,
+                        metadata={"method": "classical_cv", "detector": "edge_based"},
+                    )
+                )
 
         # Detect input fields
         if params.get("detect_inputs", True):
             inputs = self._detect_inputs_cv(image)
             for bbox in inputs:
-                elements.append(DetectedElement(
-                    bounding_box=bbox,
-                    confidence=0.65,
-                    label="Input Field",
-                    element_type="input",
-                    screenshot_index=screenshot_idx,
-                    metadata={"method": "classical_cv", "detector": "contour_based"},
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=bbox,
+                        confidence=0.65,
+                        label="Input Field",
+                        element_type="input",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "method": "classical_cv",
+                            "detector": "contour_based",
+                        },
+                    )
+                )
 
         # Detect images/icons
         if params.get("detect_images", True):
             images_found = self._detect_images_cv(image)
             for bbox in images_found:
-                elements.append(DetectedElement(
-                    bounding_box=bbox,
-                    confidence=0.6,
-                    label="Image",
-                    element_type="image",
-                    screenshot_index=screenshot_idx,
-                    metadata={"method": "classical_cv", "detector": "color_based"},
-                ))
+                elements.append(
+                    DetectedElement(
+                        bounding_box=bbox,
+                        confidence=0.6,
+                        label="Image",
+                        element_type="image",
+                        screenshot_index=screenshot_idx,
+                        metadata={"method": "classical_cv", "detector": "color_based"},
+                    )
+                )
 
         return elements
 
     async def _ml_analysis(
-        self,
-        image: np.ndarray,
-        screenshot_idx: int,
-        params: Dict[str, Any]
+        self, image: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
     ) -> List[DetectedElement]:
         """
         Machine learning-based analysis
@@ -230,17 +227,19 @@ class SingleShotAnalyzer(BaseAnalyzer):
         ]
 
         for detection in mock_detections:
-            elements.append(DetectedElement(
-                bounding_box=detection["bbox"],
-                confidence=detection["confidence"],
-                label=detection["class"].title(),
-                element_type=detection["class"],
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "ml",
-                    "model": params.get("model_path", "default"),
-                },
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=detection["bbox"],
+                    confidence=detection["confidence"],
+                    label=detection["class"].title(),
+                    element_type=detection["class"],
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "ml",
+                        "model": params.get("model_path", "default"),
+                    },
+                )
+            )
 
         return elements
 

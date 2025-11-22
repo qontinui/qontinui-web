@@ -74,6 +74,16 @@ class Settings(BaseSettings):
     # Frontend
     FRONTEND_URL: str = Field(default="http://localhost:3001")
 
+    # Runner connection URLs (for desktop app)
+    RUNNER_WS_URL: str = Field(
+        default="ws://localhost:8001",
+        description="WebSocket URL for qontinui-runner desktop app",
+    )
+    RUNNER_BACKEND_URL: str = Field(
+        default="http://localhost:8000",
+        description="Backend HTTP(S) URL for qontinui-runner API calls",
+    )
+
     # User settings
     FIRST_SUPERUSER_EMAIL: str | None = None
     FIRST_SUPERUSER_PASSWORD: str | None = None
@@ -90,7 +100,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = Field(default="eu-central-1", description="AWS region for SES")
     USE_SES_API: bool = Field(
         default=True,
-        description="Use AWS SES API instead of SMTP (recommended for AWS deployments)"
+        description="Use AWS SES API instead of SMTP (recommended for AWS deployments)",
     )
 
     # Rate limiting
@@ -162,6 +172,30 @@ class Settings(BaseSettings):
     DEVICE_VERIFICATION_REQUIRED_FOR_TRUSTED: bool = Field(
         default=True,
         description="Device must be verified before it can be marked as trusted",
+    )
+
+    # Runner token settings
+    RUNNER_TOKEN_DEFAULT_EXPIRY_DAYS: int = Field(
+        default=90,
+        description="Default expiration for runner tokens in days (0 = never expires)",
+    )
+    RUNNER_TOKEN_MAX_PER_USER: int = Field(
+        default=10,
+        description="Maximum number of runner tokens a user can create",
+    )
+
+    # Database query timing settings
+    SLOW_QUERY_THRESHOLD_MS: int = Field(
+        default=100,
+        description="Threshold in milliseconds for logging slow queries",
+    )
+    ENABLE_QUERY_LOGGING: bool = Field(
+        default=False,
+        description="Enable database query logging and statistics (disable in production for performance)",
+    )
+    MAX_QUERIES_PER_REQUEST: int = Field(
+        default=20,
+        description="Maximum number of queries per request before warning (N+1 detection)",
     )
 
     @field_validator("SECRET_KEY")

@@ -11,21 +11,22 @@ Detects interactive elements using:
 Works best with browser automation tools that can inject accessibility data.
 """
 
-import logging
-from typing import Dict, Any, List, Optional
-from io import BytesIO
-from PIL import Image
-import numpy as np
-import cv2
 import json
+import logging
+from io import BytesIO
+from typing import Any, Dict, List, Optional
+
+import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,19 +75,27 @@ class AccessibilityAnalyzer(BaseAnalyzer):
         return {
             # Accessibility data (injected by browser automation)
             "accessibility_data": None,
-
             # Role filtering
             "interactive_roles": [
-                "button", "link", "menuitem", "menuitemcheckbox", "menuitemradio",
-                "option", "radio", "checkbox", "switch", "tab", "treeitem",
-                "searchbox", "textbox", "combobox", "slider", "spinbutton"
+                "button",
+                "link",
+                "menuitem",
+                "menuitemcheckbox",
+                "menuitemradio",
+                "option",
+                "radio",
+                "checkbox",
+                "switch",
+                "tab",
+                "treeitem",
+                "searchbox",
+                "textbox",
+                "combobox",
+                "slider",
+                "spinbutton",
             ],
-
             # Tag filtering (HTML tags)
-            "interactive_tags": [
-                "button", "a", "input", "select", "textarea"
-            ],
-
+            "interactive_tags": ["button", "a", "input", "select", "textarea"],
             # Confidence scores
             "role_confidence": 0.95,  # High confidence for explicit roles
             "tag_confidence": 0.85,  # Slightly lower for semantic HTML
@@ -122,12 +131,14 @@ class AccessibilityAnalyzer(BaseAnalyzer):
             )
 
         # Load images for visual validation
-        images = self._load_images(input_data.screenshot_data) if params["visual_validation"] else []
+        images = (
+            self._load_images(input_data.screenshot_data)
+            if params["visual_validation"]
+            else []
+        )
 
         # Process accessibility data
-        elements = self._process_accessibility_data(
-            accessibility_data, images, params
-        )
+        elements = self._process_accessibility_data(accessibility_data, images, params)
 
         avg_confidence = np.mean([e.confidence for e in elements]) if elements else 0.0
 
@@ -153,7 +164,7 @@ class AccessibilityAnalyzer(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
@@ -161,7 +172,7 @@ class AccessibilityAnalyzer(BaseAnalyzer):
         self,
         accessibility_data: List[Dict[str, Any]],
         images: List[np.ndarray],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedElement]:
         """
         Process accessibility data to extract interactive elements
@@ -182,7 +193,7 @@ class AccessibilityAnalyzer(BaseAnalyzer):
                 x=int(bbox_data["x"]),
                 y=int(bbox_data["y"]),
                 width=int(bbox_data["width"]),
-                height=int(bbox_data["height"])
+                height=int(bbox_data["height"]),
             )
 
             screenshot_idx = item.get("screenshot_index", 0)
@@ -204,20 +215,22 @@ class AccessibilityAnalyzer(BaseAnalyzer):
             # Extract label
             label = self._extract_label(item)
 
-            elements.append(DetectedElement(
-                bounding_box=bbox,
-                confidence=confidence,
-                label=label,
-                element_type=element_type,
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "accessibility",
-                    "role": item.get("role"),
-                    "tag": item.get("tag"),
-                    "accessible_name": item.get("name"),
-                    "attributes": item.get("attributes", {}),
-                },
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=bbox,
+                    confidence=confidence,
+                    label=label,
+                    element_type=element_type,
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "accessibility",
+                        "role": item.get("role"),
+                        "tag": item.get("tag"),
+                        "accessible_name": item.get("name"),
+                        "attributes": item.get("attributes", {}),
+                    },
+                )
+            )
 
         return elements
 
@@ -374,7 +387,7 @@ class AccessibilityAnalyzer(BaseAnalyzer):
             return 0.7  # Out of bounds but might be scroll issue
 
         # Extract region
-        region = img[y:y+h, x:x+w]
+        region = img[y : y + h, x : x + w]
 
         if region.size == 0:
             return 0.5

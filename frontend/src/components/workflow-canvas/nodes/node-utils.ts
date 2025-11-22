@@ -29,6 +29,10 @@ import type {
   MapActionConfig,
   SortActionConfig,
 } from '@/lib/action-schema/configs/data-actions';
+import type {
+  CodeBlockActionConfig,
+  CustomFunctionActionConfig,
+} from '@/lib/action-schema/configs/code-actions';
 
 /**
  * Node categories for styling and organization
@@ -40,6 +44,7 @@ export type NodeCategory =
   | 'controlFlow'
   | 'data'
   | 'state'
+  | 'code'
   | 'special';
 
 /**
@@ -94,6 +99,11 @@ export function getNodeCategory(actionType: ActionType): NodeCategory {
     return 'state';
   }
 
+  // Code actions
+  if (['CODE_BLOCK', 'CUSTOM_FUNCTION'].includes(actionType)) {
+    return 'code';
+  }
+
   return 'special';
 }
 
@@ -108,6 +118,7 @@ export function getCategoryColor(category: NodeCategory): string {
     controlFlow: 'category-control-flow',
     data: 'category-data',
     state: 'category-state',
+    code: 'category-code',
     special: 'category-special',
   };
   return colors[category];
@@ -262,6 +273,18 @@ export function getNodeSummary(action: Action): string {
 
     case 'SCREENSHOT':
       return 'Take screenshot';
+
+    // Code Actions
+    case 'CODE_BLOCK':
+      const codeBlockConfig = config as CodeBlockActionConfig;
+      const codePreview = codeBlockConfig.code
+        ? codeBlockConfig.code.split('\n')[0].substring(0, 30) + '...'
+        : 'Python code';
+      return codePreview;
+
+    case 'CUSTOM_FUNCTION':
+      const customFunctionConfig = config as CustomFunctionActionConfig;
+      return `Function: ${customFunctionConfig.functionName || 'unnamed'}`;
 
     default:
       return type.replace(/_/g, ' ').toLowerCase();
@@ -501,6 +524,8 @@ export function getActionTypeDisplayName(actionType: ActionType): string {
     MATH_OPERATION: 'Math Operation',
     GO_TO_STATE: 'Go To State',
     RUN_WORKFLOW: 'Run Workflow',
+    CODE_BLOCK: 'Code Block',
+    CUSTOM_FUNCTION: 'Custom Function',
   };
 
   return displayNames[actionType] || actionType.replace(/_/g, ' ');
@@ -528,6 +553,11 @@ export function estimateExecutionTime(action: Action): number {
     case 'VANISH':
     case 'EXISTS':
       return 2000; // Image matching can take time
+
+    case 'CODE_BLOCK':
+    case 'CUSTOM_FUNCTION':
+      const codeConfig = config as CodeBlockActionConfig;
+      return codeConfig.timeout || 30000; // Default 30s timeout
 
     default:
       return 100; // Most actions are fast

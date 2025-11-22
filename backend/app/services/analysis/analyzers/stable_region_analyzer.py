@@ -6,18 +6,19 @@ Examples: Navigation bars, toolbars, static menus, persistent buttons.
 """
 
 import logging
-from typing import Dict, Any, List
 from io import BytesIO
-from PIL import Image
+from typing import Any, Dict, List
+
 import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ class StableRegionAnalyzer(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
@@ -127,14 +128,16 @@ class StableRegionAnalyzer(BaseAnalyzer):
 
         # Example stable region: top navigation bar
         if self._is_region_stable(images, 0, 0, width, 60):
-            elements.append(DetectedElement(
-                bounding_box=BoundingBox(x=0, y=0, width=width, height=60),
-                confidence=0.9,
-                label="Navigation Bar",
-                element_type="navigation",
-                screenshot_index=0,
-                metadata={"analysis": "stable_across_screenshots"},
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=BoundingBox(x=0, y=0, width=width, height=60),
+                    confidence=0.9,
+                    label="Navigation Bar",
+                    element_type="navigation",
+                    screenshot_index=0,
+                    metadata={"analysis": "stable_across_screenshots"},
+                )
+            )
 
         return elements
 
@@ -145,7 +148,7 @@ class StableRegionAnalyzer(BaseAnalyzer):
         y: int,
         width: int,
         height: int,
-        threshold: float = 0.1
+        threshold: float = 0.1,
     ) -> bool:
         """
         Check if a region is stable across all images

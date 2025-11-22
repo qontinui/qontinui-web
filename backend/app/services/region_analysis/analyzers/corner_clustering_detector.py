@@ -6,13 +6,14 @@ grid patterns from corner points.
 """
 
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-import numpy as np
-import cv2
 from collections import Counter
+from typing import Any, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
 from sklearn.cluster import DBSCAN
 
-from ..base import BaseRegionAnalyzer, DetectedRegion, BoundingBox, RegionType
+from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +79,7 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
 
         return regions
 
-    def _detect_corners(
-        self,
-        gray: np.ndarray,
-        params: Dict[str, Any]
-    ) -> np.ndarray:
+    def _detect_corners(self, gray: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
         """Detect corners in the image"""
         if params["corner_method"] == "shi_tomasi":
             corners = cv2.goodFeaturesToTrack(
@@ -90,7 +87,7 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
                 maxCorners=params["max_corners"],
                 qualityLevel=params["quality_level"],
                 minDistance=params["min_distance"],
-                blockSize=3
+                blockSize=3,
             )
         else:  # harris
             gray_float = np.float32(gray)
@@ -100,7 +97,9 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
             # Threshold for corner detection
             threshold = params["quality_level"] * dst.max()
             corners_y, corners_x = np.where(dst > threshold)
-            corners = np.array([[[x, y]] for x, y in zip(corners_x, corners_y)], dtype=np.float32)
+            corners = np.array(
+                [[[x, y]] for x, y in zip(corners_x, corners_y)], dtype=np.float32
+            )
 
         if corners is None:
             return np.array([])
@@ -109,9 +108,7 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
         return corners.reshape(-1, 2)
 
     def _find_grid_spacing_from_corners(
-        self,
-        corners: np.ndarray,
-        params: Dict[str, Any]
+        self, corners: np.ndarray, params: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Analyze corner positions to find uniform grid spacing
@@ -127,7 +124,7 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
         v_distances = []
 
         for i, (x1, y1) in enumerate(corners):
-            for x2, y2 in corners[i + 1:]:
+            for x2, y2 in corners[i + 1 :]:
                 dx = abs(x2 - x1)
                 dy = abs(y2 - y1)
 
@@ -151,17 +148,17 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
         if not spacing_x or not spacing_y:
             return []
 
-        return [{
-            "spacing_x": spacing_x,
-            "spacing_y": spacing_y,
-            "cell_width": spacing_x,
-            "cell_height": spacing_y,
-        }]
+        return [
+            {
+                "spacing_x": spacing_x,
+                "spacing_y": spacing_y,
+                "cell_width": spacing_x,
+                "cell_height": spacing_y,
+            }
+        ]
 
     def _find_dominant_spacing(
-        self,
-        distances: List[float],
-        params: Dict[str, Any]
+        self, distances: List[float], params: Dict[str, Any]
     ) -> Optional[int]:
         """Find the dominant spacing from a list of distances"""
         if not distances:
@@ -195,7 +192,7 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
         corners: np.ndarray,
         spacing_info: Dict[str, Any],
         img_shape: Tuple[int, int, ...],
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedRegion]:
         """Extract grid structure from corners and spacing"""
         spacing_x = spacing_info["spacing_x"]
@@ -214,8 +211,10 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
             expected_x = grid_x * spacing_x
             expected_y = grid_y * spacing_y
 
-            if abs(x - expected_x) < spacing_x * tolerance and \
-               abs(y - expected_y) < spacing_y * tolerance:
+            if (
+                abs(x - expected_x) < spacing_x * tolerance
+                and abs(y - expected_y) < spacing_y * tolerance
+            ):
                 if (grid_x, grid_y) not in grid_points:
                     grid_points[(grid_x, grid_y)] = (x, y)
 
@@ -226,7 +225,9 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
         grid_coords = np.array(list(grid_points.keys()))
 
         # DBSCAN to find contiguous grids
-        clustering = DBSCAN(eps=1.5, min_samples=params["min_grid_rows"] * params["min_grid_cols"])
+        clustering = DBSCAN(
+            eps=1.5, min_samples=params["min_grid_rows"] * params["min_grid_cols"]
+        )
         labels = clustering.fit_predict(grid_coords)
 
         # Extract each grid cluster
@@ -251,7 +252,7 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
         grid_coords: np.ndarray,
         spacing_x: int,
         spacing_y: int,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> Optional[DetectedRegion]:
         """Create a DetectedRegion from grid coordinates"""
         if len(grid_coords) < params["min_grid_rows"] * params["min_grid_cols"]:
@@ -279,19 +280,23 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
         cells = []
         for row in range(rows):
             for col in range(cols):
-                cells.append({
-                    "row": row,
-                    "col": col,
-                    "x": x_start + col * spacing_x,
-                    "y": y_start + row * spacing_y,
-                    "width": spacing_x,
-                    "height": spacing_y,
-                })
+                cells.append(
+                    {
+                        "row": row,
+                        "col": col,
+                        "x": x_start + col * spacing_x,
+                        "y": y_start + row * spacing_y,
+                        "width": spacing_x,
+                        "height": spacing_y,
+                    }
+                )
 
         # Calculate confidence based on corner density
         expected_corners = rows * cols * 4  # 4 corners per cell
         actual_corners = len(grid_coords)
-        corner_density = min(1.0, actual_corners / (expected_corners * 0.25))  # At least 25% corners
+        corner_density = min(
+            1.0, actual_corners / (expected_corners * 0.25)
+        )  # At least 25% corners
         confidence = min(0.95, 0.6 + corner_density * 0.35)
 
         return DetectedRegion(
@@ -309,5 +314,5 @@ class CornerClusteringDetector(BaseRegionAnalyzer):
                 "cells": cells,
                 "detector": "corner_clustering",
                 "method": "corner_detection",
-            }
+            },
         )

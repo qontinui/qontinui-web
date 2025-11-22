@@ -39,25 +39,25 @@ export default function SettingsPage() {
     projectName: 'My Automation Project',
     autoSave: true,
     autoSaveInterval: 30,
-    
+
     // Editor
     theme: 'dark',
     fontSize: 14,
     showLineNumbers: true,
     enableAutoComplete: true,
-    
+
     // Execution
     maxConcurrentWorkflows: 5,
     defaultTimeout: 30000,
     retryOnFailure: true,
     maxRetries: 3,
-    
+
     // Notifications
     notifyOnSuccess: false,
     notifyOnFailure: true,
     notifyOnStart: false,
     emailNotifications: true,
-    
+
     // Advanced
     enableDebugMode: false,
     logLevel: 'info',

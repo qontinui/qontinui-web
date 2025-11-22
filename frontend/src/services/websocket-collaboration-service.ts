@@ -53,6 +53,14 @@ class WebSocketCollaborationService {
   private handlers: CollaborationHandlers = {};
   private currentPresence: PresenceUpdateMessage | null = null;
 
+  // Message sequencing fields
+  private lastReceivedSequence: number = 0;
+  private outOfOrderBuffer: Map<number, any> = new Map();
+  private expectedSequence: number = 1;
+  private ackBatchSize: number = 10; // Send ack every N messages
+  private unacknowledgedCount: number = 0;
+  private lastAckedSequence: number = 0;
+
   /**
    * Connect to collaboration WebSocket for a project
    */
@@ -86,6 +94,22 @@ class WebSocketCollaborationService {
       {
         onConnect: () => {
           console.log('[CollaborationWS] Connected');
+
+          // Request sync state if reconnecting (not first connection)
+          if (this.lastAckedSequence > 0) {
+            console.log(
+              '[CollaborationWS] Reconnecting, requesting sync state'
+            );
+            this.send({
+              type: 'sync_state',
+              timestamp: new Date().toISOString(),
+              data: {
+                last_acked_sequence: this.lastAckedSequence,
+                last_received_sequence: this.lastReceivedSequence,
+              },
+            });
+          }
+
           // Send initial presence
           if (this.currentPresence) {
             this.sendPresenceUpdate(
@@ -97,6 +121,7 @@ class WebSocketCollaborationService {
         },
         onDisconnect: () => {
           console.log('[CollaborationWS] Disconnected');
+          // Don't reset sequence tracking on disconnect - preserve for reconnect
           this.handlers.onDisconnect?.();
         },
         onMessage: (event: any) => {
@@ -122,6 +147,18 @@ class WebSocketCollaborationService {
     }
     this.projectId = null;
     this.currentPresence = null;
+    this.resetSequenceTracking();
+  }
+
+  /**
+   * Reset sequence tracking state
+   */
+  private resetSequenceTracking(): void {
+    this.lastReceivedSequence = 0;
+    this.expectedSequence = 1;
+    this.outOfOrderBuffer.clear();
+    this.unacknowledgedCount = 0;
+    this.lastAckedSequence = 0;
   }
 
   /**
@@ -263,52 +300,240 @@ class WebSocketCollaborationService {
    */
   private handleMessage(event: any): void {
     try {
-      const message = event as WebSocketMessage;
+      const message = event as WebSocketMessage & { sequence?: number };
 
-      switch (message.type) {
-        case 'presence_update':
-          this.handlers.onPresenceUpdate?.(message.data);
-          break;
+      // Handle connection state message
+      if (message.type === 'connection_state') {
+        this.handleConnectionState(message.data);
+        return;
+      }
 
-        case 'cursor_move':
-          this.handlers.onCursorMove?.(message.data);
-          break;
+      // Handle resend complete message
+      if (message.type === 'resend_complete') {
+        console.log(
+          '[CollaborationWS] Resend complete:',
+          message.data?.count,
+          'messages'
+        );
+        return;
+      }
 
-        case 'lock_acquired':
-          this.handlers.onLockAcquired?.(message.data);
-          break;
-
-        case 'lock_released':
-          this.handlers.onLockReleased?.(message.data);
-          break;
-
-        case 'comment_added':
-          this.handlers.onCommentAdded?.(message.data);
-          break;
-
-        case 'comment_updated':
-          this.handlers.onCommentUpdated?.(message.data);
-          break;
-
-        case 'comment_deleted':
-          this.handlers.onCommentDeleted?.(message.data);
-          break;
-
-        case 'activity_update':
-          this.handlers.onActivityUpdate?.(message.data);
-          break;
-
-        case 'pong':
-          // Heartbeat response, no action needed
-          break;
-
-        default:
-          console.warn('[CollaborationWS] Unknown message type:', message.type);
+      // Handle messages with sequence numbers
+      if (message.sequence !== undefined) {
+        this.processSequencedMessage(message);
+      } else {
+        // Process non-sequenced messages immediately
+        this.dispatchMessage(message);
       }
     } catch (error) {
       console.error('[CollaborationWS] Failed to handle message:', error);
       this.handlers.onError?.(error as Error);
     }
+  }
+
+  /**
+   * Process a sequenced message (handle ordering)
+   */
+  private processSequencedMessage(message: any): void {
+    const sequence = message.sequence;
+
+    // Track the highest sequence we've received
+    if (sequence > this.lastReceivedSequence) {
+      this.lastReceivedSequence = sequence;
+    }
+
+    // Check if this is the next expected message
+    if (sequence === this.expectedSequence) {
+      // Process this message
+      this.dispatchMessage(message);
+      this.expectedSequence++;
+
+      // Send acknowledgment (batched)
+      this.acknowledgeMessage(sequence);
+
+      // Check if we can process any buffered messages
+      this.processBufferedMessages();
+    } else if (sequence > this.expectedSequence) {
+      // Out of order - buffer it
+      console.warn(
+        '[CollaborationWS] Out-of-order message:',
+        sequence,
+        'expected:',
+        this.expectedSequence
+      );
+      this.outOfOrderBuffer.set(sequence, message);
+
+      // Request resend if gap is too large
+      const gap = sequence - this.expectedSequence;
+      if (gap > 5) {
+        console.warn(
+          '[CollaborationWS] Large gap detected, requesting resend from',
+          this.expectedSequence
+        );
+        this.requestResend(this.expectedSequence);
+      }
+    } else {
+      // Duplicate or old message - ignore
+      console.debug(
+        '[CollaborationWS] Duplicate/old message:',
+        sequence,
+        'expected:',
+        this.expectedSequence
+      );
+    }
+  }
+
+  /**
+   * Process buffered out-of-order messages
+   */
+  private processBufferedMessages(): void {
+    while (this.outOfOrderBuffer.has(this.expectedSequence)) {
+      const message = this.outOfOrderBuffer.get(this.expectedSequence)!;
+      this.outOfOrderBuffer.delete(this.expectedSequence);
+
+      this.dispatchMessage(message);
+      this.expectedSequence++;
+
+      // Acknowledge
+      this.acknowledgeMessage(this.expectedSequence - 1);
+    }
+  }
+
+  /**
+   * Dispatch message to appropriate handler
+   */
+  private dispatchMessage(message: any): void {
+    switch (message.type) {
+      case 'presence_update':
+        this.handlers.onPresenceUpdate?.(message.data);
+        break;
+
+      case 'cursor_move':
+        this.handlers.onCursorMove?.(message.data);
+        break;
+
+      case 'lock_acquired':
+        this.handlers.onLockAcquired?.(message.data);
+        break;
+
+      case 'lock_released':
+        this.handlers.onLockReleased?.(message.data);
+        break;
+
+      case 'comment_added':
+        this.handlers.onCommentAdded?.(message.data);
+        break;
+
+      case 'comment_updated':
+        this.handlers.onCommentUpdated?.(message.data);
+        break;
+
+      case 'comment_deleted':
+        this.handlers.onCommentDeleted?.(message.data);
+        break;
+
+      case 'activity_update':
+        this.handlers.onActivityUpdate?.(message.data);
+        break;
+
+      case 'pong':
+      case 'heartbeat_ack':
+        // Heartbeat response, no action needed
+        break;
+
+      default:
+        console.warn('[CollaborationWS] Unknown message type:', message.type);
+    }
+  }
+
+  /**
+   * Send acknowledgment for received message
+   */
+  private acknowledgeMessage(sequence: number): void {
+    this.unacknowledgedCount++;
+
+    // Batch acknowledgments
+    if (this.unacknowledgedCount >= this.ackBatchSize) {
+      this.sendAck(sequence);
+      this.unacknowledgedCount = 0;
+      this.lastAckedSequence = sequence;
+    }
+  }
+
+  /**
+   * Send acknowledgment to server
+   */
+  private sendAck(sequence: number): void {
+    this.send({
+      type: 'ack',
+      timestamp: new Date().toISOString(),
+      data: { sequence },
+    });
+
+    console.debug('[CollaborationWS] Acknowledged up to sequence:', sequence);
+  }
+
+  /**
+   * Request resend of messages from a specific sequence
+   */
+  private requestResend(fromSequence: number): void {
+    this.send({
+      type: 'resend',
+      timestamp: new Date().toISOString(),
+      data: { from_sequence: fromSequence },
+    });
+
+    console.log('[CollaborationWS] Requested resend from sequence:', fromSequence);
+  }
+
+  /**
+   * Handle connection state message
+   */
+  private handleConnectionState(state: any): void {
+    console.log('[CollaborationWS] Connection state:', state);
+
+    // If reconnecting and there are unacknowledged messages, request resend
+    if (
+      this.lastAckedSequence > 0 &&
+      state.message_sequence > this.lastAckedSequence
+    ) {
+      const fromSequence = this.lastAckedSequence + 1;
+      console.log(
+        '[CollaborationWS] Reconnected, requesting resend from:',
+        fromSequence
+      );
+      this.requestResend(fromSequence);
+    }
+  }
+
+  /**
+   * Force send acknowledgment (for important messages)
+   */
+  public forceAcknowledge(): void {
+    if (this.lastReceivedSequence > this.lastAckedSequence) {
+      this.sendAck(this.lastReceivedSequence);
+      this.unacknowledgedCount = 0;
+      this.lastAckedSequence = this.lastReceivedSequence;
+    }
+  }
+
+  /**
+   * Get current sequence tracking state (for debugging)
+   */
+  public getSequenceState(): {
+    lastReceived: number;
+    expected: number;
+    lastAcked: number;
+    bufferedCount: number;
+    unacknowledged: number;
+  } {
+    return {
+      lastReceived: this.lastReceivedSequence,
+      expected: this.expectedSequence,
+      lastAcked: this.lastAckedSequence,
+      bufferedCount: this.outOfOrderBuffer.size,
+      unacknowledged: this.unacknowledgedCount,
+    };
   }
 
   /**

@@ -1,0 +1,17 @@
+{{ title }}
+===============================================
+
+{% if actor_name %}From: {{ actor_name }}{% endif %}
+
+{{ message }}
+
+{% if project_name %}Project: {{ project_name }}{% endif %}
+
+View notification: {{ notification_url }}
+
+---
+You're receiving this email because you have notifications enabled for this type of activity.
+Manage your notification preferences: {{ frontend_url }}/settings/notifications
+
+Best regards,
+The Qontinui Team

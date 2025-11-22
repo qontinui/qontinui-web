@@ -157,11 +157,6 @@ export class LinearizabilityChecker {
     const parallelActions: string[] = [];
 
     Object.entries(workflow.connections).forEach(([actionId, outputs]) => {
-      // Check for explicit parallel connections
-      if (outputs.parallel && outputs.parallel.length > 0) {
-        parallelActions.push(actionId);
-      }
-
       // Check for multiple outputs on same output type (fan-out)
       if (outputs.main && outputs.main.length > 1) {
         // For IF/SWITCH, multiple outputs are expected

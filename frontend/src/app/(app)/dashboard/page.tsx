@@ -3,14 +3,14 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { useProjects, useCreateProject, useDeleteProject } from "@/hooks/use-projects"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { SubscriptionBadge } from "@/components/subscription-badge"
-import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play, User as UserIcon, BarChart3, BookOpen, Shield } from "lucide-react"
+import { Plus, Trash2, Upload, Clock, FolderOpen, LogOut, BookTemplate as Template, Play, User as UserIcon, BarChart3, BookOpen, Shield, Cable } from "lucide-react"
 import { toast } from "sonner"
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog"
 import { WelcomeModal } from "@/components/onboarding/WelcomeModal"
@@ -40,6 +40,7 @@ interface Activity {
 export default function Dashboard() {
   const { user, logout, loading: authLoading } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { data: apiProjects = [], isLoading: projectsLoading } = useProjects()
   const createProject = useCreateProject()
   const deleteProject = useDeleteProject()
@@ -86,6 +87,18 @@ export default function Dashboard() {
     }
   }, [user, authLoading, router, hasCompletedWelcome, toggleWelcomeModal])
 
+  // Clear old localStorage project data (one-time cleanup)
+  useEffect(() => {
+    const hasCleared = localStorage.getItem('qontinui-cleanup-done')
+    if (!hasCleared) {
+      // Clear old project data from localStorage
+      localStorage.removeItem('qontinui-project-name')
+      localStorage.removeItem('qontinui-lastSaved')
+      localStorage.setItem('qontinui-cleanup-done', 'true')
+      console.log('Cleared old project localStorage data')
+    }
+  }, [])
+
   // Transform API projects to match our interface
   const projects = useMemo(() =>
     apiProjects.map((p: any) => ({
@@ -97,6 +110,20 @@ export default function Dashboard() {
       status: 'draft' as const  // Default status since API doesn't have this field yet
     }))
   , [apiProjects])
+
+  // Clean up invalid project parameter from URL
+  useEffect(() => {
+    const projectParam = searchParams.get('project')
+    if (!projectParam || projectsLoading) return
+
+    // Check if the project ID in URL exists in the projects list
+    const projectExists = projects.some(p => p.id === projectParam)
+    if (!projectExists && projects.length >= 0) {
+      // Project doesn't exist, clear the parameter
+      console.log(`Project ${projectParam} not found, clearing from URL`)
+      router.push('/dashboard')
+    }
+  }, [searchParams, projects, projectsLoading, router])
 
   // Generate activities from projects
   const activities = useMemo(() =>
@@ -161,6 +188,12 @@ export default function Dashboard() {
       toast.success('Project deleted successfully')
       setDeleteDialogOpen(false)
       setProjectToDelete(null)
+
+      // If the deleted project matches the current URL parameter, clear it
+      const currentProjectId = searchParams.get('project')
+      if (currentProjectId === projectToDelete.id) {
+        router.push('/dashboard')
+      }
     } catch (error) {
       console.error('Failed to delete project:', error)
       toast.error('Failed to delete project')
@@ -285,6 +318,15 @@ export default function Dashboard() {
               title="View Analytics"
             >
               <BarChart3 className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/connect-runner')}
+              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              title="Connect Desktop Runner"
+            >
+              <Cable className="w-4 h-4" />
             </Button>
             <Button
               variant="outline"

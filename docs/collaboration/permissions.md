@@ -17,7 +17,7 @@ Organization Level
     ├─ Member (collaborate on projects)
     └─ Viewer (read-only access)
           ↓
-Project Level  
+Project Level
     ├─ Admin (full project control)
     ├─ Edit (create & modify resources)
     ├─ Comment (add feedback)
@@ -57,7 +57,7 @@ from app.models import User, Project, Organization, TeamMember, ProjectAccessCon
 
 class PermissionService:
     """Service for checking user permissions"""
-    
+
     @staticmethod
     async def can_access_project(
         user: User,
@@ -65,37 +65,37 @@ class PermissionService:
         required_permission: str = "view"
     ) -> bool:
         """Check if user can access project with required permission"""
-        
+
         # Owner always has access
         if project.owner_id == user.id:
             return True
-        
+
         # Check direct project access
         access = await ProjectAccessControl.filter(
             project_id=project.id,
             user_id=user.id
         ).first()
-        
+
         if access and not access.is_expired:
             return check_permission_level(access.permission_level, required_permission)
-        
+
         # Check organization access
         org_access = await ProjectAccessControl.filter(
             project_id=project.id,
             organization_id__isnull=False
         ).all()
-        
+
         for oa in org_access:
             member = await TeamMember.filter(
                 organization_id=oa.organization_id,
                 user_id=user.id
             ).first()
-            
+
             if member:
                 return check_permission_level(oa.permission_level, required_permission)
-        
+
         return False
-    
+
     @staticmethod
     async def can_manage_organization(
         user: User,
@@ -103,27 +103,27 @@ class PermissionService:
         action: str
     ) -> bool:
         """Check if user can perform action on organization"""
-        
+
         # Owner can do everything
         if organization.owner_id == user.id:
             return True
-        
+
         # Get user's membership
         member = await TeamMember.filter(
             organization_id=organization.id,
             user_id=user.id
         ).first()
-        
+
         if not member:
             return False
-        
+
         # Check role permissions
         if action == "delete" and member.role != "owner":
             return False
-        
+
         if action in ["invite", "remove_member", "change_settings"]:
             return member.role in ["owner", "admin"]
-        
+
         return True
 ```
 
@@ -212,12 +212,12 @@ function resolvePermission(
     const membership = user.organizations.find(
       m => m.organization_id === orgAccess.organization_id
     );
-    
+
     if (membership.role === 'viewer') {
       // Viewers can't have edit or admin
       return downgradePermission(orgAccess.permission_level, 'comment');
     }
-    
+
     return orgAccess.permission_level;
   }
 
@@ -239,12 +239,12 @@ interface CustomPermissions {
   canDeleteState: boolean;
   canUploadImage: boolean;
   canDeleteImage: boolean;
-  
+
   // Collaboration
   canInviteUsers: boolean;
   canRemoveUsers: boolean;
   canChangePermissions: boolean;
-  
+
   // Advanced features
   canExportProject: boolean;
   canImportProject: boolean;
@@ -294,7 +294,7 @@ await shareProject(projectId, user.email, 'admin'); // Too much access
 // Audit project access monthly
 async function auditProjectAccess(projectId: number) {
   const access = await getProjectAccess(projectId);
-  
+
   const report = {
     totalUsers: access.users.length,
     totalOrgs: access.organizations.length,
@@ -311,7 +311,7 @@ async function auditProjectAccess(projectId: number) {
   // Count by permission level
   access.users.forEach(ua => {
     report.byPermission[ua.permission_level]++;
-    
+
     // Check expiration
     if (ua.expires_at) {
       const daysUntilExpiry = daysBetween(new Date(), new Date(ua.expires_at));
@@ -319,7 +319,7 @@ async function auditProjectAccess(projectId: number) {
         report.expiringSoon.push(ua);
       }
     }
-    
+
     // Check last activity
     if (ua.user.last_active_at) {
       const daysSinceActive = daysBetween(

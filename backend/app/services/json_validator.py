@@ -64,9 +64,7 @@ class JSONConfigValidator:
             errors.append(f"Schema validation error: {str(e)}")
 
         return ValidationResult(
-            valid=len(errors) == 0,
-            errors=errors,
-            warnings=warnings
+            valid=len(errors) == 0, errors=errors, warnings=warnings
         )
 
     def validate_json_string(self, json_string: str) -> ValidationResult:
@@ -86,16 +84,11 @@ class JSONConfigValidator:
             return self.validate_configuration(config_data)
         except json.JSONDecodeError as e:
             return ValidationResult(
-                valid=False,
-                errors=[f"Invalid JSON: {str(e)}"],
-                warnings=[]
+                valid=False, errors=[f"Invalid JSON: {str(e)}"], warnings=[]
             )
 
     def _validate_images(
-        self,
-        config: ConfigurationExport,
-        errors: list[str],
-        warnings: list[str]
+        self, config: ConfigurationExport, errors: list[str], warnings: list[str]
     ) -> set[str]:
         """
         Validate all images in the configuration.
@@ -135,7 +128,7 @@ class JSONConfigValidator:
         config: ConfigurationExport,
         errors: list[str],
         warnings: list[str],
-        image_ids: set[str]
+        image_ids: set[str],
     ) -> set[str]:
         """
         Validate all workflows in the configuration.
@@ -167,11 +160,7 @@ class JSONConfigValidator:
         return workflow_ids
 
     def _validate_actions(
-        self,
-        workflow: Any,
-        errors: list[str],
-        warnings: list[str],
-        image_ids: set[str]
+        self, workflow: Any, errors: list[str], warnings: list[str], image_ids: set[str]
     ) -> None:
         """
         Validate all actions in a workflow.
@@ -226,7 +215,7 @@ class JSONConfigValidator:
         config: ConfigurationExport,
         errors: list[str],
         warnings: list[str],
-        image_ids: set[str]
+        image_ids: set[str],
     ) -> set[str]:
         """
         Validate all states in the configuration.
@@ -272,7 +261,7 @@ class JSONConfigValidator:
         config: ConfigurationExport,
         errors: list[str],
         workflow_ids: set[str],
-        state_ids: set[str]
+        state_ids: set[str],
     ) -> None:
         """
         Validate all transitions in the configuration.
@@ -313,10 +302,7 @@ class JSONConfigValidator:
                     )
 
     def _check_orphaned_workflows(
-        self,
-        config: ConfigurationExport,
-        warnings: list[str],
-        workflow_ids: set[str]
+        self, config: ConfigurationExport, warnings: list[str], workflow_ids: set[str]
     ) -> None:
         """
         Check for workflows not used in any transition.

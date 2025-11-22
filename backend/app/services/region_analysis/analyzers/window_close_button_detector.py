@@ -8,20 +8,21 @@ Performance: 50-150ms
 Accuracy: 80-90% for standard close buttons
 """
 
-from typing import List, Dict, Any, Optional, Tuple
+from io import BytesIO
+from typing import Any, Dict, List, Optional, Tuple
+
 import cv2
 import numpy as np
-from io import BytesIO
 from PIL import Image
 
 from ..base import (
     BaseRegionAnalyzer,
-    DetectedRegion,
-    RegionType,
-    RegionAnalysisType,
     BoundingBox,
+    DetectedRegion,
     RegionAnalysisInput,
     RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
 )
 
 
@@ -98,7 +99,8 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         # Calculate overall confidence
         overall_confidence = (
             sum(r.confidence for r in all_regions) / len(all_regions)
-            if all_regions else 0.0
+            if all_regions
+            else 0.0
         )
 
         return RegionAnalysisResult(
@@ -108,10 +110,12 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
             confidence=overall_confidence,
             metadata={
                 "total_close_buttons": len(all_regions),
-            }
+            },
         )
 
-    def _detect_close_buttons(self, gray: np.ndarray, screenshot_index: int) -> List[DetectedRegion]:
+    def _detect_close_buttons(
+        self, gray: np.ndarray, screenshot_index: int
+    ) -> List[DetectedRegion]:
         """Detect close buttons in an image."""
         detected_buttons = []
 
@@ -125,7 +129,9 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         # Method 1: Template matching with X patterns
         for size in range(self.min_button_size, self.max_button_size + 1, 4):
             template = self._create_x_template(size)
-            buttons = self._template_match(search_region, template, size, search_left, 0)
+            buttons = self._template_match(
+                search_region, template, size, search_left, 0
+            )
             detected_buttons.extend(buttons)
 
         # Method 2: Look for small square regions with diagonal lines
@@ -147,7 +153,7 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
                 metadata={
                     "detection_method": method,
                     "button_size": w,
-                }
+                },
             )
             regions.append(region)
 
@@ -159,15 +165,24 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         thickness = max(1, size // 8)
 
         # Draw X
-        cv2.line(template, (0, 0), (size-1, size-1), 255, thickness)
-        cv2.line(template, (size-1, 0), (0, size-1), 255, thickness)
+        cv2.line(template, (0, 0), (size - 1, size - 1), 255, thickness)
+        cv2.line(template, (size - 1, 0), (0, size - 1), 255, thickness)
 
         return template
 
-    def _template_match(self, search_region: np.ndarray, template: np.ndarray,
-                       size: int, offset_x: int, offset_y: int) -> List[Tuple]:
+    def _template_match(
+        self,
+        search_region: np.ndarray,
+        template: np.ndarray,
+        size: int,
+        offset_x: int,
+        offset_y: int,
+    ) -> List[Tuple]:
         """Perform template matching."""
-        if search_region.shape[0] < template.shape[0] or search_region.shape[1] < template.shape[1]:
+        if (
+            search_region.shape[0] < template.shape[0]
+            or search_region.shape[1] < template.shape[1]
+        ):
             return []
 
         result = cv2.matchTemplate(search_region, template, cv2.TM_CCOEFF_NORMED)
@@ -185,8 +200,9 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
 
         return buttons
 
-    def _detect_geometric_x(self, search_region: np.ndarray,
-                           offset_x: int, offset_y: int) -> List[Tuple]:
+    def _detect_geometric_x(
+        self, search_region: np.ndarray, offset_x: int, offset_y: int
+    ) -> List[Tuple]:
         """Detect X patterns using geometric analysis."""
         buttons = []
 
@@ -194,9 +210,14 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         edges = cv2.Canny(search_region, 50, 150)
 
         # Find line segments using Hough transform
-        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20,
-                               minLineLength=self.min_button_size//2,
-                               maxLineGap=5)
+        lines = cv2.HoughLinesP(
+            edges,
+            1,
+            np.pi / 180,
+            threshold=20,
+            minLineLength=self.min_button_size // 2,
+            maxLineGap=5,
+        )
 
         if lines is None:
             return buttons
@@ -204,7 +225,7 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         # Group lines into potential X patterns
         # An X consists of two diagonal lines crossing
         for i in range(len(lines)):
-            for j in range(i+1, len(lines)):
+            for j in range(i + 1, len(lines)):
                 x1, y1, x2, y2 = lines[i][0]
                 x3, y3, x4, y4 = lines[j][0]
 
@@ -220,14 +241,20 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
                     h = max_y - min_y
 
                     # Check size constraints
-                    if (w >= self.min_button_size and w <= self.max_button_size and
-                        h >= self.min_button_size and h <= self.max_button_size):
+                    if (
+                        w >= self.min_button_size
+                        and w <= self.max_button_size
+                        and h >= self.min_button_size
+                        and h <= self.max_button_size
+                    ):
 
                         # Should be roughly square
                         if abs(w - h) < w * 0.3:
                             x = min_x + offset_x
                             y = min_y + offset_y
-                            confidence = 0.6  # Moderate confidence for geometric detection
+                            confidence = (
+                                0.6  # Moderate confidence for geometric detection
+                            )
 
                             buttons.append((x, y, w, h, confidence, "geometric_x"))
 
@@ -248,7 +275,7 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         angle_diff = abs(angle1 - angle2)
 
         # Check if roughly perpendicular
-        is_perpendicular = abs(angle_diff - np.pi/2) < np.pi/6
+        is_perpendicular = abs(angle_diff - np.pi / 2) < np.pi / 6
 
         # Check if lines intersect
         intersects = self._lines_intersect(x1, y1, x2, y2, x3, y3, x4, y4)
@@ -257,11 +284,13 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
 
     def _lines_intersect(self, x1, y1, x2, y2, x3, y3, x4, y4) -> bool:
         """Check if two line segments intersect."""
-        def ccw(ax, ay, bx, by, cx, cy):
-            return (cy-ay) * (bx-ax) > (by-ay) * (cx-ax)
 
-        return (ccw(x1, y1, x3, y3, x4, y4) != ccw(x2, y2, x3, y3, x4, y4) and
-                ccw(x1, y1, x2, y2, x3, y3) != ccw(x1, y1, x2, y2, x4, y4))
+        def ccw(ax, ay, bx, by, cx, cy):
+            return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax)
+
+        return ccw(x1, y1, x3, y3, x4, y4) != ccw(x2, y2, x3, y3, x4, y4) and ccw(
+            x1, y1, x2, y2, x3, y3
+        ) != ccw(x1, y1, x2, y2, x4, y4)
 
     def _remove_duplicates(self, buttons: List[Tuple]) -> List[Tuple]:
         """Remove duplicate detections (nearby buttons)."""
@@ -281,9 +310,9 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
                 kx, ky, kw, kh, _, _ = kept
 
                 # Calculate center distance
-                cx1, cy1 = x + w//2, y + h//2
-                cx2, cy2 = kx + kw//2, ky + kh//2
-                dist = np.sqrt((cx1 - cx2)**2 + (cy1 - cy2)**2)
+                cx1, cy1 = x + w // 2, y + h // 2
+                cx2, cy2 = kx + kw // 2, ky + kh // 2
+                dist = np.sqrt((cx1 - cx2) ** 2 + (cy1 - cy2) ** 2)
 
                 # If centers are very close, it's a duplicate
                 if dist < max(w, kw) * 0.5:

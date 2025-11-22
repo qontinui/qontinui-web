@@ -10,10 +10,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ProfileForm } from "@/components/profile/profile-form"
 import { AvatarUpload } from "@/components/profile/avatar-upload"
-import { AutomationStreamingCard } from "@/components/profile/automation-streaming-card"
 import { StorageUsageCard } from "@/components/profile/storage-usage-card"
 import { ActivityFeed } from "@/components/profile/activity-feed"
-import { ArrowLeft, Crown, Shield } from "lucide-react"
+import { ArrowLeft, Crown, Shield, Cable } from "lucide-react"
 import { toast } from "sonner"
 import type { StorageUsage, ActivityLog } from "@/services/profile-service"
 
@@ -109,6 +108,16 @@ export default function ProfilePage() {
             </Button>
           </div>
           <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/connect-runner')}
+              className="border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
+              title="Connect Desktop Runner"
+            >
+              <Cable className="w-4 h-4 mr-2" />
+              Connect Runner
+            </Button>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] bg-clip-text text-transparent">
               My Profile
             </h1>
@@ -161,8 +170,6 @@ export default function ProfilePage() {
                 user={user}
                 onUpdate={handleUpdateProfile}
               />
-
-              <AutomationStreamingCard />
 
               <AvatarUpload
                 userName={user.full_name || user.username}

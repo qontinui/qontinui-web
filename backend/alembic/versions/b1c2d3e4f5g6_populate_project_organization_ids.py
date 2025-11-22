@@ -93,9 +93,7 @@ def upgrade() -> None:
             print(
                 f"  Project ID: {project[0]}, Name: {project[1]}, Owner ID: {project[2]}"
             )
-        print(
-            "\nThese projects' owners may not have personal organizations yet."
-        )
+        print("\nThese projects' owners may not have personal organizations yet.")
         print(
             "Run the migrate_to_organizations.py script to create missing personal organizations."
         )

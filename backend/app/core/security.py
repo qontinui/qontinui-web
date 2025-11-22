@@ -1,14 +1,14 @@
+import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
+from app.core.config import settings
+from app.services.auth.token_blacklist_service import token_blacklist_service
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-from app.core.config import settings
-from app.services.auth.token_blacklist_service import token_blacklist_service
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
 
 def create_access_token(
@@ -29,6 +29,7 @@ def create_access_token(
         "type": "access",
         "iat": datetime.utcnow(),
         "jti": secrets.token_urlsafe(16),  # JWT ID for blacklisting
+        "aud": ["fastapi-users:auth"],  # Required by fastapi-users JWTStrategy
     }
 
     if additional_claims:
@@ -250,3 +251,50 @@ def get_session_jti_from_refresh_token(refresh_token: str) -> str | None:
     """
     payload = decode_refresh_token(refresh_token)
     return payload.get("jti") if payload else None
+
+
+# ============================================================================
+# Runner Token Generation and Hashing
+# ============================================================================
+
+
+def generate_runner_token() -> str:
+    """
+    Generate a secure random token for runner authentication.
+
+    The token format is: qontinui_runner_<64 character hex string>
+    This format allows for easy identification and monitoring.
+
+    Returns:
+        A secure random token string
+    """
+    # Generate 32 bytes (256 bits) of random data, which becomes 64 hex chars
+    random_bytes = secrets.token_hex(32)
+    return f"qontinui_runner_{random_bytes}"
+
+
+def hash_runner_token(token: str) -> str:
+    """
+    Hash a runner token for secure storage using SHA-256.
+
+    Args:
+        token: The plain text token to hash
+
+    Returns:
+        The SHA-256 hash of the token as a hex string (64 characters)
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def verify_runner_token(token: str, token_hash: str) -> bool:
+    """
+    Verify a runner token against its stored hash.
+
+    Args:
+        token: The plain text token to verify
+        token_hash: The stored hash to compare against
+
+    Returns:
+        True if the token matches the hash, False otherwise
+    """
+    return hash_runner_token(token) == token_hash

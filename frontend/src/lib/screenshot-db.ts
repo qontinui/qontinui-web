@@ -1,21 +1,49 @@
 /**
  * IndexedDB wrapper for storing screenshots
- * Uses IndexedDB because screenshots are too large for localStorage
+ *
+ * IMPORTANT: This is a TEMPORARY CLIENT-SIDE CACHE, not permanent storage.
+ *
+ * Purpose:
+ * - Temporary browser-side cache for uploaded screenshots
+ * - Local working storage for state discovery workflow
+ * - Project-scoped storage for UI components
+ *
+ * NOT used for:
+ * - Long-term persistent storage (use S3/MinIO via backend API)
+ * - Cross-device synchronization (use server API)
+ * - Automation screenshot storage (use PostgreSQL/S3 via backend)
+ * - Offline access (presigned URLs expire)
+ *
+ * Data Lifecycle:
+ * 1. User uploads screenshot → stored in IndexedDB temporarily
+ * 2. Screenshot uploaded to S3 → presigned URL stored in IndexedDB
+ * 3. Presigned URL expires after 7 days → auto-refresh on access
+ * 4. Screenshot older than 7 days → cleaned up automatically
+ *
+ * Server is the source of truth for all screenshot data.
  */
 
 const DB_NAME = 'qontinui-screenshots-db';
 const STORE_NAME = 'screenshots';
-const DB_VERSION = 2; // Incremented to add projectName index
+const DB_VERSION = 3; // Version 3: Added s3Key, projectId, urlExpiresAt for URL refresh
 
+/**
+ * Screenshot stored in IndexedDB (temporary client-side cache)
+ */
 export interface StoredScreenshot {
   id: string;
   name: string;
-  url: string; // base64 data URL
+  url: string; // base64 data URL or presigned URL from S3
   size: number;
   uploadedAt: Date;
   description?: string;
   tags?: string[];
   projectName?: string;
+
+  // Added in v3: For presigned URL refresh
+  s3Key?: string; // S3 object key (e.g., "automation/user-id/session-id/screenshot.png")
+  projectId?: number; // Project ID for API calls
+  urlExpiresAt?: Date; // When the presigned URL expires (null for base64 URLs)
 }
 
 class ScreenshotDB {
@@ -67,14 +95,20 @@ class ScreenshotDB {
           store.createIndex('name', 'name', { unique: false });
           store.createIndex('uploadedAt', 'uploadedAt', { unique: false });
           store.createIndex('projectName', 'projectName', { unique: false });
-        } else if (oldVersion < 2) {
-          // Upgrade from version 1 to 2: add projectName index
+        } else {
+          // Handle incremental upgrades
           const transaction = (event.target as IDBOpenDBRequest).transaction;
           if (transaction) {
             const store = transaction.objectStore(STORE_NAME);
-            if (!store.indexNames.contains('projectName')) {
+
+            // Version 1 → 2: add projectName index
+            if (oldVersion < 2 && !store.indexNames.contains('projectName')) {
               store.createIndex('projectName', 'projectName', { unique: false });
             }
+
+            // Version 2 → 3: No new indexes needed (just added optional fields)
+            // New fields: s3Key, projectId, urlExpiresAt
+            // These are automatically supported by IndexedDB (no schema change needed)
           }
         }
       };
@@ -261,6 +295,141 @@ class ScreenshotDB {
     } catch (error) {
       console.error(`Error renaming project from ${oldProjectName} to ${newProjectName}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Get screenshot with fresh presigned URL (refreshes if expired or near expiration)
+   *
+   * @param id Screenshot ID
+   * @returns Screenshot with fresh URL, or null if not found
+   */
+  async getWithFreshUrl(id: string): Promise<StoredScreenshot | null> {
+    try {
+      const screenshot = await this.get(id);
+      if (!screenshot) return null;
+
+      // Skip refresh for base64 data URLs
+      if (screenshot.url.startsWith('data:')) {
+        return screenshot;
+      }
+
+      // Check if URL needs refresh
+      const needsRefresh = this.shouldRefreshUrl(screenshot);
+
+      if (needsRefresh && screenshot.s3Key && screenshot.projectId) {
+        try {
+          // Dynamically import apiClient to avoid circular dependencies
+          const { apiClient } = await import('./api-client');
+
+          // Refresh presigned URL from server
+          const refreshed = await apiClient.refreshPresignedUrl(
+            screenshot.projectId,
+            screenshot.s3Key
+          );
+
+          // Update screenshot with fresh URL
+          const updatedScreenshot = {
+            ...screenshot,
+            url: refreshed.url,
+            urlExpiresAt: new Date(Date.now() + refreshed.expires_in * 1000),
+          };
+
+          await this.update(updatedScreenshot);
+          return updatedScreenshot;
+        } catch (error) {
+          console.warn(`Failed to refresh URL for screenshot ${id}:`, error);
+          // Return original screenshot even if refresh fails
+          return screenshot;
+        }
+      }
+
+      return screenshot;
+    } catch (error) {
+      console.error(`Error getting screenshot ${id} with fresh URL:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if screenshot URL should be refreshed
+   *
+   * @param screenshot Screenshot to check
+   * @returns True if URL should be refreshed
+   */
+  private shouldRefreshUrl(screenshot: StoredScreenshot): boolean {
+    // No refresh needed for base64 URLs
+    if (screenshot.url.startsWith('data:')) {
+      return false;
+    }
+
+    // No expiration data - needs refresh to be safe
+    if (!screenshot.urlExpiresAt) {
+      return true;
+    }
+
+    // Refresh if expires within 24 hours (86400000 ms)
+    const expiresAt = new Date(screenshot.urlExpiresAt).getTime();
+    const now = Date.now();
+    const oneDayFromNow = now + 86400000;
+
+    return expiresAt < oneDayFromNow;
+  }
+
+  /**
+   * Clean up expired screenshots from cache
+   *
+   * Removes screenshots that are:
+   * - Older than 7 days (for base64 URLs)
+   * - Have expired presigned URLs and are older than 1 day
+   *
+   * Should be called on app startup or periodically.
+   *
+   * @returns Number of screenshots deleted
+   */
+  async cleanupExpired(): Promise<number> {
+    try {
+      const allScreenshots = await this.getAll();
+      const now = Date.now();
+      const sevenDaysAgo = now - 7 * 86400000; // 7 days in ms
+      const oneDayAgo = now - 86400000; // 1 day in ms
+
+      let deletedCount = 0;
+
+      for (const screenshot of allScreenshots) {
+        const uploadedAt = new Date(screenshot.uploadedAt).getTime();
+        let shouldDelete = false;
+
+        // Delete base64 URLs older than 7 days
+        if (screenshot.url.startsWith('data:') && uploadedAt < sevenDaysAgo) {
+          shouldDelete = true;
+        }
+
+        // Delete presigned URLs that are expired and older than 1 day
+        if (!screenshot.url.startsWith('data:')) {
+          const urlExpired = screenshot.urlExpiresAt
+            ? new Date(screenshot.urlExpiresAt).getTime() < now
+            : true; // Treat unknown expiration as expired
+
+          if (urlExpired && uploadedAt < oneDayAgo) {
+            shouldDelete = true;
+          }
+        }
+
+        if (shouldDelete) {
+          await this.delete(screenshot.id);
+          deletedCount++;
+        }
+      }
+
+      if (deletedCount > 0) {
+        console.log(`Cleaned up ${deletedCount} expired screenshots from IndexedDB`);
+      }
+
+      return deletedCount;
+    } catch (error) {
+      console.error('Error cleaning up expired screenshots:', error);
+      return 0;
     }
   }
 }

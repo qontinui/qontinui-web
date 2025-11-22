@@ -3,11 +3,10 @@
 import asyncio
 
 import stripe
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.subscription import Subscription
 from app.models.user import User
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class StripeSubscriptionService:
@@ -40,9 +39,11 @@ class StripeSubscriptionService:
             "tier": subscription.tier,
             "status": subscription.status,
             "cancel_at_period_end": subscription.cancel_at_period_end,
-            "current_period_end": subscription.current_period_end.isoformat()
-            if subscription.current_period_end
-            else None,
+            "current_period_end": (
+                subscription.current_period_end.isoformat()
+                if subscription.current_period_end
+                else None
+            ),
         }
 
         # If there's a Stripe subscription, fetch live details

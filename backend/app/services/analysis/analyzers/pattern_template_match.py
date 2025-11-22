@@ -6,20 +6,21 @@ from screenshots and matches them across all images.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
-from io import BytesIO
-from PIL import Image
-import numpy as np
-import cv2
 from collections import defaultdict
+from io import BytesIO
+from typing import Any, Dict, List, Tuple
+
+import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,7 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
         """Load screenshots as grayscale numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')
+            img = Image.open(BytesIO(data)).convert("L")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -149,21 +150,25 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
         edges = cv2.dilate(edges, kernel, iterations=2)
 
         # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         # Sort by area (largest first) and take top N
         contours = sorted(contours, key=cv2.contourArea, reverse=True)
-        contours = contours[:params["max_templates"]]
+        contours = contours[: params["max_templates"]]
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
 
             # Filter by size
-            if (params["min_template_size"] <= w <= params["max_template_size"] and
-                params["min_template_size"] <= h <= params["max_template_size"]):
+            if (
+                params["min_template_size"] <= w <= params["max_template_size"]
+                and params["min_template_size"] <= h <= params["max_template_size"]
+            ):
 
                 # Extract template
-                template = image[y:y+h, x:x+w].copy()
+                template = image[y : y + h, x : x + w].copy()
                 bbox = BoundingBox(x=x, y=y, width=w, height=h)
 
                 templates.append((template, bbox))
@@ -175,7 +180,7 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
         template_info: Tuple[np.ndarray, BoundingBox],
         images: List[np.ndarray],
         params: Dict[str, Any],
-        template_idx: int
+        template_idx: int,
     ) -> List[DetectedElement]:
         """
         Match a template across all images
@@ -206,22 +211,24 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
             for y, x in zip(*locations):
                 confidence = float(result[y, x])
 
-                matches.append(DetectedElement(
-                    bounding_box=BoundingBox(
-                        x=int(x),
-                        y=int(y),
-                        width=template.shape[1],
-                        height=template.shape[0]
-                    ),
-                    confidence=confidence,
-                    label="Recurring Pattern",
-                    element_type="pattern",
-                    screenshot_index=screenshot_idx,
-                    metadata={
-                        "method": "template_matching",
-                        "template_id": template_idx,
-                    },
-                ))
+                matches.append(
+                    DetectedElement(
+                        bounding_box=BoundingBox(
+                            x=int(x),
+                            y=int(y),
+                            width=template.shape[1],
+                            height=template.shape[0],
+                        ),
+                        confidence=confidence,
+                        label="Recurring Pattern",
+                        element_type="pattern",
+                        screenshot_index=screenshot_idx,
+                        metadata={
+                            "method": "template_matching",
+                            "template_id": template_idx,
+                        },
+                    )
+                )
 
         # Apply non-maximum suppression within each screenshot
         matches = self._apply_nms_per_screenshot(matches, params)
@@ -248,12 +255,14 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
             boxes = []
             scores = []
             for elem in elems:
-                boxes.append([
-                    elem.bounding_box.x,
-                    elem.bounding_box.y,
-                    elem.bounding_box.x + elem.bounding_box.width,
-                    elem.bounding_box.y + elem.bounding_box.height
-                ])
+                boxes.append(
+                    [
+                        elem.bounding_box.x,
+                        elem.bounding_box.y,
+                        elem.bounding_box.x + elem.bounding_box.width,
+                        elem.bounding_box.y + elem.bounding_box.height,
+                    ]
+                )
                 scores.append(elem.confidence)
 
             boxes = np.array(boxes)
@@ -264,7 +273,7 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
                 boxes.tolist(),
                 scores.tolist(),
                 score_threshold=0.0,
-                nms_threshold=params["nms_threshold"]
+                nms_threshold=params["nms_threshold"],
             )
 
             # Keep only non-suppressed elements

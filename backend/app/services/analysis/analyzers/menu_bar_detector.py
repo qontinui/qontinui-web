@@ -10,19 +10,20 @@ Characteristics:
 """
 
 import logging
-from typing import Dict, Any, List
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,9 @@ class MenuBarDetector(BaseAnalyzer):
 
         # Analyze each screenshot
         all_elements = []
-        for screenshot_idx, (img_color, img_gray) in enumerate(zip(images_color, images_gray)):
+        for screenshot_idx, (img_color, img_gray) in enumerate(
+            zip(images_color, images_gray)
+        ):
             elements = await self._analyze_screenshot(
                 img_color, img_gray, screenshot_idx, params
             )
@@ -106,7 +109,7 @@ class MenuBarDetector(BaseAnalyzer):
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -114,7 +117,7 @@ class MenuBarDetector(BaseAnalyzer):
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')
+            img = Image.open(BytesIO(data)).convert("L")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -123,7 +126,7 @@ class MenuBarDetector(BaseAnalyzer):
         img_color: np.ndarray,
         img_gray: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedElement]:
         """Analyze a single screenshot for menu bars"""
         elements = []
@@ -136,9 +139,7 @@ class MenuBarDetector(BaseAnalyzer):
 
         # Apply edge detection
         edges = cv2.Canny(
-            top_region,
-            params["edge_threshold_low"],
-            params["edge_threshold_high"]
+            top_region, params["edge_threshold_low"], params["edge_threshold_high"]
         )
 
         # Find horizontal projections (sum edges across width)
@@ -159,7 +160,9 @@ class MenuBarDetector(BaseAnalyzer):
             menu_height = y_end - y_start
 
             # Check height constraints
-            if not (params["min_menu_height"] <= menu_height <= params["max_menu_height"]):
+            if not (
+                params["min_menu_height"] <= menu_height <= params["max_menu_height"]
+            ):
                 continue
 
             # Menu bars typically span most of the width
@@ -171,7 +174,7 @@ class MenuBarDetector(BaseAnalyzer):
                 continue
 
             # Extract menu region for analysis
-            menu_region = img_gray[y_start:y_end, menu_x:menu_x + menu_width]
+            menu_region = img_gray[y_start:y_end, menu_x : menu_x + menu_width]
 
             # Detect text items in the menu region
             text_items = self._detect_text_items(menu_region)
@@ -193,31 +196,31 @@ class MenuBarDetector(BaseAnalyzer):
             if confidence < 0.5:
                 continue
 
-            elements.append(DetectedElement(
-                bounding_box=BoundingBox(
-                    x=int(menu_x),
-                    y=int(y_start),
-                    width=int(menu_width),
-                    height=int(menu_height)
-                ),
-                confidence=confidence,
-                label="Menu Bar",
-                element_type="menu",
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "menu_bar_detection",
-                    "num_text_items": len(text_items),
-                    "evenly_spaced": is_evenly_spaced,
-                    "position": "top",
-                },
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=BoundingBox(
+                        x=int(menu_x),
+                        y=int(y_start),
+                        width=int(menu_width),
+                        height=int(menu_height),
+                    ),
+                    confidence=confidence,
+                    label="Menu Bar",
+                    element_type="menu",
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "menu_bar_detection",
+                        "num_text_items": len(text_items),
+                        "evenly_spaced": is_evenly_spaced,
+                        "position": "top",
+                    },
+                )
+            )
 
         return elements
 
     def _group_consecutive_rows(
-        self,
-        rows: np.ndarray,
-        params: Dict[str, Any]
+        self, rows: np.ndarray, params: Dict[str, Any]
     ) -> List[tuple]:
         """Group consecutive row indices into regions"""
         if len(rows) == 0:
@@ -244,7 +247,7 @@ class MenuBarDetector(BaseAnalyzer):
         # Smooth the projection
         kernel_size = 5
         kernel = np.ones(kernel_size) / kernel_size
-        smoothed = np.convolve(vertical_projection, kernel, mode='same')
+        smoothed = np.convolve(vertical_projection, kernel, mode="same")
 
         # Find peaks (text regions)
         threshold = np.mean(smoothed) * 0.5
@@ -262,7 +265,7 @@ class MenuBarDetector(BaseAnalyzer):
             return True  # Not enough items to check
 
         # Calculate gaps between items
-        gaps = [text_items[i+1] - text_items[i] for i in range(len(text_items) - 1)]
+        gaps = [text_items[i + 1] - text_items[i] for i in range(len(text_items) - 1)]
 
         if len(gaps) == 0:
             return False
@@ -280,7 +283,7 @@ class MenuBarDetector(BaseAnalyzer):
         height: int,
         num_text_items: int,
         is_evenly_spaced: bool,
-        screen_width: int
+        screen_width: int,
     ) -> float:
         """Calculate confidence score"""
         confidence = 0.5  # Base confidence

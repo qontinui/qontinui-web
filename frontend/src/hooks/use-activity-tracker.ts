@@ -4,12 +4,22 @@ import { useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 
 const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 1 hour in milliseconds
-const REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh token every 5 minutes if active
+// REMOVED: REFRESH_INTERVAL - Frontend no longer proactively refreshes tokens
+// Backend sliding window middleware handles all proactive refreshes (5min threshold)
 const WARN_BEFORE_TIMEOUT = 3 * 60 * 1000; // Warn 3 minutes before timeout
 
+/**
+ * Activity Tracker Hook
+ *
+ * Token Refresh Strategy (Aligned with Backend):
+ * - REMOVED proactive token refresh interval (previously every 5 minutes)
+ * - Backend sliding window middleware handles all proactive refreshes (5min threshold)
+ * - Frontend only tracks user activity for inactivity warnings
+ * - This prevents race conditions where both frontend and backend try to refresh simultaneously
+ */
 export function useActivityTracker() {
   const lastActivityRef = useRef<number>(Date.now());
-  const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // REMOVED: refreshTimerRef - no longer doing proactive refreshes
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const warningTimerRef = useRef<NodeJS.Timeout | null>(null);
   const activityEventCountRef = useRef<number>(0);
@@ -18,7 +28,6 @@ export function useActivityTracker() {
     // Clear all timers when session expires
     const handleSessionExpired = () => {
       console.log('[ActivityTracker] Session expired, clearing all timers');
-      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
     };
@@ -43,9 +52,6 @@ export function useActivityTracker() {
       const timeSinceLastActivity = now - lastActivityRef.current;
 
       // Clear existing timers
-      if (refreshTimerRef.current) {
-        clearInterval(refreshTimerRef.current);
-      }
       if (inactivityTimerRef.current) {
         clearTimeout(inactivityTimerRef.current);
       }
@@ -53,40 +59,9 @@ export function useActivityTracker() {
         clearTimeout(warningTimerRef.current);
       }
 
-      // Set up refresh interval - refresh token every 5 minutes to keep session alive
-      // We refresh regardless of activity to prevent token expiration
-      refreshTimerRef.current = setInterval(async () => {
-        const timeSinceLastActivity = Date.now() - lastActivityRef.current;
-
-        // Only refresh if user is authenticated and hasn't exceeded the inactivity timeout
-        // This prevents refreshing tokens for users who are truly inactive/away or logged out
-        if (apiClient.isAuthenticated() && timeSinceLastActivity < INACTIVITY_TIMEOUT) {
-          try {
-            console.log('[ActivityTracker] Periodic token refresh (5min interval)');
-            const success = await apiClient.refreshAccessToken();
-
-            // If refresh failed, stop all timers to prevent further attempts
-            if (!success) {
-              console.log('[ActivityTracker] Token refresh failed, clearing all timers');
-              if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-              if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-              if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
-            }
-          } catch (error) {
-            console.error('[ActivityTracker] Failed to refresh token:', error);
-            // On error, also stop timers to prevent spam
-            if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-            if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-            if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
-          }
-        } else if (!apiClient.isAuthenticated()) {
-          // If not authenticated, stop all timers immediately
-          console.log('[ActivityTracker] User not authenticated, clearing all timers');
-          if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-          if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-          if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
-        }
-      }, REFRESH_INTERVAL);
+      // REMOVED: Proactive token refresh interval
+      // Backend sliding window middleware now handles all proactive refreshes (5min threshold)
+      // Frontend only refreshes reactively on 401 responses
 
       // Set up warning timer - warn 3 minutes before timeout
       const warningDelay = INACTIVITY_TIMEOUT - WARN_BEFORE_TIMEOUT;
@@ -141,9 +116,6 @@ export function useActivityTracker() {
         window.removeEventListener(event, updateActivity);
       });
 
-      if (refreshTimerRef.current) {
-        clearInterval(refreshTimerRef.current);
-      }
       if (inactivityTimerRef.current) {
         clearTimeout(inactivityTimerRef.current);
       }

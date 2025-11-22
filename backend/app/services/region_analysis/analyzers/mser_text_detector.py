@@ -9,20 +9,21 @@ Performance: 50-200ms
 Accuracy: 70-85% for clear text, good for stylized fonts
 """
 
-from typing import List, Dict, Any, Optional
+from io import BytesIO
+from typing import Any, Dict, List, Optional
+
 import cv2
 import numpy as np
-from io import BytesIO
 from PIL import Image
 
 from ..base import (
     BaseRegionAnalyzer,
-    DetectedRegion,
-    RegionType,
-    RegionAnalysisType,
     BoundingBox,
+    DetectedRegion,
     RegionAnalysisInput,
     RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
 )
 
 
@@ -105,7 +106,8 @@ class MSERTextDetector(BaseRegionAnalyzer):
         # Calculate overall confidence
         overall_confidence = (
             sum(r.confidence for r in all_regions) / len(all_regions)
-            if all_regions else 0.0
+            if all_regions
+            else 0.0
         )
 
         return RegionAnalysisResult(
@@ -119,10 +121,12 @@ class MSERTextDetector(BaseRegionAnalyzer):
                 "max_area": self.max_area,
                 "group_nearby": self.group_nearby,
                 "total_text_regions": len(all_regions),
-            }
+            },
         )
 
-    def _detect_text_regions(self, gray: np.ndarray, screenshot_index: int) -> List[DetectedRegion]:
+    def _detect_text_regions(
+        self, gray: np.ndarray, screenshot_index: int
+    ) -> List[DetectedRegion]:
         """Detect text regions in a grayscale image."""
         # Create MSER detector
         mser = cv2.MSER_create(
@@ -146,7 +150,10 @@ class MSERTextDetector(BaseRegionAnalyzer):
 
             # Check aspect ratio (text is usually not too square or too elongated)
             aspect_ratio = w / h
-            if aspect_ratio < self.min_aspect_ratio or aspect_ratio > self.max_aspect_ratio:
+            if (
+                aspect_ratio < self.min_aspect_ratio
+                or aspect_ratio > self.max_aspect_ratio
+            ):
                 continue
 
             # Calculate confidence based on region stability
@@ -170,7 +177,7 @@ class MSERTextDetector(BaseRegionAnalyzer):
                     "aspect_ratio": aspect_ratio,
                     "solidity": solidity,
                     "detection_method": "mser",
-                }
+                },
             )
             detected_regions.append(detected_region)
 
@@ -180,7 +187,9 @@ class MSERTextDetector(BaseRegionAnalyzer):
 
         return detected_regions
 
-    def _group_nearby_regions(self, regions: List[DetectedRegion]) -> List[DetectedRegion]:
+    def _group_nearby_regions(
+        self, regions: List[DetectedRegion]
+    ) -> List[DetectedRegion]:
         """Group nearby text regions into text blocks."""
         if not regions:
             return regions
@@ -229,10 +238,14 @@ class MSERTextDetector(BaseRegionAnalyzer):
         box2_y2 = box2.y + box2.height
 
         # Check if boxes overlap or are close
-        x_overlap = not (box1_x2 < box2.x - self.grouping_distance or
-                        box2_x2 < box1.x - self.grouping_distance)
-        y_overlap = not (box1_y2 < box2.y - self.grouping_distance or
-                        box2_y2 < box1.y - self.grouping_distance)
+        x_overlap = not (
+            box1_x2 < box2.x - self.grouping_distance
+            or box2_x2 < box1.x - self.grouping_distance
+        )
+        y_overlap = not (
+            box1_y2 < box2.y - self.grouping_distance
+            or box2_y2 < box1.y - self.grouping_distance
+        )
 
         return x_overlap and y_overlap
 
@@ -259,5 +272,5 @@ class MSERTextDetector(BaseRegionAnalyzer):
             metadata={
                 "merged_count": len(regions),
                 "detection_method": "mser_grouped",
-            }
+            },
         )

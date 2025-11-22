@@ -6,19 +6,20 @@ Good for finding buttons, inputs, and other rectangular UI elements.
 """
 
 import logging
-from typing import Dict, Any, List
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,9 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
 
         # Analyze each screenshot
         all_elements = []
-        for screenshot_idx, (img_gray, img_color) in enumerate(zip(images_gray, images_color)):
+        for screenshot_idx, (img_gray, img_color) in enumerate(
+            zip(images_gray, images_color)
+        ):
             elements = await self._analyze_screenshot(
                 img_gray, img_color, screenshot_idx, params
             )
@@ -103,7 +106,7 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('L')
+            img = Image.open(BytesIO(data)).convert("L")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -111,7 +114,7 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img, dtype=np.uint8))
         return images
 
@@ -120,22 +123,17 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
         img_gray: np.ndarray,
         img_color: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> List[DetectedElement]:
         """Analyze a single screenshot"""
         elements = []
 
         # Apply Canny edge detection
-        edges = cv2.Canny(
-            img_gray,
-            params["canny_low"],
-            params["canny_high"]
-        )
+        edges = cv2.Canny(img_gray, params["canny_low"], params["canny_high"])
 
         # Dilate edges to connect nearby edges
         kernel = cv2.getStructuringElement(
-            cv2.MORPH_RECT,
-            (params["morph_kernel_size"], params["morph_kernel_size"])
+            cv2.MORPH_RECT, (params["morph_kernel_size"], params["morph_kernel_size"])
         )
         edges = cv2.dilate(edges, kernel, iterations=1)
 
@@ -151,18 +149,20 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
             area = w * h
             aspect_ratio = w / h if h > 0 else 0
             perimeter = cv2.arcLength(contour, True)
-            rectangularity = (4 * area) / (perimeter ** 2) if perimeter > 0 else 0
+            rectangularity = (4 * area) / (perimeter**2) if perimeter > 0 else 0
 
             # Filter by size and aspect ratio
             if not (params["min_area"] <= area <= params["max_area"]):
                 continue
-            if not (params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+            if not (
+                params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]
+            ):
                 continue
 
             # Classify element type if requested
             if params["classify_by_shape"]:
                 element_type, label = self._classify_element(
-                    w, h, aspect_ratio, rectangularity, img_color[y:y+h, x:x+w]
+                    w, h, aspect_ratio, rectangularity, img_color[y : y + h, x : x + w]
                 )
             else:
                 element_type = "element"
@@ -171,19 +171,23 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
             # Calculate confidence based on shape regularity
             confidence = min(0.9, 0.5 + rectangularity * 0.4)
 
-            elements.append(DetectedElement(
-                bounding_box=BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h)),
-                confidence=confidence,
-                label=label,
-                element_type=element_type,
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "edge_detection",
-                    "area": int(area),
-                    "aspect_ratio": float(aspect_ratio),
-                    "rectangularity": float(rectangularity),
-                },
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=BoundingBox(
+                        x=int(x), y=int(y), width=int(w), height=int(h)
+                    ),
+                    confidence=confidence,
+                    label=label,
+                    element_type=element_type,
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "edge_detection",
+                        "area": int(area),
+                        "aspect_ratio": float(aspect_ratio),
+                        "rectangularity": float(rectangularity),
+                    },
+                )
+            )
 
         return elements
 
@@ -193,7 +197,7 @@ class SingleShotEdgeAnalyzer(BaseAnalyzer):
         height: int,
         aspect_ratio: float,
         rectangularity: float,
-        region: np.ndarray
+        region: np.ndarray,
     ) -> tuple[str, str]:
         """
         Classify element type based on shape characteristics

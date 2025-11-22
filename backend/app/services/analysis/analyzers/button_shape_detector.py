@@ -9,19 +9,20 @@ Detects buttons using shape-based analysis:
 """
 
 import logging
-from typing import Dict, Any, List
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,21 +64,17 @@ class ButtonShapeDetector(BaseAnalyzer):
             "max_width": 300,
             "min_height": 30,
             "max_height": 60,
-
             # Aspect ratio constraints (width/height)
             "min_aspect_ratio": 2.0,  # 2:1 - button is wider than tall
             "max_aspect_ratio": 5.0,  # 5:1 - not too elongated
-
             # Edge detection parameters
             "canny_low": 50,
             "canny_high": 150,
             "morph_kernel_size": 3,
-
             # Shape filtering
             "min_rectangularity": 0.7,  # How rectangular the shape is
             "detect_rounded_corners": True,
             "corner_radius_threshold": 5,  # Minimum corner radius in pixels
-
             # Confidence thresholds
             "min_confidence": 0.5,
         }
@@ -104,7 +101,9 @@ class ButtonShapeDetector(BaseAnalyzer):
             )
             all_elements.extend(elements)
 
-        logger.info(f"Detected {len(all_elements)} button candidates using shape analysis")
+        logger.info(
+            f"Detected {len(all_elements)} button candidates using shape analysis"
+        )
 
         return AnalysisResult(
             analyzer_type=self.analysis_type,
@@ -133,7 +132,9 @@ class ButtonShapeDetector(BaseAnalyzer):
         for data in screenshot_data:
             img = Image.open(BytesIO(data)).convert("RGB")
             # Convert RGB to BGR for OpenCV
-            images.append(cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR))
+            images.append(
+                cv2.cvtColor(np.array(img, dtype=np.uint8), cv2.COLOR_RGB2BGR)
+            )
         return images
 
     async def _analyze_screenshot(
@@ -157,7 +158,9 @@ class ButtonShapeDetector(BaseAnalyzer):
         edges = cv2.dilate(edges, kernel, iterations=1)
 
         # Step 3: Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         logger.debug(f"Found {len(contours)} contours in screenshot {screenshot_idx}")
 
@@ -173,7 +176,9 @@ class ButtonShapeDetector(BaseAnalyzer):
 
             # Step 5: Filter by aspect ratio
             aspect_ratio = w / h if h > 0 else 0
-            if not (params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+            if not (
+                params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]
+            ):
                 continue
 
             # Step 6: Calculate rectangularity (how close to a perfect rectangle)
@@ -195,7 +200,13 @@ class ButtonShapeDetector(BaseAnalyzer):
 
             # Step 8: Calculate confidence score
             confidence = self._calculate_confidence(
-                w, h, aspect_ratio, rectangularity, has_rounded_corners, corner_score, params
+                w,
+                h,
+                aspect_ratio,
+                rectangularity,
+                has_rounded_corners,
+                corner_score,
+                params,
             )
 
             if confidence < params["min_confidence"]:
@@ -204,7 +215,9 @@ class ButtonShapeDetector(BaseAnalyzer):
             # Create detected element
             elements.append(
                 DetectedElement(
-                    bounding_box=BoundingBox(x=int(x), y=int(y), width=int(w), height=int(h)),
+                    bounding_box=BoundingBox(
+                        x=int(x), y=int(y), width=int(w), height=int(h)
+                    ),
                     confidence=confidence,
                     label="Button",
                     element_type="button",

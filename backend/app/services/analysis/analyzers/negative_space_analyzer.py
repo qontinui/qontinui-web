@@ -9,19 +9,20 @@ Uses morphological operations to identify isolated content regions.
 """
 
 import logging
-from typing import Dict, Any, List, Tuple
 from io import BytesIO
-from PIL import Image
-import numpy as np
+from typing import Any, Dict, List, Tuple
+
 import cv2
+import numpy as np
+from PIL import Image
 
 from ..base import (
-    BaseAnalyzer,
-    AnalysisType,
     AnalysisInput,
     AnalysisResult,
-    DetectedElement,
+    AnalysisType,
+    BaseAnalyzer,
     BoundingBox,
+    DetectedElement,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,17 +68,14 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
             "min_padding": 6,  # Minimum padding around elements (pixels)
             "max_padding": 24,  # Maximum padding (pixels)
             "padding_consistency": 0.7,  # How consistent padding should be
-
             # Content detection
             "content_threshold": 50,  # Minimum content density
             "min_isolation_score": 0.6,  # Minimum isolation from other content
-
             # Size filters
             "min_area": 500,
             "max_area": 50000,
             "min_aspect_ratio": 1.5,
             "max_aspect_ratio": 8.0,
-
             # Morphological operations
             "morph_kernel_size": 3,
         }
@@ -99,7 +97,9 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
             elements = await self._analyze_screenshot(img, screenshot_idx, params)
             all_elements.extend(elements)
 
-        avg_confidence = np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        avg_confidence = (
+            np.mean([e.confidence for e in all_elements]) if all_elements else 0.0
+        )
 
         logger.info(
             f"Found {len(all_elements)} isolated elements with "
@@ -122,15 +122,12 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
-            img = Image.open(BytesIO(data)).convert('RGB')
+            img = Image.open(BytesIO(data)).convert("RGB")
             images.append(np.array(img))
         return images
 
     async def _analyze_screenshot(
-        self,
-        img: np.ndarray,
-        screenshot_idx: int,
-        params: Dict[str, Any]
+        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
     ) -> List[DetectedElement]:
         """Analyze single screenshot for isolated elements"""
 
@@ -140,7 +137,9 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         # Find content islands
         islands = self._find_content_islands(content_map, params)
 
-        logger.info(f"Screenshot {screenshot_idx}: Found {len(islands)} content islands")
+        logger.info(
+            f"Screenshot {screenshot_idx}: Found {len(islands)} content islands"
+        )
 
         # Analyze each island for button characteristics
         elements = []
@@ -166,19 +165,21 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
                 isolation_score, padding_score, avg_padding, params
             )
 
-            elements.append(DetectedElement(
-                bounding_box=bbox,
-                confidence=confidence,
-                label="Isolated Element",
-                element_type="button_candidate",
-                screenshot_index=screenshot_idx,
-                metadata={
-                    "method": "negative_space",
-                    "isolation_score": float(isolation_score),
-                    "padding_score": float(padding_score),
-                    "avg_padding": float(avg_padding),
-                },
-            ))
+            elements.append(
+                DetectedElement(
+                    bounding_box=bbox,
+                    confidence=confidence,
+                    label="Isolated Element",
+                    element_type="button_candidate",
+                    screenshot_index=screenshot_idx,
+                    metadata={
+                        "method": "negative_space",
+                        "isolation_score": float(isolation_score),
+                        "padding_score": float(padding_score),
+                        "avg_padding": float(avg_padding),
+                    },
+                )
+            )
 
         return elements
 
@@ -203,15 +204,12 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
 
         # Clean up with morphological operations
         kernel = cv2.getStructuringElement(
-            cv2.MORPH_RECT,
-            (params["morph_kernel_size"], params["morph_kernel_size"])
+            cv2.MORPH_RECT, (params["morph_kernel_size"], params["morph_kernel_size"])
         )
 
         # Close small gaps
         content_map = cv2.morphologyEx(
-            content_map.astype(np.uint8),
-            cv2.MORPH_CLOSE,
-            kernel
+            content_map.astype(np.uint8), cv2.MORPH_CLOSE, kernel
         )
 
         return content_map.astype(bool)
@@ -228,8 +226,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
 
         # Find connected components
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-            content_map.astype(np.uint8),
-            connectivity=8
+            content_map.astype(np.uint8), connectivity=8
         )
 
         # Skip label 0 (background)
@@ -246,7 +243,9 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
 
             # Aspect ratio filter
             aspect_ratio = w / h if h > 0 else 0
-            if not (params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]):
+            if not (
+                params["min_aspect_ratio"] <= aspect_ratio <= params["max_aspect_ratio"]
+            ):
                 continue
 
             # Calculate isolation score
@@ -265,8 +264,11 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
     def _calculate_isolation_score(
         self,
         content_map: np.ndarray,
-        x: int, y: int, w: int, h: int,
-        params: Dict[str, Any]
+        x: int,
+        y: int,
+        w: int,
+        h: int,
+        params: Dict[str, Any],
     ) -> float:
         """
         Calculate how isolated an element is from surrounding content
@@ -307,7 +309,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         img: np.ndarray,
         bbox: BoundingBox,
         content_map: np.ndarray,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> Tuple[float, float]:
         """
         Calculate padding around element and padding consistency score
@@ -318,10 +320,18 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
 
         # Measure padding in each direction
         paddings = {
-            'top': self._measure_padding_direction(content_map, x, y, w, h, 'top', params),
-            'bottom': self._measure_padding_direction(content_map, x, y, w, h, 'bottom', params),
-            'left': self._measure_padding_direction(content_map, x, y, w, h, 'left', params),
-            'right': self._measure_padding_direction(content_map, x, y, w, h, 'right', params),
+            "top": self._measure_padding_direction(
+                content_map, x, y, w, h, "top", params
+            ),
+            "bottom": self._measure_padding_direction(
+                content_map, x, y, w, h, "bottom", params
+            ),
+            "left": self._measure_padding_direction(
+                content_map, x, y, w, h, "left", params
+            ),
+            "right": self._measure_padding_direction(
+                content_map, x, y, w, h, "right", params
+            ),
         }
 
         # Filter out None values
@@ -349,9 +359,12 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
     def _measure_padding_direction(
         self,
         content_map: np.ndarray,
-        x: int, y: int, w: int, h: int,
+        x: int,
+        y: int,
+        w: int,
+        h: int,
         direction: str,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> float:
         """
         Measure padding in a specific direction
@@ -360,9 +373,9 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         """
         max_search = params["max_padding"]
 
-        if direction == 'top':
+        if direction == "top":
             search_start = max(0, y - max_search)
-            search_region = content_map[search_start:y, x:x+w]
+            search_region = content_map[search_start:y, x : x + w]
             if search_region.size == 0:
                 return None
 
@@ -374,9 +387,9 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
             first_content = np.where(row_has_content)[0][-1]  # Last occurrence
             padding = y - (search_start + first_content)
 
-        elif direction == 'bottom':
+        elif direction == "bottom":
             search_end = min(content_map.shape[0], y + h + max_search)
-            search_region = content_map[y+h:search_end, x:x+w]
+            search_region = content_map[y + h : search_end, x : x + w]
             if search_region.size == 0:
                 return None
 
@@ -387,9 +400,9 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
             first_content = np.where(row_has_content)[0][0]
             padding = first_content
 
-        elif direction == 'left':
+        elif direction == "left":
             search_start = max(0, x - max_search)
-            search_region = content_map[y:y+h, search_start:x]
+            search_region = content_map[y : y + h, search_start:x]
             if search_region.size == 0:
                 return None
 
@@ -400,9 +413,9 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
             first_content = np.where(col_has_content)[0][-1]
             padding = x - (search_start + first_content)
 
-        elif direction == 'right':
+        elif direction == "right":
             search_end = min(content_map.shape[1], x + w + max_search)
-            search_region = content_map[y:y+h, x+w:search_end]
+            search_region = content_map[y : y + h, x + w : search_end]
             if search_region.size == 0:
                 return None
 
@@ -427,7 +440,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         x, y, w, h = bbox.x, bbox.y, bbox.width, bbox.height
 
         # Extract region
-        region = img[y:y+h, x:x+w]
+        region = img[y : y + h, x : x + w]
 
         if region.size == 0:
             return False
@@ -456,7 +469,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
         isolation_score: float,
         padding_score: float,
         avg_padding: float,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> float:
         """
         Calculate final confidence based on isolation and padding metrics
