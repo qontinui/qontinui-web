@@ -1,4 +1,4 @@
-"""add_version_history_tables
+"""add_version_history_tables.
 
 Revision ID: 20251120_add_version_history
 Revises: 20251120_094121
@@ -30,14 +30,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create project_versions and edit_commands tables."""
-
     # Create project_versions table
     op.create_table(
         "project_versions",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column(
             "project_id",
-            sa.Integer(),
+            UUID(as_uuid=True),
             sa.ForeignKey("projects.id", ondelete="CASCADE"),
             nullable=False,
             index=True,
@@ -70,7 +69,7 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column(
             "project_id",
-            sa.Integer(),
+            UUID(as_uuid=True),
             sa.ForeignKey("projects.id", ondelete="CASCADE"),
             nullable=False,
             index=True,
@@ -97,7 +96,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop project_versions and edit_commands tables."""
-
     # Drop edit_commands table and constraints
     op.drop_constraint("uq_project_command_seq", "edit_commands", type_="unique")
     op.drop_index("ix_edit_commands_applied_at", table_name="edit_commands")
@@ -105,9 +103,7 @@ def downgrade() -> None:
     op.drop_table("edit_commands")
 
     # Drop project_versions table and constraints
-    op.drop_index(
-        "ix_project_versions_project_created", table_name="project_versions"
-    )
+    op.drop_index("ix_project_versions_project_created", table_name="project_versions")
     op.drop_constraint("uq_project_version", "project_versions", type_="unique")
     op.drop_index("ix_project_versions_project_id", table_name="project_versions")
     op.drop_table("project_versions")
