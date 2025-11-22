@@ -58,20 +58,22 @@ if settings.RATE_LIMIT_ENABLED:
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # Add trusted host middleware for production
-if settings.ENVIRONMENT == "production":
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=[
-            "qontinui.io",
-            "www.qontinui.io",
-            "api.qontinui.io",  # API subdomain for backend
-            "qontinui.com",
-            "www.qontinui.com",
-            "app.qontinui.com",
-            "qontinui-prod-py.eba-km2u4s23.eu-central-1.elasticbeanstalk.com",  # ELB hostname
-            "*.elasticbeanstalk.com",  # ELB health checks
-        ],
-    )
+# TEMPORARILY DISABLED: TrustedHostMiddleware blocks ELB health checks from internal IPs
+# TODO: Re-enable with proper configuration after fixing health check Host headers
+# if settings.ENVIRONMENT == "production":
+#     app.add_middleware(
+#         TrustedHostMiddleware,
+#         allowed_hosts=[
+#             "qontinui.io",
+#             "www.qontinui.io",
+#             "api.qontinui.io",  # API subdomain for backend
+#             "qontinui.com",
+#             "www.qontinui.com",
+#             "app.qontinui.com",
+#             "qontinui-prod-py.eba-km2u4s23.eu-central-1.elasticbeanstalk.com",  # ELB hostname
+#             "*.elasticbeanstalk.com",  # ELB health checks
+#         ],
+#     )
 
 # Set up CORS
 # TEMPORARY FIX: Hardcode for production while debugging env var parsing
