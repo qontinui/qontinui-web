@@ -23,7 +23,7 @@ router = APIRouter()
 async def execute_code(
     *,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.current_active_user),
     request: CodeExecutionRequest,
 ) -> CodeExecutionResult:
     """
@@ -90,7 +90,7 @@ async def execute_code(
 async def validate_code(
     *,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.current_active_user),
     request: CodeExecutionRequest,
 ) -> dict:
     """
