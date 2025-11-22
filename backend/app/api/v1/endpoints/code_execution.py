@@ -5,17 +5,16 @@ Provides endpoints for executing inline Python code blocks and custom functions
 within automation workflows.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api import deps
-from app.db.session import get_db
+from app.db.session import get_async_db
 from app.models import User
 from app.services.code_execution_service import (
     CodeExecutionRequest,
     CodeExecutionResult,
     CodeExecutionService,
 )
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -23,7 +22,7 @@ router = APIRouter()
 @router.post("/execute", response_model=CodeExecutionResult)
 async def execute_code(
     *,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(deps.get_current_active_user),
     request: CodeExecutionRequest,
 ) -> CodeExecutionResult:
@@ -90,7 +89,7 @@ async def execute_code(
 @router.post("/validate", response_model=dict)
 async def validate_code(
     *,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(deps.get_current_active_user),
     request: CodeExecutionRequest,
 ) -> dict:
