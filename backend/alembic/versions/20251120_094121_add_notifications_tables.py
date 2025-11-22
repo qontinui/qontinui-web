@@ -58,7 +58,7 @@ def upgrade() -> None:
             sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
             sa.Column(
                 "type",
-                sa.Enum(
+                postgresql.ENUM(
                     "mention",
                     "share",
                     "comment",
