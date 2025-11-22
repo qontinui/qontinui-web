@@ -1,4 +1,4 @@
-"""add_notifications_tables
+"""add_notifications_tables.
 
 Revision ID: 20251120_094121
 Revises: 47c77a22852f
@@ -21,27 +21,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create notifications and notification_preferences tables."""
-
-    # Check if enum exists and drop/recreate to avoid conflicts
+    # Check if enum exists, only create if it doesn't
     conn = op.get_bind()
     result = conn.execute(
         sa.text("SELECT 1 FROM pg_type WHERE typname = 'notificationtype'")
     )
     enum_exists = result.fetchone() is not None
 
-    if enum_exists:
-        print("⚠️  notificationtype enum already exists, dropping and recreating")
-        op.execute("DROP TYPE IF EXISTS notificationtype CASCADE")
-
-    # Create notification_type enum
-    op.execute(
+    if not enum_exists:
+        # Create notification_type enum
+        op.execute(
+            """
+            CREATE TYPE notificationtype AS ENUM (
+                'mention', 'share', 'comment', 'reply', 'lock_released',
+                'project_update', 'team_invite', 'access_granted', 'access_revoked'
+            )
         """
-        CREATE TYPE notificationtype AS ENUM (
-            'mention', 'share', 'comment', 'reply', 'lock_released',
-            'project_update', 'team_invite', 'access_granted', 'access_revoked'
         )
-    """
-    )
+        print("✓ Created notificationtype enum")
+    else:
+        print("⚠️  notificationtype enum already exists, skipping creation")
 
     # Check if table exists
     inspector = sa.inspect(conn)
