@@ -21,26 +21,25 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create notifications and notification_preferences tables."""
-    # Check if enum exists, only create if it doesn't
+    # Try to create enum type, ignore if it already exists
     conn = op.get_bind()
-    result = conn.execute(
-        sa.text("SELECT 1 FROM pg_type WHERE typname = 'notificationtype'")
-    )
-    enum_exists = result.fetchone() is not None
 
-    if not enum_exists:
-        # Create notification_type enum
-        op.execute(
-            """
+    # Use CREATE TYPE IF NOT EXISTS equivalent for PostgreSQL
+    # PostgreSQL doesn't support IF NOT EXISTS for CREATE TYPE, so we use a PL/pgSQL block
+    op.execute(
+        """
+        DO $$ BEGIN
             CREATE TYPE notificationtype AS ENUM (
                 'mention', 'share', 'comment', 'reply', 'lock_released',
                 'project_update', 'team_invite', 'access_granted', 'access_revoked'
-            )
-        """
-        )
-        print("✓ Created notificationtype enum")
-    else:
-        print("⚠️  notificationtype enum already exists, skipping creation")
+            );
+            RAISE NOTICE 'Created notificationtype enum';
+        EXCEPTION
+            WHEN duplicate_object THEN
+                RAISE NOTICE 'notificationtype enum already exists, skipping';
+        END $$;
+    """
+    )
 
     # Check if table exists
     inspector = sa.inspect(conn)
