@@ -1,3 +1,8 @@
+"""Application configuration using Pydantic settings.
+
+Loads configuration from environment variables and .env file.
+"""
+
 import json
 import warnings
 
@@ -6,6 +11,12 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    """Application settings loaded from environment variables.
+
+    All settings can be configured via environment variables or .env file.
+    See .env.example for available options.
+    """
+
     # Project
     PROJECT_NAME: str = "Qontinui API"
     VERSION: str = "1.0.0"
@@ -57,6 +68,7 @@ class Settings(BaseSettings):
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: str | list[str]) -> list[str] | str:
+        """Parse CORS origins from string or list format."""
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, str) and v.startswith("["):
@@ -73,6 +85,12 @@ class Settings(BaseSettings):
 
     # Frontend
     FRONTEND_URL: str = Field(default="http://localhost:3001")
+
+    # Backend URL (for CSP reporting, webhooks, etc.)
+    BACKEND_URL: str = Field(
+        default="http://localhost:8000",
+        description="Backend URL for external references (CSP reports, webhooks)",
+    )
 
     # Runner connection URLs (for desktop app)
     RUNNER_WS_URL: str = Field(
@@ -201,6 +219,7 @@ class Settings(BaseSettings):
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
+        """Validate SECRET_KEY has sufficient length and complexity."""
         if v == "change-me" or len(v) < 32:
             if cls.model_fields.get("ENVIRONMENT") != "development":
                 raise ValueError(
@@ -230,6 +249,7 @@ class Settings(BaseSettings):
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, v: str) -> str:
+        """Validate ENVIRONMENT is one of allowed values."""
         allowed = ["development", "staging", "production"]
         if v not in allowed:
             raise ValueError(f"ENVIRONMENT must be one of: {allowed}")
@@ -238,6 +258,7 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL")
     @classmethod
     def validate_database_url(cls, v: str) -> str:
+        """Validate DATABASE_URL is present and PostgreSQL-based."""
         if not v:
             raise ValueError("DATABASE_URL is required")
         # Only PostgreSQL is supported
@@ -246,6 +267,8 @@ class Settings(BaseSettings):
         return v
 
     class Config:
+        """Pydantic configuration for Settings class."""
+
         env_file = ".env"
         case_sensitive = True
         extra = "ignore"  # Ignore extra env vars like PYTHONPATH set by EB
