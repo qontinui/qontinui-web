@@ -18,6 +18,23 @@ from app.models.automation_log import AutomationLog
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.automation_video import AutomationVideo
+from app.models.capture import (
+    CaptureAction,
+    CaptureDetectedElement,
+    CaptureScreenshot,
+    CaptureSession,
+    LearnedWorkflow,
+    ScreenshotStateMatch,
+)
+from app.models.code_package import (
+    CodePackage,
+    InstallationStatus,
+    PackageCategory,
+    PackageInstallation,
+    PackageRating,
+    PackageVersion,
+    SecurityScanStatus,
+)
 from app.models.collaboration import (
     ActionType,
     ActivityLog,
@@ -25,6 +42,8 @@ from app.models.collaboration import (
     ProjectLock,
     ResourceType,
 )
+from app.models.coverage_snapshot import CoverageSnapshot
+from app.models.custom_function import CustomFunction
 from app.models.device_session import DeviceSession
 from app.models.edit_command import EditCommand
 from app.models.notification import (
@@ -40,6 +59,7 @@ from app.models.organization import (
     TeamMember,
     TeamRole,
 )
+from app.models.path_discovery import PathDiscovery
 from app.models.project import Project
 from app.models.project_version import ProjectVersion
 from app.models.region_result import (
@@ -53,10 +73,27 @@ from app.models.runner_token import RunnerToken
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
 from app.models.snapshot import Pattern, Screenshot, SnapshotRun
+from app.models.software_test_run import SoftwareTestRun, TestRunStatus
 from app.models.storage_usage import StorageUsage
 from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
+from app.models.test_deficiency import (
+    DeficiencySeverity,
+    DeficiencyStatus,
+    DeficiencyType,
+    TestDeficiency,
+)
+from app.models.transition_execution import (
+    TransitionExecution,
+    TransitionExecutionStatus,
+)
+from app.models.transition_reliability import TransitionReliability
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
+from app.models.workflow_variable import (
+    VariableHistory,
+    VariableScope,
+    WorkflowVariable,
+)
 
 __all__ = [
     # User and Auth
@@ -123,4 +160,37 @@ __all__ = [
     # Version History & Event Sourcing
     "ProjectVersion",
     "EditCommand",
+    # Workflow Variables
+    "WorkflowVariable",
+    "VariableHistory",
+    "VariableScope",
+    # Code Package Library
+    "CodePackage",
+    "PackageVersion",
+    "PackageInstallation",
+    "PackageRating",
+    "PackageCategory",
+    "SecurityScanStatus",
+    "InstallationStatus",
+    # Custom Functions
+    "CustomFunction",
+    # Workflow Learning (Capture Sessions)
+    "CaptureSession",
+    "CaptureScreenshot",
+    "CaptureAction",
+    "CaptureDetectedElement",
+    "ScreenshotStateMatch",
+    "LearnedWorkflow",
+    # Software Testing
+    "SoftwareTestRun",
+    "TestRunStatus",
+    "TransitionExecution",
+    "TransitionExecutionStatus",
+    "TestDeficiency",
+    "DeficiencySeverity",
+    "DeficiencyType",
+    "DeficiencyStatus",
+    "CoverageSnapshot",
+    "PathDiscovery",
+    "TransitionReliability",
 ]

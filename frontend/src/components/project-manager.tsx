@@ -24,8 +24,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Save, FolderOpen, Plus, Trash2, FileText, ChevronDown } from 'lucide-react';
+import { Save, FolderOpen, Plus, Trash2, FileText, ChevronDown, Globe } from 'lucide-react';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
 
 interface ProjectManagerProps {
@@ -47,6 +48,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDescription, setNewProjectDescription] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
@@ -63,11 +65,13 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
         name: newProjectName,
         description: newProjectDescription,
         configuration: currentConfiguration,
+        is_public: isPublic,
       });
       setSelectedProject(project);
       setSaveDialogOpen(false);
       setNewProjectName('');
       setNewProjectDescription('');
+      setIsPublic(false);
       toast.success('Project saved successfully');
     } catch (error: any) {
       toast.error(error.message || 'Failed to save project');
@@ -201,6 +205,23 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
                   rows={3}
                 />
               </div>
+              <div className="flex items-center justify-between space-x-2 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-md border border-zinc-200 dark:border-zinc-700">
+                <div className="flex items-center space-x-2">
+                  <Globe className="w-4 h-4 text-zinc-500" />
+                  <div className="flex flex-col">
+                    <Label htmlFor="is-public" className="text-sm font-medium cursor-pointer">
+                      Make Public
+                    </Label>
+                    <p className="text-xs text-zinc-500">Allow anyone to view this project as a demo</p>
+                  </div>
+                </div>
+                <Switch
+                  id="is-public"
+                  checked={isPublic}
+                  onCheckedChange={setIsPublic}
+                  disabled={loading}
+                />
+              </div>
             </div>
           )}
 
@@ -216,6 +237,7 @@ export function ProjectManager({ currentConfiguration, onLoadConfiguration }: Pr
                     setSelectedProject(null);
                     setNewProjectName('');
                     setNewProjectDescription('');
+                    setIsPublic(false);
                   }}
                 >
                   <Plus className="w-4 h-4 mr-2" />

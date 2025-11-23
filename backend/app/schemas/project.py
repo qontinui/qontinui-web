@@ -18,6 +18,7 @@ class ProjectBase(BaseSchema):
     name: str
     description: str | None = None
     configuration: dict[str, Any] = {}
+    is_public: bool = False
 
 
 class ProjectCreate(ProjectBase):
@@ -28,6 +29,7 @@ class ProjectUpdate(BaseSchema):
     name: str | None = None
     description: str | None = None
     configuration: dict[str, Any] | None = None
+    is_public: bool | None = None
 
 
 class ProjectInDBBase(ProjectBase, BaseORMSchema):

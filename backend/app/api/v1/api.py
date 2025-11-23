@@ -10,10 +10,13 @@ from app.api.v1.endpoints import (
     automation_ws,
     background_removal,
     billing,
+    capture,
     code_execution,
+    code_packages,
     collaboration,
     collaboration_ws,
     conflicts,
+    custom_functions,
     export,
     feedback,
     health,
@@ -22,14 +25,18 @@ from app.api.v1.endpoints import (
     notifications,
     organizations,
     pattern_optimization,
+    project_files,
     projects,
+    public,
     region_analysis,
     runners,
     security,
     settings,
     snapshots,
     state_discovery,
+    testing,
     users,
+    variables,
     versions,
     videos,
 )
@@ -38,9 +45,13 @@ from fastapi import APIRouter
 api_router = APIRouter()
 
 api_router.include_router(health.router, tags=["health"])
+api_router.include_router(public.router, prefix="/public", tags=["public"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
+api_router.include_router(
+    project_files.router, prefix="/projects", tags=["project-files"]
+)
 api_router.include_router(export.router, prefix="/projects", tags=["export"])
 api_router.include_router(images.router, prefix="/projects", tags=["images"])
 api_router.include_router(
@@ -92,3 +103,10 @@ api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(runners.router, prefix="/runners", tags=["runners"])
 api_router.include_router(versions.router, prefix="/projects", tags=["versions"])
 api_router.include_router(security.router, prefix="/security", tags=["security"])
+api_router.include_router(variables.router, tags=["variables"])
+api_router.include_router(
+    code_packages.router, prefix="/code-packages", tags=["code-packages"]
+)
+api_router.include_router(custom_functions.router, tags=["custom-functions"])
+api_router.include_router(capture.router, prefix="/capture", tags=["capture-sessions"])
+api_router.include_router(testing.router, prefix="/testing", tags=["testing"])

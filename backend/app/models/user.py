@@ -83,7 +83,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         "AuditLog",
         back_populates="user",
         foreign_keys="AuditLog.user_id",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
     subscription = relationship(
         "Subscription",
@@ -111,4 +111,15 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     edit_commands = relationship(
         "EditCommand", back_populates="user", cascade="all, delete-orphan"
+    )
+    packages = relationship(
+        "CodePackage", foreign_keys="CodePackage.author_id", back_populates="author"
+    )
+    capture_sessions = relationship(
+        "CaptureSession", back_populates="user", cascade="all, delete-orphan"
+    )
+    assigned_deficiencies = relationship(
+        "TestDeficiency",
+        back_populates="assigned_to",
+        foreign_keys="TestDeficiency.assigned_to_user_id",
     )

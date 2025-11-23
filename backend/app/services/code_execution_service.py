@@ -17,8 +17,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set
 
+from app.services.automation_context import AutomationContext
 from pydantic import BaseModel, Field
-
 
 # ============================================================================
 # Models
@@ -142,7 +142,9 @@ class CodeValidator:
     """Validates Python code for security concerns before execution."""
 
     @staticmethod
-    def validate_imports(code: str, allowed_imports: List[str], allow_project_imports: bool = False) -> None:
+    def validate_imports(
+        code: str, allowed_imports: List[str], allow_project_imports: bool = False
+    ) -> None:
         """
         Validate that code only imports allowed modules.
 
@@ -307,10 +309,29 @@ class CodeExecutionService:
             except ImportError:
                 pass  # Skip if module not available
 
+        # Create AutomationContext for custom functions
+        # Build action history from action_result if available
+        action_history = []
+        if context.action_result:
+            action_history = [context.action_result]
+
+        ctx = AutomationContext(
+            workflow_run_id=context.run_id or "unknown",
+            workflow_id=context.workflow_id,
+            db=None,  # No DB session for inline code execution
+            variables=context.variables.copy() if context.variables else {},
+            action_history=action_history,
+            active_states=(
+                set(context.active_states) if context.active_states else set()
+            ),
+        )
+
         # Build global namespace
         safe_globals = {
             "__builtins__": safe_builtins,
-            # Context variables
+            # AutomationContext instance
+            "ctx": ctx,
+            # Context variables (for backward compatibility)
             "action_result": context.action_result,
             "variables": context.variables,
             "workflow_state": context.workflow_state,
@@ -347,7 +368,9 @@ class CodeExecutionService:
             # Validate code
             # Allow project imports if project_root is set (file-based execution)
             allow_project_imports = request.project_root is not None
-            CodeValidator.validate_imports(request.code, request.allowed_imports, allow_project_imports)
+            CodeValidator.validate_imports(
+                request.code, request.allowed_imports, allow_project_imports
+            )
             CodeValidator.validate_dangerous_patterns(request.code)
 
             # Add project root to sys.path for import resolution (file-based execution)

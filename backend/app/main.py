@@ -4,7 +4,7 @@ from app.api.v1.api import api_router
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
 from app.db.init_db import init_db
-from app.db.session import SessionLocal
+from app.db.session import AsyncSessionLocal
 from app.middleware.database_timing import (
     DatabaseTimingMiddleware,
     init_database_timing,
@@ -217,9 +217,8 @@ async def startup_event():
 
     # Initialize database
     try:
-        db = SessionLocal()
-        init_db(db)
-        db.close()
+        async with AsyncSessionLocal() as db:
+            await init_db(db)
         logger.info("database_initialized", status="success")
     except Exception as e:
         logger.error(

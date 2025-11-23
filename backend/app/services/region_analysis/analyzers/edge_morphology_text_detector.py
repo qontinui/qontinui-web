@@ -45,8 +45,7 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(
-        self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize Edge + Morphology text detector.
 
@@ -118,7 +117,8 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
         # Calculate overall confidence
         overall_confidence = (
             sum(r.confidence for r in all_regions) / len(all_regions)
-            if all_regions else 0.0
+            if all_regions
+            else 0.0
         )
 
         return RegionAnalysisResult(
@@ -130,10 +130,12 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
                 "canny_low": self.canny_low,
                 "canny_high": self.canny_high,
                 "morph_kernel": f"{self.morph_kernel_width}x{self.morph_kernel_height}",
-            }
+            },
         )
 
-    def _detect_text_regions(self, gray: np.ndarray, screenshot_index: int) -> List[DetectedRegion]:
+    def _detect_text_regions(
+        self, gray: np.ndarray, screenshot_index: int
+    ) -> List[DetectedRegion]:
         """Detect text regions in a grayscale image."""
         # Apply Gaussian blur to reduce noise
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
@@ -143,20 +145,25 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
 
         # Create morphological kernel (wider than tall to connect horizontal text)
         kernel = cv2.getStructuringElement(
-            cv2.MORPH_RECT,
-            (self.morph_kernel_width, self.morph_kernel_height)
+            cv2.MORPH_RECT, (self.morph_kernel_width, self.morph_kernel_height)
         )
 
         # Morphological closing to connect text regions
-        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=self.close_iterations)
+        closed = cv2.morphologyEx(
+            edges, cv2.MORPH_CLOSE, kernel, iterations=self.close_iterations
+        )
 
         # Additional dilation to ensure text is connected
         if self.dilate_iterations > 0:
             dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-            closed = cv2.dilate(closed, dilate_kernel, iterations=self.dilate_iterations)
+            closed = cv2.dilate(
+                closed, dilate_kernel, iterations=self.dilate_iterations
+            )
 
         # Find contours
-        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         detected_regions = []
 
@@ -171,7 +178,10 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
 
             # Filter by aspect ratio (text is usually wider than tall)
             aspect_ratio = w / h if h > 0 else 0
-            if aspect_ratio < self.min_aspect_ratio or aspect_ratio > self.max_aspect_ratio:
+            if (
+                aspect_ratio < self.min_aspect_ratio
+                or aspect_ratio > self.max_aspect_ratio
+            ):
                 continue
 
             # Calculate additional features for confidence
@@ -184,7 +194,7 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
                 continue
 
             # Calculate edge density in this region
-            roi = edges[y:y+h, x:x+w]
+            roi = edges[y : y + h, x : x + w]
             edge_density = np.count_nonzero(roi) / (w * h) if (w * h) > 0 else 0
 
             # Text should have moderate edge density
@@ -197,7 +207,9 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
             extent_score = min(extent * 2, 1.0)
             edge_score = min(edge_density * 10, 1.0)
 
-            confidence = (aspect_score * 0.4 + extent_score * 0.3 + edge_score * 0.3) * 0.7
+            confidence = (
+                aspect_score * 0.4 + extent_score * 0.3 + edge_score * 0.3
+            ) * 0.7
 
             detected_region = DetectedRegion(
                 bounding_box=BoundingBox(x, y, w, h),
@@ -211,9 +223,7 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
                     "extent": float(extent),
                     "edge_density": float(edge_density),
                     "detection_method": "edge_morphology",
-                ,
-                "total_text_regions": len(all_regions),
-            }
+                },
             )
             detected_regions.append(detected_region)
 

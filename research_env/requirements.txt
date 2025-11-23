@@ -4,10 +4,12 @@ opencv-contrib-python>=4.8.0
 numpy>=1.24.0
 pillow>=10.0.0
 
-# Optional: For SAM2 support (state-of-the-art detection)
+# Optional: For SAM3 support (state-of-the-art detection with text prompts)
 # Uncomment and install separately if needed:
-# torch>=2.0.0
-# torchvision>=0.15.0
-# Install SAM2 with: pip install git+https://github.com/facebookresearch/segment-anything-2.git
+# torch==2.7.0
+# torchvision
+# torchaudio
+# Install SAM3 with: pip install git+https://github.com/facebookresearch/sam3.git
+# Requires Python 3.12+, PyTorch 2.7+, CUDA 12.6+
 
 # Note: opencv-contrib-python is required for selective search (ximgproc module)

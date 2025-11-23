@@ -3,7 +3,7 @@
 // Horizontal icon popover for collapsed sidebar - updated icons v3
 import React, { useState, useEffect } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users, Shield } from 'lucide-react'
+import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users, Shield, Variable, Store, FlaskConical } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CollapsedMenuPopover } from './collapsed-menu-popover'
 import { OrganizationSwitcher } from '@/components/collaboration/OrganizationSwitcher'
@@ -177,6 +177,13 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    id: 'software-testing',
+    label: 'Software Testing',
+    icon: <FlaskConical size={28} />,
+    route: '/testing',
+    color: '#00FF88',
+  },
+  {
     id: 'analytics',
     label: 'Analytics',
     icon: <BarChart3 size={28} />,
@@ -205,6 +212,13 @@ const navItems: NavItem[] = [
         color: '#FFD700',
       },
       {
+        id: 'variables',
+        label: 'Variables',
+        icon: <Variable size={22} />,
+        route: '/automation-builder/variables',
+        color: '#FFD700',
+      },
+      {
         id: 'project-settings',
         label: 'Project Settings',
         icon: <FileText size={22} />,
@@ -219,6 +233,13 @@ const navItems: NavItem[] = [
     icon: <FileText size={28} />,
     route: '/automation-builder/documentation',
     color: '#4ECDC4',
+  },
+  {
+    id: 'marketplace',
+    label: 'Marketplace',
+    icon: <Store size={28} />,
+    route: '/marketplace',
+    color: '#00FF88',
   },
   {
     id: 'organizations',
