@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, LogIn } from 'lucide-react';
+import { ArrowRight, LogIn, Globe } from 'lucide-react';
 import { AuthDialog } from '@/components/auth-dialog';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -24,6 +24,14 @@ export function Header() {
             Qontinui
           </h2>
           <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/demo')}
+              className="hover:bg-primary/10"
+            >
+              <Globe className="mr-2 h-4 w-4" />
+              Demo
+            </Button>
             <Button
               variant="ghost"
               onClick={() => router.push('/runner/download')}

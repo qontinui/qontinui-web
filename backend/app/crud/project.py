@@ -1,11 +1,15 @@
 from uuid import UUID
 
+import structlog
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
+from app.services.project_directory import ProjectDirectoryManager
 from app.services.stripe_service import StripeService
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = structlog.get_logger(__name__)
 
 
 async def get_project(db: AsyncSession, project_id: str) -> Project | None:
@@ -56,6 +60,35 @@ async def create_project(
     db.add(db_project)
     await db.commit()
     await db.refresh(db_project)
+
+    # Create project directory structure
+    try:
+        directory_manager = ProjectDirectoryManager()
+        directory_manager.create_project_directory(
+            project_id=db_project.id,
+            project_name=project.name,
+            description=project.description or "",
+        )
+        logger.info(
+            "project_directory_created",
+            project_id=db_project.id,
+            project_name=project.name,
+        )
+    except FileExistsError:
+        # Directory already exists (shouldn't happen for new projects, but handle gracefully)
+        logger.warning(
+            "project_directory_already_exists",
+            project_id=db_project.id,
+        )
+    except Exception as e:
+        # Log error but don't fail project creation
+        # Directory can be created later when first file is uploaded
+        logger.error(
+            "project_directory_creation_failed",
+            project_id=db_project.id,
+            error=str(e),
+        )
+
     return db_project
 
 
@@ -79,7 +112,25 @@ async def update_project(
 async def delete_project(db: AsyncSession, project_id: str) -> bool:
     project = await get_project(db, project_id)
     if project:
+        # Delete project from database
         await db.delete(project)
         await db.commit()
+
+        # Delete project directory
+        try:
+            directory_manager = ProjectDirectoryManager()
+            directory_manager.delete_project_directory(project_id)
+            logger.info(
+                "project_directory_deleted_with_project",
+                project_id=project_id,
+            )
+        except Exception as e:
+            # Log error but don't fail project deletion
+            logger.error(
+                "project_directory_deletion_failed",
+                project_id=project_id,
+                error=str(e),
+            )
+
         return True
     return False

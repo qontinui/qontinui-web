@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { ArrowRight, Zap, Brain, Target, X, Check, LogIn } from "lucide-react"
+import { ArrowRight, Zap, Brain, Target, X, Check, LogIn, Globe } from "lucide-react"
 import { AuthDialog } from "@/components/auth-dialog"
 import { AuthProvider, useAuth } from "@/contexts/auth-context"
 import { Footer } from "@/components/marketing/footer"
@@ -36,6 +36,14 @@ function LandingContent() {
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <h2 className="text-2xl font-bold text-primary">Qontinui</h2>
           <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/demo')}
+              className="hover:bg-primary/10"
+            >
+              <Globe className="mr-2 h-4 w-4" />
+              Demo
+            </Button>
             <Button
               variant="ghost"
               onClick={() => router.push('/runner/download')}
@@ -105,14 +113,25 @@ function LandingContent() {
             Introducing model-based GUI automation - a system that adapts to unexpected changes instead of breaking
           </p>
 
-          <Button
-            size="lg"
-            onClick={handleGetStarted}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan pulse-cyan text-lg px-8 py-4"
-          >
-            Try Early Access
-            <ArrowRight className="ml-2 h-5 w-5" />
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <Button
+              size="lg"
+              onClick={handleGetStarted}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 glow-cyan pulse-cyan text-lg px-8 py-4"
+            >
+              Try Early Access
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => router.push('/demo')}
+              className="text-lg px-8 py-4 border-primary/30 hover:border-primary hover:bg-primary/10"
+            >
+              <Globe className="mr-2 h-5 w-5" />
+              View Demos
+            </Button>
+          </div>
         </div>
       </section>
 

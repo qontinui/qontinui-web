@@ -46,8 +46,7 @@ class ContourTextDetector(BaseRegionAnalyzer):
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(
-        self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize Contour text detector.
 
@@ -119,7 +118,8 @@ class ContourTextDetector(BaseRegionAnalyzer):
         # Calculate overall confidence
         overall_confidence = (
             sum(r.confidence for r in all_regions) / len(all_regions)
-            if all_regions else 0.0
+            if all_regions
+            else 0.0
         )
 
         return RegionAnalysisResult(
@@ -130,22 +130,20 @@ class ContourTextDetector(BaseRegionAnalyzer):
             metadata={
                 "min_contour_area": self.min_contour_area,
                 "group_nearby": self.group_nearby,
-            ,
                 "total_text_regions": len(all_regions),
-            }
+            },
         )
 
-    def _detect_text_regions(self, gray: np.ndarray, screenshot_index: int) -> List[DetectedRegion]:
+    def _detect_text_regions(
+        self, gray: np.ndarray, screenshot_index: int
+    ) -> List[DetectedRegion]:
         """Detect text regions in a grayscale image."""
         # Apply bilateral filter to preserve edges while reducing noise
         filtered = cv2.bilateralFilter(gray, 9, 75, 75)
 
         # Apply adaptive thresholding
         binary = cv2.adaptiveThreshold(
-            filtered, 255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,
-            11, 2
+            filtered, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
         )
 
         # Find contours
@@ -171,7 +169,10 @@ class ContourTextDetector(BaseRegionAnalyzer):
 
             # Filter by aspect ratio
             aspect_ratio = w / h if h > 0 else 0
-            if aspect_ratio < self.min_aspect_ratio or aspect_ratio > self.max_aspect_ratio:
+            if (
+                aspect_ratio < self.min_aspect_ratio
+                or aspect_ratio > self.max_aspect_ratio
+            ):
                 continue
 
             # Calculate rectangularity (how well the contour fits its bounding box)
@@ -193,14 +194,16 @@ class ContourTextDetector(BaseRegionAnalyzer):
             # Get parent/child relationships (for filtering nested contours)
             has_parent = hierarchy[0][i][3] != -1 if hierarchy is not None else False
 
-            character_candidates.append({
-                "bbox": (x, y, w, h),
-                "area": area,
-                "aspect_ratio": aspect_ratio,
-                "rectangularity": rectangularity,
-                "solidity": solidity,
-                "has_parent": has_parent,
-            })
+            character_candidates.append(
+                {
+                    "bbox": (x, y, w, h),
+                    "area": area,
+                    "aspect_ratio": aspect_ratio,
+                    "rectangularity": rectangularity,
+                    "solidity": solidity,
+                    "has_parent": has_parent,
+                }
+            )
 
         # Group nearby characters into text regions if enabled
         if self.group_nearby and character_candidates:
@@ -211,7 +214,8 @@ class ContourTextDetector(BaseRegionAnalyzer):
                 {
                     "bbox": c["bbox"],
                     "chars": [c],
-                    "confidence": (c["rectangularity"] * 0.5 + c["solidity"] * 0.5) * 0.6
+                    "confidence": (c["rectangularity"] * 0.5 + c["solidity"] * 0.5)
+                    * 0.6,
                 }
                 for c in character_candidates
             ]
@@ -232,18 +236,23 @@ class ContourTextDetector(BaseRegionAnalyzer):
                 screenshot_index=screenshot_index,
                 metadata={
                     "character_count": char_count,
-                    "avg_aspect_ratio": float(np.mean([c["aspect_ratio"] for c in region_data["chars"]])),
-                    "avg_rectangularity": float(np.mean([c["rectangularity"] for c in region_data["chars"]])),
+                    "avg_aspect_ratio": float(
+                        np.mean([c["aspect_ratio"] for c in region_data["chars"]])
+                    ),
+                    "avg_rectangularity": float(
+                        np.mean([c["rectangularity"] for c in region_data["chars"]])
+                    ),
                     "detection_method": "contour_heuristics",
-                ,
-                "total_text_regions": len(all_regions),
-            }
+                    "total_text_regions": len(all_regions),
+                },
             )
             detected_regions.append(detected_region)
 
         return detected_regions
 
-    def _group_characters(self, characters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _group_characters(
+        self, characters: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Group nearby characters into text regions."""
         if not characters:
             return []
@@ -285,11 +294,13 @@ class ContourTextDetector(BaseRegionAnalyzer):
 
             confidence = (avg_rect * 0.3 + avg_solid * 0.3 + char_score * 0.4) * 0.75
 
-            text_regions.append({
-                "bbox": (min_x, min_y, max_x - min_x, max_y - min_y),
-                "chars": line,
-                "confidence": confidence,
-            })
+            text_regions.append(
+                {
+                    "bbox": (min_x, min_y, max_x - min_x, max_y - min_y),
+                    "chars": line,
+                    "confidence": confidence,
+                }
+            )
 
         return text_regions
 
@@ -303,7 +314,9 @@ class ContourTextDetector(BaseRegionAnalyzer):
 
         # Check height similarity
         char_height = char["bbox"][3]
-        height_ratio = max(char_height, avg_height) / (min(char_height, avg_height) + 1e-5)
+        height_ratio = max(char_height, avg_height) / (
+            min(char_height, avg_height) + 1e-5
+        )
 
         if height_ratio > self.max_height_ratio:
             return False

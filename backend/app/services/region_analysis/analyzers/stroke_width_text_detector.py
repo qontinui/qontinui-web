@@ -46,8 +46,7 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(
-        self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize SWT text detector.
 
@@ -107,7 +106,8 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
         # Calculate overall confidence
         overall_confidence = (
             sum(r.confidence for r in all_regions) / len(all_regions)
-            if all_regions else 0.0
+            if all_regions
+            else 0.0
         )
 
         return RegionAnalysisResult(
@@ -118,12 +118,13 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
             metadata={
                 "dark_on_light": self.dark_on_light,
                 "max_stroke_width": self.max_stroke_width,
-            ,
                 "total_text_regions": len(all_regions),
-            }
+            },
         )
 
-    def _detect_text_regions(self, gray: np.ndarray, screenshot_index: int) -> List[DetectedRegion]:
+    def _detect_text_regions(
+        self, gray: np.ndarray, screenshot_index: int
+    ) -> List[DetectedRegion]:
         """Detect text regions using SWT."""
         # Compute SWT image
         swt_image = self._compute_swt(gray)
@@ -141,8 +142,7 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
 
             detected_region = DetectedRegion(
                 bounding_box=BoundingBox(
-                    bbox[0], bbox[1],
-                    bbox[2] - bbox[0], bbox[3] - bbox[1]
+                    bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]
                 ),
                 confidence=confidence,
                 region_type=RegionType.TEXT_AREA,
@@ -253,7 +253,7 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
                 continue
 
             # Get stroke widths for this component
-            component_mask = (labels == label)
+            component_mask = labels == label
             stroke_widths = swt[component_mask]
             stroke_widths = stroke_widths[stroke_widths > 0]
 
@@ -280,14 +280,16 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
             if aspect_ratio < 0.1 or aspect_ratio > 10:
                 continue
 
-            letter_candidates.append({
-                "bbox": (x, y, x + w, y + h),
-                "centroid": centroids[label],
-                "mean_stroke_width": mean_sw,
-                "area": area,
-                "aspect_ratio": aspect_ratio,
-                "variance_ratio": variance_ratio,
-            })
+            letter_candidates.append(
+                {
+                    "bbox": (x, y, x + w, y + h),
+                    "centroid": centroids[label],
+                    "mean_stroke_width": mean_sw,
+                    "area": area,
+                    "aspect_ratio": aspect_ratio,
+                    "variance_ratio": variance_ratio,
+                }
+            )
 
         return letter_candidates
 
@@ -308,14 +310,20 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
                     continue
 
                 # Check stroke width similarity
-                sw_ratio = letter["mean_stroke_width"] / (other["mean_stroke_width"] + 1e-5)
+                sw_ratio = letter["mean_stroke_width"] / (
+                    other["mean_stroke_width"] + 1e-5
+                )
                 if sw_ratio < 0.5 or sw_ratio > 2.0:
                     continue
 
                 # Check spatial proximity
                 dist = np.linalg.norm(letter["centroid"] - other["centroid"])
-                avg_height = (letter["bbox"][3] - letter["bbox"][1] +
-                            other["bbox"][3] - other["bbox"][1]) / 2
+                avg_height = (
+                    letter["bbox"][3]
+                    - letter["bbox"][1]
+                    + other["bbox"][3]
+                    - other["bbox"][1]
+                ) / 2
 
                 # Should be nearby (within 3x height)
                 if dist > avg_height * 3:
@@ -360,7 +368,9 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
 
             metadata = {
                 "letter_count": len(chain),
-                "avg_stroke_width": float(np.mean([l["mean_stroke_width"] for l in chain])),
+                "avg_stroke_width": float(
+                    np.mean([l["mean_stroke_width"] for l in chain])
+                ),
                 "avg_variance_ratio": float(avg_variance),
                 "detection_method": "swt",
             }

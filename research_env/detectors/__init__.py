@@ -14,7 +14,7 @@ from .edge_detector import EdgeBasedDetector
 from .hybrid_detector import HybridDetector
 from .mask_generator import MaskGenerator
 from .mser_detector import MSERDetector
-from .sam2_detector import SAM2Detector
+from .sam3_detector import SAM3Detector
 from .selective_search import SelectiveSearchDetector
 from .template_detector import TemplateDetector
 
@@ -28,7 +28,7 @@ __all__ = [
     "SelectiveSearchDetector",
     "MSERDetector",
     "HybridDetector",
-    "SAM2Detector",
+    "SAM3Detector",
     "ConsistencyDetector",
     "MaskGenerator",
 ]

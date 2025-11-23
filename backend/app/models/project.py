@@ -1,7 +1,16 @@
 from datetime import datetime
 
 from app.db.base import Base
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -14,6 +23,7 @@ class Project(Base):
     description = Column(Text)
     configuration = Column(JSON, nullable=False, default={})
     version = Column(Integer, nullable=False, default=1)
+    is_public = Column(Boolean, nullable=False, default=False, index=True)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     organization_id = Column(
         UUID(as_uuid=True),
@@ -35,4 +45,19 @@ class Project(Base):
     )
     edit_commands = relationship(
         "EditCommand", back_populates="project", cascade="all, delete-orphan"
+    )
+    package_installations = relationship(
+        "PackageInstallation", back_populates="project", cascade="all, delete-orphan"
+    )
+    capture_sessions = relationship(
+        "CaptureSession", back_populates="project", cascade="all, delete-orphan"
+    )
+    software_test_runs = relationship(
+        "SoftwareTestRun", back_populates="project", cascade="all, delete-orphan"
+    )
+    coverage_snapshots = relationship(
+        "CoverageSnapshot", back_populates="project", cascade="all, delete-orphan"
+    )
+    transition_reliability_stats = relationship(
+        "TransitionReliability", back_populates="project", cascade="all, delete-orphan"
     )
