@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("run_id", sa.String(length=255), nullable=False),
         sa.Column("run_name", sa.String(length=255), nullable=False),
-        sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("project_id", sa.Integer(), nullable=True),
         sa.Column("workflow_id", sa.Integer(), nullable=True),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),

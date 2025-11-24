@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Slider } from "@/components/ui/slider"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -46,7 +47,8 @@ export function SemanticAnalysisTab() {
   const [confidence, setConfidence] = useState(0.7)
   const [enableOCR, setEnableOCR] = useState(true)
   const [descriptionModel, setDescriptionModel] = useState<'clip' | 'basic'>('clip')
-  const [strategy, setStrategy] = useState<'sam2' | 'ocr' | 'hybrid'>('hybrid')
+  const [strategy, setStrategy] = useState<'sam2' | 'sam3' | 'ocr' | 'hybrid'>('hybrid')
+  const [textPrompt, setTextPrompt] = useState('')
   const [zoom, setZoom] = useState(1)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
@@ -94,16 +96,23 @@ export function SemanticAnalysisTab() {
         description_model: descriptionModel,
       }
 
+      const requestBody: any = {
+        image: selectedImage,
+        strategy,
+        options,
+      }
+
+      // Only include text_prompt if it's not empty and strategy is sam3
+      if (textPrompt.trim() && strategy === 'sam3') {
+        requestBody.text_prompt = textPrompt.trim()
+      }
+
       const response = await fetch('http://localhost:8000/api/semantic/process', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          image: selectedImage,
-          strategy,
-          options,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {
@@ -375,7 +384,7 @@ export function SemanticAnalysisTab() {
             <CardContent className="space-y-4">
               <div>
                 <Label className="text-xs">Detection Strategy</Label>
-                <div className="grid grid-cols-3 gap-1 mt-1">
+                <div className="grid grid-cols-2 gap-1 mt-1">
                   <Button
                     size="sm"
                     variant={strategy === 'sam2' ? 'default' : 'outline'}
@@ -384,6 +393,15 @@ export function SemanticAnalysisTab() {
                     title="Segment Anything Model v2 - generates pixel-perfect masks"
                   >
                     SAM2
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={strategy === 'sam3' ? 'default' : 'outline'}
+                    onClick={() => setStrategy('sam3')}
+                    className="text-xs"
+                    title="Segment Anything Model v3 - text-prompted segmentation"
+                  >
+                    SAM3
                   </Button>
                   <Button
                     size="sm"
@@ -407,11 +425,48 @@ export function SemanticAnalysisTab() {
                 <p className="text-[10px] text-gray-400 mt-1 leading-tight">
                   {strategy === 'sam2'
                     ? 'Segmentation with masks'
+                    : strategy === 'sam3'
+                    ? 'Text-prompted segmentation'
                     : strategy === 'ocr'
                     ? 'Text extraction only'
                     : 'Combined detection'}
                 </p>
               </div>
+
+              {/* SAM3 Text Prompt Controls */}
+              {strategy === 'sam3' && (
+                <div className="space-y-3 p-3 border border-[#00D9FF]/30 rounded-md bg-[#00D9FF]/5">
+                  <div>
+                    <Label className="text-xs">Text Prompt (optional)</Label>
+                    <Input
+                      value={textPrompt}
+                      onChange={(e) => setTextPrompt(e.target.value)}
+                      placeholder="e.g., button, icon, text field..."
+                      className="mt-1 text-xs h-8 bg-[#27272A] border-gray-700 focus:border-[#00D9FF]"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                      Describe what you want to detect
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs mb-2 block">Quick Presets</Label>
+                    <div className="flex flex-wrap gap-1">
+                      {['Everything', 'Button', 'Icon', 'Text Field', 'Checkbox', 'Link', 'Menu Item'].map((preset) => (
+                        <Button
+                          key={preset}
+                          size="sm"
+                          variant={textPrompt === preset.toLowerCase() ? 'default' : 'outline'}
+                          onClick={() => setTextPrompt(preset.toLowerCase())}
+                          className="text-xs h-6 px-2"
+                        >
+                          {preset}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <Label className="text-xs">Description Model</Label>
