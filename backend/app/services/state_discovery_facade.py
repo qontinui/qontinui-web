@@ -5,6 +5,40 @@ Provides both simple and advanced state discovery algorithms through a unified i
 
 - SIMPLE algorithm: Fast, uses basic clustering with perceptual hashing
 - ADVANCED algorithm: Slower, uses OCR + DBSCAN + SSIM for more accurate state identification
+
+ARCHITECTURE OVERVIEW
+=====================
+This web service facade is designed to coordinate state discovery workflows, but NOT to
+perform heavy computer vision analysis directly. The intended architecture follows this
+separation of concerns:
+
+WEB SERVICE RESPONSIBILITIES (this module):
+- Store raw automation data (screenshots, recordings, metadata)
+- Coordinate workflow and orchestration
+- Perform lightweight operations (data retrieval, result formatting)
+- Display and serve discovery results to frontend
+- Manage database persistence
+
+QONTINUI LIBRARY RESPONSIBILITIES (delegated via runner):
+- Heavy CV analysis: pixel stability, perceptual hashing, SSIM comparisons
+- State region detection (DifferentialConsistencyDetector)
+- Pixel stability analysis (PixelStabilityAnalyzer)
+- State object construction with OCR (StateBuilder)
+- All computationally intensive image processing
+
+FUTURE MIGRATION PATH
+======================
+Currently, this service performs CV operations directly for prototyping/development.
+In production, heavy CV operations should be:
+1. Packaged as jobs/tasks submitted to the qontinui library
+2. Run locally via the qontinui runner (not in web service process)
+3. Results stored back to database for web service to display
+
+This separation ensures:
+- Web service remains responsive and lightweight
+- CV operations leverage optimized library code
+- No duplication of complex CV logic between web and library
+- Easier testing and maintenance of CV algorithms
 """
 
 from enum import Enum
@@ -202,6 +236,11 @@ class StateDiscoveryFacade:
             }
             frames_data.append(frame_data)
 
+        # TODO [ARCHITECTURE]: This clustering logic should be delegated to qontinui library
+        # - Instead of performing perceptual hashing here, submit frames to library
+        # - Library's DifferentialConsistencyDetector should handle clustering
+        # - Web service should just coordinate and store results
+
         # Cluster frames using simple perceptual hashing (reuse from simple algorithm)
         from app.services.computer_vision_service import get_cv_service
         cv_service = get_cv_service()
@@ -218,6 +257,11 @@ class StateDiscoveryFacade:
             if cluster_id not in clusters:
                 clusters[cluster_id] = []
             clusters[cluster_id].append(frame)
+
+        # TODO [ARCHITECTURE]: State identification should be delegated to qontinui library
+        # - Pass cluster data to library's StateBuilder
+        # - Library performs OCR, region detection, state construction
+        # - Web service receives and stores the resulting state objects
 
         # Run advanced algorithm
         states = await service.identify_states_from_clusters(clusters, frames_data)

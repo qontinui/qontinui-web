@@ -6,6 +6,54 @@ This service handles:
 - Computing perceptual hashes
 - Calculating frame similarity
 - Detecting stable vs volatile regions
+
+ARCHITECTURE WARNING - CV DUPLICATION
+======================================
+This service reimplements heavy computer vision operations that already exist
+in the qontinui library. This was done for web service prototyping but creates
+maintenance burden and duplicates complex CV logic.
+
+DUPLICATE CV OPERATIONS IN THIS FILE:
+--------------------------------------
+1. PERCEPTUAL HASHING (lines 50-67)
+   - compute_perceptual_hash(): Uses imagehash library for dhash
+   - Library equivalent: qontinui has optimized hash utilities
+   - Should delegate to library
+
+2. HASH SIMILARITY (lines 69-96)
+   - calculate_hash_similarity(): Computes Hamming distance between hashes
+   - Library equivalent: Built into library's comparison utilities
+   - Should delegate to library
+
+3. IMAGE SIMILARITY METRICS (lines 98-161)
+   - calculate_image_similarity(): SSIM, MSE, histogram correlation
+   - Library equivalent: qontinui has comprehensive similarity functions
+   - Should delegate to library
+
+4. PIXEL STABILITY ANALYSIS (lines 163-216)
+   - detect_stable_regions(): Per-pixel variance analysis across frames
+   - Library equivalent: PixelStabilityAnalyzer in qontinui library
+   - Should delegate to library's PixelStabilityAnalyzer
+
+5. REGION EXTRACTION (lines 218-277)
+   - _extract_regions(): Connected component analysis on masks
+   - Library equivalent: DifferentialConsistencyDetector handles this
+   - Should delegate to library
+
+6. DBSCAN CLUSTERING (lines 338-401)
+   - cluster_frames_by_similarity(): DBSCAN on perceptual hashes
+   - Library equivalent: Library has clustering implementations
+   - Should delegate to library
+
+MIGRATION STRATEGY
+==================
+These CV operations should be:
+1. Removed from web service
+2. Submitted as jobs/tasks to qontinui library
+3. Run via local runner (not in web process)
+4. Results stored back to database
+
+Web service should focus on: S3 operations, database persistence, API responses
 """
 
 import io
@@ -50,6 +98,10 @@ class FrameAnalysisService:
     def compute_perceptual_hash(self, image: Image.Image, hash_size: int = 16) -> str:
         """
         Compute perceptual hash (pHash) for an image
+
+        TODO [ARCHITECTURE]: Delegate to qontinui library
+        - Library has optimized perceptual hashing utilities
+        - Should call library functions instead of direct imagehash usage
 
         Args:
             image: PIL Image
@@ -98,6 +150,11 @@ class FrameAnalysisService:
     def calculate_image_similarity(self, img1: Image.Image, img2: Image.Image) -> Dict[str, float]:
         """
         Calculate multiple similarity metrics between two images
+
+        TODO [ARCHITECTURE]: Delegate to qontinui library
+        - Library has comprehensive similarity comparison functions
+        - SSIM, MSE, histogram analysis should use library implementations
+        - Avoid reimplementing these heavy CV operations
 
         Args:
             img1: First image
@@ -168,6 +225,12 @@ class FrameAnalysisService:
         """
         Detect stable and volatile regions across multiple images
 
+        TODO [ARCHITECTURE]: CRITICAL - Delegate to qontinui library
+        - This is pixel stability analysis, core functionality of PixelStabilityAnalyzer
+        - Library's PixelStabilityAnalyzer performs this exact per-pixel variance analysis
+        - Direct duplication of library logic - should be removed from web service
+        - Submit frames to library's analyzer instead
+
         Args:
             images: List of PIL Images (should be visually similar frames)
             threshold: Similarity threshold for stable regions (0.0-1.0)
@@ -223,6 +286,11 @@ class FrameAnalysisService:
     ) -> List[Dict[str, Any]]:
         """
         Extract bounding box regions from a binary mask
+
+        TODO [ARCHITECTURE]: Delegate to qontinui library
+        - Region extraction from masks is handled by DifferentialConsistencyDetector
+        - Library has optimized region detection algorithms
+        - Should use library's region detection instead
 
         Args:
             mask: Binary mask (True = region of interest)
@@ -342,6 +410,11 @@ class FrameAnalysisService:
     ) -> List[int]:
         """
         Cluster frames based on perceptual hash similarity using DBSCAN
+
+        TODO [ARCHITECTURE]: Delegate to qontinui library
+        - Library has frame clustering implementations
+        - DBSCAN on perceptual hashes should use library functions
+        - Avoid reimplementing clustering algorithms in web service
 
         Args:
             perceptual_hashes: List of perceptual hash strings
