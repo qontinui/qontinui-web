@@ -114,9 +114,10 @@ export const AdminUserDataSchema = z.object({
   full_name: z.string().nullable(),
   is_active: z.boolean(),
   is_verified: z.boolean(),
-  created_at: z.string(), // Accept any string, will be validated as datetime
+  email_verified: z.boolean().optional(), // Alias for is_verified from backend
+  created_at: z.string().nullable(), // Accept any string or null
   project_count: z.number().int().nonnegative(),
-  subscription_tier: z.enum(['free', 'hobby', 'pro']),
+  subscription_tier: z.string(), // Allow any subscription tier value
   last_login: z.string().nullable().optional(), // Optional, nullable datetime string
 })
 
