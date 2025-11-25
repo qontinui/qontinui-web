@@ -1,6 +1,6 @@
 """add_recording_tables
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: e34e1d177ed8
 Revises: 63e5da6dd826
 Create Date: 2025-11-13 20:00:00.000000
 
@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a1b2c3d4e5f6'
+revision: str = 'e34e1d177ed8'
 down_revision: Union[str, None] = '63e5da6dd826'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
