@@ -10,6 +10,7 @@ Includes:
 
 from datetime import datetime, timedelta
 from enum import Enum as PyEnum
+from uuid import UUID as PyUUID
 
 from app.db.base import Base
 from sqlalchemy import (
@@ -67,7 +68,7 @@ class ProjectLock(Base):
         UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
     )
     project_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -120,7 +121,7 @@ class ProjectComment(Base):
         UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
     )
     project_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -169,7 +170,7 @@ class ProjectComment(Base):
     )
     parent = relationship("ProjectComment", remote_side=[id], backref="replies")
 
-    def resolve(self, user_id: UUID) -> None:
+    def resolve(self, user_id: PyUUID) -> None:
         """Mark comment as resolved."""
         self.resolved = True
         self.resolved_by = user_id
@@ -196,7 +197,7 @@ class ActivityLog(Base):
         UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
     )
     project_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -224,8 +225,8 @@ class ActivityLog(Base):
     @classmethod
     def create_activity(
         cls,
-        project_id: int,
-        user_id: UUID,
+        project_id: PyUUID,
+        user_id: PyUUID,
         action_type: ActionType,
         resource_type: ResourceType,
         resource_id: str,
@@ -332,8 +333,8 @@ class ConflictLog(Base):
         resource_id: str,
         local_version: int,
         remote_version: int,
-        local_user_id: UUID,
-        remote_user_id: UUID,
+        local_user_id: PyUUID,
+        remote_user_id: PyUUID,
         base_data: dict = None,
         local_data: dict = None,
         remote_data: dict = None,

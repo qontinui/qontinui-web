@@ -86,6 +86,18 @@ from app.models.transition_execution import (
     TransitionExecution,
     TransitionExecutionStatus,
 )
+from app.models.training_dataset import (
+    AnnotationSource,
+    DatasetSource,
+    ElementType,
+    ExportFormat,
+    ExportJobStatus,
+    ReviewStatus,
+    TrainingDataset,
+    TrainingDatasetAnnotation,
+    TrainingDatasetExportJob,
+    TrainingDatasetImage,
+)
 from app.models.transition_reliability import TransitionReliability
 from app.models.usage_metric import UsageMetric
 from app.models.user import User
@@ -193,4 +205,15 @@ __all__ = [
     "CoverageSnapshot",
     "PathDiscovery",
     "TransitionReliability",
+    # Training Datasets
+    "TrainingDataset",
+    "TrainingDatasetImage",
+    "TrainingDatasetAnnotation",
+    "TrainingDatasetExportJob",
+    "DatasetSource",
+    "AnnotationSource",
+    "ElementType",
+    "ReviewStatus",
+    "ExportFormat",
+    "ExportJobStatus",
 ]

@@ -35,6 +35,7 @@ from app.api.v1.endpoints import (
     snapshots,
     state_discovery,
     testing,
+    training_datasets,
     users,
     variables,
     versions,
@@ -110,3 +111,6 @@ api_router.include_router(
 api_router.include_router(custom_functions.router, tags=["custom-functions"])
 api_router.include_router(capture.router, prefix="/capture", tags=["capture-sessions"])
 api_router.include_router(testing.router, prefix="/testing", tags=["testing"])
+api_router.include_router(
+    training_datasets.router, prefix="/datasets", tags=["training-datasets"]
+)

@@ -74,7 +74,7 @@ def upgrade() -> None:
         sa.Column("duration_seconds", sa.Integer(), nullable=True),
         sa.Column("ip_address", sa.String(length=45), nullable=True),
         sa.Column("user_agent", sa.String(length=500), nullable=True),
-        sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("project_id", sa.Integer(), nullable=True),
         sa.Column("session_id", sa.String(length=255), nullable=True),
         sa.ForeignKeyConstraint(
             ["runner_token_id"], ["runner_tokens.id"], ondelete="CASCADE"

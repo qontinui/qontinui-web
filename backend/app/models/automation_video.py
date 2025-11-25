@@ -20,7 +20,7 @@ class AutomationVideo(Base):
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True, index=True)
 
     # S3 storage
     s3_key = Column(String, nullable=False, unique=True)
