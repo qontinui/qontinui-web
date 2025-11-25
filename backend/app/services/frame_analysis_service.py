@@ -66,7 +66,7 @@ from sklearn.cluster import DBSCAN
 from scipy.spatial.distance import hamming
 import cv2
 
-from app.services.object_storage import get_storage
+from app.services.object_storage import object_storage
 
 logger = structlog.get_logger(__name__)
 
@@ -75,7 +75,7 @@ class FrameAnalysisService:
     """Service for analyzing video frames to identify states"""
 
     def __init__(self):
-        self.storage = get_storage()
+        self.storage = object_storage
 
     async def download_frame(self, s3_key: str) -> Optional[Image.Image]:
         """

@@ -270,7 +270,7 @@ class RecordingInteraction(Base):
 
     # Metadata
     duration_ms = Column(Integer)
-    metadata = Column(JSON)
+    extra_data = Column("metadata", JSON)  # Renamed to avoid SQLAlchemy reserved word
 
     # Processing results
     causes_state_change = Column(Boolean)  # Determined during processing
@@ -341,7 +341,7 @@ class RecordingContext(Base):
     is_loading = Column(Boolean)
 
     # Metadata
-    metadata = Column(JSON)
+    extra_data = Column("metadata", JSON)  # Renamed to avoid SQLAlchemy reserved word
     description = Column(Text)
 
     # Relationship
