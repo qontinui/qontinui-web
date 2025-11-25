@@ -6,6 +6,48 @@ This service handles:
 - Extracting StateImages from stable regions
 - Generating intelligent state names using OCR
 - Calculating confidence scores
+
+ARCHITECTURE NOTE - DUPLICATE CV FUNCTIONALITY
+===============================================
+WARNING: This service currently reimplements computer vision logic that already exists
+in the qontinui library. This duplication was necessary for prototyping but should be
+refactored in production.
+
+DUPLICATE CV OPERATIONS TO MIGRATE:
+------------------------------------
+1. PIXEL STABILITY ANALYSIS (lines 60, 186-245)
+   - Current: detect_stable_regions() calculates per-pixel variance
+   - Library: PixelStabilityAnalyzer performs this exact analysis
+   - Action: Delegate to library's PixelStabilityAnalyzer
+
+2. REGION DETECTION (lines 209-216)
+   - Current: _extract_regions() finds connected regions in masks
+   - Library: DifferentialConsistencyDetector handles region detection
+   - Action: Use library's region detection instead
+
+3. STATE CONSTRUCTION WITH OCR (lines 30-135, 255-287)
+   - Current: _extract_text_elements() runs OCR, _generate_state_name() creates names
+   - Library: StateBuilder handles state object construction with OCR
+   - Action: Delegate entire state construction to StateBuilder
+
+4. PERCEPTUAL HASHING (via FrameAnalysisService)
+   - Current: FrameAnalysisService computes imagehash operations
+   - Library: Already has perceptual hashing utilities
+   - Action: Use library's hash functions
+
+5. SSIM/SIMILARITY CALCULATIONS (via FrameAnalysisService)
+   - Current: calculate_image_similarity() computes SSIM, MSE, histogram correlation
+   - Library: Has optimized similarity comparison functions
+   - Action: Delegate to library's comparison utilities
+
+INTENDED ARCHITECTURE
+=====================
+This service should primarily:
+- Coordinate workflow (download frames, call library, store results)
+- Perform lightweight data transformations
+- Handle web-specific concerns (S3 storage, database persistence)
+
+Heavy CV operations should be delegated to qontinui library via runner.
 """
 
 from typing import List, Dict, Any, Tuple, Optional
@@ -56,6 +98,10 @@ class FrameStateDiscoveryService:
                     logger.warning(f"No images downloaded for cluster {cluster_id}")
                     continue
 
+                # TODO [ARCHITECTURE]: Delegate to qontinui library
+                # This should call PixelStabilityAnalyzer from qontinui library instead
+                # of reimplementing pixel variance analysis in FrameAnalysisService
+
                 # Detect stable regions across cluster frames
                 stable_regions, volatile_regions = self.frame_analysis.detect_stable_regions(images)
 
@@ -66,6 +112,12 @@ class FrameStateDiscoveryService:
                     frames,
                     all_frames_data
                 )
+
+                # TODO [ARCHITECTURE]: Delegate OCR and state construction to qontinui library
+                # Should use StateBuilder from qontinui library which handles:
+                # - OCR extraction with proper preprocessing
+                # - Intelligent state naming
+                # - State object construction with all metadata
 
                 # Extract text elements using OCR
                 state_strings = self._extract_text_elements(images[0])
@@ -238,7 +290,13 @@ class FrameStateDiscoveryService:
         region: Dict[str, Any],
         frames: List[Dict[str, Any]]
     ) -> float:
-        """Calculate how stable a region is across frames"""
+        """
+        Calculate how stable a region is across frames
+
+        TODO [ARCHITECTURE]: Delegate to qontinui library
+        - PixelStabilityAnalyzer in library has robust stability scoring
+        - Should use library's stability calculations instead
+        """
         # Simplified: return high stability for now
         # In production, would compare region across all frames
         return 0.95
@@ -255,6 +313,10 @@ class FrameStateDiscoveryService:
     def _extract_text_elements(self, image: Image.Image) -> List[Dict[str, Any]]:
         """
         Extract text elements using OCR
+
+        TODO [ARCHITECTURE]: This duplicates OCR functionality in qontinui library
+        - Library's StateBuilder already performs OCR with better preprocessing
+        - Should delegate to library instead of running pytesseract directly here
 
         Args:
             image: PIL Image
