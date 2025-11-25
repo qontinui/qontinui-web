@@ -50,12 +50,12 @@ export class AuthService {
     console.log('[AuthService] Remember me:', credentials.remember_me);
 
     // Add remember_me as query parameter
-    const url = new URL(ApiConfig.AUTH_LOGIN);
+    let loginUrl = ApiConfig.AUTH_LOGIN;
     if (credentials.remember_me) {
-      url.searchParams.append('remember_me', 'true');
+      loginUrl += '?remember_me=true';
     }
 
-    const response = await fetch(url.toString(), {
+    const response = await fetch(loginUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
