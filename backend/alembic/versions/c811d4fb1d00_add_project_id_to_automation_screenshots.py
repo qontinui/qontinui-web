@@ -35,7 +35,7 @@ def upgrade() -> None:
         # Add project_id column (nullable, since existing screenshots don't have projects)
         op.add_column(
             "automation_screenshots",
-            sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column("project_id", sa.Integer(), nullable=True),
         )
 
         # Add foreign key constraint

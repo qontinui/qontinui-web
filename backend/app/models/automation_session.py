@@ -10,6 +10,7 @@ from uuid import UUID
 
 from app.db.base import Base
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -33,9 +34,8 @@ class AutomationSession(Base):
     )
 
     # Optional project association (nullable for now)
-    # Note: projects.id is Integer, not UUID
-    project_id: Mapped[int | None] = mapped_column(
-        Integer,
+    project_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="SET NULL"),
         nullable=True,
         index=True,

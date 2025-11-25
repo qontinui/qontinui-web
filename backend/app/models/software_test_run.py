@@ -46,8 +46,8 @@ class SoftwareTestRun(Base):
     )
 
     # Foreign keys
-    project_id: Mapped[int] = mapped_column(
-        Integer,
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

@@ -51,7 +51,7 @@ class Notification(Base):
     title = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     project_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=True,
         index=True,

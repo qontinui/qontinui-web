@@ -21,7 +21,7 @@ class EditCommand(Base):
     __tablename__ = "edit_commands"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     command_type = Column(String, nullable=False)  # 'update', 'create', 'delete'
     entity_type = Column(String, nullable=False)  # 'workflow', 'state', 'action', 'project', etc.

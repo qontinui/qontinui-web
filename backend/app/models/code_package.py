@@ -227,7 +227,7 @@ class PackageInstallation(Base):
         index=True,
     )
     project_id = Column(
-        Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False

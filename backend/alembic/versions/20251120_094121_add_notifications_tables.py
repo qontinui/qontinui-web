@@ -75,7 +75,7 @@ def upgrade() -> None:
             ),
             sa.Column("title", sa.String(), nullable=False),
             sa.Column("message", sa.Text(), nullable=False),
-            sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column("project_id", sa.Integer(), nullable=True),
             sa.Column("resource_type", sa.String(), nullable=True),
             sa.Column("resource_id", sa.String(), nullable=True),
             sa.Column("actor_id", postgresql.UUID(as_uuid=True), nullable=True),

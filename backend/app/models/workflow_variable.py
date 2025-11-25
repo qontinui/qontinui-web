@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 
@@ -45,7 +46,7 @@ class WorkflowVariable(Base):
     __tablename__ = "workflow_variables"
 
     id = Column(String, primary_key=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True)
     workflow_id = Column(
         String, nullable=True, index=True
     )  # NULL for global variables (workflow IDs are strings in project JSON)

@@ -10,6 +10,7 @@ from uuid import UUID
 
 from app.db.base import Base
 from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
@@ -67,8 +68,8 @@ class RunnerConnection(Base):
     )
 
     # Session metadata
-    project_id: Mapped[int | None] = mapped_column(
-        Integer,
+    project_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
         nullable=True,
         comment="Project ID if connection was associated with a specific project",
     )

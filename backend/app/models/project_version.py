@@ -19,7 +19,7 @@ class ProjectVersion(Base):
     __tablename__ = "project_versions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     version_number = Column(Integer, nullable=False)
     snapshot = Column(JSON, nullable=False)  # Full project state including configuration
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

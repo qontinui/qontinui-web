@@ -20,7 +20,7 @@ class StorageUsage(Base):
     file_size = Column(BigInteger, nullable=False)
     file_path = Column(String, nullable=False)
     project_id = Column(
-        Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
     )
     file_metadata = Column(JSONB, nullable=True, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
