@@ -152,6 +152,13 @@ const navItems: NavItem[] = [
         color: '#FF6B6B',
       },
       {
+        id: 'workflow-visualization',
+        label: 'Workflow Visualization',
+        icon: <Layers size={22} />,
+        route: '/workflow-viz',
+        color: '#FF6B6B',
+      },
+      {
         id: 'integration-tests',
         label: 'Integration Tests',
         icon: <Globe size={22} />,
