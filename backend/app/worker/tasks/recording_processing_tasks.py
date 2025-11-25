@@ -2,14 +2,14 @@
 ARQ tasks for recording processing and state discovery
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 import uuid
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from datetime import datetime
 
-from app.db.session import async_session
+from app.db.session import AsyncSessionLocal
 from app.models.recording import (
     Recording,
     RecordingFrame,
@@ -43,7 +43,7 @@ async def process_recording_task(
     """
     logger.info("starting_recording_processing", recording_id=recording_id)
 
-    async with async_session() as db:
+    async with AsyncSessionLocal() as db:
         try:
             # Load recording
             result = await db.execute(

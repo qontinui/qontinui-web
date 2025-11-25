@@ -48,7 +48,7 @@ from app.schemas.recording import (
     RecordingUploadRequest,
     RecordingMetadata,
 )
-from app.services.object_storage import get_storage
+from app.services.object_storage import object_storage
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -104,7 +104,7 @@ async def extract_zip_recording(
     Extract and process ZIP format recording
     Returns: (Recording object, metadata dict)
     """
-    storage = get_storage()
+    storage = object_storage
 
     # Read ZIP file
     zip_content = await zip_file.read()
@@ -629,7 +629,7 @@ async def get_recording_frames(
     frames = result.scalars().all()
 
     # Regenerate presigned URLs if expired
-    storage = get_storage()
+    storage = object_storage
     for frame in frames:
         if not frame.image_url or frame.url_expires_at < datetime.utcnow():
             frame.image_url = storage.generate_presigned_url(frame.s3_key, expiration=3600*24*7)
