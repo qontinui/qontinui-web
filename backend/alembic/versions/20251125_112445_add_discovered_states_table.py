@@ -23,6 +23,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create the discovered_states table."""
+    # Check if table already exists
+    from sqlalchemy import inspect
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "discovered_states" in inspector.get_table_names():
+        return  # Table already exists, skip creation
+
     op.create_table(
         "discovered_states",
         # Primary key
