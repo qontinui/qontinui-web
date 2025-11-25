@@ -138,7 +138,7 @@ export default function OverviewTab() {
                 <div className="text-right">
                   <div className="text-sm font-medium">{user.project_count} projects</div>
                   <div className="text-xs text-muted-foreground">
-                    Joined {new Date(user.created_at).toLocaleDateString()}
+                    {user.created_at ? `Joined ${new Date(user.created_at).toLocaleDateString()}` : 'Join date unknown'}
                   </div>
                 </div>
               </div>

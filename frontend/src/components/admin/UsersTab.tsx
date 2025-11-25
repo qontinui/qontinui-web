@@ -210,10 +210,12 @@ export default function UsersTab() {
                       <FolderOpen className="h-3 w-3" />
                       {user.project_count} projects
                     </span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {new Date(user.created_at).toLocaleDateString()}
-                    </span>
+                    {user.created_at && (
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {new Date(user.created_at).toLocaleDateString()}
+                      </span>
+                    )}
                     {user.last_login && (
                       <span className="flex items-center gap-1">
                         <Activity className="h-3 w-3" />
@@ -262,7 +264,7 @@ export default function UsersTab() {
               </div>
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Member Since</div>
-                <div>{new Date(selectedUser.created_at).toLocaleString()}</div>
+                <div>{selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleString() : 'Unknown'}</div>
               </div>
               {selectedUser.last_login && (
                 <div>
