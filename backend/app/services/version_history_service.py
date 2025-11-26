@@ -44,7 +44,7 @@ class VersionHistoryService:
     @staticmethod
     async def create_version_snapshot(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         user_id: UUID | None,
         comment: str | None = None,
     ) -> ProjectVersion:
@@ -118,7 +118,7 @@ class VersionHistoryService:
 
     @staticmethod
     async def get_version_history(
-        db: AsyncSession, project_id: int, skip: int = 0, limit: int = 100
+        db: AsyncSession, project_id: UUID, skip: int = 0, limit: int = 100
     ) -> list[ProjectVersionListItem]:
         """
         Get version history for a project (without full snapshots for efficiency).
@@ -148,7 +148,7 @@ class VersionHistoryService:
 
     @staticmethod
     async def get_version(
-        db: AsyncSession, project_id: int, version_number: int
+        db: AsyncSession, project_id: UUID, version_number: int
     ) -> ProjectVersion | None:
         """
         Get a specific version snapshot with full data.
@@ -172,7 +172,7 @@ class VersionHistoryService:
     @staticmethod
     async def restore_version(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         version_number: int,
         user_id: UUID | None,
         comment: str | None = None,
@@ -244,7 +244,7 @@ class VersionHistoryService:
 
     @staticmethod
     async def compare_versions(
-        db: AsyncSession, project_id: int, version_from: int, version_to: int
+        db: AsyncSession, project_id: UUID, version_from: int, version_to: int
     ) -> VersionComparisonResponse:
         """
         Compare two versions and return differences.

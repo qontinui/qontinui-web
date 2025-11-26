@@ -479,6 +479,7 @@ class BetaSignupResponse(BaseModel):
 async def beta_signup(
     *,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     signup_request: BetaSignupRequest,
 ):
@@ -776,6 +777,7 @@ class ChangePasswordResponse(BaseModel):
 async def change_password(
     *,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     password_data: ChangePasswordRequest,
@@ -877,6 +879,7 @@ class ResendDeviceVerificationRequest(BaseModel):
 async def resend_device_verification(
     *,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     request_data: ResendDeviceVerificationRequest,

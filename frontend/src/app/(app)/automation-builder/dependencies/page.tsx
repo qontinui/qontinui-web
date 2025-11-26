@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { RequireProject } from '@/components/require-project';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -919,8 +920,10 @@ function DependenciesPageInner() {
 
 export default function DependenciesPage() {
   return (
-    <ReactFlowProvider>
-      <DependenciesPageInner />
-    </ReactFlowProvider>
+    <RequireProject pageName="Dependencies">
+      <ReactFlowProvider>
+        <DependenciesPageInner />
+      </ReactFlowProvider>
+    </RequireProject>
   );
 }

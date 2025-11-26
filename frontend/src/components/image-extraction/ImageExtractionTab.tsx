@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, X, Scissors, ImageIcon, Plus, FolderOpen, AlertCircle, Edit } from 'lucide-react';
 import { useAutomation } from '@/contexts/automation-context';
-import { useTabState } from '@/contexts/tab-state-context';
+import { useImageExtractionState } from '@/contexts/tab-state';
 import { ScreenshotPicker } from '../common/ScreenshotPicker';
 import { AdvancedRegionSelector } from '../pattern-optimization/AdvancedRegionSelector';
 import { MaskEditor } from '../mask-editor';
@@ -34,12 +34,10 @@ export const ImageExtractionTab: React.FC = () => {
   const [editingMask, setEditingMask] = useState<{ imageUrl: string; initialMask?: string } | null>(null);
 
   const { states, addState, updateState, screenshots: projectScreenshots, images, addImage } = useAutomation();
-  const { getImageExtractionState, setImageExtractionState } = useTabState();
+  const { state: persistedState, setState: setPersistedState } = useImageExtractionState();
 
   // Load persisted state on mount
   useEffect(() => {
-    const persistedState = getImageExtractionState();
-
     if (persistedState.selectedStateId) {
       setSelectedStateId(persistedState.selectedStateId);
     }
@@ -50,16 +48,16 @@ export const ImageExtractionTab: React.FC = () => {
 
     // Note: We don't persist screenshots due to storage limitations
     // Users will need to re-upload when navigating back
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist state changes (only metadata, not images)
   useEffect(() => {
-    setImageExtractionState({
+    setPersistedState({
       selectedRegion: currentScreenshot?.region || null,
       selectedStateId,
       newStateName,
     });
-  }, [currentScreenshot?.region, selectedStateId, newStateName, setImageExtractionState]);
+  }, [currentScreenshot?.region, selectedStateId, newStateName, setPersistedState]);
 
   const handleUploadScreenshot = (file: File) => {
     const url = URL.createObjectURL(file);

@@ -39,6 +39,9 @@ import type {
   VariableChange,
 } from '@/types/workflow-variables';
 
+// Use empty string for relative URLs that go through Next.js proxy
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
 /**
  * Query keys for organizing cache
  */
@@ -55,7 +58,7 @@ export const workflowVariableKeys = {
  */
 async function fetchVariables(runId: string): Promise<VariablesResponse> {
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL}/api/v1/workflow-runs/${runId}/variables`,
+    `${API_BASE_URL}/api/v1/workflow-runs/${runId}/variables`,
     {
       credentials: 'include',
       headers: {
@@ -76,7 +79,7 @@ async function fetchVariables(runId: string): Promise<VariablesResponse> {
  */
 async function fetchVariableHistory(runId: string): Promise<VariableChangesResponse> {
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL}/api/v1/workflow-runs/${runId}/variable-changes`,
+    `${API_BASE_URL}/api/v1/workflow-runs/${runId}/variable-changes`,
     {
       credentials: 'include',
       headers: {

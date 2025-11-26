@@ -6,6 +6,7 @@ Endpoints for managing snapshot runs, screenshots, and patterns.
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from app.api.deps import get_async_db, get_current_user_async
 from app.crud import snapshot as snapshot_crud
@@ -77,8 +78,8 @@ async def create_snapshot_run(
 async def list_snapshot_runs(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    project_id: int | None = Query(None),
-    workflow_id: int | None = Query(None),
+    project_id: UUID | None = Query(None),
+    workflow_id: UUID | None = Query(None),
     tags: str | None = Query(None, description="Comma-separated list of tags"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user_async),

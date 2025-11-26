@@ -91,6 +91,7 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { RequireProject } from '@/components/require-project';
 
 // ============================================================================
 // Types
@@ -993,6 +994,7 @@ export default function DocumentationPage() {
   };
 
   return (
+    <RequireProject pageName="Documentation">
     <div className="flex flex-col h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-800/50 bg-[#1A1A1B]/50 backdrop-blur-sm">
@@ -1226,5 +1228,6 @@ export default function DocumentationPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </RequireProject>
   );
 }

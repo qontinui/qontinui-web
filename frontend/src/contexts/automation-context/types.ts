@@ -324,8 +324,8 @@ export interface AutomationContextType {
   projectName: string
   setProjectName: (name: string) => void
   renameProject: (newName: string) => Promise<void>
-  projectId: number | null
-  setProjectId: (id: number | null) => void
+  projectId: string | null
+  setProjectId: (id: string | null) => void
 
   // Workflow management (unified - replaces both processes and workflows)
   workflows: Workflow[]
@@ -398,6 +398,10 @@ export interface AutomationContextType {
 
   // Configuration
   getConfiguration: () => any
-  loadConfiguration: (config: any) => void
+  loadConfiguration: (config: any) => Promise<void>
   clearAllData: () => void
+
+  // Backend loading control - prevents race conditions
+  isLoadingFromBackend: boolean
+  setIsLoadingFromBackend: (loading: boolean) => void
 }

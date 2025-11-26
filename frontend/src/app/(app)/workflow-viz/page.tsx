@@ -8,7 +8,7 @@
  * Right panel: Active states canvas with bounds and layering
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
 import { projectDB } from '@/lib/project-db'
@@ -29,10 +29,12 @@ import {
   RotateCcw,
   Layers,
   Activity,
+  Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { WorkflowStructurePanel } from '@/components/workflow-viz/WorkflowStructurePanel'
 import { ActiveStatesCanvas } from '@/components/workflow-viz/ActiveStatesCanvas'
+import { RequireProject } from '@/components/require-project'
 
 export default function WorkflowVisualizationPage() {
   const { user, loading: authLoading } = useAuth()
@@ -215,7 +217,13 @@ export default function WorkflowVisualizationPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 h-screen flex flex-col">
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
+      </div>
+    }>
+      <RequireProject pageName="Workflow Visualization">
+        <div className="container mx-auto py-8 h-screen flex flex-col">
       {/* Navigation Links */}
       <div className="mb-6 flex items-center gap-4">
         <Button
@@ -450,6 +458,8 @@ export default function WorkflowVisualizationPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+        </div>
+      </RequireProject>
+    </Suspense>
   )
 }

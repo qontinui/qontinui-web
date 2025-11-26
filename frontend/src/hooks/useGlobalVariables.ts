@@ -8,6 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { authService } from '@/services/service-factory';
 import type {
   GlobalVariable,
   CreateVariableRequest,
@@ -15,6 +16,19 @@ import type {
 } from '@/types/variables';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+/**
+ * Get axios config with auth headers
+ */
+const getAuthConfig = () => {
+  const accessToken = authService.tokenManager.getAccessToken();
+  return {
+    headers: {
+      'Authorization': accessToken ? `Bearer ${accessToken}` : '',
+      'Content-Type': 'application/json',
+    },
+  };
+};
 
 interface UseGlobalVariablesOptions {
   projectId: string | number;
@@ -39,9 +53,14 @@ const fetchGlobalVariables = async (
   projectId: string | number
 ): Promise<GlobalVariable[]> => {
   const response = await axios.get(
-    `${API_BASE_URL}/api/v1/projects/${projectId}/variables/global`
+    `${API_BASE_URL}/api/v1/variables/global`,
+    {
+      params: { project_id: projectId },
+      ...getAuthConfig(),
+    }
   );
-  return response.data;
+  // The API returns { variables: [...], total: number }
+  return response.data.variables || response.data;
 };
 
 /**
@@ -51,9 +70,14 @@ const createGlobalVariable = async (
   projectId: string | number,
   data: CreateVariableRequest
 ): Promise<GlobalVariable> => {
+  const config = getAuthConfig();
   const response = await axios.post(
-    `${API_BASE_URL}/api/v1/projects/${projectId}/variables/global`,
-    data
+    `${API_BASE_URL}/api/v1/variables/global`,
+    data,
+    {
+      params: { project_id: projectId },
+      headers: config.headers,
+    }
   );
   return response.data;
 };
@@ -66,9 +90,14 @@ const updateGlobalVariable = async (
   name: string,
   data: UpdateVariableRequest
 ): Promise<GlobalVariable> => {
+  const config = getAuthConfig();
   const response = await axios.put(
-    `${API_BASE_URL}/api/v1/projects/${projectId}/variables/global/${encodeURIComponent(name)}`,
-    data
+    `${API_BASE_URL}/api/v1/variables/global/${encodeURIComponent(name)}`,
+    data,
+    {
+      params: { project_id: projectId },
+      headers: config.headers,
+    }
   );
   return response.data;
 };
@@ -80,8 +109,13 @@ const deleteGlobalVariable = async (
   projectId: string | number,
   name: string
 ): Promise<void> => {
+  const config = getAuthConfig();
   await axios.delete(
-    `${API_BASE_URL}/api/v1/projects/${projectId}/variables/global/${encodeURIComponent(name)}`
+    `${API_BASE_URL}/api/v1/variables/global/${encodeURIComponent(name)}`,
+    {
+      params: { project_id: projectId },
+      headers: config.headers,
+    }
   );
 };
 

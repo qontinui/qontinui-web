@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { Store, TrendingUp, Package, Sparkles } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { PackageCard } from '@/components/marketplace/PackageCard'
@@ -17,6 +17,7 @@ import {
 } from '@/hooks/useCodePackages'
 import { useProjects } from '@/hooks/use-projects'
 import type { SearchFilters, CodePackage, InstallStatus } from '@/types/code-packages'
+import { RequireProject } from '@/components/require-project'
 
 export default function MarketplacePage() {
   const router = useRouter()
@@ -42,13 +43,13 @@ export default function MarketplacePage() {
   // Mutations
   const installPackageMutation = useInstallPackage()
 
-  const handleSearch = (filters: SearchFilters) => {
+  const handleSearch = useCallback((filters: SearchFilters) => {
     setSearchFilters((prev) => ({
       ...prev,
       ...filters,
       page: 1, // Reset to first page on new search
     }))
-  }
+  }, [])
 
   const handleInstallClick = (pkg: CodePackage) => {
     setSelectedPackage(pkg)
@@ -99,6 +100,7 @@ export default function MarketplacePage() {
   const isLoading = selectedTab === 'popular' ? isLoadingPopular : isLoadingSearch
 
   return (
+    <RequireProject pageName="Marketplace">
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b border-gray-800/50 bg-gradient-to-b from-cyan-500/5 via-purple-500/5 to-transparent">
@@ -232,6 +234,7 @@ export default function MarketplacePage() {
         />
       )}
     </div>
+    </RequireProject>
   )
 }
 

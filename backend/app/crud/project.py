@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 
-async def get_project(db: AsyncSession, project_id: str) -> Project | None:
+async def get_project(db: AsyncSession, project_id: UUID) -> Project | None:
     result = await db.execute(select(Project).filter(Project.id == project_id))
     return result.scalar_one_or_none()
 
@@ -95,7 +95,7 @@ async def create_project(
 async def update_project(
     db: AsyncSession, project: Project, project_update: ProjectUpdate
 ) -> Project:
-    update_data = project_update.dict(exclude_unset=True)
+    update_data = project_update.model_dump(exclude_unset=True)
 
     for field, value in update_data.items():
         setattr(project, field, value)
@@ -109,7 +109,7 @@ async def update_project(
     return project
 
 
-async def delete_project(db: AsyncSession, project_id: str) -> bool:
+async def delete_project(db: AsyncSession, project_id: UUID) -> bool:
     project = await get_project(db, project_id)
     if project:
         # Delete project from database

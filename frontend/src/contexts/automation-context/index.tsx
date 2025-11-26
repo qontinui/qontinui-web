@@ -10,6 +10,7 @@ import { ScreenshotManager } from "./screenshot-manager"
 import { screenshotDB } from "@/lib/screenshot-db"
 import { projectDB } from "@/lib/project-db"
 import { DEFAULT_PROJECT_SETTINGS } from "@/types/project-settings"
+import { projectLogger } from "@/lib/project-logger"
 import type {
   AutomationContextType,
   State,
@@ -139,6 +140,16 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   // Track if we're in the middle of renaming to prevent premature reload
   const isRenamingRef = useRef(false)
 
+  // Track if we're loading from backend to prevent IndexedDB from overwriting
+  const [isLoadingFromBackend, setIsLoadingFromBackend] = useState(false)
+  const isLoadingFromBackendRef = useRef(false)
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    isLoadingFromBackendRef.current = isLoadingFromBackend
+    projectLogger.contextProvider('isLoadingFromBackend changed', { value: isLoadingFromBackend })
+  }, [isLoadingFromBackend])
+
   // Clean up old settings and categories on mount
   useEffect(() => {
     const oldSettings = localStorage.getItem('qontinui-settings')
@@ -158,7 +169,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   // State for project metadata - using localStorage for persistence
   const [projectName, setProjectName] = useLocalStorage<string>('qontinui-project-name', 'Untitled Project')
   const [lastSaved, setLastSaved] = useLocalStorage<string | null>('qontinui-lastSaved', null)
-  const [projectId, setProjectId] = useState<number | null>(null)
+  const [projectId, setProjectId] = useState<string | null>(null)
 
   // Categories are now stored per-project in the database, not in global localStorage
   const [categories, setCategories] = useState<string[]>([])
@@ -225,14 +236,30 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   // Load all data from IndexedDB on mount and when project changes
   useEffect(() => {
     const loadProjectData = async () => {
+      projectLogger.contextProvider('loadProjectData triggered', {
+        projectName,
+        isRenaming: isRenamingRef.current,
+        isLoadingFromBackend: isLoadingFromBackendRef.current,
+      })
+
+      // Skip loading if we're loading from backend (prevents race condition)
+      if (isLoadingFromBackendRef.current) {
+        projectLogger.contextProvider('SKIPPING IndexedDB load - loading from backend', {
+          projectName,
+        })
+        return
+      }
+
       // Skip loading if we're in the middle of a rename operation
       if (isRenamingRef.current) {
-        console.log(`Skipping reload during rename operation for project: ${projectName}`)
+        projectLogger.contextProvider('SKIPPING IndexedDB load - rename in progress', {
+          projectName,
+        })
         isRenamingRef.current = false // Reset the flag
         return
       }
 
-      console.log(`Loading data for project: ${projectName}`)
+      projectLogger.contextProvider('Starting IndexedDB load for project', { projectName })
 
       // One-time migration: rename "bdo-mask" to "bdo" (only if not already migrated)
       const migrationKey = 'qontinui-migration-bdo-mask-to-bdo-done'
@@ -853,110 +880,133 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   const loadConfiguration = useCallback(async (config: any) => {
     const newProjectName = config.name || 'Untitled Project'
 
+    projectLogger.configLoader('loadConfiguration START', {
+      newProjectName,
+      oldProjectName: projectName,
+      hasWorkflows: !!config.workflows,
+      workflowCount: config.workflows?.length ?? 0,
+      stateCount: config.states?.length ?? 0,
+      transitionCount: config.transitions?.length ?? 0,
+      imageCount: config.images?.length ?? 0,
+    })
+
     // Clear existing data for the old project from IndexedDB
+    projectLogger.indexedDB('Clearing old project data', { projectName })
     await projectDB.clearProjectData(projectName)
 
     const currentScreenshots = await screenshotDB.getByProject(projectName)
     for (const screenshot of currentScreenshots) {
       await screenshotDB.delete(screenshot.id)
     }
+    projectLogger.indexedDB('Old project data cleared', { projectName, screenshotsDeleted: currentScreenshots.length })
 
     if (config.name) {
+      projectLogger.configLoader('Setting project name', { from: projectName, to: config.name })
       setProjectName(config.name)
     }
 
     // Load workflows to IndexedDB
     if (config.workflows && Array.isArray(config.workflows)) {
+      projectLogger.configLoader('Loading workflows', { count: config.workflows.length })
       const workflowsWithProject = config.workflows.map((w: Workflow) => ({
         ...w,
         projectName: newProjectName
       })) as Array<Workflow & { projectName: string }>
       for (const workflow of workflowsWithProject) {
-        await projectDB.updateWorkflow(workflow) // Use update (put) instead of add to handle duplicates
+        await projectDB.updateWorkflow(workflow)
       }
       setWorkflows(config.workflows)
+      projectLogger.configLoader('Workflows loaded and state set', { count: config.workflows.length })
     } else {
-      // If no workflows in config, explicitly set to empty array
+      projectLogger.configLoader('No workflows in config, setting empty array')
       setWorkflows([])
     }
 
     // Load states to IndexedDB
     if (config.states && Array.isArray(config.states)) {
+      projectLogger.configLoader('Loading states', { count: config.states.length })
       const statesWithProject = config.states.map((s: State) => ({
         ...s,
         projectName: newProjectName
       }))
       for (const state of statesWithProject) {
-        await projectDB.updateState(state) // Use update (put) instead of add to handle duplicates
+        await projectDB.updateState(state)
       }
       setStates(statesWithProject)
+      projectLogger.configLoader('States loaded and state set', { count: statesWithProject.length })
     } else {
-      // If no states in config, explicitly set to empty array
+      projectLogger.configLoader('No states in config, setting empty array')
       setStates([])
     }
 
     // Load transitions to IndexedDB
     if (config.transitions && Array.isArray(config.transitions)) {
+      projectLogger.configLoader('Loading transitions', { count: config.transitions.length })
       const transitionsWithProject = config.transitions.map((t: Transition) => ({
         ...t,
         projectName: newProjectName
       }))
       for (const transition of transitionsWithProject) {
-        await projectDB.updateTransition(transition) // Use update (put) instead of add to handle duplicates
+        await projectDB.updateTransition(transition)
       }
       setTransitions(transitionsWithProject)
+      projectLogger.configLoader('Transitions loaded and state set', { count: transitionsWithProject.length })
     } else {
-      // If no transitions in config, explicitly set to empty array
+      projectLogger.configLoader('No transitions in config, setting empty array')
       setTransitions([])
     }
 
     // Load images to IndexedDB
     if (config.images && Array.isArray(config.images)) {
+      projectLogger.configLoader('Loading images', { count: config.images.length })
       const imagesWithProject = config.images.map((img: ImageAsset) => ({
         ...img,
         projectName: newProjectName
       }))
       for (const image of imagesWithProject) {
-        await projectDB.updateImage(image) // Use update (put) instead of add to handle duplicates
+        await projectDB.updateImage(image)
       }
       setImages(imagesWithProject)
+      projectLogger.configLoader('Images loaded and state set', { count: imagesWithProject.length })
     } else {
-      // If no images in config, explicitly set to empty array
+      projectLogger.configLoader('No images in config, setting empty array')
       setImages([])
     }
 
     // Load screenshots to IndexedDB
     if (config.screenshots && Array.isArray(config.screenshots)) {
+      projectLogger.configLoader('Loading screenshots', { count: config.screenshots.length })
       const screenshotsWithProject = config.screenshots.map((s: Screenshot) => ({
         ...s,
         projectName: newProjectName
       }))
       for (const screenshot of screenshotsWithProject) {
-        await screenshotDB.update(screenshot) // Use update (put) instead of add to handle duplicates
+        await screenshotDB.update(screenshot)
       }
       setScreenshots(screenshotsWithProject)
+      projectLogger.configLoader('Screenshots loaded and state set', { count: screenshotsWithProject.length })
     } else {
-      // If no screenshots in config, explicitly set to empty array
+      projectLogger.configLoader('No screenshots in config, setting empty array')
       setScreenshots([])
     }
 
     if (config.categories && Array.isArray(config.categories)) {
-      // Always include Main and Transitions, even if not in the saved config
       const uniqueCategories = Array.from(
         new Set(['Main', 'Transitions', ...config.categories])
       )
       setCategories(uniqueCategories)
+      projectLogger.configLoader('Categories set', { count: uniqueCategories.length })
     } else {
-      // If no categories in config, set defaults
       setCategories(['Main', 'Transitions'])
+      projectLogger.configLoader('Using default categories')
     }
 
     // Load schedules
     if (config.schedules && Array.isArray(config.schedules)) {
+      projectLogger.configLoader('Loading schedules', { count: config.schedules.length })
       const schedulesWithProject = config.schedules.map((s: Schedule) => ({
         ...s,
         projectName: newProjectName,
-        // Convert date strings back to Date objects if needed
         createdAt: s.createdAt ? new Date(s.createdAt) : undefined,
         lastExecutedAt: s.lastExecutedAt ? new Date(s.lastExecutedAt) : undefined,
       }))
@@ -975,6 +1025,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
     // Don't load settings from config - they should be local defaults
     // Settings are now per-project in localStorage, not saved in config
+
+    projectLogger.configLoader('loadConfiguration COMPLETE', {
+      projectName: newProjectName,
+    })
 
     triggerSave()
   }, [projectName, setProjectName, setCategories, triggerSave])
@@ -1112,6 +1166,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     getConfiguration,
     loadConfiguration,
     clearAllData,
+
+    // Backend loading control
+    isLoadingFromBackend,
+    setIsLoadingFromBackend,
   }), [
     projectName,
     setProjectName,
@@ -1164,6 +1222,8 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     getConfiguration,
     loadConfiguration,
     clearAllData,
+    isLoadingFromBackend,
+    setIsLoadingFromBackend,
   ])
 
   return (

@@ -43,6 +43,7 @@ app = FastAPI(
     ),
     docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
     redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
+    redirect_slashes=False,  # Prevent 307 redirects that break proxy
 )
 
 # Add exception handlers

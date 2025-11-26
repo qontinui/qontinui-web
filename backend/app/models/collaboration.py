@@ -18,12 +18,12 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Enum,
     ForeignKey,
     Integer,
     String,
     Text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -79,7 +79,14 @@ class ProjectLock(Base):
         nullable=False,
         index=True,
     )
-    resource_type = Column(Enum(ResourceType), nullable=False)
+    resource_type = Column(
+        PG_ENUM(
+            'workflow', 'state', 'image', 'transition', 'action', 'project',
+            name='resourcetype',
+            create_type=False
+        ),
+        nullable=False
+    )
     resource_id = Column(String, nullable=False, index=True)
     acquired_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False)
@@ -208,8 +215,24 @@ class ActivityLog(Base):
         nullable=False,
         index=True,
     )
-    action_type = Column(Enum(ActionType), nullable=False, index=True)
-    resource_type = Column(Enum(ResourceType), nullable=False)
+    action_type = Column(
+        PG_ENUM(
+            'created', 'modified', 'deleted', 'shared', 'commented',
+            'locked', 'unlocked', 'viewed', 'exported', 'imported',
+            name='actiontype',
+            create_type=False
+        ),
+        nullable=False,
+        index=True
+    )
+    resource_type = Column(
+        PG_ENUM(
+            'workflow', 'state', 'image', 'transition', 'action', 'project',
+            name='resourcetype',
+            create_type=False
+        ),
+        nullable=False
+    )
     resource_id = Column(String, nullable=False, index=True)
     resource_name = Column(String, nullable=True)  # Human-readable resource name
     changes = Column(JSON, nullable=True)  # Detailed change information

@@ -8,7 +8,6 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { SessionTimeoutWarning } from "@/components/session-timeout-warning";
 import { RefreshTokenExpiryWarning } from "@/components/refresh-token-expiry-warning";
 import { OfflineIndicator } from "@/components/offline-indicator";
-import { BetaBanner } from "@/components/beta-banner";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { ActivityTracker } from "@/components/activity-tracker";
 import "./globals.css";
@@ -46,7 +45,7 @@ export default function RootLayout({
           <QueryProvider>
             <AuthProvider>
               {/* <ActivityTracker /> */}
-              <BetaBanner />
+              {/* BetaBanner moved to app layout to properly respect sidebar */}
               {children}
               {/* <SessionTimeoutWarning /> */}
               <RefreshTokenExpiryWarning />

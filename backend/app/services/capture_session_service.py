@@ -49,7 +49,7 @@ class CaptureSessionService:
     @staticmethod
     async def create_session(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         user_id: UUID,
         session_data: CaptureSessionCreate,
     ) -> CaptureSession:
@@ -126,7 +126,7 @@ class CaptureSessionService:
     async def list_sessions(
         db: AsyncSession,
         user_id: UUID,
-        project_id: int | None = None,
+        project_id: UUID | None = None,
         status_filter: str | None = None,
         limit: int = 50,
         offset: int = 0,

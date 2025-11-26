@@ -47,7 +47,7 @@ from app.schemas.collaboration import (
 from app.schemas.project import Project
 from app.services.collaboration_service import collaboration_service
 from app.services.permission_service import permission_service
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -122,12 +122,13 @@ def verify_organization_role(
 
 
 @router.post(
-    "/", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED
+    "", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED
 )
 @user_limiter.limit("10 per minute")
 async def create_organization(
     *,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     organization_in: OrganizationCreate,
     current_user: User = Depends(get_current_active_user_async),
@@ -174,7 +175,7 @@ async def create_organization(
     return response
 
 
-@router.get("/", response_model=list[OrganizationResponse])
+@router.get("", response_model=list[OrganizationResponse])
 async def list_user_organizations(
     *,
     db: AsyncSession = Depends(get_async_db),

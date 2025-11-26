@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { VariableTable } from '@/components/variables/VariableTable';
 import { VariableEditorDialog } from '@/components/variables/VariableEditorDialog';
+import { RequireProject } from '@/components/require-project';
 import { useGlobalVariables } from '@/hooks/useGlobalVariables';
 import {
   Plus,
@@ -232,43 +233,24 @@ export default function VariablesPage() {
     input.click();
   };
 
-  // No project selected
-  if (!projectId) {
-    return (
-      <div className="container mx-auto py-8">
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No Project Selected</h3>
-            <p className="text-muted-foreground text-center max-w-md">
-              Please select a project from the sidebar to manage global variables.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="container mx-auto py-8">
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Error Loading Variables</h3>
-            <p className="text-muted-foreground text-center max-w-md mb-4">
-              {error.message}
-            </p>
-            <Button onClick={() => refetch()}>Retry</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <RequireProject pageName="Global Variables">
+      {/* Error state */}
+      {error ? (
+        <div className="container mx-auto py-8">
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-16">
+              <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Error Loading Variables</h3>
+              <p className="text-muted-foreground text-center max-w-md mb-4">
+                {error.message}
+              </p>
+              <Button onClick={() => refetch()}>Retry</Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -434,5 +416,7 @@ export default function VariablesPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+      )}
+    </RequireProject>
   );
 }

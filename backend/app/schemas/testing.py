@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, field_validator
 class TestRunCreate(BaseModel):
     """Request schema for creating a new test run."""
 
-    project_id: int = Field(..., description="Project ID", example=123)
+    project_id: UUID = Field(..., description="Project ID")
     run_name: str = Field(
         ...,
         max_length=255,
@@ -66,7 +66,7 @@ class TestRunResponse(BaseModel):
     """Response schema for test run creation and retrieval."""
 
     run_id: UUID = Field(..., description="Unique test run identifier")
-    project_id: int = Field(..., description="Project ID")
+    project_id: UUID = Field(..., description="Project ID")
     run_name: str = Field(..., description="Name of the test run")
     status: str = Field(..., description="Test run status", example="running")
     started_at: IsoDatetime = Field(..., description="Test run start time")
@@ -526,7 +526,7 @@ class CoverageTrendDataPoint(BaseModel):
 class CoverageTrendResponse(BaseModel):
     """Response schema for coverage trends."""
 
-    project_id: int = Field(..., description="Project ID")
+    project_id: UUID = Field(..., description="Project ID")
     start_date: str = Field(..., description="Start date")
     end_date: str = Field(..., description="End date")
     granularity: str = Field(..., description="Granularity (daily, weekly, monthly)")
@@ -570,7 +570,7 @@ class ReliabilityResponse(BaseModel):
 
     workflow_id: str = Field(..., description="Workflow ID")
     workflow_name: str | None = Field(None, description="Workflow name")
-    project_id: int = Field(..., description="Project ID")
+    project_id: UUID = Field(..., description="Project ID")
     date_range: dict[str, str] = Field(
         ...,
         description="Date range",

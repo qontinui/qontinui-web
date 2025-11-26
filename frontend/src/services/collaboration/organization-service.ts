@@ -70,11 +70,24 @@ export class OrganizationService {
       `${this.apiUrl}/api/v1/organizations/`
     );
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch organizations');
+    // 404 means no organizations exist for this user - return empty array
+    if (response.status === 404) {
+      return [];
     }
 
-    return response.json();
+    if (!response.ok) {
+      // Only throw for actual errors, not empty results
+      const errorText = await response.text().catch(() => '');
+      // Check if this is just an "empty" response vs a real error
+      if (response.status >= 500 || (response.status >= 400 && response.status !== 404)) {
+        throw new Error(errorText || 'Failed to fetch organizations');
+      }
+      return [];
+    }
+
+    const data = await response.json();
+    // Handle case where API returns null or undefined
+    return Array.isArray(data) ? data : [];
   }
 
   /**

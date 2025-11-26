@@ -10,6 +10,7 @@ import { TestRunDetails } from '@/components/testing/TestRunDetails';
 import { StateGraphVisualization } from '@/components/testing/StateGraphVisualization';
 import { ArrowLeft } from 'lucide-react';
 import { useTestRun } from '@/hooks/useTesting';
+import { RequireProject } from '@/components/require-project';
 
 export default function TestRunDetailPage() {
   const { user, loading: authLoading } = useAuth();
@@ -40,6 +41,7 @@ export default function TestRunDetailPage() {
   }
 
   return (
+    <RequireProject pageName="Test Run Details">
     <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
       {/* Header */}
       <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
@@ -75,5 +77,6 @@ export default function TestRunDetailPage() {
         </div>
       </main>
     </div>
+    </RequireProject>
   );
 }

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Screenshot } from '../../contexts/automation-context/types';
 import { useAutomation } from '../../contexts/automation-context';
-import { useTabState } from '../../contexts/tab-state-context';
+import { usePatternMatchingState } from '../../contexts/tab-state';
 import { qontinuiAPI } from '../../lib/qontinui-api-client';
 import { ScreenshotPicker } from '../common/ScreenshotPicker';
 
@@ -37,7 +37,7 @@ interface MatchResult {
 
 export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screenshots }) => {
   const { states, images, screenshots: contextScreenshots, resolvePatternImage } = useAutomation();
-  const { getPatternMatchingState, setPatternMatchingState } = useTabState();
+  const { state: persistedState, setState: setPersistedState } = usePatternMatchingState();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const templateCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -91,8 +91,6 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
 
   // Load persisted state on mount
   useEffect(() => {
-    const persistedState = getPatternMatchingState();
-
     // Restore screenshot
     if (persistedState.selectedScreenshotId) {
       const screenshot = activeScreenshots.find(s => s.id === persistedState.selectedScreenshotId);
@@ -126,11 +124,11 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
     // Restore settings
     setSimilarity(persistedState.threshold);
     setFindAll(persistedState.findAll);
-  }, []); // Only run on mount
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist state changes (only IDs and settings, not image data)
   useEffect(() => {
-    setPatternMatchingState({
+    setPersistedState({
       templateSource,
       selectedScreenshotId: selectedScreenshot?.id || null,
       selectedStateImageId: templateSource === 'state' ? selectedStateImage : null,
@@ -145,7 +143,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
     selectedAssetImage,
     similarity,
     findAll,
-    setPatternMatchingState
+    setPersistedState
   ]);
 
   useEffect(() => {

@@ -56,7 +56,7 @@ class CollaborationService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         required_permission: str = "view",
     ) -> bool:
         """
@@ -126,7 +126,7 @@ class CollaborationService:
         return levels.get(current, 0) >= levels.get(required, 0)
 
     async def get_user_project_permission(
-        self, db: AsyncSession, user_id: UUID, project_id: int
+        self, db: AsyncSession, user_id: UUID, project_id: UUID
     ) -> str | None:
         """
         Get user's permission level for a project.
@@ -171,7 +171,7 @@ class CollaborationService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int = 5,
@@ -368,7 +368,7 @@ class CollaborationService:
     async def get_resource_lock(
         self,
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
     ) -> ProjectLock | None:
@@ -407,7 +407,7 @@ class CollaborationService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int = 5,
@@ -490,7 +490,7 @@ class CollaborationService:
         db: AsyncSession,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
     ) -> bool:
@@ -547,7 +547,7 @@ class CollaborationService:
         db: AsyncSession,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int = 5,
@@ -639,7 +639,7 @@ class CollaborationService:
     async def track_activity(
         self,
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         user_id: UUID,
         action_type: str,
         resource_type: str,

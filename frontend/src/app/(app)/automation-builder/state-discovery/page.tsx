@@ -15,7 +15,12 @@
  */
 
 import StateDiscoveryTab from '@/components/state-discovery/StateDiscoveryTab'
+import { RequireProject } from '@/components/require-project'
 
 export default function StateDiscoveryPage() {
-  return <StateDiscoveryTab />
+  return (
+    <RequireProject pageName="State Discovery">
+      <StateDiscoveryTab />
+    </RequireProject>
+  )
 }

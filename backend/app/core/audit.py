@@ -210,7 +210,7 @@ class AuditLogger:
         db: AsyncSession,
         user_id: UUID,
         action: str,
-        project_id: int,
+        project_id: UUID,
         target_user_id: UUID,
         permission_level: str,
         old_level: Optional[str] = None,

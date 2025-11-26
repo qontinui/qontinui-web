@@ -393,7 +393,7 @@ async def upload_recording(
         )
 
 
-@router.get("/", response_model=RecordingListResponse)
+@router.get("", response_model=RecordingListResponse)
 async def list_recordings(
     project_id: Optional[str] = None,
     status: Optional[RecordingStatus] = None,

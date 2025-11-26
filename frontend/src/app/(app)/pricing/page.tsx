@@ -1,24 +1,3 @@
-// PRICING PAGE HIDDEN DURING EARLY ACCESS
-// This page will be re-enabled for the February 2026 launch
-
-'use client';
-
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-
-// Redirect to dashboard
-export default function PricingPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.push('/dashboard');
-  }, [router]);
-
-  return null;
-}
-
-/*
-// ORIGINAL PRICING PAGE (COMMENTED OUT FOR EARLY ACCESS)
 'use client';
 
 export const dynamic = 'force-dynamic'
@@ -228,4 +207,3 @@ export default function PricingPage() {
     </div>
   );
 }
-*/

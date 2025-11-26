@@ -659,14 +659,14 @@ async def get_screenshot_inputs(
 class LinkScreenshotToProjectRequest(BaseModel):
     """Request body for linking a screenshot to a project"""
 
-    project_id: int
+    project_id: UUID
 
 
 class LinkScreenshotToProjectResponse(BaseModel):
     """Response for linking a screenshot to a project"""
 
     screenshot_id: UUID
-    project_id: int | None
+    project_id: UUID | None
     message: str
 
 

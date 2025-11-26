@@ -5,6 +5,7 @@ Provides request/response models for the function library API.
 """
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -49,7 +50,7 @@ class CustomFunctionRead(CustomFunctionBase):
     """Schema for reading custom function data."""
 
     id: int
-    project_id: int
+    project_id: UUID
     parameters: list[dict]
     return_type: str | None
     inputs: dict
@@ -69,7 +70,7 @@ class CustomFunctionSummary(BaseModel):
     """Lightweight custom function summary (for list views)."""
 
     id: int
-    project_id: int
+    project_id: UUID
     file_path: str
     function_name: str
     display_name: str | None

@@ -4,6 +4,8 @@ API endpoints for custom function management.
 Provides REST API for browsing, searching, and managing discovered custom functions.
 """
 
+from uuid import UUID
+
 import structlog
 from app.api.deps import current_active_user, get_async_db
 from app.crud import custom_function as crud
@@ -29,7 +31,7 @@ router = APIRouter()
 
 
 async def verify_project_access(
-    db: AsyncSession, project_id: int, user: User
+    db: AsyncSession, project_id: UUID, user: User
 ) -> Project:
     """
     Verify user has access to a project.
@@ -72,7 +74,7 @@ async def verify_project_access(
     "/projects/{project_id}/custom-functions", response_model=CustomFunctionListResponse
 )
 async def list_custom_functions(
-    project_id: int,
+    project_id: UUID,
     limit: int = Query(50, ge=1, le=200, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     current_user: User = Depends(current_active_user),
@@ -129,7 +131,7 @@ async def list_custom_functions(
     response_model=CustomFunctionListResponse,
 )
 async def search_custom_functions(
-    project_id: int,
+    project_id: UUID,
     query: str | None = Query(None, description="Search query"),
     category: str | None = Query(None, description="Category filter"),
     tags: list[str] | None = Query(None, description="Tag filters"),
@@ -204,7 +206,7 @@ async def search_custom_functions(
     response_model=CustomFunctionRead,
 )
 async def get_custom_function(
-    project_id: int,
+    project_id: UUID,
     function_id: int,
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
@@ -267,7 +269,7 @@ async def get_custom_function(
     response_model=CustomFunctionRead,
 )
 async def update_custom_function(
-    project_id: int,
+    project_id: UUID,
     function_id: int,
     update_data: CustomFunctionUpdate,
     current_user: User = Depends(current_active_user),
@@ -341,7 +343,7 @@ async def update_custom_function(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_custom_function(
-    project_id: int,
+    project_id: UUID,
     function_id: int,
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
@@ -392,7 +394,7 @@ async def delete_custom_function(
     "/projects/{project_id}/custom-functions/stats", response_model=FunctionStats
 )
 async def get_function_stats(
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -426,7 +428,7 @@ async def get_function_stats(
     "/projects/{project_id}/custom-functions/categories", response_model=list[str]
 )
 async def get_function_categories(
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -452,7 +454,7 @@ async def get_function_categories(
 
 @router.get("/projects/{project_id}/custom-functions/tags", response_model=list[str])
 async def get_function_tags(
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -481,7 +483,7 @@ async def get_function_tags(
     response_model=list[CustomFunctionSummary],
 )
 async def get_file_functions(
-    project_id: int,
+    project_id: UUID,
     file_path: str,
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),

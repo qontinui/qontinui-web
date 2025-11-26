@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { RequireProject } from '@/components/require-project';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,11 +33,11 @@ import {
   Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { RequireProject } from '@/components/require-project';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState({
     // General
-    projectName: 'My Automation Project',
     autoSave: true,
     autoSaveInterval: 30,
 
@@ -90,6 +91,7 @@ export default function SettingsPage() {
   };
 
   return (
+    <RequireProject pageName="Settings">
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-start justify-between">
@@ -151,17 +153,6 @@ export default function SettingsPage() {
               <CardDescription>Configure general project preferences</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="projectName">Project Name</Label>
-                <Input
-                  id="projectName"
-                  value={settings.projectName}
-                  onChange={(e) => updateSetting('projectName', e.target.value)}
-                />
-              </div>
-
-              <Separator />
-
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Auto-save</Label>
@@ -476,5 +467,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
     </div>
+    </RequireProject>
   );
 }

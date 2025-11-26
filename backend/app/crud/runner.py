@@ -326,7 +326,7 @@ async def create_connection_record(
     user_id: UUID,
     ip_address: str | None = None,
     user_agent: str | None = None,
-    project_id: int | None = None,
+    project_id: UUID | None = None,
     session_id: str | None = None,
 ) -> RunnerConnection:
     """

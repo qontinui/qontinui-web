@@ -15,6 +15,7 @@ import { useAutomation } from '@/contexts/automation-context';
 import type { SnapshotRun } from '@/types/snapshots';
 import type { ActionSpec } from '@/types/integration-testing';
 import { toast } from 'sonner';
+import { RequireProject } from '@/components/require-project';
 
 export default function IntegrationTestingPage() {
   const [selectedSnapshots, setSelectedSnapshots] = useState<SnapshotRun[]>([]);
@@ -73,6 +74,7 @@ export default function IntegrationTestingPage() {
   };
 
   return (
+    <RequireProject pageName="Integration Testing">
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Integration Testing</h1>
@@ -190,5 +192,6 @@ export default function IntegrationTestingPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </RequireProject>
   );
 }

@@ -59,7 +59,7 @@ class DistributedLockService:
         return self._redis_client if self._redis_available else None
 
     def _make_lock_key(
-        self, project_id: int, resource_type: str, resource_id: str
+        self, project_id: UUID, resource_type: str, resource_id: str
     ) -> str:
         """
         Generate Redis key for a lock.
@@ -104,7 +104,7 @@ class DistributedLockService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int = 5,
@@ -145,7 +145,7 @@ class DistributedLockService:
         self,
         redis: aioredis.Redis,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int,
@@ -240,7 +240,7 @@ class DistributedLockService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int,
@@ -346,7 +346,7 @@ class DistributedLockService:
         db: AsyncSession,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
     ) -> bool:
@@ -380,7 +380,7 @@ class DistributedLockService:
         redis: aioredis.Redis,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
     ) -> bool:
@@ -446,7 +446,7 @@ class DistributedLockService:
         db: AsyncSession,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int = 5,
@@ -484,7 +484,7 @@ class DistributedLockService:
         redis: aioredis.Redis,
         lock_id: UUID,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         resource_type: str,
         resource_id: str,
         duration_minutes: int,

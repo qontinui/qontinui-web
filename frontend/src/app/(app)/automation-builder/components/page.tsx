@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { RequireProject } from '@/components/require-project';
 import {
   Package,
   Plus,
@@ -399,6 +400,7 @@ export default function ComponentLibraryPage() {
   };
 
   return (
+    <RequireProject pageName="Component Library">
     <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
       <div className="container mx-auto p-6 space-y-6">
         {/* Header Section */}
@@ -1220,6 +1222,7 @@ export default function ComponentLibraryPage() {
         </Dialog>
       )}
     </div>
+    </RequireProject>
   );
 }
 

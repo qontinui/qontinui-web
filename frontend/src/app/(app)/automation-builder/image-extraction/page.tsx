@@ -15,7 +15,12 @@
  */
 
 import { ImageExtractionTab } from '@/components/image-extraction/ImageExtractionTab'
+import { RequireProject } from '@/components/require-project'
 
 export default function ImageExtractionPage() {
-  return <ImageExtractionTab />
+  return (
+    <RequireProject pageName="Extract Images">
+      <ImageExtractionTab />
+    </RequireProject>
+  )
 }

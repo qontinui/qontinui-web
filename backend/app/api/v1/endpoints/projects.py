@@ -21,7 +21,7 @@ from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
 from app.services.storage_service import StorageService
 from app.utils.lock_utils import check_resource_lock, get_lock_info
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -29,10 +29,11 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-@router.get("/", response_model=list[Project])
+@router.get("", response_model=list[Project])
 @user_limiter.limit("100 per minute")
 async def read_projects(
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     skip: int = 0,
     limit: int = 100,
@@ -91,7 +92,7 @@ async def read_projects(
 
 
 @router.post(
-    "/",
+    "",
     response_model=Project,
     status_code=status.HTTP_201_CREATED,
     responses={
@@ -100,7 +101,7 @@ async def read_projects(
             "content": {
                 "application/json": {
                     "example": {
-                        "id": 1,
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
                         "name": "My Test Project",
                         "description": "Project for testing automation",
                         "owner_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -148,6 +149,7 @@ async def read_projects(
 async def create_new_project(
     *,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     project_in: ProjectCreate,
     current_user: User = Depends(get_current_active_user_async),
@@ -221,7 +223,7 @@ async def create_new_project(
             "content": {
                 "application/json": {
                     "example": {
-                        "id": 1,
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
                         "name": "My Test Project",
                         "description": "Project for testing automation",
                         "owner_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -261,7 +263,7 @@ async def create_new_project(
 async def read_project(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """
@@ -288,7 +290,7 @@ async def read_project(
 async def update_existing_project(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     project_update: ProjectUpdate,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
@@ -298,56 +300,100 @@ async def update_existing_project(
     Requires edit permission on the project.
     Checks if project is locked by another user before allowing updates.
     """
-    # Check if user is in read-only mode
-    is_read_only, reason = await LimitChecker.is_read_only(
-        db, current_user.id, current_user.subscription_tier
+    print(f"\n\n{'='*60}")
+    print(f"UPDATE PROJECT STARTED")
+    print(f"project_id: {project_id}")
+    print(f"user_id: {current_user.id}")
+    print(f"update_fields: {project_update.model_dump(exclude_unset=True)}")
+    print(f"{'='*60}\n")
+
+    logger.info(
+        "update_project_request",
+        project_id=str(project_id),
+        user_id=str(current_user.id),
+        update_fields=project_update.model_dump(exclude_unset=True),
     )
-    if is_read_only:
-        raise forbidden_error(
-            f"Account is in read-only mode. {reason}. Upgrade your plan to continue editing.",
-            ErrorCode.ACCOUNT_READ_ONLY,
+
+    try:
+        # Check if user is in read-only mode
+        logger.debug("update_project_checking_read_only")
+        is_read_only, reason = await LimitChecker.is_read_only(
+            db, current_user.id, current_user.subscription_tier
         )
+        if is_read_only:
+            raise forbidden_error(
+                f"Account is in read-only mode. {reason}. Upgrade your plan to continue editing.",
+                ErrorCode.ACCOUNT_READ_ONLY,
+            )
 
-    project = await get_project(db, project_id=project_id)
-    if not project:
-        raise not_found_error("Project", "project")
+        logger.debug("update_project_getting_project")
+        project = await get_project(db, project_id=project_id)
+        if not project:
+            raise not_found_error("Project", "project")
 
-    # Check if user has edit access to this project
-    # Return 404 instead of 403 to prevent timing attacks that reveal project existence
-    has_access = await permission_service.can_user_access_project(
-        db, current_user.id, project_id, PermissionLevel.EDIT
-    )
-    if not has_access:
-        raise not_found_error("Project", "project")
+        # Check if user has edit access to this project
+        # Return 404 instead of 403 to prevent timing attacks that reveal project existence
+        logger.debug("update_project_checking_access")
+        has_access = await permission_service.can_user_access_project(
+            db, current_user.id, project_id, PermissionLevel.EDIT
+        )
+        if not has_access:
+            raise not_found_error("Project", "project")
 
-    # Check if project is locked by another user
-    can_modify, lock = await check_resource_lock(
-        db=db,
-        user_id=current_user.id,
-        project_id=project_id,
-        resource_type="project",
-        resource_id=str(project_id),
-    )
-
-    if not can_modify and lock:
-        # Project is locked by another user
-        lock_info = await get_lock_info(lock, db)
-        logger.warning(
-            "project_update_blocked_by_lock",
-            project_id=project_id,
+        # Check if project is locked by another user
+        logger.debug("update_project_checking_lock")
+        can_modify, lock = await check_resource_lock(
+            db=db,
             user_id=current_user.id,
-            lock_holder=lock_info.get("locked_by_id"),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_423_LOCKED,
-            detail={
-                "message": "Project is currently locked by another user",
-                "lock_info": lock_info,
-            },
+            project_id=project_id,
+            resource_type="project",
+            resource_id=str(project_id),
         )
 
-    project = await update_project(db, project, project_update)
-    return project
+        if not can_modify and lock:
+            # Project is locked by another user
+            lock_info = await get_lock_info(lock, db)
+            logger.warning(
+                "project_update_blocked_by_lock",
+                project_id=project_id,
+                user_id=current_user.id,
+                lock_holder=lock_info.get("locked_by_id"),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail={
+                    "message": "Project is currently locked by another user",
+                    "lock_info": lock_info,
+                },
+            )
+
+        logger.debug("update_project_calling_update")
+        updated_project = await update_project(db, project, project_update)
+        logger.info("update_project_success", project_id=str(project_id))
+
+        # Explicitly convert to Pydantic model for serialization
+        logger.debug("update_project_serializing")
+        result = Project.model_validate(updated_project)
+        logger.debug("update_project_serialization_complete")
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(
+            "update_project_error",
+            project_id=str(project_id),
+            error=str(e),
+            error_type=type(e).__name__,
+            traceback=error_traceback,
+        )
+        print(f"UPDATE PROJECT ERROR: {error_traceback}")  # Force print to stdout
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update project: {str(e)}",
+        )
 
 
 @router.delete(
@@ -389,7 +435,7 @@ async def update_existing_project(
 async def delete_existing_project(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """

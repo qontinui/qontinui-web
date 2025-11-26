@@ -67,12 +67,40 @@ export class AuthService {
     console.log('[AuthService] Login response status:', response.status);
 
     if (!response.ok) {
-      const error = await response.json();
-      const errorMessage = error.message || error.detail || 'Login failed';
+      // Safely parse error response - might not be JSON
+      let errorMessage = 'Login failed';
+      try {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json();
+          errorMessage = error.message || error.detail || 'Login failed';
+        } else {
+          const text = await response.text();
+          // Check for common server errors
+          if (response.status >= 500) {
+            errorMessage = 'Server is temporarily unavailable. Please try again later.';
+          } else if (text && text.length < 200) {
+            errorMessage = text;
+          }
+        }
+      } catch {
+        // If parsing fails, use status-based message
+        if (response.status >= 500) {
+          errorMessage = 'Server is temporarily unavailable. Please try again later.';
+        } else if (response.status === 401) {
+          errorMessage = 'Invalid username or password. Please try again.';
+        }
+      }
       throw new Error(getFriendlyErrorMessage(errorMessage));
     }
 
-    const tokens: TokenResponse = await response.json();
+    // Safely parse success response
+    let tokens: TokenResponse;
+    try {
+      tokens = await response.json();
+    } catch {
+      throw new Error('Invalid response from server. Please try again.');
+    }
 
     // Store expiry timestamps and authentication state (not actual tokens)
     // Backend sets HttpOnly cookies automatically
@@ -97,12 +125,34 @@ export class AuthService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      const errorMessage = error.message || error.detail || 'Registration failed';
+      // Safely parse error response - might not be JSON
+      let errorMessage = 'Registration failed';
+      try {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json();
+          errorMessage = error.message || error.detail || 'Registration failed';
+        } else {
+          const text = await response.text();
+          if (response.status >= 500) {
+            errorMessage = 'Server is temporarily unavailable. Please try again later.';
+          } else if (text && text.length < 200) {
+            errorMessage = text;
+          }
+        }
+      } catch {
+        if (response.status >= 500) {
+          errorMessage = 'Server is temporarily unavailable. Please try again later.';
+        }
+      }
       throw new Error(getFriendlyErrorMessage(errorMessage));
     }
 
-    return response.json();
+    try {
+      return await response.json();
+    } catch {
+      throw new Error('Invalid response from server. Please try again.');
+    }
   }
 
   /**

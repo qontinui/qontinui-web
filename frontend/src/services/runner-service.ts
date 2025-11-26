@@ -19,7 +19,9 @@ export class RunnerService {
 
   constructor(httpClient: HttpClient) {
     this.httpClient = httpClient;
-    this.baseUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/v1`;
+    // Use empty string for relative URLs that go through Next.js proxy
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    this.baseUrl = `${apiUrl}/api/v1`;
   }
 
   /**

@@ -14,13 +14,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { XCircle, Loader2, Monitor, Clock, MapPin } from "lucide-react"
+import { XCircle, Loader2, Monitor, Clock, MapPin, RefreshCw, WifiOff } from "lucide-react"
 import { useActiveConnections, useDisconnectRunner } from "@/hooks/useRunners"
 import { formatRelativeTime } from "@/utils/formatDuration"
 import { StatusIndicator } from "./StatusIndicator"
 
 export function ActiveConnectionsList() {
-  const { data: connections, isLoading, error } = useActiveConnections(5000); // Auto-refresh every 5s
+  const { data: connections, isLoading, error, refetch, isRefetching } = useActiveConnections(5000); // Auto-refresh every 5s
   const disconnectMutation = useDisconnectRunner();
   const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
 
@@ -44,11 +44,40 @@ export function ActiveConnectionsList() {
   }
 
   if (error) {
+    const isConnectionError = error.message?.includes('fetch failed') ||
+                              error.message?.includes('proxy') ||
+                              error.message?.includes('network');
     return (
-      <div className="text-center py-12">
-        <p className="text-red-500">Failed to load active connections</p>
-        <p className="text-sm text-gray-400 mt-2">{error.message}</p>
-      </div>
+      <Card className="bg-[#1A1A1B] border-gray-800 p-12">
+        <div className="text-center">
+          <WifiOff className="w-16 h-16 mx-auto text-gray-600 mb-4" />
+          <h3 className="text-xl font-semibold text-gray-300 mb-2">
+            {isConnectionError ? 'Unable to Connect to Server' : 'Failed to Load Connections'}
+          </h3>
+          <p className="text-gray-400 mb-6 max-w-md mx-auto">
+            {isConnectionError
+              ? 'The backend server appears to be offline or unreachable. Please ensure the server is running and try again.'
+              : error.message || 'An unexpected error occurred while loading active connections.'}
+          </p>
+          <Button
+            onClick={() => refetch()}
+            disabled={isRefetching}
+            className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+          >
+            {isRefetching ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Retrying...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Try Again
+              </>
+            )}
+          </Button>
+        </div>
+      </Card>
     );
   }
 

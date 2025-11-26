@@ -32,6 +32,8 @@ export function useRunnerTokens() {
   return useQuery<RunnerToken[], Error>({
     queryKey: runnerKeys.tokens(),
     queryFn: () => runnerService.listTokens(),
+    retry: 1, // Only retry once on failure
+    retryDelay: 1000,
   });
 }
 
@@ -53,8 +55,14 @@ export function useActiveConnections(refetchInterval: number = 5000) {
   return useQuery<RunnerConnection[], Error>({
     queryKey: runnerKeys.activeConnections(),
     queryFn: () => runnerService.getActiveConnections(),
-    refetchInterval, // Auto-refresh every 5 seconds
+    refetchInterval: (query) => {
+      // Stop auto-refresh if there's an error (server offline)
+      if (query.state.error) return false;
+      return refetchInterval;
+    },
     refetchIntervalInBackground: false,
+    retry: 1, // Only retry once on failure
+    retryDelay: 1000,
   });
 }
 
@@ -65,6 +73,8 @@ export function useConnectionHistory(params: ConnectionHistoryParams = {}) {
   return useQuery<ConnectionHistoryResponse, Error>({
     queryKey: runnerKeys.connectionHistory(params),
     queryFn: () => runnerService.getConnectionHistory(params),
+    retry: 1,
+    retryDelay: 1000,
   });
 }
 

@@ -7,13 +7,16 @@
  */
 
 import { useState } from 'react'
-import { ComponentType, ArchitectureLevel } from '@/app/(app)/admin/architecture/page'
+import { ComponentType } from '@/app/(app)/admin/architecture/page'
+
+// Define ArchitectureLevel locally since it's only used by this component
+export type ArchitectureLevel = 'root' | 'qontinui-web' | 'qontinui-api' | 'qontinui-runner' | 'qontinui' | 'multistate'
 
 interface ArchitectureDiagramProps {
   selectedComponent: ComponentType
   onComponentSelect: (component: ComponentType) => void
-  currentLevel: ArchitectureLevel
-  onDrillDown: (component: ComponentType) => void
+  currentLevel?: ArchitectureLevel
+  onDrillDown?: (component: ComponentType) => void
 }
 
 interface Component {
@@ -315,7 +318,7 @@ const connectionMap: Record<ArchitectureLevel, Connection[]> = {
 export function ArchitectureDiagram({
   selectedComponent,
   onComponentSelect,
-  currentLevel,
+  currentLevel = 'root',
   onDrillDown,
 }: ArchitectureDiagramProps) {
   const [hoveredComponent, setHoveredComponent] = useState<ComponentType | string | null>(null)
@@ -326,8 +329,8 @@ export function ArchitectureDiagram({
   } | null>(null)
 
   // Get components and connections for current level
-  const components = architectureMap[currentLevel]
-  const connections = connectionMap[currentLevel]
+  const components = architectureMap[currentLevel] || rootComponents
+  const connections = connectionMap[currentLevel] || []
 
   const handleMouseEnter = (component: Component, event: React.MouseEvent<SVGGElement>) => {
     setHoveredComponent(component.id || component.name)

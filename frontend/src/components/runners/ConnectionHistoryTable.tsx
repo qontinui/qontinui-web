@@ -20,7 +20,9 @@ import {
   Download,
   Loader2,
   Calendar,
-  Filter
+  Filter,
+  WifiOff,
+  RefreshCw
 } from "lucide-react"
 import { useConnectionHistory } from "@/hooks/useRunners"
 import { formatDuration, formatRelativeTime } from "@/utils/formatDuration"
@@ -37,7 +39,7 @@ export function ConnectionHistoryTable() {
   const [searchInput, setSearchInput] = useState("");
   const [pageSize, setPageSize] = useState(25);
 
-  const { data, isLoading, error } = useConnectionHistory(params);
+  const { data, isLoading, error, refetch, isRefetching } = useConnectionHistory(params);
 
   const handleSearch = () => {
     setParams({ ...params, search: searchInput, offset: 0 });
@@ -76,11 +78,40 @@ export function ConnectionHistoryTable() {
   const totalPages = data ? Math.ceil(data.total / params.limit!) : 0;
 
   if (error) {
+    const isConnectionError = error.message?.includes('fetch failed') ||
+                              error.message?.includes('proxy') ||
+                              error.message?.includes('network');
     return (
-      <div className="text-center py-12">
-        <p className="text-red-500">Failed to load connection history</p>
-        <p className="text-sm text-gray-400 mt-2">{error.message}</p>
-      </div>
+      <Card className="bg-[#1A1A1B] border-gray-800 p-12">
+        <div className="text-center">
+          <WifiOff className="w-16 h-16 mx-auto text-gray-600 mb-4" />
+          <h3 className="text-xl font-semibold text-gray-300 mb-2">
+            {isConnectionError ? 'Unable to Connect to Server' : 'Failed to Load History'}
+          </h3>
+          <p className="text-gray-400 mb-6 max-w-md mx-auto">
+            {isConnectionError
+              ? 'The backend server appears to be offline or unreachable. Please ensure the server is running and try again.'
+              : error.message || 'An unexpected error occurred while loading connection history.'}
+          </p>
+          <Button
+            onClick={() => refetch()}
+            disabled={isRefetching}
+            className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+          >
+            {isRefetching ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Retrying...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Try Again
+              </>
+            )}
+          </Button>
+        </div>
+      </Card>
     );
   }
 

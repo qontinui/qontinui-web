@@ -10,7 +10,7 @@ import { useAdminProjects } from "@/hooks/use-admin"
 import ProjectDetailModal from "./ProjectDetailModal"
 
 export default function ProjectsTab() {
-  const { data: projects = [], isLoading: loading } = useAdminProjects()
+  const { data: projects = [], isLoading: loading, error } = useAdminProjects()
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState("recent")
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -63,6 +63,15 @@ export default function ProjectsTab() {
 
   if (loading) {
     return <div className="text-center text-muted-foreground">Loading projects...</div>
+  }
+
+  if (error) {
+    return (
+      <div className="text-center text-red-500 space-y-2">
+        <div>Error loading projects</div>
+        <div className="text-sm text-muted-foreground">{error.message}</div>
+      </div>
+    )
   }
 
   return (
