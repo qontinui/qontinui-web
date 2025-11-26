@@ -7,6 +7,7 @@ and presigned URL generation for secure video playback.
 
 import io
 from typing import Any
+from uuid import UUID
 
 import structlog
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -123,7 +124,7 @@ async def upload_session_video(
     duration_seconds: int | None = Form(None),
     fps: int | None = Form(None),
     quality: str | None = Form(None),
-    project_id: int | None = Form(None),
+    project_id: UUID | None = Form(None),
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """

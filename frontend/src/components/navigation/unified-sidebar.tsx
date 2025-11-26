@@ -3,7 +3,7 @@
 // Horizontal icon popover for collapsed sidebar - updated icons v3
 import React, { useState, useEffect } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users } from 'lucide-react'
+import { LayoutDashboard, Workflow, Network, Sparkles, CheckCircle2, BarChart3, Settings, FileText, ChevronDown, ChevronLeft, ChevronRight, Scissors, Search, ImageIcon, Camera, Map, Eraser, Edit3, ListTree, Box, GitBranch, Scan, Target, Sliders, Globe, Users, Play, Video, Monitor, Server, Link, Store, CreditCard, TestTube2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CollapsedMenuPopover } from './collapsed-menu-popover'
 import { OrganizationSwitcher } from '@/components/collaboration/OrganizationSwitcher'
@@ -67,6 +67,28 @@ const navItems: NavItem[] = [
         route: '/automation-builder/screenshots',
         color: '#BD00FF',
       },
+      {
+        id: 'annotations',
+        label: 'Annotations',
+        icon: <Scan size={22} />,
+        route: '/automation-builder/annotations',
+        color: '#BD00FF',
+        adminOnly: true,
+      },
+      {
+        id: 'variables',
+        label: 'Variables',
+        icon: <Sliders size={22} />,
+        route: '/automation-builder/variables',
+        color: '#BD00FF',
+      },
+      {
+        id: 'recordings',
+        label: 'Recordings',
+        icon: <Video size={22} />,
+        route: '/recordings',
+        color: '#BD00FF',
+      },
     ],
   },
   {
@@ -76,13 +98,6 @@ const navItems: NavItem[] = [
     route: '/automation-builder/overview',
     color: '#00D9FF',
     children: [
-      {
-        id: 'overview',
-        label: 'Overview',
-        icon: <LayoutDashboard size={22} />,
-        route: '/automation-builder/overview',
-        color: '#00D9FF',
-      },
       {
         id: 'overview',
         label: 'Overview',
@@ -111,43 +126,12 @@ const navItems: NavItem[] = [
         route: '/automation-builder/documentation',
         color: '#00D9FF',
       },
-    ],
-  },
-  {
-    id: 'structure',
-    label: 'Structure',
-    icon: <Network size={28} />,
-    route: '/automation-builder/states',
-    color: '#BD00FF',
-    children: [
       {
-        id: 'states',
-        label: 'States',
-        icon: <Network size={22} />,
-        route: '/automation-builder/states',
-        color: '#BD00FF',
-      },
-      {
-        id: 'images',
-        label: 'Images',
-        icon: <ImageIcon size={22} />,
-        route: '/automation-builder/images',
-        color: '#BD00FF',
-      },
-      {
-        id: 'screenshots',
-        label: 'Screenshots',
-        icon: <Camera size={22} />,
-        route: '/automation-builder/screenshots',
-        color: '#BD00FF',
-      },
-      {
-        id: 'annotations',
-        label: 'Annotations',
-        icon: <Scan size={22} />,
-        route: '/automation-builder/annotations',
-        color: '#BD00FF',
-        adminOnly: true,
+        id: 'automation-analytics',
+        label: 'Automation Analytics',
+        icon: <BarChart3 size={22} />,
+        route: '/automation-builder/analytics',
+        color: '#00D9FF',
       },
     ],
   },
@@ -199,14 +183,14 @@ const navItems: NavItem[] = [
     id: 'verify',
     label: 'Verify',
     icon: <CheckCircle2 size={28} />,
-    route: '/automation-builder/testing',
+    route: '/automation-builder/pattern-tests',
     color: '#FF6B6B',
     children: [
       {
         id: 'pattern-tests',
         label: 'Pattern Tests',
         icon: <Target size={22} />,
-        route: '/automation-builder/testing',
+        route: '/automation-builder/pattern-tests',
         color: '#FF6B6B',
       },
       {
@@ -225,10 +209,17 @@ const navItems: NavItem[] = [
         color: '#FF6B6B',
       },
       {
-        id: 'test-runner',
-        label: 'Test Runner',
-        icon: <CheckCircle2 size={22} />,
-        route: '/automation-builder/testing',
+        id: 'workflow-runner',
+        label: 'Workflow Runner',
+        icon: <Play size={22} />,
+        route: '/workflow-viz',
+        color: '#FF6B6B',
+      },
+      {
+        id: 'test-runs',
+        label: 'Test Runs',
+        icon: <TestTube2 size={22} />,
+        route: '/testing',
         color: '#FF6B6B',
       },
     ],
@@ -246,6 +237,43 @@ const navItems: NavItem[] = [
     icon: <BarChart3 size={28} />,
     route: '/analytics',
     color: '#FFD700',
+  },
+  {
+    id: 'runners',
+    label: 'Runners',
+    icon: <Server size={28} />,
+    route: '/runners',
+    color: '#10B981',
+    children: [
+      {
+        id: 'runner-list',
+        label: 'Manage Runners',
+        icon: <Server size={22} />,
+        route: '/runners',
+        color: '#10B981',
+      },
+      {
+        id: 'connect-runner',
+        label: 'Connect Runner',
+        icon: <Link size={22} />,
+        route: '/connect-runner',
+        color: '#10B981',
+      },
+      {
+        id: 'monitor',
+        label: 'Monitor',
+        icon: <Monitor size={22} />,
+        route: '/monitor',
+        color: '#10B981',
+      },
+    ],
+  },
+  {
+    id: 'marketplace',
+    label: 'Marketplace',
+    icon: <Store size={28} />,
+    route: '/marketplace',
+    color: '#8B5CF6',
   },
   {
     id: 'settings',
@@ -266,6 +294,13 @@ const navItems: NavItem[] = [
         label: 'Profile',
         icon: <Settings size={22} />,
         route: '/profile',
+        color: '#FFD700',
+      },
+      {
+        id: 'pricing',
+        label: 'Pricing',
+        icon: <CreditCard size={22} />,
+        route: '/pricing',
         color: '#FFD700',
       },
     ],
@@ -331,12 +366,12 @@ const navItems: NavItem[] = [
 
 interface UnifiedSidebarProps {
   className?: string
-  projectId?: number | null
+  projectId?: string | null
 }
 
 export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   className,
-  projectId,
+  projectId: propProjectId,
 }) => {
   const { user } = useAuth()
   const { isCollapsed, setIsCollapsed } = useSidebar()
@@ -351,10 +386,13 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   const searchParams = useSearchParams()
   const { currentOrganization, organizations, loading, switchOrganization } = useOrganization()
 
+  // Get project ID from prop or URL params - this ensures navigation preserves the project context
+  const projectId = propProjectId ?? searchParams?.get('project') ?? null
+
   // Filter nav items based on admin status
   const filterNavItems = (items: NavItem[]): NavItem[] => {
     return items
-      .filter(item => !item.adminOnly || user?.is_superuser)
+      .filter(item => !item.adminOnly || user?.is_superuser === true)
       .map(item => ({
         ...item,
         children: item.children ? filterNavItems(item.children) : undefined
@@ -399,25 +437,11 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         const tabMatch = queryParams.get('tab') === currentParams.get('tab')
 
         const matches = baseMatch && categoryMatch && tabMatch
-        console.log('[ROUTE CHECK]', {
-          routeToCheck,
-          pathname,
-          basePath,
-          category: { expected: queryParams.get('category'), actual: currentParams.get('category') },
-          tab: { expected: queryParams.get('tab'), actual: currentParams.get('tab') },
-          matches
-        })
         return matches
       } else {
         // Route has no query params - it should only match if current path also has no query params
         const currentHasParams = searchParams.toString().length > 0
         const matches = pathname === routeToCheck && !currentHasParams
-        console.log('[ROUTE CHECK]', {
-          routeToCheck,
-          pathname,
-          currentHasParams,
-          matches
-        })
         return matches
       }
     }
@@ -425,24 +449,10 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     // If item has children, check if any child is active
     if (item.children && item.children.length > 0) {
       const childActive = item.children.some(child => checkRouteMatch(child.route))
-      console.log('[PARENT ACTIVE CHECK]', {
-        itemId: item.id,
-        itemLabel: item.label,
-        hasChildren: true,
-        childRoutes: item.children.map(c => c.route),
-        childActive
-      })
       return childActive
     }
 
-    const active = checkRouteMatch(route)
-    console.log('[ITEM ACTIVE CHECK]', {
-      itemId: item.id,
-      itemLabel: item.label,
-      route,
-      active
-    })
-    return active
+    return checkRouteMatch(route)
   }
 
   const buildRoute = (route: string): string => {
@@ -548,7 +558,6 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
       <nav className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin px-2 py-4 space-y-1">
         {visibleNavItems.map((item, index) => {
           const itemZIndex = visibleNavItems.length - index
-          console.log('[NAV ITEM Z-INDEX]', { itemId: item.id, index, zIndex: itemZIndex })
           return (
           <div
             key={item.id}
@@ -565,19 +574,15 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 }
               }}
               onMouseEnter={() => {
-                console.log('[BUTTON] Mouse enter:', item.id, 'closeTimer exists:', !!closeTimer)
                 if (closeTimer) {
                   clearTimeout(closeTimer)
                   setCloseTimer(null)
-                  console.log('[BUTTON] Cleared close timer')
                 }
                 setHoveredItem(item.id)
               }}
               onMouseLeave={() => {
-                console.log('[BUTTON] Mouse leave:', item.id, 'setting timer for 300ms')
                 // Delay closing to allow mouse to move to popover
                 const timer = setTimeout(() => {
-                  console.log('[BUTTON] Timer expired, closing popover for:', item.id)
                   setHoveredItem(null)
                 }, 300)
                 setCloseTimer(timer)
@@ -698,16 +703,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
             )}
 
             {/* Children - Collapsed Sidebar Popover */}
-            {item.children && isCollapsed && hoveredItem === item.id && (() => {
-              console.log('[POPOVER RENDER]', {
-                parentId: item.id,
-                parentLabel: item.label,
-                isCollapsed,
-                hoveredItem,
-                itemZIndex,
-                childrenCount: item.children?.length
-              })
-              return (
+            {item.children && isCollapsed && hoveredItem === item.id && (
               <CollapsedMenuPopover
                 parentId={item.id}
                 parentColor={item.color}
@@ -715,16 +711,13 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 onNavigate={handleNavigation}
                 onClose={() => setHoveredItem(null)}
                 onClearTimer={() => {
-                  console.log('[CLEAR TIMER] Called, closeTimer exists:', !!closeTimer)
                   if (closeTimer) {
                     clearTimeout(closeTimer)
                     setCloseTimer(null)
-                    console.log('[CLEAR TIMER] Timer cleared successfully')
                   }
                 }}
               />
-              )
-            })()}
+            )}
           </div>
           )
         })}

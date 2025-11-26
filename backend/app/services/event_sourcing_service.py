@@ -31,7 +31,7 @@ class EventSourcingService:
     @staticmethod
     async def record_command(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         user_id: UUID | None,
         command_type: str,
         entity_type: str,
@@ -96,7 +96,7 @@ class EventSourcingService:
     @staticmethod
     async def get_command_history(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         skip: int = 0,
         limit: int = 100,
     ) -> EditCommandHistoryResponse:
@@ -133,7 +133,7 @@ class EventSourcingService:
     @staticmethod
     async def replay_commands(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         from_sequence: int = 1,
         to_sequence: int | None = None,
     ) -> dict[str, Any]:
@@ -206,7 +206,7 @@ class EventSourcingService:
     @staticmethod
     async def get_entity_history(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         entity_type: str,
         entity_id: str,
     ) -> list[EditCommand]:
@@ -255,7 +255,7 @@ class EventSourcingService:
     @staticmethod
     async def record_project_update(
         db: AsyncSession,
-        project_id: int,
+        project_id: UUID,
         user_id: UUID | None,
         old_configuration: dict[str, Any],
         new_configuration: dict[str, Any],

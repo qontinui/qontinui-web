@@ -13,14 +13,14 @@ class ProjectVersionBase(BaseSchema):
 class ProjectVersionCreate(ProjectVersionBase):
     """Schema for creating a new version snapshot"""
     snapshot: dict[str, Any]
-    project_id: int
+    project_id: UUID
     version_number: int
 
 
 class ProjectVersionResponse(ProjectVersionBase, BaseORMSchema):
     """Schema for version history response"""
     id: UUID
-    project_id: int
+    project_id: UUID
     version_number: int
     snapshot: dict[str, Any]
     created_by: UUID | None
@@ -30,7 +30,7 @@ class ProjectVersionResponse(ProjectVersionBase, BaseORMSchema):
 class ProjectVersionListItem(BaseORMSchema):
     """Lightweight schema for version list (without full snapshot)"""
     id: UUID
-    project_id: int
+    project_id: UUID
     version_number: int
     created_by: UUID | None
     created_at: IsoDatetime
@@ -58,13 +58,13 @@ class EditCommandBase(BaseSchema):
 
 class EditCommandCreate(EditCommandBase):
     """Schema for creating an edit command"""
-    project_id: int
+    project_id: UUID
 
 
 class EditCommandResponse(EditCommandBase, BaseORMSchema):
     """Schema for edit command response"""
     id: UUID
-    project_id: int
+    project_id: UUID
     user_id: UUID | None
     sequence_number: int
     applied_at: IsoDatetime
@@ -74,7 +74,7 @@ class EditCommandHistoryResponse(BaseSchema):
     """Schema for command history list"""
     commands: list[EditCommandResponse]
     total_count: int
-    project_id: int
+    project_id: UUID
 
 
 # Version Restore Schemas

@@ -34,7 +34,7 @@ from app.schemas.user import (
 )
 from app.services.avatar_service import avatar_service
 from app.services.storage_service import StorageService
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -44,6 +44,7 @@ router = APIRouter()
 @user_limiter.limit("200 per minute")
 async def read_user_me(
     request: Request,
+    response: Response,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     return current_user
@@ -126,6 +127,7 @@ async def claim_admin(
 async def update_user_me(
     *,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     user_update: UserUpdate,
     current_user: UserModel = Depends(get_current_active_user_async),
@@ -134,7 +136,7 @@ async def update_user_me(
     return user
 
 
-@router.get("/", response_model=list[User])
+@router.get("", response_model=list[User])
 async def read_users(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -282,6 +284,7 @@ async def delete_user_by_id(
 @user_limiter.limit("60 per minute")
 async def get_user_storage(
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:

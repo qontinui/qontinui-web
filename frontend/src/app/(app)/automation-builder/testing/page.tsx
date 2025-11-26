@@ -12,6 +12,9 @@
 "use client"
 
 import * as React from "react"
+import { Suspense } from 'react'
+import { RequireProject } from '@/components/require-project'
+import { Loader2 } from 'lucide-react'
 import {
   Play,
   Plus,
@@ -30,7 +33,6 @@ import {
   Filter,
   ChevronDown,
   ChevronRight,
-  Loader2,
   Settings,
   TrendingUp,
   TrendingDown,
@@ -591,7 +593,13 @@ export default function WorkflowTestingPage() {
   // ========================================================================
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
+      </div>
+    }>
+      <RequireProject pageName="Workflow Testing">
+        <div className="flex flex-col h-screen bg-background">
       {/* Header */}
       <div className="border-b bg-card">
         <div className="container mx-auto px-6 py-4">
@@ -1070,7 +1078,9 @@ export default function WorkflowTestingPage() {
           </DialogContent>
         </Dialog>
       )}
-    </div>
+        </div>
+      </RequireProject>
+    </Suspense>
   )
 }
 

@@ -285,7 +285,7 @@ export class TestingService {
       {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${this.httpClient['getAuthToken']()}`,
+          'Authorization': `Bearer ${this.httpClient.getAuthToken()}`,
         },
       }
     );
@@ -317,7 +317,7 @@ export class TestingService {
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${this.httpClient['getAuthToken']()}`,
+        'Authorization': `Bearer ${this.httpClient.getAuthToken()}`,
       },
     });
 

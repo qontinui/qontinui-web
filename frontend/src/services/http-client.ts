@@ -188,4 +188,103 @@ export class HttpClient {
 
     return false;
   }
+
+  /**
+   * Helper method for GET requests
+   */
+  async get<T>(url: string, options?: HttpOptions): Promise<T> {
+    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
+    const response = await this.fetch(fullUrl, { ...options, method: 'GET' });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`GET ${url} failed: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Helper method for POST requests
+   */
+  async post<T>(url: string, body?: unknown, options?: HttpOptions): Promise<T> {
+    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
+    const response = await this.fetch(fullUrl, {
+      ...options,
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`POST ${url} failed: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Helper method for PUT requests
+   */
+  async put<T>(url: string, body?: unknown, options?: HttpOptions): Promise<T> {
+    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
+    const response = await this.fetch(fullUrl, {
+      ...options,
+      method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`PUT ${url} failed: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Helper method for PATCH requests
+   */
+  async patch<T>(url: string, body?: unknown, options?: HttpOptions): Promise<T> {
+    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
+    const response = await this.fetch(fullUrl, {
+      ...options,
+      method: 'PATCH',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`PATCH ${url} failed: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Helper method for DELETE requests
+   */
+  async delete<T>(url: string, options?: HttpOptions): Promise<T> {
+    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
+    const response = await this.fetch(fullUrl, { ...options, method: 'DELETE' });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`DELETE ${url} failed: ${response.status} - ${errorText}`);
+    }
+
+    // DELETE may return 204 No Content
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get the auth token (for use in manual fetch calls)
+   */
+  getAuthToken(): string | null {
+    return this.tokenManager.getAccessToken();
+  }
 }

@@ -37,8 +37,8 @@ import type {
   AdminProjectDetails,
 } from '@/lib/schemas'
 
-// Admin API base URL
-const getApiUrl = () => process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// Admin API base URL - use empty string to go through Next.js proxy, or direct URL if specified
+const getApiUrl = () => process.env.NEXT_PUBLIC_API_URL || ''
 
 // Query keys for organizing cache
 export const adminKeys = {
@@ -60,32 +60,36 @@ export type { AdminStats, AdminUserData, AdminProjectData, AdminProjectDetails }
  * Features:
  * - Cached for 2 minutes (stats don't change frequently)
  * - Background refetch on window focus
+ * - Only runs when authenticated (uses HttpOnly cookies)
  */
 export function useAdminStats() {
+  // Check if user is authenticated (using hasValidToken which checks auth state)
+  const isAuthenticated = authService.tokenManager.hasValidToken()
+
   return useQuery({
     queryKey: adminKeys.stats(),
     queryFn: async () => {
       const apiUrl = getApiUrl()
-      const accessToken = authService.tokenManager.getAccessToken()
+      const url = `${apiUrl}/api/v1/admin/stats`
 
-      if (!accessToken) {
-        throw new Error('Not authenticated')
-      }
-
-      const response = await fetch(`${apiUrl}/api/v1/admin/stats`, {
+      // Use credentials: 'include' to send HttpOnly cookies for authentication
+      const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       })
 
       if (!response.ok) {
-        throw new Error('Failed to fetch admin stats')
+        const errorText = await response.text().catch(() => 'Unknown error')
+        throw new Error(`Failed to fetch admin stats: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
       return parseApi(AdminStatsSchema, data, 'admin stats')
     },
+    // Only run when authenticated
+    enabled: isAuthenticated,
     // Keep stats cached for 2 minutes
     staleTime: 2 * 60 * 1000,
   })
@@ -97,15 +101,12 @@ export function useAdminStats() {
  * @param params - Query parameters (limit, offset)
  */
 export function useAdminUsers(params?: { limit?: number; offset?: number }) {
+  const isAuthenticated = authService.tokenManager.hasValidToken()
+
   return useQuery({
     queryKey: adminKeys.userList(params),
     queryFn: async () => {
       const apiUrl = getApiUrl()
-      const accessToken = authService.tokenManager.getAccessToken()
-
-      if (!accessToken) {
-        throw new Error('Not authenticated')
-      }
 
       const searchParams = new URLSearchParams()
       if (params?.limit) searchParams.set('limit', params.limit.toString())
@@ -115,18 +116,21 @@ export function useAdminUsers(params?: { limit?: number; offset?: number }) {
 
       const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       })
 
       if (!response.ok) {
-        throw new Error('Failed to fetch admin users')
+        const errorText = await response.text().catch(() => 'Unknown error')
+        throw new Error(`Failed to fetch admin users: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
       return parseApi(AdminUsersArraySchema, data, 'admin users')
     },
+    // Only run when authenticated
+    enabled: isAuthenticated,
     // Keep user list cached for 1 minute
     staleTime: 60 * 1000,
     placeholderData: (previousData) => previousData,
@@ -139,15 +143,12 @@ export function useAdminUsers(params?: { limit?: number; offset?: number }) {
  * @param params - Query parameters (limit, offset)
  */
 export function useAdminProjects(params?: { limit?: number; offset?: number }) {
+  const isAuthenticated = authService.tokenManager.hasValidToken()
+
   return useQuery({
     queryKey: adminKeys.projectList(params),
     queryFn: async () => {
       const apiUrl = getApiUrl()
-      const accessToken = authService.tokenManager.getAccessToken()
-
-      if (!accessToken) {
-        throw new Error('Not authenticated')
-      }
 
       const searchParams = new URLSearchParams()
       if (params?.limit) searchParams.set('limit', params.limit.toString())
@@ -157,18 +158,21 @@ export function useAdminProjects(params?: { limit?: number; offset?: number }) {
 
       const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       })
 
       if (!response.ok) {
-        throw new Error('Failed to fetch admin projects')
+        const errorText = await response.text().catch(() => 'Unknown error')
+        throw new Error(`Failed to fetch admin projects: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
       return parseApi(AdminProjectsArraySchema, data, 'admin projects')
     },
+    // Only run when authenticated
+    enabled: isAuthenticated,
     // Keep project list cached for 1 minute
     staleTime: 60 * 1000,
     placeholderData: (previousData) => previousData,
@@ -182,6 +186,8 @@ export function useAdminProjects(params?: { limit?: number; offset?: number }) {
  * @param enabled - Whether to enable the query (default: true)
  */
 export function useAdminProjectDetails(projectId: string | null, enabled: boolean = true) {
+  const isAuthenticated = authService.tokenManager.hasValidToken()
+
   return useQuery({
     queryKey: adminKeys.projectDetail(projectId || ''),
     queryFn: async () => {
@@ -190,27 +196,24 @@ export function useAdminProjectDetails(projectId: string | null, enabled: boolea
       }
 
       const apiUrl = getApiUrl()
-      const accessToken = authService.tokenManager.getAccessToken()
-
-      if (!accessToken) {
-        throw new Error('Not authenticated')
-      }
 
       const response = await fetch(`${apiUrl}/api/v1/admin/projects/${projectId}`, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       })
 
       if (!response.ok) {
-        throw new Error('Failed to fetch project details')
+        const errorText = await response.text().catch(() => 'Unknown error')
+        throw new Error(`Failed to fetch project details: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
       return parseApi(AdminProjectDetailsSchema, data, 'admin project details')
     },
-    enabled: enabled && !!projectId,
+    // Only run when authenticated and have projectId
+    enabled: enabled && !!projectId && isAuthenticated,
     // Keep project details cached for 2 minutes
     staleTime: 2 * 60 * 1000,
   })

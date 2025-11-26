@@ -296,13 +296,15 @@ class DebugJWTStrategy(JWTStrategy):
             )
             return result
         except Exception as e:
-            logger.error(
+            logger.warning(
                 "jwt_decode_failed",
                 error=str(e),
                 error_type=type(e).__name__,
                 token_preview=token[:50] if token else None,
             )
-            raise
+            # Return None instead of raising - this tells fastapi-users the token is invalid
+            # and will result in a proper 401 Unauthorized response
+            return None
 
 
 def get_jwt_strategy() -> JWTStrategy:

@@ -1,21 +1,67 @@
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, FolderOpen, TrendingUp, Activity, DollarSign, Zap } from "lucide-react"
+import { Users, FolderOpen, TrendingUp, Activity, DollarSign, Zap, ShieldAlert, AlertCircle } from "lucide-react"
 import { useAdminStats, useAdminUsers } from "@/hooks/use-admin"
+import { Button } from "@/components/ui/button"
 
 export default function OverviewTab() {
-  const { data: stats, isLoading: statsLoading } = useAdminStats()
-  const { data: users = [], isLoading: usersLoading } = useAdminUsers({ limit: 10 })
+  const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useAdminStats()
+  const { data: users = [], isLoading: usersLoading, error: usersError } = useAdminUsers({ limit: 10 })
 
   const loading = statsLoading || usersLoading
+  const error = statsError || usersError
 
   if (loading) {
-    return <div className="text-center text-muted-foreground">Loading overview...</div>
+    return <div className="text-center text-muted-foreground py-12">Loading overview...</div>
+  }
+
+  if (error) {
+    const is403 = error.message?.includes('403')
+    const is500 = error.message?.includes('500') || error.message?.includes('Server')
+
+    return (
+      <Card className="bg-card border-border">
+        <CardContent className="flex flex-col items-center justify-center py-12">
+          {is403 ? (
+            <>
+              <ShieldAlert className="h-12 w-12 text-yellow-500 mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Admin Access Required</h3>
+              <p className="text-muted-foreground text-center max-w-md mb-4">
+                You don't have admin privileges. Contact a superuser to grant you admin access,
+                or use the bootstrap endpoint if this is a fresh installation.
+              </p>
+              <code className="text-xs bg-muted px-3 py-2 rounded mb-4">
+                POST /api/v1/admin/bootstrap-first-admin?email=your@email.com
+              </code>
+            </>
+          ) : is500 ? (
+            <>
+              <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Server Error</h3>
+              <p className="text-muted-foreground text-center max-w-md mb-4">
+                The backend server is unavailable or encountered an error. Please ensure the server is running.
+              </p>
+            </>
+          ) : (
+            <>
+              <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Error Loading Data</h3>
+              <p className="text-muted-foreground text-center max-w-md mb-4">
+                {error.message}
+              </p>
+            </>
+          )}
+          <Button onClick={() => refetchStats()} variant="outline">
+            Try Again
+          </Button>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (!stats) {
-    return <div className="text-center text-muted-foreground">No data available</div>
+    return <div className="text-center text-muted-foreground py-12">No data available</div>
   }
 
   const activationRate = stats.total_users > 0

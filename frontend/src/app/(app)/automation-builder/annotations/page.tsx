@@ -21,7 +21,8 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
 import { useAutomation } from '@/contexts/automation-context'
-import { ScreenshotAnnotationTab } from '@/components/screenshot-annotation/ScreenshotAnnotationTab'
+import ScreenshotAnnotationTab from '@/components/screenshot-annotation/ScreenshotAnnotationTab'
+import { RequireProject } from '@/components/require-project'
 import { toast } from 'sonner'
 
 export default function AnnotationsPage() {
@@ -40,5 +41,9 @@ export default function AnnotationsPage() {
     return null
   }
 
-  return <ScreenshotAnnotationTab states={states} />
+  return (
+    <RequireProject pageName="Annotations">
+      <ScreenshotAnnotationTab states={states} />
+    </RequireProject>
+  )
 }

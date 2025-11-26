@@ -4,6 +4,8 @@ API endpoints for code package management.
 Provides REST API for publishing, discovering, and installing community code packages.
 """
 
+from uuid import UUID
+
 import structlog
 from app.api.deps import current_active_user, get_async_db
 from app.crud import code_package as crud
@@ -690,7 +692,7 @@ async def uninstall_package(
 
 @router.get("/projects/{project_id}/packages", response_model=ProjectPackagesResponse)
 async def list_project_packages(
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_db),
 ):

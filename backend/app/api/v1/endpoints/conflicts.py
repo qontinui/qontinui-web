@@ -36,7 +36,7 @@ router = APIRouter()
 
 
 async def verify_project_permission(
-    db: AsyncSession, project_id: int, user: User, required_permission: str
+    db: AsyncSession, project_id: UUID, user: User, required_permission: str
 ) -> None:
     """Verify user has required project permission."""
     has_access = await collaboration_service.check_user_has_access(
@@ -50,7 +50,7 @@ async def verify_project_permission(
         )
 
 
-async def get_project_or_404(db: AsyncSession, project_id: int) -> Project:
+async def get_project_or_404(db: AsyncSession, project_id: UUID) -> Project:
     """Get project or raise 404."""
     result = await db.execute(select(Project).filter(Project.id == project_id))
     project = result.scalar_one_or_none()
@@ -74,7 +74,7 @@ async def list_conflicts(
     *,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
-    project_id: int | None = Query(None, description="Filter by project ID"),
+    project_id: UUID | None = Query(None, description="Filter by project ID"),
     resource_type: str | None = Query(None, description="Filter by resource type"),
     resource_id: str | None = Query(None, description="Filter by resource ID"),
     resolved: bool | None = Query(None, description="Filter by resolved status"),
@@ -148,7 +148,7 @@ async def list_conflicts(
 async def list_project_conflicts(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
     resource_type: str | None = Query(None),
     resource_id: str | None = Query(None),
@@ -431,7 +431,7 @@ async def resolve_conflict(
 async def get_project_conflict_summary(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """

@@ -17,7 +17,12 @@
  */
 
 import { BackgroundRemovalTab } from '@/components/background-removal/BackgroundRemovalTab'
+import { RequireProject } from '@/components/require-project'
 
 export default function BackgroundRemovalPage() {
-  return <BackgroundRemovalTab />
+  return (
+    <RequireProject pageName="Remove Background">
+      <BackgroundRemovalTab />
+    </RequireProject>
+  )
 }

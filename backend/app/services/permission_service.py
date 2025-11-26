@@ -69,7 +69,7 @@ class PermissionService:
         self,
         db: AsyncSession,
         user_id: UUID,
-        project_id: int,
+        project_id: UUID,
         required_level: PermissionLevel,
     ) -> bool:
         """
@@ -141,7 +141,7 @@ class PermissionService:
             return False
 
     async def get_user_permission_level(
-        self, db: AsyncSession, user_id: UUID, project_id: int
+        self, db: AsyncSession, user_id: UUID, project_id: UUID
     ) -> Optional[PermissionLevel]:
         """
         Get the highest permission level a user has for a project.
@@ -338,7 +338,10 @@ class PermissionService:
                             ),
                         )
                     )
-                    .distinct()
+                    # Use distinct on id only - full distinct fails because
+                    # json columns don't have equality operators in PostgreSQL
+                    .distinct(Project.id)
+                    .order_by(Project.id)  # Required for DISTINCT ON in PostgreSQL
                     .options(selectinload(Project.owner))
                 )
                 shared_projects = list(shared_result.scalars().all())

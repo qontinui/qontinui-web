@@ -13,7 +13,7 @@ import { ApiConfig } from "@/services/api-config"
 import { authService } from "@/services/service-factory"
 
 export default function UsersTab() {
-  const { data: users = [], isLoading: loading, refetch } = useAdminUsers({ limit: 1000 })
+  const { data: users = [], isLoading: loading, error, refetch } = useAdminUsers({ limit: 1000 })
   const [searchTerm, setSearchTerm] = useState("")
   const [tierFilter, setTierFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
@@ -123,6 +123,15 @@ export default function UsersTab() {
 
   if (loading) {
     return <div className="text-center text-muted-foreground">Loading users...</div>
+  }
+
+  if (error) {
+    return (
+      <div className="text-center text-red-500 space-y-2">
+        <div>Error loading users</div>
+        <div className="text-sm text-muted-foreground">{error.message}</div>
+      </div>
+    )
   }
 
   return (

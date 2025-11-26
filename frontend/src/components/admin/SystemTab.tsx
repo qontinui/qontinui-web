@@ -40,6 +40,7 @@ interface SystemHealth {
 export default function SystemTab() {
   const [health, setHealth] = useState<SystemHealth | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     loadSystemHealth()
@@ -68,11 +69,16 @@ export default function SystemTab() {
       if (response.ok) {
         const data = await response.json()
         setHealth(data)
+        setError(null)
       } else {
+        const errorText = await response.text().catch(() => 'Unknown error')
+        setError(`Failed to load system health: ${response.status} - ${errorText}`)
         toast.error('Failed to load system health')
       }
-    } catch (error) {
-      console.error('Failed to load system health:', error)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+      setError(`Failed to load system health: ${errorMsg}`)
+      console.error('Failed to load system health:', err)
       toast.error('Failed to load system health')
     } finally {
       setLoading(false)
@@ -99,6 +105,15 @@ export default function SystemTab() {
 
   if (loading) {
     return <div className="text-center text-muted-foreground">Loading system health...</div>
+  }
+
+  if (error) {
+    return (
+      <div className="text-center text-red-500 space-y-2">
+        <div>Error loading system health</div>
+        <div className="text-sm text-muted-foreground">{error}</div>
+      </div>
+    )
   }
 
   if (!health) {

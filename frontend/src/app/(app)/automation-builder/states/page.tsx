@@ -12,8 +12,25 @@
  * - Associate GUI elements with states for recognition
  */
 
+import { Suspense } from 'react'
 import { StateStructure } from '@/components/state-machine'
+import { RequireProject } from '@/components/require-project'
+import { Loader2 } from 'lucide-react'
+
+function LoadingFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
+    </div>
+  )
+}
 
 export default function StatesPage() {
-  return <StateStructure />
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <RequireProject pageName="States">
+        <StateStructure />
+      </RequireProject>
+    </Suspense>
+  )
 }

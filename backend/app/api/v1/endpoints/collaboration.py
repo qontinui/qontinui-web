@@ -51,7 +51,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-async def get_project_or_404(db: AsyncSession, project_id: int) -> Project:
+async def get_project_or_404(db: AsyncSession, project_id: UUID) -> Project:
     """Get project or raise 404."""
     result = await db.execute(select(Project).filter(Project.id == project_id))
     project = result.scalar_one_or_none()
@@ -66,7 +66,7 @@ async def get_project_or_404(db: AsyncSession, project_id: int) -> Project:
 
 
 async def verify_project_permission(
-    db: AsyncSession, project_id: int, user: User, required_permission: str
+    db: AsyncSession, project_id: UUID, user: User, required_permission: str
 ) -> None:
     """Verify user has required project permission."""
     has_access = await collaboration_service.check_user_has_access(
@@ -93,7 +93,7 @@ async def verify_project_permission(
 async def share_project(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     share_request: ProjectShareRequest,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
@@ -209,7 +209,7 @@ async def share_project(
 async def list_project_collaborators(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
@@ -258,7 +258,7 @@ async def list_project_collaborators(
 async def update_collaborator_permissions(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     collaborator_id: UUID,
     update: ProjectShareUpdate,
     current_user: User = Depends(get_current_active_user_async),
@@ -309,7 +309,7 @@ async def update_collaborator_permissions(
 async def revoke_collaborator_access(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     collaborator_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
 ) -> None:
@@ -357,7 +357,7 @@ async def revoke_collaborator_access(
 async def acquire_lock(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     lock_request: LockRequest,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
@@ -420,7 +420,7 @@ async def acquire_lock(
 async def release_lock(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     lock_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
 ) -> None:
@@ -449,7 +449,7 @@ async def release_lock(
 async def extend_lock(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     lock_id: UUID,
     extend_request: LockExtendRequest,
     current_user: User = Depends(get_current_active_user_async),
@@ -501,7 +501,7 @@ async def extend_lock(
 async def get_project_locks(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
     resource_type: str | None = Query(None),
     resource_id: str | None = Query(None),
@@ -553,7 +553,7 @@ async def get_project_locks(
 async def create_comment(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     comment_in: CommentCreate,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
@@ -670,7 +670,7 @@ async def create_comment(
 async def list_comments(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
     workflow_id: str | None = Query(None),
     action_id: str | None = Query(None),
@@ -737,7 +737,7 @@ async def list_comments(
 async def update_comment(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     comment_id: UUID,
     comment_update: CommentUpdate,
     current_user: User = Depends(get_current_active_user_async),
@@ -798,7 +798,7 @@ async def update_comment(
 async def delete_comment(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     comment_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
 ) -> None:
@@ -844,7 +844,7 @@ async def delete_comment(
 async def resolve_comment(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     comment_id: UUID,
     resolve_request: CommentResolveRequest,
     current_user: User = Depends(get_current_active_user_async),
@@ -904,7 +904,7 @@ async def resolve_comment(
 async def get_project_activity(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
     action_type: str | None = Query(None),
     resource_type: str | None = Query(None),

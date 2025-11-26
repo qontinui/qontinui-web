@@ -13,6 +13,7 @@ Provides endpoints for managing project files and directories:
 from datetime import datetime
 from pathlib import Path
 from typing import List
+from uuid import UUID
 
 import structlog
 from app.api import deps
@@ -109,7 +110,7 @@ def sanitize_filename(filename: str) -> str:
 
 async def scan_python_file_for_functions(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     file_path: str,
     content: str,
 ) -> int:
@@ -217,7 +218,7 @@ async def list_project_files(
     *,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    project_id: int,
+    project_id: UUID,
     directory: str = ".",
 ) -> FileListResponse:
     """
@@ -307,7 +308,7 @@ async def upload_project_file(
     *,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    project_id: int,
+    project_id: UUID,
     request: FileUploadRequest,
 ) -> FileUploadResponse:
     """
@@ -418,7 +419,7 @@ async def get_project_file(
     *,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    project_id: int,
+    project_id: UUID,
     file_path: str,
 ) -> FileContentResponse:
     """
@@ -515,7 +516,7 @@ async def update_project_file(
     *,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    project_id: int,
+    project_id: UUID,
     file_path: str,
     request: FileUpdateRequest,
 ) -> FileUploadResponse:
@@ -620,7 +621,7 @@ async def delete_project_file(
     *,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    project_id: int,
+    project_id: UUID,
     file_path: str,
 ) -> FileDeleteResponse:
     """
@@ -718,7 +719,7 @@ async def create_project_folder(
     *,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    project_id: int,
+    project_id: UUID,
     request: FolderCreateRequest,
 ) -> FolderCreateResponse:
     """
@@ -802,7 +803,7 @@ async def get_project_limits(
     *,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.current_active_user),
-    project_id: int,
+    project_id: UUID,
 ) -> ProjectLimitsResponse:
     """
     Get project size and file count limits.

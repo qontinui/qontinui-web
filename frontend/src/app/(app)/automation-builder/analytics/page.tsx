@@ -14,6 +14,8 @@
 
 'use client';
 
+import { RequireProject } from '@/components/require-project';
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -597,6 +599,7 @@ export default function WorkflowAnalyticsPage() {
   const hasActiveFilters = filters.folder || filters.tag || filters.status !== 'all' || filters.searchQuery;
 
   return (
+    <RequireProject pageName="Workflow Analytics">
     <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white p-6">
       <div className="max-w-[1800px] mx-auto space-y-6">
         {/* Header */}
@@ -1114,5 +1117,6 @@ export default function WorkflowAnalyticsPage() {
         )}
       </div>
     </div>
+    </RequireProject>
   );
 }

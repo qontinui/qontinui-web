@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { DeficiencyList } from '@/components/testing/DeficiencyList';
 import { ArrowLeft } from 'lucide-react';
+import { RequireProject } from '@/components/require-project';
 
 export default function DeficienciesPage() {
   const { user, loading: authLoading } = useAuth();
@@ -37,6 +38,7 @@ export default function DeficienciesPage() {
   }
 
   return (
+    <RequireProject pageName="Deficiencies">
     <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
       {/* Header */}
       <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
@@ -72,5 +74,6 @@ export default function DeficienciesPage() {
         />
       </main>
     </div>
+    </RequireProject>
   );
 }

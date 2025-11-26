@@ -24,6 +24,7 @@ interface AnalyticsData {
 export default function AnalyticsTab() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     loadAnalytics()
@@ -49,11 +50,16 @@ export default function AnalyticsTab() {
       if (response.ok) {
         const data = await response.json()
         setAnalytics(data)
+        setError(null)
       } else {
+        const errorText = await response.text().catch(() => 'Unknown error')
+        setError(`Failed to load analytics: ${response.status} - ${errorText}`)
         toast.error('Failed to load analytics')
       }
-    } catch (error) {
-      console.error('Failed to load analytics:', error)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+      setError(`Failed to load analytics: ${errorMsg}`)
+      console.error('Failed to load analytics:', err)
       toast.error('Failed to load analytics')
     } finally {
       setLoading(false)
@@ -69,6 +75,15 @@ export default function AnalyticsTab() {
 
   if (loading) {
     return <div className="text-center text-muted-foreground">Loading analytics...</div>
+  }
+
+  if (error) {
+    return (
+      <div className="text-center text-red-500 space-y-2">
+        <div>Error loading analytics</div>
+        <div className="text-sm text-muted-foreground">{error}</div>
+      </div>
+    )
   }
 
   if (!analytics) {

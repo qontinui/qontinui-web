@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Loader2, Monitor, History, Key, Plus } from "lucide-react"
+import { ArrowLeft, Loader2, Monitor, History, Key, Plus, WifiOff, RefreshCw } from "lucide-react"
 import { CreateTokenDialog } from "@/components/runners/CreateTokenDialog"
 import { RunnerTokenCard } from "@/components/runners/RunnerTokenCard"
 import { ActiveConnectionsList } from "@/components/runners/ActiveConnectionsList"
@@ -25,7 +25,7 @@ export default function RunnersPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("active");
 
-  const { data: tokens, isLoading: tokensLoading } = useRunnerTokens();
+  const { data: tokens, isLoading: tokensLoading, error: tokensError, refetch: refetchTokens, isRefetching: isRefetchingTokens } = useRunnerTokens();
   const { data: activeConnections } = useActiveConnections(5000);
   const revokeMutation = useRevokeRunnerToken();
   const deleteMutation = useDeleteRunnerToken();
@@ -184,6 +184,37 @@ export default function RunnersPage() {
                 <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF]" />
                 <span className="ml-3 text-gray-400">Loading tokens...</span>
               </div>
+            ) : tokensError ? (
+              <Card className="bg-[#1A1A1B] border-gray-800 p-12">
+                <div className="text-center">
+                  <WifiOff className="w-16 h-16 mx-auto text-gray-600 mb-4" />
+                  <h3 className="text-xl font-semibold text-gray-300 mb-2">
+                    Unable to Load Tokens
+                  </h3>
+                  <p className="text-gray-400 mb-6 max-w-md mx-auto">
+                    {tokensError.message?.includes('fetch failed') || tokensError.message?.includes('proxy')
+                      ? 'The backend server appears to be offline or unreachable. Please ensure the server is running and try again.'
+                      : tokensError.message || 'An unexpected error occurred while loading tokens.'}
+                  </p>
+                  <Button
+                    onClick={() => refetchTokens()}
+                    disabled={isRefetchingTokens}
+                    className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+                  >
+                    {isRefetchingTokens ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Retrying...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Try Again
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </Card>
             ) : !tokens || tokens.length === 0 ? (
               <Card className="bg-[#1A1A1B] border-gray-800 p-12">
                 <div className="text-center">

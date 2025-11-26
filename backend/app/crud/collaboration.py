@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # ProjectLock CRUD
 async def get_active_locks(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     resource_id: Optional[str] = None,
 ) -> List[ProjectLock]:
     """
@@ -100,7 +100,7 @@ async def cleanup_expired_locks(db: AsyncSession) -> int:
 # ProjectComment CRUD
 async def get_project_comments(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     workflow_id: Optional[str] = None,
     action_id: Optional[str] = None,
     include_resolved: bool = False,
@@ -161,7 +161,7 @@ async def get_comment(
 
 async def create_comment(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     author_id: UUID,
     content: str,
     workflow_id: Optional[str] = None,
@@ -262,7 +262,7 @@ async def delete_comment(
 
 async def get_comment_count(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     workflow_id: Optional[str] = None,
     include_resolved: bool = False,
 ) -> int:
@@ -295,7 +295,7 @@ async def get_comment_count(
 # ActivityLog CRUD
 async def get_project_activities(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     action_type: Optional[ActionType] = None,
     resource_type: Optional[ResourceType] = None,
     resource_id: Optional[str] = None,
@@ -346,7 +346,7 @@ async def get_project_activities(
 
 async def create_activity(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     user_id: UUID,
     action_type: ActionType,
     resource_type: ResourceType,
@@ -390,7 +390,7 @@ async def create_activity(
 
 async def get_recent_activity_count(
     db: AsyncSession,
-    project_id: int,
+    project_id: UUID,
     minutes: int = 60,
 ) -> int:
     """

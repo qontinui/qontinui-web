@@ -10,6 +10,7 @@ Provides REST API for:
 """
 
 from typing import Any
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -40,7 +41,7 @@ router = APIRouter()
 async def list_project_versions(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     current_user: User = Depends(get_current_active_user_async),
@@ -95,7 +96,7 @@ async def list_project_versions(
 async def get_project_version(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     version_number: int,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
@@ -150,7 +151,7 @@ async def get_project_version(
 async def restore_project_version(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     version_number: int,
     restore_request: VersionRestoreRequest,
     current_user: User = Depends(get_current_active_user_async),
@@ -227,7 +228,7 @@ async def restore_project_version(
 async def compare_project_versions(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     version_from: int,
     version_to: int,
     current_user: User = Depends(get_current_active_user_async),
@@ -296,7 +297,7 @@ async def compare_project_versions(
 async def get_project_command_history(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: int,
+    project_id: UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     current_user: User = Depends(get_current_active_user_async),

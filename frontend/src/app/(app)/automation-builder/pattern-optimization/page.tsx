@@ -15,7 +15,12 @@
  */
 
 import { PatternOptimizationSimplified } from '@/components/pattern-optimization/PatternOptimizationSimplified'
+import { RequireProject } from '@/components/require-project'
 
 export default function PatternOptimizationPage() {
-  return <PatternOptimizationSimplified />
+  return (
+    <RequireProject pageName="Optimize Patterns">
+      <PatternOptimizationSimplified />
+    </RequireProject>
+  )
 }

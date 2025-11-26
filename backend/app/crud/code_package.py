@@ -428,7 +428,7 @@ async def get_trending_packages(
 
 
 async def install_package(
-    db: AsyncSession, project_id: int, package_id: int, version_id: int, user_id: UUID
+    db: AsyncSession, project_id: UUID, package_id: int, version_id: int, user_id: UUID
 ) -> PackageInstallation:
     """
     Install a package to a project.
@@ -512,7 +512,7 @@ async def install_package(
     return installation
 
 
-async def uninstall_package(db: AsyncSession, project_id: int, package_id: int) -> bool:
+async def uninstall_package(db: AsyncSession, project_id: UUID, package_id: int) -> bool:
     """
     Uninstall a package from a project.
 
@@ -558,7 +558,7 @@ async def uninstall_package(db: AsyncSession, project_id: int, package_id: int) 
 
 
 async def get_project_packages(
-    db: AsyncSession, project_id: int
+    db: AsyncSession, project_id: UUID
 ) -> list[PackageInstallation]:
     """Get all packages installed in a project."""
     result = await db.execute(

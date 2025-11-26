@@ -5,6 +5,9 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Prevent Next.js from stripping trailing slashes on API routes
+  // FastAPI requires trailing slashes on some endpoints
+  skipTrailingSlashRedirect: true,
   eslint: {
     // Warning: This allows production builds to successfully complete even if
     // your project has ESLint errors.

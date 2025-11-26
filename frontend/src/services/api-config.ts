@@ -12,4 +12,12 @@ export class ApiConfig {
   static readonly AUTH_LOGOUT = `${ApiConfig.API_BASE_URL}/api/v1/auth/jwt/logout`;
   static readonly AUTH_REFRESH = `${ApiConfig.API_BASE_URL}/api/v1/auth/jwt/refresh`;
   static readonly USERS_ME = `${ApiConfig.API_BASE_URL}/api/v1/auth/users/me`;
+
+  /**
+   * Get the base URL for API requests
+   * Returns empty string for relative URLs (uses Next.js proxy)
+   */
+  static getBaseUrl(): string {
+    return ApiConfig.API_BASE_URL;
+  }
 }

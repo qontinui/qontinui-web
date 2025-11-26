@@ -1,116 +1,147 @@
 "use client"
 
 /**
- * Simplified Automation Builder
+ * Automation Builder Component
  *
- * This component shows just the workflow editor without the complex tab navigation.
- * Individual features (states, images, testing, etc.) are now accessed via the
- * left sidebar navigation.
+ * Single Responsibility: Compose project management UI.
+ * This component orchestrates the hooks and renders the workflow editor.
+ *
+ * Hooks used (each with single responsibility):
+ * - useProjectLoader: Load project from URL/backend
+ * - useProjectAutoSave: Handle auto-saving
+ * - useProjectNameEditor: Handle inline name editing
  */
 
-import { useEffect, useState, useRef } from "react"
-import { useSearchParams } from "next/navigation"
+import { Suspense } from "react"
 import { AutomationBuilder as UnifiedAutomationBuilder } from "@/components/automation-builder/AutomationBuilder"
-import { toast } from "sonner"
-import { AutomationProvider, useAutomation } from "@/contexts/automation-context"
-import { projectService } from "@/services/service-factory"
+import { useAutomation } from "@/contexts/automation-context"
+import { useProjectLoader } from "@/hooks/use-project-loader"
+import { useProjectAutoSave } from "@/hooks/use-project-auto-save"
+import { useProjectNameEditor } from "@/hooks/use-project-name-editor"
+import { projectLogger } from "@/lib/project-logger"
+import { Pencil, Check, X, Loader2 } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 
-function AutomationBuilderContent() {
-  const [currentProjectId, setCurrentProjectId] = useState<number | null>(null)
-  const previousProjectName = useRef<string>('')
-  const searchParams = useSearchParams()
+/**
+ * Project Header Component
+ *
+ * Single Responsibility: Render the project name header with edit functionality.
+ */
+function ProjectHeader({
+  projectId,
+}: {
+  projectId: string | null
+}) {
+  const { projectName, lastSaved } = useAutomation()
 
   const {
-    projectName,
-    setProjectName,
-    lastSaved,
-    triggerSave,
-    getConfiguration,
-    loadConfiguration,
-    workflows,
-    states,
-    transitions,
-    images,
-    setProjectId
-  } = useAutomation()
-
-  // Load project from URL parameter
-  useEffect(() => {
-    const projectId = searchParams.get('project')
-    if (projectId) {
-      loadProjectFromBackend(projectId)
-    }
-  }, [searchParams])
-
-  // Sync projectId to context
-  useEffect(() => {
-    setProjectId(currentProjectId)
-  }, [currentProjectId, setProjectId])
-
-  // Auto-save to localStorage
-  useEffect(() => {
-    const interval = setInterval(() => {
-      triggerSave()
-    }, 2000)
-    return () => clearInterval(interval)
-  }, [triggerSave])
-
-  // Auto-save to backend
-  useEffect(() => {
-    if (!currentProjectId) return
-
-    const interval = setInterval(() => {
-      saveConfigurationToBackend()
-    }, 10000)
-    return () => clearInterval(interval)
-  }, [currentProjectId, workflows, states, transitions, images])
-
-  const loadProjectFromBackend = async (projectId: string) => {
-    try {
-      if (!projectId || isNaN(Number(projectId))) {
-        console.warn('[automation-builder] Invalid project ID:', projectId)
-        return
-      }
-
-      const project = await projectService.getProject(Number(projectId))
-      await loadConfiguration(project.configuration)
-      setProjectName(project.name)
-      setCurrentProjectId(project.id)
-      previousProjectName.current = project.name
-    } catch (error) {
-      console.error('Failed to load project:', error)
-      toast.error('Failed to load project')
-    }
-  }
-
-  const saveConfigurationToBackend = async () => {
-    if (!currentProjectId) return
-
-    try {
-      const config = getConfiguration()
-      await projectService.updateProject(currentProjectId.toString(), {
-        configuration: config,
-      })
-    } catch (error) {
-      console.error('Failed to save configuration:', error)
-    }
-  }
+    isEditing,
+    editedName,
+    inputRef,
+    startEditing,
+    cancelEditing,
+    saveName,
+    setEditedName,
+    handleKeyDown,
+  } = useProjectNameEditor({ projectId })
 
   return (
-    <div className="h-full w-full flex flex-col bg-[#1E1E1E]">
-      {/* Project Name Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-semibold text-white">
-            {projectName || 'Untitled Project'}
-          </h1>
-          {lastSaved && (
-            <span className="text-sm text-gray-400">
-              Last saved: {new Date(lastSaved).toLocaleTimeString()}
-            </span>
-          )}
-        </div>
+    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+      <div className="flex items-center gap-4">
+        {isEditing ? (
+          <div className="flex items-center gap-2">
+            <Input
+              ref={inputRef}
+              value={editedName}
+              onChange={(e) => setEditedName(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={cancelEditing}
+              className="h-8 w-64 bg-gray-800 border-gray-600 text-white text-xl font-semibold"
+              placeholder="Project name"
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={saveName}
+              className="h-8 w-8 p-0 text-green-500 hover:text-green-400 hover:bg-gray-700"
+            >
+              <Check className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={cancelEditing}
+              className="h-8 w-8 p-0 text-red-500 hover:text-red-400 hover:bg-gray-700"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <div
+            className="flex items-center gap-2 group cursor-pointer"
+            onClick={startEditing}
+          >
+            <h1 className="text-xl font-semibold text-white group-hover:text-[#00D9FF] transition-colors">
+              {projectName || 'Untitled Project'}
+            </h1>
+            <Pencil className="h-4 w-4 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        )}
+        {lastSaved && (
+          <span className="text-sm text-gray-400">
+            Last saved: {new Date(lastSaved).toLocaleTimeString()}
+          </span>
+        )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Loading Indicator Component
+ */
+function LoadingOverlay() {
+  return (
+    <div className="absolute inset-0 bg-[#1E1E1E]/80 flex items-center justify-center z-50">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
+        <span className="text-white">Loading project...</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Main Content Component
+ *
+ * Single Responsibility: Orchestrate hooks and compose the UI.
+ */
+function AutomationBuilderContent() {
+  // Project loading from URL
+  const { projectId, isLoading, error } = useProjectLoader()
+
+  projectLogger.debug('AutomationBuilder', 'Render', {
+    projectId,
+    isLoading,
+    hasError: !!error,
+  })
+
+  // Auto-save functionality
+  useProjectAutoSave({
+    projectId,
+    enabled: !isLoading && projectId !== null,
+  })
+
+  return (
+    <div className="h-full w-full flex flex-col bg-[#1E1E1E] relative">
+      {/* Loading Overlay */}
+      {isLoading && <LoadingOverlay />}
+
+      {/* Project Name Header */}
+      <ProjectHeader projectId={projectId} />
 
       {/* Workflow Editor */}
       <div className="flex-1 min-h-0">
@@ -120,10 +151,22 @@ function AutomationBuilderContent() {
   )
 }
 
+/**
+ * Exported Component with Suspense Boundary
+ *
+ * Note: AutomationProvider is already provided by the app layout.
+ * Don't wrap again here or RequireProject won't see the projectId.
+ */
 export default function AutomationBuilder() {
   return (
-    <AutomationProvider>
+    <Suspense
+      fallback={
+        <div className="h-full w-full flex items-center justify-center bg-[#1E1E1E]">
+          <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
+        </div>
+      }
+    >
       <AutomationBuilderContent />
-    </AutomationProvider>
+    </Suspense>
   )
 }

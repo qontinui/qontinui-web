@@ -17,6 +17,7 @@ import { LockService } from './collaboration/lock-service';
 import { CommentService } from './collaboration/comment-service';
 import { ActivityService } from './collaboration/activity-service';
 import { TestingService } from './testing-service';
+import { RecordingService } from './recording-service';
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -43,6 +44,7 @@ export class ServiceFactory {
   public readonly commentService: CommentService;
   public readonly activityService: ActivityService;
   public readonly testingService: TestingService;
+  public readonly recordingService: RecordingService;
 
   private constructor() {
     // Initialize auth services in dependency order
@@ -70,6 +72,9 @@ export class ServiceFactory {
 
     // Initialize testing service
     this.testingService = new TestingService(this.httpClient);
+
+    // Initialize recording service
+    this.recordingService = new RecordingService(this.httpClient);
 
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
@@ -109,3 +114,4 @@ export const lockService = factory.lockService;
 export const commentService = factory.commentService;
 export const activityService = factory.activityService;
 export const testingService = factory.testingService;
+export const recordingService = factory.recordingService;

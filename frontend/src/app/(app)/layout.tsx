@@ -5,12 +5,14 @@ import { AuthProvider } from "@/contexts/auth-context";
 import { AutomationProvider } from "@/contexts/automation-context";
 import { OrganizationProvider } from "@/contexts/organization-context";
 import { SidebarProvider, useSidebar } from "@/contexts/sidebar-context";
+import { TabStateProvider } from "@/contexts/tab-state-context";
 import { OfflineIndicator } from "@/components/offline/OfflineIndicator";
 import { SyncQueueViewer } from "@/components/offline/SyncQueueViewer";
 import { AppInitializer } from "@/components/offline/AppInitializer";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { SessionTimeoutWarning } from "@/components/session-timeout-warning";
 import { UnifiedSidebar } from "@/components/navigation";
+import { BetaBanner } from "@/components/beta-banner";
 import { cn } from "@/lib/utils";
 // Tutorial system imports - files pending restoration
 // import { TutorialProvider } from "@/components/tutorial/integration/TutorialProvider";
@@ -27,12 +29,15 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background">
       <UnifiedSidebar />
-      <main className={cn(
-        "flex-1 transition-all duration-300",
+      <div className={cn(
+        "flex-1 flex flex-col transition-all duration-300",
         isCollapsed ? "ml-16" : "ml-64"
       )}>
-        {children}
-      </main>
+        <BetaBanner />
+        <main className="flex-1">
+          {children}
+        </main>
+      </div>
       <OfflineIndicator />
       <SyncQueueViewer />
       <OnboardingTour />
@@ -51,11 +56,13 @@ export default function AppLayout({
       <OrganizationProvider>
         <SidebarProvider>
           <AutomationProvider>
-            <AppInitializer>
-              <AppLayoutContent>
-                {children}
-              </AppLayoutContent>
-            </AppInitializer>
+            <TabStateProvider>
+              <AppInitializer>
+                <AppLayoutContent>
+                  {children}
+                </AppLayoutContent>
+              </AppInitializer>
+            </TabStateProvider>
           </AutomationProvider>
         </SidebarProvider>
       </OrganizationProvider>

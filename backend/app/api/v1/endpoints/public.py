@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import UUID
 
 import structlog
 from app.api.deps import get_async_db
@@ -47,7 +48,7 @@ async def read_public_projects(
 
 @router.get("/projects/{project_id}", response_model=Project)
 async def read_public_project(
-    project_id: int,
+    project_id: UUID,
     db: AsyncSession = Depends(get_async_db),
 ) -> Any:
     """
