@@ -716,7 +716,7 @@ class NotificationService:
                 if hasattr(preferences, key):
                     setattr(preferences, key, value)
 
-            preferences.updated_at = datetime.utcnow()
+            preferences.updated_at = datetime.utcnow()  # type: ignore[assignment]
             await db.commit()
             await db.refresh(preferences)
 
