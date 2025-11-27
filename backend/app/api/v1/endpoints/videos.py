@@ -10,15 +10,16 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.automation_video import AutomationVideo
 from app.models.user import User
 from app.services.limit_checker import LimitChecker
 from app.services.object_storage import object_storage
 from app.services.storage_service import StorageQuotaExceeded, StorageService
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -332,7 +333,12 @@ async def upload_session_video(
             error=str(e),
         )
         # Generate a fallback URL
-        presigned_url = f"https://{object_storage.backend.bucket_name}.s3.{object_storage.backend.region}.amazonaws.com/{s3_key}"
+        from app.services.object_storage import S3Backend
+
+        if isinstance(object_storage.backend, S3Backend):
+            presigned_url = f"https://{object_storage.backend.bucket_name}.s3.{object_storage.backend.region}.amazonaws.com/{s3_key}"
+        else:
+            presigned_url = f"/uploads/{s3_key}"
 
     logger.info(
         "video_upload_complete",
@@ -412,12 +418,13 @@ async def get_session_video(
 
     # Verify file exists in S3
     try:
-        exists = object_storage.file_exists(video.s3_key)
+        s3_key = str(video.s3_key)
+        exists = object_storage.file_exists(s3_key)
         if not exists:
             logger.error(
                 "video_file_missing_in_s3",
                 video_id=video.id,
-                s3_key=video.s3_key,
+                s3_key=s3_key,
             )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -429,7 +436,7 @@ async def get_session_video(
         logger.error(
             "s3_video_exists_check_failed",
             video_id=video.id,
-            s3_key=video.s3_key,
+            s3_key=str(video.s3_key),
             error=str(e),
         )
         raise HTTPException(
@@ -440,7 +447,7 @@ async def get_session_video(
     # Generate presigned URL
     try:
         presigned_url = object_storage.generate_presigned_url(
-            video.s3_key, expiration=VIDEO_PRESIGNED_URL_EXPIRATION
+            str(video.s3_key), expiration=VIDEO_PRESIGNED_URL_EXPIRATION
         )
     except Exception as e:
         logger.error(
@@ -517,7 +524,7 @@ async def delete_session_video(
             detail=f"Video not found for session {session_id}",
         )
 
-    s3_key = video.s3_key
+    s3_key = str(video.s3_key)
 
     # Delete from S3
     try:

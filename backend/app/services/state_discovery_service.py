@@ -5,22 +5,22 @@ Analyzes automation sessions to discover states and state transitions.
 """
 
 import time
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import datetime
+from typing import Any, cast
 from uuid import UUID
 
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.automation import AutomationInputEvent
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
-from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.schemas.state_discovery import (
     DiscoveredState,
     StateDiscoveryResponse,
     StateTransition,
 )
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -146,6 +146,7 @@ class StateDiscoveryService:
                 states=[],
                 algorithm="timestamp_clustering",
                 parameters=parameters,
+                processing_time_ms=0.0,
             )
 
         # Cluster screenshots into states
@@ -192,8 +193,8 @@ class StateDiscoveryService:
             nearest_state = StateDiscoveryService._find_state_for_input(
                 input_event, states, screenshots, max_input_distance
             )
-            if nearest_state:
-                nearest_state.input_events.append(input_event.id)
+            if nearest_state and input_event.id is not None:
+                nearest_state.input_events.append(int(input_event.id))
 
         # Create transitions based on input events
         StateDiscoveryService._create_transitions(states, input_events, screenshots)
@@ -208,6 +209,7 @@ class StateDiscoveryService:
             states=states,
             algorithm="timestamp_clustering",
             parameters=parameters,
+            processing_time_ms=0.0,
         )
 
     @staticmethod
@@ -288,7 +290,7 @@ class StateDiscoveryService:
         and is followed by a screenshot in a different state.
         """
         # Build screenshot ID to state mapping
-        screenshot_to_state: dict[int, DiscoveredState] = {}
+        screenshot_to_state: dict[UUID, DiscoveredState] = {}
         for state in states:
             for screenshot_id in state.screenshot_ids:
                 screenshot_to_state[screenshot_id] = state
@@ -301,7 +303,10 @@ class StateDiscoveryService:
             # Find the state containing this input event
             source_state = None
             for state in states:
-                if input_event.id in state.input_events:
+                if (
+                    input_event.id is not None
+                    and int(input_event.id) in state.input_events
+                ):
                     source_state = state
                     break
 
@@ -335,9 +340,15 @@ class StateDiscoveryService:
                 transition = StateTransition(
                     from_state_id=source_state.state_id,
                     to_state_id=target_state.state_id,
-                    trigger_event_id=input_event.id,
-                    event_type=input_event.event_type,
-                    timestamp=input_event.timestamp,
+                    trigger_event_id=(
+                        int(input_event.id) if input_event.id is not None else None
+                    ),
+                    event_type=(
+                        str(input_event.event_type.value)
+                        if input_event.event_type is not None
+                        else None
+                    ),
+                    timestamp=cast(datetime, input_event.timestamp),
                     confidence=1.0,
                 )
                 source_state.outgoing_transitions.append(transition)

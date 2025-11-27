@@ -7,7 +7,7 @@ Examples: Navigation bars, toolbars, static menus, persistent buttons.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -52,7 +52,7 @@ class StableRegionAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 2  # Need at least 2 to compare
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "variance_threshold": 0.05,  # Threshold for "stable" regions
             "min_area": 100,  # Minimum element area in pixels
@@ -93,7 +93,7 @@ class StableRegionAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -102,8 +102,8 @@ class StableRegionAnalyzer(BaseAnalyzer):
         return images
 
     async def _find_stable_regions(
-        self, images: List[np.ndarray], params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, images: list[np.ndarray], params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """
         Find regions with low variance across screenshots
 
@@ -143,7 +143,7 @@ class StableRegionAnalyzer(BaseAnalyzer):
 
     def _is_region_stable(
         self,
-        images: List[np.ndarray],
+        images: list[np.ndarray],
         x: int,
         y: int,
         width: int,
@@ -165,6 +165,6 @@ class StableRegionAnalyzer(BaseAnalyzer):
 
         # Stack regions and compute variance
         stacked = np.stack(regions)
-        variance = np.var(stacked, axis=0).mean()
+        variance: float = np.var(stacked, axis=0).mean()
 
         return variance < threshold

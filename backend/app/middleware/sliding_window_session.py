@@ -8,7 +8,12 @@ This middleware:
 4. Enforces absolute maximum session duration (MAX_SESSION_DAYS)
 """
 
+from typing import Any, cast
+
 import structlog
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -19,8 +24,6 @@ from app.core.security import (
 )
 from app.crud.session_activity import is_session_expired, update_last_activity
 from app.db.session import AsyncSessionLocal
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = structlog.get_logger(__name__)
 
@@ -37,10 +40,10 @@ class SlidingWindowSessionMiddleware(BaseHTTPMiddleware):
     - Gracefully handles cases when sliding window is disabled
     """
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
         # Skip if sliding window is disabled
         if not settings.SLIDING_WINDOW_ENABLED:
-            return await call_next(request)
+            return cast(Response, await call_next(request))
 
         # Skip health checks and static files
         if request.url.path in [
@@ -48,19 +51,19 @@ class SlidingWindowSessionMiddleware(BaseHTTPMiddleware):
             "/",
             "/favicon.ico",
         ] or request.url.path.startswith("/uploads"):
-            return await call_next(request)
+            return cast(Response, await call_next(request))
 
         # Get authorization header
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
-            return await call_next(request)
+            return cast(Response, await call_next(request))
 
         access_token = auth_header[7:]  # Remove "Bearer " prefix
 
         # Decode the access token
         token_payload = decode_token(access_token)
         if not token_payload or token_payload.get("type") != "access":
-            return await call_next(request)
+            return cast(Response, await call_next(request))
 
         # Get refresh token from cookie or header (if provided by client)
         refresh_token = request.cookies.get("refresh_token") or request.headers.get(
@@ -72,14 +75,17 @@ class SlidingWindowSessionMiddleware(BaseHTTPMiddleware):
             token_payload, settings.SLIDING_WINDOW_THRESHOLD_MINUTES
         ):
             if refresh_token:
+                # Get user_id and ensure it's a string
+                user_id = token_payload.get("sub")
+                if not user_id or not isinstance(user_id, str):
+                    return cast(Response, await call_next(request))
+
                 # Try to refresh the session
-                new_tokens = await self._refresh_session(
-                    token_payload.get("sub"), refresh_token
-                )
+                new_tokens = await self._refresh_session(user_id, refresh_token)
 
                 if new_tokens:
                     # Process the request
-                    response = await call_next(request)
+                    response = cast(Response, await call_next(request))
 
                     # Add new tokens to response headers
                     response.headers["X-New-Access-Token"] = new_tokens["access_token"]
@@ -89,7 +95,7 @@ class SlidingWindowSessionMiddleware(BaseHTTPMiddleware):
 
                     logger.info(
                         "sliding_window_refresh",
-                        user_id=token_payload.get("sub"),
+                        user_id=user_id,
                         path=request.url.path,
                     )
 
@@ -100,9 +106,11 @@ class SlidingWindowSessionMiddleware(BaseHTTPMiddleware):
             await self._update_session_activity(refresh_token)
 
         # Continue with normal request processing
-        return await call_next(request)
+        return cast(Response, await call_next(request))
 
-    async def _refresh_session(self, user_id: str, refresh_token: str) -> dict | None:
+    async def _refresh_session(
+        self, user_id: str, refresh_token: str
+    ) -> dict[str, str] | None:
         """
         Refresh the session by issuing new tokens.
 

@@ -8,14 +8,17 @@ from pathlib import Path
 backend_dir = Path(__file__).resolve().parent
 sys.path.insert(0, str(backend_dir))
 
+from passlib.context import CryptContext
+
 from app.db.session import SessionLocal
 from app.models.user import User
-from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Allow customization via command line or environment
-email = sys.argv[1] if len(sys.argv) > 1 else os.getenv("ADMIN_EMAIL", "admin@qontinui.com")
+email = (
+    sys.argv[1] if len(sys.argv) > 1 else os.getenv("ADMIN_EMAIL", "admin@qontinui.com")
+)
 username = sys.argv[2] if len(sys.argv) > 2 else os.getenv("ADMIN_USERNAME", "admin")
 password = sys.argv[3] if len(sys.argv) > 3 else os.getenv("ADMIN_PASSWORD", "admin123")
 
@@ -45,6 +48,7 @@ try:
 except Exception as e:
     print(f"Error: {e}")
     import traceback
+
     traceback.print_exc()
     db.rollback()
 finally:

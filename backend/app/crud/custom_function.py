@@ -9,10 +9,11 @@ from datetime import datetime
 from uuid import UUID
 
 import structlog
-from app.models.custom_function import CustomFunction
-from app.schemas.custom_function import CustomFunctionCreate, CustomFunctionUpdate
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.custom_function import CustomFunction
+from app.schemas.custom_function import CustomFunctionCreate, CustomFunctionUpdate
 
 logger = structlog.get_logger(__name__)
 
@@ -122,7 +123,7 @@ async def update_custom_function(
     for field, value in update_dict.items():
         setattr(function, field, value)
 
-    function.updated_at = datetime.utcnow()
+    function.updated_at = datetime.utcnow()  # type: ignore[assignment]
     await db.commit()
     await db.refresh(function)
 
@@ -439,7 +440,7 @@ async def upsert_custom_function(
         for field, value in function_data.model_dump(exclude_unset=True).items():
             setattr(existing, field, value)
 
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = datetime.utcnow()  # type: ignore[assignment]
         await db.commit()
         await db.refresh(existing)
 

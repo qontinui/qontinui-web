@@ -110,7 +110,9 @@ def add_deprecation_warning(
         response.headers["Link"] = f'<{successor}>; rel="successor-version"'
 
     # Add custom Warning header for human-readable message
-    warning_msg = f"This endpoint is deprecated and will be removed after {sunset_date}."
+    warning_msg = (
+        f"This endpoint is deprecated and will be removed after {sunset_date}."
+    )
     if successor:
         warning_msg += f" Use {successor} instead."
     response.headers["Warning"] = f'299 - "{warning_msg}"'

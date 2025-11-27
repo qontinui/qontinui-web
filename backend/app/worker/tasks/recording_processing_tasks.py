@@ -2,35 +2,38 @@
 ARQ tasks for recording processing and state discovery
 """
 
-from typing import Any, Dict, List
 import uuid
-import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
 from datetime import datetime
+from typing import Any
+
+import structlog
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.models.recording import (
-    Recording,
-    RecordingFrame,
-    RecordingInteraction,
     DiscoveredState,
     DiscoveredTransition,
     ProcessingLog,
-    RecordingStatus,
     ProcessingPhase,
+    Recording,
+    RecordingFrame,
+    RecordingInteraction,
+    RecordingStatus,
 )
 from app.services.frame_analysis_service import FrameAnalysisService
-from app.services.frame_state_discovery_service import FrameStateDiscoveryService as StateDiscoveryService
+from app.services.frame_state_discovery_service import (
+    FrameStateDiscoveryService as StateDiscoveryService,
+)
 from app.services.transition_discovery_service import TransitionDiscoveryService
 
 logger = structlog.get_logger(__name__)
 
 
 async def process_recording_task(
-    ctx: Dict[str, Any],
+    ctx: dict[str, Any],
     recording_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Process a recording to discover states and transitions
 
@@ -56,33 +59,70 @@ async def process_recording_task(
 
             # Update status
             recording.status = RecordingStatus.PROCESSING
-            recording.processing_started_at = datetime.utcnow()
+            recording.processing_started_at = datetime.utcnow()  # type: ignore[assignment]
             await db.commit()
 
             # Phase 1: Frame Analysis
-            await _log_phase(db, recording_id, ProcessingPhase.FRAME_ANALYSIS, "Starting frame analysis")
+            await _log_phase(
+                db,
+                recording_id,
+                ProcessingPhase.FRAME_ANALYSIS,
+                "Starting frame analysis",
+            )
             frames_data = await _phase_1_frame_analysis(db, recording_id)
-            await _update_progress(db, recording_id, ProcessingPhase.FRAME_ANALYSIS, 0.2)
+            await _update_progress(
+                db, recording_id, ProcessingPhase.FRAME_ANALYSIS, 0.2
+            )
 
             # Phase 2: State Identification
-            await _log_phase(db, recording_id, ProcessingPhase.STATE_IDENTIFICATION, "Identifying states from clusters")
+            await _log_phase(
+                db,
+                recording_id,
+                ProcessingPhase.STATE_IDENTIFICATION,
+                "Identifying states from clusters",
+            )
             states = await _phase_2_state_identification(db, recording_id, frames_data)
-            await _update_progress(db, recording_id, ProcessingPhase.STATE_IDENTIFICATION, 0.4)
+            await _update_progress(
+                db, recording_id, ProcessingPhase.STATE_IDENTIFICATION, 0.4
+            )
 
             # Phase 3: Interaction Processing
-            await _log_phase(db, recording_id, ProcessingPhase.INTERACTION_PROCESSING, "Processing interactions")
+            await _log_phase(
+                db,
+                recording_id,
+                ProcessingPhase.INTERACTION_PROCESSING,
+                "Processing interactions",
+            )
             interactions = await _phase_3_interaction_processing(db, recording_id)
-            await _update_progress(db, recording_id, ProcessingPhase.INTERACTION_PROCESSING, 0.6)
+            await _update_progress(
+                db, recording_id, ProcessingPhase.INTERACTION_PROCESSING, 0.6
+            )
 
             # Phase 4: Transition Discovery
-            await _log_phase(db, recording_id, ProcessingPhase.TRANSITION_DISCOVERY, "Discovering transitions")
-            transitions = await _phase_4_transition_discovery(db, recording_id, states, frames_data, interactions)
-            await _update_progress(db, recording_id, ProcessingPhase.TRANSITION_DISCOVERY, 0.8)
+            await _log_phase(
+                db,
+                recording_id,
+                ProcessingPhase.TRANSITION_DISCOVERY,
+                "Discovering transitions",
+            )
+            transitions = await _phase_4_transition_discovery(
+                db, recording_id, states, frames_data, interactions
+            )
+            await _update_progress(
+                db, recording_id, ProcessingPhase.TRANSITION_DISCOVERY, 0.8
+            )
 
             # Phase 5: State Machine Assembly & Optimization
-            await _log_phase(db, recording_id, ProcessingPhase.STATE_MACHINE_ASSEMBLY, "Assembling state machine")
+            await _log_phase(
+                db,
+                recording_id,
+                ProcessingPhase.STATE_MACHINE_ASSEMBLY,
+                "Assembling state machine",
+            )
             await _phase_5_optimization(db, recording_id, states, transitions)
-            await _update_progress(db, recording_id, ProcessingPhase.STATE_MACHINE_ASSEMBLY, 0.9)
+            await _update_progress(
+                db, recording_id, ProcessingPhase.STATE_MACHINE_ASSEMBLY, 0.9
+            )
 
             # Complete
             await _complete_processing(db, recording_id, states, transitions)
@@ -92,7 +132,7 @@ async def process_recording_task(
                 "recording_processing_completed",
                 recording_id=recording_id,
                 states_found=len(states),
-                transitions_found=len(transitions)
+                transitions_found=len(transitions),
             )
 
             return {
@@ -107,7 +147,7 @@ async def process_recording_task(
                 "recording_processing_failed",
                 recording_id=recording_id,
                 error=str(e),
-                exc_info=True
+                exc_info=True,
             )
 
             # Update recording with error
@@ -117,7 +157,7 @@ async def process_recording_task(
                 .values(
                     status=RecordingStatus.FAILED,
                     processing_error=str(e),
-                    processing_completed_at=datetime.utcnow()
+                    processing_completed_at=datetime.utcnow(),
                 )
             )
             await db.commit()
@@ -135,7 +175,7 @@ async def _log_phase(
     phase: ProcessingPhase,
     message: str,
     level: str = "info",
-    data: Dict[str, Any] = None
+    data: dict[str, Any] | None = None,
 ):
     """Log processing phase"""
     log_entry = ProcessingLog(
@@ -152,10 +192,7 @@ async def _log_phase(
 
 
 async def _update_progress(
-    db: AsyncSession,
-    recording_id: str,
-    phase: ProcessingPhase,
-    progress: float
+    db: AsyncSession, recording_id: str, phase: ProcessingPhase, progress: float
 ):
     """Update recording progress"""
     await db.execute(
@@ -164,16 +201,15 @@ async def _update_progress(
         .values(
             processing_phase=phase,
             processing_progress=progress,
-            updated_at=datetime.utcnow()
+            updated_at=datetime.utcnow(),
         )
     )
     await db.commit()
 
 
 async def _phase_1_frame_analysis(
-    db: AsyncSession,
-    recording_id: str
-) -> Dict[str, Any]:
+    db: AsyncSession, recording_id: str
+) -> dict[str, Any]:
     """
     Phase 1: Analyze frames and cluster by similarity
 
@@ -202,35 +238,39 @@ async def _phase_1_frame_analysis(
     for frame in frames:
         try:
             # Download and analyze frame
-            image = await frame_analysis.download_frame(frame.s3_key)
+            image = await frame_analysis.download_frame(str(frame.s3_key))
 
             if image:
                 # Compute hash
                 phash = frame_analysis.compute_perceptual_hash(image)
-                frame.perceptual_hash = phash
-                frame.phash_computed = True
+                frame.perceptual_hash = phash  # type: ignore[assignment]
+                frame.phash_computed = True  # type: ignore[assignment]
 
                 # Compute quality metrics
                 quality = frame_analysis.calculate_frame_quality(image)
-                frame.sharpness = quality["sharpness"]
-                frame.brightness = quality["brightness"]
-                frame.contrast = quality["contrast"]
+                frame.sharpness = quality["sharpness"]  # type: ignore[assignment]
+                frame.brightness = quality["brightness"]  # type: ignore[assignment]
+                frame.contrast = quality["contrast"]  # type: ignore[assignment]
 
                 perceptual_hashes.append(phash)
 
-                frame_data.append({
-                    "id": str(frame.id),
-                    "frame_number": frame.frame_number,
-                    "timestamp": frame.timestamp,
-                    "relative_time_ms": frame.relative_time_ms,
-                    "s3_key": frame.s3_key,
-                    "perceptual_hash": phash,
-                    "window_title": frame.window_title,
-                    "url": frame.url,
-                })
+                frame_data.append(
+                    {
+                        "id": str(frame.id),
+                        "frame_number": frame.frame_number,
+                        "timestamp": frame.timestamp,
+                        "relative_time_ms": frame.relative_time_ms,
+                        "s3_key": frame.s3_key,
+                        "perceptual_hash": phash,
+                        "window_title": frame.window_title,
+                        "url": frame.url,
+                    }
+                )
 
         except Exception as e:
-            logger.warning(f"Failed to process frame {frame.frame_number}", error=str(e))
+            logger.warning(
+                f"Failed to process frame {frame.frame_number}", error=str(e)
+            )
             continue
 
     await db.commit()
@@ -239,19 +279,18 @@ async def _phase_1_frame_analysis(
     logger.info("clustering_frames", total_frames=len(perceptual_hashes))
 
     cluster_labels = frame_analysis.cluster_frames_by_similarity(
-        perceptual_hashes,
-        similarity_threshold=0.95
+        perceptual_hashes, similarity_threshold=0.95
     )
 
     # Update frames with cluster assignment
     for i, frame in enumerate(frames):
         if i < len(cluster_labels):
-            frame.cluster_id = int(cluster_labels[i])
+            frame.cluster_id = int(cluster_labels[i])  # type: ignore[assignment]
 
     await db.commit()
 
     # Group frames by cluster
-    frames_by_cluster = {}
+    frames_by_cluster: dict[int, list[dict[str, Any]]] = {}
     for i, frame_dict in enumerate(frame_data):
         if i < len(cluster_labels):
             cluster_id = int(cluster_labels[i])
@@ -260,9 +299,11 @@ async def _phase_1_frame_analysis(
             frames_by_cluster[cluster_id].append(frame_dict)
 
     await _log_phase(
-        db, recording_id, ProcessingPhase.FRAME_ANALYSIS,
+        db,
+        recording_id,
+        ProcessingPhase.FRAME_ANALYSIS,
         f"Clustered {len(frame_data)} frames into {len(frames_by_cluster)} clusters",
-        data={"clusters": len(frames_by_cluster), "frames": len(frame_data)}
+        data={"clusters": len(frames_by_cluster), "frames": len(frame_data)},
     )
 
     return {
@@ -273,10 +314,8 @@ async def _phase_1_frame_analysis(
 
 
 async def _phase_2_state_identification(
-    db: AsyncSession,
-    recording_id: str,
-    frames_data: Dict[str, Any]
-) -> List[Dict[str, Any]]:
+    db: AsyncSession, recording_id: str, frames_data: dict[str, Any]
+) -> list[dict[str, Any]]:
     """
     Phase 2: Identify states from frame clusters
 
@@ -289,14 +328,12 @@ async def _phase_2_state_identification(
 
     # Discover states from clusters
     discovered_states = await state_discovery.identify_states_from_clusters(
-        frames_data["frames_by_cluster"],
-        frames_data["frames"]
+        frames_data["frames_by_cluster"], frames_data["frames"]
     )
 
     # Merge similar states
     deduplicated_states = state_discovery.merge_similar_states(
-        discovered_states,
-        similarity_threshold=0.90
+        discovered_states, similarity_threshold=0.90
     )
 
     # Save discovered states to database
@@ -338,18 +375,19 @@ async def _phase_2_state_identification(
     await db.commit()
 
     await _log_phase(
-        db, recording_id, ProcessingPhase.STATE_IDENTIFICATION,
+        db,
+        recording_id,
+        ProcessingPhase.STATE_IDENTIFICATION,
         f"Identified {len(deduplicated_states)} states",
-        data={"states": len(deduplicated_states)}
+        data={"states": len(deduplicated_states)},
     )
 
     return deduplicated_states
 
 
 async def _phase_3_interaction_processing(
-    db: AsyncSession,
-    recording_id: str
-) -> List[Dict[str, Any]]:
+    db: AsyncSession, recording_id: str
+) -> list[dict[str, Any]]:
     """
     Phase 3: Load and process interactions
 
@@ -367,33 +405,37 @@ async def _phase_3_interaction_processing(
     interactions = result.scalars().all()
 
     # Convert to dicts
-    interaction_data = []
+    interaction_data: list[dict[str, Any]] = []
     for interaction in interactions:
-        interaction_data.append({
-            "id": str(interaction.id),
-            "timestamp": interaction.timestamp,
-            "relative_time_ms": interaction.relative_time_ms,
-            "frame_number": interaction.frame_number,
-            "interaction_type": interaction.interaction_type,
-            "action": interaction.action,
-            "x": interaction.x,
-            "y": interaction.y,
-            "button": interaction.button,
-            "click_count": interaction.click_count,
-            "start_x": interaction.start_x,
-            "start_y": interaction.start_y,
-            "end_x": interaction.end_x,
-            "end_y": interaction.end_y,
-            "key": interaction.key,
-            "text": interaction.text,
-            "modifiers": interaction.modifiers or [],
-            "target_element": interaction.target_element or {},
-        })
+        interaction_data.append(
+            {
+                "id": str(interaction.id),
+                "timestamp": interaction.timestamp,
+                "relative_time_ms": interaction.relative_time_ms,
+                "frame_number": interaction.frame_number,
+                "interaction_type": interaction.interaction_type,
+                "action": interaction.action,
+                "x": interaction.x,
+                "y": interaction.y,
+                "button": interaction.button,
+                "click_count": interaction.click_count,
+                "start_x": interaction.start_x,
+                "start_y": interaction.start_y,
+                "end_x": interaction.end_x,
+                "end_y": interaction.end_y,
+                "key": interaction.key,
+                "text": interaction.text,
+                "modifiers": interaction.modifiers or [],
+                "target_element": interaction.target_element or {},
+            }
+        )
 
     await _log_phase(
-        db, recording_id, ProcessingPhase.INTERACTION_PROCESSING,
+        db,
+        recording_id,
+        ProcessingPhase.INTERACTION_PROCESSING,
         f"Processed {len(interaction_data)} interactions",
-        data={"interactions": len(interaction_data)}
+        data={"interactions": len(interaction_data)},
     )
 
     return interaction_data
@@ -402,10 +444,10 @@ async def _phase_3_interaction_processing(
 async def _phase_4_transition_discovery(
     db: AsyncSession,
     recording_id: str,
-    states: List[Dict[str, Any]],
-    frames_data: Dict[str, Any],
-    interactions: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+    states: list[dict[str, Any]],
+    frames_data: dict[str, Any],
+    interactions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
     Phase 4: Discover transitions between states
 
@@ -418,9 +460,7 @@ async def _phase_4_transition_discovery(
 
     # Discover transitions
     discovered_transitions = transition_discovery.discover_transitions(
-        states,
-        frames_data["frames"],
-        interactions
+        states, frames_data["frames"], interactions
     )
 
     # Deduplicate
@@ -457,9 +497,11 @@ async def _phase_4_transition_discovery(
     await db.commit()
 
     await _log_phase(
-        db, recording_id, ProcessingPhase.TRANSITION_DISCOVERY,
+        db,
+        recording_id,
+        ProcessingPhase.TRANSITION_DISCOVERY,
         f"Discovered {len(deduplicated_transitions)} transitions",
-        data={"transitions": len(deduplicated_transitions)}
+        data={"transitions": len(deduplicated_transitions)},
     )
 
     return deduplicated_transitions
@@ -468,8 +510,8 @@ async def _phase_4_transition_discovery(
 async def _phase_5_optimization(
     db: AsyncSession,
     recording_id: str,
-    states: List[Dict[str, Any]],
-    transitions: List[Dict[str, Any]]
+    states: list[dict[str, Any]],
+    transitions: list[dict[str, Any]],
 ):
     """
     Phase 5: Optimize state machine (remove transient states, calculate layout)
@@ -490,30 +532,30 @@ async def _phase_5_optimization(
         await db.execute(
             update(DiscoveredState)
             .where(DiscoveredState.id == state["id"])
-            .values(
-                position_x=position_x,
-                position_y=position_y
-            )
+            .values(position_x=position_x, position_y=position_y)
         )
 
     await db.commit()
 
     await _log_phase(
-        db, recording_id, ProcessingPhase.OPTIMIZATION,
-        "Optimized state machine layout"
+        db, recording_id, ProcessingPhase.OPTIMIZATION, "Optimized state machine layout"
     )
 
 
 async def _complete_processing(
     db: AsyncSession,
     recording_id: str,
-    states: List[Dict[str, Any]],
-    transitions: List[Dict[str, Any]]
+    states: list[dict[str, Any]],
+    transitions: list[dict[str, Any]],
 ):
     """Mark processing as completed and update stats"""
     # Calculate average confidence
-    state_confidences = [s.get("confidence", 0.0) for s in states if s.get("confidence")]
-    avg_confidence = sum(state_confidences) / len(state_confidences) if state_confidences else None
+    state_confidences = [
+        s.get("confidence", 0.0) for s in states if s.get("confidence")
+    ]
+    avg_confidence = (
+        sum(state_confidences) / len(state_confidences) if state_confidences else None
+    )
 
     await db.execute(
         update(Recording)
@@ -532,11 +574,13 @@ async def _complete_processing(
     await db.commit()
 
     await _log_phase(
-        db, recording_id, ProcessingPhase.COMPLETED,
+        db,
+        recording_id,
+        ProcessingPhase.COMPLETED,
         f"Processing completed: {len(states)} states, {len(transitions)} transitions",
         data={
             "states": len(states),
             "transitions": len(transitions),
-            "confidence": avg_confidence
-        }
+            "confidence": avg_confidence,
+        },
     )

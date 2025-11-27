@@ -7,7 +7,8 @@ import type {
   ConnectionHistoryParams,
   ConnectionHistoryResponse,
   CreateTokenRequest,
-  ConnectionInfo
+  ConnectionInfo,
+  TestConnectionResponse
 } from '@/types/runner';
 
 /**
@@ -19,9 +20,9 @@ export class RunnerService {
 
   constructor(httpClient: HttpClient) {
     this.httpClient = httpClient;
-    // Use empty string for relative URLs that go through Next.js proxy
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
-    this.baseUrl = `${apiUrl}/api/v1`;
+    // Always use relative URLs for browser requests - they go through Next.js proxy
+    // which handles CORS and forwards to the backend
+    this.baseUrl = '/api/v1';
   }
 
   /**
@@ -35,7 +36,7 @@ export class RunnerService {
     };
 
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runner-tokens`,
+      `${this.baseUrl}/runners/tokens`,
       {
         method: 'POST',
         body: JSON.stringify(body)
@@ -52,7 +53,7 @@ export class RunnerService {
 
   async listTokens(): Promise<RunnerToken[]> {
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runner-tokens`
+      `${this.baseUrl}/runners/tokens`
     );
 
     if (!response.ok) {
@@ -63,10 +64,11 @@ export class RunnerService {
   }
 
   async revokeToken(tokenId: string): Promise<void> {
+    // Soft delete - marks token as revoked but keeps it in database
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runner-tokens/${tokenId}/revoke`,
+      `${this.baseUrl}/runners/tokens/${tokenId}`,
       {
-        method: 'POST'
+        method: 'DELETE'
       }
     );
 
@@ -77,8 +79,9 @@ export class RunnerService {
   }
 
   async deleteToken(tokenId: string): Promise<void> {
+    // Hard delete - permanently removes token and its connection history
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runner-tokens/${tokenId}`,
+      `${this.baseUrl}/runners/tokens/${tokenId}/permanent`,
       {
         method: 'DELETE'
       }
@@ -96,7 +99,7 @@ export class RunnerService {
 
   async getActiveConnections(): Promise<RunnerConnection[]> {
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runner-connections/active`
+      `${this.baseUrl}/runners/connections/active`
     );
 
     if (!response.ok) {
@@ -115,7 +118,7 @@ export class RunnerService {
     if (params.start_date) queryParams.append('start_date', params.start_date);
     if (params.end_date) queryParams.append('end_date', params.end_date);
 
-    const url = `${this.baseUrl}/runner-connections/history?${queryParams.toString()}`;
+    const url = `${this.baseUrl}/runners/connections?${queryParams.toString()}`;
     const response = await this.httpClient.fetch(url);
 
     if (!response.ok) {
@@ -127,7 +130,7 @@ export class RunnerService {
 
   async disconnectRunner(connectionId: number): Promise<void> {
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runner-connections/${connectionId}/disconnect`,
+      `${this.baseUrl}/runners/connections/${connectionId}/disconnect`,
       {
         method: 'POST'
       }
@@ -172,7 +175,7 @@ export class RunnerService {
    */
   async getToken(tokenId: string): Promise<RunnerToken> {
     const response = await this.httpClient.fetch(
-      `${this.baseUrl}/runner-tokens/${tokenId}`
+      `${this.baseUrl}/runners/tokens/${tokenId}`
     );
 
     if (!response.ok) {
@@ -191,11 +194,31 @@ export class RunnerService {
     if (params.limit) queryParams.append('limit', params.limit.toString());
     if (params.offset) queryParams.append('offset', params.offset.toString());
 
-    const url = `${this.baseUrl}/runner-tokens/${tokenId}/connections?${queryParams.toString()}`;
+    const url = `${this.baseUrl}/runners/tokens/${tokenId}/connections?${queryParams.toString()}`;
     const response = await this.httpClient.fetch(url);
 
     if (!response.ok) {
       throw new Error('Failed to fetch token connections');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Test a runner connection
+   * Called by the desktop runner when Quick Connect saves settings
+   */
+  async testConnection(token: string): Promise<TestConnectionResponse> {
+    const response = await this.httpClient.fetch(
+      `${this.baseUrl}/runners/test-connection?token=${encodeURIComponent(token)}`,
+      {
+        method: 'POST'
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Connection test failed' }));
+      throw new Error(error.detail || 'Connection test failed');
     }
 
     return response.json();

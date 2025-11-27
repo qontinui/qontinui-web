@@ -6,15 +6,15 @@ management endpoints.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # ============================================================================
 # Enums (mirror the model enums for API)
 # ============================================================================
+
 
 class DatasetSourceEnum(str):
     RUNNER_EXPORT = "runner_export"
@@ -69,23 +69,27 @@ class ExportJobStatusEnum(str):
 # Dataset Schemas
 # ============================================================================
 
+
 class DatasetCreate(BaseModel):
     """Schema for creating a new dataset"""
+
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class DatasetUpdate(BaseModel):
     """Schema for updating a dataset"""
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
+
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = None
 
 
 class DatasetResponse(BaseModel):
     """Schema for dataset response"""
+
     id: str
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     source: str
     created_at: datetime
     updated_at: datetime
@@ -97,8 +101,8 @@ class DatasetResponse(BaseModel):
     reviewed_count: int
 
     # Metadata
-    dataset_version: Optional[str] = None
-    export_metadata: Optional[Dict[str, Any]] = None
+    dataset_version: str | None = None
+    export_metadata: dict[str, Any] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -121,33 +125,36 @@ class DatasetResponse(BaseModel):
 # Image Schemas
 # ============================================================================
 
+
 class DatasetImageBase(BaseModel):
     """Base schema for dataset image"""
+
     image_hash: str
     filename: str
     width: int = Field(..., gt=0)
     height: int = Field(..., gt=0)
-    action_id: Optional[str] = None
-    action_type: Optional[str] = None
-    active_states: Optional[List[str]] = None
-    timestamp: Optional[datetime] = None
+    action_id: str | None = None
+    action_type: str | None = None
+    active_states: list[str] | None = None
+    timestamp: datetime | None = None
 
 
 class DatasetImageResponse(DatasetImageBase):
     """Schema for dataset image response"""
+
     id: str
     dataset_id: str
     storage_path: str
-    image_url: Optional[str] = None  # Computed field
+    image_url: str | None = None  # Computed field
 
     # Review status
     reviewed: bool
-    reviewed_by: Optional[str] = None
-    reviewed_at: Optional[datetime] = None
-    reviewer_notes: Optional[str] = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    reviewer_notes: str | None = None
 
     # Annotation count
-    annotation_count: Optional[int] = None
+    annotation_count: int | None = None
 
     created_at: datetime
 
@@ -172,25 +179,29 @@ class DatasetImageResponse(DatasetImageBase):
 
 class DatasetImageUpdate(BaseModel):
     """Schema for updating an image"""
-    reviewed: Optional[bool] = None
-    reviewer_notes: Optional[str] = None
+
+    reviewed: bool | None = None
+    reviewer_notes: str | None = None
 
 
 # ============================================================================
 # Annotation Schemas
 # ============================================================================
 
+
 class InferenceMetadataResponse(BaseModel):
     """Schema for inference metadata"""
+
     strategy_used: str
     element_type: str
     used_fallback: bool
     processing_time_ms: float
-    alternatives_count: Optional[int] = None
+    alternatives_count: int | None = None
 
 
 class DatasetAnnotationBase(BaseModel):
     """Base schema for dataset annotation"""
+
     x: int = Field(..., ge=0)
     y: int = Field(..., ge=0)
     width: int = Field(..., gt=0)
@@ -199,41 +210,44 @@ class DatasetAnnotationBase(BaseModel):
     category_name: str = "gui_element"
     confidence: float = Field(1.0, ge=0.0, le=1.0)
     source: str = "user_click"
-    element_type: Optional[str] = None
+    element_type: str | None = None
     verified: bool = False
 
 
 class DatasetAnnotationCreate(DatasetAnnotationBase):
     """Schema for creating an annotation"""
+
     image_id: str
-    inference_metadata: Optional[Dict[str, Any]] = None
+    inference_metadata: dict[str, Any] | None = None
 
 
 class DatasetAnnotationUpdate(BaseModel):
     """Schema for updating an annotation"""
-    x: Optional[int] = Field(None, ge=0)
-    y: Optional[int] = Field(None, ge=0)
-    width: Optional[int] = Field(None, gt=0)
-    height: Optional[int] = Field(None, gt=0)
-    category_id: Optional[int] = None
-    category_name: Optional[str] = None
-    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
-    element_type: Optional[str] = None
-    verified: Optional[bool] = None
-    review_status: Optional[str] = None
-    reviewer_notes: Optional[str] = None
+
+    x: int | None = Field(None, ge=0)
+    y: int | None = Field(None, ge=0)
+    width: int | None = Field(None, gt=0)
+    height: int | None = Field(None, gt=0)
+    category_id: int | None = None
+    category_name: str | None = None
+    confidence: float | None = Field(None, ge=0.0, le=1.0)
+    element_type: str | None = None
+    verified: bool | None = None
+    review_status: str | None = None
+    reviewer_notes: str | None = None
 
 
 class DatasetAnnotationResponse(DatasetAnnotationBase):
     """Schema for annotation response"""
+
     id: str
     dataset_id: str
     image_id: str
-    inference_metadata: Optional[Dict[str, Any]] = None
+    inference_metadata: dict[str, Any] | None = None
     review_status: str
-    reviewer_notes: Optional[str] = None
-    reviewed_by: Optional[str] = None
-    reviewed_at: Optional[datetime] = None
+    reviewer_notes: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -276,19 +290,21 @@ class DatasetAnnotationResponse(DatasetAnnotationBase):
 # Filter Schemas
 # ============================================================================
 
+
 class DatasetFilters(BaseModel):
     """Schema for dataset filters"""
-    sources: Optional[List[str]] = None
-    element_types: Optional[List[str]] = None
-    confidence_min: Optional[float] = Field(None, ge=0.0, le=1.0)
-    confidence_max: Optional[float] = Field(None, ge=0.0, le=1.0)
-    review_statuses: Optional[List[str]] = None
-    verified: Optional[bool] = None
-    category_names: Optional[List[str]] = None
-    search: Optional[str] = None
+
+    sources: list[str] | None = None
+    element_types: list[str] | None = None
+    confidence_min: float | None = Field(None, ge=0.0, le=1.0)
+    confidence_max: float | None = Field(None, ge=0.0, le=1.0)
+    review_statuses: list[str] | None = None
+    verified: bool | None = None
+    category_names: list[str] | None = None
+    search: str | None = None
     page: int = Field(1, ge=1)
     page_size: int = Field(50, ge=1, le=500)
-    sort_by: Optional[str] = None
+    sort_by: str | None = None
     sort_order: str = "desc"
 
 
@@ -296,9 +312,11 @@ class DatasetFilters(BaseModel):
 # Pagination Schemas
 # ============================================================================
 
+
 class PaginatedResponse(BaseModel):
     """Generic paginated response"""
-    items: List[Any]
+
+    items: list[Any]
     total: int
     page: int
     page_size: int
@@ -307,7 +325,8 @@ class PaginatedResponse(BaseModel):
 
 class PaginatedImagesResponse(BaseModel):
     """Paginated images response"""
-    items: List[DatasetImageResponse]
+
+    items: list[DatasetImageResponse]
     total: int
     page: int
     page_size: int
@@ -316,7 +335,8 @@ class PaginatedImagesResponse(BaseModel):
 
 class PaginatedAnnotationsResponse(BaseModel):
     """Paginated annotations response"""
-    items: List[DatasetAnnotationResponse]
+
+    items: list[DatasetAnnotationResponse]
     total: int
     page: int
     page_size: int
@@ -327,8 +347,10 @@ class PaginatedAnnotationsResponse(BaseModel):
 # Statistics Schemas
 # ============================================================================
 
+
 class ConfidenceStats(BaseModel):
     """Confidence statistics"""
+
     min: float
     max: float
     mean: float
@@ -337,6 +359,7 @@ class ConfidenceStats(BaseModel):
 
 class CategoryCount(BaseModel):
     """Category count"""
+
     category_id: int
     category_name: str
     count: int
@@ -344,20 +367,22 @@ class CategoryCount(BaseModel):
 
 class DatasetStatisticsResponse(BaseModel):
     """Schema for dataset statistics response"""
+
     total_images: int
     unique_images: int
     total_annotations: int
     reviewed_images: int
     reviewed_annotations: int
-    by_source: Dict[str, int]
-    by_element_type: Dict[str, int]
-    by_review_status: Dict[str, int]
+    by_source: dict[str, int]
+    by_element_type: dict[str, int]
+    by_review_status: dict[str, int]
     confidence_stats: ConfidenceStats
-    by_category: List[CategoryCount]
+    by_category: list[CategoryCount]
 
 
 class ConfidenceHistogramBucket(BaseModel):
     """Confidence histogram bucket"""
+
     min: float
     max: float
     count: int
@@ -365,32 +390,37 @@ class ConfidenceHistogramBucket(BaseModel):
 
 class ConfidenceHistogramResponse(BaseModel):
     """Confidence histogram response"""
-    buckets: List[ConfidenceHistogramBucket]
+
+    buckets: list[ConfidenceHistogramBucket]
 
 
 # ============================================================================
 # Import Schemas
 # ============================================================================
 
+
 class DatasetImportResponse(BaseModel):
     """Schema for import response"""
+
     dataset_id: str
     images_imported: int
     annotations_imported: int
-    warnings: List[str]
-    errors: List[str]
+    warnings: list[str]
+    errors: list[str]
 
 
 # ============================================================================
 # Export Schemas
 # ============================================================================
 
+
 class TrainValTestSplit(BaseModel):
     """Train/val/test split configuration"""
+
     train_percent: float = Field(..., ge=0.0, le=1.0)
     val_percent: float = Field(..., ge=0.0, le=1.0)
     test_percent: float = Field(..., ge=0.0, le=1.0)
-    random_seed: Optional[int] = None
+    random_seed: int | None = None
 
     @field_validator("test_percent")
     @classmethod
@@ -405,23 +435,27 @@ class TrainValTestSplit(BaseModel):
 
 class DatasetExportRequest(BaseModel):
     """Schema for export request"""
-    format: str = Field(..., description="Export format: coco, yolo, pascal_voc, csv, jsonl")
-    filters: Optional[DatasetFilters] = None
-    split: Optional[TrainValTestSplit] = None
+
+    format: str = Field(
+        ..., description="Export format: coco, yolo, pascal_voc, csv, jsonl"
+    )
+    filters: DatasetFilters | None = None
+    split: TrainValTestSplit | None = None
     include_images: bool = True
 
 
 class DatasetExportJobResponse(BaseModel):
     """Schema for export job response"""
+
     id: str
     dataset_id: str
     status: str
     progress: int
     format: str
-    download_url: Optional[str] = None
-    error: Optional[str] = None
+    download_url: str | None = None
+    error: str | None = None
     created_at: datetime
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -444,20 +478,24 @@ class DatasetExportJobResponse(BaseModel):
 # Bulk Operation Schemas
 # ============================================================================
 
+
 class BulkAnnotationUpdate(BaseModel):
     """Schema for bulk annotation update"""
-    annotation_ids: List[str]
+
+    annotation_ids: list[str]
     update: DatasetAnnotationUpdate
 
 
 class BulkAnnotationError(BaseModel):
     """Schema for bulk operation error"""
+
     annotation_id: str
     error: str
 
 
 class BulkOperationResult(BaseModel):
     """Schema for bulk operation result"""
+
     updated_count: int
     failed_count: int
-    errors: List[BulkAnnotationError]
+    errors: list[BulkAnnotationError]

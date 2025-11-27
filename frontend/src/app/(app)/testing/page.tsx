@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TestRunsList } from '@/components/testing/TestRunsList';
 import { CoverageTrendChart } from '@/components/testing/CoverageTrendChart';
 import { ReliabilityStats } from '@/components/testing/ReliabilityStats';
+import { RequireProject } from '@/components/require-project';
 import { BarChart3, FileText, TrendingUp, PlayCircle } from 'lucide-react';
 
 export default function TestingDashboard() {
@@ -41,6 +42,7 @@ export default function TestingDashboard() {
   }
 
   return (
+    <RequireProject pageName="Test Runs">
     <div className="min-h-screen bg-gradient-to-br from-[#0A0A0B] via-[#0F0F10] to-[#0A0A0B] text-white">
       {/* Header */}
       <header className="border-b border-gray-800/50 bg-[#0A0A0B]/80 backdrop-blur-xl sticky top-0 z-50">
@@ -164,5 +166,6 @@ export default function TestingDashboard() {
         )}
       </main>
     </div>
+    </RequireProject>
   );
 }

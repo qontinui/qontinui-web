@@ -1,9 +1,10 @@
 from collections.abc import AsyncGenerator
 
-from app.core.config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
+
+from app.core.config import settings
 
 # Sync engine only for Alembic migrations and init_db
 database_url_str = str(settings.DATABASE_URL)
@@ -40,7 +41,7 @@ if "sslmode=require" in async_database_url:
 else:
     # For local development without SSL (Docker PostgreSQL)
     # asyncpg tries SSL by default, so we need to explicitly disable it
-    connect_args["ssl"] = False
+    connect_args["ssl"] = False  # type: ignore[assignment]
 
 # ============================================================================
 # OPTIMIZED CONNECTION POOL CONFIGURATION
@@ -139,5 +140,4 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
-        finally:
-            await session.close()
+        # Note: No explicit session.close() needed - the async context manager handles it

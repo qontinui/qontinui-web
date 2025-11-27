@@ -4,6 +4,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+
 from app.worker.arq_pool import enqueue_task
 
 logger = structlog.get_logger(__name__)
@@ -52,11 +53,15 @@ class TaskQueue:
                     reason="queue_unavailable",
                 )
                 transport = EmailTransportService()
+                # Use html_content as text_body if text_content is None
+                text_body_content = (
+                    text_content if text_content is not None else html_content
+                )
                 await transport.send_email(
                     to_email=to_email,
                     subject=subject,
                     html_body=html_content,
-                    text_body=text_content,
+                    text_body=text_body_content,
                 )
                 return "sync"
             except Exception as e:
@@ -117,9 +122,14 @@ class TaskQueue:
                 context = {"username": username, "verify_url": verify_url}
 
                 template_service = EmailTemplateService()
-                html_body, text_body = template_service.render_template(
+                html_body = template_service.render_template(
                     "email_verification", context
                 )
+                # Render text template separately
+                text_template = template_service.env.get_template(
+                    "email_verification.txt"
+                )
+                text_body = text_template.render(**context)
 
                 transport = EmailTransportService()
                 await transport.send_email(
@@ -187,9 +197,10 @@ class TaskQueue:
                 context = {"username": username, "reset_url": reset_url}
 
                 template_service = EmailTemplateService()
-                html_body, text_body = template_service.render_template(
-                    "password_reset", context
-                )
+                html_body = template_service.render_template("password_reset", context)
+                # Render text template separately
+                text_template = template_service.env.get_template("password_reset.txt")
+                text_body = text_template.render(**context)
 
                 transport = EmailTransportService()
                 await transport.send_email(

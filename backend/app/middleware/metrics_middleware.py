@@ -1,11 +1,13 @@
 import time
 from collections.abc import Callable
+from uuid import UUID
 
 import structlog
-from app.db.session import AsyncSessionLocal
-from app.services.metrics_service import metrics_service
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.db.session import AsyncSessionLocal
+from app.services.metrics_service import metrics_service
 
 logger = structlog.get_logger(__name__)
 
@@ -24,7 +26,8 @@ class MetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip metrics for excluded paths
         if any(request.url.path.startswith(path) for path in self.EXCLUDED_PATHS):
-            return await call_next(request)
+            response: Response = await call_next(request)
+            return response
 
         # Record start time
         start_time = time.time()
@@ -36,7 +39,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         response_time = time.time() - start_time
 
         # Try to get user ID from request state (set by auth dependency)
-        user_id = None
+        user_id: UUID | None = None
         if hasattr(request.state, "user"):
             user_id = getattr(request.state.user, "id", None)
 
@@ -50,7 +53,9 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                     token = auth_header.replace("Bearer ", "")
                     payload = decode_token(token)
                     if payload:
-                        user_id = int(payload.get("sub"))
+                        sub_value = payload.get("sub")
+                        if sub_value:
+                            user_id = UUID(str(sub_value))
                 except Exception as e:
                     logger.debug("token_extraction_failed", error=str(e))
 

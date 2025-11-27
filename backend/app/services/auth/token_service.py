@@ -2,8 +2,9 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.core.config import settings
 from jose import JWTError, jwt
+
+from app.core.config import settings
 
 
 class TokenService:

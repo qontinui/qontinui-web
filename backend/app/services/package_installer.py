@@ -11,16 +11,17 @@ Features:
 - Virtual environment management
 """
 
-import os
 import re
 import shutil
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.code_package import (
     CodePackage,
     InstallationStatus,
@@ -38,8 +39,6 @@ from app.schemas.package import (
     UpdateResult,
 )
 from app.services.project_directory import ProjectDirectoryManager
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -66,7 +65,7 @@ class PackageInstaller:
     def __init__(
         self,
         db_session: AsyncSession,
-        project_dir_manager: Optional[ProjectDirectoryManager] = None,
+        project_dir_manager: ProjectDirectoryManager | None = None,
     ):
         """
         Initialize package installer.
@@ -206,7 +205,7 @@ class PackageInstaller:
     # ========================================================================
 
     async def resolve_dependencies(
-        self, dependencies: List[Dict[str, str]]
+        self, dependencies: list[dict[str, str]]
     ) -> DependencyResolutionResult:
         """
         Resolve package dependencies.
@@ -221,8 +220,8 @@ class PackageInstaller:
         Returns:
             DependencyResolutionResult with required and missing dependencies
         """
-        required_deps: List[DependencyInfo] = []
-        missing_deps: List[str] = []
+        required_deps: list[DependencyInfo] = []
+        missing_deps: list[str] = []
 
         for dep in dependencies:
             name = dep.get("name", "")
@@ -250,7 +249,7 @@ class PackageInstaller:
         )
 
     async def install_dependencies(
-        self, project_id: int, dependencies: List[str]
+        self, project_id: int, dependencies: list[str]
     ) -> bool:
         """
         Install missing dependencies for a package.
@@ -314,7 +313,7 @@ class PackageInstaller:
     # Updates
     # ========================================================================
 
-    async def check_updates(self, project_id: int) -> List[UpdateInfo]:
+    async def check_updates(self, project_id: int) -> list[UpdateInfo]:
         """
         Check for available package updates.
 
@@ -327,7 +326,7 @@ class PackageInstaller:
         Returns:
             List of UpdateInfo for packages with available updates
         """
-        updates: List[UpdateInfo] = []
+        updates: list[UpdateInfo] = []
 
         # Get all active installations for project
         query = select(PackageInstallation).where(
@@ -339,26 +338,33 @@ class PackageInstaller:
 
         for installation in installations:
             # Get current version
-            current_version = await self._get_package_version(installation.version_id)
+            version_id: int = installation.version_id  # type: ignore[assignment]
+            current_version = await self._get_package_version(version_id)
             if not current_version:
                 continue
 
             # Get latest version for this package
-            latest_version = await self._get_latest_version(installation.package_id)
+            package_id: int = installation.package_id  # type: ignore[assignment]
+            latest_version = await self._get_latest_version(package_id)
             if not latest_version:
                 continue
 
             # Compare versions (simple string comparison for now)
-            if self._is_newer_version(latest_version.version, current_version.version):
-                package = await self._get_package(installation.package_id)
+            latest_ver_str: str = latest_version.version  # type: ignore[assignment]
+            current_ver_str: str = current_version.version  # type: ignore[assignment]
+            if self._is_newer_version(latest_ver_str, current_ver_str):
+                package = await self._get_package(package_id)
                 if package:
+                    pkg_id: int = package.id  # type: ignore[assignment]
+                    pkg_name: str = package.name  # type: ignore[assignment]
+                    changelog: str | None = latest_version.changelog  # type: ignore[assignment]
                     updates.append(
                         UpdateInfo(
-                            package_id=package.id,
-                            package_name=package.name,
-                            current_version=current_version.version,
-                            latest_version=latest_version.version,
-                            changelog=latest_version.changelog,
+                            package_id=pkg_id,
+                            package_name=pkg_name,
+                            current_version=current_ver_str,
+                            latest_version=latest_ver_str,
+                            changelog=changelog,
                         )
                     )
 
@@ -396,7 +402,8 @@ class PackageInstaller:
                 )
 
             # Get current version
-            old_version = await self._get_package_version(installation.version_id)
+            version_id: int = installation.version_id  # type: ignore[assignment]
+            old_version = await self._get_package_version(version_id)
             if not old_version:
                 return UpdateResult(
                     success=False,
@@ -409,23 +416,26 @@ class PackageInstaller:
 
             # Get latest version
             latest_version = await self._get_latest_version(package_id)
+            old_ver_str: str = old_version.version  # type: ignore[assignment]
             if not latest_version:
                 return UpdateResult(
                     success=False,
                     package_id=package_id,
-                    old_version=old_version.version,
+                    old_version=old_ver_str,
                     new_version="",
                     message="No updates available",
                     error="NO_UPDATES",
                 )
 
             # Check if already on latest
-            if latest_version.id == old_version.id:
+            new_ver_str: str = latest_version.version  # type: ignore[assignment]
+            latest_ver_id: int = latest_version.id  # type: ignore[assignment]
+            if latest_ver_id == old_version.id:
                 return UpdateResult(
                     success=True,
                     package_id=package_id,
-                    old_version=old_version.version,
-                    new_version=latest_version.version,
+                    old_version=old_ver_str,
+                    new_version=new_ver_str,
                     message="Already on latest version",
                 )
 
@@ -434,15 +444,15 @@ class PackageInstaller:
 
             # Install new version
             install_result = await self.install_package(
-                project_id, package_id, latest_version.id, user_id
+                project_id, package_id, latest_ver_id, user_id
             )
 
             if not install_result.success:
                 return UpdateResult(
                     success=False,
                     package_id=package_id,
-                    old_version=old_version.version,
-                    new_version=latest_version.version,
+                    old_version=old_ver_str,
+                    new_version=new_ver_str,
                     message="Update failed",
                     error=install_result.error,
                 )
@@ -450,9 +460,9 @@ class PackageInstaller:
             return UpdateResult(
                 success=True,
                 package_id=package_id,
-                old_version=old_version.version,
-                new_version=latest_version.version,
-                message=f"Updated from {old_version.version} to {latest_version.version}",
+                old_version=old_ver_str,
+                new_version=new_ver_str,
+                message=f"Updated from {old_ver_str} to {new_ver_str}",
             )
 
         except Exception as e:
@@ -526,7 +536,8 @@ class PackageInstaller:
                 )
 
             # Update installation status
-            installation.status = InstallationStatus.DISABLED.value
+            new_status: str = InstallationStatus.DISABLED.value
+            installation.status = new_status  # type: ignore[assignment]
             await self.db.commit()
 
             return UninstallResult(
@@ -554,21 +565,21 @@ class PackageInstaller:
     # Helper Methods - Database
     # ========================================================================
 
-    async def _get_package(self, package_id: int) -> Optional[CodePackage]:
+    async def _get_package(self, package_id: int) -> CodePackage | None:
         """Get package by ID."""
         result = await self.db.execute(
             select(CodePackage).where(CodePackage.id == package_id)
         )
         return result.scalar_one_or_none()
 
-    async def _get_package_version(self, version_id: int) -> Optional[PackageVersion]:
+    async def _get_package_version(self, version_id: int) -> PackageVersion | None:
         """Get package version by ID."""
         result = await self.db.execute(
             select(PackageVersion).where(PackageVersion.id == version_id)
         )
         return result.scalar_one_or_none()
 
-    async def _get_latest_version(self, package_id: int) -> Optional[PackageVersion]:
+    async def _get_latest_version(self, package_id: int) -> PackageVersion | None:
         """Get latest version for a package."""
         query = (
             select(PackageVersion)
@@ -581,7 +592,7 @@ class PackageInstaller:
 
     async def _get_installation(
         self, project_id: int, package_id: int
-    ) -> Optional[PackageInstallation]:
+    ) -> PackageInstallation | None:
         """Get package installation record."""
         query = select(PackageInstallation).where(
             PackageInstallation.project_id == project_id,
@@ -614,8 +625,10 @@ class PackageInstaller:
         self, package: CodePackage, version: PackageVersion
     ):
         """Increment download counts for package and version."""
-        package.total_downloads += 1
-        version.download_count += 1
+        current_pkg_downloads: int = package.total_downloads  # type: ignore[assignment]
+        package.total_downloads = current_pkg_downloads + 1  # type: ignore[assignment]
+        current_ver_downloads: int = version.download_count  # type: ignore[assignment]
+        version.download_count = current_ver_downloads + 1  # type: ignore[assignment]
 
     # ========================================================================
     # Helper Methods - File System
@@ -655,57 +668,68 @@ class PackageInstaller:
         - README.md (package metadata)
         """
         # Write main code file
-        code_file = install_path / f"{version.function_name}.py"
-        code_file.write_text(version.code_content)
+        func_name: str = version.function_name  # type: ignore[assignment]
+        code_file = install_path / f"{func_name}.py"
+        code_content: str = version.code_content  # type: ignore[assignment]
+        code_file.write_text(code_content)
 
         # Create __init__.py to export main function
+        pkg_name: str = package.name  # type: ignore[assignment]
+        pkg_desc: str = package.description  # type: ignore[assignment]
+        ver_str: str = version.version  # type: ignore[assignment]
+        pkg_license: str | None = package.license  # type: ignore[assignment]
+
         init_content = f'''"""
-{package.name}
+{pkg_name}
 
-{package.description}
+{pkg_desc}
 
-Version: {version.version}
+Version: {ver_str}
 Author: {package.author_id}
-License: {package.license or 'Not specified'}
+License: {pkg_license or 'Not specified'}
 """
 
-from .{version.function_name} import {version.function_name}
+from .{func_name} import {func_name}
 
-__all__ = ["{version.function_name}"]
-__version__ = "{version.version}"
+__all__ = ["{func_name}"]
+__version__ = "{ver_str}"
 '''
         init_file = install_path / "__init__.py"
         init_file.write_text(init_content)
 
         # Create README with package metadata
-        readme_content = f"""# {package.name}
+        pkg_slug: str = package.slug  # type: ignore[assignment]
+        dependencies_list: list[dict[str, str]] = version.dependencies  # type: ignore[assignment]
+        changelog: str | None = version.changelog  # type: ignore[assignment]
 
-{package.description}
+        readme_content = f"""# {pkg_name}
+
+{pkg_desc}
 
 ## Version
 
-{version.version}
+{ver_str}
 
 ## Usage
 
 ```python
-from packages.{package.slug} import {version.function_name}
+from packages.{pkg_slug} import {func_name}
 
 # Use the function in your workflow
-result = {version.function_name}(...)
+result = {func_name}(...)
 ```
 
 ## Dependencies
 
-{self._format_dependencies(version.dependencies)}
+{self._format_dependencies(dependencies_list)}
 
 ## Changelog
 
-{version.changelog or 'No changelog available'}
+{changelog or 'No changelog available'}
 
 ## License
 
-{package.license or 'Not specified'}
+{pkg_license or 'Not specified'}
 
 ---
 
@@ -714,7 +738,7 @@ result = {version.function_name}(...)
         readme_file = install_path / "README.md"
         readme_file.write_text(readme_content)
 
-    def _format_dependencies(self, dependencies: List[Dict[str, str]]) -> str:
+    def _format_dependencies(self, dependencies: list[dict[str, str]]) -> str:
         """Format dependencies list for README."""
         if not dependencies:
             return "No dependencies"
@@ -762,7 +786,7 @@ result = {version.function_name}(...)
 
     def _check_dependency_installed(
         self, name: str, version_spec: str
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Check if a Python dependency is installed.
 
@@ -886,18 +910,17 @@ result = {version.function_name}(...)
         Returns:
             SafetyCheckResult
         """
-        checks: Dict[str, bool] = {}
-        errors: List[str] = []
-        warnings: List[str] = []
+        checks: dict[str, bool] = {}
+        errors: list[str] = []
+        warnings: list[str] = []
 
         # Check security scan status
-        security_passed = (
-            version.security_scan_status == SecurityScanStatus.PASSED.value
-        )
+        scan_status: str = version.security_scan_status  # type: ignore[assignment]
+        security_passed = scan_status == SecurityScanStatus.PASSED.value
         checks["security_scan"] = security_passed
         if not security_passed:
             errors.append(
-                f"Package has not passed security scan (status: {version.security_scan_status})"
+                f"Package has not passed security scan (status: {scan_status})"
             )
 
         # Check disk space

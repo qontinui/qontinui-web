@@ -15,7 +15,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from reportlab.graphics.charts.piecharts import Pie
 from reportlab.graphics.shapes import Drawing
@@ -66,11 +66,11 @@ class PDFReportOptions:
 class IntegrationTestPDFReport:
     """Generate PDF reports for integration test execution results"""
 
-    def __init__(self, options: PDFReportOptions = None):
+    def __init__(self, options: PDFReportOptions | None = None):
         self.options = options or PDFReportOptions()
         self.styles = getSampleStyleSheet()
         self._setup_custom_styles()
-        self.story = []
+        self.story: list[Any] = []
 
     def _setup_custom_styles(self):
         """Setup custom paragraph styles"""
@@ -382,7 +382,7 @@ class IntegrationTestPDFReport:
         self.story.append(Spacer(1, 0.2 * inch))
 
         # Action type distribution
-        action_types = defaultdict(int)
+        action_types: defaultdict[str, int] = defaultdict(int)
         for action in actions:
             action_types[action.get("action_type", "UNKNOWN")] += 1
 
@@ -423,13 +423,13 @@ class IntegrationTestPDFReport:
         )
         self.story.append(Spacer(1, 0.1 * inch))
 
-        transitions = []
+        transitions: list[dict[str, Any]] = []
         for i in range(len(actions) - 1):
             current_states = set(actions[i].get("active_states", []))
             next_states = set(actions[i + 1].get("active_states", []))
 
-            added = next_states - current_states
-            removed = current_states - next_states
+            added: set[str] = next_states - current_states
+            removed: set[str] = current_states - next_states
 
             if added or removed:
                 transitions.append(
@@ -451,12 +451,18 @@ class IntegrationTestPDFReport:
         if transitions[:5]:  # Show first 5 transitions
             trans_data = [["Action #", "Action Type", "States Added", "States Removed"]]
             for trans in transitions[:5]:
+                added_states = cast(set[str], trans["added"])
+                removed_states = cast(set[str], trans["removed"])
                 trans_data.append(
                     [
                         str(trans["index"]),
-                        trans["action"],
-                        ", ".join(trans["added"]) if trans["added"] else "-",
-                        ", ".join(trans["removed"]) if trans["removed"] else "-",
+                        (
+                            str(trans["action"])
+                            if trans["action"] is not None
+                            else "UNKNOWN"
+                        ),
+                        ", ".join(sorted(added_states)) if added_states else "-",
+                        ", ".join(sorted(removed_states)) if removed_states else "-",
                     ]
                 )
 
@@ -644,7 +650,7 @@ class IntegrationTestPDFReport:
         # Failed actions analysis
         failed_actions = [a for a in actions if not a.get("success")]
         if failed_actions:
-            failed_types = defaultdict(int)
+            failed_types: defaultdict[str, int] = defaultdict(int)
             for action in failed_actions:
                 failed_types[action.get("action_type")] += 1
 
@@ -700,7 +706,7 @@ class IntegrationTestPDFReport:
 def generate_pdf_report(
     execution_result: dict[str, Any],
     screenshots_dir: Path,
-    options: PDFReportOptions = None,
+    options: PDFReportOptions | None = None,
 ) -> bytes:
     """
     Generate PDF report for integration test execution

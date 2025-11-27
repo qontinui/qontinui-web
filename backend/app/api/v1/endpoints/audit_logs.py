@@ -11,11 +11,11 @@ All endpoints are admin-only for security compliance.
 """
 
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -23,7 +23,11 @@ from sqlalchemy.orm import joinedload
 from app.api.deps import get_async_db, get_current_superuser_async
 from app.models.audit_log import AuditLog
 from app.models.user import User
-from app.schemas.audit import AuditLogListResponse, AuditLogResponse, AuditLogStatsResponse
+from app.schemas.audit import (
+    AuditLogListResponse,
+    AuditLogResponse,
+    AuditLogStatsResponse,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -37,15 +41,23 @@ async def list_audit_logs(
     current_user: User = Depends(get_current_superuser_async),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    user_id: Optional[UUID] = Query(None, description="Filter by user who performed action"),
-    target_user_id: Optional[UUID] = Query(None, description="Filter by user affected by action"),
-    action: Optional[str] = Query(None, description="Filter by action"),
-    resource_type: Optional[str] = Query(None, description="Filter by resource type"),
-    resource_id: Optional[str] = Query(None, description="Filter by resource ID"),
-    event_category: Optional[str] = Query(None, description="Filter by event category"),
-    correlation_id: Optional[str] = Query(None, description="Filter by correlation ID"),
-    start_date: Optional[datetime] = Query(None, description="Filter events after this date"),
-    end_date: Optional[datetime] = Query(None, description="Filter events before this date"),
+    user_id: UUID | None = Query(
+        None, description="Filter by user who performed action"
+    ),
+    target_user_id: UUID | None = Query(
+        None, description="Filter by user affected by action"
+    ),
+    action: str | None = Query(None, description="Filter by action"),
+    resource_type: str | None = Query(None, description="Filter by resource type"),
+    resource_id: str | None = Query(None, description="Filter by resource ID"),
+    event_category: str | None = Query(None, description="Filter by event category"),
+    correlation_id: str | None = Query(None, description="Filter by correlation ID"),
+    start_date: datetime | None = Query(
+        None, description="Filter events after this date"
+    ),
+    end_date: datetime | None = Query(
+        None, description="Filter events before this date"
+    ),
 ) -> Any:
     """
     List audit logs with comprehensive filtering (admin only).
@@ -155,9 +167,13 @@ async def get_user_audit_logs(
     user_id: UUID,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    event_category: Optional[str] = Query(None, description="Filter by event category"),
-    start_date: Optional[datetime] = Query(None, description="Filter events after this date"),
-    end_date: Optional[datetime] = Query(None, description="Filter events before this date"),
+    event_category: str | None = Query(None, description="Filter by event category"),
+    start_date: datetime | None = Query(
+        None, description="Filter events after this date"
+    ),
+    end_date: datetime | None = Query(
+        None, description="Filter events before this date"
+    ),
 ) -> Any:
     """
     Get audit logs for a specific user (admin only).
@@ -237,7 +253,9 @@ async def get_user_audit_logs(
     )
 
 
-@router.get("/resource/{resource_type}/{resource_id}", response_model=AuditLogListResponse)
+@router.get(
+    "/resource/{resource_type}/{resource_id}", response_model=AuditLogListResponse
+)
 async def get_resource_audit_logs(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -246,9 +264,13 @@ async def get_resource_audit_logs(
     resource_id: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    event_category: Optional[str] = Query(None, description="Filter by event category"),
-    start_date: Optional[datetime] = Query(None, description="Filter events after this date"),
-    end_date: Optional[datetime] = Query(None, description="Filter events before this date"),
+    event_category: str | None = Query(None, description="Filter by event category"),
+    start_date: datetime | None = Query(
+        None, description="Filter events after this date"
+    ),
+    end_date: datetime | None = Query(
+        None, description="Filter events before this date"
+    ),
 ) -> Any:
     """
     Get audit logs for a specific resource (admin only).
@@ -362,52 +384,58 @@ async def get_audit_stats(
 
     # Events by category
     category_query = select(
-        AuditLog.event_category,
-        func.count().label("count")
+        AuditLog.event_category, func.count().label("count")
     ).group_by(AuditLog.event_category)
     category_result = await db.execute(category_query)
     events_by_category = {
-        row[0] or "uncategorized": row[1]
-        for row in category_result.all()
+        row[0] or "uncategorized": row[1] for row in category_result.all()
     }
 
     # Events by action (top 20)
-    action_query = select(
-        AuditLog.action,
-        func.count().label("count")
-    ).group_by(AuditLog.action).order_by(desc("count")).limit(20)
+    action_query = (
+        select(AuditLog.action, func.count().label("count"))
+        .group_by(AuditLog.action)
+        .order_by(desc("count"))
+        .limit(20)
+    )
     action_result = await db.execute(action_query)
-    events_by_action = {
-        row[0]: row[1]
-        for row in action_result.all()
-    }
+    events_by_action = {row[0]: row[1] for row in action_result.all()}
 
     # Recent events (24 hours)
     now = datetime.utcnow()
     twenty_four_hours_ago = now - timedelta(hours=24)
-    recent_24h_query = select(func.count()).select_from(AuditLog).where(
-        AuditLog.created_at >= twenty_four_hours_ago
+    recent_24h_query = (
+        select(func.count())
+        .select_from(AuditLog)
+        .where(AuditLog.created_at >= twenty_four_hours_ago)
     )
     recent_24h_result = await db.execute(recent_24h_query)
     recent_events_24h = recent_24h_result.scalar_one()
 
     # Recent events (7 days)
     seven_days_ago = now - timedelta(days=7)
-    recent_7d_query = select(func.count()).select_from(AuditLog).where(
-        AuditLog.created_at >= seven_days_ago
+    recent_7d_query = (
+        select(func.count())
+        .select_from(AuditLog)
+        .where(AuditLog.created_at >= seven_days_ago)
     )
     recent_7d_result = await db.execute(recent_7d_query)
     recent_events_7d = recent_7d_result.scalar_one()
 
     # Top users (by event count, top 10)
-    top_users_query = select(
-        AuditLog.user_id,
-        User.email,
-        User.username,
-        func.count().label("event_count")
-    ).join(User, AuditLog.user_id == User.id).group_by(
-        AuditLog.user_id, User.email, User.username
-    ).order_by(desc("event_count")).limit(10)
+    event_count_label = func.count().label("event_count")
+    top_users_query = (
+        select(  # type: ignore[call-overload]
+            AuditLog.user_id,
+            User.email,
+            User.username,
+            event_count_label,
+        )
+        .join(User, AuditLog.user_id == User.id)
+        .group_by(AuditLog.user_id, User.email, User.username)
+        .order_by(desc(event_count_label))
+        .limit(10)
+    )
 
     top_users_result = await db.execute(top_users_query)
     top_users = [

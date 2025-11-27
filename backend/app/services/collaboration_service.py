@@ -13,27 +13,15 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.collaboration import (
-    ActionType,
-    ActivityLog,
-    ProjectComment,
-    ProjectLock,
-    ResourceType,
-)
-from app.models.organization import (
-    Organization,
-    OrganizationInvitation,
-    ProjectAccessControl,
-    TeamMember,
-)
-from app.models.project import Project
-from app.models.user import User
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.collaboration import ActionType, ActivityLog, ProjectLock, ResourceType
+from app.models.organization import Organization, OrganizationInvitation
 from app.services.distributed_lock_service import distributed_lock_service
 from app.services.email.email_template_service import EmailTemplateService
 from app.services.email.email_transport_service import EmailTransportService
 from app.services.permission_service import permission_service
-from sqlalchemy import and_, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -46,7 +34,9 @@ class CollaborationService:
         self.email_transport = EmailTransportService()
         self.email_templates = EmailTemplateService()
         self.use_distributed_locks = True  # Enable distributed locks by default
-        self.permission_service = permission_service  # Use centralized permission service
+        self.permission_service = (
+            permission_service  # Use centralized permission service
+        )
 
     # ========================================================================
     # Access Control
@@ -278,6 +268,9 @@ class CollaborationService:
 
                 return lock
 
+            # Return None if we somehow get here
+            return None
+
         except Exception as e:
             logger.error("lock_acquisition_error", error=str(e))
             await db.rollback()
@@ -312,12 +305,14 @@ class CollaborationService:
                 return False
 
             # Track activity
+            # Cast project_id from Column to UUID for type safety
+            project_id_value: UUID = lock.project_id  # type: ignore[assignment]
             await self.track_activity(
                 db,
-                lock.project_id,
+                project_id_value,
                 user_id,
                 ActionType.UNLOCKED.value,
-                lock.resource_type.value,
+                lock.resource_type,
                 lock.resource_id,
             )
 
@@ -460,7 +455,7 @@ class CollaborationService:
                 logger.error("distributed_lock_error", error=str(e))
                 # Fall back to regular lock acquisition
                 logger.warning("falling_back_to_regular_lock")
-                return await self._lock_to_dict(
+                return self._lock_to_dict(
                     await self.acquire_project_lock(
                         db,
                         user_id,
@@ -473,7 +468,7 @@ class CollaborationService:
                 )
         else:
             # Use original PostgreSQL-only implementation
-            return await self._lock_to_dict(
+            return self._lock_to_dict(
                 await self.acquire_project_lock(
                     db,
                     user_id,
@@ -626,7 +621,7 @@ class CollaborationService:
             "lock_id": str(lock.id),
             "user_id": str(lock.user_id),
             "project_id": lock.project_id,
-            "resource_type": lock.resource_type.value,
+            "resource_type": lock.resource_type,
             "resource_id": lock.resource_id,
             "expires_at": lock.expires_at.isoformat(),
             "backend": "postgresql",
@@ -674,7 +669,7 @@ class CollaborationService:
                 resource_id=resource_id,
                 resource_name=resource_name,
                 changes=changes,
-                metadata=metadata,
+                activity_metadata=metadata,
             )
 
             db.add(activity)
@@ -733,8 +728,10 @@ class CollaborationService:
             )
 
             # Send email
+            # Cast email from Column to str for type safety
+            email_value: str = invitation.email  # type: ignore[assignment]
             success = await self.email_transport.send_email(
-                to_email=invitation.email,
+                to_email=email_value,
                 subject=f"You've been invited to join {organization.name} on Qontinui",
                 text_body=f"You've been invited to join {organization.name}. Visit {invitation_url} to accept.",
                 html_body=html_body,

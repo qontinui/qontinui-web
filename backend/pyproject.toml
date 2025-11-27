@@ -10,7 +10,7 @@ packages = [{include = "app"}]
 python = "^3.12"
 fastapi = "^0.116.2"
 sqlalchemy = "^2.0.43"
-uvicorn = "^0.36.0"
+uvicorn = {extras = ["standard"], version = "^0.36.0"}
 pydantic = "^2.11.9"
 python-jose = "^3.5.0"
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
@@ -54,8 +54,85 @@ pytest-asyncio = "^0.24.0"
 pytest-xdist = "^3.6.0"
 pre-commit = "^4.4.0"
 aiosqlite = "^0.21.0"
+# Linting tools
+black = "^24.10.0"
+isort = "^5.13.2"
+flake8 = "^7.1.1"
+flake8-docstrings = "^1.7.0"
+mypy = "^1.14.0"
+ruff = "^0.8.0"
+types-python-jose = "^3.5.0.20250531"
+types-passlib = "^1.7.7.20250602"
 
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.mypy_cache
+    | \.pytest_cache
+    | \.venv
+    | venv
+    | __pycache__
+    | alembic
+    | migrations
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+skip = [".git", "__pycache__", "venv", ".venv", "alembic", "migrations"]
+known_first_party = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true
+strict_equality = true
+ignore_missing_imports = true
+exclude = ["alembic", "migrations", "tests"]
+# Use package mode to properly resolve module names - run with: poetry run mypy --package app
+packages = ["app"]
+# Disable some noisy checks for gradual adoption
+warn_unreachable = false
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+exclude = [
+    ".git",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    "venv",
+    ".venv",
+    "alembic",
+    "migrations",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "E203",  # whitespace before ':'
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

@@ -89,6 +89,13 @@ const navItems: NavItem[] = [
         route: '/recordings',
         color: '#BD00FF',
       },
+      {
+        id: 'captures',
+        label: 'Captures',
+        icon: <Camera size={22} />,
+        route: '/captures',
+        color: '#BD00FF',
+      },
     ],
   },
   {
@@ -407,7 +414,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     const newState = !isCollapsed
     setIsCollapsed(newState)
     localStorage.setItem('unified-sidebar-collapsed', JSON.stringify(newState))
-    
+
     // Expand default sections when expanding sidebar
     if (!newState) {
       setExpandedSections(new Set(['workflows', 'structure', 'create', 'verify', 'settings']))
@@ -457,7 +464,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
 
   const buildRoute = (route: string): string => {
     if (!projectId) return route
-    
+
     if (route.includes('?')) {
       return `${route}&project=${projectId}`
     } else {

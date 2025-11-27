@@ -10,11 +10,9 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-import pytest
 import pytest_asyncio
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool

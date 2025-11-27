@@ -9,7 +9,7 @@ Includes:
 from datetime import datetime
 from enum import Enum as PyEnum
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,14 +40,18 @@ class Notification(Base):
 
     __tablename__ = "notifications"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+    )
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    type = Column(Enum(NotificationType), nullable=False, index=True)
+    type: Column[NotificationType] = Column(
+        Enum(NotificationType), nullable=False, index=True
+    )
     title = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     project_id = Column(
@@ -72,18 +76,20 @@ class Notification(Base):
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id], backref="notifications")
-    actor = relationship("User", foreign_keys=[actor_id], backref="triggered_notifications")
+    actor = relationship(
+        "User", foreign_keys=[actor_id], backref="triggered_notifications"
+    )
     project = relationship("Project", backref="notifications")
 
     def mark_as_read(self) -> None:
         """Mark notification as read."""
-        self.read = True
-        self.read_at = datetime.utcnow()
+        self.read = True  # type: ignore[assignment]
+        self.read_at = datetime.utcnow()  # type: ignore[assignment]
 
     def mark_as_unread(self) -> None:
         """Mark notification as unread."""
-        self.read = False
-        self.read_at = None
+        self.read = False  # type: ignore[assignment]
+        self.read_at = None  # type: ignore[assignment]
 
 
 class NotificationPreferences(Base):
@@ -95,7 +101,9 @@ class NotificationPreferences(Base):
 
     __tablename__ = "notification_preferences"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+    )
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -143,7 +151,8 @@ class NotificationPreferences(Base):
             NotificationType.REPLY: self.email_replies,
             NotificationType.TEAM_INVITE: self.email_team_invites,
         }
-        return mapping.get(notification_type, False)
+        result = mapping.get(notification_type, False)
+        return bool(result)
 
     def should_send_in_app(self, notification_type: NotificationType) -> bool:
         """Check if in-app notification should be sent for a notification type."""
@@ -155,4 +164,5 @@ class NotificationPreferences(Base):
             NotificationType.TEAM_INVITE: self.in_app_team_invites,
             NotificationType.PROJECT_UPDATE: self.in_app_project_updates,
         }
-        return mapping.get(notification_type, True)
+        result = mapping.get(notification_type, True)
+        return bool(result)

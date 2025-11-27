@@ -18,7 +18,7 @@ def check_analyzer_structure(
     """Check if an analyzer file has the correct structure"""
     print(f"\nChecking {filepath}...")
 
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         content = f.read()
 
     # Parse the file
@@ -131,10 +131,10 @@ def main():
     print("Checking Registration")
     print("=" * 60)
 
-    with open("app/services/analysis/analyzers/__init__.py", "r") as f:
+    with open("app/services/analysis/analyzers/__init__.py") as f:
         init_content = f.read()
 
-    with open("app/services/analysis/register.py", "r") as f:
+    with open("app/services/analysis/register.py") as f:
         register_content = f.read()
 
     registration_checks = {

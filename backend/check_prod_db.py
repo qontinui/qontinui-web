@@ -12,7 +12,8 @@ Example:
 """
 
 import sys
-from sqlalchemy import create_engine, text, inspect
+
+from sqlalchemy import create_engine, inspect, text
 
 
 def check_production_database(database_url: str):
@@ -38,7 +39,9 @@ def check_production_database(database_url: str):
                     for v in versions:
                         print(f"   ✓ Migration version: {v}")
                     if len(versions) > 1:
-                        print(f"   ⚠️  WARNING: Multiple heads detected ({len(versions)} versions)")
+                        print(
+                            f"   ⚠️  WARNING: Multiple heads detected ({len(versions)} versions)"
+                        )
                 else:
                     print("   ⚠️  No alembic version found - database not initialized")
             except Exception as e:
@@ -51,7 +54,7 @@ def check_production_database(database_url: str):
             inspector = inspect(engine)
             existing_tables = inspector.get_table_names()
 
-            required_tables = ['users', 'annotation_sets']
+            required_tables = ["users", "annotation_sets"]
             for table in required_tables:
                 if table in existing_tables:
                     print(f"   ✓ {table} exists")
@@ -63,15 +66,15 @@ def check_production_database(database_url: str):
             print("3. NEW TABLES (should NOT exist before migration)")
             print("-" * 40)
             new_tables = [
-                'analytics_events',
-                'analysis_jobs',
-                'region_analysis_jobs',
-                'analyzer_results',
-                'fused_elements',
-                'fused_regions',
-                'region_analyzer_results',
-                'detected_elements',
-                'detected_regions'
+                "analytics_events",
+                "analysis_jobs",
+                "region_analysis_jobs",
+                "analyzer_results",
+                "fused_elements",
+                "fused_regions",
+                "region_analyzer_results",
+                "detected_elements",
+                "detected_regions",
             ]
 
             already_exist = []
@@ -92,12 +95,16 @@ def check_production_database(database_url: str):
             # 5. Check for JSONB columns with GIN indexes
             print("5. JSONB COLUMNS WITH GIN INDEXES")
             print("-" * 40)
-            jsonb_tables = ['automation_logs', 'automation_screenshots',
-                           'automation_sessions', 'screenshot_input_associations']
+            jsonb_tables = [
+                "automation_logs",
+                "automation_screenshots",
+                "automation_sessions",
+                "screenshot_input_associations",
+            ]
             for table in jsonb_tables:
                 if table in existing_tables:
                     indexes = inspector.get_indexes(table)
-                    gin_indexes = [idx for idx in indexes if 'gin' in str(idx).lower()]
+                    gin_indexes = [idx for idx in indexes if "gin" in str(idx).lower()]
                     if gin_indexes:
                         print(f"   ℹ️  {table} has GIN indexes: {len(gin_indexes)}")
             print()
@@ -115,20 +122,20 @@ def check_production_database(database_url: str):
                 print("   2. Manually creating only missing tables")
                 print()
 
-            if versions and versions[0] != '0a5fcb4bb6cd':
+            if versions and versions[0] != "0a5fcb4bb6cd":
                 print("⚠️  CAUTION: Production is not at expected parent migration!")
                 print(f"   Current: {versions[0] if versions else 'none'}")
                 print("   Expected: 0a5fcb4bb6cd")
                 print("   You may need to run intermediate migrations first.")
                 print()
 
-            if not already_exist and versions and versions[0] == '0a5fcb4bb6cd':
+            if not already_exist and versions and versions[0] == "0a5fcb4bb6cd":
                 print("✅ READY: Production database is ready for migration!")
                 print("   Run: alembic upgrade head")
                 print()
 
     except Exception as e:
-        print(f"❌ ERROR: Failed to connect to database")
+        print("❌ ERROR: Failed to connect to database")
         print(f"   {type(e).__name__}: {e}")
         print()
         print("Check your connection string format:")

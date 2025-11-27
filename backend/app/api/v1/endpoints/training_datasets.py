@@ -16,14 +16,19 @@ import io
 import json
 import math
 import os
-import tempfile
 import uuid
 import zipfile
 from collections import defaultdict
 from datetime import datetime
-from typing import List, Optional
+from typing import Any
 
 import structlog
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
+from sqlalchemy import String, and_, cast, distinct, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.expression import ColumnElement
+
 from app.api import deps
 from app.models.training_dataset import (
     AnnotationSource,
@@ -44,7 +49,6 @@ from app.schemas.training_dataset import (
     ConfidenceHistogramBucket,
     ConfidenceHistogramResponse,
     ConfidenceStats,
-    DatasetAnnotationCreate,
     DatasetAnnotationResponse,
     DatasetAnnotationUpdate,
     DatasetCreate,
@@ -60,11 +64,6 @@ from app.schemas.training_dataset import (
     PaginatedImagesResponse,
 )
 from app.services.object_storage import object_storage
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, delete as sql_delete, distinct, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 
@@ -75,28 +74,32 @@ router = APIRouter()
 # Helper Functions
 # ============================================================================
 
+
 def compute_image_hash(content: bytes) -> str:
     """Compute SHA256 hash of image content"""
     return hashlib.sha256(content).hexdigest()
 
 
-async def update_dataset_stats(db: AsyncSession, dataset_id: uuid.UUID):
+async def update_dataset_stats(db: AsyncSession, dataset_id: uuid.UUID) -> None:
     """Update denormalized statistics for a dataset"""
     # Count images
     image_count = await db.scalar(
-        select(func.count()).select_from(TrainingDatasetImage)
+        select(func.count())
+        .select_from(TrainingDatasetImage)
         .where(TrainingDatasetImage.dataset_id == dataset_id)
     )
 
     # Count annotations
     annotation_count = await db.scalar(
-        select(func.count()).select_from(TrainingDatasetAnnotation)
+        select(func.count())
+        .select_from(TrainingDatasetAnnotation)
         .where(TrainingDatasetAnnotation.dataset_id == dataset_id)
     )
 
     # Count reviewed images
     reviewed_count = await db.scalar(
-        select(func.count()).select_from(TrainingDatasetImage)
+        select(func.count())
+        .select_from(TrainingDatasetImage)
         .where(
             and_(
                 TrainingDatasetImage.dataset_id == dataset_id,
@@ -111,22 +114,23 @@ async def update_dataset_stats(db: AsyncSession, dataset_id: uuid.UUID):
     )
     dataset = result.scalar_one_or_none()
     if dataset:
-        dataset.total_images = image_count or 0
-        dataset.total_annotations = annotation_count or 0
-        dataset.reviewed_count = reviewed_count or 0
+        dataset.total_images = image_count or 0  # type: ignore[assignment]
+        dataset.total_annotations = annotation_count or 0  # type: ignore[assignment]
+        dataset.reviewed_count = reviewed_count or 0  # type: ignore[assignment]
 
 
 # ============================================================================
 # Dataset CRUD Endpoints
 # ============================================================================
 
-@router.get("/", response_model=List[DatasetResponse])
+
+@router.get("/", response_model=list[DatasetResponse])
 async def list_datasets(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
-) -> List[TrainingDataset]:
+) -> list[DatasetResponse]:
     """List all training datasets (admin only)"""
     result = await db.execute(
         select(TrainingDataset)
@@ -137,23 +141,9 @@ async def list_datasets(
     datasets = result.scalars().all()
 
     # Convert to response format with created_by as string
-    response_datasets = []
+    response_datasets: list[DatasetResponse] = []
     for d in datasets:
-        d_dict = {
-            "id": str(d.id),
-            "name": d.name,
-            "description": d.description,
-            "source": d.source.value if hasattr(d.source, "value") else str(d.source),
-            "created_at": d.created_at,
-            "updated_at": d.updated_at,
-            "created_by": str(d.created_by_id),
-            "total_images": d.total_images,
-            "total_annotations": d.total_annotations,
-            "reviewed_count": d.reviewed_count,
-            "dataset_version": d.dataset_version,
-            "export_metadata": d.export_metadata,
-        }
-        response_datasets.append(DatasetResponse(**d_dict))
+        response_datasets.append(DatasetResponse.model_validate(d))
 
     return response_datasets
 
@@ -175,20 +165,7 @@ async def create_dataset(
     await db.commit()
     await db.refresh(dataset)
 
-    return DatasetResponse(
-        id=str(dataset.id),
-        name=dataset.name,
-        description=dataset.description,
-        source=dataset.source.value,
-        created_at=dataset.created_at,
-        updated_at=dataset.updated_at,
-        created_by=str(dataset.created_by_id),
-        total_images=dataset.total_images,
-        total_annotations=dataset.total_annotations,
-        reviewed_count=dataset.reviewed_count,
-        dataset_version=dataset.dataset_version,
-        export_metadata=dataset.export_metadata,
-    )
+    return DatasetResponse.model_validate(dataset)
 
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)
@@ -205,20 +182,7 @@ async def get_dataset(
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    return DatasetResponse(
-        id=str(dataset.id),
-        name=dataset.name,
-        description=dataset.description,
-        source=dataset.source.value,
-        created_at=dataset.created_at,
-        updated_at=dataset.updated_at,
-        created_by=str(dataset.created_by_id),
-        total_images=dataset.total_images,
-        total_annotations=dataset.total_annotations,
-        reviewed_count=dataset.reviewed_count,
-        dataset_version=dataset.dataset_version,
-        export_metadata=dataset.export_metadata,
-    )
+    return DatasetResponse.model_validate(dataset)
 
 
 @router.put("/{dataset_id}", response_model=DatasetResponse)
@@ -237,27 +201,14 @@ async def update_dataset(
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     if dataset_in.name is not None:
-        dataset.name = dataset_in.name
+        dataset.name = dataset_in.name  # type: ignore[assignment]
     if dataset_in.description is not None:
-        dataset.description = dataset_in.description
+        dataset.description = dataset_in.description  # type: ignore[assignment]
 
     await db.commit()
     await db.refresh(dataset)
 
-    return DatasetResponse(
-        id=str(dataset.id),
-        name=dataset.name,
-        description=dataset.description,
-        source=dataset.source.value,
-        created_at=dataset.created_at,
-        updated_at=dataset.updated_at,
-        created_by=str(dataset.created_by_id),
-        total_images=dataset.total_images,
-        total_annotations=dataset.total_annotations,
-        reviewed_count=dataset.reviewed_count,
-        dataset_version=dataset.dataset_version,
-        export_metadata=dataset.export_metadata,
-    )
+    return DatasetResponse.model_validate(dataset)
 
 
 @router.delete("/{dataset_id}")
@@ -265,7 +216,7 @@ async def delete_dataset(
     dataset_id: str,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
-) -> dict:
+) -> dict[str, Any]:
     """Delete a dataset and all its images/annotations (admin only)"""
     result = await db.execute(
         select(TrainingDataset).where(TrainingDataset.id == dataset_id)
@@ -276,15 +227,19 @@ async def delete_dataset(
 
     # Delete associated files from storage
     images_result = await db.execute(
-        select(TrainingDatasetImage).where(TrainingDatasetImage.dataset_id == dataset_id)
+        select(TrainingDatasetImage).where(
+            TrainingDatasetImage.dataset_id == dataset_id
+        )
     )
     images = images_result.scalars().all()
 
     for image in images:
         try:
-            object_storage.backend.delete_file(image.storage_path)
+            object_storage.backend.delete_file(image.storage_path)  # type: ignore[arg-type]
         except Exception as e:
-            logger.warning("failed_to_delete_image_file", path=image.storage_path, error=str(e))
+            logger.warning(
+                "failed_to_delete_image_file", path=image.storage_path, error=str(e)
+            )
 
     await db.delete(dataset)
     await db.commit()
@@ -296,14 +251,15 @@ async def delete_dataset(
 # Image Endpoints
 # ============================================================================
 
+
 @router.get("/{dataset_id}/images", response_model=PaginatedImagesResponse)
 async def get_dataset_images(
     dataset_id: str,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
-    review_status: Optional[List[str]] = Query(None),
-    search: Optional[str] = None,
-    sort_by: Optional[str] = None,
+    review_status: list[str] | None = Query(None),
+    search: str | None = None,
+    sort_by: str | None = None,
     sort_order: str = "desc",
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
@@ -341,6 +297,7 @@ async def get_dataset_images(
     total = await db.scalar(count_query) or 0
 
     # Apply sorting
+    order_col: ColumnElement[Any]
     if sort_by == "filename":
         order_col = TrainingDatasetImage.filename
     elif sort_by == "created_at":
@@ -361,7 +318,7 @@ async def get_dataset_images(
     images = result.scalars().all()
 
     # Get annotation counts
-    annotation_counts = {}
+    annotation_counts: dict[str, int] = {}
     if images:
         image_ids = [img.id for img in images]
         count_result = await db.execute(
@@ -373,31 +330,18 @@ async def get_dataset_images(
             .group_by(TrainingDatasetAnnotation.image_id)
         )
         for row in count_result:
-            annotation_counts[str(row.image_id)] = row.count
+            annotation_counts[str(row.image_id)] = row.count  # type: ignore[assignment]
 
     # Build response
-    items = []
+    items: list[DatasetImageResponse] = []
     for img in images:
-        items.append(DatasetImageResponse(
-            id=str(img.id),
-            dataset_id=str(img.dataset_id),
-            image_hash=img.image_hash,
-            filename=img.filename,
-            width=img.width,
-            height=img.height,
-            storage_path=img.storage_path,
-            image_url=f"/api/v1/datasets/{dataset_id}/images/{img.image_hash}/file",
-            action_id=img.action_id,
-            action_type=img.action_type,
-            active_states=img.active_states,
-            timestamp=img.timestamp,
-            reviewed=img.reviewed,
-            reviewed_by=str(img.reviewed_by_id) if img.reviewed_by_id else None,
-            reviewed_at=img.reviewed_at,
-            reviewer_notes=img.reviewer_notes,
-            annotation_count=annotation_counts.get(str(img.id), 0),
-            created_at=img.created_at,
-        ))
+        img_response = DatasetImageResponse.model_validate(img)
+        # Override computed fields
+        img_response.image_url = (
+            f"/api/v1/datasets/{dataset_id}/images/{img.image_hash}/file"
+        )
+        img_response.annotation_count = annotation_counts.get(str(img.id), 0)
+        items.append(img_response)
 
     return PaginatedImagesResponse(
         items=items,
@@ -414,7 +358,7 @@ async def get_image_file(
     image_hash: str,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
-):
+) -> StreamingResponse:
     """Get the actual image file"""
     result = await db.execute(
         select(TrainingDatasetImage).where(
@@ -430,10 +374,14 @@ async def get_image_file(
 
     # Get file from storage
     try:
-        file_content = object_storage.backend.download_file(image.storage_path)
+        file_content = object_storage.backend.download_file(image.storage_path)  # type: ignore[arg-type]
 
         # Determine content type
-        ext = image.filename.rsplit(".", 1)[-1].lower() if "." in image.filename else "png"
+        ext = (
+            image.filename.rsplit(".", 1)[-1].lower()
+            if "." in image.filename
+            else "png"
+        )
         content_type = {
             "png": "image/png",
             "jpg": "image/jpeg",
@@ -459,7 +407,7 @@ async def get_image_thumbnail(
     size: int = Query(200, ge=50, le=500),
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
-):
+) -> StreamingResponse:
     """Get a thumbnail of the image"""
     # For simplicity, return the full image. In production, you'd generate thumbnails.
     return await get_image_file(dataset_id, image_hash, db, current_user)
@@ -487,93 +435,61 @@ async def update_image(
         raise HTTPException(status_code=404, detail="Image not found")
 
     if image_in.reviewed is not None:
-        image.reviewed = image_in.reviewed
+        image.reviewed = image_in.reviewed  # type: ignore[assignment]
         if image_in.reviewed:
-            image.reviewed_by_id = current_user.id
-            image.reviewed_at = datetime.utcnow()
+            image.reviewed_by_id = current_user.id  # type: ignore[assignment]
+            image.reviewed_at = datetime.utcnow()  # type: ignore[assignment]
         else:
-            image.reviewed_by_id = None
-            image.reviewed_at = None
+            image.reviewed_by_id = None  # type: ignore[assignment]
+            image.reviewed_at = None  # type: ignore[assignment]
 
     if image_in.reviewer_notes is not None:
-        image.reviewer_notes = image_in.reviewer_notes
+        image.reviewer_notes = image_in.reviewer_notes  # type: ignore[assignment]
 
     await db.commit()
     await db.refresh(image)
 
     # Update dataset stats
-    await update_dataset_stats(db, image.dataset_id)
+    await update_dataset_stats(db, image.dataset_id)  # type: ignore[arg-type]
     await db.commit()
 
-    return DatasetImageResponse(
-        id=str(image.id),
-        dataset_id=str(image.dataset_id),
-        image_hash=image.image_hash,
-        filename=image.filename,
-        width=image.width,
-        height=image.height,
-        storage_path=image.storage_path,
-        image_url=f"/api/v1/datasets/{dataset_id}/images/{image.image_hash}/file",
-        action_id=image.action_id,
-        action_type=image.action_type,
-        active_states=image.active_states,
-        timestamp=image.timestamp,
-        reviewed=image.reviewed,
-        reviewed_by=str(image.reviewed_by_id) if image.reviewed_by_id else None,
-        reviewed_at=image.reviewed_at,
-        reviewer_notes=image.reviewer_notes,
-        annotation_count=0,  # Would need separate query
-        created_at=image.created_at,
+    img_response = DatasetImageResponse.model_validate(image)
+    img_response.image_url = (
+        f"/api/v1/datasets/{dataset_id}/images/{image.image_hash}/file"
     )
+    img_response.annotation_count = 0  # Would need separate query
+    return img_response
 
 
 # ============================================================================
 # Annotation Endpoints
 # ============================================================================
 
-@router.get("/{dataset_id}/images/{image_id}/annotations", response_model=List[DatasetAnnotationResponse])
+
+@router.get(
+    "/{dataset_id}/images/{image_id}/annotations",
+    response_model=list[DatasetAnnotationResponse],
+)
 async def get_image_annotations(
     dataset_id: str,
     image_id: str,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
-) -> List[DatasetAnnotationResponse]:
+) -> list[DatasetAnnotationResponse]:
     """Get all annotations for a specific image"""
     result = await db.execute(
-        select(TrainingDatasetAnnotation).where(
+        select(TrainingDatasetAnnotation)
+        .where(
             and_(
                 TrainingDatasetAnnotation.dataset_id == dataset_id,
                 TrainingDatasetAnnotation.image_id == image_id,
             )
-        ).order_by(TrainingDatasetAnnotation.created_at)
+        )
+        .order_by(TrainingDatasetAnnotation.created_at)
     )
     annotations = result.scalars().all()
 
-    return [
-        DatasetAnnotationResponse(
-            id=str(ann.id),
-            dataset_id=str(ann.dataset_id),
-            image_id=str(ann.image_id),
-            x=ann.x,
-            y=ann.y,
-            width=ann.width,
-            height=ann.height,
-            category_id=ann.category_id,
-            category_name=ann.category_name,
-            confidence=ann.confidence,
-            source=ann.source.value if hasattr(ann.source, "value") else str(ann.source),
-            element_type=ann.element_type.value if ann.element_type and hasattr(ann.element_type, "value") else (str(ann.element_type) if ann.element_type else None),
-            verified=ann.verified,
-            inference_metadata=ann.inference_metadata,
-            review_status=ann.review_status.value if hasattr(ann.review_status, "value") else str(ann.review_status),
-            reviewer_notes=ann.reviewer_notes,
-            reviewed_by=str(ann.reviewed_by_id) if ann.reviewed_by_id else None,
-            reviewed_at=ann.reviewed_at,
-            created_at=ann.created_at,
-            updated_at=ann.updated_at,
-        )
-        for ann in annotations
-    ]
+    return [DatasetAnnotationResponse.model_validate(ann) for ann in annotations]
 
 
 @router.get("/{dataset_id}/annotations", response_model=PaginatedAnnotationsResponse)
@@ -581,15 +497,15 @@ async def get_dataset_annotations(
     dataset_id: str,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
-    source: Optional[List[str]] = Query(None),
-    element_type: Optional[List[str]] = Query(None),
-    confidence_min: Optional[float] = Query(None, ge=0.0, le=1.0),
-    confidence_max: Optional[float] = Query(None, ge=0.0, le=1.0),
-    review_status: Optional[List[str]] = Query(None),
-    verified: Optional[bool] = None,
-    category_name: Optional[List[str]] = Query(None),
-    search: Optional[str] = None,
-    sort_by: Optional[str] = None,
+    source: list[str] | None = Query(None),
+    element_type: list[str] | None = Query(None),
+    confidence_min: float | None = Query(None, ge=0.0, le=1.0),
+    confidence_max: float | None = Query(None, ge=0.0, le=1.0),
+    review_status: list[str] | None = Query(None),
+    verified: bool | None = None,
+    category_name: list[str] | None = Query(None),
+    search: str | None = None,
+    sort_by: str | None = None,
     sort_order: str = "desc",
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
@@ -609,12 +525,18 @@ async def get_dataset_annotations(
 
     # Apply filters
     if source:
-        source_enums = [AnnotationSource(s) for s in source if s in [e.value for e in AnnotationSource]]
+        source_enums = [
+            AnnotationSource(s)
+            for s in source
+            if s in [e.value for e in AnnotationSource]
+        ]
         if source_enums:
             query = query.where(TrainingDatasetAnnotation.source.in_(source_enums))
 
     if element_type:
-        type_enums = [ElementType(t) for t in element_type if t in [e.value for e in ElementType]]
+        type_enums = [
+            ElementType(t) for t in element_type if t in [e.value for e in ElementType]
+        ]
         if type_enums:
             query = query.where(TrainingDatasetAnnotation.element_type.in_(type_enums))
 
@@ -625,9 +547,15 @@ async def get_dataset_annotations(
         query = query.where(TrainingDatasetAnnotation.confidence <= confidence_max)
 
     if review_status:
-        status_enums = [ReviewStatus(s) for s in review_status if s in [e.value for e in ReviewStatus]]
+        status_enums = [
+            ReviewStatus(s)
+            for s in review_status
+            if s in [e.value for e in ReviewStatus]
+        ]
         if status_enums:
-            query = query.where(TrainingDatasetAnnotation.review_status.in_(status_enums))
+            query = query.where(
+                TrainingDatasetAnnotation.review_status.in_(status_enums)
+            )
 
     if verified is not None:
         query = query.where(TrainingDatasetAnnotation.verified == verified)
@@ -636,19 +564,22 @@ async def get_dataset_annotations(
         query = query.where(TrainingDatasetAnnotation.category_name.in_(category_name))
 
     if search:
-        query = query.where(TrainingDatasetAnnotation.category_name.ilike(f"%{search}%"))
+        query = query.where(
+            TrainingDatasetAnnotation.category_name.ilike(f"%{search}%")
+        )
 
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
     total = await db.scalar(count_query) or 0
 
     # Apply sorting
+    order_col: ColumnElement[Any]
     if sort_by == "confidence":
         order_col = TrainingDatasetAnnotation.confidence
     elif sort_by == "category_name":
         order_col = TrainingDatasetAnnotation.category_name
     elif sort_by == "review_status":
-        order_col = TrainingDatasetAnnotation.review_status
+        order_col = cast(TrainingDatasetAnnotation.review_status, String)
     else:
         order_col = TrainingDatasetAnnotation.created_at
 
@@ -664,31 +595,7 @@ async def get_dataset_annotations(
     result = await db.execute(query)
     annotations = result.scalars().all()
 
-    items = [
-        DatasetAnnotationResponse(
-            id=str(ann.id),
-            dataset_id=str(ann.dataset_id),
-            image_id=str(ann.image_id),
-            x=ann.x,
-            y=ann.y,
-            width=ann.width,
-            height=ann.height,
-            category_id=ann.category_id,
-            category_name=ann.category_name,
-            confidence=ann.confidence,
-            source=ann.source.value if hasattr(ann.source, "value") else str(ann.source),
-            element_type=ann.element_type.value if ann.element_type and hasattr(ann.element_type, "value") else (str(ann.element_type) if ann.element_type else None),
-            verified=ann.verified,
-            inference_metadata=ann.inference_metadata,
-            review_status=ann.review_status.value if hasattr(ann.review_status, "value") else str(ann.review_status),
-            reviewer_notes=ann.reviewer_notes,
-            reviewed_by=str(ann.reviewed_by_id) if ann.reviewed_by_id else None,
-            reviewed_at=ann.reviewed_at,
-            created_at=ann.created_at,
-            updated_at=ann.updated_at,
-        )
-        for ann in annotations
-    ]
+    items = [DatasetAnnotationResponse.model_validate(ann) for ann in annotations]
 
     return PaginatedAnnotationsResponse(
         items=items,
@@ -699,7 +606,10 @@ async def get_dataset_annotations(
     )
 
 
-@router.get("/{dataset_id}/annotations/{annotation_id}", response_model=DatasetAnnotationResponse)
+@router.get(
+    "/{dataset_id}/annotations/{annotation_id}",
+    response_model=DatasetAnnotationResponse,
+)
 async def get_annotation(
     dataset_id: str,
     annotation_id: str,
@@ -719,31 +629,13 @@ async def get_annotation(
     if not ann:
         raise HTTPException(status_code=404, detail="Annotation not found")
 
-    return DatasetAnnotationResponse(
-        id=str(ann.id),
-        dataset_id=str(ann.dataset_id),
-        image_id=str(ann.image_id),
-        x=ann.x,
-        y=ann.y,
-        width=ann.width,
-        height=ann.height,
-        category_id=ann.category_id,
-        category_name=ann.category_name,
-        confidence=ann.confidence,
-        source=ann.source.value if hasattr(ann.source, "value") else str(ann.source),
-        element_type=ann.element_type.value if ann.element_type and hasattr(ann.element_type, "value") else (str(ann.element_type) if ann.element_type else None),
-        verified=ann.verified,
-        inference_metadata=ann.inference_metadata,
-        review_status=ann.review_status.value if hasattr(ann.review_status, "value") else str(ann.review_status),
-        reviewer_notes=ann.reviewer_notes,
-        reviewed_by=str(ann.reviewed_by_id) if ann.reviewed_by_id else None,
-        reviewed_at=ann.reviewed_at,
-        created_at=ann.created_at,
-        updated_at=ann.updated_at,
-    )
+    return DatasetAnnotationResponse.model_validate(ann)
 
 
-@router.put("/{dataset_id}/annotations/{annotation_id}", response_model=DatasetAnnotationResponse)
+@router.put(
+    "/{dataset_id}/annotations/{annotation_id}",
+    response_model=DatasetAnnotationResponse,
+)
 async def update_annotation(
     dataset_id: str,
     annotation_id: str,
@@ -766,55 +658,34 @@ async def update_annotation(
 
     # Update fields
     if annotation_in.x is not None:
-        ann.x = annotation_in.x
+        ann.x = annotation_in.x  # type: ignore[assignment]
     if annotation_in.y is not None:
-        ann.y = annotation_in.y
+        ann.y = annotation_in.y  # type: ignore[assignment]
     if annotation_in.width is not None:
-        ann.width = annotation_in.width
+        ann.width = annotation_in.width  # type: ignore[assignment]
     if annotation_in.height is not None:
-        ann.height = annotation_in.height
+        ann.height = annotation_in.height  # type: ignore[assignment]
     if annotation_in.category_id is not None:
-        ann.category_id = annotation_in.category_id
+        ann.category_id = annotation_in.category_id  # type: ignore[assignment]
     if annotation_in.category_name is not None:
-        ann.category_name = annotation_in.category_name
+        ann.category_name = annotation_in.category_name  # type: ignore[assignment]
     if annotation_in.confidence is not None:
-        ann.confidence = annotation_in.confidence
+        ann.confidence = annotation_in.confidence  # type: ignore[assignment]
     if annotation_in.element_type is not None:
         ann.element_type = ElementType(annotation_in.element_type)
     if annotation_in.verified is not None:
-        ann.verified = annotation_in.verified
+        ann.verified = annotation_in.verified  # type: ignore[assignment]
     if annotation_in.review_status is not None:
         ann.review_status = ReviewStatus(annotation_in.review_status)
-        ann.reviewed_by_id = current_user.id
-        ann.reviewed_at = datetime.utcnow()
+        ann.reviewed_by_id = current_user.id  # type: ignore[assignment]
+        ann.reviewed_at = datetime.utcnow()  # type: ignore[assignment]
     if annotation_in.reviewer_notes is not None:
-        ann.reviewer_notes = annotation_in.reviewer_notes
+        ann.reviewer_notes = annotation_in.reviewer_notes  # type: ignore[assignment]
 
     await db.commit()
     await db.refresh(ann)
 
-    return DatasetAnnotationResponse(
-        id=str(ann.id),
-        dataset_id=str(ann.dataset_id),
-        image_id=str(ann.image_id),
-        x=ann.x,
-        y=ann.y,
-        width=ann.width,
-        height=ann.height,
-        category_id=ann.category_id,
-        category_name=ann.category_name,
-        confidence=ann.confidence,
-        source=ann.source.value if hasattr(ann.source, "value") else str(ann.source),
-        element_type=ann.element_type.value if ann.element_type and hasattr(ann.element_type, "value") else (str(ann.element_type) if ann.element_type else None),
-        verified=ann.verified,
-        inference_metadata=ann.inference_metadata,
-        review_status=ann.review_status.value if hasattr(ann.review_status, "value") else str(ann.review_status),
-        reviewer_notes=ann.reviewer_notes,
-        reviewed_by=str(ann.reviewed_by_id) if ann.reviewed_by_id else None,
-        reviewed_at=ann.reviewed_at,
-        created_at=ann.created_at,
-        updated_at=ann.updated_at,
-    )
+    return DatasetAnnotationResponse.model_validate(ann)
 
 
 @router.delete("/{dataset_id}/annotations/{annotation_id}")
@@ -823,7 +694,7 @@ async def delete_annotation(
     annotation_id: str,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
-) -> dict:
+) -> dict[str, Any]:
     """Delete an annotation"""
     result = await db.execute(
         select(TrainingDatasetAnnotation).where(
@@ -857,7 +728,7 @@ async def bulk_update_annotations(
     """Bulk update annotations"""
     updated_count = 0
     failed_count = 0
-    errors = []
+    errors: list[dict[str, Any]] = []
 
     for annotation_id in bulk_update.annotation_ids:
         try:
@@ -879,12 +750,12 @@ async def bulk_update_annotations(
             update_data = bulk_update.update
             if update_data.review_status is not None:
                 ann.review_status = ReviewStatus(update_data.review_status)
-                ann.reviewed_by_id = current_user.id
-                ann.reviewed_at = datetime.utcnow()
+                ann.reviewed_by_id = current_user.id  # type: ignore[assignment]
+                ann.reviewed_at = datetime.utcnow()  # type: ignore[assignment]
             if update_data.reviewer_notes is not None:
-                ann.reviewer_notes = update_data.reviewer_notes
+                ann.reviewer_notes = update_data.reviewer_notes  # type: ignore[assignment]
             if update_data.verified is not None:
-                ann.verified = update_data.verified
+                ann.verified = update_data.verified  # type: ignore[assignment]
 
             updated_count += 1
 
@@ -897,13 +768,14 @@ async def bulk_update_annotations(
     return BulkOperationResult(
         updated_count=updated_count,
         failed_count=failed_count,
-        errors=errors,
+        errors=errors,  # type: ignore[arg-type]
     )
 
 
 # ============================================================================
 # Statistics Endpoints
 # ============================================================================
+
 
 @router.get("/{dataset_id}/stats", response_model=DatasetStatisticsResponse)
 async def get_dataset_statistics(
@@ -921,27 +793,34 @@ async def get_dataset_statistics(
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     # Total and unique images
-    total_images = dataset.total_images
-    unique_images = await db.scalar(
-        select(func.count(distinct(TrainingDatasetImage.image_hash)))
-        .where(TrainingDatasetImage.dataset_id == dataset_id)
-    ) or 0
-
-    # Total annotations
-    total_annotations = dataset.total_annotations
-
-    # Reviewed counts
-    reviewed_images = dataset.reviewed_count
-    reviewed_annotations = await db.scalar(
-        select(func.count())
-        .select_from(TrainingDatasetAnnotation)
-        .where(
-            and_(
-                TrainingDatasetAnnotation.dataset_id == dataset_id,
-                TrainingDatasetAnnotation.review_status != ReviewStatus.PENDING,
+    total_images: int = dataset.total_images  # type: ignore[assignment]
+    unique_images = (
+        await db.scalar(
+            select(func.count(distinct(TrainingDatasetImage.image_hash))).where(
+                TrainingDatasetImage.dataset_id == dataset_id
             )
         )
-    ) or 0
+        or 0
+    )
+
+    # Total annotations
+    total_annotations: int = dataset.total_annotations  # type: ignore[assignment]
+
+    # Reviewed counts
+    reviewed_images: int = dataset.reviewed_count  # type: ignore[assignment]
+    reviewed_annotations = (
+        await db.scalar(
+            select(func.count())
+            .select_from(TrainingDatasetAnnotation)
+            .where(
+                and_(
+                    TrainingDatasetAnnotation.dataset_id == dataset_id,
+                    TrainingDatasetAnnotation.review_status != ReviewStatus.PENDING,
+                )
+            )
+        )
+        or 0
+    )
 
     # By source
     source_result = await db.execute(
@@ -952,7 +831,7 @@ async def get_dataset_statistics(
         .where(TrainingDatasetAnnotation.dataset_id == dataset_id)
         .group_by(TrainingDatasetAnnotation.source)
     )
-    by_source = {row.source.value: row.count for row in source_result}
+    by_source: dict[str, int] = {row.source.value: row.count for row in source_result}  # type: ignore[misc]
 
     # By element type
     type_result = await db.execute(
@@ -963,8 +842,8 @@ async def get_dataset_statistics(
         .where(TrainingDatasetAnnotation.dataset_id == dataset_id)
         .group_by(TrainingDatasetAnnotation.element_type)
     )
-    by_element_type = {
-        (row.element_type.value if row.element_type else "unknown"): row.count
+    by_element_type: dict[str, int] = {
+        (row.element_type.value if row.element_type else "unknown"): row.count  # type: ignore[misc]
         for row in type_result
     }
 
@@ -977,7 +856,7 @@ async def get_dataset_statistics(
         .where(TrainingDatasetAnnotation.dataset_id == dataset_id)
         .group_by(TrainingDatasetAnnotation.review_status)
     )
-    by_review_status = {row.review_status.value: row.count for row in status_result}
+    by_review_status: dict[str, int] = {row.review_status.value: row.count for row in status_result}  # type: ignore[misc]
 
     # Confidence stats
     confidence_result = await db.execute(
@@ -985,8 +864,7 @@ async def get_dataset_statistics(
             func.min(TrainingDatasetAnnotation.confidence).label("min"),
             func.max(TrainingDatasetAnnotation.confidence).label("max"),
             func.avg(TrainingDatasetAnnotation.confidence).label("mean"),
-        )
-        .where(TrainingDatasetAnnotation.dataset_id == dataset_id)
+        ).where(TrainingDatasetAnnotation.dataset_id == dataset_id)
     )
     conf_row = confidence_result.one_or_none()
 
@@ -1020,8 +898,12 @@ async def get_dataset_statistics(
             TrainingDatasetAnnotation.category_name,
         )
     )
-    by_category = [
-        {"category_id": row.category_id, "category_name": row.category_name, "count": row.count}
+    by_category: list[dict[str, Any]] = [
+        {
+            "category_id": row.category_id,
+            "category_name": row.category_name,
+            "count": row.count,
+        }
         for row in category_result
     ]
 
@@ -1035,11 +917,14 @@ async def get_dataset_statistics(
         by_element_type=by_element_type,
         by_review_status=by_review_status,
         confidence_stats=confidence_stats,
-        by_category=by_category,
+        by_category=by_category,  # type: ignore[arg-type]
     )
 
 
-@router.get("/{dataset_id}/stats/confidence-histogram", response_model=ConfidenceHistogramResponse)
+@router.get(
+    "/{dataset_id}/stats/confidence-histogram",
+    response_model=ConfidenceHistogramResponse,
+)
 async def get_confidence_histogram(
     dataset_id: str,
     buckets: int = Query(10, ge=2, le=100),
@@ -1049,15 +934,18 @@ async def get_confidence_histogram(
     """Get confidence score histogram"""
     # Get all confidence values
     result = await db.execute(
-        select(TrainingDatasetAnnotation.confidence)
-        .where(TrainingDatasetAnnotation.dataset_id == dataset_id)
+        select(TrainingDatasetAnnotation.confidence).where(
+            TrainingDatasetAnnotation.dataset_id == dataset_id
+        )
     )
-    confidences = [row[0] for row in result]
+    confidences: list[float] = [row[0] for row in result]
 
     if not confidences:
         return ConfidenceHistogramResponse(
             buckets=[
-                ConfidenceHistogramBucket(min=i / buckets, max=(i + 1) / buckets, count=0)
+                ConfidenceHistogramBucket(
+                    min=i / buckets, max=(i + 1) / buckets, count=0
+                )
                 for i in range(buckets)
             ]
         )
@@ -1086,11 +974,12 @@ async def get_confidence_histogram(
 # Import Endpoint
 # ============================================================================
 
+
 @router.post("/import", response_model=DatasetImportResponse)
 async def import_dataset(
     file: UploadFile = File(...),
     name: str = Form(...),
-    description: Optional[str] = Form(None),
+    description: str | None = Form(None),
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
 ) -> DatasetImportResponse:
@@ -1103,8 +992,8 @@ async def import_dataset(
     - annotations/: Directory containing annotation JSON files
     - metadata.json (optional): Export metadata
     """
-    warnings = []
-    errors = []
+    warnings: list[str] = []
+    errors: list[str] = []
     images_imported = 0
     annotations_imported = 0
 
@@ -1124,17 +1013,19 @@ async def import_dataset(
         with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
             # Check for required files
             names = zf.namelist()
-            manifest_path = None
+            manifest_path: str | None = None
             for n in names:
                 if n.endswith("manifest.jsonl"):
                     manifest_path = n
                     break
 
             if not manifest_path:
-                raise HTTPException(status_code=400, detail="ZIP file must contain manifest.jsonl")
+                raise HTTPException(
+                    status_code=400, detail="ZIP file must contain manifest.jsonl"
+                )
 
             # Read metadata if present
-            metadata_path = None
+            metadata_path: str | None = None
             for n in names:
                 if n.endswith("metadata.json"):
                     metadata_path = n
@@ -1159,9 +1050,11 @@ async def import_dataset(
                             continue
 
                         # Try to find the image in the ZIP
-                        image_path = None
+                        image_path: str | None = None
                         for n in names:
-                            if n.endswith(image_filename) or n.endswith(os.path.basename(image_filename)):
+                            if n.endswith(image_filename) or n.endswith(
+                                os.path.basename(image_filename)
+                            ):
                                 image_path = n
                                 break
 
@@ -1186,7 +1079,9 @@ async def import_dataset(
                             )
                         )
                         if existing.scalar_one_or_none():
-                            warnings.append(f"Duplicate image skipped: {image_filename}")
+                            warnings.append(
+                                f"Duplicate image skipped: {image_filename}"
+                            )
                             continue
 
                         # Upload to storage
@@ -1212,7 +1107,11 @@ async def import_dataset(
                             action_id=entry.get("action_id"),
                             action_type=entry.get("action_type"),
                             active_states=entry.get("active_states"),
-                            timestamp=datetime.fromisoformat(entry["timestamp"]) if entry.get("timestamp") else None,
+                            timestamp=(
+                                datetime.fromisoformat(entry["timestamp"])
+                                if entry.get("timestamp")
+                                else None
+                            ),
                         )
                         db.add(image)
                         await db.flush()
@@ -1221,9 +1120,11 @@ async def import_dataset(
                         # Process annotations
                         annotation_filename = entry.get("annotation_path")
                         if annotation_filename:
-                            ann_path = None
+                            ann_path: str | None = None
                             for n in names:
-                                if n.endswith(annotation_filename) or n.endswith(os.path.basename(annotation_filename)):
+                                if n.endswith(annotation_filename) or n.endswith(
+                                    os.path.basename(annotation_filename)
+                                ):
                                     ann_path = n
                                     break
 
@@ -1231,8 +1132,17 @@ async def import_dataset(
                                 with zf.open(ann_path) as ann_file:
                                     ann_data = json.load(ann_file)
 
-                                    for ann in ann_data.get("annotations", [ann_data] if "bbox" in ann_data else []):
-                                        bbox = ann.get("bbox", ann.get("bounding_box", {}))
+                                    for ann in ann_data.get(
+                                        "annotations",
+                                        [ann_data] if "bbox" in ann_data else [],
+                                    ):
+                                        bbox = ann.get(
+                                            "bbox", ann.get("bounding_box", {})
+                                        )
+                                        x: float
+                                        y: float
+                                        w: float
+                                        h: float
                                         if isinstance(bbox, dict):
                                             x = bbox.get("x", 0)
                                             y = bbox.get("y", 0)
@@ -1252,10 +1162,12 @@ async def import_dataset(
 
                                         # Parse element type
                                         element_type_str = ann.get("element_type")
-                                        element_type = None
+                                        element_type: ElementType | None = None
                                         if element_type_str:
                                             try:
-                                                element_type = ElementType(element_type_str)
+                                                element_type = ElementType(
+                                                    element_type_str
+                                                )
                                             except ValueError:
                                                 element_type = ElementType.UNKNOWN
 
@@ -1267,12 +1179,16 @@ async def import_dataset(
                                             width=int(w),
                                             height=int(h),
                                             category_id=ann.get("category_id", 1),
-                                            category_name=ann.get("category_name", "gui_element"),
+                                            category_name=ann.get(
+                                                "category_name", "gui_element"
+                                            ),
                                             confidence=ann.get("confidence", 1.0),
                                             source=source,
                                             element_type=element_type,
                                             verified=ann.get("verified", False),
-                                            inference_metadata=ann.get("inference_metadata"),
+                                            inference_metadata=ann.get(
+                                                "inference_metadata"
+                                            ),
                                         )
                                         db.add(annotation)
                                         annotations_imported += 1
@@ -1283,8 +1199,8 @@ async def import_dataset(
                         warnings.append(f"Error processing entry: {str(e)}")
 
         # Update stats
-        dataset.total_images = images_imported
-        dataset.total_annotations = annotations_imported
+        dataset.total_images = images_imported  # type: ignore[assignment]
+        dataset.total_annotations = annotations_imported  # type: ignore[assignment]
 
         await db.commit()
 
@@ -1309,6 +1225,7 @@ async def import_dataset(
 # Export Endpoints
 # ============================================================================
 
+
 @router.post("/{dataset_id}/export", response_model=DatasetExportJobResponse)
 async def start_export(
     dataset_id: str,
@@ -1329,7 +1246,9 @@ async def start_export(
     try:
         export_format = ExportFormat(request.format)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid export format: {request.format}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid export format: {request.format}"
+        )
 
     job = TrainingDatasetExportJob(
         dataset_id=uuid.UUID(dataset_id),
@@ -1357,28 +1276,18 @@ async def start_export(
         download_url = await generate_export(db, job, dataset)
 
         job.status = ExportJobStatus.COMPLETED
-        job.download_url = download_url
-        job.completed_at = datetime.utcnow()
-        job.progress = 100
+        job.download_url = download_url  # type: ignore[assignment]
+        job.completed_at = datetime.utcnow()  # type: ignore[assignment]
+        job.progress = 100  # type: ignore[assignment]
         await db.commit()
 
     except Exception as e:
         job.status = ExportJobStatus.FAILED
-        job.error = str(e)
+        job.error = str(e)  # type: ignore[assignment]
         await db.commit()
         logger.error("export_failed", error=str(e))
 
-    return DatasetExportJobResponse(
-        id=str(job.id),
-        dataset_id=str(job.dataset_id),
-        status=job.status.value,
-        progress=job.progress,
-        format=job.format.value,
-        download_url=job.download_url,
-        error=job.error,
-        created_at=job.created_at,
-        completed_at=job.completed_at,
-    )
+    return DatasetExportJobResponse.model_validate(job)
 
 
 async def generate_export(
@@ -1403,11 +1312,12 @@ async def generate_export(
     annotations = annotations_result.scalars().all()
 
     # Build annotations by image
-    annotations_by_image = defaultdict(list)
+    annotations_by_image: dict[str, list[Any]] = defaultdict(list)
     for ann in annotations:
         annotations_by_image[str(ann.image_id)].append(ann)
 
     # Create export based on format
+    export_data: Any
     if job.format == ExportFormat.COCO:
         export_data = generate_coco_export(images, annotations, dataset)
     elif job.format == ExportFormat.YOLO:
@@ -1430,10 +1340,12 @@ async def generate_export(
         if job.include_images:
             for img in images:
                 try:
-                    img_content = object_storage.backend.download_file(img.storage_path)
+                    img_content = object_storage.backend.download_file(img.storage_path)  # type: ignore[arg-type]
                     zf.writestr(f"images/{img.filename}", img_content)
                 except Exception as e:
-                    logger.warning("failed_to_include_image", image_id=str(img.id), error=str(e))
+                    logger.warning(
+                        "failed_to_include_image", image_id=str(img.id), error=str(e)
+                    )
 
     # Upload export file
     zip_buffer.seek(0)
@@ -1447,9 +1359,9 @@ async def generate_export(
     return url
 
 
-def generate_coco_export(images, annotations, dataset):
+def generate_coco_export(images: Any, annotations: Any, dataset: Any) -> dict[str, Any]:
     """Generate COCO format export"""
-    coco = {
+    coco: dict[str, Any] = {
         "info": {
             "description": dataset.name,
             "version": dataset.dataset_version or "1.0",
@@ -1463,7 +1375,7 @@ def generate_coco_export(images, annotations, dataset):
     }
 
     # Build category list
-    categories = {}
+    categories: dict[int, str] = {}
     for ann in annotations:
         if ann.category_id not in categories:
             categories[ann.category_id] = ann.category_name
@@ -1474,47 +1386,61 @@ def generate_coco_export(images, annotations, dataset):
     ]
 
     # Add images
-    image_id_map = {}
+    image_id_map: dict[str, int] = {}
     for idx, img in enumerate(images):
         image_id = idx + 1
         image_id_map[str(img.id)] = image_id
-        coco["images"].append({
-            "id": image_id,
-            "file_name": img.filename,
-            "width": img.width,
-            "height": img.height,
-        })
+        coco["images"].append(
+            {
+                "id": image_id,
+                "file_name": img.filename,
+                "width": img.width,
+                "height": img.height,
+            }
+        )
 
     # Add annotations
     for idx, ann in enumerate(annotations):
-        image_id = image_id_map.get(str(ann.image_id))
-        if not image_id:
+        mapped_image_id: int | None = image_id_map.get(str(ann.image_id))
+        if not mapped_image_id:
             continue
 
-        coco["annotations"].append({
-            "id": idx + 1,
-            "image_id": image_id,
-            "category_id": ann.category_id,
-            "bbox": [ann.x, ann.y, ann.width, ann.height],
-            "area": ann.width * ann.height,
-            "iscrowd": 0,
-            "attributes": {
-                "confidence": ann.confidence,
-                "source": ann.source.value if hasattr(ann.source, "value") else str(ann.source),
-                "element_type": ann.element_type.value if ann.element_type and hasattr(ann.element_type, "value") else None,
-            },
-        })
+        coco["annotations"].append(
+            {
+                "id": idx + 1,
+                "image_id": mapped_image_id,
+                "category_id": ann.category_id,
+                "bbox": [ann.x, ann.y, ann.width, ann.height],
+                "area": ann.width * ann.height,
+                "iscrowd": 0,
+                "attributes": {
+                    "confidence": ann.confidence,
+                    "source": (
+                        ann.source.value
+                        if hasattr(ann.source, "value")
+                        else str(ann.source)
+                    ),
+                    "element_type": (
+                        ann.element_type.value
+                        if ann.element_type and hasattr(ann.element_type, "value")
+                        else None
+                    ),
+                },
+            }
+        )
 
     return coco
 
 
-def generate_yolo_export(images, annotations_by_image):
+def generate_yolo_export(
+    images: Any, annotations_by_image: Any
+) -> list[dict[str, str]]:
     """Generate YOLO format export"""
-    files = []
+    files: list[dict[str, str]] = []
 
     for img in images:
         img_anns = annotations_by_image.get(str(img.id), [])
-        lines = []
+        lines: list[str] = []
 
         for ann in img_anns:
             # YOLO format: class_id x_center y_center width height (normalized)
@@ -1523,20 +1449,26 @@ def generate_yolo_export(images, annotations_by_image):
             norm_width = ann.width / img.width
             norm_height = ann.height / img.height
 
-            lines.append(f"{ann.category_id} {x_center:.6f} {y_center:.6f} {norm_width:.6f} {norm_height:.6f}")
+            lines.append(
+                f"{ann.category_id} {x_center:.6f} {y_center:.6f} {norm_width:.6f} {norm_height:.6f}"
+            )
 
         label_filename = os.path.splitext(img.filename)[0] + ".txt"
-        files.append({
-            "path": f"labels/{label_filename}",
-            "content": "\n".join(lines),
-        })
+        files.append(
+            {
+                "path": f"labels/{label_filename}",
+                "content": "\n".join(lines),
+            }
+        )
 
     return files
 
 
-def generate_jsonl_export(images, annotations_by_image):
+def generate_jsonl_export(
+    images: Any, annotations_by_image: Any
+) -> list[dict[str, str]]:
     """Generate JSONL format export"""
-    lines = []
+    lines: list[str] = []
 
     for img in images:
         img_anns = annotations_by_image.get(str(img.id), [])
@@ -1550,7 +1482,11 @@ def generate_jsonl_export(images, annotations_by_image):
                     "category_id": ann.category_id,
                     "category_name": ann.category_name,
                     "confidence": ann.confidence,
-                    "source": ann.source.value if hasattr(ann.source, "value") else str(ann.source),
+                    "source": (
+                        ann.source.value
+                        if hasattr(ann.source, "value")
+                        else str(ann.source)
+                    ),
                 }
                 for ann in img_anns
             ],
@@ -1580,14 +1516,4 @@ async def get_export_job(
     if not job:
         raise HTTPException(status_code=404, detail="Export job not found")
 
-    return DatasetExportJobResponse(
-        id=str(job.id),
-        dataset_id=str(job.dataset_id),
-        status=job.status.value,
-        progress=job.progress,
-        format=job.format.value,
-        download_url=job.download_url,
-        error=job.error,
-        created_at=job.created_at,
-        completed_at=job.completed_at,
-    )
+    return DatasetExportJobResponse.model_validate(job)

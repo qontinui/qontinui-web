@@ -219,7 +219,9 @@ async def process_uploaded_image(
         # Step 2: Generate thumbnails (using parallel processing for 40-50% speed improvement)
         logger.debug("generating_thumbnails_parallel", image_id=image_id)
         try:
-            thumbnails = ImageProcessingService.generate_thumbnails_parallel(original_bytes)
+            thumbnails = ImageProcessingService.generate_thumbnails_parallel(
+                original_bytes
+            )
             logger.info(
                 "thumbnails_generated_parallel",
                 image_id=image_id,
@@ -372,10 +374,11 @@ async def cleanup_old_data_task(
     try:
         from datetime import datetime, timedelta
 
+        from sqlalchemy import delete
+
         from app.db.session import AsyncSessionLocal
         from app.models.audit_log import AuditLog
         from app.models.usage_metric import UsageMetric
-        from sqlalchemy import delete
 
         cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
         audit_logs_deleted = 0
@@ -441,12 +444,13 @@ async def send_analytics_report_task(
     try:
         from datetime import datetime
 
+        from sqlalchemy import select
+
         from app.core.config import settings
         from app.db.session import AsyncSessionLocal
         from app.models.user import User
         from app.services.analytics_service import analytics_service
         from app.services.email.email_transport_service import EmailTransportService
-        from sqlalchemy import select
 
         # Determine days based on report type
         days_map = {"daily": 1, "weekly": 7, "monthly": 30}

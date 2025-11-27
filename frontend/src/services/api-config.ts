@@ -20,4 +20,12 @@ export class ApiConfig {
   static getBaseUrl(): string {
     return ApiConfig.API_BASE_URL;
   }
+
+  /**
+   * Get the qontinui API URL for integration testing
+   * This points to the qontinui-api service that handles mock execution
+   */
+  static getApiUrl(): string {
+    return ApiConfig.QONTINUI_API_URL;
+  }
 }

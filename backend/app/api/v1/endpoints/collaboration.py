@@ -8,11 +8,15 @@ Provides endpoints for:
 - Activity feeds and tracking
 """
 
-from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.collaboration import (
     ActionType,
@@ -25,7 +29,6 @@ from app.models.organization import ProjectAccessControl
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.collaboration import (
-    ActivityFilterParams,
     ActivityLogResponse,
     CollaboratorResponse,
     CommentCreate,
@@ -40,11 +43,6 @@ from app.schemas.collaboration import (
 )
 from app.services.collaboration_service import collaboration_service
 from app.services.notification_service import notification_service
-from app.utils.authorization import verify_project_access
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
 logger = structlog.get_logger(__name__)
 
@@ -165,32 +163,36 @@ async def share_project(
         ActionType.SHARED.value,
         ResourceType.PROJECT.value,
         str(project_id),
-        project.name,
+        cast(str, project.name),
         metadata={"shared_with": target, "permission": share_request.permission_level},
     )
 
     # Send notification email if sharing with user
     if share_request.user_id:
-        result = await db.execute(select(User).filter(User.id == share_request.user_id))
+        result = await db.execute(
+            select(User).filter(User.id == share_request.user_id)  # type: ignore[arg-type]
+        )
         shared_user = result.scalar_one_or_none()
         if shared_user:
             # Send legacy email
             await collaboration_service.send_project_share_email(
-                to_email=shared_user.email,
-                to_name=shared_user.username,
-                project_name=project.name,
+                to_email=cast(str, shared_user.email),
+                to_name=cast(str, shared_user.username),
+                project_name=cast(str, project.name),
                 shared_by_name=current_user.username,
                 permission_level=share_request.permission_level,
             )
             # Send in-app notification
             try:
+                # Note: notification service expects int for project_id but we have UUID
+                # This is a type mismatch in the notification service signature
                 await notification_service.send_share_notification(
                     db=db,
                     shared_with_user_id=share_request.user_id,
                     actor_id=current_user.id,
                     actor_username=current_user.username,
-                    project_id=project_id,
-                    project_name=project.name,
+                    project_id=project_id,  # type: ignore[arg-type]
+                    project_name=cast(str, project.name),
                     permission_level=share_request.permission_level,
                 )
             except Exception as e:
@@ -240,8 +242,8 @@ async def list_project_collaborators(
         response.is_expired = access.is_expired
 
         if access.user:
-            response.username = access.user.username
-            response.email = access.user.email
+            response.username = cast(str, access.user.username)
+            response.email = cast(str, access.user.email)
             response.full_name = access.user.full_name
             response.avatar_url = access.user.avatar_url
         elif access.organization:
@@ -392,7 +394,7 @@ async def acquire_lock(
 
         if existing_lock:
             result = await db.execute(
-                select(User).filter(User.id == existing_lock.user_id)
+                select(User).filter(User.id == existing_lock.user_id)  # type: ignore[arg-type]
             )
             lock_holder = result.scalar_one_or_none()
 
@@ -404,6 +406,12 @@ async def acquire_lock(
                     "expires_at": existing_lock.expires_at.isoformat(),
                 },
             )
+
+        # If no lock was acquired and no existing lock found, raise error
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to acquire lock",
+        )
 
     logger.info("lock_acquired", lock_id=lock.id, project_id=project_id)
 
@@ -533,8 +541,8 @@ async def get_project_locks(
             response = LockResponse.model_validate(lock)
             response.is_expired = False
             if lock.user:
-                response.username = lock.user.username
-                response.email = lock.user.email
+                response.username = cast(str, lock.user.username)
+                response.email = cast(str, lock.user.email)
             responses.append(response)
 
     return responses
@@ -604,9 +612,9 @@ async def create_comment(
                     mentioned_user_id=mentioned_user_id,
                     actor_id=current_user.id,
                     actor_username=current_user.username,
-                    project_id=project_id,
-                    project_name=project.name,
-                    comment_id=comment.id,
+                    project_id=project_id,  # type: ignore[arg-type]
+                    project_name=cast(str, project.name),
+                    comment_id=cast(UUID, comment.id),
                     comment_content=comment.content,
                 )
             except Exception as e:
@@ -625,13 +633,13 @@ async def create_comment(
             if parent_comment and parent_comment.author_id != current_user.id:
                 await notification_service.send_reply_notification(
                     db=db,
-                    notify_user_id=parent_comment.author_id,
+                    notify_user_id=cast(UUID, parent_comment.author_id),
                     actor_id=current_user.id,
                     actor_username=current_user.username,
-                    project_id=project_id,
-                    project_name=project.name,
-                    comment_id=comment.id,
-                    parent_comment_id=parent_comment.id,
+                    project_id=project_id,  # type: ignore[arg-type]
+                    project_name=cast(str, project.name),
+                    comment_id=cast(UUID, comment.id),
+                    parent_comment_id=cast(UUID, parent_comment.id),
                     reply_content=comment.content,
                 )
         except Exception as e:
@@ -643,12 +651,12 @@ async def create_comment(
             if project.owner_id != current_user.id:
                 await notification_service.send_comment_notification(
                     db=db,
-                    notify_user_id=project.owner_id,
+                    notify_user_id=cast(UUID, project.owner_id),
                     actor_id=current_user.id,
                     actor_username=current_user.username,
-                    project_id=project_id,
-                    project_name=project.name,
-                    comment_id=comment.id,
+                    project_id=project_id,  # type: ignore[arg-type]
+                    project_name=cast(str, project.name),
+                    comment_id=cast(UUID, comment.id),
                     comment_content=comment.content,
                 )
         except Exception as e:
@@ -716,8 +724,8 @@ async def list_comments(
         response = CommentResponse.model_validate(comment)
 
         if comment.author:
-            response.author_username = comment.author.username
-            response.author_email = comment.author.email
+            response.author_username = cast(str, comment.author.username)
+            response.author_email = cast(str, comment.author.email)
             response.author_avatar_url = comment.author.avatar_url
 
         # Get reply count
@@ -888,8 +896,8 @@ async def resolve_comment(
 
     response = CommentResponse.model_validate(comment)
     if comment.author:
-        response.author_username = comment.author.username
-        response.author_email = comment.author.email
+        response.author_username = cast(str, comment.author.username)
+        response.author_email = cast(str, comment.author.email)
         response.author_avatar_url = comment.author.avatar_url
 
     return response
@@ -943,8 +951,8 @@ async def get_project_activity(
         response = ActivityLogResponse.model_validate(activity)
 
         if activity.user:
-            response.username = activity.user.username
-            response.email = activity.user.email
+            response.username = cast(str, activity.user.username)
+            response.email = cast(str, activity.user.email)
             response.avatar_url = activity.user.avatar_url
 
         responses.append(response)

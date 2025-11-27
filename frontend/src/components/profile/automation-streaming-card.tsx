@@ -9,6 +9,8 @@ import { Progress } from "@/components/ui/progress"
 import { toast } from "sonner"
 import { Wifi, RefreshCcw, Info } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { httpClient } from "@/services/service-factory"
+import { ApiConfig } from "@/services/api-config"
 
 interface AutomationStreamingSettings {
   enabled: boolean
@@ -33,16 +35,10 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
   const loadSettings = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem("access_token")
-      console.log("[AutomationStreaming] Loading settings...")
-      console.log("[AutomationStreaming] Token exists:", !!token)
-      console.log("[AutomationStreaming] Token preview:", token?.substring(0, 20) + "...")
+      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming`
+      console.log("[AutomationStreaming] Loading settings from:", url)
 
-      const response = await fetch("/api/v1/users/me/automation-streaming", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+      const response = await httpClient.fetch(url)
 
       console.log("[AutomationStreaming] Response status:", response.status)
       console.log("[AutomationStreaming] Response ok:", response.ok)
@@ -67,12 +63,9 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
   const toggleStreaming = async (enabled: boolean) => {
     try {
       setUpdating(true)
-      const response = await fetch("/api/v1/users/me/automation-streaming/toggle", {
+      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming/toggle`
+      const response = await httpClient.fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-        },
         body: JSON.stringify({ enabled }),
       })
 
@@ -94,11 +87,9 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
   const resetLimit = async () => {
     try {
       setUpdating(true)
-      const response = await fetch("/api/v1/users/me/automation-streaming/reset-limit", {
+      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming/reset-limit`
+      const response = await httpClient.fetch(url, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-        },
       })
 
       if (response.ok) {

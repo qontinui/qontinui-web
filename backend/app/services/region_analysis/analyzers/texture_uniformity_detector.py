@@ -6,14 +6,21 @@ and Local Binary Patterns (LBP).
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
-from scipy import ndimage
-from sklearn.cluster import DBSCAN
+from sklearn.cluster import DBSCAN  # type: ignore[import-untyped]
 
-from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
+from ..base import (
+    BaseRegionAnalyzer,
+    BoundingBox,
+    DetectedRegion,
+    RegionAnalysisInput,
+    RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +41,11 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
     def name(self) -> str:
         return "texture_uniformity_detector"
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    @property
+    def analysis_type(self) -> RegionAnalysisType:
+        return RegionAnalysisType.PATTERN_ANALYSIS
+
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "lbp_radius": 3,
             "lbp_points": 24,
@@ -48,10 +59,50 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
             "use_gabor": True,
         }
 
-    def analyze(self, image: np.ndarray, **kwargs) -> List[DetectedRegion]:
-        """Detect inventory grids using texture uniformity"""
-        params = {**self.get_default_parameters(), **kwargs}
+    async def analyze(self, input_data: RegionAnalysisInput) -> RegionAnalysisResult:
+        """
+        Perform region analysis on the input data
 
+        Args:
+            input_data: Input screenshots and parameters
+
+        Returns:
+            RegionAnalysisResult containing detected regions
+        """
+        params = {**self.get_default_parameters(), **input_data.parameters}
+
+        # Process all screenshots
+        all_regions: list[DetectedRegion] = []
+        for idx, screenshot_bytes in enumerate(input_data.screenshot_data):
+            # Decode image from bytes
+            nparr = np.frombuffer(screenshot_bytes, np.uint8)
+            decoded_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+            # cv2.imdecode can return None if decoding fails
+            if decoded_image is not None:
+                # Detect regions in this screenshot
+                regions = self._analyze_image(decoded_image, idx, params)
+                all_regions.extend(regions)
+
+        # Calculate overall confidence
+        overall_confidence = (
+            sum(r.confidence for r in all_regions) / len(all_regions)
+            if all_regions
+            else 0.0
+        )
+
+        return RegionAnalysisResult(
+            analyzer_type=self.analysis_type,
+            analyzer_name=self.name,
+            regions=all_regions,
+            confidence=overall_confidence,
+            metadata={"screenshot_count": len(input_data.screenshot_data)},
+        )
+
+    def _analyze_image(
+        self, image: np.ndarray, screenshot_index: int, params: dict[str, Any]
+    ) -> list[DetectedRegion]:
+        """Detect inventory grids using texture uniformity"""
         # Convert to grayscale
         if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -72,6 +123,10 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
 
         # Cluster regions into grids
         grid_regions = self._cluster_into_grids(uniform_regions, gray.shape, params)
+
+        # Set the screenshot index for all detected regions
+        for region in grid_regions:
+            region.screenshot_index = screenshot_index
 
         return grid_regions
 
@@ -119,8 +174,8 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         return lbp
 
     def _compute_texture_map(
-        self, gray: np.ndarray, params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, gray: np.ndarray, params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """
         Compute texture features for sliding windows
 
@@ -171,8 +226,8 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         return windows
 
     def _find_uniform_texture_regions(
-        self, texture_map: List[Dict[str, Any]], params: Dict[str, Any]
-    ) -> List[List[Dict[str, Any]]]:
+        self, texture_map: list[dict[str, Any]], params: dict[str, Any]
+    ) -> list[list[dict[str, Any]]]:
         """
         Find groups of windows with similar texture
 
@@ -225,10 +280,10 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
 
     def _cluster_into_grids(
         self,
-        uniform_regions: List[List[Dict[str, Any]]],
-        img_shape: Tuple[int, int],
-        params: Dict[str, Any],
-    ) -> List[DetectedRegion]:
+        uniform_regions: list[list[dict[str, Any]]],
+        img_shape: tuple[int, int],
+        params: dict[str, Any],
+    ) -> list[DetectedRegion]:
         """Cluster uniform texture regions into grid structures"""
         grid_regions = []
 
@@ -265,8 +320,8 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         return grid_regions
 
     def _extract_grid_from_windows(
-        self, windows: List[Dict[str, Any]], params: Dict[str, Any]
-    ) -> Optional[DetectedRegion]:
+        self, windows: list[dict[str, Any]], params: dict[str, Any]
+    ) -> DetectedRegion | None:
         """Extract grid structure from uniform texture windows"""
         if len(windows) < params["min_grid_rows"] * params["min_grid_cols"]:
             return None

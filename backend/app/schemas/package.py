@@ -3,7 +3,7 @@ Pydantic schemas for package installation service.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,9 +25,9 @@ class PackageVersionBase(BaseModel):
     version: str
     code_content: str
     function_name: str
-    changelog: Optional[str] = None
-    dependencies: List[PackageDependency] = Field(default_factory=list)
-    min_python_version: Optional[str] = None
+    changelog: str | None = None
+    dependencies: list[PackageDependency] = Field(default_factory=list)
+    min_python_version: str | None = None
 
 
 class PackageVersionCreate(PackageVersionBase):
@@ -42,7 +42,7 @@ class PackageVersionResponse(PackageVersionBase):
     id: int
     package_id: int
     security_scan_status: str
-    security_scan_result: Optional[Dict[str, Any]] = None
+    security_scan_result: dict[str, Any] | None = None
     download_count: int
     created_at: datetime
 
@@ -55,15 +55,15 @@ class PackageBase(BaseModel):
     name: str
     slug: str
     description: str
-    long_description: Optional[str] = None
-    license: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
+    long_description: str | None = None
+    license: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 class PackageCreate(PackageBase):
     """Schema for creating a new package."""
 
-    category_id: Optional[int] = None
+    category_id: int | None = None
 
 
 class PackageResponse(PackageBase):
@@ -71,10 +71,10 @@ class PackageResponse(PackageBase):
 
     id: int
     author_id: str
-    category_id: Optional[int] = None
+    category_id: int | None = None
     is_verified: bool
     total_downloads: int
-    avg_rating: Optional[float] = None
+    avg_rating: float | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -94,7 +94,7 @@ class InstallResult(BaseModel):
     version_id: int
     installed_path: str
     message: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class UpdateInfo(BaseModel):
@@ -104,7 +104,7 @@ class UpdateInfo(BaseModel):
     package_name: str
     current_version: str
     latest_version: str
-    changelog: Optional[str] = None
+    changelog: str | None = None
 
 
 class UpdateResult(BaseModel):
@@ -115,7 +115,7 @@ class UpdateResult(BaseModel):
     old_version: str
     new_version: str
     message: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class UninstallResult(BaseModel):
@@ -124,8 +124,8 @@ class UninstallResult(BaseModel):
     success: bool
     package_id: int
     message: str
-    removed_dependencies: List[str] = Field(default_factory=list)
-    error: Optional[str] = None
+    removed_dependencies: list[str] = Field(default_factory=list)
+    error: str | None = None
 
 
 class PackageInstallationResponse(BaseModel):
@@ -141,8 +141,8 @@ class PackageInstallationResponse(BaseModel):
     updated_at: datetime
 
     # Related data
-    package: Optional[PackageResponse] = None
-    version: Optional[PackageVersionResponse] = None
+    package: PackageResponse | None = None
+    version: PackageVersionResponse | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -158,15 +158,15 @@ class DependencyInfo(BaseModel):
     name: str
     version_spec: str  # e.g., ">=2.0.0"
     is_installed: bool
-    installed_version: Optional[str] = None
+    installed_version: str | None = None
 
 
 class DependencyResolutionResult(BaseModel):
     """Result of dependency resolution."""
 
-    required_dependencies: List[DependencyInfo]
-    missing_dependencies: List[str]
-    conflicts: List[str] = Field(default_factory=list)
+    required_dependencies: list[DependencyInfo]
+    missing_dependencies: list[str]
+    conflicts: list[str] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -178,15 +178,15 @@ class SecurityScanResult(BaseModel):
     """Result of security scan."""
 
     status: str  # "passed", "failed", "pending"
-    vulnerabilities: List[Dict[str, Any]] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
-    scanned_at: Optional[datetime] = None
+    vulnerabilities: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    scanned_at: datetime | None = None
 
 
 class SafetyCheckResult(BaseModel):
     """Result of pre-installation safety checks."""
 
     passed: bool
-    checks: Dict[str, bool]
-    errors: List[str] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
+    checks: dict[str, bool]
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

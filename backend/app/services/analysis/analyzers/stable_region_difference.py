@@ -7,7 +7,7 @@ areas with minimal changes.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -52,7 +52,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 2
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "difference_threshold": 30.0,  # Max pixel difference for "stable"
             "min_area": 400,
@@ -109,7 +109,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -117,7 +117,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
             images.append(np.array(img, dtype=np.float32))
         return images
 
-    def _resize_to_common_size(self, images: List[np.ndarray]) -> List[np.ndarray]:
+    def _resize_to_common_size(self, images: list[np.ndarray]) -> list[np.ndarray]:
         """Resize all images to the size of the first image"""
         if not images:
             return images
@@ -133,7 +133,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
         return resized
 
     def _compute_accumulated_differences(
-        self, images: List[np.ndarray], params: Dict[str, Any]
+        self, images: list[np.ndarray], params: dict[str, Any]
     ) -> np.ndarray:
         """
         Compute accumulated frame differences
@@ -155,6 +155,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
         differences_array = np.stack(differences, axis=0)
         method = params["accumulation_method"]
 
+        accumulated: np.ndarray
         if method == "mean":
             accumulated = np.mean(differences_array, axis=0)
         elif method == "median":
@@ -167,7 +168,7 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
 
         return accumulated
 
-    def _clean_mask(self, mask: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
+    def _clean_mask(self, mask: np.ndarray, params: dict[str, Any]) -> np.ndarray:
         """Clean up binary mask using morphological operations"""
         mask_uint8 = mask.astype(np.uint8) * 255
 
@@ -175,16 +176,16 @@ class StableRegionDifferenceAnalyzer(BaseAnalyzer):
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
 
         # Close small holes
-        mask_uint8 = cv2.morphologyEx(mask_uint8, cv2.MORPH_CLOSE, kernel)
+        mask_cleaned: np.ndarray = cv2.morphologyEx(mask_uint8, cv2.MORPH_CLOSE, kernel)
 
         # Remove small noise
-        mask_uint8 = cv2.morphologyEx(mask_uint8, cv2.MORPH_OPEN, kernel)
+        mask_cleaned = cv2.morphologyEx(mask_cleaned, cv2.MORPH_OPEN, kernel)
 
-        return mask_uint8 > 0
+        return mask_cleaned > 0
 
     def _find_elements_from_mask(
-        self, mask: np.ndarray, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, mask: np.ndarray, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Find connected components in mask and create bounding boxes"""
         elements = []
 

@@ -7,7 +7,8 @@ Provides cleanup utilities for automation sessions including:
 - Automatic session abortion on disconnect
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -23,7 +24,7 @@ async def cleanup_session_on_disconnect(
     db: AsyncSession,
     session_id: UUID | None,
     disconnect_reason: str = "websocket_disconnect",
-) -> dict[str, any]:
+) -> dict[str, Any]:
     """
     Clean up automation session when WebSocket disconnects.
 
@@ -129,7 +130,7 @@ async def cleanup_session_on_disconnect(
 async def check_session_timeout(
     db: AsyncSession,
     session_id: UUID,
-) -> tuple[bool, dict[str, any]]:
+) -> tuple[bool, dict[str, Any]]:
     """
     Check if a session has exceeded its maximum duration.
 

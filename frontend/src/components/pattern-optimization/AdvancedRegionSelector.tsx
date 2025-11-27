@@ -347,7 +347,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
       setCurrentRegion(newRegion);
     } else if (isDragging && dragHandle && currentRegion && dragStart && coords) {
       // Resizing/moving existing region
-      let newRegion = { ...currentRegion };
+      const newRegion = { ...currentRegion };
 
       switch (dragHandle) {
         case 'move':

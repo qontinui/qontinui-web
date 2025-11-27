@@ -12,7 +12,7 @@ Characteristics:
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -58,7 +58,7 @@ class ModalDialogDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_width": 250,
             "max_width_ratio": 0.8,  # Max 80% of screen width
@@ -88,7 +88,7 @@ class ModalDialogDetector(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, (img_color, img_gray) in enumerate(
-            zip(images_color, images_gray)
+            zip(images_color, images_gray, strict=False)
         ):
             elements = await self._analyze_screenshot(
                 img_color, img_gray, screenshot_idx, params
@@ -109,7 +109,7 @@ class ModalDialogDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
@@ -117,7 +117,7 @@ class ModalDialogDetector(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -130,8 +130,8 @@ class ModalDialogDetector(BaseAnalyzer):
         img_color: np.ndarray,
         img_gray: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot for modal dialogs"""
         elements = []
 
@@ -253,7 +253,7 @@ class ModalDialogDetector(BaseAnalyzer):
         title_region = dialog_region[:title_height, :]
 
         # Title bar typically has different background or edge
-        top_edge_density = np.sum(cv2.Canny(title_region, 50, 150))
+        top_edge_density: float = float(np.sum(cv2.Canny(title_region, 50, 150)))
         total_pixels = title_region.size
 
         # If there's significant edge activity at top, likely a title bar
@@ -333,7 +333,7 @@ class ModalDialogDetector(BaseAnalyzer):
         )
 
         # Background should be 10-30% darker if there's an overlay
-        return dialog_brightness > background_brightness * 1.1
+        return bool(dialog_brightness > background_brightness * 1.1)
 
     def _calculate_confidence(
         self,

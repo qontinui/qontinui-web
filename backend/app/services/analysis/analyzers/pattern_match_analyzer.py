@@ -7,7 +7,7 @@ Examples: "OK" buttons in dialogs, close icons, common UI widgets.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -52,7 +52,7 @@ class PatternMatchAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1  # Can work with single screenshot, better with multiple
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_occurrences": 2,  # Pattern must appear at least N times
             "similarity_threshold": 0.85,  # How similar patterns must be
@@ -90,7 +90,7 @@ class PatternMatchAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -99,8 +99,8 @@ class PatternMatchAnalyzer(BaseAnalyzer):
         return images
 
     async def _find_recurring_patterns(
-        self, images: List[np.ndarray], params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, images: list[np.ndarray], params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """
         Find patterns that appear multiple times across screenshots
 
@@ -147,7 +147,7 @@ class PatternMatchAnalyzer(BaseAnalyzer):
 
     def _detect_button_patterns(
         self, image: np.ndarray
-    ) -> List[Tuple[int, int, int, int]]:
+    ) -> list[tuple[int, int, int, int]]:
         """
         Detect button-like patterns in an image
 
@@ -184,6 +184,6 @@ class PatternMatchAnalyzer(BaseAnalyzer):
             return 0.0
 
         # Simple normalized cross-correlation as example
-        correlation = np.corrcoef(region1.flatten(), region2.flatten())[0, 1]
+        correlation: float = np.corrcoef(region1.flatten(), region2.flatten())[0, 1]
 
         return max(0.0, correlation)

@@ -43,7 +43,7 @@ class CaptureSessionResponse(BaseModel):
     """Schema for capture session response."""
 
     id: UUID
-    project_id: int
+    project_id: UUID
     user_id: UUID
     name: str
     description: str | None
@@ -248,7 +248,7 @@ class LearnedWorkflowCreate(BaseModel):
     """Schema for creating a learned workflow."""
 
     session_id: UUID
-    project_id: int
+    project_id: UUID
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
     workflow_json: dict = Field(
@@ -281,7 +281,7 @@ class LearnedWorkflowResponse(BaseModel):
 
     id: UUID
     session_id: UUID
-    project_id: int
+    project_id: UUID
     name: str
     description: str | None
     workflow_json: dict
@@ -305,7 +305,7 @@ class BatchActionCreate(BaseModel):
     """Schema for batch creating actions."""
 
     actions: list[CaptureActionCreate] = Field(
-        ..., max_items=1000, description="Batch of actions to create"
+        ..., description="Batch of actions to create", max_length=1000
     )
 
 
@@ -313,7 +313,7 @@ class BatchDetectedElementCreate(BaseModel):
     """Schema for batch creating detected elements."""
 
     elements: list[CaptureDetectedElementCreate] = Field(
-        ..., max_items=1000, description="Batch of elements to create"
+        ..., description="Batch of elements to create", max_length=1000
     )
 
 

@@ -10,11 +10,16 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute, selectinload
+
 from app.api.deps import current_active_user, get_async_db
 from app.models.automation_log import AutomationLog
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
-from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.user import User
 from app.schemas.automation import (
     AutomationSessionListResponse,
@@ -27,11 +32,6 @@ from app.schemas.automation import (
 )
 from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 
@@ -1094,6 +1094,7 @@ async def get_session_logs_paginated(
     total = count_result.scalar_one()
 
     # Apply ordering
+    order_field: InstrumentedAttribute[int] | InstrumentedAttribute[datetime]
     if order_by == "sequence_number":
         order_field = AutomationLog.sequence_number
     else:

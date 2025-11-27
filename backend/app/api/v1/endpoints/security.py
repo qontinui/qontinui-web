@@ -87,9 +87,7 @@ async def receive_csp_report(
             "violatedDirective"
         )
         blocked_uri = report_data.get("blocked-uri") or report_data.get("blockedURI")
-        document_uri = report_data.get("document-uri") or report_data.get(
-            "documentURI"
-        )
+        document_uri = report_data.get("document-uri") or report_data.get("documentURI")
         source_file = report_data.get("source-file") or report_data.get("sourceFile")
         line_number = report_data.get("line-number") or report_data.get("lineNumber")
 
@@ -148,9 +146,10 @@ def _is_suspicious_violation(report_data: dict) -> bool:
         bool: True if violation appears suspicious
     """
     blocked_uri = str(report_data.get("blocked-uri", "")).lower()
-    violated_directive = str(
-        report_data.get("violated-directive", "")
-    ).lower() or str(report_data.get("effective-directive", "")).lower()
+    violated_directive = (
+        str(report_data.get("violated-directive", "")).lower()
+        or str(report_data.get("effective-directive", "")).lower()
+    )
 
     # Common XSS patterns
     suspicious_patterns = [

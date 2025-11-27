@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { TrendingUp, Users, Activity, Target, Calendar, BarChart3 } from "lucide-react"
 import { toast } from "sonner"
-import { authService } from "@/services/service-factory"
+import { httpClient } from "@/services/service-factory"
 
 interface AnalyticsData {
   dau: number
@@ -33,33 +33,33 @@ export default function AnalyticsTab() {
   const loadAnalytics = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const accessToken = authService.tokenManager.getAccessToken()
+      const url = `${apiUrl}/api/v1/admin/analytics`
 
-      if (!accessToken) {
-        toast.error('Not authenticated')
-        return
-      }
+      console.log('[AnalyticsTab] Loading analytics from:', url)
 
-      const response = await fetch(`${apiUrl}/api/v1/admin/analytics`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      })
+      const response = await httpClient.fetch(url)
+
+      console.log('[AnalyticsTab] Response status:', response.status, response.statusText)
 
       if (response.ok) {
         const data = await response.json()
+        console.log('[AnalyticsTab] Analytics data loaded successfully')
         setAnalytics(data)
         setError(null)
       } else {
         const errorText = await response.text().catch(() => 'Unknown error')
+        console.error('[AnalyticsTab] Error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+        })
         setError(`Failed to load analytics: ${response.status} - ${errorText}`)
         toast.error('Failed to load analytics')
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error'
       setError(`Failed to load analytics: ${errorMsg}`)
-      console.error('Failed to load analytics:', err)
+      console.error('[AnalyticsTab] Exception:', err)
       toast.error('Failed to load analytics')
     } finally {
       setLoading(false)

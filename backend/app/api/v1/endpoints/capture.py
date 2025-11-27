@@ -5,8 +5,11 @@ Handles creating, managing, and analyzing screenshot capture sessions
 for the workflow learning pipeline.
 """
 
-from typing import Annotated
 from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
 from app.models.user import User
@@ -22,8 +25,6 @@ from app.schemas.capture import (
     ScreenshotStateMatchResponse,
 )
 from app.services.capture_session_service import CaptureSessionService
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

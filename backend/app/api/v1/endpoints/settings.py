@@ -2,11 +2,12 @@
 
 from typing import Any
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.models.user import User
 from app.schemas.settings import QontinuiSettings, QontinuiSettingsUpdate
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -22,7 +23,9 @@ async def get_settings(
     """
     # For now, return default settings
     # TODO: Implement database storage for settings
-    from qontinui.config.qontinui_properties import QontinuiProperties
+    from qontinui.config.qontinui_properties import (
+        QontinuiProperties,  # type: ignore[import-not-found]
+    )
 
     props = QontinuiProperties()
     return props.model_dump()

@@ -11,7 +11,7 @@ Characteristics:
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -57,7 +57,7 @@ class IconButtonDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_size": 16,
             "max_size": 64,
@@ -86,7 +86,7 @@ class IconButtonDetector(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, (img_color, img_gray) in enumerate(
-            zip(images_color, images_gray)
+            zip(images_color, images_gray, strict=False)
         ):
             elements = await self._analyze_screenshot(
                 img_color, img_gray, screenshot_idx, icon_templates, params
@@ -107,7 +107,7 @@ class IconButtonDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
@@ -115,7 +115,7 @@ class IconButtonDetector(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -123,7 +123,7 @@ class IconButtonDetector(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _create_icon_templates(self) -> Dict[str, List[np.ndarray]]:
+    def _create_icon_templates(self) -> dict[str, list[np.ndarray]]:
         """Create templates for common icon types"""
         templates = {}
 
@@ -144,7 +144,7 @@ class IconButtonDetector(BaseAnalyzer):
 
         return templates
 
-    def _create_hamburger_templates(self) -> List[np.ndarray]:
+    def _create_hamburger_templates(self) -> list[np.ndarray]:
         """Create hamburger menu icon templates"""
         templates = []
 
@@ -166,7 +166,7 @@ class IconButtonDetector(BaseAnalyzer):
 
         return templates
 
-    def _create_settings_templates(self) -> List[np.ndarray]:
+    def _create_settings_templates(self) -> list[np.ndarray]:
         """Create settings/gear icon templates"""
         templates = []
 
@@ -176,20 +176,20 @@ class IconButtonDetector(BaseAnalyzer):
             radius = size // 3
 
             # Draw a simplified gear (circle with teeth)
-            cv2.circle(template, (center, center), radius, 255, 2)
+            cv2.circle(template, (center, center), radius, (255,), 2)
 
             # Add 6 teeth around the circle
             for angle in range(0, 360, 60):
                 rad = np.radians(angle)
                 x = int(center + radius * 1.3 * np.cos(rad))
                 y = int(center + radius * 1.3 * np.sin(rad))
-                cv2.line(template, (center, center), (x, y), 255, 2)
+                cv2.line(template, (center, center), (x, y), (255,), 2)
 
             templates.append(template)
 
         return templates
 
-    def _create_search_templates(self) -> List[np.ndarray]:
+    def _create_search_templates(self) -> list[np.ndarray]:
         """Create search/magnifying glass icon templates"""
         templates = []
 
@@ -199,18 +199,18 @@ class IconButtonDetector(BaseAnalyzer):
             radius = size // 4
 
             # Draw circle (lens)
-            cv2.circle(template, (center, center), radius, 255, 2)
+            cv2.circle(template, (center, center), radius, (255,), 2)
 
             # Draw handle
             handle_start = (int(center + radius * 0.7), int(center + radius * 0.7))
             handle_end = (size - 4, size - 4)
-            cv2.line(template, handle_start, handle_end, 255, 2)
+            cv2.line(template, handle_start, handle_end, (255,), 2)
 
             templates.append(template)
 
         return templates
 
-    def _create_close_templates(self) -> List[np.ndarray]:
+    def _create_close_templates(self) -> list[np.ndarray]:
         """Create close/X icon templates"""
         templates = []
 
@@ -219,14 +219,18 @@ class IconButtonDetector(BaseAnalyzer):
             margin = size // 4
 
             # Draw X
-            cv2.line(template, (margin, margin), (size - margin, size - margin), 255, 2)
-            cv2.line(template, (size - margin, margin), (margin, size - margin), 255, 2)
+            cv2.line(
+                template, (margin, margin), (size - margin, size - margin), (255,), 2
+            )
+            cv2.line(
+                template, (size - margin, margin), (margin, size - margin), (255,), 2
+            )
 
             templates.append(template)
 
         return templates
 
-    def _create_more_templates(self) -> List[np.ndarray]:
+    def _create_more_templates(self) -> list[np.ndarray]:
         """Create more/three dots icon templates"""
         templates = []
 
@@ -240,9 +244,9 @@ class IconButtonDetector(BaseAnalyzer):
             y2 = size // 2
             y3 = 3 * size // 4
 
-            cv2.circle(template, (center_x, y1), dot_radius, 255, -1)
-            cv2.circle(template, (center_x, y2), dot_radius, 255, -1)
-            cv2.circle(template, (center_x, y3), dot_radius, 255, -1)
+            cv2.circle(template, (center_x, y1), dot_radius, (255,), -1)
+            cv2.circle(template, (center_x, y2), dot_radius, (255,), -1)
+            cv2.circle(template, (center_x, y3), dot_radius, (255,), -1)
 
             templates.append(template)
 
@@ -253,9 +257,9 @@ class IconButtonDetector(BaseAnalyzer):
         img_color: np.ndarray,
         img_gray: np.ndarray,
         screenshot_idx: int,
-        icon_templates: Dict[str, List[np.ndarray]],
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        icon_templates: dict[str, list[np.ndarray]],
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot for icon buttons"""
         elements = []
         detected_locations = set()
@@ -331,7 +335,7 @@ class IconButtonDetector(BaseAnalyzer):
 
     def _template_match_icons(
         self, img_gray: np.ndarray, template: np.ndarray, threshold: float
-    ) -> List[Tuple[int, int, int, int, float]]:
+    ) -> list[tuple[int, int, int, int, float]]:
         """Template match for icons"""
         matches = []
 
@@ -341,7 +345,7 @@ class IconButtonDetector(BaseAnalyzer):
         # Find locations above threshold
         locations = np.where(result >= threshold)
 
-        for pt in zip(*locations[::-1]):
+        for pt in zip(*locations[::-1], strict=False):
             x, y = pt
             h, w = template.shape
             confidence = float(result[y, x])
@@ -353,8 +357,8 @@ class IconButtonDetector(BaseAnalyzer):
         return matches
 
     def _non_max_suppression(
-        self, matches: List[Tuple[int, int, int, int, float]], iou_threshold: float
-    ) -> List[Tuple[int, int, int, int, float]]:
+        self, matches: list[tuple[int, int, int, int, float]], iou_threshold: float
+    ) -> list[tuple[int, int, int, int, float]]:
         """Remove overlapping detections"""
         if not matches:
             return []
@@ -373,8 +377,8 @@ class IconButtonDetector(BaseAnalyzer):
 
     def _boxes_overlap(
         self,
-        box1: Tuple[int, int, int, int, float],
-        box2: Tuple[int, int, int, int, float],
+        box1: tuple[int, int, int, int, float],
+        box2: tuple[int, int, int, int, float],
         threshold: float,
     ) -> bool:
         """Check if two boxes overlap"""
@@ -398,8 +402,8 @@ class IconButtonDetector(BaseAnalyzer):
         return iou >= threshold
 
     def _detect_by_shape(
-        self, img_gray: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float]]:
+        self, img_gray: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float]]:
         """Detect icon buttons by shape (small, square regions)"""
         icons = []
 

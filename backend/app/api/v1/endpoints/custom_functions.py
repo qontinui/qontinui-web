@@ -7,6 +7,9 @@ Provides REST API for browsing, searching, and managing discovered custom functi
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import current_active_user, get_async_db
 from app.crud import custom_function as crud
 from app.models.project import Project
@@ -14,13 +17,10 @@ from app.models.user import User
 from app.schemas.custom_function import (
     CustomFunctionListResponse,
     CustomFunctionRead,
-    CustomFunctionSearchFilters,
     CustomFunctionSummary,
     CustomFunctionUpdate,
     FunctionStats,
 )
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -102,20 +102,7 @@ async def list_custom_functions(
         db, project_id, skip=offset, limit=limit
     )
 
-    summaries = [
-        CustomFunctionSummary(
-            id=f.id,
-            project_id=f.project_id,
-            file_path=f.file_path,
-            function_name=f.function_name,
-            display_name=f.display_name,
-            description=f.description,
-            category=f.category,
-            tags=f.tags or [],
-            created_at=f.created_at,
-        )
-        for f in functions
-    ]
+    summaries = [CustomFunctionSummary.model_validate(f) for f in functions]
 
     return CustomFunctionListResponse(
         functions=summaries,
@@ -174,20 +161,7 @@ async def search_custom_functions(
         limit=limit,
     )
 
-    summaries = [
-        CustomFunctionSummary(
-            id=f.id,
-            project_id=f.project_id,
-            file_path=f.file_path,
-            function_name=f.function_name,
-            display_name=f.display_name,
-            description=f.description,
-            category=f.category,
-            tags=f.tags or [],
-            created_at=f.created_at,
-        )
-        for f in functions
-    ]
+    summaries = [CustomFunctionSummary.model_validate(f) for f in functions]
 
     return CustomFunctionListResponse(
         functions=summaries,
@@ -241,27 +215,7 @@ async def get_custom_function(
             detail="Custom function not found in this project",
         )
 
-    return CustomFunctionRead(
-        id=function.id,
-        project_id=function.project_id,
-        file_path=function.file_path,
-        function_name=function.function_name,
-        display_name=function.display_name,
-        description=function.description,
-        category=function.category,
-        tags=function.tags or [],
-        parameters=function.parameters or [],
-        return_type=function.return_type,
-        inputs=function.inputs or {},
-        outputs=function.outputs or {},
-        observable_outputs=function.observable_outputs or [],
-        source_code=function.source_code,
-        docstring=function.docstring,
-        line_start=function.line_start,
-        line_end=function.line_end,
-        created_at=function.created_at,
-        updated_at=function.updated_at,
-    )
+    return CustomFunctionRead.model_validate(function)
 
 
 @router.put(
@@ -315,27 +269,7 @@ async def update_custom_function(
         user_id=current_user.id,
     )
 
-    return CustomFunctionRead(
-        id=function.id,
-        project_id=function.project_id,
-        file_path=function.file_path,
-        function_name=function.function_name,
-        display_name=function.display_name,
-        description=function.description,
-        category=function.category,
-        tags=function.tags or [],
-        parameters=function.parameters or [],
-        return_type=function.return_type,
-        inputs=function.inputs or {},
-        outputs=function.outputs or {},
-        observable_outputs=function.observable_outputs or [],
-        source_code=function.source_code,
-        docstring=function.docstring,
-        line_start=function.line_start,
-        line_end=function.line_end,
-        created_at=function.created_at,
-        updated_at=function.updated_at,
-    )
+    return CustomFunctionRead.model_validate(function)
 
 
 @router.delete(
@@ -507,17 +441,4 @@ async def get_file_functions(
 
     functions = await crud.get_functions_by_file(db, project_id, file_path)
 
-    return [
-        CustomFunctionSummary(
-            id=f.id,
-            project_id=f.project_id,
-            file_path=f.file_path,
-            function_name=f.function_name,
-            display_name=f.display_name,
-            description=f.description,
-            category=f.category,
-            tags=f.tags or [],
-            created_at=f.created_at,
-        )
-        for f in functions
-    ]
+    return [CustomFunctionSummary.model_validate(f) for f in functions]

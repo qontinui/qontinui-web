@@ -4,11 +4,11 @@ Analysis Orchestrator - Manages the analysis pipeline
 
 import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any
 from uuid import UUID
 
-from .base import AnalysisInput, AnalysisResult, AnalysisType, BaseAnalyzer
-from .fusion import DecisionFusion, FusedElement
+from .base import AnalysisInput, AnalysisResult, BaseAnalyzer
+from .fusion import DecisionFusion
 from .progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
@@ -18,10 +18,10 @@ class AnalyzerRegistry:
     """Registry of available analyzers"""
 
     def __init__(self):
-        self._analyzers: Dict[str, Type[BaseAnalyzer]] = {}
-        self._instances: Dict[str, BaseAnalyzer] = {}
+        self._analyzers: dict[str, type[BaseAnalyzer]] = {}
+        self._instances: dict[str, BaseAnalyzer] = {}
 
-    def register(self, analyzer_class: Type[BaseAnalyzer], name: Optional[str] = None):
+    def register(self, analyzer_class: type[BaseAnalyzer], name: str | None = None):
         """
         Register an analyzer class
 
@@ -37,7 +37,7 @@ class AnalyzerRegistry:
         logger.info(f"Registered analyzer: {analyzer_name}")
 
     def get_analyzer(
-        self, name: str, config: Optional[Dict[str, Any]] = None
+        self, name: str, config: dict[str, Any] | None = None
     ) -> BaseAnalyzer:
         """
         Get an analyzer instance
@@ -55,7 +55,7 @@ class AnalyzerRegistry:
         # Create new instance with config
         return self._analyzers[name](config)
 
-    def list_analyzers(self) -> List[Dict[str, Any]]:
+    def list_analyzers(self) -> list[dict[str, Any]]:
         """
         List all registered analyzers
 
@@ -91,9 +91,9 @@ class AnalysisOrchestrator:
 
     def __init__(
         self,
-        fusion_system: Optional[DecisionFusion] = None,
-        registry: Optional[AnalyzerRegistry] = None,
-        progress_tracker: Optional[ProgressTracker] = None,
+        fusion_system: DecisionFusion | None = None,
+        registry: AnalyzerRegistry | None = None,
+        progress_tracker: ProgressTracker | None = None,
     ):
         """
         Initialize orchestrator
@@ -110,13 +110,13 @@ class AnalysisOrchestrator:
     async def analyze(
         self,
         input_data: AnalysisInput,
-        analyzer_names: Optional[List[str]] = None,
-        analyzer_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+        analyzer_names: list[str] | None = None,
+        analyzer_configs: dict[str, dict[str, Any]] | None = None,
         parallel: bool = True,
         fuse_results: bool = True,
         overlap_threshold: float = 0.5,
-        job_id: Optional[UUID] = None,
-    ) -> Dict[str, Any]:
+        job_id: UUID | None = None,
+    ) -> dict[str, Any]:
         """
         Run analysis pipeline
 
@@ -223,10 +223,10 @@ class AnalysisOrchestrator:
 
     async def _run_parallel(
         self,
-        analyzers: List[BaseAnalyzer],
+        analyzers: list[BaseAnalyzer],
         input_data: AnalysisInput,
-        job_id: Optional[UUID] = None,
-    ) -> List[AnalysisResult]:
+        job_id: UUID | None = None,
+    ) -> list[AnalysisResult]:
         """Run analyzers in parallel"""
 
         async def run_with_progress(analyzer: BaseAnalyzer):
@@ -260,16 +260,16 @@ class AnalysisOrchestrator:
             else:
                 valid_results.append(result)
 
-        return valid_results
+        return valid_results  # type: ignore[return-value]
 
     async def _run_sequential(
         self,
-        analyzers: List[BaseAnalyzer],
+        analyzers: list[BaseAnalyzer],
         input_data: AnalysisInput,
-        job_id: Optional[UUID] = None,
-    ) -> List[AnalysisResult]:
+        job_id: UUID | None = None,
+    ) -> list[AnalysisResult]:
         """Run analyzers sequentially"""
-        results = []
+        results: list[AnalysisResult] = []
         for analyzer in analyzers:
             if job_id:
                 await self.progress_tracker.update_analyzer_start(job_id, analyzer.name)
@@ -291,6 +291,6 @@ class AnalysisOrchestrator:
 
         return results
 
-    def get_available_analyzers(self) -> List[Dict[str, Any]]:
+    def get_available_analyzers(self) -> list[dict[str, Any]]:
         """Get list of available analyzers"""
         return self.registry.list_analyzers()

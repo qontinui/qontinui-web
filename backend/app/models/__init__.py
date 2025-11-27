@@ -82,10 +82,6 @@ from app.models.test_deficiency import (
     DeficiencyType,
     TestDeficiency,
 )
-from app.models.transition_execution import (
-    TransitionExecution,
-    TransitionExecutionStatus,
-)
 from app.models.training_dataset import (
     AnnotationSource,
     DatasetSource,
@@ -97,6 +93,10 @@ from app.models.training_dataset import (
     TrainingDatasetAnnotation,
     TrainingDatasetExportJob,
     TrainingDatasetImage,
+)
+from app.models.transition_execution import (
+    TransitionExecution,
+    TransitionExecutionStatus,
 )
 from app.models.transition_reliability import TransitionReliability
 from app.models.usage_metric import UsageMetric

@@ -13,10 +13,10 @@ from pathlib import Path
 backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
-from app.db.base_class import Base
+from sqlalchemy import inspect
+
 from app.db.session import engine
 from app.models.annotation import Annotation, AnnotationSet
-from sqlalchemy import inspect
 
 
 def table_exists(table_name: str) -> bool:

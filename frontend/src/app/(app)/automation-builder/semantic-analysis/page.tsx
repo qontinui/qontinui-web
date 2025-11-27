@@ -15,7 +15,12 @@
  */
 
 import { SemanticAnalysisTab } from '@/components/SemanticAnalysis/SemanticAnalysisTab'
+import { RequireProject } from '@/components/require-project'
 
 export default function SemanticAnalysisPage() {
-  return <SemanticAnalysisTab />
+  return (
+    <RequireProject pageName="Semantic Analysis">
+      <SemanticAnalysisTab />
+    </RequireProject>
+  )
 }

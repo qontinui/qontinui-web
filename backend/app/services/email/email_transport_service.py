@@ -6,8 +6,9 @@ from email.mime.text import MIMEText
 import aiosmtplib
 import boto3
 import structlog
-from app.core.config import settings
 from botocore.exceptions import BotoCoreError, ClientError
+
+from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -126,7 +127,7 @@ class EmailTransportService:
 
         try:
             # Send via SES API
-            response = self.ses_client.send_email(
+            response = self.ses_client.send_email(  # type: ignore[union-attr]
                 Source=settings.SMTP_FROM_EMAIL,
                 Destination={"ToAddresses": [to_email]},
                 Message={

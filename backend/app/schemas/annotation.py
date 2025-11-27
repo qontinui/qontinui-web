@@ -3,10 +3,10 @@ Pydantic schemas for annotation API
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Screenshot schema for multi-screenshot support
 
@@ -28,10 +28,10 @@ class AnnotationBase(BaseModel):
     y: int = Field(..., ge=0)
     width: int = Field(..., gt=0)
     height: int = Field(..., gt=0)
-    label: Optional[str] = None
-    description: Optional[str] = None
-    reason: Optional[str] = None
-    extra_data: Optional[Dict[str, Any]] = None
+    label: str | None = None
+    description: str | None = None
+    reason: str | None = None
+    extra_data: dict[str, Any] | None = None
     screenshot_index: int = Field(
         default=0,
         ge=0,
@@ -44,15 +44,15 @@ class AnnotationCreate(AnnotationBase):
 
 
 class AnnotationUpdate(BaseModel):
-    x: Optional[int] = Field(None, ge=0)
-    y: Optional[int] = Field(None, ge=0)
-    width: Optional[int] = Field(None, gt=0)
-    height: Optional[int] = Field(None, gt=0)
-    label: Optional[str] = None
-    description: Optional[str] = None
-    reason: Optional[str] = None
-    extra_data: Optional[Dict[str, Any]] = None
-    screenshot_index: Optional[int] = Field(
+    x: int | None = Field(None, ge=0)
+    y: int | None = Field(None, ge=0)
+    width: int | None = Field(None, gt=0)
+    height: int | None = Field(None, gt=0)
+    label: str | None = None
+    description: str | None = None
+    reason: str | None = None
+    extra_data: dict[str, Any] | None = None
+    screenshot_index: int | None = Field(
         None, ge=0, description="Index of the screenshot this annotation belongs to"
     )
 
@@ -81,17 +81,17 @@ class AnnotationSetBase(BaseModel):
     screenshot_url: str
     image_width: int = Field(..., gt=0)
     image_height: int = Field(..., gt=0)
-    notes: Optional[str] = None
+    notes: str | None = None
     boundary_width: int = Field(
         default=5, ge=0, le=50, description="Boundary tolerance in pixels for matching"
     )
-    screenshots: Optional[List[Screenshot]] = Field(
+    screenshots: list[Screenshot] | None = Field(
         None, description="Array of screenshots for multi-screenshot support"
     )
 
 
 class AnnotationSetCreate(AnnotationSetBase):
-    annotations: Optional[List[AnnotationCreate]] = None
+    annotations: list[AnnotationCreate] | None = None
 
     @field_validator("annotations")
     @classmethod
@@ -114,16 +114,16 @@ class AnnotationSetCreate(AnnotationSetBase):
 
 
 class AnnotationSetUpdate(BaseModel):
-    screenshot_name: Optional[str] = None
-    screenshot_url: Optional[str] = None
-    notes: Optional[str] = None
-    boundary_width: Optional[int] = Field(
+    screenshot_name: str | None = None
+    screenshot_url: str | None = None
+    notes: str | None = None
+    boundary_width: int | None = Field(
         None, ge=0, le=50, description="Boundary tolerance in pixels"
     )
-    screenshots: Optional[List[Screenshot]] = Field(
+    screenshots: list[Screenshot] | None = Field(
         None, description="Array of screenshots for multi-screenshot support"
     )
-    annotations: Optional[List[AnnotationCreate]] = None
+    annotations: list[AnnotationCreate] | None = None
 
     @field_validator("annotations")
     @classmethod
@@ -150,7 +150,7 @@ class AnnotationSetResponse(AnnotationSetBase):
     created_at: datetime
     updated_at: datetime
     created_by_id: str
-    annotations: List[AnnotationResponse] = []
+    annotations: list[AnnotationResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 

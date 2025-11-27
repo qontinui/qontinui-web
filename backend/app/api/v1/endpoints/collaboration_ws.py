@@ -7,10 +7,16 @@ and activity broadcasting for collaborative project editing.
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, cast
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import and_, delete, select
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_user_from_ws
 from app.crud.project import get_project
 from app.models.collaboration import (
@@ -23,10 +29,6 @@ from app.models.collaboration import (
 from app.models.user import User
 from app.services.websocket_manager import connection_manager
 from app.utils.authorization import verify_project_access
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
-from pydantic import BaseModel, ValidationError
-from sqlalchemy import and_, delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -47,7 +49,7 @@ class PresenceUpdateMessage(BaseModel):
     action: str  # joined, left, active
     user_id: str
     username: str
-    cursor_position: Optional[dict] = None
+    cursor_position: dict | None = None
 
 
 class CursorMoveMessage(BaseModel):
@@ -56,7 +58,7 @@ class CursorMoveMessage(BaseModel):
     type: str = "cursor_move"
     x: float
     y: float
-    workflow_id: Optional[str] = None
+    workflow_id: str | None = None
 
 
 class LockMessage(BaseModel):
@@ -76,7 +78,7 @@ class ResourceUpdateMessage(BaseModel):
     resource_type: str
     resource_id: str
     action: str  # created, modified, deleted
-    changes: Optional[dict] = None
+    changes: dict | None = None
 
 
 class CommentMessage(BaseModel):
@@ -84,12 +86,12 @@ class CommentMessage(BaseModel):
 
     type: str = "comment_added"
     comment_id: str
-    workflow_id: Optional[str] = None
-    action_id: Optional[str] = None
+    workflow_id: str | None = None
+    action_id: str | None = None
     author_id: str
     author_username: str
     content: str
-    position: Optional[dict] = None
+    position: dict | None = None
 
 
 class ActivityMessage(BaseModel):
@@ -125,7 +127,7 @@ async def verify_project_access_ws(
     Closes WebSocket and raises exception if access denied.
     """
     # Get project
-    project = await get_project(db, project_id=project_id)
+    project = await get_project(db, project_id=UUID(project_id))
     if not project:
         await websocket.close(
             code=status.WS_1008_POLICY_VIOLATION, reason="Project not found"
@@ -155,7 +157,7 @@ async def acquire_resource_lock(
     resource_type: ResourceType,
     resource_id: str,
     duration_minutes: int = 5,
-) -> Optional[ProjectLock]:
+) -> ProjectLock | None:
     """
     Acquire a lock on a resource.
 
@@ -180,7 +182,7 @@ async def acquire_resource_lock(
             select(ProjectLock)
             .where(
                 and_(
-                    ProjectLock.project_id == int(project_id),
+                    ProjectLock.project_id == UUID(project_id),
                     ProjectLock.resource_type == resource_type,
                     ProjectLock.resource_id == resource_id,
                 )
@@ -228,7 +230,7 @@ async def acquire_resource_lock(
         # Create new lock (either no lock existed or expired lock was deleted)
         if existing_lock is None:
             lock = ProjectLock(
-                project_id=int(project_id),
+                project_id=UUID(project_id),
                 user_id=user_id,
                 resource_type=resource_type,
                 resource_id=resource_id,
@@ -249,6 +251,8 @@ async def acquire_resource_lock(
             )
 
             return lock
+
+        return None
 
     except Exception as e:
         logger.error("lock_acquisition_error_ws", error=str(e))
@@ -274,14 +278,17 @@ async def release_resource_lock(
     Returns:
         True if lock was released
     """
-    result = await db.execute(
-        delete(ProjectLock).where(
-            and_(
-                ProjectLock.project_id == int(project_id),
-                ProjectLock.user_id == user_id,
-                ProjectLock.resource_id == resource_id,
+    result = cast(
+        CursorResult[Any],
+        await db.execute(
+            delete(ProjectLock).where(
+                and_(
+                    ProjectLock.project_id == UUID(project_id),
+                    ProjectLock.user_id == user_id,
+                    ProjectLock.resource_id == resource_id,
+                )
             )
-        )
+        ),
     )
     await db.commit()
 
@@ -314,14 +321,17 @@ async def release_user_locks(
     Returns:
         Number of locks released
     """
-    result = await db.execute(
-        delete(ProjectLock).where(
-            and_(
-                ProjectLock.project_id == int(project_id),
-                ProjectLock.user_id == user_id,
-                ProjectLock.auto_release == True,  # noqa: E712
+    result = cast(
+        CursorResult[Any],
+        await db.execute(
+            delete(ProjectLock).where(
+                and_(
+                    ProjectLock.project_id == UUID(project_id),
+                    ProjectLock.user_id == user_id,
+                    ProjectLock.auto_release == True,  # noqa: E712
+                )
             )
-        )
+        ),
     )
     await db.commit()
 
@@ -345,8 +355,8 @@ async def log_activity(
     action_type: ActionType,
     resource_type: ResourceType,
     resource_id: str,
-    resource_name: str = None,
-    changes: dict = None,
+    resource_name: str | None = None,
+    changes: dict | None = None,
 ) -> ActivityLog:
     """
     Log an activity to the database.
@@ -365,13 +375,13 @@ async def log_activity(
         ActivityLog entry
     """
     activity = ActivityLog.create_activity(
-        project_id=int(project_id),
+        project_id=UUID(project_id),
         user_id=user_id,
         action_type=action_type,
         resource_type=resource_type,
         resource_id=resource_id,
-        resource_name=resource_name,
-        changes=changes,
+        resource_name=cast(str, resource_name),
+        changes=cast(dict, changes),
     )
     db.add(activity)
     await db.commit()
@@ -813,6 +823,9 @@ async def collaboration_websocket(
                         )
                         continue
 
+                    # Narrow types for mypy
+                    assert isinstance(resource_id, str)
+
                     try:
                         resource_type = ResourceType(resource_type_str)
                         action_type = ActionType(action)
@@ -867,7 +880,7 @@ async def collaboration_websocket(
                         continue
 
                     comment = ProjectComment(
-                        project_id=int(project_id),
+                        project_id=UUID(project_id),
                         workflow_id=message.data.get("workflow_id"),
                         action_id=message.data.get("action_id"),
                         author_id=user.id,
@@ -921,6 +934,9 @@ async def collaboration_websocket(
                         )
                         continue
 
+                    # Narrow types for mypy
+                    assert isinstance(resource_id, str)
+
                     try:
                         action_type = ActionType(action_type_str)
                         resource_type = ResourceType(resource_type_str)
@@ -970,7 +986,7 @@ async def collaboration_websocket(
                         }
                     )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Send ping to keep connection alive
                 try:
                     await websocket.send_json(

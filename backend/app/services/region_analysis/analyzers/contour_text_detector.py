@@ -10,7 +10,7 @@ Accuracy: 75-85% for text with clear boundaries
 """
 
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -39,14 +39,14 @@ class ContourTextDetector(BaseRegionAnalyzer):
         return "contour_text_detector"
 
     @property
-    def supported_region_types(self) -> List[RegionType]:
+    def supported_region_types(self) -> list[RegionType]:
         return [RegionType.TEXT_AREA]
 
     @property
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize Contour text detector.
 
@@ -79,7 +79,7 @@ class ContourTextDetector(BaseRegionAnalyzer):
         self.max_height_ratio = params["max_height_ratio"]
         self.max_spacing_ratio = params["max_spacing_ratio"]
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_contour_area": 100,
             "max_contour_area": 20000,
@@ -136,7 +136,7 @@ class ContourTextDetector(BaseRegionAnalyzer):
 
     def _detect_text_regions(
         self, gray: np.ndarray, screenshot_index: int
-    ) -> List[DetectedRegion]:
+    ) -> list[DetectedRegion]:
         """Detect text regions in a grayscale image."""
         # Apply bilateral filter to preserve edges while reducing noise
         filtered = cv2.bilateralFilter(gray, 9, 75, 75)
@@ -243,7 +243,7 @@ class ContourTextDetector(BaseRegionAnalyzer):
                         np.mean([c["rectangularity"] for c in region_data["chars"]])
                     ),
                     "detection_method": "contour_heuristics",
-                    "total_text_regions": len(all_regions),
+                    "total_text_regions": len(all_regions),  # type: ignore
                 },
             )
             detected_regions.append(detected_region)
@@ -251,8 +251,8 @@ class ContourTextDetector(BaseRegionAnalyzer):
         return detected_regions
 
     def _group_characters(
-        self, characters: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, characters: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Group nearby characters into text regions."""
         if not characters:
             return []
@@ -304,7 +304,7 @@ class ContourTextDetector(BaseRegionAnalyzer):
 
         return text_regions
 
-    def _can_group(self, line: List[Dict[str, Any]], char: Dict[str, Any]) -> bool:
+    def _can_group(self, line: list[dict[str, Any]], char: dict[str, Any]) -> bool:
         """Check if a character can be grouped with a line."""
         if not line:
             return True

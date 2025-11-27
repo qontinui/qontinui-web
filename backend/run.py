@@ -2,6 +2,7 @@ import signal
 
 import psutil
 import uvicorn
+
 from app.core.config import settings
 
 

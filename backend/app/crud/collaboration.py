@@ -4,9 +4,11 @@ CRUD operations for collaboration models.
 Provides database operations for locks, comments, and activity logs.
 """
 
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, timedelta
 from uuid import UUID
+
+from sqlalchemy import and_, delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collaboration import (
     ActionType,
@@ -15,16 +17,14 @@ from app.models.collaboration import (
     ProjectLock,
     ResourceType,
 )
-from sqlalchemy import and_, delete, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # ProjectLock CRUD
 async def get_active_locks(
     db: AsyncSession,
     project_id: UUID,
-    resource_id: Optional[str] = None,
-) -> List[ProjectLock]:
+    resource_id: str | None = None,
+) -> list[ProjectLock]:
     """
     Get all active (non-expired) locks for a project.
 
@@ -53,8 +53,8 @@ async def get_active_locks(
 async def get_user_locks(
     db: AsyncSession,
     user_id: UUID,
-    project_id: Optional[int] = None,
-) -> List[ProjectLock]:
+    project_id: int | None = None,
+) -> list[ProjectLock]:
     """
     Get all locks for a specific user.
 
@@ -94,19 +94,19 @@ async def cleanup_expired_locks(db: AsyncSession) -> int:
         delete(ProjectLock).where(ProjectLock.expires_at <= datetime.utcnow())
     )
     await db.commit()
-    return result.rowcount
+    return result.rowcount or 0  # type: ignore[attr-defined]
 
 
 # ProjectComment CRUD
 async def get_project_comments(
     db: AsyncSession,
     project_id: UUID,
-    workflow_id: Optional[str] = None,
-    action_id: Optional[str] = None,
+    workflow_id: str | None = None,
+    action_id: str | None = None,
     include_resolved: bool = False,
     skip: int = 0,
     limit: int = 100,
-) -> List[ProjectComment]:
+) -> list[ProjectComment]:
     """
     Get comments for a project.
 
@@ -142,7 +142,7 @@ async def get_project_comments(
 async def get_comment(
     db: AsyncSession,
     comment_id: UUID,
-) -> Optional[ProjectComment]:
+) -> ProjectComment | None:
     """
     Get a specific comment by ID.
 
@@ -164,11 +164,11 @@ async def create_comment(
     project_id: UUID,
     author_id: UUID,
     content: str,
-    workflow_id: Optional[str] = None,
-    action_id: Optional[str] = None,
-    position: Optional[dict] = None,
-    mentions: Optional[list] = None,
-    parent_comment_id: Optional[UUID] = None,
+    workflow_id: str | None = None,
+    action_id: str | None = None,
+    position: dict | None = None,
+    mentions: list | None = None,
+    parent_comment_id: UUID | None = None,
 ) -> ProjectComment:
     """
     Create a new comment.
@@ -206,9 +206,9 @@ async def create_comment(
 async def update_comment(
     db: AsyncSession,
     comment: ProjectComment,
-    content: Optional[str] = None,
-    resolved: Optional[bool] = None,
-    resolved_by: Optional[UUID] = None,
+    content: str | None = None,
+    resolved: bool | None = None,
+    resolved_by: UUID | None = None,
 ) -> ProjectComment:
     """
     Update a comment.
@@ -228,6 +228,10 @@ async def update_comment(
 
     if resolved is not None:
         if resolved:
+            if resolved_by is None:
+                raise ValueError(
+                    "resolved_by must be provided when resolving a comment"
+                )
             comment.resolve(resolved_by)
         else:
             comment.unresolve()
@@ -257,13 +261,13 @@ async def delete_comment(
         delete(ProjectComment).where(ProjectComment.id == comment_id)
     )
     await db.commit()
-    return result.rowcount > 0
+    return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
 
 
 async def get_comment_count(
     db: AsyncSession,
     project_id: UUID,
-    workflow_id: Optional[str] = None,
+    workflow_id: str | None = None,
     include_resolved: bool = False,
 ) -> int:
     """
@@ -296,14 +300,14 @@ async def get_comment_count(
 async def get_project_activities(
     db: AsyncSession,
     project_id: UUID,
-    action_type: Optional[ActionType] = None,
-    resource_type: Optional[ResourceType] = None,
-    resource_id: Optional[str] = None,
-    user_id: Optional[UUID] = None,
-    since: Optional[datetime] = None,
+    action_type: ActionType | None = None,
+    resource_type: ResourceType | None = None,
+    resource_id: str | None = None,
+    user_id: UUID | None = None,
+    since: datetime | None = None,
     skip: int = 0,
     limit: int = 100,
-) -> List[ActivityLog]:
+) -> list[ActivityLog]:
     """
     Get activity logs for a project.
 
@@ -351,9 +355,9 @@ async def create_activity(
     action_type: ActionType,
     resource_type: ResourceType,
     resource_id: str,
-    resource_name: Optional[str] = None,
-    changes: Optional[dict] = None,
-    metadata: Optional[dict] = None,
+    resource_name: str | None = None,
+    changes: dict | None = None,
+    metadata: dict | None = None,
 ) -> ActivityLog:
     """
     Create a new activity log entry.
@@ -380,7 +384,7 @@ async def create_activity(
         resource_id=resource_id,
         resource_name=resource_name,
         changes=changes,
-        metadata=metadata,
+        activity_metadata=metadata,
     )
     db.add(activity)
     await db.commit()
@@ -437,4 +441,4 @@ async def cleanup_old_activities(
         delete(ActivityLog).where(ActivityLog.created_at < cutoff_date)
     )
     await db.commit()
-    return result.rowcount
+    return result.rowcount or 0  # type: ignore[attr-defined]

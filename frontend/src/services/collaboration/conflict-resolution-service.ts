@@ -360,7 +360,7 @@ export class ConflictDetector {
   threeWayMerge(local: any, remote: any, base: any): MergeResult {
     const conflicts = this.detectConflicts(local, remote, base)
     const resolutions: Resolution[] = []
-    let mergedVersion = { ...base }
+    const mergedVersion = { ...base }
 
     // Try to auto-resolve conflicts
     for (const conflict of conflicts) {

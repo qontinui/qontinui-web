@@ -1,18 +1,20 @@
 """Stripe customer management service."""
 
 import asyncio
+from typing import Any
 
 import stripe
-from app.models.subscription import Subscription, SubscriptionTier
-from app.models.user import User
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.subscription import Subscription, SubscriptionTier
+from app.models.user import User
 
 
 class StripeCustomerService:
     """Handles Stripe customer creation and retrieval."""
 
-    def __init__(self, stripe_client: stripe = stripe):
+    def __init__(self, stripe_client: Any = stripe):
         """Initialize the customer service with a Stripe client."""
         self.stripe = stripe_client
 
@@ -34,7 +36,7 @@ class StripeCustomerService:
         subscription = result.scalar_one_or_none()
 
         if subscription and subscription.stripe_customer_id:
-            return subscription.stripe_customer_id
+            return str(subscription.stripe_customer_id)
 
         # Create new Stripe customer (run in thread pool since Stripe SDK is sync)
         customer = await asyncio.to_thread(
@@ -57,7 +59,7 @@ class StripeCustomerService:
 
         await db.commit()
 
-        return customer.id
+        return str(customer.id)
 
     async def get_customer_id(self, user: User, db: AsyncSession) -> str | None:
         """
@@ -74,4 +76,8 @@ class StripeCustomerService:
             select(Subscription).filter(Subscription.user_id == user.id)
         )
         subscription = result.scalar_one_or_none()
-        return subscription.stripe_customer_id if subscription else None
+        return (
+            str(subscription.stripe_customer_id)
+            if subscription and subscription.stripe_customer_id
+            else None
+        )

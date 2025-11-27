@@ -116,10 +116,10 @@ class ImageProcessor:
             if pattern1.shape != pattern2.shape:
                 h = min(pattern1.shape[0], pattern2.shape[0])
                 w = min(pattern1.shape[1], pattern2.shape[1])
-                pattern1 = Image.fromarray(pattern1).resize((w, h))
-                pattern2 = Image.fromarray(pattern2).resize((w, h))
-                pattern1 = np.array(pattern1)
-                pattern2 = np.array(pattern2)
+                pattern1_img = Image.fromarray(pattern1).resize((w, h))
+                pattern2_img = Image.fromarray(pattern2).resize((w, h))
+                pattern1 = np.array(pattern1_img)
+                pattern2 = np.array(pattern2_img)
 
             # Calculate normalized correlation
             pattern1_flat = pattern1.flatten().astype(float)

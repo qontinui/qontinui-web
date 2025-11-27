@@ -25,7 +25,7 @@ interface ConnectionInfo {
   url: string
   token: string
   userId: string
-  projectId: number | null
+  projectId: string | null
   createdAt: string
   backendUrl: string
   runnerTokenId?: string
@@ -37,7 +37,7 @@ export default function ConnectRunnerPage() {
   const [loading, setLoading] = useState(true)
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [useDedicatedToken, setUseDedicatedToken] = useState(true)
   const [tokenName, setTokenName] = useState("")
@@ -60,31 +60,44 @@ export default function ConnectRunnerPage() {
     try {
       setLoading(true)
 
-      // Load connection info and projects in parallel
-      const [connInfo, projectsList] = await Promise.all([
+      console.log('[ConnectRunner] Loading data...')
+
+      // Load connection info and projects independently so one failure doesn't block the other
+      const [connInfoResult, projectsResult] = await Promise.allSettled([
         fetchConnectionInfo(),
         projectService.getProjects()
       ])
 
-      setConnectionInfo(connInfo)
-      setProjects(projectsList)
+      // Handle connection info
+      if (connInfoResult.status === 'fulfilled') {
+        console.log('[ConnectRunner] Connection info:', connInfoResult.value)
+        setConnectionInfo(connInfoResult.value)
+      } else {
+        console.error('[ConnectRunner] Failed to load connection info:', connInfoResult.reason)
+        toast.error('Failed to load connection information')
+      }
 
-      // Auto-select first project if available
-      if (projectsList.length > 0 && !selectedProjectId) {
-        setSelectedProjectId(projectsList[0].id)
+      // Handle projects - always try to set projects even if connection info fails
+      if (projectsResult.status === 'fulfilled') {
+        const projectsList = projectsResult.value
+        console.log('[ConnectRunner] Projects loaded:', projectsList?.length || 0, projectsList)
+        setProjects(projectsList)
+        // Don't auto-select - let user choose a project
+      } else {
+        console.error('[ConnectRunner] Failed to load projects:', projectsResult.reason)
+        toast.error('Failed to load projects')
       }
     } catch (error) {
-      console.error('Failed to load data:', error)
-      toast.error('Failed to load connection information')
+      console.error('[ConnectRunner] Unexpected error:', error)
+      toast.error('An unexpected error occurred')
     } finally {
       setLoading(false)
     }
   }
 
   const fetchConnectionInfo = async (): Promise<ConnectionInfo> => {
-    const response = await httpClient.fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/v1/users/me/connection-info`
-    )
+    // Use relative URL to go through Next.js proxy for proper cookie forwarding
+    const response = await httpClient.fetch('/api/v1/users/me/connection-info')
     if (!response.ok) {
       throw new Error('Failed to fetch connection info')
     }
@@ -190,12 +203,6 @@ export default function ConnectRunnerPage() {
               </p>
             </div>
             <div className="flex gap-3">
-              {activeConnections && activeConnections.length > 0 && (
-                <Badge variant="outline" className="border-green-500/50 text-green-500">
-                  <Monitor className="w-3 h-3 mr-1" />
-                  {activeConnections.length} Active
-                </Badge>
-              )}
               <Link href="/runners">
                 <Button variant="outline" className="border-gray-700">
                   <Settings className="w-4 h-4 mr-2" />
@@ -205,6 +212,63 @@ export default function ConnectRunnerPage() {
             </div>
           </div>
         </div>
+
+        {/* Runner Connection Status Card */}
+        <Card className={`mb-6 p-4 border ${activeConnections && activeConnections.length > 0 ? 'bg-green-950/30 border-green-500/50' : 'bg-red-950/30 border-red-500/50'}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              {/* Status Light */}
+              <div className="relative">
+                <div className={`w-4 h-4 rounded-full ${activeConnections && activeConnections.length > 0 ? 'bg-green-500' : 'bg-red-500'}`} />
+                {activeConnections && activeConnections.length > 0 && (
+                  <div className="absolute inset-0 w-4 h-4 rounded-full bg-green-500 animate-ping opacity-75" />
+                )}
+              </div>
+
+              {/* Status Text */}
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={`font-semibold ${activeConnections && activeConnections.length > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {activeConnections && activeConnections.length > 0 ? 'Runner Connected' : 'No Runner Connected'}
+                  </span>
+                </div>
+                {activeConnections && activeConnections.length > 0 ? (
+                  <div className="text-sm text-gray-400 mt-1">
+                    {activeConnections.map((conn, idx) => (
+                      <div key={conn.id} className="flex items-center gap-2">
+                        <Monitor className="w-3 h-3" />
+                        <span className="text-white">{conn.runner_name}</span>
+                        {conn.project_name && (
+                          <>
+                            <span className="text-gray-500">→</span>
+                            <span className="text-[#00D9FF]">{conn.project_name}</span>
+                          </>
+                        )}
+                        {!conn.project_name && conn.project_id && (
+                          <>
+                            <span className="text-gray-500">→</span>
+                            <span className="text-gray-400">Project #{conn.project_id}</span>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 mt-1">
+                    Use the connection string below to connect your desktop runner
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Connection Count Badge */}
+            {activeConnections && activeConnections.length > 0 && (
+              <Badge variant="outline" className="border-green-500/50 text-green-400">
+                {activeConnections.length} Active
+              </Badge>
+            )}
+          </div>
+        </Card>
 
         {loading ? (
           <div className="text-center py-12">
@@ -282,13 +346,14 @@ export default function ConnectRunnerPage() {
                       Choose the project for the runner to work with:
                     </label>
                     <select
-                      value={selectedProjectId || ''}
-                      onChange={(e) => setSelectedProjectId(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#00D9FF]"
+                      value={selectedProjectId ?? ''}
+                      onChange={(e) => setSelectedProjectId(e.target.value || null)}
+                      className="w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#00D9FF] cursor-pointer"
+                      style={{ colorScheme: 'dark' }}
                     >
-                      <option value="">Select a project</option>
+                      <option value="" className="bg-[#1A1A1B] text-white">Select a project</option>
                       {projects.map((project) => (
-                        <option key={project.id} value={project.id}>
+                        <option key={String(project.id)} value={String(project.id)} className="bg-[#1A1A1B] text-white">
                           {project.name}
                         </option>
                       ))}

@@ -6,9 +6,8 @@ More robust to scale and rotation than template matching.
 """
 
 import logging
-from collections import defaultdict
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -53,7 +52,7 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 2  # Need at least 2 to find recurring patterns
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_occurrences": 2,
             "max_features": 500,  # Maximum ORB features per image
@@ -102,7 +101,7 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -110,7 +109,7 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _resize_to_common_size(self, images: List[np.ndarray]) -> List[np.ndarray]:
+    def _resize_to_common_size(self, images: list[np.ndarray]) -> list[np.ndarray]:
         """Resize all images to the size of the first image"""
         if not images:
             return images
@@ -126,15 +125,15 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
         return resized
 
     def _detect_features_all_images(
-        self, images: List[np.ndarray], params: Dict[str, Any]
-    ) -> List[Tuple[List, np.ndarray]]:
+        self, images: list[np.ndarray], params: dict[str, Any]
+    ) -> list[tuple[list, np.ndarray]]:
         """
         Detect ORB features in all images
 
         Returns:
             List of (keypoints, descriptors) tuples for each image
         """
-        orb = cv2.ORB_create(nfeatures=params["max_features"])
+        orb = cv2.ORB_create(nfeatures=params["max_features"])  # type: ignore[attr-defined]
         features_per_image = []
 
         for img in images:
@@ -145,10 +144,10 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
 
     def _find_pattern_clusters(
         self,
-        images: List[np.ndarray],
-        features_per_image: List[Tuple[List, np.ndarray]],
-        params: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
+        images: list[np.ndarray],
+        features_per_image: list[tuple[list, np.ndarray]],
+        params: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         """
         Find clusters of matched features that represent recurring patterns
 
@@ -167,7 +166,7 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
                 kp2, desc2 = features_per_image[j]
 
                 if desc1 is None or desc2 is None:
-                    continue
+                    continue  # type: ignore[unreachable]
 
                 # Match descriptors
                 matches = bf.knnMatch(desc1, desc2, k=2)
@@ -193,7 +192,7 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
                 )
 
                 # Record pattern clusters
-                for cluster_i, cluster_j in zip(clusters_i, clusters_j):
+                for cluster_i, cluster_j in zip(clusters_i, clusters_j, strict=False):
                     if (
                         len(cluster_i) >= params["min_cluster_size"]
                         and len(cluster_j) >= params["min_cluster_size"]
@@ -211,7 +210,7 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
 
         return pattern_clusters
 
-    def _cluster_keypoints(self, keypoints: List, params: Dict[str, Any]) -> List[List]:
+    def _cluster_keypoints(self, keypoints: list, params: dict[str, Any]) -> list[list]:
         """
         Cluster keypoints spatially
 
@@ -252,8 +251,8 @@ class PatternFeatureMatchAnalyzer(BaseAnalyzer):
         return clusters
 
     def _clusters_to_elements(
-        self, pattern_clusters: List[Dict[str, Any]], params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, pattern_clusters: list[dict[str, Any]], params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Convert pattern clusters to detected elements"""
         elements = []
 

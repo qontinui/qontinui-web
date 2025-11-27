@@ -5,9 +5,14 @@ API endpoints for annotation management (admin only)
 import io
 import uuid
 from datetime import datetime
-from typing import List
 
 import structlog
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy import delete as sql_delete
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.api import deps
 from app.models.annotation import Annotation, AnnotationSet
 from app.models.user import User
@@ -20,11 +25,6 @@ from app.schemas.annotation import (
     AnnotationUpdate,
 )
 from app.services.object_storage import object_storage
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import delete as sql_delete
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 logger = structlog.get_logger(__name__)
 
@@ -56,7 +56,8 @@ async def upload_screenshot(
         file_obj = io.BytesIO(content)
 
         # Generate unique filename
-        file_extension = file.filename.split(".")[-1] if "." in file.filename else "png"
+        filename = file.filename or "screenshot.png"
+        file_extension = filename.split(".")[-1] if "." in filename else "png"
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
         # Upload to S3/MinIO using the backend directly
@@ -84,13 +85,13 @@ async def upload_screenshot(
         )
 
 
-@router.get("/", response_model=List[AnnotationSetResponse])
+@router.get("/", response_model=list[AnnotationSetResponse])
 async def list_annotation_sets(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(deps.get_async_db),
     current_user: User = Depends(deps.get_current_superuser_async),
-) -> List[AnnotationSet]:
+) -> list[AnnotationSet]:
     """List all annotation sets (admin only)"""
     result = await db.execute(
         select(AnnotationSet)
@@ -189,20 +190,20 @@ async def update_annotation_set(
 
     # Update annotation set fields
     if annotation_set_in.screenshot_name is not None:
-        annotation_set.screenshot_name = annotation_set_in.screenshot_name
+        annotation_set.screenshot_name = annotation_set_in.screenshot_name  # type: ignore[assignment]
     if annotation_set_in.screenshot_url is not None:
-        annotation_set.screenshot_url = annotation_set_in.screenshot_url
+        annotation_set.screenshot_url = annotation_set_in.screenshot_url  # type: ignore[assignment]
     if annotation_set_in.notes is not None:
-        annotation_set.notes = annotation_set_in.notes
+        annotation_set.notes = annotation_set_in.notes  # type: ignore[assignment]
     if annotation_set_in.boundary_width is not None:
-        annotation_set.boundary_width = annotation_set_in.boundary_width
+        annotation_set.boundary_width = annotation_set_in.boundary_width  # type: ignore[assignment]
     if annotation_set_in.screenshots is not None:
         # Convert screenshots to JSON
         annotation_set.screenshots = [
             s.model_dump() for s in annotation_set_in.screenshots
         ]
 
-    annotation_set.updated_at = datetime.utcnow()
+    annotation_set.updated_at = datetime.utcnow()  # type: ignore[assignment]
 
     # Update annotations if provided
     if annotation_set_in.annotations is not None:
@@ -305,7 +306,7 @@ async def add_annotation(
     )
 
     db.add(annotation)
-    annotation_set.updated_at = datetime.utcnow()
+    annotation_set.updated_at = datetime.utcnow()  # type: ignore[assignment]
     await db.commit()
     await db.refresh(annotation)
     return annotation
@@ -336,25 +337,25 @@ async def update_annotation(
                 status_code=400,
                 detail=f"screenshot_index {annotation_in.screenshot_index} exceeds maximum {max_screenshot_index}",
             )
-        annotation.screenshot_index = annotation_in.screenshot_index
+        annotation.screenshot_index = annotation_in.screenshot_index  # type: ignore[assignment]
 
     # Update fields
     if annotation_in.x is not None:
-        annotation.x = annotation_in.x
+        annotation.x = annotation_in.x  # type: ignore[assignment]
     if annotation_in.y is not None:
-        annotation.y = annotation_in.y
+        annotation.y = annotation_in.y  # type: ignore[assignment]
     if annotation_in.width is not None:
-        annotation.width = annotation_in.width
+        annotation.width = annotation_in.width  # type: ignore[assignment]
     if annotation_in.height is not None:
-        annotation.height = annotation_in.height
+        annotation.height = annotation_in.height  # type: ignore[assignment]
     if annotation_in.label is not None:
-        annotation.label = annotation_in.label
+        annotation.label = annotation_in.label  # type: ignore[assignment]
     if annotation_in.description is not None:
-        annotation.description = annotation_in.description
+        annotation.description = annotation_in.description  # type: ignore[assignment]
     if annotation_in.reason is not None:
-        annotation.reason = annotation_in.reason
+        annotation.reason = annotation_in.reason  # type: ignore[assignment]
     if annotation_in.extra_data is not None:
-        annotation.extra_data = annotation_in.extra_data
+        annotation.extra_data = annotation_in.extra_data  # type: ignore[assignment]
 
     # Update annotation set timestamp
     annotation.annotation_set.updated_at = datetime.utcnow()

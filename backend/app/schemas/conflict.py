@@ -13,7 +13,6 @@ from pydantic import Field, field_validator
 
 from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 
-
 # ============================================================================
 # Conflict Change Schemas
 # ============================================================================
@@ -49,7 +48,9 @@ class ConflictChange(BaseSchema):
 class ConflictLogBase(BaseSchema):
     """Base conflict log schema."""
 
-    resource_type: str = Field(..., description="Type of resource (workflow, state, etc.)")
+    resource_type: str = Field(
+        ..., description="Type of resource (workflow, state, etc.)"
+    )
     resource_id: str = Field(..., description="ID of the conflicting resource")
     local_version: int = Field(..., description="Version number of local changes")
     remote_version: int = Field(..., description="Version number of remote changes")
@@ -62,7 +63,9 @@ class ConflictLogCreate(ConflictLogBase):
     remote_user_id: UUID = Field(..., description="ID of user with remote changes")
     base_data: dict[str, Any] | None = Field(None, description="Data before both edits")
     local_data: dict[str, Any] | None = Field(None, description="Local user's changes")
-    remote_data: dict[str, Any] | None = Field(None, description="Remote user's changes")
+    remote_data: dict[str, Any] | None = Field(
+        None, description="Remote user's changes"
+    )
     metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
 
 
@@ -90,10 +93,14 @@ class ConflictLogResponse(ConflictLogBase, BaseORMSchema):
     # Populated from joined user data
     local_user_username: str | None = Field(None, description="Local user's username")
     local_user_email: str | None = Field(None, description="Local user's email")
-    local_user_avatar_url: str | None = Field(None, description="Local user's avatar URL")
+    local_user_avatar_url: str | None = Field(
+        None, description="Local user's avatar URL"
+    )
     remote_user_username: str | None = Field(None, description="Remote user's username")
     remote_user_email: str | None = Field(None, description="Remote user's email")
-    remote_user_avatar_url: str | None = Field(None, description="Remote user's avatar URL")
+    remote_user_avatar_url: str | None = Field(
+        None, description="Remote user's avatar URL"
+    )
 
 
 class ConflictResolveRequest(BaseSchema):

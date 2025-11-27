@@ -8,14 +8,13 @@ authentication tokens and tracking connection history.
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.security import generate_runner_token, hash_runner_token, verify_runner_token
+from app.core.security import generate_runner_token, hash_runner_token
 from app.models.runner_connection import RunnerConnection
 from app.models.runner_token import RunnerToken
-
 
 # ============================================================================
 # Runner Token CRUD Operations
@@ -101,18 +100,12 @@ async def get_runner_tokens(
         List of tuples: (RunnerToken, connection_count)
     """
     # Build query
-    query = select(
-        RunnerToken,
-        func.count(RunnerConnection.id).label("connection_count")
-    ).outerjoin(
-        RunnerConnection,
-        RunnerToken.id == RunnerConnection.runner_token_id
-    ).where(
-        RunnerToken.user_id == user_id
-    ).group_by(
-        RunnerToken.id
-    ).order_by(
-        RunnerToken.created_at.desc()
+    query = (
+        select(RunnerToken, func.count(RunnerConnection.id).label("connection_count"))
+        .outerjoin(RunnerConnection, RunnerToken.id == RunnerConnection.runner_token_id)
+        .where(RunnerToken.user_id == user_id)
+        .group_by(RunnerToken.id)
+        .order_by(RunnerToken.created_at.desc())
     )
 
     # Filter revoked if needed
@@ -120,7 +113,7 @@ async def get_runner_tokens(
         query = query.where(RunnerToken.is_revoked == False)
 
     result = await db.execute(query)
-    return list(result.all())
+    return list(result.all())  # type: ignore[arg-type]
 
 
 async def get_runner_token_by_id(
@@ -163,9 +156,7 @@ async def get_runner_token_by_hash(
     Returns:
         RunnerToken or None if not found
     """
-    query = select(RunnerToken).where(
-        RunnerToken.token_hash == token_hash
-    )
+    query = select(RunnerToken).where(RunnerToken.token_hash == token_hash)
     result = await db.execute(query)
     return result.scalar_one_or_none()
 
@@ -322,8 +313,8 @@ async def update_runner_token_name(
 
 async def create_connection_record(
     db: AsyncSession,
-    token_id: UUID,
     user_id: UUID,
+    token_id: UUID | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
     project_id: UUID | None = None,
@@ -334,8 +325,8 @@ async def create_connection_record(
 
     Args:
         db: Database session
-        token_id: ID of the runner token used
         user_id: ID of the user
+        token_id: Optional ID of the runner token used (None for JWT auth)
         ip_address: Optional IP address
         user_agent: Optional user agent
         project_id: Optional project ID
@@ -357,8 +348,9 @@ async def create_connection_record(
     await db.commit()
     await db.refresh(connection)
 
-    # Also update token's last_used_at
-    await update_token_last_used(db, token_id, ip_address, user_agent)
+    # Also update token's last_used_at if using runner token
+    if token_id:
+        await update_token_last_used(db, token_id, ip_address, user_agent)
 
     return connection
 
@@ -474,11 +466,53 @@ async def get_connection_by_session_id(
     Returns:
         RunnerConnection or None if not found
     """
-    query = select(RunnerConnection).where(
-        RunnerConnection.session_id == session_id
-    )
+    query = select(RunnerConnection).where(RunnerConnection.session_id == session_id)
     result = await db.execute(query)
     return result.scalar_one_or_none()
+
+
+async def create_test_connection(
+    db: AsyncSession,
+    user_id: UUID,
+    token_id: UUID | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> RunnerConnection:
+    """
+    Create a test connection record (immediately closed).
+
+    This is used when the runner tests its connection settings.
+    The connection is created and immediately marked as disconnected
+    with a duration of 0 seconds.
+
+    Args:
+        db: Database session
+        user_id: ID of the user
+        token_id: Optional ID of the runner token used
+        ip_address: Optional IP address
+        user_agent: Optional user agent
+
+    Returns:
+        Created and closed RunnerConnection record
+    """
+    connection = RunnerConnection(
+        runner_token_id=token_id,
+        user_id=user_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        disconnected_at=datetime.utcnow(),
+        duration_seconds=0,
+    )
+
+    db.add(connection)
+    await db.commit()
+    await db.refresh(connection)
+
+    # Update token's last_used_at if using runner token
+    if token_id:
+        await update_token_last_used(db, token_id, ip_address, user_agent)
+
+    return connection
 
 
 async def get_runner_token_stats(
@@ -498,15 +532,21 @@ async def get_runner_token_stats(
     # Count tokens by status
     tokens_query = select(
         func.count(RunnerToken.id).label("total"),
-        func.count(RunnerToken.id).filter(RunnerToken.is_revoked == False).label("active"),
-        func.count(RunnerToken.id).filter(RunnerToken.is_revoked == True).label("revoked"),
-        func.count(RunnerToken.id).filter(
+        func.count(RunnerToken.id)
+        .filter(RunnerToken.is_revoked == False)
+        .label("active"),
+        func.count(RunnerToken.id)
+        .filter(RunnerToken.is_revoked == True)
+        .label("revoked"),
+        func.count(RunnerToken.id)
+        .filter(
             and_(
                 RunnerToken.expires_at.isnot(None),
                 RunnerToken.expires_at < datetime.utcnow(),
                 RunnerToken.is_revoked == False,
             )
-        ).label("expired"),
+        )
+        .label("expired"),
     ).where(RunnerToken.user_id == user_id)
 
     tokens_result = await db.execute(tokens_query)
@@ -515,9 +555,9 @@ async def get_runner_token_stats(
     # Count connections
     connections_query = select(
         func.count(RunnerConnection.id).label("total"),
-        func.count(RunnerConnection.id).filter(
-            RunnerConnection.disconnected_at.is_(None)
-        ).label("active"),
+        func.count(RunnerConnection.id)
+        .filter(RunnerConnection.disconnected_at.is_(None))
+        .label("active"),
         func.max(RunnerConnection.connected_at).label("most_recent"),
     ).where(RunnerConnection.user_id == user_id)
 

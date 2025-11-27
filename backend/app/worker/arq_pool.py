@@ -3,9 +3,11 @@
 from typing import Any
 
 import structlog
-from app.worker.settings import get_arq_redis_settings
 from arq import create_pool
 from arq.connections import ArqRedis
+from arq.jobs import Job
+
+from app.worker.settings import get_arq_redis_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -67,6 +69,9 @@ async def enqueue_task(
 
     try:
         job = await _arq_pool.enqueue_job(task_name, *args, **kwargs)
+        if job is None:
+            logger.warning("task_enqueue_returned_none", task_name=task_name)
+            return None
         logger.info("task_enqueued", task_name=task_name, job_id=job.job_id)
         return job.job_id
     except Exception as e:
@@ -91,9 +96,7 @@ async def get_job_result(job_id: str) -> Any:
     """
     try:
         pool = await get_arq_pool()
-        job = await pool.get_job(job_id)
-        if job is None:
-            return None
+        job = Job(job_id=job_id, redis=pool)
         return await job.result()
     except Exception as e:
         logger.error(

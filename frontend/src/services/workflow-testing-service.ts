@@ -915,7 +915,7 @@ export class WorkflowTestingService {
           if (assertion.customFunction) {
             try {
               // Create a function from the string and execute it
-              // eslint-disable-next-line no-new-func
+
               const fn = new Function('value', 'context', assertion.customFunction);
               passed = Boolean(fn(actualValue, context));
             } catch (err) {

@@ -58,9 +58,9 @@ def censor_sensitive_data(
         "authorization",
     ]
 
-    def _censor_dict(d: dict) -> dict:
+    def _censor_dict(d: dict[str, Any]) -> dict[str, Any]:
         """Recursively censor sensitive keys"""
-        censored = {}
+        censored: dict[str, Any] = {}
         for key, value in d.items():
             if any(sensitive in key.lower() for sensitive in sensitive_keys):
                 censored[key] = "***REDACTED***"
@@ -75,7 +75,7 @@ def censor_sensitive_data(
                 censored[key] = value
         return censored
 
-    return _censor_dict(event_dict)
+    return _censor_dict(event_dict)  # type: ignore[arg-type]
 
 
 def configure_logging(environment: str = "development", log_level: str = "INFO"):
@@ -86,13 +86,13 @@ def configure_logging(environment: str = "development", log_level: str = "INFO")
         environment: Environment name (development, staging, production)
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     """
-    log_level = getattr(logging, log_level.upper(), logging.INFO)
+    log_level_int: int = getattr(logging, log_level.upper(), logging.INFO)
 
     # Configure standard library logging
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
-        level=log_level,
+        level=log_level_int,
     )
 
     # Silence noisy loggers

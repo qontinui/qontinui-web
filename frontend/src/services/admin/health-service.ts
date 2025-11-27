@@ -5,7 +5,6 @@
  * security warnings, and session statistics.
  */
 
-import { authService } from '../service-factory'
 import { ApiConfig } from '../api-config'
 
 export interface HealthOverview {
@@ -94,18 +93,20 @@ export interface HealthExportData {
 }
 
 class HealthService {
-  private getAuthHeaders(): HeadersInit {
-    const accessToken = authService.tokenManager.getAccessToken()
+  private getRequestOptions(): RequestInit {
+    // Use credentials: 'include' for cookie-based authentication
     return {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
     }
   }
 
   async getHealthOverview(): Promise<HealthOverview> {
-    const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/admin/health/overview`, {
-      headers: this.getAuthHeaders(),
-    })
+    const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/admin/health/overview`,
+      this.getRequestOptions()
+    )
 
     if (!response.ok) {
       // Fallback data if endpoint doesn't exist yet
@@ -148,9 +149,9 @@ class HealthService {
   }
 
   async getRedisStatus(): Promise<RedisStatus> {
-    const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/admin/health/redis`, {
-      headers: this.getAuthHeaders(),
-    })
+    const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/admin/health/redis`,
+      this.getRequestOptions()
+    )
 
     if (!response.ok) {
       // Fallback data
@@ -174,9 +175,7 @@ class HealthService {
   async getSecurityWarnings(limit: number = 50): Promise<SecurityWarning[]> {
     const response = await fetch(
       `${ApiConfig.API_BASE_URL}/api/v1/admin/health/security`,
-      {
-        headers: this.getAuthHeaders(),
-      }
+      this.getRequestOptions()
     )
 
     if (!response.ok) {
@@ -276,9 +275,9 @@ class HealthService {
   }
 
   async getSessionStats(): Promise<SessionStats> {
-    const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/admin/health/sessions`, {
-      headers: this.getAuthHeaders(),
-    })
+    const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/admin/health/sessions`,
+      this.getRequestOptions()
+    )
 
     if (!response.ok) {
       // Fallback data
@@ -303,9 +302,9 @@ class HealthService {
 
   async getSystemMetrics(): Promise<SystemMetrics> {
     // Use existing system health endpoint
-    const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/admin/system/health`, {
-      headers: this.getAuthHeaders(),
-    })
+    const response = await fetch(`${ApiConfig.API_BASE_URL}/api/v1/admin/system/health`,
+      this.getRequestOptions()
+    )
 
     if (!response.ok) {
       throw new Error('Failed to fetch system metrics')

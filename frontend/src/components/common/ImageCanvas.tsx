@@ -321,7 +321,7 @@ export function ImageCanvas({
         const dx = coords.x - dragStart.x
         const dy = coords.y - dragStart.y
 
-        let updatedBox = { ...selectedBox }
+        const updatedBox = { ...selectedBox }
 
         if (dragHandle === 'inside') {
           // Move entire box

@@ -10,7 +10,6 @@ from decimal import Decimal
 from enum import Enum as PyEnum
 from uuid import UUID, uuid4
 
-from app.db.base import Base
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -24,6 +23,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class DeficiencySeverity(str, PyEnum):

@@ -92,6 +92,13 @@ export class HttpClient {
 
     if (!skipAuth) {
       const accessToken = this.tokenManager.getAccessToken();
+      console.log('[HttpClient] executeSingleRequest:', {
+        url,
+        method: options.method || 'GET',
+        skipAuth,
+        hasAccessToken: !!accessToken,
+        accessTokenLength: accessToken?.length || 0,
+      });
       if (accessToken) {
         headers['Authorization'] = `Bearer ${accessToken}`;
       }
@@ -115,6 +122,15 @@ export class HttpClient {
       });
 
       clearTimeout(timeoutId);
+
+      // Debug logging for response
+      console.log('[HttpClient] Response:', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      });
+
       return response;
     } catch (error: any) {
       clearTimeout(timeoutId);

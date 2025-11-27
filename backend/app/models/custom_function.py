@@ -6,7 +6,6 @@ Tracks user-defined automation functions discovered in uploaded Python files.
 
 from datetime import datetime
 
-from app.db.base import Base
 from sqlalchemy import (
     JSON,
     Column,
@@ -19,6 +18,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class CustomFunction(Base):
@@ -36,7 +37,9 @@ class CustomFunction(Base):
     __tablename__ = "custom_functions"
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True)
+    project_id = Column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
+    )
     file_path = Column(String, nullable=False, index=True)  # Relative path in project
 
     # Function identity

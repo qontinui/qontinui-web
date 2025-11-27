@@ -35,7 +35,6 @@ Usage:
 
 import uuid
 from datetime import datetime
-from typing import Any, Optional
 from uuid import UUID
 
 import structlog
@@ -60,10 +59,18 @@ class AuditLogger:
     CATEGORY_SYSTEM_CONFIG = "system_config"
 
     # PII field names to track
-    PII_FIELDS = {"email", "phone", "full_name", "phone_number", "address", "ssn", "tax_id"}
+    PII_FIELDS = {
+        "email",
+        "phone",
+        "full_name",
+        "phone_number",
+        "address",
+        "ssn",
+        "tax_id",
+    }
 
     @staticmethod
-    def get_ip_address(request: Optional[Request]) -> Optional[str]:
+    def get_ip_address(request: Request | None) -> str | None:
         """Extract IP address from request, handling proxies."""
         if not request:
             return None
@@ -86,7 +93,7 @@ class AuditLogger:
         return None
 
     @staticmethod
-    def get_correlation_id(request: Optional[Request]) -> str:
+    def get_correlation_id(request: Request | None) -> str:
         """
         Get or generate correlation ID for request tracing.
 
@@ -94,7 +101,9 @@ class AuditLogger:
         """
         if request:
             # Check for existing correlation ID in headers
-            correlation_id = request.headers.get("X-Request-ID") or request.headers.get("X-Correlation-ID")
+            correlation_id = request.headers.get("X-Request-ID") or request.headers.get(
+                "X-Correlation-ID"
+            )
             if correlation_id:
                 return correlation_id
 
@@ -104,17 +113,17 @@ class AuditLogger:
     async def log_audit_event(
         self,
         db: AsyncSession,
-        user_id: Optional[UUID],
+        user_id: UUID | None,
         action: str,
-        resource_type: Optional[str] = None,
-        resource_id: Optional[str] = None,
-        event_category: Optional[str] = None,
-        target_user_id: Optional[UUID] = None,
-        changes: Optional[dict] = None,
-        metadata: Optional[dict] = None,
-        ip_address: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        request: Optional[Request] = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        event_category: str | None = None,
+        target_user_id: UUID | None = None,
+        changes: dict | None = None,
+        metadata: dict | None = None,
+        ip_address: str | None = None,
+        correlation_id: str | None = None,
+        request: Request | None = None,
     ) -> AuditLog:
         """
         Log a general audit event.
@@ -195,7 +204,14 @@ class AuditLogger:
                 # Recursively sanitize nested dicts
                 sanitized_value = {}
                 for k, v in value.items():
-                    if k in {"password", "hashed_password", "password_hash", "secret", "token", "api_key"}:
+                    if k in {
+                        "password",
+                        "hashed_password",
+                        "password_hash",
+                        "secret",
+                        "token",
+                        "api_key",
+                    }:
                         sanitized_value[k] = "[REDACTED]"
                     else:
                         sanitized_value[k] = v
@@ -213,10 +229,10 @@ class AuditLogger:
         project_id: UUID,
         target_user_id: UUID,
         permission_level: str,
-        old_level: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        request: Optional[Request] = None,
+        old_level: str | None = None,
+        ip_address: str | None = None,
+        correlation_id: str | None = None,
+        request: Request | None = None,
     ) -> AuditLog:
         """
         Log project permission changes.
@@ -271,10 +287,10 @@ class AuditLogger:
         organization_id: UUID,
         target_user_id: UUID,
         role: str,
-        old_role: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        request: Optional[Request] = None,
+        old_role: str | None = None,
+        ip_address: str | None = None,
+        correlation_id: str | None = None,
+        request: Request | None = None,
     ) -> AuditLog:
         """
         Log team membership changes.
@@ -328,10 +344,10 @@ class AuditLogger:
         resource_type: str,
         resource_id: str,
         fields_accessed: list[str],
-        reason: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        request: Optional[Request] = None,
+        reason: str | None = None,
+        ip_address: str | None = None,
+        correlation_id: str | None = None,
+        request: Request | None = None,
     ) -> AuditLog:
         """
         Log PII data access for compliance.
@@ -375,9 +391,9 @@ class AuditLogger:
         target_user_id: UUID,
         changes_dict: dict,
         action: str = "update_account",
-        ip_address: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        request: Optional[Request] = None,
+        ip_address: str | None = None,
+        correlation_id: str | None = None,
+        request: Request | None = None,
     ) -> AuditLog:
         """
         Log account modifications (profile updates, role changes, deletions).
@@ -412,13 +428,13 @@ class AuditLogger:
     async def log_authentication(
         self,
         db: AsyncSession,
-        user_id: Optional[UUID],
+        user_id: UUID | None,
         action: str,
         success: bool,
-        metadata: Optional[dict] = None,
-        ip_address: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        request: Optional[Request] = None,
+        metadata: dict | None = None,
+        ip_address: str | None = None,
+        correlation_id: str | None = None,
+        request: Request | None = None,
     ) -> AuditLog:
         """
         Log authentication events (login, logout, failed attempts).

@@ -3,6 +3,9 @@
 from typing import Annotated
 
 import stripe
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.config import settings
 from app.models.subscription import SubscriptionTier
@@ -16,8 +19,6 @@ from app.schemas.subscription import (
 )
 from app.services.limit_checker import LimitChecker
 from app.services.stripe_service import StripeService
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -37,6 +38,7 @@ async def get_subscription(
             status="active",
             cancel_at_period_end=False,
             current_period_end=None,
+            stripe_status=None,
         )
 
     return SubscriptionResponse(**subscription)
@@ -71,6 +73,12 @@ async def create_checkout_session(
         else settings.STRIPE_PRICE_PRO
     )
 
+    if not price_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stripe price ID not configured for this tier",
+        )
+
     # Create checkout session
     success_url = (
         f"{settings.FRONTEND_URL}/billing/success?session_id={{CHECKOUT_SESSION_ID}}"
@@ -86,7 +94,7 @@ async def create_checkout_session(
             cancel_url=cancel_url,
         )
         return CheckoutSessionResponse(**session)
-    except stripe.error.StripeError as e:
+    except stripe.error.StripeError as e:  # type: ignore[attr-defined]
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Stripe error: {str(e)}",
@@ -107,7 +115,7 @@ async def create_billing_portal_session(
             user=current_user, db=db, return_url=return_url
         )
         return BillingPortalResponse(**session)
-    except stripe.error.StripeError as e:
+    except stripe.error.StripeError as e:  # type: ignore[attr-defined]
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Stripe error: {str(e)}",
@@ -183,7 +191,7 @@ async def stripe_webhook(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid payload",
             )
-        except stripe.error.SignatureVerificationError:
+        except stripe.error.SignatureVerificationError:  # type: ignore[attr-defined]
             # Invalid signature
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

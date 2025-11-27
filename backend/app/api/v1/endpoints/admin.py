@@ -5,6 +5,11 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
+
 from app.api.deps import get_async_db, get_current_user_async
 from app.models.project import Project
 from app.models.user import User
@@ -20,10 +25,6 @@ from app.schemas.health import (
 )
 from app.services.auth_analytics_service import auth_analytics_service
 from app.services.health_service import health_service
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -37,7 +38,7 @@ async def bootstrap_first_admin(
 ) -> Any:
     """One-time endpoint to create the first admin. Remove after use!"""
     # Check if any admin exists
-    result = await db.execute(select(User).filter(User.is_superuser))
+    result = await db.execute(select(User).filter(User.is_superuser))  # type: ignore[arg-type]
     existing_admin = result.scalar_one_or_none()
     if existing_admin:
         raise HTTPException(
@@ -46,7 +47,7 @@ async def bootstrap_first_admin(
         )
 
     # Find user by email
-    result = await db.execute(select(User).filter(User.email == email))
+    result = await db.execute(select(User).filter(User.email == email))  # type: ignore[arg-type]
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(
@@ -80,20 +81,20 @@ async def get_admin_stats(
     """Get overall platform statistics."""
 
     # Total users
-    result = await db.execute(select(func.count(User.id)))
+    result = await db.execute(select(func.count(User.id)))  # type: ignore[arg-type]
     total_users = result.scalar()
 
     # Users registered in last 7 days
     week_ago = datetime.utcnow() - timedelta(days=7)
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= week_ago)
+        select(func.count(User.id)).filter(User.created_at >= week_ago)  # type: ignore[arg-type]
     )
     new_users_week = result.scalar()
 
     # Users registered in last 30 days
     month_ago = datetime.utcnow() - timedelta(days=30)
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= month_ago)
+        select(func.count(User.id)).filter(User.created_at >= month_ago)  # type: ignore[arg-type]
     )
     new_users_month = result.scalar()
 
@@ -156,7 +157,7 @@ async def get_users_list(
                 is_active=user.is_active,
                 is_verified=user.is_verified,
                 email_verified=user.is_verified,  # Alias for frontend compatibility
-                created_at=user.created_at.isoformat() if user.created_at else None,
+                created_at=user.created_at.isoformat() if user.created_at else None,  # type: ignore[arg-type]
                 project_count=project_count or 0,
                 subscription_tier=user.subscription_tier,
                 last_login=None,  # Add last_login tracking in future
@@ -174,7 +175,7 @@ async def get_user_details(
 ) -> Any:
     """Get detailed info about a specific user."""
 
-    result = await db.execute(select(User).filter(User.id == user_id))
+    result = await db.execute(select(User).filter(User.id == user_id))  # type: ignore[arg-type]
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(
@@ -234,7 +235,7 @@ async def get_all_projects(
     project_data = []
     for project in projects:
         # Count states and transitions from configuration
-        config = project.configuration or {}
+        config: dict[str, Any] = project.configuration or {}  # type: ignore[assignment]
         state_count = len(config.get("states", []))
         transition_count = sum(
             len(state.get("transitions", [])) for state in config.get("states", [])
@@ -243,8 +244,8 @@ async def get_all_projects(
         project_data.append(
             AdminProjectData(
                 id=str(project.id),
-                name=project.name,
-                description=project.description,
+                name=str(project.name),
+                description=project.description,  # type: ignore[arg-type]
                 owner_id=str(project.owner_id),
                 owner_username=project.owner.username,
                 owner_email=project.owner.email,
@@ -283,7 +284,7 @@ async def get_project_details(
         )
 
     # Get full configuration
-    config = project.configuration or {}
+    config: dict[str, Any] = project.configuration or {}  # type: ignore[assignment]
     states = config.get("states", [])
 
     # Extract image library from two sources:
@@ -366,17 +367,17 @@ async def get_analytics(
 
     # New users
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= day_ago)
+        select(func.count(User.id)).filter(User.created_at >= day_ago)  # type: ignore[arg-type]
     )
     new_users_today = result.scalar() or 0
 
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= week_ago)
+        select(func.count(User.id)).filter(User.created_at >= week_ago)  # type: ignore[arg-type]
     )
     new_users_week = result.scalar() or 0
 
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at >= month_ago)
+        select(func.count(User.id)).filter(User.created_at >= month_ago)  # type: ignore[arg-type]
     )
     new_users_month = result.scalar() or 0
 
@@ -387,11 +388,11 @@ async def get_analytics(
     active_projects_week = result.scalar() or 0
 
     # Simple retention calculation (users who created project in first week and are still active)
-    result = await db.execute(select(func.count(User.id)))
+    result = await db.execute(select(func.count(User.id)))  # type: ignore[arg-type]
     total_users = result.scalar() or 1
 
     result = await db.execute(
-        select(func.count(User.id))
+        select(func.count(User.id))  # type: ignore[arg-type]
         .filter(User.created_at <= week_ago)
         .filter(User.created_at >= month_ago)
     )
@@ -399,7 +400,7 @@ async def get_analytics(
 
     result = await db.execute(
         select(func.count(func.distinct(User.id)))
-        .join(Project, User.id == Project.owner_id)
+        .join(Project, User.id == Project.owner_id)  # type: ignore[arg-type]
         .filter(User.created_at <= week_ago)
         .filter(User.created_at >= month_ago)
         .filter(Project.updated_at >= day_ago)
@@ -411,13 +412,13 @@ async def get_analytics(
     )
 
     result = await db.execute(
-        select(func.count(User.id)).filter(User.created_at <= month_ago)
+        select(func.count(User.id)).filter(User.created_at <= month_ago)  # type: ignore[arg-type]
     )
     users_30days_old = result.scalar() or 1
 
     result = await db.execute(
         select(func.count(func.distinct(User.id)))
-        .join(Project, User.id == Project.owner_id)
+        .join(Project, User.id == Project.owner_id)  # type: ignore[arg-type]
         .filter(User.created_at <= month_ago)
         .filter(Project.updated_at >= day_ago)
     )
@@ -774,4 +775,4 @@ async def get_health_thresholds(
 
     Requires superuser authentication.
     """
-    return HealthThresholds(**health_service.THRESHOLDS)
+    return HealthThresholds(**health_service.THRESHOLDS)  # type: ignore[arg-type]

@@ -322,7 +322,7 @@ class ApiClient {
         reject(new Error('Upload timeout'));
       });
 
-      xhr.open('POST', `${API_BASE_URL}/api/v1/images/projects/${projectId}/images/upload`);
+      xhr.open('POST', `${API_BASE_URL}/api/v1/projects/${projectId}/images/upload`);
 
       // HttpOnly Cookie Security: Enable credentials to send cookies
       xhr.withCredentials = true;
@@ -343,7 +343,7 @@ class ApiClient {
     size: 'thumb' | 'medium' | 'large' | 'original' = 'medium'
   ): Promise<string> {
     const response = await this.fetchWithAuth(
-      `/images/projects/${projectId}/images/${imageId}/url?size=${size}`,
+      `/projects/${projectId}/images/${imageId}/url?size=${size}`,
       {
         method: 'GET',
       }
@@ -368,7 +368,7 @@ class ApiClient {
 
     while (attempts < maxAttempts) {
       const response = await this.fetchWithAuth(
-        `/images/projects/${projectId}/images/${imageId}/status`,
+        `/projects/${projectId}/images/${imageId}/status`,
         {
           method: 'GET',
         }
@@ -395,7 +395,7 @@ class ApiClient {
 
   async deleteProjectImage(projectId: number, s3Key: string): Promise<void> {
     const response = await this.fetchWithAuth(
-      `/images/projects/${projectId}/images/${encodeURIComponent(s3Key)}`,
+      `/projects/${projectId}/images/${encodeURIComponent(s3Key)}`,
       {
         method: 'DELETE',
       }
@@ -416,7 +416,7 @@ class ApiClient {
     expires_in: number;
   }> {
     const response = await this.fetchWithAuth(
-      `/images/projects/${projectId}/images/${encodeURIComponent(s3Key)}/refresh-url`,
+      `/projects/${projectId}/images/${encodeURIComponent(s3Key)}/refresh-url`,
       {
         method: 'POST',
       }
@@ -595,12 +595,60 @@ class ApiClient {
   }
 
   /**
+   * Get a token for WebSocket authentication.
+   * This fetches the JWT from the HttpOnly cookie via the ws-token endpoint.
+   */
+  async getWebSocketToken(): Promise<string | null> {
+    try {
+      const response = await fetch('/api/v1/ws-token', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        console.error('[ApiClient] Failed to get WebSocket token:', response.status);
+        return null;
+      }
+      const data = await response.json();
+      return data.token || null;
+    } catch (error) {
+      console.error('[ApiClient] Error getting WebSocket token:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get WebSocket URL for runner connection
    */
-  getRunnerWebSocketUrl(): string {
+  async getRunnerWebSocketUrl(): Promise<string> {
     const wsProtocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
     const url = API_BASE_URL.replace(/^https?:\/\//, '');
-    return `${wsProtocol}://${url}/api/v1/ws/automation/runner`;
+    const baseUrl = `${wsProtocol}://${url}/api/v1/automation/ws/automation/runner`;
+
+    // Get token for WebSocket authentication
+    const token = await this.getWebSocketToken();
+    if (token) {
+      return `${baseUrl}?token=${encodeURIComponent(token)}`;
+    }
+
+    // Fallback without token (backend will try cookie auth)
+    return baseUrl;
+  }
+
+  /**
+   * Get WebSocket URL for monitoring a specific session
+   */
+  async getMonitorWebSocketUrl(sessionId: string): Promise<string> {
+    const wsProtocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
+    const url = API_BASE_URL.replace(/^https?:\/\//, '');
+    const baseUrl = `${wsProtocol}://${url}/api/v1/automation/ws/automation/monitor/${sessionId}`;
+
+    // Get token for WebSocket authentication
+    const token = await this.getWebSocketToken();
+    if (token) {
+      return `${baseUrl}?token=${encodeURIComponent(token)}`;
+    }
+
+    // Fallback without token (backend will try cookie auth)
+    return baseUrl;
   }
 }
 

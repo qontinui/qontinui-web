@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Server, Database, HardDrive, Cpu, AlertCircle, CheckCircle, Clock, Activity } from "lucide-react"
 import { toast } from "sonner"
-import { authService } from "@/services/service-factory"
+import { httpClient } from "@/services/service-factory"
 
 interface SystemHealth {
   api_status: "healthy" | "degraded" | "down"
@@ -52,33 +52,33 @@ export default function SystemTab() {
   const loadSystemHealth = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const accessToken = authService.tokenManager.getAccessToken()
+      const url = `${apiUrl}/api/v1/admin/system/health`
 
-      if (!accessToken) {
-        toast.error('Not authenticated')
-        return
-      }
+      console.log('[SystemTab] Loading system health from:', url)
 
-      const response = await fetch(`${apiUrl}/api/v1/admin/system/health`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      })
+      const response = await httpClient.fetch(url)
+
+      console.log('[SystemTab] Response status:', response.status, response.statusText)
 
       if (response.ok) {
         const data = await response.json()
+        console.log('[SystemTab] System health loaded successfully')
         setHealth(data)
         setError(null)
       } else {
         const errorText = await response.text().catch(() => 'Unknown error')
+        console.error('[SystemTab] Error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+        })
         setError(`Failed to load system health: ${response.status} - ${errorText}`)
         toast.error('Failed to load system health')
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error'
       setError(`Failed to load system health: ${errorMsg}`)
-      console.error('Failed to load system health:', err)
+      console.error('[SystemTab] Exception:', err)
       toast.error('Failed to load system health')
     } finally {
       setLoading(false)

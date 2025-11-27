@@ -6,29 +6,16 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
 import { toast } from 'sonner';
-import { authService } from '@/services/service-factory';
+import { httpClient } from '@/services/service-factory';
 import type {
   GlobalVariable,
   CreateVariableRequest,
   UpdateVariableRequest,
 } from '@/types/variables';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-/**
- * Get axios config with auth headers
- */
-const getAuthConfig = () => {
-  const accessToken = authService.tokenManager.getAccessToken();
-  return {
-    headers: {
-      'Authorization': accessToken ? `Bearer ${accessToken}` : '',
-      'Content-Type': 'application/json',
-    },
-  };
-};
+// Use empty string for relative URLs through Next.js proxy for proper cookie forwarding
+const API_BASE_URL = '';
 
 interface UseGlobalVariablesOptions {
   projectId: string | number;
@@ -52,15 +39,15 @@ interface UseGlobalVariablesReturn {
 const fetchGlobalVariables = async (
   projectId: string | number
 ): Promise<GlobalVariable[]> => {
-  const response = await axios.get(
-    `${API_BASE_URL}/api/v1/variables/global`,
-    {
-      params: { project_id: projectId },
-      ...getAuthConfig(),
-    }
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/variables/global?project_id=${projectId}`
   );
+  if (!response.ok) {
+    throw new Error(`Failed to fetch variables: ${response.status}`);
+  }
+  const data = await response.json();
   // The API returns { variables: [...], total: number }
-  return response.data.variables || response.data;
+  return data.variables || data;
 };
 
 /**
@@ -70,16 +57,17 @@ const createGlobalVariable = async (
   projectId: string | number,
   data: CreateVariableRequest
 ): Promise<GlobalVariable> => {
-  const config = getAuthConfig();
-  const response = await axios.post(
-    `${API_BASE_URL}/api/v1/variables/global`,
-    data,
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/variables/global?project_id=${projectId}`,
     {
-      params: { project_id: projectId },
-      headers: config.headers,
+      method: 'POST',
+      body: JSON.stringify(data),
     }
   );
-  return response.data;
+  if (!response.ok) {
+    throw new Error(`Failed to create variable: ${response.status}`);
+  }
+  return response.json();
 };
 
 /**
@@ -90,16 +78,17 @@ const updateGlobalVariable = async (
   name: string,
   data: UpdateVariableRequest
 ): Promise<GlobalVariable> => {
-  const config = getAuthConfig();
-  const response = await axios.put(
-    `${API_BASE_URL}/api/v1/variables/global/${encodeURIComponent(name)}`,
-    data,
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/variables/global/${encodeURIComponent(name)}?project_id=${projectId}`,
     {
-      params: { project_id: projectId },
-      headers: config.headers,
+      method: 'PUT',
+      body: JSON.stringify(data),
     }
   );
-  return response.data;
+  if (!response.ok) {
+    throw new Error(`Failed to update variable: ${response.status}`);
+  }
+  return response.json();
 };
 
 /**
@@ -109,14 +98,15 @@ const deleteGlobalVariable = async (
   projectId: string | number,
   name: string
 ): Promise<void> => {
-  const config = getAuthConfig();
-  await axios.delete(
-    `${API_BASE_URL}/api/v1/variables/global/${encodeURIComponent(name)}`,
+  const response = await httpClient.fetch(
+    `${API_BASE_URL}/api/v1/variables/global/${encodeURIComponent(name)}?project_id=${projectId}`,
     {
-      params: { project_id: projectId },
-      headers: config.headers,
+      method: 'DELETE',
     }
   );
+  if (!response.ok) {
+    throw new Error(`Failed to delete variable: ${response.status}`);
+  }
 };
 
 /**

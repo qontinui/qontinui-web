@@ -74,7 +74,9 @@ def add_deprecation_headers(
         response.headers["Link"] = f'<{successor}>; rel="successor-version"'
 
     # Add Warning header for human-readable message (RFC 7234)
-    warning_msg = f"This endpoint is deprecated and will be removed after {sunset_date}."
+    warning_msg = (
+        f"This endpoint is deprecated and will be removed after {sunset_date}."
+    )
     if successor:
         warning_msg += f" Please migrate to {successor}."
     response.headers["Warning"] = f'299 - "{warning_msg}"'
@@ -103,7 +105,7 @@ def is_version_deprecated(version: str) -> tuple[bool, str | None]:
             print(f"Version v1 will be sunset on {sunset_date}")
     """
     # Define deprecated versions and their sunset dates
-    DEPRECATED_VERSIONS = {
+    DEPRECATED_VERSIONS: dict[str, str] = {
         # "v1": "2025-12-31",  # Example: v1 deprecated, remove after Dec 31, 2025
         # Add deprecated versions here as new versions are released
     }
@@ -127,7 +129,7 @@ def get_successor_version(version: str) -> str | None:
         # Returns: "v2"
     """
     # Define version succession mapping
-    VERSION_SUCCESSION = {
+    VERSION_SUCCESSION: dict[str, str] = {
         # "v1": "v2",  # Example: v1 succeeded by v2
         # Add version mappings as new versions are released
     }

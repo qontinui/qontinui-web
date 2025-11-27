@@ -13,9 +13,8 @@ then expands to button boundaries.
 """
 
 import logging
-import re
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -65,7 +64,7 @@ class TypographyDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Text detection
             "min_text_area": 100,
@@ -169,7 +168,7 @@ class TypographyDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -178,8 +177,8 @@ class TypographyDetector(BaseAnalyzer):
         return images
 
     async def _analyze_screenshot(
-        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, img: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Analyze single screenshot for button text"""
 
         # Detect text regions
@@ -233,25 +232,30 @@ class TypographyDetector(BaseAnalyzer):
         return elements
 
     def _detect_text_regions(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[BoundingBox]:
+        self, img: np.ndarray, params: dict[str, Any]
+    ) -> list[BoundingBox]:
         """
         Detect text regions in image
 
         Uses MSER (Maximally Stable Extremal Regions) which works well for text
         """
-        text_regions = []
+        text_regions: list[BoundingBox] = []
 
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
         # MSER detector for text
-        mser = cv2.MSER_create(
-            _min_area=int(params["min_text_area"]),
-            _max_area=int(params["max_text_area"]),
-            _delta=5,
-        )
-
-        regions, _ = mser.detectRegions(gray)
+        # Note: cv2.MSER_create might not be available in all OpenCV versions
+        # Using try-except to handle this gracefully
+        try:
+            mser = cv2.MSER_create(  # type: ignore[attr-defined]
+                _min_area=int(params["min_text_area"]),
+                _max_area=int(params["max_text_area"]),
+                _delta=5,
+            )
+            regions, _ = mser.detectRegions(gray)
+        except AttributeError:
+            logger.warning("cv2.MSER_create not available in this OpenCV version")
+            return text_regions
 
         min_ar, max_ar = params["text_aspect_ratio_range"]
 
@@ -271,8 +275,8 @@ class TypographyDetector(BaseAnalyzer):
         return text_regions
 
     def _analyze_typography(
-        self, img: np.ndarray, bbox: BoundingBox, params: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        self, img: np.ndarray, bbox: BoundingBox, params: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """
         Analyze typography characteristics of text region
 
@@ -316,8 +320,8 @@ class TypographyDetector(BaseAnalyzer):
         return features
 
     def _analyze_stroke_width(
-        self, gray: np.ndarray, params: Dict[str, Any]
-    ) -> Optional[Tuple[bool, float]]:
+        self, gray: np.ndarray, params: dict[str, Any]
+    ) -> tuple[bool, float] | None:
         """
         Analyze stroke width to detect bold text
 
@@ -358,7 +362,7 @@ class TypographyDetector(BaseAnalyzer):
         stroke_ratio = avg_stroke_width / height if height > 0 else 0
         is_bold = stroke_ratio >= params["bold_stroke_ratio"]
 
-        return (is_bold, avg_stroke_width)
+        return (bool(is_bold), float(avg_stroke_width))
 
     def _analyze_text_compactness(self, gray: np.ndarray) -> float:
         """
@@ -398,7 +402,7 @@ class TypographyDetector(BaseAnalyzer):
 
         # Find text bounding box within region
         coords = cv2.findNonZero(binary)
-        if coords is None:
+        if coords is None or len(coords) == 0:
             return False
 
         x, y, w, h = cv2.boundingRect(coords)
@@ -408,15 +412,18 @@ class TypographyDetector(BaseAnalyzer):
         right_margin = gray.shape[1] - (x + w)
 
         # Consider centered if margins are similar (within 30%)
-        if left_margin + right_margin == 0:
-            return False
+        max_margin = max(left_margin, right_margin)
+        if max_margin == 0:
+            return (
+                True  # If both margins are 0, text fills the region - consider centered
+            )
 
-        center_ratio = min(left_margin, right_margin) / max(left_margin, right_margin)
+        center_ratio = min(left_margin, right_margin) / max_margin
 
-        return center_ratio >= 0.7
+        return bool(center_ratio >= 0.7)
 
     def _calculate_confidence(
-        self, features: Dict[str, Any], params: Dict[str, Any]
+        self, features: dict[str, Any], params: dict[str, Any]
     ) -> float:
         """
         Calculate confidence based on typography features
@@ -450,7 +457,7 @@ class TypographyDetector(BaseAnalyzer):
         return min(0.9, confidence)
 
     def _expand_to_button_boundary(
-        self, img: np.ndarray, text_bbox: BoundingBox, params: Dict[str, Any]
+        self, img: np.ndarray, text_bbox: BoundingBox, params: dict[str, Any]
     ) -> BoundingBox:
         """
         Expand text bounding box to include button boundaries
@@ -490,7 +497,7 @@ class TypographyDetector(BaseAnalyzer):
         )
 
     def _validate_button(
-        self, img: np.ndarray, bbox: BoundingBox, params: Dict[str, Any]
+        self, img: np.ndarray, bbox: BoundingBox, params: dict[str, Any]
     ) -> bool:
         """
         Validate that expanded region has button-like properties

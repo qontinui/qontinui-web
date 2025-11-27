@@ -10,15 +10,15 @@ from uuid import UUID
 
 import httpx
 import structlog
-from app.core.config import settings
-from app.models.capture import CaptureDetectedElement, CaptureScreenshot, CaptureSession
-from app.schemas.capture import CaptureDetectedElementCreate
-from app.services.object_storage import object_storage
 from fastapi import HTTPException, status
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.core.config import settings
+from app.models.capture import CaptureDetectedElement, CaptureScreenshot, CaptureSession
+from app.services.object_storage import object_storage
 
 logger = structlog.get_logger(__name__)
 
@@ -173,7 +173,7 @@ class ElementDetectionService:
         # Detect elements in each screenshot
         total_elements = 0
         analyzed_count = 0
-        element_type_counts = {}
+        element_type_counts: dict[str, int] = {}
 
         for screenshot in screenshots:
             # Skip if already analyzed

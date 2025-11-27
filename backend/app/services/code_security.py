@@ -10,14 +10,13 @@ Provides comprehensive security scanning for Python code including:
 """
 
 import ast
-import base64
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from pydantic import BaseModel, Field
-from radon.complexity import cc_visit
-from radon.metrics import mi_visit
+from radon.complexity import cc_visit  # type: ignore[import-untyped]
+from radon.metrics import mi_visit  # type: ignore[import-untyped]
 
 # ============================================================================
 # Security Configuration
@@ -213,34 +212,34 @@ class SecurityIssue(BaseModel):
 
     severity: IssueSeverity
     issue_type: IssueType
-    line_number: Optional[int] = None
-    column: Optional[int] = None
+    line_number: int | None = None
+    column: int | None = None
     message: str
-    code_snippet: Optional[str] = None
-    suggestion: Optional[str] = None
+    code_snippet: str | None = None
+    suggestion: str | None = None
 
 
 class SecurityScanResult(BaseModel):
     """Result of security scan."""
 
     status: SecurityStatus
-    issues: List[SecurityIssue] = Field(default_factory=list)
+    issues: list[SecurityIssue] = Field(default_factory=list)
     risk_score: int = Field(
         ge=0, le=100, description="Risk score from 0 (safe) to 100 (dangerous)"
     )
-    recommendations: List[str] = Field(default_factory=list)
-    complexity_metrics: Dict[str, Any] = Field(default_factory=dict)
-    scanned_at: Optional[str] = None
+    recommendations: list[str] = Field(default_factory=list)
+    complexity_metrics: dict[str, Any] = Field(default_factory=dict)
+    scanned_at: str | None = None
 
     def add_issue(
         self,
         severity: IssueSeverity,
         issue_type: IssueType,
         message: str,
-        line_number: Optional[int] = None,
-        column: Optional[int] = None,
-        code_snippet: Optional[str] = None,
-        suggestion: Optional[str] = None,
+        line_number: int | None = None,
+        column: int | None = None,
+        code_snippet: str | None = None,
+        suggestion: str | None = None,
     ) -> None:
         """Add an issue to the scan result."""
         self.issues.append(
@@ -300,11 +299,11 @@ class SecurityScanResult(BaseModel):
 class SecurityASTVisitor(ast.NodeVisitor):
     """AST visitor for detecting security issues."""
 
-    def __init__(self, code_lines: List[str]):
+    def __init__(self, code_lines: list[str]):
         self.code_lines = code_lines
-        self.issues: List[SecurityIssue] = []
-        self.imports: Set[str] = set()
-        self.function_calls: Set[str] = set()
+        self.issues: list[SecurityIssue] = []
+        self.imports: set[str] = set()
+        self.function_calls: set[str] = set()
         self.has_file_operations = False
         self.has_network_operations = False
         self.has_global_vars = False
@@ -591,7 +590,7 @@ class CodeSecurityScanner:
 
         return result
 
-    def validate_imports(self, code: str) -> List[SecurityIssue]:
+    def validate_imports(self, code: str) -> list[SecurityIssue]:
         """
         Validate imports using AST parsing.
 
@@ -601,7 +600,7 @@ class CodeSecurityScanner:
         Returns:
             List of security issues related to imports
         """
-        issues = []
+        issues: list[SecurityIssue] = []
         try:
             tree = ast.parse(code)
             code_lines = code.split("\n")
@@ -619,7 +618,7 @@ class CodeSecurityScanner:
 
         return issues
 
-    def detect_dangerous_patterns(self, code: str) -> List[SecurityIssue]:
+    def detect_dangerous_patterns(self, code: str) -> list[SecurityIssue]:
         """
         Detect dangerous patterns using AST analysis.
 
@@ -629,7 +628,7 @@ class CodeSecurityScanner:
         Returns:
             List of security issues related to dangerous patterns
         """
-        issues = []
+        issues: list[SecurityIssue] = []
         try:
             tree = ast.parse(code)
             code_lines = code.split("\n")
@@ -655,7 +654,7 @@ class CodeSecurityScanner:
 
         return issues
 
-    def check_complexity(self, code: str) -> Dict[str, Any]:
+    def check_complexity(self, code: str) -> dict[str, Any]:
         """
         Check cyclomatic complexity and maintainability.
 
@@ -665,13 +664,14 @@ class CodeSecurityScanner:
         Returns:
             Dict with complexity metrics and issues
         """
-        metrics = {
+        metrics: dict[str, Any] = {
             "average_complexity": 0,
             "max_complexity": 0,
             "total_functions": 0,
             "maintainability_index": 0,
             "issues": [],
         }
+        issues_list: list[SecurityIssue] = []
 
         try:
             # Calculate cyclomatic complexity
@@ -685,7 +685,7 @@ class CodeSecurityScanner:
                 # Check for high complexity functions
                 for result in complexity_results:
                     if result.complexity > MAX_COMPLEXITY_BLOCK:
-                        metrics["issues"].append(
+                        issues_list.append(
                             SecurityIssue(
                                 severity=IssueSeverity.HIGH,
                                 issue_type=IssueType.HIGH_COMPLEXITY,
@@ -695,7 +695,7 @@ class CodeSecurityScanner:
                             )
                         )
                     elif result.complexity > MAX_COMPLEXITY_WARN:
-                        metrics["issues"].append(
+                        issues_list.append(
                             SecurityIssue(
                                 severity=IssueSeverity.MEDIUM,
                                 issue_type=IssueType.HIGH_COMPLEXITY,
@@ -711,7 +711,7 @@ class CodeSecurityScanner:
                 metrics["maintainability_index"] = mi_results
 
                 if mi_results < MIN_MAINTAINABILITY_INDEX:
-                    metrics["issues"].append(
+                    issues_list.append(
                         SecurityIssue(
                             severity=IssueSeverity.MEDIUM,
                             issue_type=IssueType.LOW_MAINTAINABILITY,
@@ -727,7 +727,7 @@ class CodeSecurityScanner:
             visitor.visit(tree)
 
             if visitor.max_nesting_depth > MAX_NESTING_DEPTH:
-                metrics["issues"].append(
+                issues_list.append(
                     SecurityIssue(
                         severity=IssueSeverity.MEDIUM,
                         issue_type=IssueType.DEEP_NESTING,
@@ -738,7 +738,7 @@ class CodeSecurityScanner:
 
         except Exception as e:
             # If complexity analysis fails, add a warning
-            metrics["issues"].append(
+            issues_list.append(
                 SecurityIssue(
                     severity=IssueSeverity.LOW,
                     issue_type=IssueType.HIGH_COMPLEXITY,
@@ -746,9 +746,10 @@ class CodeSecurityScanner:
                 )
             )
 
+        metrics["issues"] = issues_list
         return metrics
 
-    def detect_obfuscation(self, code: str) -> List[SecurityIssue]:
+    def detect_obfuscation(self, code: str) -> list[SecurityIssue]:
         """
         Detect code obfuscation patterns.
 
@@ -841,12 +842,12 @@ class CodeSecurityScanner:
 
         return result
 
-    def _generate_recommendations(self, result: SecurityScanResult) -> List[str]:
+    def _generate_recommendations(self, result: SecurityScanResult) -> list[str]:
         """Generate security recommendations based on scan results."""
         recommendations = []
 
         # Group issues by type
-        issue_types = {}
+        issue_types: dict[IssueType, list[SecurityIssue]] = {}
         for issue in result.issues:
             issue_type = issue.issue_type
             if issue_type not in issue_types:

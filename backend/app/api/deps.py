@@ -4,13 +4,18 @@ FastAPI dependencies for authentication and database access.
 Now using fastapi-users for authentication.
 """
 
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 import structlog
-from app.core.config import settings
-from app.models.user import User
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
+
+from app.core.config import settings
+from app.models.user import User
+
+if TYPE_CHECKING:
+    from app.models.runner_token import RunnerToken
 
 logger = structlog.get_logger(__name__)
 
@@ -47,15 +52,33 @@ async def get_current_user_from_ws(token: str) -> User:
         HTTPException if authentication fails
     """
     try:
+        # Log what we're trying to decode
+        logger.info(
+            "ws_jwt_decode_attempt",
+            token_length=len(token) if token else 0,
+            secret_key_set=bool(settings.ACCESS_SECRET_KEY),
+            algorithm=settings.ALGORITHM,
+        )
+
         # Decode JWT token
+        # fastapi-users uses "fastapi-users:auth" as the audience claim
+        # ACCESS_SECRET_KEY is validated to be non-None by pydantic validator
+        secret_key = cast(str, settings.ACCESS_SECRET_KEY)
         payload = jwt.decode(
             token,
-            settings.ACCESS_SECRET_KEY,
+            secret_key,
             algorithms=[settings.ALGORITHM],
+            audience="fastapi-users:auth",
+        )
+
+        logger.info(
+            "ws_jwt_decode_success",
+            sub=payload.get("sub"),
+            claims=list(payload.keys()),
         )
 
         # Extract user ID from token
-        user_id_str: str = payload.get("sub")
+        user_id_str: str | None = payload.get("sub")
         if user_id_str is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,7 +88,11 @@ async def get_current_user_from_ws(token: str) -> User:
         user_id = UUID(user_id_str)
 
     except JWTError as e:
-        logger.error("ws_jwt_decode_error", error=str(e))
+        logger.error(
+            "ws_jwt_decode_error",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -83,7 +110,9 @@ async def get_current_user_from_ws(token: str) -> User:
         try:
             from sqlalchemy import select
 
-            result = await db.execute(select(User).where(User.id == user_id))
+            result = await db.execute(
+                select(User).where(User.id == user_id)  # type: ignore[arg-type]
+            )
             user = result.scalar_one_or_none()
 
             if user is None:
@@ -102,9 +131,6 @@ async def get_current_user_from_ws(token: str) -> User:
 
         finally:
             await db.close()
-
-        # Only process one db session
-        break
 
     # If we get here, something went wrong
     raise HTTPException(
@@ -135,7 +161,6 @@ async def authenticate_runner(
         HTTPException if authentication fails
     """
     from app.crud import runner as runner_crud
-    from app.models.runner_token import RunnerToken
 
     # First, try JWT authentication
     try:
@@ -160,29 +185,26 @@ async def authenticate_runner(
             from sqlalchemy import select
 
             result = await db.execute(
-                select(User).where(User.id == runner_token.user_id)
+                select(User).where(User.id == runner_token.user_id)  # type: ignore[arg-type]
             )
-            user = result.scalar_one_or_none()
+            user_from_db: User | None = result.scalar_one_or_none()
 
-            if not user:
+            if not user_from_db:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="User not found",
                 )
 
-            if not user.is_active:
+            if not user_from_db.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="User is not active",
                 )
 
-            return user, runner_token
+            return user_from_db, runner_token
 
         finally:
             await db.close()
-
-        # Only process one db session
-        break
 
     # If we get here, authentication failed
     raise HTTPException(

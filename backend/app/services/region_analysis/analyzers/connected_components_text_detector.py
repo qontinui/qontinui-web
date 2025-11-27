@@ -10,7 +10,7 @@ Accuracy: 75-85% for clear text with good contrast
 """
 
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -39,14 +39,14 @@ class ConnectedComponentsTextDetector(BaseRegionAnalyzer):
         return "connected_components_text_detector"
 
     @property
-    def supported_region_types(self) -> List[RegionType]:
+    def supported_region_types(self) -> list[RegionType]:
         return [RegionType.TEXT_AREA]
 
     @property
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize Connected Components text detector.
 
@@ -68,7 +68,7 @@ class ConnectedComponentsTextDetector(BaseRegionAnalyzer):
         self.dilation_iterations = params["dilation_iterations"]
         self.use_adaptive_threshold = params["use_adaptive_threshold"]
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_area": 50,
             "max_area": 10000,
@@ -125,7 +125,7 @@ class ConnectedComponentsTextDetector(BaseRegionAnalyzer):
 
     def _detect_text_regions(
         self, gray: np.ndarray, screenshot_index: int
-    ) -> List[DetectedRegion]:
+    ) -> list[DetectedRegion]:
         """Detect text regions in a grayscale image."""
         # Threshold the image
         if self.use_adaptive_threshold:

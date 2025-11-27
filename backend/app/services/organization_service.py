@@ -8,10 +8,11 @@ Provides functionality for:
 """
 
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.organization import Organization, TeamMember, TeamRole
 from app.models.user import User
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

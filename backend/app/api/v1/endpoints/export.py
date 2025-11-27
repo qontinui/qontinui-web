@@ -1,5 +1,9 @@
 import json
 from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.crud.project import get_project, update_project
@@ -8,8 +12,6 @@ from app.schemas.export import ValidationResult
 from app.schemas.project import ProjectUpdate
 from app.services.export_import import ExportImportService
 from app.services.json_validator import JSONConfigValidator
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -18,7 +20,7 @@ router = APIRouter()
 async def export_project_configuration(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: str,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """
@@ -44,8 +46,9 @@ async def export_project_configuration(
         config = service.export_project(project, current_user)
 
         # Create filename
+        project_name: str = str(project.name)
         safe_name = "".join(
-            c for c in project.name if c.isalnum() or c in (" ", "-", "_")
+            c for c in project_name if c.isalnum() or c in (" ", "-", "_")
         ).rstrip()
         filename = f"{safe_name}_config.json"
 
@@ -71,7 +74,7 @@ async def export_project_configuration(
 async def import_project_configuration(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: str,
+    project_id: UUID,
     configuration: dict,
     merge: bool = False,
     current_user: User = Depends(get_current_active_user_async),
@@ -137,7 +140,7 @@ async def validate_configuration(
 async def get_project_configuration(
     *,
     db: AsyncSession = Depends(get_async_db),
-    project_id: str,
+    project_id: UUID,
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
     """

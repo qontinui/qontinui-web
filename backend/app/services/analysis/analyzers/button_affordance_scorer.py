@@ -16,7 +16,7 @@ to provide a single likelihood score for each candidate region.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -67,7 +67,7 @@ class ButtonAffordanceScorer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Region extraction
             "edge_threshold1": 50,
@@ -109,7 +109,7 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, (img_gray, img_color) in enumerate(
-            zip(images_gray, images_color)
+            zip(images_gray, images_color, strict=False)
         ):
             elements = await self._analyze_screenshot(
                 img_gray, img_color, screenshot_idx, params
@@ -133,7 +133,7 @@ class ButtonAffordanceScorer(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -141,7 +141,7 @@ class ButtonAffordanceScorer(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color (BGR for OpenCV)"""
         images = []
         for data in screenshot_data:
@@ -156,8 +156,8 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         img_gray: np.ndarray,
         img_color: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot using affordance scoring"""
         elements = []
 
@@ -207,8 +207,8 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         return elements
 
     def _extract_candidate_regions(
-        self, img_gray: np.ndarray, params: Dict[str, Any]
-    ) -> List[BoundingBox]:
+        self, img_gray: np.ndarray, params: dict[str, Any]
+    ) -> list[BoundingBox]:
         """
         Extract candidate rectangular regions that could be buttons
 
@@ -265,8 +265,8 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         y: int,
         w: int,
         h: int,
-        params: Dict[str, Any],
-    ) -> Dict[str, float]:
+        params: dict[str, Any],
+    ) -> dict[str, float]:
         """
         Calculate all affordance features for a region
 
@@ -347,7 +347,7 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         region_mean = np.mean(region_color, axis=(0, 1))
         bg_mean = np.mean(bg_pixels, axis=0)
 
-        contrast = np.linalg.norm(region_mean - bg_mean)
+        contrast = float(np.linalg.norm(region_mean - bg_mean))
 
         # Normalize (typical range 0-150)
         return min(1.0, contrast / 80)
@@ -368,9 +368,9 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         # Lower std = higher uniformity
         uniformity = max(0, 1.0 - (avg_std / 40))
 
-        return uniformity
+        return float(uniformity)
 
-    def _score_shape(self, w: int, h: int, params: Dict[str, Any]) -> float:
+    def _score_shape(self, w: int, h: int, params: dict[str, Any]) -> float:
         """
         Score shape regularity (0-1)
 
@@ -385,7 +385,7 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         # Score based on how close to optimal
         shape_score = max(0, 1.0 - (ratio_diff / 2.0))
 
-        return shape_score
+        return float(shape_score)
 
     def _score_position(
         self, x: int, y: int, w: int, h: int, img_w: int, img_h: int
@@ -463,9 +463,9 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         # Combine both aspects
         border_score = min(1.0, border_contrast / 30) * 0.6 + border_uniformity * 0.4
 
-        return border_score
+        return float(border_score)
 
-    def _score_size(self, w: int, h: int, params: Dict[str, Any]) -> float:
+    def _score_size(self, w: int, h: int, params: dict[str, Any]) -> float:
         """
         Score size appropriateness (0-1)
 
@@ -507,10 +507,10 @@ class ButtonAffordanceScorer(BaseAnalyzer):
         # Normalize (typical range 0-100)
         prominence = min(1.0, brightness_diff / 40)
 
-        return prominence
+        return float(prominence)
 
     def _combine_features(
-        self, features: Dict[str, float], params: Dict[str, Any]
+        self, features: dict[str, float], params: dict[str, Any]
     ) -> float:
         """
         Combine all feature scores into a single affordance score (0-1)
@@ -531,4 +531,4 @@ class ButtonAffordanceScorer(BaseAnalyzer):
             features.get("visual_prominence", 0) * params["weight_visual_prominence"]
         )
 
-        return min(1.0, max(0.0, affordance_score))
+        return float(min(1.0, max(0.0, affordance_score)))

@@ -12,10 +12,12 @@ Provides endpoints for managing project files and directories:
 
 from datetime import datetime
 from pathlib import Path
-from typing import List
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api import deps
 from app.core.error_codes import ErrorCode
 from app.crud import custom_function as custom_function_crud
@@ -38,14 +40,7 @@ from app.schemas.project_file import (
 )
 from app.services.function_scanner import FunctionScanner
 from app.services.permission_service import permission_service
-from app.services.project_directory import (
-    ALLOWED_EXTENSIONS,
-    MAX_FILES_PER_PROJECT,
-    MAX_PROJECT_SIZE_BYTES,
-    ProjectDirectoryManager,
-)
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.project_directory import ProjectDirectoryManager
 
 logger = structlog.get_logger(__name__)
 
@@ -128,7 +123,7 @@ async def scan_python_file_for_functions(
     """
     try:
         # Scan file for functions
-        functions = function_scanner.scan_file_content(content, file_path)
+        functions = function_scanner.scan_file(content, file_path)
 
         if not functions:
             # No functions found, but clean up any old ones for this file
@@ -244,11 +239,11 @@ async def list_project_files(
         raise not_found_error("Project", "project")
 
     # Get project root
-    project_root = directory_manager.get_project_root(project_id)
+    project_root = directory_manager.get_project_root(str(project_id))
 
     # Ensure directory exists (for backward compatibility)
     if not project_root.exists():
-        directory_manager.ensure_project_directory(project_id)
+        directory_manager.ensure_project_directory(str(project_id))
 
     try:
         # Resolve directory path
@@ -337,15 +332,15 @@ async def upload_project_file(
         )
 
     # Get project root
-    project_root = directory_manager.get_project_root(project_id)
+    project_root = directory_manager.get_project_root(str(project_id))
 
     # Ensure directory exists
     if not project_root.exists():
-        directory_manager.ensure_project_directory(project_id)
+        directory_manager.ensure_project_directory(str(project_id))
 
     try:
         # Check project limits before upload
-        limits = directory_manager.check_project_limits(project_id)
+        limits = directory_manager.check_project_limits(str(project_id))
         if not limits["within_limits"]:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -445,7 +440,7 @@ async def get_project_file(
         raise not_found_error("Project", "project")
 
     # Get project root
-    project_root = directory_manager.get_project_root(project_id)
+    project_root = directory_manager.get_project_root(str(project_id))
 
     if not project_root.exists():
         raise HTTPException(
@@ -547,7 +542,7 @@ async def update_project_file(
         )
 
     # Get project root
-    project_root = directory_manager.get_project_root(project_id)
+    project_root = directory_manager.get_project_root(str(project_id))
 
     if not project_root.exists():
         raise HTTPException(
@@ -650,7 +645,7 @@ async def delete_project_file(
         )
 
     # Get project root
-    project_root = directory_manager.get_project_root(project_id)
+    project_root = directory_manager.get_project_root(str(project_id))
 
     if not project_root.exists():
         raise HTTPException(
@@ -748,11 +743,11 @@ async def create_project_folder(
         )
 
     # Get project root
-    project_root = directory_manager.get_project_root(project_id)
+    project_root = directory_manager.get_project_root(str(project_id))
 
     # Ensure directory exists
     if not project_root.exists():
-        directory_manager.ensure_project_directory(project_id)
+        directory_manager.ensure_project_directory(str(project_id))
 
     try:
         # Resolve folder path
@@ -827,7 +822,7 @@ async def get_project_limits(
         raise not_found_error("Project", "project")
 
     try:
-        limits = directory_manager.check_project_limits(project_id)
+        limits = directory_manager.check_project_limits(str(project_id))
 
         return ProjectLimitsResponse(**limits)
 

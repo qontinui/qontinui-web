@@ -4,7 +4,7 @@
 
 ### Import in your component
 ```typescript
-import { useConflictResolution } from '@/hooks/useConflictResolution'
+import { useConflictResolution } from '@/hooks/collaboration'
 ```
 
 ### Use in component
@@ -42,7 +42,7 @@ const {
 
 ### ✅ Optimistic updates
 ```typescript
-import { useOptimisticUpdate } from '@/hooks/useConflictResolution'
+import { useOptimisticUpdate } from '@/hooks/collaboration'
 
 const { applyOptimistic, rollback } = useOptimisticUpdate('workflow', workflowId)
 
@@ -58,7 +58,7 @@ const updateAction = async (changes) => {
 
 ### ✅ Offline support
 ```typescript
-import { useOfflineQueue } from '@/hooks/useConflictResolution'
+import { useOfflineQueue } from '@/hooks/collaboration'
 
 const { queueState, processQueue } = useOfflineQueue()
 
@@ -72,7 +72,7 @@ const { queueState, processQueue } = useOfflineQueue()
 
 ### ✅ Real-time collaboration
 ```typescript
-import { useRealtimeCollaboration } from '@/hooks/useConflictResolution'
+import { useRealtimeCollaboration } from '@/hooks/collaboration'
 
 const {
   isConnected,

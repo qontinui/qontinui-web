@@ -10,9 +10,11 @@ common web vulnerabilities:
 
 Reference: https://owasp.org/www-project-secure-headers/
 """
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+
 from app.core.config import settings
 
 
@@ -84,13 +86,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Controls which browser features can be used
         permissions = [
             "geolocation=()",  # Disable geolocation
-            "microphone=()",   # Disable microphone
-            "camera=()",       # Disable camera
-            "payment=()",      # Disable payment API
-            "usb=()",          # Disable USB
-            "magnetometer=()", # Disable magnetometer
-            "gyroscope=()",    # Disable gyroscope
-            "accelerometer=()",# Disable accelerometer
+            "microphone=()",  # Disable microphone
+            "camera=()",  # Disable camera
+            "payment=()",  # Disable payment API
+            "usb=()",  # Disable USB
+            "magnetometer=()",  # Disable magnetometer
+            "gyroscope=()",  # Disable gyroscope
+            "accelerometer=()",  # Disable accelerometer
         ]
         response.headers["Permissions-Policy"] = ", ".join(permissions)
 

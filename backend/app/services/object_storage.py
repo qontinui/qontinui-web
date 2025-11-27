@@ -20,10 +20,11 @@ from typing import BinaryIO
 
 import boto3
 import structlog
-from app.core.config import settings
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
+
+from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -152,17 +153,18 @@ class S3Backend(StorageBackend):
                 # We'll assume the bucket exists and continue
                 # Only log in production - in development this is expected
                 from app.core.config import settings
+
                 if settings.ENVIRONMENT == "production":
                     logger.warning(
                         "bucket_access_restricted",
                         bucket=self.bucket_name,
-                        message="Received 403 on head_bucket, assuming bucket exists"
+                        message="Received 403 on head_bucket, assuming bucket exists",
                     )
                 else:
                     logger.debug(
                         "bucket_access_restricted_dev",
                         bucket=self.bucket_name,
-                        message="403 on head_bucket (expected in development)"
+                        message="403 on head_bucket (expected in development)",
                     )
             else:
                 logger.error(
@@ -183,7 +185,7 @@ class S3Backend(StorageBackend):
         """Upload file to S3"""
         try:
             # Prepare upload arguments
-            extra_args = {}
+            extra_args: dict[str, str | dict[str, str]] = {}
 
             if content_type:
                 extra_args["ContentType"] = content_type
@@ -194,7 +196,7 @@ class S3Backend(StorageBackend):
                     extra_args["ContentType"] = guessed_type
 
             if metadata:
-                extra_args["Metadata"] = {k: str(v) for k, v in metadata.items()}
+                extra_args["Metadata"] = {str(k): str(v) for k, v in metadata.items()}
 
             # Add cache control header for better browser caching
             # Images are immutable (UUID-based keys), so cache for 1 year
@@ -203,7 +205,11 @@ class S3Backend(StorageBackend):
             elif content_type and content_type.startswith("image/"):
                 # Default: 1 year cache for images (31536000 seconds)
                 extra_args["CacheControl"] = "max-age=31536000, immutable"
-                logger.debug("adding_cache_control", key=key, cache_control=extra_args["CacheControl"])
+                logger.debug(
+                    "adding_cache_control",
+                    key=key,
+                    cache_control=extra_args["CacheControl"],
+                )
 
             # Upload file
             self.client.upload_fileobj(
@@ -226,7 +232,8 @@ class S3Backend(StorageBackend):
         """Download file from S3"""
         try:
             response = self.client.get_object(Bucket=self.bucket_name, Key=key)
-            return response["Body"].read()
+            body_data: bytes = response["Body"].read()
+            return body_data
         except ClientError as e:
             logger.error("download_failed", key=key, error=str(e))
             raise HTTPException(
@@ -274,7 +281,7 @@ class S3Backend(StorageBackend):
     ) -> str:
         """Generate presigned URL for temporary access"""
         try:
-            url = self.client.generate_presigned_url(
+            url: str = self.client.generate_presigned_url(
                 "get_object" if http_method == "GET" else "put_object",
                 Params={"Bucket": self.bucket_name, "Key": key},
                 ExpiresIn=expiration,
@@ -449,7 +456,7 @@ class LocalBackend(StorageBackend):
             if metadata_path.exists():
                 import json
 
-                with open(metadata_path, "r") as f:
+                with open(metadata_path) as f:
                     meta = json.load(f)
                     content_type = meta.pop("content_type", None)
                     meta.pop("uploaded_at", None)  # Remove internal fields
@@ -715,6 +722,15 @@ class ObjectStorageService:
         """
         prefix = f"images/{user_id}/{project_id}/"
         deleted_count = 0
+
+        # Only S3Backend supports list_objects_v2
+        if not isinstance(self.backend, S3Backend):
+            logger.warning(
+                "delete_project_images_not_supported",
+                backend_type=type(self.backend).__name__,
+                message="Bulk delete not supported for this backend",
+            )
+            return 0
 
         try:
             # List all objects with the prefix

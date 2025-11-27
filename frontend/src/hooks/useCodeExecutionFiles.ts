@@ -10,7 +10,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { PythonFile } from '@/components/code-execution/PythonFileBrowser';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use empty string for relative URLs through Next.js proxy for proper cookie forwarding
+const API_BASE_URL = '';
 
 interface ListFilesResponse {
   files: Array<{

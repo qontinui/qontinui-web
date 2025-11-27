@@ -9,9 +9,7 @@ from app.schemas.version import EditCommandCreate, ProjectVersionCreate
 
 
 # ProjectVersion CRUD operations
-async def get_version(
-    db: AsyncSession, version_id: UUID
-) -> ProjectVersion | None:
+async def get_version(db: AsyncSession, version_id: UUID) -> ProjectVersion | None:
     """Get a specific version by ID"""
     result = await db.execute(
         select(ProjectVersion).filter(ProjectVersion.id == version_id)
@@ -141,9 +139,7 @@ async def get_commands_by_project(
 async def get_command_count(db: AsyncSession, project_id: UUID) -> int:
     """Count total commands for a project"""
     result = await db.execute(
-        select(func.count(EditCommand.id)).filter(
-            EditCommand.project_id == project_id
-        )
+        select(func.count(EditCommand.id)).filter(EditCommand.project_id == project_id)
     )
     return result.scalar() or 0
 

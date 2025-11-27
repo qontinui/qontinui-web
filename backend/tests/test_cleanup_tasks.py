@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
+
 from app.models.device_session import DeviceSession
 from app.models.session_activity import SessionActivity
 from app.worker.scheduler import run_all_cleanup_tasks
@@ -13,7 +15,6 @@ from app.worker.tasks.cleanup_tasks import (
     cleanup_old_analytics_events,
     cleanup_token_blacklist,
 )
-from sqlalchemy import select
 
 
 @pytest.mark.asyncio

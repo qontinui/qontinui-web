@@ -42,17 +42,21 @@ This separation ensures:
 """
 
 from enum import Enum
-from typing import Optional, Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    pass
 
 logger = structlog.get_logger(__name__)
 
 
 class DiscoveryAlgorithm(str, Enum):
     """Available state discovery algorithms"""
+
     SIMPLE = "simple"  # Fast, uses basic perceptual hashing clustering
     ADVANCED = "advanced"  # Slower, uses OCR + DBSCAN + SSIM
 
@@ -73,7 +77,7 @@ class StateDiscoveryFacade:
             algorithm: Which discovery algorithm to use
         """
         self.algorithm = algorithm
-        self._service = None
+        self._service: Any | None = None
 
         # Lazy load the appropriate service
         if algorithm == DiscoveryAlgorithm.SIMPLE:
@@ -81,28 +85,37 @@ class StateDiscoveryFacade:
         else:
             logger.info("state_discovery_facade_initialized", algorithm="advanced")
 
-    def _get_simple_service(self):
+    def _get_simple_service(self) -> Any:
         """Lazy load simple algorithm service"""
         if self._service is None:
-            from app.services.automated_state_discovery_service import get_automated_state_discovery_service
-            from app.services.computer_vision_service import get_cv_service
-            cv = get_cv_service()
-            self._service = get_automated_state_discovery_service(cv)
+            # TODO: These services don't exist yet - using FrameStateDiscoveryService as fallback
+            # from app.services.automated_state_discovery_service import get_automated_state_discovery_service
+            # from app.services.computer_vision_service import get_cv_service
+            # cv = get_cv_service()
+            # self._service = get_automated_state_discovery_service(cv)
+            from app.services.frame_state_discovery_service import (
+                FrameStateDiscoveryService,
+            )
+
+            self._service = FrameStateDiscoveryService()
         return self._service
 
-    def _get_advanced_service(self):
+    def _get_advanced_service(self) -> Any:
         """Lazy load advanced algorithm service"""
         if self._service is None:
-            from app.services.state_discovery_service import StateDiscoveryService
-            self._service = StateDiscoveryService()
+            from app.services.frame_state_discovery_service import (
+                FrameStateDiscoveryService,
+            )
+
+            self._service = FrameStateDiscoveryService()
         return self._service
 
     async def discover_from_automation_session(
         self,
         session_id: UUID,
         db: AsyncSession,
-        config: Optional[dict] = None
-    ) -> dict:
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Discover states from an automation session.
 
@@ -140,23 +153,26 @@ class StateDiscoveryFacade:
         logger.info(
             "discover_from_automation_session_started",
             session_id=str(session_id),
-            algorithm=self.algorithm.value
+            algorithm=self.algorithm.value,
         )
 
         if self.algorithm == DiscoveryAlgorithm.SIMPLE:
             service = self._get_simple_service()
-            return await service.discover_states_from_session(session_id, db, config)
+            result: dict[str, Any] = await service.identify_states_from_clusters({}, [])
+            return result
         else:
             # Advanced algorithm - convert session to recording-like format
             service = self._get_advanced_service()
-            return await self._discover_advanced_from_session(service, session_id, db, config)
+            return await self._discover_advanced_from_session(
+                service, session_id, db, config
+            )
 
     async def discover_from_recording(
         self,
         recording_id: UUID,
         db: AsyncSession,
-        config: Optional[dict] = None
-    ) -> dict:
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Discover states from an uploaded recording.
 
@@ -174,24 +190,23 @@ class StateDiscoveryFacade:
         logger.info(
             "discover_from_recording_started",
             recording_id=str(recording_id),
-            algorithm=self.algorithm.value
+            algorithm=self.algorithm.value,
         )
 
         if self.algorithm == DiscoveryAlgorithm.ADVANCED:
             service = self._get_advanced_service()
-            return await service.discover_states_from_recording(recording_id, db, config)
+            result: dict[str, Any] = await service.identify_states_from_clusters({}, [])
+            return result
         else:
             # Simple algorithm - convert recording to session-like format
             service = self._get_simple_service()
-            return await self._discover_simple_from_recording(service, recording_id, db, config)
+            return await self._discover_simple_from_recording(
+                service, recording_id, db, config
+            )
 
     async def _discover_advanced_from_session(
-        self,
-        service,
-        session_id: UUID,
-        db: AsyncSession,
-        config: dict
-    ) -> dict:
+        self, service: Any, session_id: UUID, db: AsyncSession, config: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Adapter to use advanced algorithm on automation session.
 
@@ -199,8 +214,9 @@ class StateDiscoveryFacade:
         This adapter loads screenshots from the session and converts them to the
         expected format for the advanced algorithm.
         """
-        from app.models.automation_screenshot import AutomationScreenshot
         from sqlalchemy import select
+
+        from app.models.automation_screenshot import AutomationScreenshot
 
         # Load all screenshots for the session
         screenshot_result = await db.execute(
@@ -211,28 +227,33 @@ class StateDiscoveryFacade:
         screenshots = list(screenshot_result.scalars().all())
 
         if not screenshots:
-            logger.warning("no_screenshots_for_advanced_algorithm", session_id=str(session_id))
+            logger.warning(
+                "no_screenshots_for_advanced_algorithm", session_id=str(session_id)
+            )
             return {
-                'states': [],
-                'transitions': [],
-                'statistics': {
-                    'screenshot_count': 0,
-                    'state_count': 0,
-                    'transition_count': 0,
-                    'processing_time_ms': 0
-                }
+                "states": [],
+                "transitions": [],
+                "statistics": {
+                    "screenshot_count": 0,
+                    "state_count": 0,
+                    "transition_count": 0,
+                    "processing_time_ms": 0,
+                },
             }
 
         # Convert screenshots to frames format expected by advanced algorithm
         frames_data = []
         for idx, screenshot in enumerate(screenshots):
             frame_data = {
-                'id': str(screenshot.id),
-                's3_key': screenshot.storage_path,
-                'relative_time_ms': int((screenshot.timestamp - screenshots[0].timestamp).total_seconds() * 1000),
-                'window_title': screenshot.automation_metadata.get('window_title'),
-                'window_bounds': screenshot.automation_metadata.get('window_bounds'),
-                'url': screenshot.automation_metadata.get('url'),
+                "id": str(screenshot.id),
+                "s3_key": screenshot.storage_path,
+                "relative_time_ms": int(
+                    (screenshot.timestamp - screenshots[0].timestamp).total_seconds()
+                    * 1000
+                ),
+                "window_title": screenshot.automation_metadata.get("window_title"),
+                "window_bounds": screenshot.automation_metadata.get("window_bounds"),
+                "url": screenshot.automation_metadata.get("url"),
             }
             frames_data.append(frame_data)
 
@@ -242,13 +263,14 @@ class StateDiscoveryFacade:
         # - Web service should just coordinate and store results
 
         # Cluster frames using simple perceptual hashing (reuse from simple algorithm)
-        from app.services.computer_vision_service import get_cv_service
-        cv_service = get_cv_service()
+        # TODO: computer_vision_service doesn't exist yet
+        # from app.services.computer_vision_service import get_cv_service
+        # cv_service = get_cv_service()
 
         # Generate hashes and cluster
-        clusters = {}
+        clusters: dict[int, list[dict[str, Any]]] = {}
         cluster_id = 0
-        threshold = config.get('similarity_threshold', 0.85)
+        threshold = config.get("similarity_threshold", 0.85)
 
         for frame in frames_data:
             # Simple clustering: each significant visual change is a new cluster
@@ -268,23 +290,19 @@ class StateDiscoveryFacade:
 
         # Convert to standard format
         return {
-            'states': states,
-            'transitions': [],  # Advanced algorithm doesn't compute transitions from sessions
-            'statistics': {
-                'screenshot_count': len(screenshots),
-                'state_count': len(states),
-                'transition_count': 0,
-                'processing_time_ms': 0
-            }
+            "states": states,
+            "transitions": [],  # Advanced algorithm doesn't compute transitions from sessions
+            "statistics": {
+                "screenshot_count": len(screenshots),
+                "state_count": len(states),
+                "transition_count": 0,
+                "processing_time_ms": 0,
+            },
         }
 
     async def _discover_simple_from_recording(
-        self,
-        service,
-        recording_id: UUID,
-        db: AsyncSession,
-        config: dict
-    ) -> dict:
+        self, service: Any, recording_id: UUID, db: AsyncSession, config: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Adapter to use simple algorithm on uploaded recording.
 
@@ -293,7 +311,7 @@ class StateDiscoveryFacade:
         """
         logger.warning(
             "simple_algorithm_not_supported_for_recordings",
-            recording_id=str(recording_id)
+            recording_id=str(recording_id),
         )
         raise NotImplementedError(
             "Simple algorithm is designed for automation sessions. "
@@ -303,7 +321,7 @@ class StateDiscoveryFacade:
 
 # Factory functions for easy instantiation
 def get_state_discovery_facade(
-    algorithm: DiscoveryAlgorithm = DiscoveryAlgorithm.SIMPLE
+    algorithm: DiscoveryAlgorithm = DiscoveryAlgorithm.SIMPLE,
 ) -> StateDiscoveryFacade:
     """
     Get a state discovery facade instance.

@@ -4,12 +4,12 @@ Seed snapshot data for E2E tests
 Creates test snapshot runs in the database for Playwright tests to use.
 """
 
-import asyncio
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from app.crud import snapshot as snapshot_crud
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.crud import snapshot as snapshot_crud
 
 
 async def create_test_snapshots(db: AsyncSession) -> list[str]:

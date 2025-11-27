@@ -9,9 +9,8 @@ then bootstraps detection from these patterns.
 """
 
 import logging
-from collections import defaultdict
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -60,7 +59,7 @@ class ConsistencyDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 3  # Need multiple screenshots for pattern detection
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Candidate extraction
             "min_candidate_area": 500,
@@ -143,7 +142,7 @@ class ConsistencyDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -152,8 +151,8 @@ class ConsistencyDetector(BaseAnalyzer):
         return images
 
     def _extract_candidates(
-        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, np.ndarray, int]]:
+        self, img: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, np.ndarray, int]]:
         """
         Extract candidate regions from screenshot
 
@@ -201,9 +200,9 @@ class ConsistencyDetector(BaseAnalyzer):
 
     def _cluster_similar_patterns(
         self,
-        candidates: List[Tuple[BoundingBox, np.ndarray, int]],
-        params: Dict[str, Any],
-    ) -> List[List[Tuple[BoundingBox, np.ndarray, int]]]:
+        candidates: list[tuple[BoundingBox, np.ndarray, int]],
+        params: dict[str, Any],
+    ) -> list[list[tuple[BoundingBox, np.ndarray, int]]]:
         """
         Cluster candidates by visual similarity
 
@@ -271,7 +270,7 @@ class ConsistencyDetector(BaseAnalyzer):
         # Combined similarity
         similarity = 0.6 * ssim_approx + 0.4 * hist_similarity
 
-        return max(0, similarity)
+        return float(max(0, similarity))
 
     def _compute_color_histogram(self, region: np.ndarray) -> np.ndarray:
         """Compute color histogram for region"""
@@ -285,9 +284,9 @@ class ConsistencyDetector(BaseAnalyzer):
 
     def _identify_button_patterns(
         self,
-        clusters: List[List[Tuple[BoundingBox, np.ndarray, int]]],
-        params: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
+        clusters: list[list[tuple[BoundingBox, np.ndarray, int]]],
+        params: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         """
         Identify which clusters represent button patterns
 
@@ -321,7 +320,7 @@ class ConsistencyDetector(BaseAnalyzer):
         return patterns
 
     def _calculate_cluster_consistency(
-        self, cluster: List[Tuple[BoundingBox, np.ndarray, int]]
+        self, cluster: list[tuple[BoundingBox, np.ndarray, int]]
     ) -> float:
         """
         Calculate how visually consistent a cluster is
@@ -342,10 +341,10 @@ class ConsistencyDetector(BaseAnalyzer):
             return 1.0
 
         # Consistency is mean pairwise similarity
-        return np.mean(similarities)
+        return float(np.mean(similarities))
 
     def _create_pattern_template(
-        self, cluster: List[Tuple[BoundingBox, np.ndarray, int]]
+        self, cluster: list[tuple[BoundingBox, np.ndarray, int]]
     ) -> np.ndarray:
         """
         Create template image representing the cluster
@@ -356,7 +355,8 @@ class ConsistencyDetector(BaseAnalyzer):
         regions = np.stack([c[1] for c in cluster])
 
         # Compute median image
-        template = np.median(regions, axis=0).astype(np.uint8)
+        median_result = np.median(regions, axis=0)
+        template: np.ndarray = median_result.astype(np.uint8)
 
         return template
 
@@ -364,9 +364,9 @@ class ConsistencyDetector(BaseAnalyzer):
         self,
         img: np.ndarray,
         screenshot_idx: int,
-        patterns: List[Dict[str, Any]],
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        patterns: list[dict[str, Any]],
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """
         Detect buttons in screenshot using learned patterns
         """
@@ -378,7 +378,7 @@ class ConsistencyDetector(BaseAnalyzer):
         # Match each candidate against patterns
         for bbox, region, _ in candidates:
             best_match = None
-            best_similarity = 0
+            best_similarity = 0.0
 
             for pattern in patterns:
                 similarity = self._compute_similarity(region, pattern["template"])
@@ -420,8 +420,8 @@ class ConsistencyDetector(BaseAnalyzer):
         return elements
 
     def _apply_nms(
-        self, elements: List[DetectedElement], params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, elements: list[DetectedElement], params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Apply non-maximum suppression"""
         if not elements:
             return []

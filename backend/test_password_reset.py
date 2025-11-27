@@ -4,7 +4,6 @@ Test script for password reset functionality
 Run this to test the password reset flow without email
 """
 
-import json
 
 import requests
 

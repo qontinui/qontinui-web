@@ -6,39 +6,26 @@ in the workflow learning pipeline.
 """
 
 import io
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-import httpx
 import structlog
-from app.core.config import settings
-from app.models.capture import (
-    CaptureAction,
-    CaptureDetectedElement,
-    CaptureScreenshot,
-    CaptureSession,
-    LearnedWorkflow,
-    ScreenshotStateMatch,
-)
-from app.schemas.capture import (
-    CaptureActionCreate,
-    CaptureDetectedElementCreate,
-    CaptureScreenshotCreate,
-    CaptureSessionCreate,
-    CaptureSessionUpdate,
-    LearnedWorkflowCreate,
-    LearnedWorkflowUpdate,
-    ScreenshotStateMatchCreate,
-)
-from app.services.object_storage import object_storage
-from app.services.state_matching_service import StateMatchingService
-from app.services.storage_service import StorageService
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.models.capture import CaptureAction, CaptureScreenshot, CaptureSession
+from app.schemas.capture import (
+    CaptureActionCreate,
+    CaptureSessionCreate,
+    CaptureSessionUpdate,
+)
+from app.services.object_storage import object_storage
+from app.services.state_matching_service import StateMatchingService
+from app.services.storage_service import StorageService
 
 logger = structlog.get_logger(__name__)
 
@@ -72,7 +59,7 @@ class CaptureSessionService:
             description=session_data.description,
             status="capturing",
             extra_metadata=session_data.extra_metadata,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         db.add(session)
@@ -198,7 +185,7 @@ class CaptureSessionService:
             session.status = update_data.status
             # Set completed_at when status changes to completed
             if update_data.status == "completed":
-                session.completed_at = datetime.now(timezone.utc)
+                session.completed_at = datetime.now(UTC)
         if update_data.extra_metadata is not None:
             session.extra_metadata = update_data.extra_metadata
 
@@ -365,7 +352,7 @@ class CaptureSessionService:
             thumbnail_url=thumbnail_url,
             width=width,
             height=height,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             extra_metadata=extra_metadata,
             analysis_status="pending",
         )
@@ -427,7 +414,7 @@ class CaptureSessionService:
             key=action_data.key,
             button=action_data.button,
             scroll_delta=action_data.scroll_delta,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             extra_metadata=action_data.extra_metadata,
         )
 
@@ -490,7 +477,7 @@ class CaptureSessionService:
                 key=action_data.key,
                 button=action_data.button,
                 scroll_delta=action_data.scroll_delta,
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 extra_metadata=action_data.extra_metadata,
             )
             actions.append(action)
@@ -616,8 +603,8 @@ class CaptureSessionService:
 
         # Match each screenshot
         total_matches = 0
-        matched_screenshot_ids = set()
-        all_states = set()
+        matched_screenshot_ids: set[UUID] = set()
+        all_states: set[str] = set()
 
         for screenshot in screenshots:
             try:

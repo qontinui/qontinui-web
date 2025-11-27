@@ -8,10 +8,11 @@ providing an audit trail and connection history.
 from datetime import datetime
 from uuid import UUID
 
-from app.db.base import Base
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class RunnerConnection(Base):
@@ -29,8 +30,9 @@ class RunnerConnection(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Foreign keys
-    runner_token_id: Mapped[UUID] = mapped_column(
-        ForeignKey("runner_tokens.id", ondelete="CASCADE"), nullable=False, index=True
+    # runner_token_id is nullable to support JWT auth connections (not just runner token connections)
+    runner_token_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("runner_tokens.id", ondelete="CASCADE"), nullable=True, index=True
     )
 
     user_id: Mapped[UUID] = mapped_column(

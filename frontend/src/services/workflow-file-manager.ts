@@ -566,7 +566,7 @@ export class WorkflowFileManager {
   autoFixWorkflow(workflow: Workflow): AutoFixResult {
     const changes: string[] = [];
     let fixed = false;
-    let fixedWorkflow = { ...workflow };
+    const fixedWorkflow = { ...workflow };
 
     // Fix 1: Ensure workflow has required fields
     if (!fixedWorkflow.id) {

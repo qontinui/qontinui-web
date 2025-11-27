@@ -11,6 +11,20 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import structlog
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import current_active_user, get_async_db
 from app.crud import runner as runner_crud
 from app.models.user import User
@@ -37,26 +51,10 @@ from app.schemas.testing import (
     TransitionBatchCreate,
     TransitionBatchResponse,
 )
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    Form,
-    HTTPException,
-    Query,
-    UploadFile,
-    status,
-)
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 # TYPE_CHECKING imports - models are being created by another agent
 if TYPE_CHECKING:
-    from app.models.test_deficiency import TestDeficiency
-    from app.models.test_run import TestRun
-    from app.models.test_screenshot import TestScreenshot
-    from app.models.test_transition import TestTransition
+    pass
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -106,7 +104,9 @@ async def get_runner_user(
     await db.commit()
 
     # Get user from runner token
-    result = await db.execute(select(User).where(User.id == runner_token.user_id))
+    result = await db.execute(
+        select(User).where(User.id == runner_token.user_id)  # type: ignore[arg-type]
+    )
     user = result.scalar_one_or_none()
 
     if not user:
@@ -534,7 +534,7 @@ async def list_test_runs(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     project_id: UUID = Query(..., description="Filter by project ID"),
-    status: str | None = Query(None, description="Filter by status"),
+    run_status: str | None = Query(None, description="Filter by status"),
     runner_hostname: str | None = Query(None, description="Filter by runner hostname"),
     start_date: datetime | None = Query(
         None, description="Filter runs started after this date"
@@ -557,7 +557,7 @@ async def list_test_runs(
 
     **Query Parameters:**
     - `project_id` (required): Project to filter by
-    - `status`: Filter by run status (running, completed, failed, timeout, aborted)
+    - `run_status`: Filter by run status (running, completed, failed, timeout, aborted)
     - `runner_hostname`: Filter by runner machine hostname
     - `start_date`: Filter runs started after this date (ISO 8601)
     - `end_date`: Filter runs started before this date (ISO 8601)
@@ -572,7 +572,7 @@ async def list_test_runs(
         "list_test_runs_requested",
         user_id=str(current_user.id),
         project_id=project_id,
-        status=status,
+        status=run_status,
         limit=limit,
         offset=offset,
     )
@@ -632,7 +632,7 @@ async def list_deficiencies(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
     project_id: UUID = Query(..., description="Filter by project ID"),
-    status: str | None = Query(None, description="Filter by status"),
+    deficiency_status: str | None = Query(None, description="Filter by status"),
     severity: str | None = Query(None, description="Filter by severity"),
     deficiency_type: str | None = Query(None, description="Filter by type"),
     run_id: UUID | None = Query(None, description="Filter by specific test run"),
@@ -652,7 +652,7 @@ async def list_deficiencies(
 
     **Query Parameters:**
     - `project_id` (required): Project to filter by
-    - `status`: Filter by status (open, in_progress, resolved, closed, wont_fix)
+    - `deficiency_status`: Filter by status (open, in_progress, resolved, closed, wont_fix)
     - `severity`: Filter by severity (critical, high, medium, low, informational)
     - `deficiency_type`: Filter by type (functional_bug, ui_issue, performance, etc.)
     - `run_id`: Filter by specific test run UUID
@@ -668,7 +668,7 @@ async def list_deficiencies(
         "list_deficiencies_requested",
         user_id=str(current_user.id),
         project_id=project_id,
-        status=status,
+        status=deficiency_status,
         severity=severity,
     )
 

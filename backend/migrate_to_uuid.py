@@ -10,8 +10,6 @@ This script:
 6. Creates missing tables with UUID foreign keys
 """
 
-import os
-
 from sqlalchemy import create_engine, text
 
 # Production database URL

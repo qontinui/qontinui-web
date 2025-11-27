@@ -12,7 +12,7 @@ Requires video input or sequential screenshots with interaction events.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -67,7 +67,7 @@ class TemporalAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 2  # Need at least 2 frames to detect changes
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Interaction events (optional)
             "interaction_events": None,  # List of {type, timestamp, x, y}
@@ -131,7 +131,7 @@ class TemporalAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -140,8 +140,8 @@ class TemporalAnalyzer(BaseAnalyzer):
         return images
 
     def _detect_temporal_changes(
-        self, images: List[np.ndarray], params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, images: list[np.ndarray], params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """
         Detect regions that change over time
 
@@ -171,7 +171,7 @@ class TemporalAnalyzer(BaseAnalyzer):
         return clustered_regions
 
     def _compute_frame_difference(
-        self, frame1: np.ndarray, frame2: np.ndarray, params: Dict[str, Any]
+        self, frame1: np.ndarray, frame2: np.ndarray, params: dict[str, Any]
     ) -> np.ndarray:
         """
         Compute pixel-wise difference between frames
@@ -198,8 +198,8 @@ class TemporalAnalyzer(BaseAnalyzer):
         return mask
 
     def _extract_changed_regions(
-        self, diff_mask: np.ndarray, frame_idx: int, params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, diff_mask: np.ndarray, frame_idx: int, params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """
         Extract bounding boxes of changed regions
         """
@@ -235,8 +235,8 @@ class TemporalAnalyzer(BaseAnalyzer):
         return regions
 
     def _cluster_temporal_regions(
-        self, regions: List[Dict[str, Any]], params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, regions: list[dict[str, Any]], params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """
         Cluster regions that appear in same location across frames
 
@@ -285,10 +285,10 @@ class TemporalAnalyzer(BaseAnalyzer):
 
     def _validate_interactive_elements(
         self,
-        images: List[np.ndarray],
-        change_regions: List[Dict[str, Any]],
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        images: list[np.ndarray],
+        change_regions: list[dict[str, Any]],
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """
         Validate that changed regions are interactive elements
         """
@@ -335,8 +335,8 @@ class TemporalAnalyzer(BaseAnalyzer):
         return elements
 
     def _analyze_change_pattern(
-        self, images: List[np.ndarray], cluster: Dict[str, Any], params: Dict[str, Any]
-    ) -> Optional[str]:
+        self, images: list[np.ndarray], cluster: dict[str, Any], params: dict[str, Any]
+    ) -> str | None:
         """
         Analyze what type of change occurred
 
@@ -385,7 +385,7 @@ class TemporalAnalyzer(BaseAnalyzer):
 
         return None
 
-    def _calculate_color_variance(self, regions: List[np.ndarray]) -> float:
+    def _calculate_color_variance(self, regions: list[np.ndarray]) -> float:
         """
         Calculate color variance across regions
         """
@@ -393,22 +393,22 @@ class TemporalAnalyzer(BaseAnalyzer):
             return 0.0
 
         # Calculate mean color for each region
-        mean_colors = []
+        mean_colors_list: list[Any] = []
         for region in regions:
             if region.size > 0:
                 mean_color = np.mean(region, axis=(0, 1))
-                mean_colors.append(mean_color)
+                mean_colors_list.append(mean_color)
 
-        if not mean_colors:
+        if not mean_colors_list:
             return 0.0
 
         # Calculate variance of mean colors
-        mean_colors = np.array(mean_colors)
-        variance = np.mean(np.var(mean_colors, axis=0))
+        mean_colors_array = np.array(mean_colors_list)
+        variance = np.mean(np.var(mean_colors_array, axis=0))
 
-        return variance
+        return float(variance)
 
-    def _calculate_brightness_changes(self, regions: List[np.ndarray]) -> float:
+    def _calculate_brightness_changes(self, regions: list[np.ndarray]) -> float:
         """
         Calculate brightness change magnitude
         """
@@ -426,9 +426,9 @@ class TemporalAnalyzer(BaseAnalyzer):
             return 0.0
 
         # Max change in brightness
-        return max(brightnesses) - min(brightnesses)
+        return float(max(brightnesses) - min(brightnesses))
 
-    def _calculate_size_variance(self, regions: List[Dict[str, Any]]) -> float:
+    def _calculate_size_variance(self, regions: list[dict[str, Any]]) -> float:
         """
         Calculate variance in region sizes (detecting size animations)
         """
@@ -437,10 +437,10 @@ class TemporalAnalyzer(BaseAnalyzer):
         if len(areas) < 2:
             return 0.0
 
-        return np.var(areas)
+        return float(np.var(areas))
 
     def _calculate_temporal_confidence(
-        self, cluster: Dict[str, Any], change_type: str, params: Dict[str, Any]
+        self, cluster: dict[str, Any], change_type: str, params: dict[str, Any]
     ) -> float:
         """
         Calculate confidence based on temporal characteristics

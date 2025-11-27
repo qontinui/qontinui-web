@@ -9,17 +9,17 @@ import uuid as uuid_lib
 from datetime import datetime, timedelta
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import current_active_user, get_async_db
-from app.auth.config import auth_backend, fastapi_users
+from app.auth.config import fastapi_users
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
 from app.core.security import verify_password
 from app.crud.user import get_user_by_email
-from app.middleware.error_handler import (
-    not_found_error,
-    unauthorized_error,
-    validation_error,
-)
+from app.middleware.error_handler import unauthorized_error, validation_error
 from app.middleware.rate_limit import auth_limiter
 from app.models.device_session import DeviceSession
 from app.models.user import User
@@ -31,9 +31,6 @@ from app.services.auth_analytics_service import auth_analytics_service
 from app.services.cookie_service import cookie_service
 from app.services.device_fingerprint_service import device_fingerprint_service
 from app.services.device_session_service import device_session_service
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, EmailStr
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -74,8 +71,9 @@ router.include_router(
 
 # ===== CUSTOM ENDPOINTS (NOT PROVIDED BY FASTAPI-USERS) =====
 
-from app.core.security import create_access_token, create_refresh_token
 from fastapi.security import OAuth2PasswordRequestForm
+
+from app.core.security import create_access_token, create_refresh_token
 
 
 class TokenResponse(BaseModel):
@@ -362,7 +360,10 @@ async def refresh_token(
     if not payload:
         raise unauthorized_error("Invalid refresh token", ErrorCode.TOKEN_INVALID)
 
-    user_id: str = payload.get("sub")
+    user_id_value = payload.get("sub")
+    if not user_id_value or not isinstance(user_id_value, str):
+        raise unauthorized_error("Invalid refresh token", ErrorCode.TOKEN_INVALID)
+    user_id: str = user_id_value
     token_type = payload.get("type")
     token_jti = payload.get("jti")
     # Preserve the long_lived flag from the original token
@@ -403,7 +404,7 @@ async def refresh_token(
     )
 
     # Handle session extension if requested
-    if request.extend_session and settings.SLIDING_WINDOW_ENABLED:
+    if extend_session and settings.SLIDING_WINDOW_ENABLED:
         # Delete old session
         await delete_session(db, token_jti)
 
@@ -425,7 +426,7 @@ async def refresh_token(
         user_id=user.id,
         properties={
             "long_lived": is_long_lived,
-            "extend_session": request.extend_session,
+            "extend_session": extend_session,
             "subscription_tier": user.subscription_tier,
         },
     )
@@ -829,16 +830,15 @@ async def change_password(
     # Invalidate all existing sessions for security
     # Users will need to log in again with the new password
     if settings.REDIS_ENABLED:
-        from app.services.auth.token_blacklist_service import token_blacklist_service
 
         # Get all device sessions for this user
         user_sessions = await device_session_service.get_user_device_sessions(
             db, current_user.id
         )
 
-        # Revoke all device sessions
+        # Delete all device sessions (user will need to re-authenticate)
         for session in user_sessions:
-            await device_session_service.revoke_device_session(db, session)
+            await device_session_service.delete_device_session(db, session)
 
         logger.info(
             "password_changed_sessions_revoked",
@@ -996,16 +996,14 @@ async def _send_device_verification_email(
 
     # Render email template
     template_service = EmailTemplateService()
-    html_body, text_body = template_service.render_template(
-        "device_verification", context
-    )
+    html_body = template_service.render_template("device_verification", context)
 
     # Send email via task queue
     job_id = await task_queue.send_email(
         to_email=user_email,
         subject="Qontinui - New Device Login Detected",
         html_content=html_body,
-        text_content=text_body,
+        text_content=f"New device login detected from {location} (IP: {device_session.ip_address}). If this was you, please verify your device using the link sent to your email.",
     )
 
     if job_id:

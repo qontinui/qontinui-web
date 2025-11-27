@@ -8,7 +8,7 @@ from screenshots and matches them across all images.
 import logging
 from collections import defaultdict
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -54,7 +54,7 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_occurrences": 2,  # Pattern must appear at least N times
             "match_threshold": 0.7,  # Template matching threshold (0-1)
@@ -108,7 +108,7 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -116,7 +116,7 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _resize_to_common_size(self, images: List[np.ndarray]) -> List[np.ndarray]:
+    def _resize_to_common_size(self, images: list[np.ndarray]) -> list[np.ndarray]:
         """Resize all images to the size of the first image"""
         if not images:
             return images
@@ -132,8 +132,8 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
         return resized
 
     def _extract_candidate_templates(
-        self, image: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[np.ndarray, BoundingBox]]:
+        self, image: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[np.ndarray, BoundingBox]]:
         """
         Extract candidate templates using edge detection and contours
 
@@ -177,11 +177,11 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
 
     def _match_template_across_images(
         self,
-        template_info: Tuple[np.ndarray, BoundingBox],
-        images: List[np.ndarray],
-        params: Dict[str, Any],
+        template_info: tuple[np.ndarray, BoundingBox],
+        images: list[np.ndarray],
+        params: dict[str, Any],
         template_idx: int,
-    ) -> List[DetectedElement]:
+    ) -> list[DetectedElement]:
         """
         Match a template across all images
 
@@ -208,7 +208,7 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
             locations = np.where(result >= threshold)
 
             # Convert to list of (x, y, confidence)
-            for y, x in zip(*locations):
+            for y, x in zip(*locations, strict=False):
                 confidence = float(result[y, x])
 
                 matches.append(
@@ -236,8 +236,8 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
         return matches
 
     def _apply_nms_per_screenshot(
-        self, elements: List[DetectedElement], params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, elements: list[DetectedElement], params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Apply non-maximum suppression to remove overlapping detections"""
         # Group by screenshot
         by_screenshot = defaultdict(list)
@@ -252,10 +252,10 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
                 continue
 
             # Convert to format for NMS
-            boxes = []
-            scores = []
+            boxes_list: list[list[int]] = []
+            scores_list: list[float] = []
             for elem in elems:
-                boxes.append(
+                boxes_list.append(
                     [
                         elem.bounding_box.x,
                         elem.bounding_box.y,
@@ -263,30 +263,30 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
                         elem.bounding_box.y + elem.bounding_box.height,
                     ]
                 )
-                scores.append(elem.confidence)
+                scores_list.append(elem.confidence)
 
-            boxes = np.array(boxes)
-            scores = np.array(scores)
+            boxes_array = np.array(boxes_list)
+            scores_array = np.array(scores_list)
 
             # Apply NMS
             indices = cv2.dnn.NMSBoxes(
-                boxes.tolist(),
-                scores.tolist(),
+                boxes_array.tolist(),
+                scores_array.tolist(),
                 score_threshold=0.0,
                 nms_threshold=params["nms_threshold"],
             )
 
             # Keep only non-suppressed elements
             if len(indices) > 0:
-                indices = indices.flatten()
-                for idx in indices:
-                    result.append(elems[idx])
+                indices_flat = np.asarray(indices).flatten()
+                for idx in indices_flat:
+                    result.append(elems[int(idx)])
 
         return result
 
     def _filter_by_occurrences(
-        self, elements: List[DetectedElement], params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, elements: list[DetectedElement], params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """
         Filter patterns by minimum occurrence count
 

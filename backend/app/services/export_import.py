@@ -1,7 +1,7 @@
 """Service for exporting and importing project configurations."""
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.models.project import Project
@@ -35,7 +35,7 @@ class ExportImportService:
         Raises:
             ValueError: If configuration validation fails
         """
-        config = project.configuration or self._get_default_configuration()
+        config: dict[str, Any] = project.configuration or self._get_default_configuration()  # type: ignore[assignment]
 
         metadata = config.get("metadata", {})
         metadata.update(
@@ -43,7 +43,7 @@ class ExportImportService:
                 "name": project.name,
                 "description": project.description or "",
                 "author": user.username,
-                "modified": datetime.now(timezone.utc).isoformat(),
+                "modified": datetime.now(UTC).isoformat(),
             }
         )
 
@@ -90,7 +90,8 @@ class ExportImportService:
             )
 
         if merge and project.configuration:
-            return self._merge_configurations(project.configuration, config_data)
+            existing_config: dict[str, Any] = project.configuration  # type: ignore[assignment]
+            return self._merge_configurations(existing_config, config_data)
 
         return config_data
 
@@ -162,7 +163,7 @@ class ExportImportService:
 
         merged["version"] = new.get("version", existing.get("version", "1.0.0"))
         merged["metadata"] = new.get("metadata", existing.get("metadata", {}))
-        merged["metadata"]["modified"] = datetime.now(timezone.utc).isoformat()
+        merged["metadata"]["modified"] = datetime.now(UTC).isoformat()
 
         merged["images"] = self._merge_by_id(
             existing.get("images", []), new.get("images", [])
@@ -237,7 +238,7 @@ class ExportImportService:
         Returns:
             Default configuration dictionary
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         return {
             "version": "1.0.0",

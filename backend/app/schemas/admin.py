@@ -1,8 +1,5 @@
 """Pydantic schemas for admin endpoints."""
 
-from datetime import datetime
-from typing import Optional
-
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -12,7 +9,7 @@ class AdminUserData(BaseModel):
     id: str = Field(..., description="User UUID")
     email: EmailStr
     username: str
-    full_name: Optional[str] = None
+    full_name: str | None = None
     is_active: bool
     is_verified: bool
     created_at: str = Field(..., description="ISO 8601 datetime string")
@@ -20,7 +17,7 @@ class AdminUserData(BaseModel):
     subscription_tier: str = Field(
         ..., description="Subscription tier: free, hobby, or pro"
     )
-    last_login: Optional[str] = Field(None, description="ISO 8601 datetime string")
+    last_login: str | None = Field(None, description="ISO 8601 datetime string")
     email_verified: bool = Field(
         default=False, description="Email verification status (alias for is_verified)"
     )
@@ -34,12 +31,12 @@ class AdminProjectData(BaseModel):
 
     id: str = Field(..., description="Project ID or UUID")
     name: str = Field(..., min_length=1)
-    description: Optional[str] = None
+    description: str | None = None
     owner_id: str = Field(..., description="Owner UUID")
     owner_username: str
     owner_email: EmailStr
-    created_at: Optional[str] = Field(None, description="ISO 8601 datetime string")
-    updated_at: Optional[str] = Field(None, description="ISO 8601 datetime string")
+    created_at: str | None = Field(None, description="ISO 8601 datetime string")
+    updated_at: str | None = Field(None, description="ISO 8601 datetime string")
     state_count: int = Field(..., ge=0)
     transition_count: int = Field(..., ge=0)
 

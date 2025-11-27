@@ -18,21 +18,21 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 # Add backend to path
 backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.session import AsyncSessionLocal
 from app.models.annotation import AnnotationSet
-from app.models.user import User
 from app.services.analysis import AnalysisInput, AnalysisOrchestrator
 from app.services.analysis.orchestrator import analyzer_registry
 from app.services.object_storage import download_file
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AnalysisEvaluator:
@@ -44,7 +44,7 @@ class AnalysisEvaluator:
 
     async def get_test_annotation_sets(
         self, db: AsyncSession, limit: int = 5
-    ) -> List[AnnotationSet]:
+    ) -> list[AnnotationSet]:
         """Get annotation sets for testing"""
         query = select(AnnotationSet).limit(limit)
         result = await db.execute(query)
@@ -52,7 +52,7 @@ class AnalysisEvaluator:
 
     async def evaluate_single_set(
         self, annotation_set: AnnotationSet, db: AsyncSession
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Evaluate all analyzers on a single annotation set"""
 
         print(f"\n{'='*80}")
@@ -160,7 +160,7 @@ class AnalysisEvaluator:
                 evaluation_result["analyzers"][analyzer_name] = {"error": str(e)}
 
         # Test fusion with all analyzers
-        print(f"\n🔀 Testing fusion with all analyzers...")
+        print("\n🔀 Testing fusion with all analyzers...")
         try:
             analysis_input = AnalysisInput(
                 annotation_set_id=UUID(str(annotation_set.id)),
@@ -238,7 +238,7 @@ class AnalysisEvaluator:
 
         return evaluation_result
 
-    def _count_element_types(self, elements: List[Dict]) -> Dict[str, int]:
+    def _count_element_types(self, elements: list[dict]) -> dict[str, int]:
         """Count occurrences of each element type"""
         counts = {}
         for elem in elements:
@@ -246,7 +246,7 @@ class AnalysisEvaluator:
             counts[elem_type] = counts.get(elem_type, 0) + 1
         return counts
 
-    def _calculate_agreement(self, fused_elements: List[Dict]) -> Dict[str, Any]:
+    def _calculate_agreement(self, fused_elements: list[dict]) -> dict[str, Any]:
         """Calculate analyzer agreement statistics"""
         if not fused_elements:
             return {}
@@ -264,8 +264,8 @@ class AnalysisEvaluator:
         }
 
     async def run_evaluation(
-        self, annotation_set_ids: Optional[List[str]] = None, max_sets: int = 5
-    ) -> Dict[str, Any]:
+        self, annotation_set_ids: list[str] | None = None, max_sets: int = 5
+    ) -> dict[str, Any]:
         """Run full evaluation across multiple annotation sets"""
 
         print("\n" + "=" * 80)
@@ -311,7 +311,7 @@ class AnalysisEvaluator:
                 "total_annotation_sets_tested": len(all_results),
             }
 
-    def _generate_summary(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _generate_summary(self, results: list[dict[str, Any]]) -> dict[str, Any]:
         """Generate summary statistics across all evaluations"""
 
         if not results:
@@ -367,7 +367,7 @@ class AnalysisEvaluator:
             ),
         }
 
-    def save_report(self, results: Dict[str, Any], output_file: str):
+    def save_report(self, results: dict[str, Any], output_file: str):
         """Save evaluation report to file"""
         output_path = Path(output_file)
 

@@ -5,9 +5,10 @@ Test security features: rate limiting, JWT, error handling
 import asyncio
 
 import pytest
+from fastapi.testclient import TestClient
+
 from app.core.security import blacklist_token, create_access_token, decode_token
 from app.main import app
-from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
