@@ -23,8 +23,8 @@ async def get_settings(
     """
     # For now, return default settings
     # TODO: Implement database storage for settings
-    from qontinui.config.qontinui_properties import (
-        QontinuiProperties,  # type: ignore[import-not-found]
+    from qontinui.config.qontinui_properties import (  # type: ignore[import-not-found]
+        QontinuiProperties,
     )
 
     props = QontinuiProperties()
