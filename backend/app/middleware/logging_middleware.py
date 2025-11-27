@@ -6,13 +6,14 @@ Integrates with structlog for structured JSON logging.
 """
 
 import time
-from typing import Callable
+from collections.abc import Callable
 
 import structlog
-from app.core.logging_config import log_error, log_request
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
+
+from app.core.logging_helpers import log_error, log_request
 
 logger = structlog.get_logger(__name__)
 
@@ -45,7 +46,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
         # Skip health check logging (too noisy)
         if path == "/health":
-            return await call_next(request)
+            return await call_next(request)  # type: ignore[no-any-return]
 
         # Get user ID if authenticated
         user_id = None
@@ -81,7 +82,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                     user_id=user_id,
                 )
 
-            return response
+            return response  # type: ignore[no-any-return]
 
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000

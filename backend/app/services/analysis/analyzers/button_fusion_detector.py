@@ -7,7 +7,7 @@ to achieve high recall from shape detection and high precision from text/color.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any, TypedDict
 
 import cv2
 import numpy as np
@@ -23,6 +23,21 @@ from ..base import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class CandidateVotes(TypedDict, total=False):
+    """Type definition for candidate votes from different strategies"""
+
+    shape: float
+    text: float
+    color: float
+
+
+class DetectionCandidate(TypedDict):
+    """Type definition for a detection candidate"""
+
+    bbox: BoundingBox
+    votes: CandidateVotes
 
 
 class ButtonFusionDetector(BaseAnalyzer):
@@ -53,7 +68,7 @@ class ButtonFusionDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Strategy weights
             "shape_weight": 0.4,
@@ -138,7 +153,7 @@ class ButtonFusionDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -147,8 +162,8 @@ class ButtonFusionDetector(BaseAnalyzer):
         return images
 
     async def _analyze_screenshot(
-        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, img: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Analyze single screenshot using fusion approach"""
 
         # Run all three detection strategies
@@ -171,8 +186,8 @@ class ButtonFusionDetector(BaseAnalyzer):
         return fused_elements
 
     def _detect_by_shape(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float]]:
+        self, img: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float]]:
         """
         Detect button candidates by shape (rectangles with edges)
         Returns list of (bbox, confidence) tuples
@@ -226,8 +241,8 @@ class ButtonFusionDetector(BaseAnalyzer):
         return candidates
 
     def _detect_text_regions(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float]]:
+        self, img: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float]]:
         """
         Detect regions containing button-like text
         Returns list of (bbox, confidence) tuples
@@ -240,7 +255,7 @@ class ButtonFusionDetector(BaseAnalyzer):
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
         # Use MSER (Maximally Stable Extremal Regions) to find text regions
-        mser = cv2.MSER_create(_min_area=50, _max_area=5000, _delta=5)
+        mser = cv2.MSER_create(_min_area=50, _max_area=5000, _delta=5)  # type: ignore[attr-defined]
 
         regions_mser, _ = mser.detectRegions(gray)
 
@@ -276,8 +291,8 @@ class ButtonFusionDetector(BaseAnalyzer):
         return regions
 
     def _detect_by_color(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float]]:
+        self, img: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float]]:
         """
         Detect buttons by color properties (uniform colored regions)
         Returns list of (bbox, confidence) tuples
@@ -317,10 +332,10 @@ class ButtonFusionDetector(BaseAnalyzer):
 
             # Check color uniformity
             region_hsv = hsv[y : y + h, x : x + w]
-            hue_std = np.std(region_hsv[:, :, 0])
+            hue_std = float(np.std(region_hsv[:, :, 0]))
 
             # Uniform colors suggest buttons
-            uniformity = max(0, 1 - (hue_std / 180))
+            uniformity = max(0.0, 1.0 - (hue_std / 180.0))
 
             if uniformity < params["color_uniformity_threshold"]:
                 continue
@@ -333,26 +348,26 @@ class ButtonFusionDetector(BaseAnalyzer):
 
     def _fuse_detections(
         self,
-        shape_candidates: List[Tuple[BoundingBox, float]],
-        text_regions: List[Tuple[BoundingBox, float]],
-        color_regions: List[Tuple[BoundingBox, float]],
-        params: Dict[str, Any],
+        shape_candidates: list[tuple[BoundingBox, float]],
+        text_regions: list[tuple[BoundingBox, float]],
+        color_regions: list[tuple[BoundingBox, float]],
+        params: dict[str, Any],
         screenshot_idx: int,
-    ) -> List[DetectedElement]:
+    ) -> list[DetectedElement]:
         """
         Fuse detections from multiple strategies using weighted voting
         """
         elements = []
 
         # Combine all candidates
-        all_candidates = []
+        all_candidates: list[DetectionCandidate] = []
 
         for bbox, conf in shape_candidates:
             all_candidates.append(
-                {
-                    "bbox": bbox,
-                    "votes": {"shape": conf * params["shape_weight"]},
-                }
+                DetectionCandidate(
+                    bbox=bbox,
+                    votes=CandidateVotes(shape=conf * params["shape_weight"]),
+                )
             )
 
         # Merge with text regions
@@ -366,10 +381,10 @@ class ButtonFusionDetector(BaseAnalyzer):
 
             if not merged:
                 all_candidates.append(
-                    {
-                        "bbox": bbox,
-                        "votes": {"text": conf * params["text_weight"]},
-                    }
+                    DetectionCandidate(
+                        bbox=bbox,
+                        votes=CandidateVotes(text=conf * params["text_weight"]),
+                    )
                 )
 
         # Merge with color regions
@@ -383,16 +398,16 @@ class ButtonFusionDetector(BaseAnalyzer):
 
             if not merged:
                 all_candidates.append(
-                    {
-                        "bbox": bbox,
-                        "votes": {"color": conf * params["color_weight"]},
-                    }
+                    DetectionCandidate(
+                        bbox=bbox,
+                        votes=CandidateVotes(color=conf * params["color_weight"]),
+                    )
                 )
 
         # Calculate final scores
         for candidate in all_candidates:
             votes = candidate["votes"]
-            total_score = sum(votes.values())
+            total_score: float = sum(votes.values())  # type: ignore[arg-type]
             num_strategies = len(votes)
 
             # Require minimum agreement

@@ -57,14 +57,16 @@ Web service should focus on: S3 operations, database persistence, API responses
 """
 
 import io
-from typing import List, Tuple, Dict, Any, Optional
-import numpy as np
-from PIL import Image
-import imagehash
-import structlog
-from sklearn.cluster import DBSCAN
-from scipy.spatial.distance import hamming
+from typing import Any, cast
+
 import cv2
+import imagehash
+import numpy as np
+import structlog
+from numpy.typing import NDArray
+from PIL import Image
+from scipy.spatial.distance import hamming  # type: ignore[import-untyped]
+from sklearn.cluster import DBSCAN  # type: ignore[import-untyped]
 
 from app.services.object_storage import object_storage
 
@@ -77,7 +79,7 @@ class FrameAnalysisService:
     def __init__(self):
         self.storage = object_storage
 
-    async def download_frame(self, s3_key: str) -> Optional[Image.Image]:
+    async def download_frame(self, s3_key: str) -> Image.Image | None:
         """
         Download frame from S3 and return as PIL Image
 
@@ -147,7 +149,9 @@ class FrameAnalysisService:
             logger.error("Failed to calculate hash similarity", error=str(e))
             return 0.0
 
-    def calculate_image_similarity(self, img1: Image.Image, img2: Image.Image) -> Dict[str, float]:
+    def calculate_image_similarity(
+        self, img1: Image.Image, img2: Image.Image
+    ) -> dict[str, float]:
         """
         Calculate multiple similarity metrics between two images
 
@@ -166,7 +170,7 @@ class FrameAnalysisService:
         try:
             # Ensure images are same size
             if img1.size != img2.size:
-                img2 = img2.resize(img1.size, Image.LANCZOS)
+                img2 = img2.resize(img1.size, Image.Resampling.LANCZOS)
 
             # Convert to numpy arrays
             arr1 = np.array(img1)
@@ -181,7 +185,10 @@ class FrameAnalysisService:
                 gray2 = arr2
 
             # 1. Structural Similarity Index (SSIM)
-            from skimage.metrics import structural_similarity as ssim
+            from skimage.metrics import (
+                structural_similarity as ssim,  # type: ignore[import-not-found]
+            )
+
             ssim_score = ssim(gray1, gray2)
 
             # 2. Mean Squared Error (MSE) - converted to similarity
@@ -195,8 +202,7 @@ class FrameAnalysisService:
 
             # 4. Perceptual hash similarity
             phash_sim = self.calculate_hash_similarity(
-                self.compute_perceptual_hash(img1),
-                self.compute_perceptual_hash(img2)
+                self.compute_perceptual_hash(img1), self.compute_perceptual_hash(img2)
             )
 
             return {
@@ -204,7 +210,7 @@ class FrameAnalysisService:
                 "mse_similarity": float(mse_similarity),
                 "histogram_correlation": float(hist_correlation),
                 "perceptual_hash": float(phash_sim),
-                "combined": float((ssim_score + hist_correlation + phash_sim) / 3.0)
+                "combined": float((ssim_score + hist_correlation + phash_sim) / 3.0),
             }
 
         except Exception as e:
@@ -214,14 +220,12 @@ class FrameAnalysisService:
                 "mse_similarity": 0.0,
                 "histogram_correlation": 0.0,
                 "perceptual_hash": 0.0,
-                "combined": 0.0
+                "combined": 0.0,
             }
 
     def detect_stable_regions(
-        self,
-        images: List[Image.Image],
-        threshold: float = 0.95
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        self, images: list[Image.Image], threshold: float = 0.95
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         Detect stable and volatile regions across multiple images
 
@@ -247,7 +251,9 @@ class FrameAnalysisService:
             normalized_images = []
             for img in images:
                 if img.size != base_size:
-                    normalized_images.append(img.resize(base_size, Image.LANCZOS))
+                    normalized_images.append(
+                        img.resize(base_size, Image.Resampling.LANCZOS)
+                    )
                 else:
                     normalized_images.append(img)
 
@@ -279,11 +285,8 @@ class FrameAnalysisService:
             return [], []
 
     def _extract_regions(
-        self,
-        mask: np.ndarray,
-        image_size: Tuple[int, int],
-        min_area: int = 100
-    ) -> List[Dict[str, Any]]:
+        self, mask: np.ndarray, image_size: tuple[int, int], min_area: int = 100
+    ) -> list[dict[str, Any]]:
         """
         Extract bounding box regions from a binary mask
 
@@ -302,13 +305,11 @@ class FrameAnalysisService:
         """
         try:
             # Convert mask to uint8 for OpenCV
-            mask_uint8 = (mask.astype(np.uint8) * 255)
+            mask_uint8 = mask.astype(np.uint8) * 255
 
             # Find contours
             contours, _ = cv2.findContours(
-                mask_uint8,
-                cv2.RETR_EXTERNAL,
-                cv2.CHAIN_APPROX_SIMPLE
+                mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
 
             regions = []
@@ -323,17 +324,19 @@ class FrameAnalysisService:
 
                 # Calculate region statistics
                 region_mask = np.zeros_like(mask_uint8)
-                cv2.drawContours(region_mask, [contour], -1, 255, -1)
+                cv2.drawContours(region_mask, [contour], -1, (255,), -1)
 
-                regions.append({
-                    "id": i,
-                    "x": int(x),
-                    "y": int(y),
-                    "width": int(w),
-                    "height": int(h),
-                    "area": int(area),
-                    "density": float(area / (image_size[0] * image_size[1]))
-                })
+                regions.append(
+                    {
+                        "id": i,
+                        "x": int(x),
+                        "y": int(y),
+                        "width": int(w),
+                        "height": int(h),
+                        "area": int(area),
+                        "density": float(area / (image_size[0] * image_size[1])),
+                    }
+                )
 
             # Sort by area (largest first)
             regions.sort(key=lambda r: r["area"], reverse=True)
@@ -344,7 +347,7 @@ class FrameAnalysisService:
             logger.error("Failed to extract regions", error=str(e))
             return []
 
-    def calculate_image_features(self, image: Image.Image) -> Dict[str, Any]:
+    def calculate_image_features(self, image: Image.Image) -> dict[str, Any]:
         """
         Extract visual features from an image for analysis
 
@@ -369,20 +372,18 @@ class FrameAnalysisService:
                 # Color features
                 "avg_brightness": float(np.mean(arr)),
                 "brightness_std": float(np.std(arr)),
-
                 # Texture features
                 "sharpness": float(self._calculate_sharpness(gray)),
                 "contrast": float(np.std(gray)),
-
                 # Edge features
                 "edge_density": float(self._calculate_edge_density(gray)),
-
                 # Color distribution
                 "dark_pixel_percentage": float(np.sum(gray < 50) / gray.size),
                 "light_pixel_percentage": float(np.sum(gray > 200) / gray.size),
-
                 # Histogram features
-                "histogram": cv2.calcHist([gray], [0], None, [256], [0, 256]).flatten().tolist(),
+                "histogram": cv2.calcHist([gray], [0], None, [256], [0, 256])
+                .flatten()
+                .tolist(),
             }
 
             return features
@@ -404,10 +405,8 @@ class FrameAnalysisService:
         return float(edge_pixels / total_pixels)
 
     def cluster_frames_by_similarity(
-        self,
-        perceptual_hashes: List[str],
-        similarity_threshold: float = 0.95
-    ) -> List[int]:
+        self, perceptual_hashes: list[str], similarity_threshold: float = 0.95
+    ) -> list[int]:
         """
         Cluster frames based on perceptual hash similarity using DBSCAN
 
@@ -429,19 +428,19 @@ class FrameAnalysisService:
 
             # Convert hashes to binary vectors
             hash_size = len(perceptual_hashes[0]) * 4  # hex chars to bits
-            vectors = []
+            vectors_list: list[NDArray[np.int_]] = []
 
             for hash_str in perceptual_hashes:
                 try:
                     h = imagehash.hex_to_hash(hash_str)
                     # Convert to binary array
                     binary = np.array([int(b) for b in h.hash.flatten()])
-                    vectors.append(binary)
+                    vectors_list.append(binary)
                 except:
                     # Invalid hash, use zeros
-                    vectors.append(np.zeros(hash_size, dtype=int))
+                    vectors_list.append(np.zeros(hash_size, dtype=int))
 
-            vectors = np.array(vectors)
+            vectors: NDArray[np.int_] = np.array(vectors_list)
 
             # Calculate distance matrix using Hamming distance
             n = len(vectors)
@@ -461,19 +460,17 @@ class FrameAnalysisService:
             # eps = maximum distance between samples in same cluster
             # min_samples = minimum number of samples for a core point
             clustering = DBSCAN(
-                eps=distance_threshold,
-                min_samples=2,
-                metric='precomputed'
+                eps=distance_threshold, min_samples=2, metric="precomputed"
             ).fit(distances)
 
-            return clustering.labels_.tolist()
+            return cast(list[int], clustering.labels_.tolist())
 
         except Exception as e:
             logger.error("Failed to cluster frames", error=str(e))
             # Return all frames in cluster 0 as fallback
             return [0] * len(perceptual_hashes)
 
-    def calculate_frame_quality(self, image: Image.Image) -> Dict[str, float]:
+    def calculate_frame_quality(self, image: Image.Image) -> dict[str, float]:
         """
         Calculate quality metrics for a frame
 

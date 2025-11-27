@@ -7,7 +7,7 @@ These endpoints provide different levels of health checks:
 - /health/ready: Readiness probe (can the service handle traffic?)
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, Depends, status
@@ -42,7 +42,7 @@ async def health_check(db: AsyncSession = Depends(get_async_db)) -> JSONResponse
         }
     }
     """
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     checks = {"version": settings.VERSION}
     overall_status = "healthy"
     http_status = status.HTTP_200_OK
@@ -107,7 +107,7 @@ async def liveness_probe() -> JSONResponse:
         }
     }
     """
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
 
     response = {
         "status": "healthy",
@@ -148,7 +148,7 @@ async def readiness_probe(db: AsyncSession = Depends(get_async_db)) -> JSONRespo
         }
     }
     """
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     checks = {"version": settings.VERSION}
     overall_status = "healthy"
     http_status = status.HTTP_200_OK

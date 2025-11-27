@@ -8,9 +8,7 @@ allowing for curation, review, and export to various ML training formats.
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Optional
 
-from app.db.base import Base
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -25,11 +23,14 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class DatasetSource(str, PyEnum):
     """Source of the dataset"""
+
     RUNNER_EXPORT = "runner_export"
     MANUAL_UPLOAD = "manual_upload"
     MERGED = "merged"
@@ -37,6 +38,7 @@ class DatasetSource(str, PyEnum):
 
 class AnnotationSource(str, PyEnum):
     """Source of annotation detection"""
+
     USER_CLICK = "user_click"
     TEMPLATE_MATCHING = "template_matching"
     SMART_CLICK_ANALYSIS = "smart_click_analysis"
@@ -45,6 +47,7 @@ class AnnotationSource(str, PyEnum):
 
 class ElementType(str, PyEnum):
     """Type of GUI element"""
+
     BUTTON = "button"
     ICON = "icon"
     TEXT = "text"
@@ -60,6 +63,7 @@ class ElementType(str, PyEnum):
 
 class ReviewStatus(str, PyEnum):
     """Review status for annotations"""
+
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -68,6 +72,7 @@ class ReviewStatus(str, PyEnum):
 
 class ExportFormat(str, PyEnum):
     """Export format for datasets"""
+
     COCO = "coco"
     YOLO = "yolo"
     PASCAL_VOC = "pascal_voc"
@@ -77,6 +82,7 @@ class ExportFormat(str, PyEnum):
 
 class ExportJobStatus(str, PyEnum):
     """Status of export job"""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -91,7 +97,7 @@ class TrainingDataset(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    source = Column(
+    source: Mapped[DatasetSource] = mapped_column(
         Enum(DatasetSource, name="dataset_source_enum"),
         nullable=False,
         default=DatasetSource.RUNNER_EXPORT,
@@ -131,9 +137,7 @@ class TrainingDataset(Base):
     )
     created_by = relationship("User")
 
-    __table_args__ = (
-        Index("ix_training_datasets_created_by", "created_by_id"),
-    )
+    __table_args__ = (Index("ix_training_datasets_created_by", "created_by_id"),)
 
 
 class TrainingDatasetImage(Base):
@@ -218,12 +222,12 @@ class TrainingDatasetAnnotation(Base):
 
     # Metadata
     confidence = Column(Float, nullable=False, default=1.0)
-    source = Column(
+    source: Mapped[AnnotationSource] = mapped_column(
         Enum(AnnotationSource, name="annotation_source_enum"),
         nullable=False,
         default=AnnotationSource.USER_CLICK,
     )
-    element_type = Column(
+    element_type: Mapped[ElementType | None] = mapped_column(
         Enum(ElementType, name="element_type_enum"),
         nullable=True,
     )
@@ -233,7 +237,7 @@ class TrainingDatasetAnnotation(Base):
     inference_metadata = Column(JSON, nullable=True)
 
     # Review workflow
-    review_status = Column(
+    review_status: Mapped[ReviewStatus] = mapped_column(
         Enum(ReviewStatus, name="review_status_enum"),
         nullable=False,
         default=ReviewStatus.PENDING,
@@ -275,7 +279,7 @@ class TrainingDatasetExportJob(Base):
     )
 
     # Export configuration
-    format = Column(
+    format: Mapped[ExportFormat] = mapped_column(
         Enum(ExportFormat, name="export_format_enum"),
         nullable=False,
     )
@@ -291,7 +295,7 @@ class TrainingDatasetExportJob(Base):
     filters = Column(JSON, nullable=True)
 
     # Job status
-    status = Column(
+    status: Mapped[ExportJobStatus] = mapped_column(
         Enum(ExportJobStatus, name="export_job_status_enum"),
         nullable=False,
         default=ExportJobStatus.PENDING,

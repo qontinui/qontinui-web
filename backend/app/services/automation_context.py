@@ -12,7 +12,7 @@ def my_function(input, context: AutomationContext):
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,11 +35,11 @@ class AutomationContext:
     def __init__(
         self,
         workflow_run_id: str,
-        workflow_id: Optional[str] = None,
-        db: Optional[AsyncSession] = None,
-        variables: Optional[Dict[str, Any]] = None,
-        action_history: Optional[List[Dict[str, Any]]] = None,
-        active_states: Optional[Set[str]] = None,
+        workflow_id: str | None = None,
+        db: AsyncSession | None = None,
+        variables: dict[str, Any] | None = None,
+        action_history: list[dict[str, Any]] | None = None,
+        active_states: set[str] | None = None,
     ):
         """
         Initialize automation context.
@@ -60,16 +60,16 @@ class AutomationContext:
         self._active_states = active_states or set()
 
         # In-memory state (for this run)
-        self._state: Dict[str, Any] = {}
+        self._state: dict[str, Any] = {}
 
         # Persistent state (across runs) - would be loaded from DB
-        self._persistent_state: Dict[str, Any] = {}
+        self._persistent_state: dict[str, Any] = {}
 
         # Debug breakpoints
-        self._breakpoints: List[Dict[str, Any]] = []
+        self._breakpoints: list[dict[str, Any]] = []
 
         # Execution logs
-        self._logs: List[Dict[str, Any]] = []
+        self._logs: list[dict[str, Any]] = []
 
     # ========================================================================
     # State Management
@@ -188,7 +188,7 @@ class AutomationContext:
             getattr(logging, level.upper()), f"[{self.workflow_run_id}] {message}"
         )
 
-    def debug_breakpoint(self, locals_dict: Dict[str, Any]) -> None:
+    def debug_breakpoint(self, locals_dict: dict[str, Any]) -> None:
         """
         Pause execution and show variables in UI (debugging).
 
@@ -216,7 +216,7 @@ class AutomationContext:
     # ========================================================================
 
     @property
-    def action_history(self) -> List[Dict[str, Any]]:
+    def action_history(self) -> list[dict[str, Any]]:
         """
         Get history of previous actions in workflow.
 
@@ -232,7 +232,7 @@ class AutomationContext:
         return self._action_history
 
     @property
-    def previous_result(self) -> Optional[Dict[str, Any]]:
+    def previous_result(self) -> dict[str, Any] | None:
         """
         Get result of previous action.
 
@@ -251,7 +251,7 @@ class AutomationContext:
     # ========================================================================
 
     @property
-    def workflow_id(self) -> Optional[str]:
+    def workflow_id(self) -> str | None:
         """
         Current workflow ID.
 
@@ -271,7 +271,7 @@ class AutomationContext:
         return self.workflow_run_id
 
     @property
-    def variables(self) -> Dict[str, Any]:
+    def variables(self) -> dict[str, Any]:
         """
         Get all workflow variables.
 
@@ -301,7 +301,7 @@ class AutomationContext:
         return None
 
     @property
-    def screen_size(self) -> Optional[tuple[int, int]]:
+    def screen_size(self) -> tuple[int, int] | None:
         """
         Get screen dimensions (width, height).
 
@@ -315,7 +315,7 @@ class AutomationContext:
     # Trigger GUI Actions from Code (Future Implementation)
     # ========================================================================
 
-    def click(self, x: int, y: int) -> Dict[str, Any]:
+    def click(self, x: int, y: int) -> dict[str, Any]:
         """
         Click at coordinates.
 
@@ -334,7 +334,7 @@ class AutomationContext:
         # TODO: Send action to runner via WebSocket
         raise NotImplementedError("GUI actions require runner integration")
 
-    def find_pattern(self, image_path: str) -> Dict[str, Any]:
+    def find_pattern(self, image_path: str) -> dict[str, Any]:
         """
         Find pattern on screen.
 
@@ -356,15 +356,15 @@ class AutomationContext:
     # Internal Methods
     # ========================================================================
 
-    def _get_execution_logs(self) -> List[Dict[str, Any]]:
+    def _get_execution_logs(self) -> list[dict[str, Any]]:
         """Get all execution logs (for debugging)."""
         return self._logs.copy()
 
-    def _get_breakpoints(self) -> List[Dict[str, Any]]:
+    def _get_breakpoints(self) -> list[dict[str, Any]]:
         """Get all breakpoints (for debugging)."""
         return self._breakpoints.copy()
 
-    def _update_action_history(self, action_result: Dict[str, Any]) -> None:
+    def _update_action_history(self, action_result: dict[str, Any]) -> None:
         """Add new action to history (internal use)."""
         self._action_history.append(action_result)
 

@@ -8,10 +8,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID as PyUUID
 
-from app.db.base import Base
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -33,7 +34,10 @@ class SnapshotRun(Base):
 
     # Optional project association
     project_id: Mapped[PyUUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
 
     # Workflow association (workflow_id references processes/workflows)

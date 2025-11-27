@@ -24,22 +24,12 @@ import type {
   ConfidenceHistogram,
   ReviewStatus,
 } from '@/types/dataset';
+import { httpClient } from './service-factory';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use empty string for relative URLs through Next.js proxy for proper cookie forwarding
+const API_BASE = '';
 
 class DatasetService {
-  private getAuthHeaders(): HeadersInit {
-    // Get token from localStorage or auth context
-    const token = typeof window !== 'undefined'
-      ? localStorage.getItem('access_token')
-      : null;
-
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-  }
-
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -53,23 +43,18 @@ class DatasetService {
   // ============================================================================
 
   async listDatasets(): Promise<Dataset[]> {
-    const response = await fetch(`${API_BASE}/api/v1/datasets/`, {
-      headers: this.getAuthHeaders(),
-    });
+    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/`);
     return this.handleResponse<Dataset[]>(response);
   }
 
   async getDataset(id: string): Promise<Dataset> {
-    const response = await fetch(`${API_BASE}/api/v1/datasets/${id}`, {
-      headers: this.getAuthHeaders(),
-    });
+    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/${id}`);
     return this.handleResponse<Dataset>(response);
   }
 
   async createDataset(data: { name: string; description?: string }): Promise<Dataset> {
-    const response = await fetch(`${API_BASE}/api/v1/datasets/`, {
+    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/`, {
       method: 'POST',
-      headers: this.getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return this.handleResponse<Dataset>(response);
@@ -79,18 +64,16 @@ class DatasetService {
     id: string,
     data: { name?: string; description?: string }
   ): Promise<Dataset> {
-    const response = await fetch(`${API_BASE}/api/v1/datasets/${id}`, {
+    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/${id}`, {
       method: 'PUT',
-      headers: this.getAuthHeaders(),
       body: JSON.stringify(data),
     });
     return this.handleResponse<Dataset>(response);
   }
 
   async deleteDataset(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/api/v1/datasets/${id}`, {
+    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/${id}`, {
       method: 'DELETE',
-      headers: this.getAuthHeaders(),
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -118,16 +101,13 @@ class DatasetService {
     if (filters?.sort_order) params.set('sort_order', filters.sort_order);
 
     const url = `${API_BASE}/api/v1/datasets/${datasetId}/images?${params}`;
-    const response = await fetch(url, {
-      headers: this.getAuthHeaders(),
-    });
+    const response = await httpClient.fetch(url);
     return this.handleResponse<PaginatedResponse<DatasetImage>>(response);
   }
 
   async getImage(datasetId: string, imageId: string): Promise<DatasetImage> {
-    const response = await fetch(
-      `${API_BASE}/api/v1/datasets/${datasetId}/images/${imageId}`,
-      { headers: this.getAuthHeaders() }
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/datasets/${datasetId}/images/${imageId}`
     );
     return this.handleResponse<DatasetImage>(response);
   }
@@ -137,11 +117,10 @@ class DatasetService {
     imageId: string,
     data: { reviewed?: boolean; reviewer_notes?: string }
   ): Promise<DatasetImage> {
-    const response = await fetch(
+    const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/images/${imageId}`,
       {
         method: 'PUT',
-        headers: this.getAuthHeaders(),
         body: JSON.stringify(data),
       }
     );
@@ -186,9 +165,7 @@ class DatasetService {
     if (filters?.sort_order) params.set('sort_order', filters.sort_order);
 
     const url = `${API_BASE}/api/v1/datasets/${datasetId}/annotations?${params}`;
-    const response = await fetch(url, {
-      headers: this.getAuthHeaders(),
-    });
+    const response = await httpClient.fetch(url);
     return this.handleResponse<PaginatedResponse<DatasetAnnotation>>(response);
   }
 
@@ -196,9 +173,8 @@ class DatasetService {
     datasetId: string,
     imageId: string
   ): Promise<DatasetAnnotation[]> {
-    const response = await fetch(
-      `${API_BASE}/api/v1/datasets/${datasetId}/images/${imageId}/annotations`,
-      { headers: this.getAuthHeaders() }
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/datasets/${datasetId}/images/${imageId}/annotations`
     );
     return this.handleResponse<DatasetAnnotation[]>(response);
   }
@@ -207,9 +183,8 @@ class DatasetService {
     datasetId: string,
     annotationId: string
   ): Promise<DatasetAnnotation> {
-    const response = await fetch(
-      `${API_BASE}/api/v1/datasets/${datasetId}/annotations/${annotationId}`,
-      { headers: this.getAuthHeaders() }
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/datasets/${datasetId}/annotations/${annotationId}`
     );
     return this.handleResponse<DatasetAnnotation>(response);
   }
@@ -219,11 +194,10 @@ class DatasetService {
     annotationId: string,
     data: Partial<DatasetAnnotation>
   ): Promise<DatasetAnnotation> {
-    const response = await fetch(
+    const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/annotations/${annotationId}`,
       {
         method: 'PUT',
-        headers: this.getAuthHeaders(),
         body: JSON.stringify(data),
       }
     );
@@ -231,11 +205,10 @@ class DatasetService {
   }
 
   async deleteAnnotation(datasetId: string, annotationId: string): Promise<void> {
-    const response = await fetch(
+    const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/annotations/${annotationId}`,
       {
         method: 'DELETE',
-        headers: this.getAuthHeaders(),
       }
     );
     if (!response.ok) {
@@ -248,11 +221,10 @@ class DatasetService {
     datasetId: string,
     update: BulkAnnotationUpdate
   ): Promise<BulkOperationResult> {
-    const response = await fetch(
+    const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/annotations/bulk`,
       {
         method: 'POST',
-        headers: this.getAuthHeaders(),
         body: JSON.stringify(update),
       }
     );
@@ -299,9 +271,8 @@ class DatasetService {
   // ============================================================================
 
   async getStatistics(datasetId: string): Promise<DatasetStatistics> {
-    const response = await fetch(
-      `${API_BASE}/api/v1/datasets/${datasetId}/stats`,
-      { headers: this.getAuthHeaders() }
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/datasets/${datasetId}/stats`
     );
     return this.handleResponse<DatasetStatistics>(response);
   }
@@ -310,9 +281,8 @@ class DatasetService {
     datasetId: string,
     buckets: number = 10
   ): Promise<ConfidenceHistogram> {
-    const response = await fetch(
-      `${API_BASE}/api/v1/datasets/${datasetId}/stats/confidence-histogram?buckets=${buckets}`,
-      { headers: this.getAuthHeaders() }
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/datasets/${datasetId}/stats/confidence-histogram?buckets=${buckets}`
     );
     return this.handleResponse<ConfidenceHistogram>(response);
   }
@@ -355,12 +325,8 @@ class DatasetService {
         reject(new Error('Network error during upload'));
       });
 
-      const token = typeof window !== 'undefined'
-        ? localStorage.getItem('access_token')
-        : null;
-
       xhr.open('POST', `${API_BASE}/api/v1/datasets/import`);
-      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.withCredentials = true; // Include cookies for authentication
       xhr.send(formData);
     });
   }
@@ -373,11 +339,10 @@ class DatasetService {
     datasetId: string,
     request: DatasetExportRequest
   ): Promise<DatasetExportJob> {
-    const response = await fetch(
+    const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/export`,
       {
         method: 'POST',
-        headers: this.getAuthHeaders(),
         body: JSON.stringify(request),
       }
     );
@@ -385,9 +350,8 @@ class DatasetService {
   }
 
   async getExportJob(datasetId: string, jobId: string): Promise<DatasetExportJob> {
-    const response = await fetch(
-      `${API_BASE}/api/v1/datasets/${datasetId}/export/${jobId}`,
-      { headers: this.getAuthHeaders() }
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/datasets/${datasetId}/export/${jobId}`
     );
     return this.handleResponse<DatasetExportJob>(response);
   }

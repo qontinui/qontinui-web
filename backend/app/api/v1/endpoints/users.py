@@ -1,6 +1,18 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     get_async_db,
@@ -8,7 +20,6 @@ from app.api.deps import (
     get_current_superuser_async,
 )
 from app.core.audit import audit_logger
-from app.core.error_codes import ErrorCode
 from app.crud.user import (
     delete_user,
     get_user,
@@ -34,8 +45,6 @@ from app.schemas.user import (
 )
 from app.services.avatar_service import avatar_service
 from app.services.storage_service import StorageService
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -89,7 +98,7 @@ async def get_runner_connection_info(
         token=token,
         userId=str(current_user.id),
         projectId=None,
-        createdAt=datetime.now(timezone.utc),
+        createdAt=datetime.now(UTC),
         backendUrl=settings.RUNNER_BACKEND_URL,
     )
 
@@ -106,7 +115,7 @@ async def claim_admin(
     from sqlalchemy import select
 
     # Check if any admin exists
-    result = await db.execute(select(UserModel).filter(UserModel.is_superuser))
+    result = await db.execute(select(UserModel).filter(UserModel.is_superuser))  # type: ignore[arg-type]
     existing_admin = result.scalar_one_or_none()
     if existing_admin:
         raise HTTPException(
@@ -416,7 +425,7 @@ async def remove_avatar(
         await avatar_service.delete_avatar(
             current_user.avatar_url, db=db, user_id=current_user.id
         )
-        user = await update_user_avatar(db, current_user, None)
+        user = await update_user_avatar(db, current_user, None)  # type: ignore[arg-type]
         return user
 
     return current_user
@@ -457,7 +466,9 @@ async def get_automation_streaming_settings(
     )
 
 
-@router.post("/me/automation-streaming/toggle", response_model=AutomationStreamingSettings)
+@router.post(
+    "/me/automation-streaming/toggle", response_model=AutomationStreamingSettings
+)
 async def toggle_automation_streaming(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -481,7 +492,7 @@ async def toggle_automation_streaming(
 
     if toggle_data.enabled:
         # Calculate next month for reset date
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if now.month == 12:
             next_month = now.replace(year=now.year + 1, month=1, day=1)
         else:
@@ -508,7 +519,9 @@ async def toggle_automation_streaming(
     )
 
 
-@router.post("/me/automation-streaming/reset-limit", response_model=AutomationStreamingSettings)
+@router.post(
+    "/me/automation-streaming/reset-limit", response_model=AutomationStreamingSettings
+)
 async def reset_automation_streaming_limit(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -526,7 +539,7 @@ async def reset_automation_streaming_limit(
     current_user.automation_sessions_used = 0
 
     # Calculate next reset date (next month)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if now.month == 12:
         next_month = now.replace(year=now.year + 1, month=1, day=1)
     else:

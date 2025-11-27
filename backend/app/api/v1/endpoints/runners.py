@@ -5,15 +5,20 @@ Provides REST API for creating, listing, revoking, and managing
 desktop runner authentication tokens and viewing connection history.
 """
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_active_user_async
+from app.api.deps import (
+    authenticate_runner,
+    get_async_db,
+    get_current_active_user_async,
+)
 from app.crud import runner as runner_crud
-from app.models.runner_token import RunnerToken
 from app.models.user import User as UserModel
 from app.schemas.runner import (
     RunnerConnectionHistory,
@@ -23,12 +28,17 @@ from app.schemas.runner import (
     RunnerTokenStats,
     RunnerTokenUpdate,
     RunnerTokenWithSecret,
+    TestConnectionResponse,
 )
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
 
-@router.post("/tokens", response_model=RunnerTokenWithSecret, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/tokens", response_model=RunnerTokenWithSecret, status_code=status.HTTP_201_CREATED
+)
 async def create_runner_token(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -152,8 +162,7 @@ async def get_runner_token(
         include_revoked=True,
     )
     connection_count = next(
-        (count for t, count in tokens_with_counts if t.id == token_id),
-        0
+        (count for t, count in tokens_with_counts if t.id == token_id), 0
     )
 
     return RunnerTokenResponse(
@@ -215,8 +224,7 @@ async def update_runner_token(
         include_revoked=True,
     )
     connection_count = next(
-        (count for t, count in tokens_with_counts if t.id == token_id),
-        0
+        (count for t, count in tokens_with_counts if t.id == token_id), 0
     )
 
     return RunnerTokenResponse(
@@ -341,12 +349,16 @@ async def get_connection_history(
             RunnerConnectionResponse(
                 id=conn.id,
                 runner_token_id=conn.runner_token_id,
-                runner_name=token_names.get(conn.runner_token_id, "Unknown"),
+                runner_name=(
+                    token_names.get(conn.runner_token_id, "Unknown")
+                    if conn.runner_token_id
+                    else "Browser Session"
+                ),
                 connected_at=conn.connected_at,
                 disconnected_at=conn.disconnected_at,
                 duration_seconds=conn.duration_seconds,
                 ip_address=conn.ip_address,
-                project_id=conn.project_id,
+                project_id=conn.project_id,  # type: ignore[arg-type]
             )
             for conn in connections
         ],
@@ -386,12 +398,16 @@ async def get_active_connections(
         RunnerConnectionResponse(
             id=conn.id,
             runner_token_id=conn.runner_token_id,
-            runner_name=token_names.get(conn.runner_token_id, "Unknown"),
+            runner_name=(
+                token_names.get(conn.runner_token_id, "Unknown")
+                if conn.runner_token_id
+                else "Browser Session"
+            ),
             connected_at=conn.connected_at,
             disconnected_at=conn.disconnected_at,
             duration_seconds=conn.duration_seconds,
             ip_address=conn.ip_address,
-            project_id=conn.project_id,
+            project_id=conn.project_id,  # type: ignore[arg-type]
         )
         for conn in active_connections
     ]
@@ -415,3 +431,71 @@ async def get_runner_stats(
     )
 
     return RunnerTokenStats(**stats)
+
+
+@router.post("/test-connection", response_model=TestConnectionResponse)
+async def test_runner_connection(
+    request: Request,
+    token: str,
+    db: AsyncSession = Depends(get_async_db),
+) -> Any:
+    """
+    Test a runner connection and verify authentication.
+
+    This endpoint is called by the desktop runner when Quick Connect
+    saves settings. It validates the token and creates a test connection
+    record to confirm the connection is working.
+
+    Args:
+        token: JWT access token or runner token to test
+
+    Returns:
+        Test connection response with user info and connection ID
+
+    Raises:
+        401: If authentication fails
+    """
+    # Authenticate using the provided token
+    try:
+        user, runner_token = await authenticate_runner(token)
+    except Exception as e:
+        logger.error("test_connection_auth_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed. Please check your token.",
+        )
+
+    # Get client IP
+    client_ip = request.client.host if request.client else None
+
+    # Create a test connection record
+    connection = await runner_crud.create_test_connection(
+        db=db,
+        user_id=user.id,
+        token_id=runner_token.id if runner_token else None,
+        ip_address=client_ip,
+    )
+
+    auth_method = "runner_token" if runner_token else "jwt"
+    token_name = runner_token.name if runner_token else None
+
+    logger.info(
+        "test_connection_successful",
+        user_id=str(user.id),
+        username=user.username,
+        auth_method=auth_method,
+        token_name=token_name,
+        connection_id=connection.id,
+        ip_address=client_ip,
+    )
+
+    return TestConnectionResponse(
+        success=True,
+        message="Connection test successful! Your runner is configured correctly.",
+        user_id=str(user.id),
+        username=user.username,
+        auth_method=auth_method,
+        token_name=token_name,
+        connection_id=connection.id,
+        tested_at=datetime.utcnow(),
+    )

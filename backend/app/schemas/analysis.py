@@ -3,7 +3,7 @@ Pydantic schemas for analysis API
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,10 +24,10 @@ class DetectedElementSchema(BaseModel):
 
     bounding_box: BoundingBoxSchema
     confidence: float = Field(ge=0.0, le=1.0)
-    label: Optional[str] = None
-    element_type: Optional[str] = None
+    label: str | None = None
+    element_type: str | None = None
     screenshot_index: int = 0
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnalyzerResultSchema(BaseModel):
@@ -35,9 +35,9 @@ class AnalyzerResultSchema(BaseModel):
 
     analyzer_type: str
     analyzer_name: str
-    elements: List[DetectedElementSchema]
+    elements: list[DetectedElementSchema]
     confidence: float
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class FusedElementSchema(BaseModel):
@@ -45,13 +45,13 @@ class FusedElementSchema(BaseModel):
 
     bounding_box: BoundingBoxSchema
     confidence: float
-    sources: List[str]
-    source_confidences: Dict[str, float]
+    sources: list[str]
+    source_confidences: dict[str, float]
     votes: int
-    label: Optional[str] = None
-    element_type: Optional[str] = None
+    label: str | None = None
+    element_type: str | None = None
     screenshot_index: int = 0
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnalyzerInfoSchema(BaseModel):
@@ -62,7 +62,7 @@ class AnalyzerInfoSchema(BaseModel):
     version: str
     supports_multi_screenshot: bool
     required_screenshots: int
-    default_parameters: Dict[str, Any]
+    default_parameters: dict[str, Any]
 
 
 # Request schemas
@@ -70,8 +70,8 @@ class AnalysisRequest(BaseModel):
     """Request to run analysis on an annotation set"""
 
     annotation_set_id: UUID
-    analyzer_names: Optional[List[str]] = None  # None = all analyzers
-    analyzer_configs: Optional[Dict[str, Dict[str, Any]]] = None
+    analyzer_names: list[str] | None = None  # None = all analyzers
+    analyzer_configs: dict[str, dict[str, Any]] | None = None
     parallel: bool = True
     fuse_results: bool = True
     overlap_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -82,7 +82,7 @@ class QuickAnalysisRequest(BaseModel):
     """Quick analysis request (no DB storage)"""
 
     annotation_set_id: UUID
-    analyzers: Optional[List[str]] = None
+    analyzers: list[str] | None = None
     fuse_results: bool = True
 
 
@@ -90,17 +90,15 @@ class QuickAnalysisRequest(BaseModel):
 class AnalysisResponse(BaseModel):
     """Response from running analysis"""
 
-    analysis_job_id: Optional[UUID] = None  # None if not saved to DB
-    progress_job_id: Optional[UUID] = (
-        None  # For polling progress (only during analysis)
-    )
+    analysis_job_id: UUID | None = None  # None if not saved to DB
+    progress_job_id: UUID | None = None  # For polling progress (only during analysis)
     annotation_set_id: UUID
-    analyzer_results: List[AnalyzerResultSchema]
-    fused_elements: Optional[List[FusedElementSchema]] = None
-    fusion_stats: Optional[Dict[str, Any]] = None
-    analyzer_statistics: Dict[str, Any]
+    analyzer_results: list[AnalyzerResultSchema]
+    fused_elements: list[FusedElementSchema] | None = None
+    fusion_stats: dict[str, Any] | None = None
+    analyzer_statistics: dict[str, Any]
     status: str = "completed"
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 class AnalysisJobSchema(BaseModel):
@@ -110,17 +108,17 @@ class AnalysisJobSchema(BaseModel):
 
     id: UUID
     annotation_set_id: UUID
-    analyzers_used: List[str]
-    parameters: Optional[Dict[str, Any]] = None
+    analyzers_used: list[str]
+    parameters: dict[str, Any] | None = None
     fusion_enabled: bool
-    fusion_config: Optional[Dict[str, Any]] = None
+    fusion_config: dict[str, Any] | None = None
     status: str
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error_message: Optional[str] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error_message: str | None = None
     total_elements_found: int
     total_fused_elements: int
-    analyzer_statistics: Optional[Dict[str, Any]] = None
+    analyzer_statistics: dict[str, Any] | None = None
     created_at: datetime
     created_by_id: UUID
 
@@ -128,13 +126,13 @@ class AnalysisJobSchema(BaseModel):
 class AnalysisJobDetailSchema(AnalysisJobSchema):
     """Detailed analysis job with elements"""
 
-    fused_elements: List[FusedElementSchema]
+    fused_elements: list[FusedElementSchema]
 
 
 class AnalysisJobListResponse(BaseModel):
     """Response for listing analysis jobs"""
 
-    jobs: List[AnalysisJobSchema]
+    jobs: list[AnalysisJobSchema]
     total: int
     page: int
     page_size: int
@@ -144,7 +142,7 @@ class AnalysisJobListResponse(BaseModel):
 class AnalyzerListResponse(BaseModel):
     """Response listing available analyzers"""
 
-    analyzers: List[AnalyzerInfoSchema]
+    analyzers: list[AnalyzerInfoSchema]
     total: int
 
 
@@ -154,4 +152,4 @@ class AnalysisStatistics(BaseModel):
     total_jobs: int
     total_elements_detected: int
     avg_confidence: float
-    analyzers_used: Dict[str, int]  # {analyzer_name: count}
+    analyzers_used: dict[str, int]  # {analyzer_name: count}

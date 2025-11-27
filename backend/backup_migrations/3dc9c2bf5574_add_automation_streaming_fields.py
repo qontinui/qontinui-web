@@ -11,6 +11,7 @@ automation session limits and tracking.
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -53,7 +54,9 @@ def upgrade() -> None:
     # Add automation_sessions_reset_at column
     op.add_column(
         "users",
-        sa.Column("automation_sessions_reset_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "automation_sessions_reset_at", sa.DateTime(timezone=True), nullable=True
+        ),
     )
 
     # Create index on automation_streaming_enabled for fast lookups
@@ -68,9 +71,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove automation streaming fields from users table."""
     # Drop index first
-    op.drop_index(
-        op.f("ix_users_automation_streaming_enabled"), table_name="users"
-    )
+    op.drop_index(op.f("ix_users_automation_streaming_enabled"), table_name="users")
 
     # Drop columns
     op.drop_column("users", "automation_sessions_reset_at")

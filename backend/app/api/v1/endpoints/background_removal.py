@@ -3,9 +3,10 @@ Background Removal API endpoint
 """
 
 import structlog
-from app.services.background_removal_service import BackgroundRemovalService
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from app.services.background_removal_service import BackgroundRemovalService
 
 logger = structlog.get_logger(__name__)
 

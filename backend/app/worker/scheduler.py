@@ -3,6 +3,7 @@
 from typing import Any
 
 import structlog
+
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -33,7 +34,7 @@ async def run_all_cleanup_tasks(ctx: dict[str, Any]) -> dict[str, Any]:
         cleanup_token_blacklist,
     )
 
-    results = {
+    results: dict[str, Any] = {
         "status": "success",
         "tasks": {},
         "total_deleted": 0,

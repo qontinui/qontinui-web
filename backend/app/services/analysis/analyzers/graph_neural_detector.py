@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -56,7 +56,7 @@ class UINode:
     id: int
     bbox: BoundingBox
     features: np.ndarray
-    node_type: Optional[str] = None  # "button", "input", "text", etc.
+    node_type: str | None = None  # "button", "input", "text", etc.
     confidence: float = 0.5
 
 
@@ -104,7 +104,7 @@ class GraphNeuralDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Node extraction
             "min_node_area": 200,
@@ -160,7 +160,7 @@ class GraphNeuralDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -169,8 +169,8 @@ class GraphNeuralDetector(BaseAnalyzer):
         return images
 
     async def _analyze_screenshot(
-        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, img: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Analyze single screenshot using graph approach"""
 
         # Step 1: Extract candidate nodes
@@ -213,7 +213,7 @@ class GraphNeuralDetector(BaseAnalyzer):
 
         return elements
 
-    def _extract_nodes(self, img: np.ndarray, params: Dict[str, Any]) -> List[UINode]:
+    def _extract_nodes(self, img: np.ndarray, params: dict[str, Any]) -> list[UINode]:
         """
         Extract candidate UI element nodes from image
         """
@@ -298,8 +298,8 @@ class GraphNeuralDetector(BaseAnalyzer):
         return np.array(features[:10], dtype=np.float32)
 
     def _build_graph(
-        self, nodes: List[UINode], img: np.ndarray, params: Dict[str, Any]
-    ) -> List[UIEdge]:
+        self, nodes: list[UINode], img: np.ndarray, params: dict[str, Any]
+    ) -> list[UIEdge]:
         """
         Build graph by computing spatial relationships between nodes
         """
@@ -328,8 +328,8 @@ class GraphNeuralDetector(BaseAnalyzer):
         return edges
 
     def _compute_spatial_relations(
-        self, bbox1: BoundingBox, bbox2: BoundingBox, params: Dict[str, Any]
-    ) -> List[Tuple[RelationType, float]]:
+        self, bbox1: BoundingBox, bbox2: BoundingBox, params: dict[str, Any]
+    ) -> list[tuple[RelationType, float]]:
         """
         Compute spatial relationships between two bounding boxes
 
@@ -382,11 +382,11 @@ class GraphNeuralDetector(BaseAnalyzer):
 
     def _apply_graph_reasoning(
         self,
-        nodes: List[UINode],
-        edges: List[UIEdge],
+        nodes: list[UINode],
+        edges: list[UIEdge],
         img: np.ndarray,
-        params: Dict[str, Any],
-    ) -> List[UINode]:
+        params: dict[str, Any],
+    ) -> list[UINode]:
         """
         Apply graph-based reasoning to classify nodes and adjust confidence
 
@@ -396,7 +396,7 @@ class GraphNeuralDetector(BaseAnalyzer):
         - Centered elements more likely to be important
         """
         # Build adjacency information
-        node_edges = {node.id: [] for node in nodes}
+        node_edges: dict[int, list[UIEdge]] = {node.id: [] for node in nodes}
         for edge in edges:
             node_edges[edge.source_id].append(edge)
             node_edges[edge.target_id].append(edge)
@@ -458,8 +458,8 @@ class GraphNeuralDetector(BaseAnalyzer):
     def _count_aligned_buttons(
         self,
         node: UINode,
-        nodes: List[UINode],
-        edges: List[UIEdge],
+        nodes: list[UINode],
+        edges: list[UIEdge],
         alignment_type: RelationType,
     ) -> int:
         """
@@ -490,8 +490,8 @@ class GraphNeuralDetector(BaseAnalyzer):
     def _count_elements_in_direction(
         self,
         node: UINode,
-        nodes: List[UINode],
-        edges: List[UIEdge],
+        nodes: list[UINode],
+        edges: list[UIEdge],
         direction: RelationType,
     ) -> int:
         """
@@ -519,11 +519,11 @@ class GraphNeuralDetector(BaseAnalyzer):
         # Within 20% of center
         threshold = img.shape[1] * 0.2
 
-        return abs(center_x - img_center_x) < threshold
+        return bool(abs(center_x - img_center_x) < threshold)
 
     def _propagate_confidence(
-        self, nodes: List[UINode], edges: List[UIEdge], params: Dict[str, Any]
-    ) -> List[UINode]:
+        self, nodes: list[UINode], edges: list[UIEdge], params: dict[str, Any]
+    ) -> list[UINode]:
         """
         Propagate confidence through graph
 

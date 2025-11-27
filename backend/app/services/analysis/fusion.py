@@ -5,7 +5,7 @@ Decision Fusion System - Combines results from multiple analyzers
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base import AnalysisResult, AnalysisType, BoundingBox, DetectedElement
 
@@ -18,15 +18,15 @@ class FusedElement:
 
     bounding_box: BoundingBox
     confidence: float  # Combined confidence
-    sources: List[str]  # Which analyzers detected this
-    source_confidences: Dict[str, float]  # Individual analyzer confidences
+    sources: list[str]  # Which analyzers detected this
+    source_confidences: dict[str, float]  # Individual analyzer confidences
     votes: int  # How many analyzers agreed
-    label: Optional[str] = None
-    element_type: Optional[str] = None
+    label: str | None = None
+    element_type: str | None = None
     screenshot_index: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization"""
         return {
             "bounding_box": {
@@ -50,8 +50,8 @@ class FusionStrategy:
     """Base class for fusion strategies"""
 
     def fuse(
-        self, results: List[AnalysisResult], overlap_threshold: float = 0.5
-    ) -> List[FusedElement]:
+        self, results: list[AnalysisResult], overlap_threshold: float = 0.5
+    ) -> list[FusedElement]:
         """
         Combine results from multiple analyzers
 
@@ -73,7 +73,7 @@ class WeightedVotingFusion(FusionStrategy):
     Weights can be assigned to different analyzer types.
     """
 
-    def __init__(self, weights: Optional[Dict[AnalysisType, float]] = None):
+    def __init__(self, weights: dict[AnalysisType, float] | None = None):
         """
         Initialize fusion strategy
 
@@ -89,21 +89,21 @@ class WeightedVotingFusion(FusionStrategy):
         }
 
     def fuse(
-        self, results: List[AnalysisResult], overlap_threshold: float = 0.5
-    ) -> List[FusedElement]:
+        self, results: list[AnalysisResult], overlap_threshold: float = 0.5
+    ) -> list[FusedElement]:
         """Combine results using weighted voting"""
 
         if not results:
             return []
 
         # Collect all elements
-        all_elements: List[tuple[DetectedElement, AnalysisResult]] = []
+        all_elements: list[tuple[DetectedElement, AnalysisResult]] = []
         for result in results:
             for element in result.elements:
                 all_elements.append((element, result))
 
         # Group overlapping elements
-        element_groups: List[List[tuple[DetectedElement, AnalysisResult]]] = []
+        element_groups: list[list[tuple[DetectedElement, AnalysisResult]]] = []
 
         for element, result in all_elements:
             # Find existing group this element belongs to
@@ -134,7 +134,7 @@ class WeightedVotingFusion(FusionStrategy):
         return fused_elements
 
     def _fuse_group(
-        self, group: List[tuple[DetectedElement, AnalysisResult]]
+        self, group: list[tuple[DetectedElement, AnalysisResult]]
     ) -> FusedElement:
         """Fuse a group of overlapping elements"""
 
@@ -248,7 +248,7 @@ class DecisionFusion:
 
     def __init__(
         self,
-        strategy: Optional[FusionStrategy] = None,
+        strategy: FusionStrategy | None = None,
         min_confidence: float = 0.3,
         min_votes: int = 1,
     ):
@@ -265,8 +265,8 @@ class DecisionFusion:
         self.min_votes = min_votes
 
     async def fuse(
-        self, results: List[AnalysisResult], overlap_threshold: float = 0.5
-    ) -> List[FusedElement]:
+        self, results: list[AnalysisResult], overlap_threshold: float = 0.5
+    ) -> list[FusedElement]:
         """
         Combine results from multiple analyzers
 
@@ -301,7 +301,7 @@ class DecisionFusion:
 
         return filtered
 
-    def get_analyzer_statistics(self, results: List[AnalysisResult]) -> Dict[str, Any]:
+    def get_analyzer_statistics(self, results: list[AnalysisResult]) -> dict[str, Any]:
         """
         Get statistics about analyzer performance
 
@@ -311,7 +311,9 @@ class DecisionFusion:
         Returns:
             Dictionary with statistics per analyzer
         """
-        stats = defaultdict(lambda: {"elements": 0, "avg_confidence": 0.0})
+        stats: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {"elements": 0, "avg_confidence": 0.0}
+        )
 
         for result in results:
             stats[result.analyzer_name]["elements"] = len(result.elements)

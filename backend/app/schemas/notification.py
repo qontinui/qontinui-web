@@ -10,10 +10,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
-
 
 # ============================================================================
 # Notification Schemas
@@ -23,8 +22,12 @@ from app.schemas.base import BaseORMSchema, BaseSchema, IsoDatetime
 class NotificationBase(BaseSchema):
     """Base notification schema."""
 
-    type: str = Field(..., description="Notification type: mention, share, comment, reply, etc.")
-    title: str = Field(..., min_length=1, max_length=255, description="Notification title")
+    type: str = Field(
+        ..., description="Notification type: mention, share, comment, reply, etc."
+    )
+    title: str = Field(
+        ..., min_length=1, max_length=255, description="Notification title"
+    )
     message: str = Field(..., min_length=1, description="Notification message")
 
 
@@ -35,7 +38,9 @@ class NotificationCreate(NotificationBase):
     project_id: int | None = Field(None, description="Related project ID")
     resource_type: str | None = Field(None, description="Type of resource")
     resource_id: str | None = Field(None, description="Resource ID")
-    actor_id: UUID | None = Field(None, description="User who triggered the notification")
+    actor_id: UUID | None = Field(
+        None, description="User who triggered the notification"
+    )
     metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
 
 
@@ -84,7 +89,9 @@ class UnreadCountResponse(BaseSchema):
     """Schema for unread notification count response."""
 
     count: int = Field(..., description="Number of unread notifications")
-    by_type: dict[str, int] | None = Field(None, description="Count by notification type")
+    by_type: dict[str, int] | None = Field(
+        None, description="Count by notification type"
+    )
 
 
 class MarkAllReadResponse(BaseSchema):

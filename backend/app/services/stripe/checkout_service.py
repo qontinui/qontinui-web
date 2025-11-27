@@ -1,11 +1,13 @@
 """Stripe checkout session management service."""
 
 import asyncio
+from types import ModuleType
 
 import stripe
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.user import User
 from app.services.stripe.customer_service import StripeCustomerService
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class StripeCheckoutService:
@@ -14,7 +16,7 @@ class StripeCheckoutService:
     def __init__(
         self,
         customer_service: StripeCustomerService,
-        stripe_client: stripe = stripe,
+        stripe_client: ModuleType = stripe,
     ):
         """Initialize the checkout service."""
         self.customer_service = customer_service

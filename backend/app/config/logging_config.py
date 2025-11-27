@@ -16,10 +16,11 @@ import logging
 import sys
 
 import structlog
+
 from app.core.log_sanitizer import sanitize_log_data
 
 
-def sanitize_event_dict(logger, method_name, event_dict):
+def sanitize_event_dict(logger, method_name, event_dict) -> dict:
     """
     Structlog processor that sanitizes sensitive data from log events.
 
@@ -91,7 +92,7 @@ def configure_logging(environment: str = "development") -> None:
 
     # Configure structlog
     structlog.configure(
-        processors=processors,
+        processors=processors,  # type: ignore[arg-type]
         wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
@@ -106,7 +107,7 @@ def configure_logging(environment: str = "development") -> None:
     )
 
 
-def get_logger(name: str) -> structlog.stdlib.BoundLogger:
+def get_logger(name: str):
     """
     Get a structured logger instance.
 

@@ -5,18 +5,32 @@ These models store recording data (frames, interactions, context) that will be
 processed to automatically generate state structures.
 """
 
-from sqlalchemy import Column, String, Integer, Text, JSON, DateTime, ForeignKey, Boolean, Float, Index, Enum
+import enum
+import uuid
+from datetime import datetime
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+
 from app.db.base import Base
-from typing import Optional, Dict, Any, List
-import uuid
-import enum
 
 
 class RecordingStatus(str, enum.Enum):
     """Status of recording processing"""
+
     UPLOADED = "uploaded"
     VALIDATING = "validating"
     PROCESSING = "processing"
@@ -27,6 +41,7 @@ class RecordingStatus(str, enum.Enum):
 
 class ProcessingPhase(str, enum.Enum):
     """Processing phases for state discovery"""
+
     FRAME_ANALYSIS = "frame_analysis"
     STATE_IDENTIFICATION = "state_identification"
     INTERACTION_PROCESSING = "interaction_processing"
@@ -40,11 +55,17 @@ class Recording(Base):
     """
     A recording session containing frames and interactions for state discovery
     """
+
     __tablename__ = "recordings"
 
     # Primary identification
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     # Recording metadata
@@ -88,8 +109,8 @@ class Recording(Base):
     upload_size_bytes = Column(Integer)
 
     # Processing status
-    status = Column(Enum(RecordingStatus), default=RecordingStatus.UPLOADED, nullable=False, index=True)
-    processing_phase = Column(Enum(ProcessingPhase), nullable=True)
+    status: RecordingStatus = Column(Enum(RecordingStatus), default=RecordingStatus.UPLOADED, nullable=False, index=True)  # type: ignore[assignment]
+    processing_phase: ProcessingPhase | None = Column(Enum(ProcessingPhase), nullable=True)  # type: ignore[assignment]
     processing_progress = Column(Float, default=0.0)  # 0.0 to 1.0
     processing_started_at = Column(DateTime)
     processing_completed_at = Column(DateTime)
@@ -113,27 +134,41 @@ class Recording(Base):
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
 
     # Relationships
     project = relationship("Project")
     created_by = relationship("User")
-    frames = relationship("RecordingFrame", back_populates="recording", cascade="all, delete-orphan")
-    interactions = relationship("RecordingInteraction", back_populates="recording", cascade="all, delete-orphan")
-    context_events = relationship("RecordingContext", back_populates="recording", cascade="all, delete-orphan")
-    discovered_states = relationship("DiscoveredState", back_populates="recording", cascade="all, delete-orphan")
-    discovered_transitions = relationship("DiscoveredTransition", back_populates="recording", cascade="all, delete-orphan")
-    processing_logs = relationship("ProcessingLog", back_populates="recording", cascade="all, delete-orphan")
+    frames = relationship(
+        "RecordingFrame", back_populates="recording", cascade="all, delete-orphan"
+    )
+    interactions = relationship(
+        "RecordingInteraction", back_populates="recording", cascade="all, delete-orphan"
+    )
+    context_events = relationship(
+        "RecordingContext", back_populates="recording", cascade="all, delete-orphan"
+    )
+    discovered_states = relationship(
+        "DiscoveredState", back_populates="recording", cascade="all, delete-orphan"
+    )
+    discovered_transitions = relationship(
+        "DiscoveredTransition", back_populates="recording", cascade="all, delete-orphan"
+    )
+    processing_logs = relationship(
+        "ProcessingLog", back_populates="recording", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
-        Index('ix_recordings_project_status', 'project_id', 'status'),
-        Index('ix_recordings_created_at', 'created_at'),
+        Index("ix_recordings_project_status", "project_id", "status"),
+        Index("ix_recordings_created_at", "created_at"),
     )
 
     @property
     def duration_seconds(self) -> float:
         """Get duration in seconds"""
-        return self.duration_ms / 1000.0
+        return self.duration_ms / 1000.0  # type: ignore[return-value]
 
     @property
     def is_processing(self) -> bool:
@@ -148,23 +183,32 @@ class Recording(Base):
     @property
     def has_errors(self) -> bool:
         """Check if there are validation or processing errors"""
-        return (self.validation_errors and len(self.validation_errors) > 0) or \
-               self.processing_error is not None
+        return (
+            self.validation_errors and len(self.validation_errors) > 0
+        ) or self.processing_error is not None
 
 
 class RecordingFrame(Base):
     """
     Individual frame from a recording
     """
+
     __tablename__ = "recording_frames"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    recording_id = Column(UUID(as_uuid=True), ForeignKey("recordings.id", ondelete="CASCADE"), nullable=False, index=True)
+    recording_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     # Frame identification
     frame_number = Column(Integer, nullable=False)
     timestamp = Column(DateTime, nullable=False)
-    relative_time_ms = Column(Integer, nullable=False)  # Milliseconds since recording start
+    relative_time_ms = Column(
+        Integer, nullable=False
+    )  # Milliseconds since recording start
 
     # Image storage
     s3_key = Column(String, nullable=False)  # Full S3 key for frame image
@@ -183,7 +227,9 @@ class RecordingFrame(Base):
 
     # Cluster assignment
     cluster_id = Column(Integer)  # Which cluster this frame belongs to
-    state_id = Column(UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True)
+    state_id = Column(
+        UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True
+    )
 
     # Quality metrics
     sharpness = Column(Float)
@@ -208,9 +254,9 @@ class RecordingFrame(Base):
     state = relationship("DiscoveredState", foreign_keys=[state_id])
 
     __table_args__ = (
-        Index('ix_recording_frames_recording_frame', 'recording_id', 'frame_number'),
-        Index('ix_recording_frames_recording_time', 'recording_id', 'relative_time_ms'),
-        Index('ix_recording_frames_cluster', 'recording_id', 'cluster_id'),
+        Index("ix_recording_frames_recording_frame", "recording_id", "frame_number"),
+        Index("ix_recording_frames_recording_time", "recording_id", "relative_time_ms"),
+        Index("ix_recording_frames_cluster", "recording_id", "cluster_id"),
     )
 
 
@@ -218,10 +264,16 @@ class RecordingInteraction(Base):
     """
     User interaction event (click, key, drag, etc.)
     """
+
     __tablename__ = "recording_interactions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    recording_id = Column(UUID(as_uuid=True), ForeignKey("recordings.id", ondelete="CASCADE"), nullable=False, index=True)
+    recording_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     # Timing
     timestamp = Column(DateTime, nullable=False)
@@ -274,8 +326,12 @@ class RecordingInteraction(Base):
 
     # Processing results
     causes_state_change = Column(Boolean)  # Determined during processing
-    target_state_id = Column(UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True)
-    transition_id = Column(UUID(as_uuid=True), ForeignKey("discovered_transitions.id"), nullable=True)
+    target_state_id = Column(
+        UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True
+    )
+    transition_id = Column(
+        UUID(as_uuid=True), ForeignKey("discovered_transitions.id"), nullable=True
+    )
 
     # Relationship
     recording = relationship("Recording", back_populates="interactions")
@@ -283,8 +339,12 @@ class RecordingInteraction(Base):
     transition = relationship("DiscoveredTransition", foreign_keys=[transition_id])
 
     __table_args__ = (
-        Index('ix_recording_interactions_recording_time', 'recording_id', 'relative_time_ms'),
-        Index('ix_recording_interactions_type', 'recording_id', 'interaction_type'),
+        Index(
+            "ix_recording_interactions_recording_time",
+            "recording_id",
+            "relative_time_ms",
+        ),
+        Index("ix_recording_interactions_type", "recording_id", "interaction_type"),
     )
 
 
@@ -292,10 +352,16 @@ class RecordingContext(Base):
     """
     Context events (window changes, URL navigation, focus changes)
     """
+
     __tablename__ = "recording_contexts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    recording_id = Column(UUID(as_uuid=True), ForeignKey("recordings.id", ondelete="CASCADE"), nullable=False, index=True)
+    recording_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     # Timing
     timestamp = Column(DateTime, nullable=False)
@@ -303,7 +369,9 @@ class RecordingContext(Base):
     frame_number = Column(Integer)
 
     # Event type
-    event_type = Column(String, nullable=False)  # window_change, url_change, focus_change, app_launch, app_close
+    event_type = Column(
+        String, nullable=False
+    )  # window_change, url_change, focus_change, app_launch, app_close
 
     # Window information
     window_title = Column(String)
@@ -348,8 +416,10 @@ class RecordingContext(Base):
     recording = relationship("Recording", back_populates="context_events")
 
     __table_args__ = (
-        Index('ix_recording_contexts_recording_time', 'recording_id', 'relative_time_ms'),
-        Index('ix_recording_contexts_type', 'recording_id', 'event_type'),
+        Index(
+            "ix_recording_contexts_recording_time", "recording_id", "relative_time_ms"
+        ),
+        Index("ix_recording_contexts_type", "recording_id", "event_type"),
     )
 
 
@@ -357,10 +427,16 @@ class DiscoveredState(Base):
     """
     A state discovered through automated analysis
     """
+
     __tablename__ = "discovered_states"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    recording_id = Column(UUID(as_uuid=True), ForeignKey("recordings.id", ondelete="CASCADE"), nullable=False, index=True)
+    recording_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     # State identification
     name = Column(String, nullable=False)
@@ -402,7 +478,9 @@ class DiscoveredState(Base):
     user_notes = Column(Text)
 
     # Conversion to actual state
-    converted_to_state_id = Column(UUID(as_uuid=True), nullable=True)  # Reference to actual State if accepted
+    converted_to_state_id = Column(
+        UUID(as_uuid=True), nullable=True
+    )  # Reference to actual State if accepted
     converted_at = Column(DateTime)
 
     # Timestamps
@@ -412,8 +490,8 @@ class DiscoveredState(Base):
     recording = relationship("Recording", back_populates="discovered_states")
 
     __table_args__ = (
-        Index('ix_discovered_states_recording', 'recording_id'),
-        Index('ix_discovered_states_confidence', 'confidence'),
+        Index("ix_discovered_states_recording", "recording_id"),
+        Index("ix_discovered_states_confidence", "confidence"),
     )
 
 
@@ -421,14 +499,24 @@ class DiscoveredTransition(Base):
     """
     A transition discovered through automated analysis
     """
+
     __tablename__ = "discovered_transitions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    recording_id = Column(UUID(as_uuid=True), ForeignKey("recordings.id", ondelete="CASCADE"), nullable=False, index=True)
+    recording_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     # Transition definition
-    from_state_id = Column(UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=False)
-    to_state_id = Column(UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True)
+    from_state_id = Column(
+        UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=False
+    )
+    to_state_id = Column(
+        UUID(as_uuid=True), ForeignKey("discovered_states.id"), nullable=True
+    )
 
     # Multi-state support
     activate_state_ids = Column(JSON, default=list)  # Array of state UUIDs
@@ -436,7 +524,9 @@ class DiscoveredTransition(Base):
     stays_visible = Column(Boolean, default=False)
 
     # Trigger information
-    trigger_interaction_id = Column(UUID(as_uuid=True), ForeignKey("recording_interactions.id"), nullable=True)
+    trigger_interaction_id = Column(
+        UUID(as_uuid=True), ForeignKey("recording_interactions.id"), nullable=True
+    )
     trigger_type = Column(String)  # click, key, auto, etc.
     trigger_description = Column(Text)
 
@@ -475,12 +565,14 @@ class DiscoveredTransition(Base):
     recording = relationship("Recording", back_populates="discovered_transitions")
     from_state = relationship("DiscoveredState", foreign_keys=[from_state_id])
     to_state = relationship("DiscoveredState", foreign_keys=[to_state_id])
-    trigger_interaction = relationship("RecordingInteraction", foreign_keys=[trigger_interaction_id])
+    trigger_interaction = relationship(
+        "RecordingInteraction", foreign_keys=[trigger_interaction_id]
+    )
 
     __table_args__ = (
-        Index('ix_discovered_transitions_recording', 'recording_id'),
-        Index('ix_discovered_transitions_from_state', 'from_state_id'),
-        Index('ix_discovered_transitions_to_state', 'to_state_id'),
+        Index("ix_discovered_transitions_recording", "recording_id"),
+        Index("ix_discovered_transitions_from_state", "from_state_id"),
+        Index("ix_discovered_transitions_to_state", "to_state_id"),
     )
 
 
@@ -488,14 +580,20 @@ class ProcessingLog(Base):
     """
     Logs for processing steps (for debugging and progress tracking)
     """
+
     __tablename__ = "processing_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    recording_id = Column(UUID(as_uuid=True), ForeignKey("recordings.id", ondelete="CASCADE"), nullable=False, index=True)
+    recording_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     # Log entry
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    phase = Column(Enum(ProcessingPhase), nullable=False)
+    phase: ProcessingPhase = Column(Enum(ProcessingPhase), nullable=False)  # type: ignore[assignment]
     level = Column(String, nullable=False)  # info, warning, error
     message = Column(Text, nullable=False)
 
@@ -509,6 +607,6 @@ class ProcessingLog(Base):
     recording = relationship("Recording", back_populates="processing_logs")
 
     __table_args__ = (
-        Index('ix_processing_logs_recording_time', 'recording_id', 'timestamp'),
-        Index('ix_processing_logs_phase', 'recording_id', 'phase'),
+        Index("ix_processing_logs_recording_time", "recording_id", "timestamp"),
+        Index("ix_processing_logs_phase", "recording_id", "phase"),
     )

@@ -1,6 +1,7 @@
 """Email composer classes - handle specific email types."""
 
 import structlog
+
 from app.core.config import settings
 from app.models.user import User
 from app.services.email.email_template_service import EmailTemplateService
@@ -48,14 +49,12 @@ class BetaWelcomeEmailComposer(BaseEmailComposer):
             "login_url": f"{settings.FRONTEND_URL}/login",
         }
 
-        html_body, text_body = self.template_service.render_template(
-            "beta_welcome", context
-        )
+        html_body = self.template_service.render_template("beta_welcome", context)
 
         return await self.transport_service.send_email(
             to_email=user.email,
             subject="🎉 Welcome to Qontinui Beta!",
-            text_body=text_body,
+            text_body="",
             html_body=html_body,
         )
 
@@ -81,14 +80,12 @@ class PasswordResetEmailComposer(BaseEmailComposer):
             "reset_url": reset_url,
         }
 
-        html_body, text_body = self.template_service.render_template(
-            "password_reset", context
-        )
+        html_body = self.template_service.render_template("password_reset", context)
 
         return await self.transport_service.send_email(
             to_email=user.email,
             subject="Qontinui - Password Reset Request",
-            text_body=text_body,
+            text_body="",
             html_body=html_body,
         )
 
@@ -114,14 +111,12 @@ class EmailVerificationComposer(BaseEmailComposer):
             "verify_url": verify_url,
         }
 
-        html_body, text_body = self.template_service.render_template(
-            "email_verification", context
-        )
+        html_body = self.template_service.render_template("email_verification", context)
 
         return await self.transport_service.send_email(
             to_email=user.email,
             subject="Qontinui - Verify Your Email Address",
-            text_body=text_body,
+            text_body="",
             html_body=html_body,
         )
 
@@ -147,14 +142,14 @@ class ResendVerificationEmailComposer(BaseEmailComposer):
             "verify_url": verify_url,
         }
 
-        html_body, text_body = self.template_service.render_template(
+        html_body = self.template_service.render_template(
             "resend_verification", context
         )
 
         return await self.transport_service.send_email(
             to_email=user.email,
             subject="Qontinui - Verify Your Email Address",
-            text_body=text_body,
+            text_body="",
             html_body=html_body,
         )
 

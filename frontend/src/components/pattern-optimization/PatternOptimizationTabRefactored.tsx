@@ -161,7 +161,7 @@ export const PatternOptimizationTabRefactored: React.FC = () => {
     // Calculate quality score
     let quality = 'Poor';
     let qualityColor = 'text-red-600';
-    let recommendations: string[] = [];
+    const recommendations: string[] = [];
 
     if (density < 0.1) {
       recommendations.push('Very low mask density - consider lowering similarity threshold');

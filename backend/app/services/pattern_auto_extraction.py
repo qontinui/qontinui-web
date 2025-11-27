@@ -9,7 +9,7 @@ import base64
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
@@ -25,8 +25,8 @@ try:
 
     CV2_AVAILABLE = True
 except ImportError:
-    cv2 = None
-    np = None  # type: ignore
+    cv2 = None  # type: ignore[assignment]
+    np = None  # type: ignore[assignment]
     CV2_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ class PatternAutoExtractor:
             try:
                 img = cv2.imread(str(path_obj))
                 if img is None:
-                    logger.warning(f"Failed to load image: {path}")
+                    logger.warning(f"Failed to load image: {path}")  # type: ignore[unreachable]
                     continue
 
                 if detect_buttons:

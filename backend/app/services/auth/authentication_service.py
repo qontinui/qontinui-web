@@ -1,11 +1,12 @@
 from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.user import User
 from app.services.auth.password_service import password_service
 from app.services.auth.token_blacklist_service import token_blacklist_service
 from app.services.auth.token_service import token_service
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class AuthenticationService:
@@ -60,7 +61,7 @@ class AuthenticationService:
         if "exp" in payload:
             expiry = datetime.fromtimestamp(payload["exp"])
 
-        await self.blacklist_service.blacklist_token(token_jti, expiry)
+        await self.blacklist_service.blacklist_token(token_jti, expiry)  # type: ignore[arg-type]
 
         return self.create_user_tokens(user_id)
 

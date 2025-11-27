@@ -1,13 +1,14 @@
 from uuid import UUID
 
 import structlog
+from fastapi import HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.project_directory import ProjectDirectoryManager
 from app.services.stripe_service import StripeService
-from fastapi import HTTPException, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -65,7 +66,7 @@ async def create_project(
     try:
         directory_manager = ProjectDirectoryManager()
         directory_manager.create_project_directory(
-            project_id=db_project.id,
+            project_id=db_project.id,  # type: ignore[arg-type]
             project_name=project.name,
             description=project.description or "",
         )
@@ -101,7 +102,7 @@ async def update_project(
         setattr(project, field, value)
 
     # Increment version on every update
-    project.version += 1
+    project.version += 1  # type: ignore[assignment]
 
     db.add(project)
     await db.commit()

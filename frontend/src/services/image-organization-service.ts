@@ -559,7 +559,7 @@ export class ImageOrganizationService {
         };
       }
 
-      let imageIds: string[] = [];
+      const imageIds: string[] = [];
 
       // Get direct images
       const directImages = Array.from(this.metadata.values())
@@ -1506,7 +1506,7 @@ export class ImageOrganizationService {
     s3_key?: string
   ): OperationResult<ImageVersion> {
     try {
-      let versions = this.versions.get(imageId) || [];
+      const versions = this.versions.get(imageId) || [];
 
       // Set all existing versions to non-primary
       versions.forEach(v => {

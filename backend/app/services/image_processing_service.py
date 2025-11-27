@@ -7,24 +7,24 @@ and optimizing images for web delivery.
 
 import io
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Tuple
 
 import structlog
 from PIL import Image, ImageOps
+from PIL.Image import Image as PILImage
 
 logger = structlog.get_logger(__name__)
 
 # Thumbnail size presets (width, height)
 THUMBNAIL_SIZES = {
-    "thumb": (256, 256),      # Small thumbnail for lists/grids
-    "medium": (1024, 1024),   # Medium size for preview/lightbox
-    "large": (2048, 2048),    # Large size for high-res displays
+    "thumb": (256, 256),  # Small thumbnail for lists/grids
+    "medium": (1024, 1024),  # Medium size for preview/lightbox
+    "large": (2048, 2048),  # Large size for high-res displays
 }
 
 
 def _generate_single_thumbnail(
     image_data: bytes, size_name: str, width: int, height: int, format: str = "webp"
-) -> Tuple[str, bytes]:
+) -> tuple[str, bytes]:
     """
     Generate a single thumbnail (helper function for parallel processing).
 
@@ -42,22 +42,25 @@ def _generate_single_thumbnail(
     """
     try:
         # Open image from bytes
-        img = Image.open(io.BytesIO(image_data))
+        img: PILImage = Image.open(io.BytesIO(image_data))
 
         # Convert RGBA to RGB with white background if needed
         if img.mode == "RGBA":
-            background = Image.new("RGB", img.size, (255, 255, 255))
+            background: PILImage = Image.new("RGB", img.size, (255, 255, 255))
             background.paste(img, mask=img.split()[3])
             img = background
         elif img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
 
         # Auto-rotate based on EXIF orientation
-        img = ImageOps.exif_transpose(img)
+        if img is not None:
+            img = ImageOps.exif_transpose(img)
+        if img is None:
+            raise ValueError("Failed to process image")
 
         # Resize using LANCZOS (high-quality downsampling)
         thumbnail = img.copy()
-        thumbnail.thumbnail((width, height), Image.LANCZOS)
+        thumbnail.thumbnail((width, height), Image.Resampling.LANCZOS)
 
         # Convert to bytes
         output = io.BytesIO()
@@ -123,7 +126,9 @@ class ImageProcessingService:
             large_data = thumbnails["large"]
         """
         try:
-            logger.info("generating_thumbnails_parallel", thumbnail_count=len(THUMBNAIL_SIZES))
+            logger.info(
+                "generating_thumbnails_parallel", thumbnail_count=len(THUMBNAIL_SIZES)
+            )
             thumbnails = {}
 
             # Use ProcessPoolExecutor for CPU-bound thumbnail generation
@@ -194,12 +199,12 @@ class ImageProcessingService:
         """
         try:
             # Open image from bytes
-            img = Image.open(io.BytesIO(image_data))
+            img: PILImage = Image.open(io.BytesIO(image_data))
 
             # Convert RGBA to RGB with white background if needed
             if img.mode == "RGBA":
                 logger.debug("converting_rgba_to_rgb", original_mode=img.mode)
-                background = Image.new("RGB", img.size, (255, 255, 255))
+                background: PILImage = Image.new("RGB", img.size, (255, 255, 255))
                 background.paste(img, mask=img.split()[3])  # Use alpha channel as mask
                 img = background
             elif img.mode not in ("RGB", "L"):
@@ -208,7 +213,10 @@ class ImageProcessingService:
                 img = img.convert("RGB")
 
             # Auto-rotate based on EXIF orientation
-            img = ImageOps.exif_transpose(img)
+            if img is not None:
+                img = ImageOps.exif_transpose(img)
+            if img is None:
+                raise ValueError("Failed to process image")
 
             thumbnails = {}
 
@@ -219,7 +227,7 @@ class ImageProcessingService:
 
                 # Resize using LANCZOS (high-quality downsampling)
                 # thumbnail() maintains aspect ratio and fits within the box
-                thumbnail.thumbnail((width, height), Image.LANCZOS)
+                thumbnail.thumbnail((width, height), Image.Resampling.LANCZOS)
 
                 # Convert to bytes
                 output = io.BytesIO()
@@ -283,7 +291,7 @@ class ImageProcessingService:
     @staticmethod
     def optimize_image(
         image_data: bytes, target_format: str = "webp", quality: int = 85
-    ) -> Tuple[bytes, str]:
+    ) -> tuple[bytes, str]:
         """
         Optimize an image by converting to WebP or JPEG with compression.
 
@@ -308,12 +316,12 @@ class ImageProcessingService:
         """
         try:
             # Open image from bytes
-            img = Image.open(io.BytesIO(image_data))
+            img: PILImage = Image.open(io.BytesIO(image_data))
 
             # Convert RGBA to RGB with white background if needed
             if img.mode == "RGBA" and target_format.lower() in ("jpeg", "jpg"):
                 logger.debug("converting_rgba_to_rgb_for_jpeg", original_mode=img.mode)
-                background = Image.new("RGB", img.size, (255, 255, 255))
+                background: PILImage = Image.new("RGB", img.size, (255, 255, 255))
                 background.paste(img, mask=img.split()[3])
                 img = background
             elif img.mode not in ("RGB", "L", "RGBA"):
@@ -321,7 +329,10 @@ class ImageProcessingService:
                 img = img.convert("RGB")
 
             # Auto-rotate based on EXIF orientation
-            img = ImageOps.exif_transpose(img)
+            if img is not None:
+                img = ImageOps.exif_transpose(img)
+            if img is None:
+                raise ValueError("Failed to process image")
 
             # Optimize and convert
             output = io.BytesIO()

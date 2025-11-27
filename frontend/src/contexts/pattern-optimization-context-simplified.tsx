@@ -459,7 +459,7 @@ export function PatternOptimizationProvider({ children }: PatternOptimizationPro
     const stdDev = pattern.stdDevConfidence
 
     let score = 0
-    let recommendations: string[] = []
+    const recommendations: string[] = []
 
     // Density score (ideal: 30-80%)
     if (density >= 0.3 && density <= 0.8) {

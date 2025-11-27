@@ -1,16 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 
 export async function POST(request: NextRequest) {
   try {
     console.log('[AutomationStreaming Reset-Limit API Route] POST request received')
 
-    const authorization = request.headers.get('Authorization')
-    console.log('[AutomationStreaming Reset-Limit API Route] Authorization header present:', !!authorization)
+    // Get the access token from cookie (preferred) or Authorization header (fallback)
+    const cookieStore = await cookies()
+    const accessTokenCookie = cookieStore.get('access_token')
+    const authorizationHeader = request.headers.get('Authorization')
 
-    if (!authorization) {
-      console.error('[AutomationStreaming Reset-Limit API Route] Missing authorization header')
+    // Use cookie token or extract from Authorization header
+    let accessToken: string | null = null
+    if (accessTokenCookie?.value) {
+      accessToken = accessTokenCookie.value
+      console.log('[AutomationStreaming Reset-Limit API Route] Using token from cookie')
+    } else if (authorizationHeader?.startsWith('Bearer ')) {
+      accessToken = authorizationHeader.substring(7)
+      console.log('[AutomationStreaming Reset-Limit API Route] Using token from Authorization header')
+    }
+
+    if (!accessToken) {
+      console.error('[AutomationStreaming Reset-Limit API Route] No access token found')
       return NextResponse.json(
-        { error: 'Missing authorization header' },
+        { error: 'Not authenticated' },
         { status: 401 }
       )
     }
@@ -24,7 +37,7 @@ export async function POST(request: NextRequest) {
     const response = await fetch(backendUrl, {
       method: 'POST',
       headers: {
-        'Authorization': authorization,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
     })

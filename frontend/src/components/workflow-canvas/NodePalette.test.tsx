@@ -563,7 +563,7 @@ describe('Integration Tests', () => {
   });
 
   it('favorites workflow: add to favorites and access from favorites section', async () => {
-    let favorites: any[] = [];
+    const favorites: any[] = [];
     const mockToggleFavorite = jest.fn((type) => {
       favorites.push({ type, order: 0, addedAt: Date.now() });
     });

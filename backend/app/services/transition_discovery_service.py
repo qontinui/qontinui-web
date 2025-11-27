@@ -8,10 +8,10 @@ This service handles:
 - Detecting multi-state scenarios (modals, overlays)
 """
 
-from typing import List, Dict, Any, Optional, Tuple
 import uuid
+from typing import Any
+
 import structlog
-from datetime import datetime, timedelta
 
 logger = structlog.get_logger(__name__)
 
@@ -21,10 +21,10 @@ class TransitionDiscoveryService:
 
     def discover_transitions(
         self,
-        states: List[Dict[str, Any]],
-        frames: List[Dict[str, Any]],
-        interactions: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        states: list[dict[str, Any]],
+        frames: list[dict[str, Any]],
+        interactions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """
         Discover transitions between states
 
@@ -56,7 +56,7 @@ class TransitionDiscoveryService:
                     change["to_state"],
                     trigger,
                     interactions,
-                    state_timeline
+                    state_timeline,
                 )
 
                 # Generate workflow
@@ -64,29 +64,28 @@ class TransitionDiscoveryService:
                     interaction_sequence,
                     change["from_state"],
                     change["to_state"],
-                    change["latency_ms"]
+                    change["latency_ms"],
                 )
 
                 # Detect multi-state scenario
                 multi_state_info = self._detect_multi_state_scenario(
-                    change["from_state"],
-                    change["to_state"],
-                    states
+                    change["from_state"], change["to_state"], states
                 )
 
                 # Calculate confidence
                 confidence_scores = self._calculate_transition_confidence(
-                    change,
-                    trigger,
-                    interaction_sequence,
-                    workflow
+                    change, trigger, interaction_sequence, workflow
                 )
 
                 # Create transition object
                 transition = {
                     "id": str(uuid.uuid4()),
                     "from_state_id": change["from_state"]["id"],
-                    "to_state_id": change["to_state"]["id"] if not multi_state_info["is_multi_state"] else None,
+                    "to_state_id": (
+                        change["to_state"]["id"]
+                        if not multi_state_info["is_multi_state"]
+                        else None
+                    ),
                     "activate_state_ids": multi_state_info["activate_states"],
                     "deactivate_state_ids": multi_state_info["deactivate_states"],
                     "stays_visible": multi_state_info["stays_visible"],
@@ -94,7 +93,9 @@ class TransitionDiscoveryService:
                     "trigger_type": trigger["interaction_type"] if trigger else "auto",
                     "trigger_description": self._describe_trigger(trigger),
                     "latency_ms": change["latency_ms"],
-                    "recommended_timeout_ms": int(change["latency_ms"] * 1.5 + 1000),  # 1.5x + 1s buffer
+                    "recommended_timeout_ms": int(
+                        change["latency_ms"] * 1.5 + 1000
+                    ),  # 1.5x + 1s buffer
                     "recommended_retry_count": 3,
                     "workflow": workflow,
                     "workflow_name": f"{change['from_state']['name']}_to_{change['to_state']['name']}",
@@ -113,10 +114,8 @@ class TransitionDiscoveryService:
         return transitions
 
     def _build_state_timeline(
-        self,
-        frames: List[Dict[str, Any]],
-        states: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, frames: list[dict[str, Any]], states: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """
         Build timeline mapping frames to states
 
@@ -137,23 +136,24 @@ class TransitionDiscoveryService:
         timeline = []
         for frame in sorted(frames, key=lambda f: f.get("frame_number", 0)):
             frame_id = frame.get("id")
-            state = frame_to_state.get(frame_id)
+            frame_state: dict[str, Any] | None = frame_to_state.get(frame_id)
 
-            if state:
-                timeline.append({
-                    "frame_number": frame["frame_number"],
-                    "timestamp": frame["timestamp"],
-                    "relative_time_ms": frame["relative_time_ms"],
-                    "state": state,
-                    "state_id": state["id"],
-                })
+            if frame_state:
+                timeline.append(
+                    {
+                        "frame_number": frame["frame_number"],
+                        "timestamp": frame["timestamp"],
+                        "relative_time_ms": frame["relative_time_ms"],
+                        "state": frame_state,
+                        "state_id": frame_state["id"],
+                    }
+                )
 
         return timeline
 
     def _detect_state_changes(
-        self,
-        timeline: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, timeline: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """
         Detect points where state changes
 
@@ -171,26 +171,30 @@ class TransitionDiscoveryService:
 
             if current["state_id"] != next_entry["state_id"]:
                 # State change detected
-                latency_ms = next_entry["relative_time_ms"] - current["relative_time_ms"]
+                latency_ms = (
+                    next_entry["relative_time_ms"] - current["relative_time_ms"]
+                )
 
-                changes.append({
-                    "from_state": current["state"],
-                    "to_state": next_entry["state"],
-                    "change_time_ms": next_entry["relative_time_ms"],
-                    "change_timestamp": next_entry["timestamp"],
-                    "latency_ms": latency_ms,
-                    "from_frame": current["frame_number"],
-                    "to_frame": next_entry["frame_number"],
-                })
+                changes.append(
+                    {
+                        "from_state": current["state"],
+                        "to_state": next_entry["state"],
+                        "change_time_ms": next_entry["relative_time_ms"],
+                        "change_timestamp": next_entry["timestamp"],
+                        "latency_ms": latency_ms,
+                        "from_frame": current["frame_number"],
+                        "to_frame": next_entry["frame_number"],
+                    }
+                )
 
         return changes
 
     def _find_trigger_interaction(
         self,
-        change: Dict[str, Any],
-        interactions: List[Dict[str, Any]],
-        lookback_ms: int = 2000
-    ) -> Optional[Dict[str, Any]]:
+        change: dict[str, Any],
+        interactions: list[dict[str, Any]],
+        lookback_ms: int = 2000,
+    ) -> dict[str, Any] | None:
         """
         Find interaction that likely triggered the state change
 
@@ -207,7 +211,8 @@ class TransitionDiscoveryService:
 
         # Find interactions in time window before state change
         candidates = [
-            interaction for interaction in interactions
+            interaction
+            for interaction in interactions
             if window_start <= interaction["relative_time_ms"] < change_time
         ]
 
@@ -227,21 +232,21 @@ class TransitionDiscoveryService:
         candidates.sort(
             key=lambda i: (
                 priority.get(i["interaction_type"], 0),
-                -abs(change_time - i["relative_time_ms"])
+                -abs(change_time - i["relative_time_ms"]),
             ),
-            reverse=True
+            reverse=True,
         )
 
         return candidates[0] if candidates else None
 
     def _get_interaction_sequence(
         self,
-        from_state: Dict[str, Any],
-        to_state: Dict[str, Any],
-        trigger: Optional[Dict[str, Any]],
-        all_interactions: List[Dict[str, Any]],
-        timeline: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        from_state: dict[str, Any],
+        to_state: dict[str, Any],
+        trigger: dict[str, Any] | None,
+        all_interactions: list[dict[str, Any]],
+        timeline: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """
         Get sequence of interactions between two states
 
@@ -260,8 +265,7 @@ class TransitionDiscoveryService:
 
         # Find time range: from start of from_state to trigger
         from_state_frames = [
-            entry for entry in timeline
-            if entry["state_id"] == from_state["id"]
+            entry for entry in timeline if entry["state_id"] == from_state["id"]
         ]
 
         if not from_state_frames:
@@ -272,7 +276,8 @@ class TransitionDiscoveryService:
 
         # Get interactions in range
         sequence = [
-            interaction for interaction in all_interactions
+            interaction
+            for interaction in all_interactions
             if start_time <= interaction["relative_time_ms"] <= end_time
         ]
 
@@ -283,11 +288,11 @@ class TransitionDiscoveryService:
 
     def _generate_workflow(
         self,
-        interactions: List[Dict[str, Any]],
-        from_state: Dict[str, Any],
-        to_state: Dict[str, Any],
-        latency_ms: int
-    ) -> Dict[str, Any]:
+        interactions: list[dict[str, Any]],
+        from_state: dict[str, Any],
+        to_state: dict[str, Any],
+        latency_ms: int,
+    ) -> dict[str, Any]:
         """
         Generate workflow from interaction sequence
 
@@ -301,7 +306,7 @@ class TransitionDiscoveryService:
             Workflow dict with actions and connections
         """
         actions = []
-        connections = {}
+        connections: dict[str, list[str]] = {}
 
         # Convert interactions to actions
         for i, interaction in enumerate(interactions):
@@ -348,10 +353,8 @@ class TransitionDiscoveryService:
         return workflow
 
     def _interaction_to_action(
-        self,
-        interaction: Dict[str, Any],
-        action_id: str
-    ) -> Dict[str, Any]:
+        self, interaction: dict[str, Any], action_id: str
+    ) -> dict[str, Any]:
         """Convert interaction to workflow action"""
         interaction_type = interaction["interaction_type"]
 
@@ -409,10 +412,10 @@ class TransitionDiscoveryService:
 
     def _detect_multi_state_scenario(
         self,
-        from_state: Dict[str, Any],
-        to_state: Dict[str, Any],
-        all_states: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        from_state: dict[str, Any],
+        to_state: dict[str, Any],
+        all_states: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """
         Detect if this is a multi-state scenario (modal/overlay)
 
@@ -438,7 +441,7 @@ class TransitionDiscoveryService:
                     "activate_states": [to_state["id"]],
                     "deactivate_states": [],
                     "stays_visible": True,
-                    "scenario": "overlay"
+                    "scenario": "overlay",
                 }
 
         # Check if to_state is subset of from_state (partial close)
@@ -451,7 +454,7 @@ class TransitionDiscoveryService:
                     "activate_states": [],
                     "deactivate_states": [],  # Would need to identify which state to deactivate
                     "stays_visible": False,
-                    "scenario": "partial_close"
+                    "scenario": "partial_close",
                 }
 
         # Normal transition
@@ -460,10 +463,10 @@ class TransitionDiscoveryService:
             "activate_states": [],
             "deactivate_states": [],
             "stays_visible": False,
-            "scenario": "full_transition"
+            "scenario": "full_transition",
         }
 
-    def _describe_trigger(self, trigger: Optional[Dict[str, Any]]) -> str:
+    def _describe_trigger(self, trigger: dict[str, Any] | None) -> str:
         """Generate human-readable description of trigger"""
         if not trigger:
             return "Auto transition (no user interaction)"
@@ -497,11 +500,11 @@ class TransitionDiscoveryService:
 
     def _calculate_transition_confidence(
         self,
-        change: Dict[str, Any],
-        trigger: Optional[Dict[str, Any]],
-        interactions: List[Dict[str, Any]],
-        workflow: Dict[str, Any]
-    ) -> Dict[str, float]:
+        change: dict[str, Any],
+        trigger: dict[str, Any] | None,
+        interactions: list[dict[str, Any]],
+        workflow: dict[str, Any],
+    ) -> dict[str, float]:
         """
         Calculate confidence scores for transition
 
@@ -531,19 +534,18 @@ class TransitionDiscoveryService:
         completeness = 1.0 if trigger and workflow.get("actions") else 0.5
 
         # Overall
-        overall = (clarity * 0.4 + consistency * 0.3 + completeness * 0.3)
+        overall = clarity * 0.4 + consistency * 0.3 + completeness * 0.3
 
         return {
             "clarity": float(clarity),
             "consistency": float(consistency),
             "completeness": float(completeness),
-            "overall": float(overall)
+            "overall": float(overall),
         }
 
     def deduplicate_transitions(
-        self,
-        transitions: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        self, transitions: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """
         Remove duplicate transitions (same from/to states)
 
@@ -565,7 +567,8 @@ class TransitionDiscoveryService:
             else:
                 # Merge with existing (take higher confidence)
                 existing = next(
-                    t for t in deduplicated
+                    t
+                    for t in deduplicated
                     if (t["from_state_id"], t.get("to_state_id")) == key
                 )
 

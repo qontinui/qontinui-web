@@ -22,12 +22,7 @@ sys.path.insert(0, str(qontinui_path))
 from qontinui.config.schema import (
     Action,
     ClickActionConfig,
-    CoordinatesTarget,
     FindActionConfig,
-    ImageTarget,
-    RegionTarget,
-    TargetConfig,
-    TextTarget,
     TypeActionConfig,
     WaitActionConfig,
     Workflow,

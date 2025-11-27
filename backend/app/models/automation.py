@@ -7,7 +7,6 @@ Provides models for automation input events.
 import enum
 from datetime import datetime
 
-from app.db.base import Base
 from sqlalchemy import (
     TIMESTAMP,
     BigInteger,
@@ -22,6 +21,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class InputEventType(str, enum.Enum):
@@ -57,7 +58,7 @@ class AutomationInputEvent(Base):
         nullable=False,
         index=True,
     )
-    event_type = Column(
+    event_type: Column[InputEventType] = Column(
         Enum(InputEventType, name="input_event_type_enum", native_enum=True),
         nullable=False,
     )  # PostgreSQL enum: mouse.clicked, mouse.moved, mouse.dragged, keyboard.text_typed

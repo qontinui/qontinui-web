@@ -1,18 +1,20 @@
 """Stripe subscription retrieval service."""
 
 import asyncio
+from types import ModuleType
 
 import stripe
-from app.models.subscription import Subscription
-from app.models.user import User
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.subscription import Subscription
+from app.models.user import User
 
 
 class StripeSubscriptionService:
     """Handles subscription retrieval and details."""
 
-    def __init__(self, stripe_client: stripe = stripe):
+    def __init__(self, stripe_client: ModuleType = stripe):
         """Initialize the subscription service."""
         self.stripe = stripe_client
 
@@ -56,7 +58,7 @@ class StripeSubscriptionService:
                 )
                 result["stripe_status"] = stripe_sub.status
                 result["cancel_at_period_end"] = stripe_sub.cancel_at_period_end
-            except stripe.error.StripeError:
+            except Exception:  # Catch any Stripe errors
                 pass
 
         return result

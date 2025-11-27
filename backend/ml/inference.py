@@ -6,12 +6,11 @@ Supports batch processing, preprocessing, and post-processing.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import cv2
 import numpy as np
 import torch
-from models.button_cnn import ButtonCNN
 from models.button_yolo import ButtonYOLO
 from PIL import Image
 
@@ -114,8 +113,8 @@ class ButtonDetectorInference:
 
     def preprocess_image(
         self,
-        image: Union[str, Path, Image.Image, np.ndarray],
-        target_size: Tuple[int, int] = (224, 224),
+        image: str | Path | Image.Image | np.ndarray,
+        target_size: tuple[int, int] = (224, 224),
     ) -> torch.Tensor:
         """
         Preprocess image for inference
@@ -148,8 +147,8 @@ class ButtonDetectorInference:
     def preprocess_region(
         self,
         image: np.ndarray,
-        bbox: List[int],
-        target_size: Tuple[int, int] = (224, 224),
+        bbox: list[int],
+        target_size: tuple[int, int] = (224, 224),
     ) -> torch.Tensor:
         """
         Extract and preprocess image region
@@ -181,8 +180,8 @@ class ButtonDetectorInference:
 
     @torch.no_grad()
     def predict_classification(
-        self, image: Union[str, Path, Image.Image, np.ndarray, torch.Tensor]
-    ) -> Dict[str, Any]:
+        self, image: str | Path | Image.Image | np.ndarray | torch.Tensor
+    ) -> dict[str, Any]:
         """
         Run classification inference on single image/region
 
@@ -230,8 +229,8 @@ class ButtonDetectorInference:
 
     @torch.no_grad()
     def predict_detection(
-        self, image: Union[str, Path, Image.Image, np.ndarray]
-    ) -> List[Dict[str, Any]]:
+        self, image: str | Path | Image.Image | np.ndarray
+    ) -> list[dict[str, Any]]:
         """
         Run detection inference on full image (YOLO)
 
@@ -257,8 +256,8 @@ class ButtonDetectorInference:
             raise ValueError("Detection mode requires YOLO model")
 
     def predict_regions(
-        self, image: np.ndarray, regions: List[List[int]]
-    ) -> List[Dict[str, Any]]:
+        self, image: np.ndarray, regions: list[list[int]]
+    ) -> list[dict[str, Any]]:
         """
         Predict button types for multiple regions in an image
 
@@ -304,9 +303,9 @@ class ButtonDetectorInference:
 
     def predict_batch(
         self,
-        images: List[Union[str, Path, Image.Image, np.ndarray]],
+        images: list[str | Path | Image.Image | np.ndarray],
         batch_size: int = 32,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Run batch inference on multiple images
 
@@ -359,8 +358,8 @@ class ButtonDetectorInference:
         return all_predictions
 
     def apply_nms(
-        self, detections: List[Dict[str, Any]], iou_threshold: float = None
-    ) -> List[Dict[str, Any]]:
+        self, detections: list[dict[str, Any]], iou_threshold: float = None
+    ) -> list[dict[str, Any]]:
         """
         Apply Non-Maximum Suppression to detections
 
@@ -416,8 +415,8 @@ class ButtonDetectorInference:
     def visualize_predictions(
         self,
         image: np.ndarray,
-        predictions: List[Dict[str, Any]],
-        save_path: Optional[str] = None,
+        predictions: list[dict[str, Any]],
+        save_path: str | None = None,
     ) -> np.ndarray:
         """
         Visualize predictions on image
@@ -506,5 +505,5 @@ if __name__ == "__main__":
 
     except FileNotFoundError:
         print(
-            f"Model checkpoint not found. Train a model first using train_button_detector.py"
+            "Model checkpoint not found. Train a model first using train_button_detector.py"
         )

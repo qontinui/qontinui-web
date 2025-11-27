@@ -21,6 +21,8 @@ _tasks_py_path = Path(__file__).parent.parent / "tasks.py"
 _spec = importlib.util.spec_from_file_location(
     "app.worker._tasks_module", _tasks_py_path
 )
+if _spec is None or _spec.loader is None:
+    raise RuntimeError(f"Could not load module from {_tasks_py_path}")
 _tasks_module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_tasks_module)
 

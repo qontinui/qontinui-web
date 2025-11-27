@@ -14,11 +14,9 @@ Usage:
 
 import argparse
 import json
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
-import cv2
 import numpy as np
 import torch
 import torch.nn as nn
@@ -80,7 +78,7 @@ class COCOButtonDataset(Dataset):
         self.img_size = img_size
 
         # Load annotations
-        with open(annotation_file, "r") as f:
+        with open(annotation_file) as f:
             self.coco_data = json.load(f)
 
         # Build mappings
@@ -130,7 +128,7 @@ class COCOButtonDataset(Dataset):
         else:
             return self._get_detection_item(idx)
 
-    def _get_classification_item(self, idx) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    def _get_classification_item(self, idx) -> tuple[torch.Tensor, dict[str, Any]]:
         """Get classification sample"""
         sample = self.samples[idx]
 
@@ -158,7 +156,7 @@ class COCOButtonDataset(Dataset):
 
         return image, target
 
-    def _get_detection_item(self, idx) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    def _get_detection_item(self, idx) -> tuple[torch.Tensor, dict[str, Any]]:
         """Get detection sample (for YOLO)"""
         img_id = self.image_ids[idx]
         img_info = self.images[img_id]
@@ -203,7 +201,7 @@ class COCOButtonDataset(Dataset):
 class ButtonDetectorTrainer:
     """Trainer for button detection models"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize trainer
 
@@ -281,7 +279,7 @@ class ButtonDetectorTrainer:
         else:
             raise ValueError(f"Unknown model type: {model_type}")
 
-    def _create_dataloaders(self) -> Tuple[DataLoader, DataLoader]:
+    def _create_dataloaders(self) -> tuple[DataLoader, DataLoader]:
         """Create training and validation dataloaders"""
         # Determine mode based on model type
         model_type = self.config.get("model", "mobilenet_v3")
@@ -374,7 +372,7 @@ class ButtonDetectorTrainer:
         else:
             return None
 
-    def train_epoch(self, epoch: int) -> Dict[str, float]:
+    def train_epoch(self, epoch: int) -> dict[str, float]:
         """Train for one epoch"""
         self.model.train()
 
@@ -442,7 +440,7 @@ class ButtonDetectorTrainer:
         }
 
     @torch.no_grad()
-    def validate(self, epoch: int) -> Dict[str, float]:
+    def validate(self, epoch: int) -> dict[str, float]:
         """Validate model"""
         self.model.eval()
 
@@ -586,9 +584,9 @@ class ButtonDetectorTrainer:
         self.writer.close()
 
 
-def load_config(config_path: str) -> Dict[str, Any]:
+def load_config(config_path: str) -> dict[str, Any]:
     """Load configuration from YAML file"""
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
     return config
 

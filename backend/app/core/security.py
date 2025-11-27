@@ -1,12 +1,13 @@
 import hashlib
 import secrets
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
+
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.services.auth.token_blacklist_service import token_blacklist_service
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
@@ -36,8 +37,9 @@ def create_access_token(
         to_encode.update(additional_claims)
 
     # Use ACCESS_SECRET_KEY to match fastapi-users JWT strategy
+    # ACCESS_SECRET_KEY is guaranteed to be str by the config validator
     encoded_jwt = jwt.encode(
-        to_encode, settings.ACCESS_SECRET_KEY, algorithm=settings.ALGORITHM
+        to_encode, cast(str, settings.ACCESS_SECRET_KEY), algorithm=settings.ALGORITHM
     )
     return encoded_jwt
 
@@ -80,7 +82,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def decode_token(token: str) -> dict:
+def decode_token(token: str) -> dict[Any, Any]:
     """
     Decode a JWT token without checking blacklist.
 
@@ -92,10 +94,13 @@ def decode_token(token: str) -> dict:
     """
     try:
         # Try decoding with ACCESS_SECRET_KEY first (for access tokens)
+        # ACCESS_SECRET_KEY is guaranteed to be str by the config validator
         payload = jwt.decode(
-            token, settings.ACCESS_SECRET_KEY, algorithms=[settings.ALGORITHM]
+            token,
+            cast(str, settings.ACCESS_SECRET_KEY),
+            algorithms=[settings.ALGORITHM],
         )
-        return payload
+        return cast(dict[Any, Any], payload)
     except JWTError:
         return {}
 
@@ -174,12 +179,13 @@ def verify_password_reset_token(token: str) -> str | None:
         )
         if payload.get("type") != "password_reset":
             return None
-        return payload.get("sub")
+        sub = payload.get("sub")
+        return cast(str, sub) if sub is not None else None
     except JWTError:
         return None
 
 
-def decode_refresh_token(token: str) -> dict:
+def decode_refresh_token(token: str) -> dict[Any, Any]:
     """
     Decode a refresh token specifically (uses SECRET_KEY).
 
@@ -199,7 +205,7 @@ def decode_refresh_token(token: str) -> dict:
         if payload.get("type") != "refresh":
             return {}
 
-        return payload
+        return cast(dict[Any, Any], payload)
     except JWTError:
         return {}
 

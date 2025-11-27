@@ -5,6 +5,9 @@ Provides endpoints for executing inline Python code blocks and custom functions
 within automation workflows.
 """
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api import deps
 from app.db.session import get_async_db
 from app.models import User
@@ -13,8 +16,6 @@ from app.services.code_execution_service import (
     CodeExecutionResult,
     CodeExecutionService,
 )
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -127,7 +128,7 @@ async def validate_code(
     """
     from app.services.code_execution_service import CodeValidator
 
-    errors = []
+    errors: list[dict[str, str | int]] = []
 
     try:
         # Validate imports
@@ -145,14 +146,15 @@ async def validate_code(
     try:
         compile(request.code, "<string>", "exec")
     except SyntaxError as e:
-        errors.append(
-            {
-                "type": "syntax_error",
-                "message": str(e),
-                "line": e.lineno,
-                "offset": e.offset,
-            }
-        )
+        error_dict: dict[str, str | int] = {
+            "type": "syntax_error",
+            "message": str(e),
+        }
+        if e.lineno is not None:
+            error_dict["line"] = e.lineno
+        if e.offset is not None:
+            error_dict["offset"] = e.offset
+        errors.append(error_dict)
 
     return {"valid": len(errors) == 0, "errors": errors}
 
@@ -273,6 +275,7 @@ workflow_state['total'] = result""",
 # Phase 2: File-based Code Execution Endpoints
 # ==============================================================================
 
+
 @router.get("/files/list", response_model=dict)
 async def list_python_files(
     *,
@@ -294,15 +297,17 @@ async def list_python_files(
             "count": 2
         }
     """
-    from app.services.file_loader import PythonFileLoader
-    from pathlib import Path
     import os
+    from pathlib import Path
+
+    from app.services.file_loader import PythonFileLoader
 
     # TODO: Get project root from project_id when project model is available
     # For now, use a default project directory
     # Support TEST_PROJECT_ROOT for testing
-    if os.getenv("TEST_PROJECT_ROOT"):
-        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
+    test_project_root = os.getenv("TEST_PROJECT_ROOT")
+    if test_project_root:
+        project_root = Path(test_project_root)
     else:
         project_root = Path.cwd() / "user_projects" / (project_id or "default")
 
@@ -350,14 +355,16 @@ async def validate_file_path(
             "size_bytes": 1234
         }
     """
-    from app.services.file_loader import FilePathValidator
-    from pathlib import Path
     import os
+    from pathlib import Path
+
+    from app.services.file_loader import FilePathValidator
 
     # TODO: Get project root from project_id
     # Support TEST_PROJECT_ROOT for testing
-    if os.getenv("TEST_PROJECT_ROOT"):
-        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
+    test_project_root = os.getenv("TEST_PROJECT_ROOT")
+    if test_project_root:
+        project_root = Path(test_project_root)
     else:
         project_root = Path.cwd() / "user_projects" / (project_id or "default")
 
@@ -405,14 +412,16 @@ async def load_file_content(
             "cached": false
         }
     """
-    from app.services.file_loader import PythonFileLoader
-    from pathlib import Path
     import os
+    from pathlib import Path
+
+    from app.services.file_loader import PythonFileLoader
 
     # TODO: Get project root from project_id
     # Support TEST_PROJECT_ROOT for testing
-    if os.getenv("TEST_PROJECT_ROOT"):
-        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
+    test_project_root = os.getenv("TEST_PROJECT_ROOT")
+    if test_project_root:
+        project_root = Path(test_project_root)
     else:
         project_root = Path.cwd() / "user_projects" / (project_id or "default")
 
@@ -465,14 +474,16 @@ async def execute_file_code(
     Returns:
         CodeExecutionResult with execution status and result
     """
-    from app.services.file_loader import PythonFileLoader
-    from pathlib import Path
     import os
+    from pathlib import Path
+
+    from app.services.file_loader import PythonFileLoader
 
     # TODO: Get project root from project_id
     # Support TEST_PROJECT_ROOT for testing
-    if os.getenv("TEST_PROJECT_ROOT"):
-        project_root = Path(os.getenv("TEST_PROJECT_ROOT"))
+    test_project_root = os.getenv("TEST_PROJECT_ROOT")
+    if test_project_root:
+        project_root = Path(test_project_root)
     else:
         project_root = Path.cwd() / "user_projects" / (project_id or "default")
 
@@ -492,12 +503,19 @@ async def execute_file_code(
             code = wrapped_code
 
         # Execute code using existing service with import resolution
+        from app.services.code_execution_service import ExecutionContext
+
+        # Convert dict context to ExecutionContext if provided
+        exec_context = ExecutionContext(**context) if context else ExecutionContext()
+
         request = CodeExecutionRequest(
             code=code,
-            context=context or {},
+            context=exec_context,
             inputs=inputs or {},
             timeout=timeout,
-            project_root=str(project_root),  # Enable import resolution for file-based code
+            project_root=str(
+                project_root
+            ),  # Enable import resolution for file-based code
         )
 
         result = CodeExecutionService.execute_code(request)

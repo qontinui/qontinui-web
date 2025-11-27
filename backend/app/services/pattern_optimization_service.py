@@ -2,10 +2,12 @@
 
 import uuid
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, cast
 
 import numpy as np
 import structlog
+from numpy.typing import NDArray
+
 from app.utils.image_utils import ImageProcessor
 
 logger = structlog.get_logger(__name__)
@@ -33,7 +35,7 @@ class PatternData:
     screenshot_index: int
     region: dict[str, int]
     image_data: str
-    array: Optional[Any] = None  # np.ndarray when available
+    array: NDArray[np.uint8] | None = None  # np.ndarray when available
 
 
 @dataclass
@@ -50,7 +52,7 @@ class SimilarityStatistics:
 class PatternOptimizationService:
     """Handles pattern extraction, similarity analysis, and optimization."""
 
-    def __init__(self, image_processor: ImageProcessor = None):
+    def __init__(self, image_processor: ImageProcessor | None = None):
         """
         Initialize the service.
 
@@ -81,7 +83,9 @@ class PatternOptimizationService:
             )
 
         patterns = []
-        for i, (screenshot_b64, region) in enumerate(zip(screenshots, regions)):
+        for i, (screenshot_b64, region) in enumerate(
+            zip(screenshots, regions, strict=False)
+        ):
             # Decode image
             image = self.image_processor.decode_base64_to_array(screenshot_b64)
 
@@ -129,8 +133,15 @@ class PatternOptimizationService:
                     similarity_matrix[i][j] = 1.0
                 elif i < j:
                     # Calculate similarity only once for each pair
+                    # Ensure arrays are not None
+                    array_i = patterns[i].array
+                    array_j = patterns[j].array
+                    if array_i is None or array_j is None:
+                        raise ValueError(
+                            "Pattern arrays cannot be None for similarity calculation"
+                        )
                     similarity = self.image_processor.calculate_similarity(
-                        patterns[i].array, patterns[j].array
+                        array_i, array_j
                     )
                     similarity_matrix[i][j] = similarity
                     similarity_matrix[j][i] = similarity
@@ -232,11 +243,11 @@ class PatternOptimizationService:
             evaluations.append(evaluation)
 
         # Sort by performance score (TPR - FPR)
-        evaluations.sort(
-            key=lambda e: e["performance"]["truePositiveRate"]
-            - e["performance"]["falsePositiveRate"],
-            reverse=True,
-        )
+        def sort_key(e: dict[str, Any]) -> float:
+            performance = cast(dict[str, float], e["performance"])
+            return performance["truePositiveRate"] - performance["falsePositiveRate"]
+
+        evaluations.sort(key=sort_key, reverse=True)
 
         return evaluations
 

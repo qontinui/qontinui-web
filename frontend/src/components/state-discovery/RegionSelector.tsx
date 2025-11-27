@@ -148,7 +148,7 @@ const RegionSelector: React.FC<RegionSelectorProps> = ({
       const dx = pos.x - startPoint.x;
       const dy = pos.y - startPoint.y;
 
-      let newRegion = { ...currentRegion };
+      const newRegion = { ...currentRegion };
 
       switch (dragHandle) {
         case 'move':

@@ -1,27 +1,24 @@
 """FastAPI-Users configuration for authentication."""
 
 import uuid
-from typing import Optional
+from typing import cast
 
 import structlog
-from app.core.config import settings
-from app.db.session import get_async_db
-from app.models.user import User
 from fastapi import Depends, Request, Response
-from fastapi.security import HTTPBearer, OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.security.http import HTTPAuthorizationCredentials
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, exceptions
-from fastapi_users.authentication import (
-    AuthenticationBackend,
-    BearerTransport,
-    JWTStrategy,
-)
+from fastapi_users.authentication import AuthenticationBackend, JWTStrategy
 from fastapi_users.authentication.transport import (
     Transport,
     TransportLogoutNotSupportedError,
 )
+from fastapi_users.openapi import OpenAPIResponseType
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.db.session import get_async_db
+from app.models.user import User
 
 logger = structlog.get_logger(__name__)
 
@@ -42,7 +39,7 @@ class CookieOrBearerScheme(OAuth2PasswordBearer):
         super().__init__(tokenUrl=tokenUrl, auto_error=False)
         self.cookie_name = cookie_name
 
-    async def __call__(self, request: Request) -> Optional[str]:
+    async def __call__(self, request: Request) -> str | None:
         """
         Extract token from cookie or Authorization header.
 
@@ -111,6 +108,27 @@ class CookieOrBearerTransport(Transport):
         """Return logout response."""
         raise TransportLogoutNotSupportedError()
 
+    @staticmethod
+    def get_openapi_login_responses_success() -> OpenAPIResponseType:
+        """Return OpenAPI responses for successful login."""
+        return {
+            200: {
+                "description": "Successful login",
+                "content": {
+                    "application/json": {"example": {"detail": "Login successful"}}
+                },
+            }
+        }
+
+    @staticmethod
+    def get_openapi_logout_responses_success() -> OpenAPIResponseType:
+        """Return OpenAPI responses for successful logout."""
+        return {
+            200: {
+                "description": "Successful logout",
+            }
+        }
+
 
 # ===== USER DATABASE =====
 
@@ -126,8 +144,8 @@ async def get_user_db(session: AsyncSession = Depends(get_async_db)):
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     """User manager for handling user registration, password reset, etc."""
 
-    reset_password_token_secret = settings.RESET_PASSWORD_SECRET_KEY
-    verification_token_secret = settings.VERIFICATION_SECRET_KEY
+    reset_password_token_secret: str = settings.RESET_PASSWORD_SECRET_KEY or ""
+    verification_token_secret: str = settings.VERIFICATION_SECRET_KEY or ""
 
     async def on_after_register(self, user: User, request: Request | None = None):
         """Called after a user successfully registers."""
@@ -136,8 +154,10 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         # Create personal organization for the new user
         from app.services.organization_service import organization_service
 
+        # Cast user_db to SQLAlchemyUserDatabase to access session attribute
+        user_db = cast(SQLAlchemyUserDatabase, self.user_db)
         personal_org = await organization_service.create_personal_organization(
-            db=self.user_db.session,
+            db=user_db.session,
             user=user,
         )
 
@@ -209,9 +229,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         else:
             logger.error("verification_email_enqueue_failed", email=user.email)
 
-    async def authenticate(
-        self, credentials: OAuth2PasswordRequestForm
-    ) -> Optional[User]:
+    async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
         """
         Authenticate and return a user following a username/email and password.
 
@@ -221,13 +239,16 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         :param credentials: The user credentials (username field can be email or username).
         """
         # First try to get user by email
+        user: User | None
         try:
             user = await self.get_by_email(credentials.username)
         except exceptions.UserNotExists:
             # Try to get user by username instead
             from sqlalchemy import select
 
-            result = await self.user_db.session.execute(
+            # Cast user_db to SQLAlchemyUserDatabase to access session attribute
+            user_db = cast(SQLAlchemyUserDatabase, self.user_db)
+            result = await user_db.session.execute(
                 select(User).filter(User.username == credentials.username)
             )
             user = result.scalar_one_or_none()
@@ -310,7 +331,7 @@ class DebugJWTStrategy(JWTStrategy):
 def get_jwt_strategy() -> JWTStrategy:
     """Get JWT authentication strategy with debug logging."""
     return DebugJWTStrategy(
-        secret=settings.ACCESS_SECRET_KEY,
+        secret=settings.ACCESS_SECRET_KEY or "",
         lifetime_seconds=settings.ACCESS_TOKEN_EXPIRE_SECONDS,
     )
 

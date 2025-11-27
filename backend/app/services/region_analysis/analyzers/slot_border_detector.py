@@ -6,12 +6,22 @@ morphological operations and edge detection.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from io import BytesIO
+from typing import Any
 
 import cv2
 import numpy as np
+from PIL import Image
 
-from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
+from ..base import (
+    BaseRegionAnalyzer,
+    BoundingBox,
+    DetectedRegion,
+    RegionAnalysisInput,
+    RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +40,18 @@ class SlotBorderDetector(BaseRegionAnalyzer):
     """
 
     @property
+    def analysis_type(self) -> RegionAnalysisType:
+        return RegionAnalysisType.EDGE_DETECTION
+
+    @property
     def name(self) -> str:
         return "slot_border_detector"
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    @property
+    def supported_region_types(self) -> list[RegionType]:
+        return [RegionType.INVENTORY_GRID]
+
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "canny_low": 30,
             "canny_high": 100,
@@ -46,9 +64,40 @@ class SlotBorderDetector(BaseRegionAnalyzer):
             "min_grid_cols": 2,
         }
 
-    def analyze(self, image: np.ndarray, **kwargs) -> List[DetectedRegion]:
+    async def analyze(self, input_data: RegionAnalysisInput) -> RegionAnalysisResult:
         """Detect inventory grids by finding slot borders"""
-        params = {**self.get_default_parameters(), **kwargs}
+        all_regions = []
+
+        # Process each screenshot
+        for idx, screenshot_bytes in enumerate(input_data.screenshot_data):
+            # Convert bytes to numpy array
+            image = Image.open(BytesIO(screenshot_bytes))
+            image_np = np.array(image)
+
+            # Detect regions in this screenshot
+            regions = self._analyze_image(image_np, idx, input_data.parameters)
+            all_regions.extend(regions)
+
+        # Calculate overall confidence
+        overall_confidence = (
+            sum(r.confidence for r in all_regions) / len(all_regions)
+            if all_regions
+            else 0.0
+        )
+
+        return RegionAnalysisResult(
+            analyzer_type=self.analysis_type,
+            analyzer_name=self.name,
+            regions=all_regions,
+            confidence=overall_confidence,
+            metadata={"total_grids_detected": len(all_regions)},
+        )
+
+    def _analyze_image(
+        self, image: np.ndarray, screenshot_index: int, params: dict[str, Any]
+    ) -> list[DetectedRegion]:
+        """Detect inventory grids by finding slot borders"""
+        params = {**self.get_default_parameters(), **params}
 
         # Convert to grayscale
         if len(image.shape) == 3:
@@ -69,14 +118,14 @@ class SlotBorderDetector(BaseRegionAnalyzer):
         grid_regions = []
         for group in size_groups:
             if len(group) >= params["min_grid_rows"] * params["min_grid_cols"]:
-                grids = self._extract_grid_pattern(group, params)
+                grids = self._extract_grid_pattern(group, params, screenshot_index)
                 grid_regions.extend(grids)
 
         return grid_regions
 
     def _detect_borders(
-        self, gray: np.ndarray, params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, gray: np.ndarray, params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """
         Detect rectangular borders in the image
 
@@ -96,10 +145,10 @@ class SlotBorderDetector(BaseRegionAnalyzer):
             edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
         )
 
-        borders = []
+        borders: list[dict[str, Any]] = []
 
         if hierarchy is None:
-            return borders
+            return borders  # type: ignore[unreachable]
 
         hierarchy = hierarchy[0]
 
@@ -157,8 +206,8 @@ class SlotBorderDetector(BaseRegionAnalyzer):
         return borders
 
     def _group_by_size(
-        self, borders: List[Dict[str, Any]], params: Dict[str, Any]
-    ) -> List[List[Dict[str, Any]]]:
+        self, borders: list[dict[str, Any]], params: dict[str, Any]
+    ) -> list[list[dict[str, Any]]]:
         """Group borders by similar size"""
         if not borders:
             return []
@@ -201,8 +250,11 @@ class SlotBorderDetector(BaseRegionAnalyzer):
         return groups
 
     def _extract_grid_pattern(
-        self, borders: List[Dict[str, Any]], params: Dict[str, Any]
-    ) -> List[DetectedRegion]:
+        self,
+        borders: list[dict[str, Any]],
+        params: dict[str, Any],
+        screenshot_index: int,
+    ) -> list[DetectedRegion]:
         """Extract grid pattern from grouped borders"""
         if len(borders) < params["min_grid_rows"] * params["min_grid_cols"]:
             return []
@@ -307,6 +359,7 @@ class SlotBorderDetector(BaseRegionAnalyzer):
             confidence=confidence,
             region_type=RegionType.INVENTORY_GRID,
             label="Inventory Grid",
+            screenshot_index=screenshot_index,
             metadata={
                 "grid_rows": rows,
                 "grid_cols": cols,

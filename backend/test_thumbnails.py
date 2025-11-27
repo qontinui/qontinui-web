@@ -7,7 +7,6 @@ the ImageProcessingService works correctly.
 """
 
 import io
-from pathlib import Path
 
 from PIL import Image
 
@@ -73,14 +72,19 @@ def test_thumbnail_generation():
         print(f"      Actual size: {thumbnail_img.width}x{thumbnail_img.height}")
         print(f"      File size: {len(thumbnail_data):,} bytes")
         print(f"      Format: {thumbnail_img.format}")
-        print(f"      Compression: {len(thumbnail_data) / len(test_image) * 100:.1f}% of original")
+        print(
+            f"      Compression: {len(thumbnail_data) / len(test_image) * 100:.1f}% of original"
+        )
 
         # Verify size constraints
-        if thumbnail_img.width > expected_max_size[0] or thumbnail_img.height > expected_max_size[1]:
-            print(f"      ERROR: Thumbnail exceeds max dimensions!")
+        if (
+            thumbnail_img.width > expected_max_size[0]
+            or thumbnail_img.height > expected_max_size[1]
+        ):
+            print("      ERROR: Thumbnail exceeds max dimensions!")
             return False
 
-        print(f"      ✓ Size within bounds")
+        print("      ✓ Size within bounds")
 
     # Test optimize_image
     print("\n4. Testing image optimization...")
@@ -88,22 +92,22 @@ def test_thumbnail_generation():
         optimized_webp, content_type = ImageProcessingService.optimize_image(
             test_image, target_format="webp", quality=85
         )
-        print(f"   WebP optimization:")
+        print("   WebP optimization:")
         print(f"      Original: {len(test_image):,} bytes")
         print(f"      Optimized: {len(optimized_webp):,} bytes")
         print(f"      Compression: {len(optimized_webp) / len(test_image) * 100:.1f}%")
         print(f"      Content-Type: {content_type}")
-        print(f"      ✓ WebP optimization successful")
+        print("      ✓ WebP optimization successful")
 
         optimized_jpeg, content_type = ImageProcessingService.optimize_image(
             test_image, target_format="jpeg", quality=85
         )
-        print(f"\n   JPEG optimization:")
+        print("\n   JPEG optimization:")
         print(f"      Original: {len(test_image):,} bytes")
         print(f"      Optimized: {len(optimized_jpeg):,} bytes")
         print(f"      Compression: {len(optimized_jpeg) / len(test_image) * 100:.1f}%")
         print(f"      Content-Type: {content_type}")
-        print(f"      ✓ JPEG optimization successful")
+        print("      ✓ JPEG optimization successful")
 
     except Exception as e:
         print(f"   ERROR: {e}")
@@ -119,7 +123,7 @@ def test_thumbnail_generation():
         rgba_data = rgba_output.getvalue()
 
         thumbnails_rgba = ImageProcessingService.generate_thumbnails(rgba_data)
-        print(f"   ✓ RGBA conversion successful")
+        print("   ✓ RGBA conversion successful")
         print(f"   Generated {len(thumbnails_rgba)} thumbnails from RGBA image")
     except Exception as e:
         print(f"   ERROR: {e}")

@@ -10,7 +10,7 @@ import { Search, Filter, ChevronRight, Mail, Calendar, Activity, FolderOpen, Tra
 import { useAdminUsers, type AdminUserData } from "@/hooks/use-admin"
 import { toast } from "sonner"
 import { ApiConfig } from "@/services/api-config"
-import { authService } from "@/services/service-factory"
+import { httpClient } from "@/services/service-factory"
 
 export default function UsersTab() {
   const { data: users = [], isLoading: loading, error, refetch } = useAdminUsers({ limit: 1000 })
@@ -27,33 +27,11 @@ export default function UsersTab() {
 
     setIsDeleting(true)
     try {
-      const accessToken = authService.tokenManager.getAccessToken()
-      console.log('[UsersTab] Delete user - Access token:', accessToken ? 'Present' : 'Missing')
-      console.log('[UsersTab] Access token preview:', accessToken?.substring(0, 20) + '...')
-
-      if (!accessToken) {
-        console.error('[UsersTab] No access token available!')
-        throw new Error('Not authenticated')
-      }
-
       const url = `${ApiConfig.API_BASE_URL}/api/v1/users/${userId}`
-      console.log('[UsersTab] DELETE request to:', url)
-      console.log('[UsersTab] Headers:', {
-        'Authorization': `Bearer ${accessToken.substring(0, 20)}...`,
-        'Content-Type': 'application/json',
-      })
 
-      const response = await fetch(url, {
+      const response = await httpClient.fetch(url, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
       })
-
-      console.log('[UsersTab] Response status:', response.status)
-      console.log('[UsersTab] Response ok:', response.ok)
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'No error text')

@@ -9,7 +9,8 @@ Handles version snapshot management for projects, including:
 - Managing version retention
 """
 
-from typing import Any
+from datetime import datetime
+from typing import Any, cast
 from uuid import UUID
 
 import structlog
@@ -21,12 +22,10 @@ from app.crud.version import (
     delete_old_versions,
     get_latest_version,
     get_version_by_number,
-    get_version_count,
     get_versions_by_project,
 )
 from app.models.project import Project
 from app.models.project_version import ProjectVersion
-from app.schemas.project import ProjectUpdate
 from app.schemas.version import (
     ProjectVersionCreate,
     ProjectVersionListItem,
@@ -71,14 +70,14 @@ class VersionHistoryService:
         )
 
         # Get current project state
-        project = await get_project(db, str(project_id))
+        project = await get_project(db, project_id)
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
         # Get next version number
         latest_version = await get_latest_version(db, project_id)
-        next_version_number = (
-            latest_version.version_number + 1 if latest_version else 1
+        next_version_number: int = (
+            cast(int, latest_version.version_number) + 1 if latest_version else 1
         )
 
         # Create snapshot with full project state
@@ -88,9 +87,15 @@ class VersionHistoryService:
             "configuration": project.configuration,
             "version": project.version,
             "owner_id": str(project.owner_id),
-            "organization_id": str(project.organization_id) if project.organization_id else None,
-            "created_at": project.created_at.isoformat() if project.created_at else None,
-            "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+            "organization_id": (
+                str(project.organization_id) if project.organization_id else None
+            ),
+            "created_at": (
+                project.created_at.isoformat() if project.created_at else None
+            ),
+            "updated_at": (
+                project.updated_at.isoformat() if project.updated_at else None
+            ),
         }
 
         version_data = ProjectVersionCreate(
@@ -142,9 +147,7 @@ class VersionHistoryService:
         versions = await get_versions_by_project(db, project_id, skip, limit)
 
         # Convert to lightweight list items
-        return [
-            ProjectVersionListItem.model_validate(version) for version in versions
-        ]
+        return [ProjectVersionListItem.model_validate(version) for version in versions]
 
     @staticmethod
     async def get_version(
@@ -210,7 +213,7 @@ class VersionHistoryService:
             )
 
         # Get current project
-        project = await get_project(db, str(project_id))
+        project = await get_project(db, project_id)
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
@@ -225,9 +228,8 @@ class VersionHistoryService:
         await db.refresh(project)
 
         # Create new version snapshot with restored state
-        restore_comment = (
-            f"Restored from version {version_number}" +
-            (f": {comment}" if comment else "")
+        restore_comment = f"Restored from version {version_number}" + (
+            f": {comment}" if comment else ""
         )
         new_version = await VersionHistoryService.create_version_snapshot(
             db, project_id, user_id, restore_comment
@@ -281,7 +283,7 @@ class VersionHistoryService:
 
         # Compare snapshots
         changes = VersionHistoryService._compute_diff(
-            v_from.snapshot, v_to.snapshot
+            cast(dict[str, Any], v_from.snapshot), cast(dict[str, Any], v_to.snapshot)
         )
 
         # Generate summary
@@ -290,8 +292,8 @@ class VersionHistoryService:
         return VersionComparisonResponse(
             version_from=version_from,
             version_to=version_to,
-            created_at_from=v_from.created_at,
-            created_at_to=v_to.created_at,
+            created_at_from=cast(datetime, v_from.created_at),
+            created_at_to=cast(datetime, v_to.created_at),
             changes=changes,
             summary=summary,
         )
@@ -305,7 +307,7 @@ class VersionHistoryService:
 
         Returns a dict with keys: 'added', 'removed', 'modified'
         """
-        diff = {"added": {}, "removed": {}, "modified": {}}
+        diff: dict[str, Any] = {"added": {}, "removed": {}, "modified": {}}
 
         # Find added and modified keys
         for key in snapshot_to:

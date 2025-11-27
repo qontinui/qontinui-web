@@ -1,8 +1,9 @@
 import uuid
 
-from app.schemas.base import IsoDatetime
 from fastapi_users import schemas
 from pydantic import BaseModel, ConfigDict, EmailStr
+
+from app.schemas.base import IsoDatetime
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):

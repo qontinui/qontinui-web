@@ -4,7 +4,6 @@ This is called from the Playwright global-setup.
 """
 
 import asyncio
-import sys
 
 # Import all models first to ensure they're registered with SQLAlchemy
 from app.db.base_class import Base  # noqa
@@ -13,7 +12,6 @@ from tests.utils.seed_snapshot_data import create_test_snapshots
 
 # Ensure we can import from the backend app
 # sys.path is already set by the calling script
-
 
 
 async def seed():

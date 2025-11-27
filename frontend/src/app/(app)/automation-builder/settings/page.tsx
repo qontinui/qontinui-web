@@ -33,7 +33,6 @@ import {
   Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { RequireProject } from '@/components/require-project';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState({

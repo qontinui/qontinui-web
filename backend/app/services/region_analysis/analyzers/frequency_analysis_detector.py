@@ -6,14 +6,22 @@ extracting grid spacing from frequency domain peaks.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
-from scipy.fft import fft2, fftshift, ifft2, ifftshift
-from scipy.ndimage import maximum_filter
+from scipy.fft import fft2, fftshift  # type: ignore[import-untyped]
+from scipy.ndimage import maximum_filter  # type: ignore[import-untyped]
 
-from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
+from ..base import (
+    BaseRegionAnalyzer,
+    BoundingBox,
+    DetectedRegion,
+    RegionAnalysisInput,
+    RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +42,11 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
     def name(self) -> str:
         return "frequency_analysis_detector"
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    @property
+    def analysis_type(self) -> RegionAnalysisType:
+        return RegionAnalysisType.PATTERN_ANALYSIS
+
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_cell_size": 24,
             "max_cell_size": 150,
@@ -45,10 +57,52 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
             "use_edges": True,
         }
 
-    def analyze(self, image: np.ndarray, **kwargs) -> List[DetectedRegion]:
+    async def analyze(self, input_data: RegionAnalysisInput) -> RegionAnalysisResult:
         """Detect inventory grids using frequency analysis"""
-        params = {**self.get_default_parameters(), **kwargs}
+        params = {**self.get_default_parameters(), **input_data.parameters}
 
+        # Process the first screenshot
+        if not input_data.screenshot_data:
+            return RegionAnalysisResult(
+                analyzer_type=self.analysis_type,
+                analyzer_name=self.name,
+                regions=[],
+                confidence=0.0,
+                metadata={"error": "No screenshot data provided"},
+            )
+
+        # Decode image from bytes
+        image_bytes = input_data.screenshot_data[0]
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        image: np.ndarray | None = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if image is None:
+            return RegionAnalysisResult(
+                analyzer_type=self.analysis_type,
+                analyzer_name=self.name,
+                regions=[],
+                confidence=0.0,
+                metadata={"error": "Failed to decode image"},
+            )
+
+        # Detect regions using the helper method
+        regions = self._analyze_image(image, params)
+
+        # Calculate overall confidence
+        confidence = max([r.confidence for r in regions], default=0.0)
+
+        return RegionAnalysisResult(
+            analyzer_type=self.analysis_type,
+            analyzer_name=self.name,
+            regions=regions,
+            confidence=confidence,
+            metadata={"detector": "frequency_analysis", "method": "fft"},
+        )
+
+    def _analyze_image(
+        self, image: np.ndarray, params: dict[str, Any]
+    ) -> list[DetectedRegion]:
+        """Helper method to detect inventory grids using frequency analysis"""
         # Convert to grayscale
         if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -74,8 +128,8 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
         return regions
 
     def _frequency_analysis(
-        self, image: np.ndarray, params: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        self, image: np.ndarray, params: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """
         Perform 2D FFT to detect periodic patterns
 
@@ -172,9 +226,9 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
         self,
         edge_img: np.ndarray,
         gray_img: np.ndarray,
-        grid_params: Dict[str, Any],
-        params: Dict[str, Any],
-    ) -> List[DetectedRegion]:
+        grid_params: dict[str, Any],
+        params: dict[str, Any],
+    ) -> list[DetectedRegion]:
         """Locate actual grid regions using detected spacing"""
         spacing_x = grid_params["spacing_x"]
         spacing_y = grid_params["spacing_y"]
@@ -198,7 +252,7 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
             threshold = 0.3
 
             locations = np.where(result >= threshold)
-            matches = list(zip(locations[1], locations[0]))  # (x, y)
+            matches = list(zip(locations[1], locations[0], strict=False))  # (x, y)
 
             if len(matches) < params["min_grid_rows"] * params["min_grid_cols"]:
                 return []
@@ -214,12 +268,12 @@ class FrequencyAnalysisDetector(BaseRegionAnalyzer):
 
     def _extract_grid_from_matches(
         self,
-        matches: List[Tuple[int, int]],
+        matches: list[tuple[int, int]],
         spacing_x: int,
         spacing_y: int,
-        img_shape: Tuple[int, int],
-        params: Dict[str, Any],
-    ) -> List[DetectedRegion]:
+        img_shape: tuple[int, int],
+        params: dict[str, Any],
+    ) -> list[DetectedRegion]:
         """Extract grid structure from template matches"""
         if len(matches) < params["min_grid_rows"] * params["min_grid_cols"]:
             return []

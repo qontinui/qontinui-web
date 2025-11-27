@@ -5,7 +5,6 @@ Pydantic models for file upload, management, and validation.
 """
 
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, Field, validator
 
@@ -114,8 +113,8 @@ class FileInfo(BaseModel):
     size_bytes: int = Field(..., description="File size in bytes")
     extension: str = Field(..., description="File extension (e.g., '.py')")
     is_directory: bool = Field(default=False, description="True if this is a directory")
-    created_at: Optional[datetime] = Field(None, description="Creation timestamp")
-    modified_at: Optional[datetime] = Field(
+    created_at: datetime | None = Field(None, description="Creation timestamp")
+    modified_at: datetime | None = Field(
         None, description="Last modification timestamp"
     )
 
@@ -123,7 +122,7 @@ class FileInfo(BaseModel):
 class FileListResponse(BaseModel):
     """Response for file listing."""
 
-    files: List[FileInfo] = Field(..., description="List of files")
+    files: list[FileInfo] = Field(..., description="List of files")
     total_count: int = Field(..., description="Total number of files")
     total_size_bytes: int = Field(..., description="Total size of all files in bytes")
 
@@ -135,7 +134,7 @@ class FileContentResponse(BaseModel):
     content: str = Field(..., description="File content")
     size_bytes: int = Field(..., description="File size in bytes")
     extension: str = Field(..., description="File extension")
-    modified_at: Optional[datetime] = Field(
+    modified_at: datetime | None = Field(
         None, description="Last modification timestamp"
     )
 

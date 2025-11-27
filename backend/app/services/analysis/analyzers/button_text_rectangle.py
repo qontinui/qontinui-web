@@ -12,14 +12,14 @@ High precision strategy - only reports high-confidence button detections.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
 from PIL import Image
 
 try:
-    import pytesseract
+    import pytesseract  # type: ignore[import-untyped]
 
     PYTESSERACT_AVAILABLE = True
 except ImportError:
@@ -111,7 +111,7 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Text constraints
             "min_text_length": 1,
@@ -159,7 +159,7 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
         # Analyze each screenshot
         all_elements = []
         for screenshot_idx, (img_gray, img_color) in enumerate(
-            zip(images_gray, images_color)
+            zip(images_gray, images_color, strict=False)
         ):
             elements = await self._analyze_screenshot(
                 img_gray, img_color, screenshot_idx, params
@@ -183,7 +183,7 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale"""
         images = []
         for data in screenshot_data:
@@ -191,7 +191,7 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
             images.append(np.array(img, dtype=np.uint8))
         return images
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color (BGR for OpenCV)"""
         images = []
         for data in screenshot_data:
@@ -206,8 +206,8 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
         img_gray: np.ndarray,
         img_color: np.ndarray,
         screenshot_idx: int,
-        params: Dict[str, Any],
-    ) -> List[DetectedElement]:
+        params: dict[str, Any],
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot for text-in-rectangle buttons"""
         elements = []
 
@@ -287,7 +287,7 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
 
         return elements
 
-    def _is_button_like_text(self, text: str, params: Dict[str, Any]) -> bool:
+    def _is_button_like_text(self, text: str, params: dict[str, Any]) -> bool:
         """
         Check if text is typical of button labels
 
@@ -318,8 +318,8 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
         text_y: int,
         text_w: int,
         text_h: int,
-        params: Dict[str, Any],
-    ) -> Tuple[BoundingBox | None, Dict[str, int]]:
+        params: dict[str, Any],
+    ) -> tuple[BoundingBox | None, dict[str, int]]:
         """
         Find the button rectangle enclosing the text
 
@@ -413,7 +413,7 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
         return best_bbox, best_padding
 
     def _evaluate_padding(
-        self, padding_info: Dict[str, int], params: Dict[str, Any]
+        self, padding_info: dict[str, int], params: dict[str, Any]
     ) -> float:
         """
         Evaluate how consistent and appropriate the padding is
@@ -461,8 +461,8 @@ class ButtonTextRectangleDetector(BaseAnalyzer):
         text: str,
         ocr_conf: float,
         padding_score: float,
-        padding_info: Dict[str, int],
-        params: Dict[str, Any],
+        padding_info: dict[str, int],
+        params: dict[str, Any],
     ) -> float:
         """
         Calculate confidence score for button detection

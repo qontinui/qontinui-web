@@ -33,7 +33,7 @@ class BackgroundRemovalService:
         """
         try:
             # Import qontinui background removal module
-            from discovery.background_removal import (
+            from discovery.background_removal import (  # type: ignore[import-not-found]
                 BackgroundRemovalConfig,
                 remove_backgrounds_from_base64,
             )

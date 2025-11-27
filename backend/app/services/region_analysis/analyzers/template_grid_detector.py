@@ -6,13 +6,22 @@ to find all similar cells, then extracts the grid structure.
 """
 
 import logging
-from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from io import BytesIO
+from typing import Any
 
 import cv2
 import numpy as np
+from PIL import Image
 
-from ..base import BaseRegionAnalyzer, BoundingBox, DetectedRegion, RegionType
+from ..base import (
+    BaseRegionAnalyzer,
+    BoundingBox,
+    DetectedRegion,
+    RegionAnalysisInput,
+    RegionAnalysisResult,
+    RegionAnalysisType,
+    RegionType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +40,18 @@ class TemplateGridDetector(BaseRegionAnalyzer):
     """
 
     @property
+    def analysis_type(self) -> RegionAnalysisType:
+        return RegionAnalysisType.TEMPLATE_MATCH
+
+    @property
     def name(self) -> str:
         return "template_grid_detector"
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    @property
+    def supported_region_types(self) -> list[RegionType]:
+        return [RegionType.INVENTORY_GRID]
+
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_template_size": 24,
             "max_template_size": 120,
@@ -46,9 +63,40 @@ class TemplateGridDetector(BaseRegionAnalyzer):
             "edge_based": True,
         }
 
-    def analyze(self, image: np.ndarray, **kwargs) -> List[DetectedRegion]:
+    async def analyze(self, input_data: RegionAnalysisInput) -> RegionAnalysisResult:
         """Detect inventory grids using template matching"""
-        params = {**self.get_default_parameters(), **kwargs}
+        all_regions = []
+
+        # Process each screenshot
+        for idx, screenshot_bytes in enumerate(input_data.screenshot_data):
+            # Convert bytes to numpy array
+            image = Image.open(BytesIO(screenshot_bytes))
+            image_np = np.array(image)
+
+            # Detect regions in this screenshot
+            regions = self._analyze_image(image_np, idx, input_data.parameters)
+            all_regions.extend(regions)
+
+        # Calculate overall confidence
+        overall_confidence = (
+            sum(r.confidence for r in all_regions) / len(all_regions)
+            if all_regions
+            else 0.0
+        )
+
+        return RegionAnalysisResult(
+            analyzer_type=self.analysis_type,
+            analyzer_name=self.name,
+            regions=all_regions,
+            confidence=overall_confidence,
+            metadata={"total_grids_detected": len(all_regions)},
+        )
+
+    def _analyze_image(
+        self, image: np.ndarray, screenshot_index: int, params: dict[str, Any]
+    ) -> list[DetectedRegion]:
+        """Detect inventory grids using template matching"""
+        params = {**self.get_default_parameters(), **params}
 
         # Convert to grayscale
         if len(image.shape) == 3:
@@ -68,7 +116,7 @@ class TemplateGridDetector(BaseRegionAnalyzer):
 
         for template_info in templates[:3]:  # Try top 3 templates
             regions = self._match_template_and_extract_grid(
-                gray, image, template_info, params
+                gray, image, template_info, params, screenshot_index
             )
 
             if regions:
@@ -84,8 +132,8 @@ class TemplateGridDetector(BaseRegionAnalyzer):
         return best_regions
 
     def _extract_candidate_templates(
-        self, gray: np.ndarray, color_img: np.ndarray, params: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+        self, gray: np.ndarray, color_img: np.ndarray, params: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """
         Extract candidate cell templates from the image
 
@@ -153,9 +201,10 @@ class TemplateGridDetector(BaseRegionAnalyzer):
         self,
         gray: np.ndarray,
         color_img: np.ndarray,
-        template_info: Dict[str, Any],
-        params: Dict[str, Any],
-    ) -> List[DetectedRegion]:
+        template_info: dict[str, Any],
+        params: dict[str, Any],
+        screenshot_index: int,
+    ) -> list[DetectedRegion]:
         """Match template and extract grid structure"""
         template = template_info["template"]
         t_h, t_w = template.shape[:2]
@@ -165,7 +214,7 @@ class TemplateGridDetector(BaseRegionAnalyzer):
 
         # Find matches above threshold
         locations = np.where(result >= params["match_threshold"])
-        matches = list(zip(locations[1], locations[0]))  # (x, y)
+        matches = list(zip(locations[1], locations[0], strict=False))  # (x, y)
 
         if len(matches) < params["min_grid_rows"] * params["min_grid_cols"]:
             return []
@@ -179,16 +228,18 @@ class TemplateGridDetector(BaseRegionAnalyzer):
             return []
 
         # Extract grid structure from matches
-        return self._extract_grid_from_matches(matches, t_w, t_h, gray.shape, params)
+        return self._extract_grid_from_matches(
+            matches, t_w, t_h, gray.shape, params, screenshot_index
+        )
 
     def _non_max_suppression(
         self,
-        matches: List[Tuple[int, int]],
+        matches: list[tuple[int, int]],
         width: int,
         height: int,
         scores: np.ndarray,
         threshold: float,
-    ) -> List[Tuple[int, int]]:
+    ) -> list[tuple[int, int]]:
         """Remove overlapping matches, keeping only the best ones"""
         if not matches:
             return []
@@ -197,7 +248,7 @@ class TemplateGridDetector(BaseRegionAnalyzer):
         match_scores = [(x, y, scores[y, x]) for x, y in matches]
         match_scores.sort(key=lambda x: x[2], reverse=True)
 
-        kept_matches = []
+        kept_matches: list[tuple[int, int]] = []
 
         for x, y, score in match_scores:
             # Check if this match overlaps with any kept match
@@ -215,12 +266,13 @@ class TemplateGridDetector(BaseRegionAnalyzer):
 
     def _extract_grid_from_matches(
         self,
-        matches: List[Tuple[int, int]],
+        matches: list[tuple[int, int]],
         cell_width: int,
         cell_height: int,
-        img_shape: Tuple[int, int],
-        params: Dict[str, Any],
-    ) -> List[DetectedRegion]:
+        img_shape: tuple[int, int],
+        params: dict[str, Any],
+        screenshot_index: int,
+    ) -> list[DetectedRegion]:
         """Extract grid structure from template matches"""
         if len(matches) < params["min_grid_rows"] * params["min_grid_cols"]:
             return []
@@ -317,6 +369,7 @@ class TemplateGridDetector(BaseRegionAnalyzer):
             confidence=confidence,
             region_type=RegionType.INVENTORY_GRID,
             label="Inventory Grid",
+            screenshot_index=screenshot_index,
             metadata={
                 "grid_rows": rows,
                 "grid_cols": cols,

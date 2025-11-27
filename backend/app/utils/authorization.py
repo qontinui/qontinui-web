@@ -1,8 +1,9 @@
 """Authorization utilities for access control."""
 
+from fastapi import HTTPException, status
+
 from app.models.project import Project
 from app.models.user import User
-from fastapi import HTTPException, status
 
 
 def verify_project_access(project: Project, user: User, action: str = "access") -> None:
@@ -35,7 +36,7 @@ def is_project_owner(project: Project, user: User) -> bool:
     Returns:
         True if user owns the project or is a superuser
     """
-    return project.owner_id == user.id or user.is_superuser
+    return project.owner_id == user.id or user.is_superuser  # type: ignore[return-value]
 
 
 def verify_superuser(user: User, action: str = "perform this action") -> None:

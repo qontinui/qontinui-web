@@ -11,14 +11,13 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from app.models.workflow_variable import (
-    VariableHistory,
-    VariableScope,
-    WorkflowVariable,
-)
-from app.schemas.variable import VariableCreate, VariableUpdate
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.workflow_variable import VariableHistory
+from app.models.workflow_variable import VariableScope as ModelVariableScope
+from app.models.workflow_variable import WorkflowVariable
+from app.schemas.variable import VariableCreate, VariableScope, VariableUpdate
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +46,13 @@ async def create_variable(
     if variable_data.scope == VariableScope.WORKFLOW and workflow_id is None:
         raise ValueError("workflow_id is required for WORKFLOW scope variables")
 
+    # Convert schema enum to model enum
+    model_scope = (
+        ModelVariableScope.WORKFLOW
+        if variable_data.scope == VariableScope.WORKFLOW
+        else ModelVariableScope.GLOBAL
+    )
+
     db_variable = WorkflowVariable(
         project_id=project_id,
         workflow_id=(
@@ -54,7 +60,7 @@ async def create_variable(
         ),
         name=variable_data.name,
         value=variable_data.value,
-        scope=variable_data.scope,
+        scope=model_scope,
         description=variable_data.description,
     )
 
@@ -98,7 +104,7 @@ async def get_variable(
             and_(
                 WorkflowVariable.project_id == project_id,
                 WorkflowVariable.name == name,
-                WorkflowVariable.scope == VariableScope.GLOBAL,
+                WorkflowVariable.scope == ModelVariableScope.GLOBAL,
             )
         )
     else:
@@ -108,7 +114,7 @@ async def get_variable(
                 WorkflowVariable.project_id == project_id,
                 WorkflowVariable.workflow_id == workflow_id,
                 WorkflowVariable.name == name,
-                WorkflowVariable.scope == VariableScope.WORKFLOW,
+                WorkflowVariable.scope == ModelVariableScope.WORKFLOW,
             )
         )
 
@@ -160,7 +166,7 @@ async def list_variables(
         base_query = select(WorkflowVariable).where(
             and_(
                 WorkflowVariable.project_id == project_id,
-                WorkflowVariable.scope == VariableScope.GLOBAL,
+                WorkflowVariable.scope == ModelVariableScope.GLOBAL,
             )
         )
     else:
@@ -169,7 +175,7 @@ async def list_variables(
             and_(
                 WorkflowVariable.project_id == project_id,
                 WorkflowVariable.workflow_id == workflow_id,
-                WorkflowVariable.scope == VariableScope.WORKFLOW,
+                WorkflowVariable.scope == ModelVariableScope.WORKFLOW,
             )
         )
 
@@ -397,10 +403,10 @@ async def get_run_variables_snapshot(
         and_(
             WorkflowVariable.project_id == project_id,
             (
-                (WorkflowVariable.scope == VariableScope.GLOBAL)
+                (WorkflowVariable.scope == ModelVariableScope.GLOBAL)
                 | (
                     and_(
-                        WorkflowVariable.scope == VariableScope.WORKFLOW,
+                        WorkflowVariable.scope == ModelVariableScope.WORKFLOW,
                         WorkflowVariable.workflow_id == workflow_id,
                     )
                 )

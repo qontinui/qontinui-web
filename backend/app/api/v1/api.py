@@ -1,3 +1,5 @@
+from fastapi import APIRouter
+
 from app.api.v1.endpoints import (
     admin,
     admin_ws,
@@ -5,7 +7,7 @@ from app.api.v1.endpoints import (
     analytics,
     annotations,
     audit_logs,
-    auth,
+    auth_endpoints,
     automation,
     automation_ws,
     background_removal,
@@ -42,13 +44,12 @@ from app.api.v1.endpoints import (
     versions,
     videos,
 )
-from fastapi import APIRouter
 
 api_router = APIRouter()
 
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(public.router, prefix="/public", tags=["public"])
-api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(auth_endpoints.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(

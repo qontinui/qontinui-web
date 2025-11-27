@@ -9,7 +9,7 @@ Accuracy: 80-90% for standard close buttons
 """
 
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -38,14 +38,14 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         return "window_close_button_detector"
 
     @property
-    def supported_region_types(self) -> List[RegionType]:
+    def supported_region_types(self) -> list[RegionType]:
         return [RegionType.CLOSE_BUTTON]
 
     @property
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize Window Close Button detector.
 
@@ -64,7 +64,7 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         self.search_right_bias = params["search_right_bias"]
         self.template_match_threshold = params["template_match_threshold"]
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_button_size": 16,
             "max_button_size": 48,
@@ -115,7 +115,7 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
 
     def _detect_close_buttons(
         self, gray: np.ndarray, screenshot_index: int
-    ) -> List[DetectedRegion]:
+    ) -> list[DetectedRegion]:
         """Detect close buttons in an image."""
         detected_buttons = []
 
@@ -165,8 +165,8 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         thickness = max(1, size // 8)
 
         # Draw X
-        cv2.line(template, (0, 0), (size - 1, size - 1), 255, thickness)
-        cv2.line(template, (size - 1, 0), (0, size - 1), 255, thickness)
+        cv2.line(template, (0, 0), (size - 1, size - 1), (255,), thickness)
+        cv2.line(template, (size - 1, 0), (0, size - 1), (255,), thickness)
 
         return template
 
@@ -177,7 +177,7 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         size: int,
         offset_x: int,
         offset_y: int,
-    ) -> List[Tuple]:
+    ) -> list[tuple[int, int, int, int, float, str]]:
         """Perform template matching."""
         if (
             search_region.shape[0] < template.shape[0]
@@ -191,7 +191,7 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         locations = np.where(result >= self.template_match_threshold)
 
         buttons = []
-        for pt in zip(*locations[::-1]):
+        for pt in zip(*locations[::-1], strict=False):
             x = pt[0] + offset_x
             y = pt[1] + offset_y
             confidence = float(result[pt[1], pt[0]])
@@ -202,9 +202,9 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
 
     def _detect_geometric_x(
         self, search_region: np.ndarray, offset_x: int, offset_y: int
-    ) -> List[Tuple]:
+    ) -> list[tuple[int, int, int, int, float, str]]:
         """Detect X patterns using geometric analysis."""
-        buttons = []
+        buttons: list[tuple[int, int, int, int, float, str]] = []
 
         # Edge detection
         edges = cv2.Canny(search_region, 50, 150)
@@ -219,48 +219,48 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
             maxLineGap=5,
         )
 
-        if lines is None:
-            return buttons
-
         # Group lines into potential X patterns
         # An X consists of two diagonal lines crossing
-        for i in range(len(lines)):
-            for j in range(i + 1, len(lines)):
-                x1, y1, x2, y2 = lines[i][0]
-                x3, y3, x4, y4 = lines[j][0]
+        if lines is not None:
+            for i in range(len(lines)):
+                for j in range(i + 1, len(lines)):
+                    x1, y1, x2, y2 = lines[i][0]
+                    x3, y3, x4, y4 = lines[j][0]
 
-                # Check if lines are roughly diagonal and crossing
-                if self._lines_form_x(x1, y1, x2, y2, x3, y3, x4, y4):
-                    # Calculate bounding box
-                    min_x = min(x1, x2, x3, x4)
-                    max_x = max(x1, x2, x3, x4)
-                    min_y = min(y1, y2, y3, y4)
-                    max_y = max(y1, y2, y3, y4)
+                    # Check if lines are roughly diagonal and crossing
+                    if self._lines_form_x(x1, y1, x2, y2, x3, y3, x4, y4):
+                        # Calculate bounding box
+                        min_x = min(x1, x2, x3, x4)
+                        max_x = max(x1, x2, x3, x4)
+                        min_y = min(y1, y2, y3, y4)
+                        max_y = max(y1, y2, y3, y4)
 
-                    w = max_x - min_x
-                    h = max_y - min_y
+                        w = max_x - min_x
+                        h = max_y - min_y
 
-                    # Check size constraints
-                    if (
-                        w >= self.min_button_size
-                        and w <= self.max_button_size
-                        and h >= self.min_button_size
-                        and h <= self.max_button_size
-                    ):
+                        # Check size constraints
+                        if (
+                            w >= self.min_button_size
+                            and w <= self.max_button_size
+                            and h >= self.min_button_size
+                            and h <= self.max_button_size
+                        ):
 
-                        # Should be roughly square
-                        if abs(w - h) < w * 0.3:
-                            x = min_x + offset_x
-                            y = min_y + offset_y
-                            confidence = (
-                                0.6  # Moderate confidence for geometric detection
-                            )
+                            # Should be roughly square
+                            if abs(w - h) < w * 0.3:
+                                x = min_x + offset_x
+                                y = min_y + offset_y
+                                confidence = (
+                                    0.6  # Moderate confidence for geometric detection
+                                )
 
-                            buttons.append((x, y, w, h, confidence, "geometric_x"))
+                                buttons.append((x, y, w, h, confidence, "geometric_x"))
 
         return buttons
 
-    def _lines_form_x(self, x1, y1, x2, y2, x3, y3, x4, y4) -> bool:
+    def _lines_form_x(
+        self, x1: int, y1: int, x2: int, y2: int, x3: int, y3: int, x4: int, y4: int
+    ) -> bool:
         """Check if two line segments form an X pattern."""
         # Calculate angles of both lines
         angle1 = np.arctan2(y2 - y1, x2 - x1)
@@ -282,17 +282,21 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
 
         return is_perpendicular and intersects
 
-    def _lines_intersect(self, x1, y1, x2, y2, x3, y3, x4, y4) -> bool:
+    def _lines_intersect(
+        self, x1: int, y1: int, x2: int, y2: int, x3: int, y3: int, x4: int, y4: int
+    ) -> bool:
         """Check if two line segments intersect."""
 
-        def ccw(ax, ay, bx, by, cx, cy):
-            return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax)
+        def ccw(ax: int, ay: int, bx: int, by: int, cx: int, cy: int) -> bool:
+            return bool((cy - ay) * (bx - ax) > (by - ay) * (cx - ax))
 
-        return ccw(x1, y1, x3, y3, x4, y4) != ccw(x2, y2, x3, y3, x4, y4) and ccw(
-            x1, y1, x2, y2, x3, y3
-        ) != ccw(x1, y1, x2, y2, x4, y4)
+        cond1 = ccw(x1, y1, x3, y3, x4, y4) != ccw(x2, y2, x3, y3, x4, y4)
+        cond2 = ccw(x1, y1, x2, y2, x3, y3) != ccw(x1, y1, x2, y2, x4, y4)
+        return cond1 and cond2
 
-    def _remove_duplicates(self, buttons: List[Tuple]) -> List[Tuple]:
+    def _remove_duplicates(
+        self, buttons: list[tuple[int, int, int, int, float, str]]
+    ) -> list[tuple[int, int, int, int, float, str]]:
         """Remove duplicate detections (nearby buttons)."""
         if not buttons:
             return buttons
@@ -300,7 +304,7 @@ class WindowCloseButtonDetector(BaseRegionAnalyzer):
         # Sort by confidence (descending)
         sorted_buttons = sorted(buttons, key=lambda b: b[4], reverse=True)
 
-        keep = []
+        keep: list[tuple[int, int, int, int, float, str]] = []
         for button in sorted_buttons:
             x, y, w, h, conf, method = button
 

@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
-import { useProjects } from '@/hooks/use-projects';
+import { useAutomation } from '@/contexts/automation-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +22,6 @@ import {
   AlertCircle,
   Loader2,
   Search,
-  Filter,
 } from 'lucide-react';
 import { recordingService } from '@/services/service-factory';
 import {
@@ -41,14 +40,18 @@ import { formatDistanceToNow } from 'date-fns';
 
 export function RecordingListPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
-  const { data: projects = [] } = useProjects();
+  const { projectId: contextProjectId } = useAutomation();
+
+  // Get project ID from context or URL (same logic as RequireProject)
+  const urlProjectId = searchParams?.get('project') ?? null;
+  const projectId = contextProjectId || urlProjectId;
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<RecordingStatus | 'all'>('all');
-  const [projectFilter, setProjectFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 20;
@@ -58,7 +61,7 @@ export function RecordingListPage() {
     try {
       setLoading(true);
       const response = await recordingService.listRecordings(
-        projectFilter !== 'all' ? projectFilter : undefined,
+        projectId || undefined,
         statusFilter !== 'all' ? statusFilter : undefined,
         page,
         pageSize
@@ -75,7 +78,7 @@ export function RecordingListPage() {
 
   useEffect(() => {
     loadRecordings();
-  }, [page, statusFilter, projectFilter]);
+  }, [page, statusFilter, projectId]);
 
   // Filter recordings by search query
   const filteredRecordings = recordings.filter((recording) =>
@@ -175,21 +178,6 @@ export function RecordingListPage() {
               </div>
             </div>
 
-            {/* Project Filter */}
-            <Select value={projectFilter} onValueChange={setProjectFilter}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="All Projects" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Projects</SelectItem>
-                {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
             {/* Status Filter */}
             <Select
               value={statusFilter}
@@ -223,7 +211,7 @@ export function RecordingListPage() {
             <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">No recordings found</h3>
             <p className="text-muted-foreground mb-4">
-              {searchQuery || statusFilter !== 'all' || projectFilter !== 'all'
+              {searchQuery || statusFilter !== 'all'
                 ? 'Try adjusting your filters'
                 : 'Upload your first recording to get started'}
             </p>

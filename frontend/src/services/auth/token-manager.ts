@@ -81,11 +81,19 @@ export class TokenManager {
     // Check token expiry for proactive refresh logic
     const expiry = this.storage.getTokenExpiry();
 
+    console.log('[TokenManager] hasValidToken check:', {
+      isAuthenticated,
+      expiry,
+      expiryDate: expiry ? new Date(expiry).toISOString() : null,
+      now: new Date().toISOString(),
+    });
+
     // Log validation state
     this.validator.logValidation(isAuthenticated, isAuthenticated, expiry);
 
     // If not authenticated flag, definitely not valid
     if (!isAuthenticated) {
+      console.log('[TokenManager] hasValidToken: returning false (not authenticated flag)');
       return false;
     }
 
@@ -93,6 +101,7 @@ export class TokenManager {
     // If access token is expired, we might need to refresh (but session is still valid)
     const isValid = this.validator.hasValidSession(isAuthenticated, isAuthenticated, expiry);
 
+    console.log('[TokenManager] hasValidToken: returning', isValid);
     return isValid;
   }
 

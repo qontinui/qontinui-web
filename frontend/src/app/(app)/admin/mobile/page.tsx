@@ -19,7 +19,6 @@ import {
   ArrowLeft
 } from "lucide-react"
 import { toast } from "sonner"
-import { authService } from "@/services/service-factory"
 import { healthService } from "@/services/admin/health-service"
 import type { HealthOverview, SecurityWarning } from "@/services/admin/health-service"
 
@@ -64,18 +63,12 @@ export default function MobileAdminDashboard() {
   } = useQuery({
     queryKey: ['admin', 'mobile', 'analytics'],
     queryFn: async () => {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const accessToken = authService.tokenManager.getAccessToken()
-
-      if (!accessToken) {
-        throw new Error('Not authenticated')
-      }
-
-      const response = await fetch(`${apiUrl}/api/v1/admin/analytics`, {
+      // Use relative URL through Next.js proxy with credentials for cookie auth
+      const response = await fetch('/api/v1/admin/analytics', {
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       })
 
       if (!response.ok) {

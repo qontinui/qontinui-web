@@ -34,9 +34,6 @@ export function RequireProject({ children, pageName = 'this page' }: RequireProj
   // Consider project selected if either context has it OR URL has it
   const hasProjectSelected = Boolean(projectId || urlProjectId)
 
-  // Debug logging
-  console.log('[RequireProject] isLoading:', isLoading, 'projects:', projects?.length, 'projectId:', projectId, 'urlProjectId:', urlProjectId, 'hasProjectSelected:', hasProjectSelected, 'error:', error?.message)
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -48,7 +45,6 @@ export function RequireProject({ children, pageName = 'this page' }: RequireProj
   if (error) {
     // If there's an error (including auth errors), treat it as "no projects"
     // This handles the case where the user isn't logged in or their session expired
-    console.log('[RequireProject] Error state, showing no-projects message:', error.message)
     return (
       <div className="flex items-center justify-center min-h-[400px] p-4">
         <Card className="bg-[#1A1A1B]/30 border-gray-800/50 border-dashed backdrop-blur-sm max-w-md">

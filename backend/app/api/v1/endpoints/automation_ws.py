@@ -10,11 +10,18 @@ import io
 import time
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 import structlog
+from dateutil.relativedelta import relativedelta  # type: ignore
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from PIL import Image
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import authenticate_runner, get_async_db
 from app.api.v1.endpoints.images import (
     validate_image_magic_bytes,
@@ -25,29 +32,23 @@ from app.crud import runner as runner_crud
 from app.models.automation import AutomationInputEvent, InputEventType
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
-from app.models.runner_connection import RunnerConnection
-from app.models.runner_token import RunnerToken
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.user import User
 from app.services.object_storage import object_storage
 from app.services.websocket_manager import get_websocket_manager
-from dateutil.relativedelta import relativedelta
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
-from PIL import Image
-from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
 # Rate limiting state (in-memory for WebSocket connections)
 # For production, consider using Redis for distributed rate limiting
-_connection_attempts: Dict[str, list[float]] = defaultdict(list)
-_message_counts: Dict[str, list[float]] = defaultdict(list)
+_connection_attempts: dict[str, list[float]] = defaultdict(list)
+_message_counts: dict[str, list[float]] = defaultdict(list)
 
 
-def check_connection_rate_limit(ip_address: str, limit: int = 5, window: int = 60) -> bool:
+def check_connection_rate_limit(
+    ip_address: str, limit: int = 5, window: int = 60
+) -> bool:
     """
     Check if an IP address has exceeded the connection rate limit.
 
@@ -76,7 +77,9 @@ def check_connection_rate_limit(ip_address: str, limit: int = 5, window: int = 6
     return True
 
 
-def check_message_rate_limit(session_key: str, limit: int = 60, window: int = 60) -> bool:
+def check_message_rate_limit(
+    session_key: str, limit: int = 60, window: int = 60
+) -> bool:
     """
     Check if a session has exceeded the message rate limit.
 
@@ -186,18 +189,18 @@ async def link_screenshots_to_input(
 
         # Also update direct references if appropriate
         if association_type == "before" and not input_event.screenshot_before_id:
-            input_event.screenshot_before_id = screenshot.id
+            input_event.screenshot_before_id = screenshot.id  # type: ignore
         elif association_type == "after" and not input_event.screenshot_after_id:
-            input_event.screenshot_after_id = screenshot.id
+            input_event.screenshot_after_id = screenshot.id  # type: ignore
 
     await db.commit()
 
 
 async def handle_input_event(
-    message: Dict[str, Any],
+    message: dict[str, Any],
     db: AsyncSession,
-    session_id: Optional[UUID] = None,
-) -> Dict[str, Any]:
+    session_id: UUID | None = None,
+) -> dict[str, Any]:
     """
     Handle input event message.
 
@@ -255,26 +258,29 @@ async def handle_input_event(
         )
 
         # Handle mouse events
-        if event_type_enum in [InputEventType.MOUSE_CLICKED, InputEventType.MOUSE_MOVED]:
-            input_event.mouse_x = message.get("x")
-            input_event.mouse_y = message.get("y")
-            input_event.mouse_button = message.get("button")
+        if event_type_enum in [
+            InputEventType.MOUSE_CLICKED,
+            InputEventType.MOUSE_MOVED,
+        ]:
+            input_event.mouse_x = message.get("x")  # type: ignore
+            input_event.mouse_y = message.get("y")  # type: ignore
+            input_event.mouse_button = message.get("button")  # type: ignore
 
         # Handle drag events
         elif event_type_enum == InputEventType.MOUSE_DRAGGED:
-            input_event.drag_from_x = message.get("from_x")
-            input_event.drag_from_y = message.get("from_y")
-            input_event.drag_to_x = message.get("to_x")
-            input_event.drag_to_y = message.get("to_y")
-            input_event.drag_duration = message.get("duration")
-            input_event.drag_path_points = message.get("path_points")
-            input_event.drag_avg_speed = message.get("avg_speed")
-            input_event.drag_max_speed = message.get("max_speed")
+            input_event.drag_from_x = message.get("from_x")  # type: ignore
+            input_event.drag_from_y = message.get("from_y")  # type: ignore
+            input_event.drag_to_x = message.get("to_x")  # type: ignore
+            input_event.drag_to_y = message.get("to_y")  # type: ignore
+            input_event.drag_duration = message.get("duration")  # type: ignore
+            input_event.drag_path_points = message.get("path_points")  # type: ignore
+            input_event.drag_avg_speed = message.get("avg_speed")  # type: ignore
+            input_event.drag_max_speed = message.get("max_speed")  # type: ignore
 
         # Handle keyboard events
         elif event_type_enum == InputEventType.KEYBOARD_TEXT_TYPED:
-            input_event.text_typed = message.get("text")
-            input_event.character_count = len(message.get("text", ""))
+            input_event.text_typed = message.get("text")  # type: ignore
+            input_event.character_count = len(message.get("text", ""))  # type: ignore
 
         # Save to database
         db.add(input_event)
@@ -314,11 +320,11 @@ async def handle_input_event(
 
 
 async def handle_screenshot(
-    message: Dict[str, Any],
+    message: dict[str, Any],
     db: AsyncSession,
     user_id: UUID,
-    session_id: Optional[UUID] = None,
-) -> Dict[str, Any]:
+    session_id: UUID | None = None,
+) -> dict[str, Any]:
     """
     Handle screenshot message with full S3 upload and database storage.
 
@@ -397,7 +403,7 @@ async def handle_screenshot(
             )
             return {
                 "type": "error",
-                "message": f"Screenshot too large. Maximum size: 10.0MB",
+                "message": "Screenshot too large. Maximum size: 10.0MB",
             }
 
         # Step 4: Validate magic bytes
@@ -541,7 +547,7 @@ async def handle_screenshot(
 @router.websocket("/ws/automation/runner")
 async def websocket_runner_endpoint(
     websocket: WebSocket,
-    token: str,
+    token: str | None = None,
 ):
     """
     WebSocket endpoint for automation runner streaming.
@@ -614,9 +620,31 @@ async def websocket_runner_endpoint(
     session_key = f"ws_runner_{id(websocket)}"  # Unique session key for rate limiting
 
     try:
-        # Authenticate user (supports both JWT and runner tokens)
+        # Authenticate user (supports JWT token, runner tokens, and cookies)
+        # Try to get token from query param, then from cookies
+        auth_token: str | None = token
+        if not auth_token:
+            # Try to read from cookies (for HttpOnly cookie auth)
+            auth_token = websocket.cookies.get("access_token")
+
+        if auth_token:
+            logger.info("automation_ws_using_cookie_auth")
+
+        if not auth_token:
+            logger.error(
+                "automation_ws_no_token", error="No token in query param or cookies"
+            )
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": "Authentication required. Provide token query param or access_token cookie.",
+                }
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
         try:
-            user, runner_token = await authenticate_runner(token)
+            user, runner_token = await authenticate_runner(auth_token)
         except Exception as e:
             logger.error("automation_ws_auth_failed", error=str(e))
             await websocket.send_json(
@@ -644,8 +672,21 @@ async def websocket_runner_endpoint(
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
             return
 
-        # Refresh user to get latest settings
-        await db.refresh(user)
+        # Re-fetch user in this session (the user object from authenticate_runner
+        # was in a different session that's now closed)
+        user_result = await db.execute(select(User).filter(User.id == user.id))  # type: ignore
+        user = user_result.scalar_one_or_none()
+
+        if not user:
+            logger.error("automation_ws_user_not_found")
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": "User not found",
+                }
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
         # Check if streaming is enabled for this user
         if not user.automation_streaming_enabled:
@@ -660,11 +701,11 @@ async def websocket_runner_endpoint(
             # Check if we need to reset monthly limit
             if (
                 user.automation_sessions_reset_at
-                and datetime.utcnow() > user.automation_sessions_reset_at
+                and datetime.now(UTC) > user.automation_sessions_reset_at
             ):
                 # Reset for new month
                 user.automation_sessions_used = 0
-                user.automation_sessions_reset_at = datetime.utcnow() + relativedelta(
+                user.automation_sessions_reset_at = datetime.now(UTC) + relativedelta(
                     months=1
                 )
                 await db.commit()
@@ -678,30 +719,30 @@ async def websocket_runner_endpoint(
                 )
                 return
 
-        # Log connection if using runner token
-        if runner_token:
-            try:
-                # Extract IP and user agent from WebSocket
-                client_host = websocket.client.host if websocket.client else None
-                # Note: WebSocket doesn't easily expose user agent, would need custom header
-                connection_record = await runner_crud.create_connection_record(
-                    db=db,
-                    token_id=runner_token.id,
-                    user_id=user.id,
-                    ip_address=client_host,
-                )
-                logger.info(
-                    "runner_connection_logged",
-                    connection_id=connection_record.id,
-                    token_id=str(runner_token.id),
-                    token_name=runner_token.name,
-                )
-            except Exception as e:
-                logger.error(
-                    "runner_connection_log_failed",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
+        # Log connection for all auth methods (runner token or JWT)
+        try:
+            # Extract IP and user agent from WebSocket
+            client_host = websocket.client.host if websocket.client else None
+            # Note: WebSocket doesn't easily expose user agent, would need custom header
+            connection_record = await runner_crud.create_connection_record(
+                db=db,
+                user_id=user.id,
+                token_id=runner_token.id if runner_token else None,
+                ip_address=client_host,
+            )
+            logger.info(
+                "runner_connection_logged",
+                connection_id=connection_record.id,
+                token_id=str(runner_token.id) if runner_token else None,
+                token_name=runner_token.name if runner_token else None,
+                auth_method="runner_token" if runner_token else "jwt",
+            )
+        except Exception as e:
+            logger.error(
+                "runner_connection_log_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
         logger.info(
             "automation_ws_connected",
@@ -931,7 +972,7 @@ async def websocket_runner_endpoint(
                         }
                     )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Send ping to keep connection alive
                 try:
                     await websocket.send_json(
@@ -978,7 +1019,7 @@ async def websocket_runner_endpoint(
         # Clean up rate limiting state
         cleanup_rate_limit_session(session_key)
 
-        # Close connection record if using runner token
+        # Close connection record (for both runner token and JWT auth)
         if connection_record and db:
             try:
                 await runner_crud.close_connection_record(
@@ -1021,7 +1062,7 @@ async def websocket_runner_endpoint(
 async def websocket_monitor_endpoint(
     websocket: WebSocket,
     session_id: str,
-    token: str,
+    token: str | None = None,
 ):
     """
     WebSocket endpoint for monitoring automation sessions in real-time.
@@ -1092,9 +1133,32 @@ async def websocket_monitor_endpoint(
     session_key = f"ws_monitor_{id(websocket)}"  # Unique session key for rate limiting
 
     try:
-        # Authenticate user
+        # Authenticate user (supports JWT token, runner tokens, and cookies)
+        # Try to get token from query param, then from cookies
+        auth_token: str | None = token
+        if not auth_token:
+            # Try to read from cookies (for HttpOnly cookie auth)
+            auth_token = websocket.cookies.get("access_token")
+
+        if auth_token:
+            logger.info("automation_monitor_ws_using_cookie_auth")
+
+        if not auth_token:
+            logger.error(
+                "automation_monitor_ws_no_token",
+                error="No token in query param or cookies",
+            )
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": "Authentication required. Provide token query param or access_token cookie.",
+                }
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
         try:
-            user, _ = await authenticate_runner(token)
+            user, _ = await authenticate_runner(auth_token)
         except Exception as e:
             logger.error("automation_monitor_ws_auth_failed", error=str(e))
             await websocket.send_json(
@@ -1235,7 +1299,7 @@ async def websocket_monitor_endpoint(
                         }
                     )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Send ping to keep connection alive
                 try:
                     await websocket.send_json(

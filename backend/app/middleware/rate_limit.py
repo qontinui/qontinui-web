@@ -1,11 +1,12 @@
 import time
 
-from app.core.config import settings
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+
+from app.core.config import settings
 
 # Determine storage backend based on configuration
 # Use Redis if enabled for scalable, persistent rate limiting across instances
@@ -31,7 +32,7 @@ def get_user_identifier(request: Request) -> str:
     user = getattr(request.state, "user", None)
     if user:
         return f"user:{user.id}"
-    return f"ip:{request.client.host}"
+    return f"ip:{request.client.host}"  # type: ignore[union-attr]
 
 
 # Create limiter instance

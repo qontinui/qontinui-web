@@ -1,5 +1,12 @@
 import time
 
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.api.v1.api import api_router
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
@@ -21,13 +28,6 @@ from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.sliding_window_session import SlidingWindowSessionMiddleware
-from fastapi import FastAPI
-from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.staticfiles import StaticFiles
-from slowapi.errors import RateLimitExceeded
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Configure structured logging
 configure_logging(environment=settings.ENVIRONMENT)
@@ -47,16 +47,16 @@ app = FastAPI(
 )
 
 # Add exception handlers
-app.add_exception_handler(AppError, app_exception_handler)
-app.add_exception_handler(RequestValidationError, validation_exception_handler)
-app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(AppError, app_exception_handler)  # type: ignore
+app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore
 if settings.ENVIRONMENT == "development":
     app.add_exception_handler(Exception, general_exception_handler)
 
 # Add rate limiting
 if settings.RATE_LIMIT_ENABLED:
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore
 
 # Add trusted host middleware for production
 # TEMPORARILY DISABLED: TrustedHostMiddleware blocks ELB health checks from internal IPs
@@ -307,8 +307,9 @@ async def health_check():
 
     # Check async database connectivity
     try:
-        from app.db.session import AsyncSessionLocal
         from sqlalchemy import text
+
+        from app.db.session import AsyncSessionLocal
 
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))

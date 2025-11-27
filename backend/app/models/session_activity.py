@@ -11,9 +11,10 @@ This model tracks:
 from datetime import datetime
 from uuid import UUID
 
-from app.db.base import Base
 from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base
 
 
 class SessionActivity(Base):

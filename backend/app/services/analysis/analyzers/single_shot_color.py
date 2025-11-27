@@ -7,7 +7,7 @@ colored buttons, highlights, and distinct visual elements.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -53,7 +53,7 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "num_colors": 8,  # Number of dominant colors to find
             "min_area": 400,
@@ -96,7 +96,7 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images_color(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_color(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots in color"""
         images = []
         for data in screenshot_data:
@@ -105,8 +105,8 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
         return images
 
     async def _analyze_screenshot(
-        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, img: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Analyze a single screenshot"""
         elements = []
 
@@ -156,7 +156,9 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
                     continue  # Skip low-saturation (grayish) regions
 
                 # Confidence based on color distinctiveness
-                confidence = min(0.9, 0.4 + (mean_saturation / 255.0) * 0.5)
+                confidence = float(
+                    min(0.9, 0.4 + (float(mean_saturation) / 255.0) * 0.5)
+                )
 
                 elements.append(
                     DetectedElement(
@@ -180,7 +182,7 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
 
     def _find_dominant_colors(
         self, img: np.ndarray, num_colors: int
-    ) -> List[np.ndarray]:
+    ) -> list[np.ndarray]:
         """
         Find dominant colors using K-means clustering
 
@@ -197,18 +199,20 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
 
         # Apply K-means
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+        # bestLabels should be a properly initialized array, not None
+        best_labels = np.zeros((len(pixels), 1), dtype=np.int32)
         _, labels, centers = cv2.kmeans(
-            pixels, num_colors, None, criteria, 10, cv2.KMEANS_PP_CENTERS
+            pixels, num_colors, best_labels, criteria, 10, cv2.KMEANS_PP_CENTERS
         )
 
         # Convert centers to HSV
         centers_rgb = centers.reshape((1, num_colors, 3)).astype(np.uint8)
         centers_hsv = cv2.cvtColor(centers_rgb, cv2.COLOR_RGB2HSV)[0]
 
-        return centers_hsv
+        return list(centers_hsv)
 
     def _create_color_mask(
-        self, hsv: np.ndarray, color: np.ndarray, params: Dict[str, Any]
+        self, hsv: np.ndarray, color: np.ndarray, params: dict[str, Any]
     ) -> np.ndarray:
         """
         Create binary mask for pixels close to the given color
@@ -247,7 +251,7 @@ class SingleShotColorAnalyzer(BaseAnalyzer):
 
         return mask
 
-    def _clean_mask(self, mask: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
+    def _clean_mask(self, mask: np.ndarray, params: dict[str, Any]) -> np.ndarray:
         """Clean up binary mask using morphological operations"""
         kernel_size = params["morph_kernel_size"]
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))

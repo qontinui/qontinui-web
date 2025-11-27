@@ -10,7 +10,7 @@ from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 try:
     import cv2
@@ -18,8 +18,9 @@ try:
 
     CV2_AVAILABLE = True
 except ImportError:
-    cv2 = None
-    np = None
+    if not TYPE_CHECKING:
+        cv2 = None  # type: ignore[assignment]
+        np = None  # type: ignore[assignment]
     CV2_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -446,7 +447,7 @@ class VideoExporter:
 
             # Initialize video writer
             target_size = self.options.target_resolution
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
             out = cv2.VideoWriter(
                 str(output_file), fourcc, self.options.fps, target_size
             )

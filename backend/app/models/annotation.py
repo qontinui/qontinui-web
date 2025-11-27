@@ -4,22 +4,13 @@ Annotation models for GUI element ground truth data
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
+
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    Column,
-    DateTime,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-)
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 
 
 class AnnotationSet(Base):
@@ -36,7 +27,9 @@ class AnnotationSet(Base):
     # Multi-screenshot support: array of screenshot objects
     # Format: [{"name": "...", "url": "...", "width": ..., "height": ...}, ...]
     # If null, this is a single-screenshot set (backward compatibility)
-    screenshots = Column(JSON, nullable=True)
+    screenshots: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True
+    )
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -62,26 +55,25 @@ class AnnotationSet(Base):
     @property
     def screenshot_count(self) -> int:
         """Get the number of screenshots in this set"""
-        if self.screenshots is None:
-            return 1  # Single screenshot (backward compatibility)
-        return len(self.screenshots)
+        return 1 if self.screenshots is None else len(self.screenshots)
 
-    def get_screenshot(self, index: int = 0) -> Optional[Dict[str, Any]]:
+    def get_screenshot(self, index: int = 0) -> dict[str, Any] | None:
         """Get screenshot metadata by index"""
         if self.screenshots is None:
             # Single screenshot mode - return the original fields
-            if index == 0:
-                return {
+            return (
+                {
                     "name": self.screenshot_name,
                     "url": self.screenshot_url,
                     "width": self.image_width,
                     "height": self.image_height,
                 }
-            return None
+                if index == 0
+                else None
+            )
 
-        if 0 <= index < len(self.screenshots):
-            return self.screenshots[index]
-        return None
+        # Multi-screenshot mode
+        return self.screenshots[index] if 0 <= index < len(self.screenshots) else None
 
 
 class Annotation(Base):

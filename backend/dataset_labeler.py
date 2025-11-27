@@ -6,10 +6,8 @@ Allows for validation and correction of automated predictions.
 """
 
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -45,7 +43,7 @@ class DatasetLabeler:
         self.image_id = 1
         self.annotation_id = 1
 
-    def _init_coco_dataset(self) -> Dict:
+    def _init_coco_dataset(self) -> dict:
         """Initialize COCO format dataset."""
         return {
             "info": {
@@ -61,7 +59,7 @@ class DatasetLabeler:
             "categories": [{"id": 1, "name": "button", "supercategory": "ui_element"}],
         }
 
-    def detect_buttons_opencv(self, image_path: str) -> List[Dict]:
+    def detect_buttons_opencv(self, image_path: str) -> list[dict]:
         """
         Detect buttons using OpenCV-based analysis.
 
@@ -121,7 +119,7 @@ class DatasetLabeler:
 
         return candidates[:20]  # Return top 20 candidates
 
-    def detect_buttons_color(self, image_path: str) -> List[Dict]:
+    def detect_buttons_color(self, image_path: str) -> list[dict]:
         """
         Detect buttons using color-based analysis.
 
@@ -189,8 +187,8 @@ class DatasetLabeler:
         return candidates
 
     def merge_detections(
-        self, detections: List[Dict], iou_threshold: float = 0.5
-    ) -> List[Dict]:
+        self, detections: list[dict], iou_threshold: float = 0.5
+    ) -> list[dict]:
         """
         Merge overlapping detections using Non-Maximum Suppression.
 
@@ -254,7 +252,7 @@ class DatasetLabeler:
 
     def label_image(
         self, image_path: str, split: str = "train", auto_detect: bool = True
-    ) -> Dict:
+    ) -> dict:
         """
         Label a single image.
 
@@ -323,7 +321,7 @@ class DatasetLabeler:
 
     def label_directory(
         self, input_dir: str, split: str = "train", pattern: str = "*.png"
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """
         Label all images in a directory.
 
@@ -355,7 +353,7 @@ class DatasetLabeler:
 
         return stats
 
-    def export_coco(self, output_file: Optional[str] = None):
+    def export_coco(self, output_file: str | None = None):
         """Export dataset in COCO format."""
         for split in ["train", "val", "test"]:
             if self.datasets[split]["images"]:
@@ -364,7 +362,7 @@ class DatasetLabeler:
                     json.dump(self.datasets[split], f, indent=2)
                 print(f"Exported {split} annotations to {out_file}")
 
-    def export_yolo(self, output_dir: Optional[str] = None):
+    def export_yolo(self, output_dir: str | None = None):
         """Export dataset in YOLO format."""
         out_dir = Path(output_dir) if output_dir else self.output_dir / "yolo"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -401,7 +399,7 @@ class DatasetLabeler:
 
         print(f"Exported YOLO format to {out_dir}")
 
-    def export_pascal_voc(self, output_dir: Optional[str] = None):
+    def export_pascal_voc(self, output_dir: str | None = None):
         """Export dataset in Pascal VOC format."""
         try:
             import xml.etree.ElementTree as ET

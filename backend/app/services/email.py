@@ -9,6 +9,7 @@ refactored architecture with separated concerns:
 """
 
 import structlog
+
 from app.models.user import User
 from app.services.email.email_composers import (
     BetaWelcomeEmailComposer,

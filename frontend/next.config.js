@@ -32,12 +32,30 @@ const nextConfig = {
     ]
   },
   async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:8000/api/:path*', // Proxy to Backend
-      },
-    ]
+    return {
+      // beforeFiles rewrites are checked before pages/public files
+      // allowing them to override page routes
+      beforeFiles: [],
+      // afterFiles rewrites are checked after pages/public files
+      // but before dynamic routes - this is the default behavior
+      afterFiles: [
+        // Exclude paths that have custom API route handlers
+        // These routes read cookies and forward to backend with Bearer token
+        {
+          source: '/api/v1/users/me/automation-streaming/:path*',
+          destination: '/api/v1/users/me/automation-streaming/:path*',
+          has: [{ type: 'header', key: 'x-skip-rewrite' }], // Never matches, effectively skips
+        },
+      ],
+      // fallback rewrites are checked after both pages/public files
+      // and dynamic routes
+      fallback: [
+        {
+          source: '/api/:path*',
+          destination: 'http://localhost:8000/api/:path*', // Proxy to Backend
+        },
+      ],
+    }
   },
 }
 

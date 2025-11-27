@@ -11,6 +11,10 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import current_active_user, get_async_db
 from app.crud import variable as variable_crud
 from app.models.project import Project
@@ -27,9 +31,6 @@ from app.schemas.variable import (
     VariableUpdate,
 )
 from app.utils.authorization import verify_project_access
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -255,7 +256,7 @@ async def update_global_variable(
     if variable_update.value is not None and old_value != variable.value:
         await variable_crud.record_variable_change(
             db,
-            variable.id,
+            UUID(str(variable.id)),
             old_value,
             variable.value,
             changed_by_action="manual_update",
@@ -521,7 +522,7 @@ async def update_workflow_variable(
     if variable_update.value is not None and old_value != variable.value:
         await variable_crud.record_variable_change(
             db,
-            variable.id,
+            UUID(str(variable.id)),
             old_value,
             variable.value,
             changed_by_action="manual_update",
@@ -682,10 +683,10 @@ async def get_run_variables_snapshot(
 
     snapshots = [
         VariableSnapshot(
-            name=v.name,
+            name=str(v.name),
             value=v.value,
-            scope=v.scope,
-            description=v.description,
+            scope=v.scope,  # type: ignore[arg-type]
+            description=str(v.description) if v.description else None,
         )
         for v in variables
     ]
@@ -734,7 +735,9 @@ async def get_run_variable_changes(
     # Verify user has access to the project (by checking first variable if any)
     if changes:
         first_change = changes[0]
-        variable = await variable_crud.get_variable_by_id(db, first_change.variable_id)
+        variable = await variable_crud.get_variable_by_id(
+            db, UUID(str(first_change.variable_id))
+        )
         if variable:
             project = await get_project_or_404(db, str(variable.project_id))
             verify_project_access(project, current_user, "view variable changes")

@@ -7,7 +7,7 @@ using pixel-wise variance analysis.
 
 import logging
 from io import BytesIO
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -54,7 +54,7 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 2
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "variance_threshold": 100.0,  # Pixels with variance below this are "stable"
             "min_area": 400,  # Minimum element area (20x20)
@@ -113,7 +113,7 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
             },
         )
 
-    def _load_images_grayscale(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images_grayscale(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as grayscale numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -121,7 +121,7 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
             images.append(np.array(img, dtype=np.float32))
         return images
 
-    def _resize_to_common_size(self, images: List[np.ndarray]) -> List[np.ndarray]:
+    def _resize_to_common_size(self, images: list[np.ndarray]) -> list[np.ndarray]:
         """Resize all images to the size of the first image"""
         if not images:
             return images
@@ -136,7 +136,7 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
 
         return resized
 
-    def _compute_variance(self, images: List[np.ndarray]) -> np.ndarray:
+    def _compute_variance(self, images: list[np.ndarray]) -> np.ndarray:
         """
         Compute pixel-wise variance across all images
 
@@ -149,9 +149,9 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
         # Compute variance along the image axis
         variance = np.var(stacked, axis=0)
 
-        return variance
+        return np.asarray(variance)
 
-    def _clean_mask(self, mask: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
+    def _clean_mask(self, mask: np.ndarray, params: dict[str, Any]) -> np.ndarray:
         """
         Clean up binary mask using morphological operations
 
@@ -168,24 +168,28 @@ class StableRegionVarianceAnalyzer(BaseAnalyzer):
         # Gaussian blur to reduce noise
         blur_size = params["blur_kernel_size"]
         if blur_size > 0:
-            mask_uint8 = cv2.GaussianBlur(mask_uint8, (blur_size, blur_size), 0)
-            _, mask_uint8 = cv2.threshold(mask_uint8, 127, 255, cv2.THRESH_BINARY)
+            blurred = cv2.GaussianBlur(mask_uint8, (blur_size, blur_size), 0)
+            mask_uint8 = np.asarray(blurred, dtype=np.uint8)
+            _, thresholded = cv2.threshold(mask_uint8, 127, 255, cv2.THRESH_BINARY)
+            mask_uint8 = np.asarray(thresholded, dtype=np.uint8)
 
         # Morphological operations to clean up
         kernel_size = params["morph_kernel_size"]
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
 
         # Close small holes
-        mask_uint8 = cv2.morphologyEx(mask_uint8, cv2.MORPH_CLOSE, kernel)
+        closed = cv2.morphologyEx(mask_uint8, cv2.MORPH_CLOSE, kernel)
+        mask_uint8 = np.asarray(closed, dtype=np.uint8)
 
         # Remove small noise
-        mask_uint8 = cv2.morphologyEx(mask_uint8, cv2.MORPH_OPEN, kernel)
+        opened = cv2.morphologyEx(mask_uint8, cv2.MORPH_OPEN, kernel)
+        mask_uint8 = np.asarray(opened, dtype=np.uint8)
 
         return mask_uint8 > 0
 
     def _find_elements_from_mask(
-        self, mask: np.ndarray, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, mask: np.ndarray, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """
         Find connected components in mask and create bounding boxes
 

@@ -99,13 +99,17 @@ def get_current_query_stats() -> QueryStats | None:
 
 # Event listeners for sync engine (used by Alembic and init_db)
 @event.listens_for(Engine, "before_cursor_execute")
-def before_cursor_execute_sync(conn, cursor, statement, parameters, context, executemany):
+def before_cursor_execute_sync(
+    conn, cursor, statement, parameters, context, executemany
+):
     """Track query start time for sync engine."""
     conn.info.setdefault("query_start_time", []).append(time.time())
 
 
 @event.listens_for(Engine, "after_cursor_execute")
-def after_cursor_execute_sync(conn, cursor, statement, parameters, context, executemany):
+def after_cursor_execute_sync(
+    conn, cursor, statement, parameters, context, executemany
+):
     """Track query completion for sync engine."""
     if "query_start_time" not in conn.info or not conn.info["query_start_time"]:
         return
@@ -134,12 +138,16 @@ def after_cursor_execute_sync(conn, cursor, statement, parameters, context, exec
 
 
 # Event listeners (will be registered via init_database_timing)
-def before_cursor_execute_handler(conn, cursor, statement, parameters, context, executemany):
+def before_cursor_execute_handler(
+    conn, cursor, statement, parameters, context, executemany
+):
     """Track query start time."""
     conn.info.setdefault("query_start_time", []).append(time.time())
 
 
-def after_cursor_execute_handler(conn, cursor, statement, parameters, context, executemany):
+def after_cursor_execute_handler(
+    conn, cursor, statement, parameters, context, executemany
+):
     """Track query completion."""
     if "query_start_time" not in conn.info or not conn.info["query_start_time"]:
         return
@@ -191,7 +199,8 @@ class DatabaseTimingMiddleware(BaseHTTPMiddleware):
         """Process request and track database queries."""
         # Skip tracking for excluded paths
         if any(request.url.path.startswith(path) for path in self.EXCLUDED_PATHS):
-            return await call_next(request)
+            response: Response = await call_next(request)
+            return response
 
         # Get or generate request ID
         request_id = request.headers.get("X-Request-ID", str(id(request)))
@@ -247,7 +256,7 @@ class DatabaseTimingMiddleware(BaseHTTPMiddleware):
             return response
 
 
-def init_database_timing(async_engine: AsyncEngine, sync_engine: Engine = None):
+def init_database_timing(async_engine: AsyncEngine, sync_engine: Engine | None = None):
     """
     Initialize database query timing.
 
@@ -261,13 +270,21 @@ def init_database_timing(async_engine: AsyncEngine, sync_engine: Engine = None):
     # Register event listeners on the sync engine from async_engine
     if async_engine:
         sync_engine_from_async = async_engine.sync_engine
-        event.listen(sync_engine_from_async, "before_cursor_execute", before_cursor_execute_handler)
-        event.listen(sync_engine_from_async, "after_cursor_execute", after_cursor_execute_handler)
+        event.listen(
+            sync_engine_from_async,
+            "before_cursor_execute",
+            before_cursor_execute_handler,
+        )
+        event.listen(
+            sync_engine_from_async, "after_cursor_execute", after_cursor_execute_handler
+        )
         logger.info("database_timing_listeners_registered", engine_type="async")
 
     # Also register on sync engine if provided
     if sync_engine:
-        event.listen(sync_engine, "before_cursor_execute", before_cursor_execute_handler)
+        event.listen(
+            sync_engine, "before_cursor_execute", before_cursor_execute_handler
+        )
         event.listen(sync_engine, "after_cursor_execute", after_cursor_execute_handler)
         logger.info("database_timing_listeners_registered", engine_type="sync")
 

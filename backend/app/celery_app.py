@@ -8,7 +8,7 @@ This module sets up Celery for handling long-running tasks like:
 - Long automation runs
 """
 
-from celery import Celery
+from celery import Celery  # type: ignore[import-not-found]
 
 # TODO: Import settings
 # from app.config.settings import settings

@@ -48,6 +48,7 @@ export function useTestRuns(filters?: TestRunFilters) {
         throw error;
       }
     },
+    enabled: !!filters?.project_id, // Only fetch when project_id is provided
     placeholderData: (previousData) => previousData,
     staleTime: 30000, // Consider data stale after 30 seconds
   });

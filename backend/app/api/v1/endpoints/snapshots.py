@@ -4,9 +4,11 @@ Snapshot Management API Endpoints
 Endpoints for managing snapshot runs, screenshots, and patterns.
 """
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user_async
 from app.crud import snapshot as snapshot_crud
@@ -20,8 +22,6 @@ from app.schemas.snapshot import (
     SnapshotRunUpdate,
 )
 from app.services.permission_service import PermissionService
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 permission_service = PermissionService()
 
@@ -40,9 +40,12 @@ async def create_snapshot_run(
     Requires EDIT permission on the project.
     """
     # Check project permission (EDIT required to create snapshots)
-    if snapshot_data.project_id:
+    project_id_uuid = (
+        UUID(str(snapshot_data.project_id)) if snapshot_data.project_id else None
+    )
+    if project_id_uuid:
         has_permission = await permission_service.can_user_access_project(
-            db, current_user.id, snapshot_data.project_id, PermissionLevel.EDIT
+            db, current_user.id, project_id_uuid, PermissionLevel.EDIT
         )
         if not has_permission:
             raise HTTPException(
@@ -64,7 +67,7 @@ async def create_snapshot_run(
         run_name=snapshot_data.run_name,
         timestamp=snapshot_data.timestamp,
         states=snapshot_data.states,
-        project_id=snapshot_data.project_id,
+        project_id=project_id_uuid,
         workflow_id=snapshot_data.workflow_id,
         description=snapshot_data.description,
         tags=snapshot_data.tags,
@@ -79,7 +82,7 @@ async def list_snapshot_runs(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     project_id: UUID | None = Query(None),
-    workflow_id: UUID | None = Query(None),
+    workflow_id: int | None = Query(None),
     tags: str | None = Query(None, description="Comma-separated list of tags"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user_async),

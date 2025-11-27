@@ -32,11 +32,11 @@ def test_imports():
 
     # Test WebSocket manager
     try:
-        from app.services.websocket_manager import ConnectionManager, connection_manager
+        from app.services.websocket_manager import connection_manager
 
         print("✓ WebSocket manager imported successfully")
-        print(f"  - ConnectionManager class available")
-        print(f"  - Global connection_manager instance created")
+        print("  - ConnectionManager class available")
+        print("  - Global connection_manager instance created")
         print(f"  - Active connections: {connection_manager.get_total_connections()}")
     except Exception as e:
         print(f"✗ Failed to import WebSocket manager: {e}")
@@ -57,7 +57,7 @@ def test_imports():
         from app.crud import collaboration
 
         print("✓ CRUD operations imported successfully")
-        print(f"  - Available functions:")
+        print("  - Available functions:")
         funcs = [
             f
             for f in dir(collaboration)
@@ -73,18 +73,11 @@ def test_imports():
 
     # Test schemas
     try:
-        from app.schemas.collaboration import (
-            ActivityLogResponse,
-            CommentCreate,
-            CommentResponse,
-            LockRequest,
-            LockResponse,
-        )
 
         print("✓ Schemas imported successfully")
-        print(f"  - Lock schemas available")
-        print(f"  - Comment schemas available")
-        print(f"  - Activity log schemas available")
+        print("  - Lock schemas available")
+        print("  - Comment schemas available")
+        print("  - Activity log schemas available")
     except Exception as e:
         print(f"✗ Failed to import schemas: {e}")
         return False
@@ -100,12 +93,12 @@ def test_imports():
             if "collaboration" in route.path.lower()
         ]
         if routes:
-            print(f"  - Collaboration routes registered:")
+            print("  - Collaboration routes registered:")
             for route in routes:
                 print(f"    - {route}")
         else:
             # WebSocket routes might not show up in routes list
-            print(f"  - API router configured (WebSocket routes may not be visible)")
+            print("  - API router configured (WebSocket routes may not be visible)")
     except Exception as e:
         print(f"✗ Failed to verify API router: {e}")
         return False

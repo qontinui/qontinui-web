@@ -36,7 +36,7 @@ interface AnnotationSet {
 }
 
 export default function RegionAnalysisPage() {
-  const { user, loading: authLoading, getAccessToken } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const [token, setToken] = useState<string>('')
 
@@ -61,17 +61,11 @@ export default function RegionAnalysisPage() {
       return
     }
 
-    // Get access token
+    // Set token ready flag for loading annotation sets
     if (user) {
-      const fetchToken = async () => {
-        const accessToken = await getAccessToken()
-        if (accessToken) {
-          setToken(accessToken)
-        }
-      }
-      fetchToken()
+      setToken('cookie-auth')
     }
-  }, [user, authLoading, router, getAccessToken])
+  }, [user, authLoading, router])
 
   // Load annotation sets
   useEffect(() => {
@@ -83,10 +77,9 @@ export default function RegionAnalysisPage() {
   const loadAnnotationSets = async () => {
     try {
       setIsLoadingSets(true)
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/annotations/sets`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+      // Use relative URL through Next.js proxy with credentials for cookie auth
+      const response = await fetch('/api/v1/annotations/sets', {
+        credentials: 'include',
       })
 
       if (!response.ok) {

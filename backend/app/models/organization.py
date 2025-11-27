@@ -2,7 +2,6 @@ import secrets
 from datetime import datetime, timedelta
 from enum import Enum
 
-from app.db.base import Base
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -11,13 +10,14 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
-    Integer,
     String,
     Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class TeamRole(str, Enum):
@@ -229,7 +229,9 @@ class ProjectAccessControl(Base):
         UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
     )
     project_id = Column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
     )
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
@@ -282,8 +284,8 @@ class ProjectAccessControl(Base):
         return f"<ProjectAccessControl(project={self.project_id}, {target}, level={self.permission_level})>"
 
     @property
-    def is_expired(self):
+    def is_expired(self) -> bool:
         """Check if access has expired"""
         if self.expires_at is None:
-            return False
-        return datetime.utcnow() > self.expires_at
+            return False  # type: ignore[unreachable]
+        return datetime.utcnow() > self.expires_at  # type: ignore[return-value]

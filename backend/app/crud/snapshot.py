@@ -6,9 +6,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from app.models.snapshot import Pattern, Screenshot, SnapshotRun
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.snapshot import Pattern, Screenshot, SnapshotRun
 
 
 async def create_snapshot_run(

@@ -28,7 +28,7 @@ This system provides comprehensive conflict detection, resolution, and synchroni
 ### Basic Conflict Resolution
 
 ```typescript
-import { useConflictResolution } from '@/hooks/useConflictResolution'
+import { useConflictResolution } from '@/hooks/collaboration'
 
 function WorkflowEditor({ projectId, workflowId }) {
   const {
@@ -82,7 +82,7 @@ function WorkflowEditor({ projectId, workflowId }) {
 ### Optimistic Updates
 
 ```typescript
-import { useOptimisticUpdate } from '@/hooks/useConflictResolution'
+import { useOptimisticUpdate } from '@/hooks/collaboration'
 
 function ActionEditor({ workflowId, actionId }) {
   const { applyOptimistic, hasOptimistic, rollback } = useOptimisticUpdate(
@@ -110,7 +110,7 @@ function ActionEditor({ workflowId, actionId }) {
 ### Real-time Collaboration
 
 ```typescript
-import { useRealtimeCollaboration } from '@/hooks/useConflictResolution'
+import { useRealtimeCollaboration } from '@/hooks/collaboration'
 
 function CollaborativeCanvas({ projectId, workflowId }) {
   const {
@@ -141,7 +141,7 @@ function CollaborativeCanvas({ projectId, workflowId }) {
 ### Offline Queue Management
 
 ```typescript
-import { useOfflineQueue } from '@/hooks/useConflictResolution'
+import { useOfflineQueue } from '@/hooks/collaboration'
 
 function OfflineIndicator() {
   const { queueState, isProcessing, processQueue, clearQueue } = useOfflineQueue()

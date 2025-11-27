@@ -2,16 +2,18 @@
 Pydantic schemas for recording API (automated state discovery)
 """
 
-from pydantic import BaseModel, Field, field_validator, HttpUrl
-from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
+from pydantic import BaseModel, Field, field_validator
 
 # Enums
 
+
 class RecordingStatusEnum(str, Enum):
     """Recording processing status"""
+
     UPLOADED = "uploaded"
     VALIDATING = "validating"
     PROCESSING = "processing"
@@ -22,6 +24,7 @@ class RecordingStatusEnum(str, Enum):
 
 class ProcessingPhaseEnum(str, Enum):
     """Processing phases"""
+
     FRAME_ANALYSIS = "frame_analysis"
     STATE_IDENTIFICATION = "state_identification"
     INTERACTION_PROCESSING = "interaction_processing"
@@ -33,6 +36,7 @@ class ProcessingPhaseEnum(str, Enum):
 
 class InteractionTypeEnum(str, Enum):
     """Interaction types"""
+
     CLICK = "click"
     DRAG = "drag"
     KEY = "key"
@@ -42,6 +46,7 @@ class InteractionTypeEnum(str, Enum):
 
 class ContextEventTypeEnum(str, Enum):
     """Context event types"""
+
     WINDOW_CHANGE = "window_change"
     URL_CHANGE = "url_change"
     FOCUS_CHANGE = "focus_change"
@@ -51,41 +56,46 @@ class ContextEventTypeEnum(str, Enum):
 
 # Metadata schemas (from recording format spec)
 
+
 class RecorderInfo(BaseModel):
     """Information about the recording tool"""
+
     name: str
-    version: Optional[str] = None
+    version: str | None = None
     platform: str = Field(..., pattern="^(windows|macos|linux|web)$")
 
 
 class SystemInfo(BaseModel):
     """System information"""
-    os: Optional[str] = None
-    osVersion: Optional[str] = None
-    screenResolution: Dict[str, int] = Field(..., description="width and height")
-    dpi: Optional[int] = None
-    locale: Optional[str] = None
 
-    @field_validator('screenResolution')
+    os: str | None = None
+    osVersion: str | None = None
+    screenResolution: dict[str, int] = Field(..., description="width and height")
+    dpi: int | None = None
+    locale: str | None = None
+
+    @field_validator("screenResolution")
     @classmethod
     def validate_resolution(cls, v):
-        if 'width' not in v or 'height' not in v:
+        if "width" not in v or "height" not in v:
             raise ValueError("screenResolution must contain width and height")
-        if v['width'] <= 0 or v['height'] <= 0:
+        if v["width"] <= 0 or v["height"] <= 0:
             raise ValueError("screenResolution dimensions must be positive")
         return v
 
 
 class TargetApplication(BaseModel):
     """Target application information"""
+
     name: str
-    version: Optional[str] = None
+    version: str | None = None
     type: str = Field(..., pattern="^(desktop|web|mobile)$")
-    url: Optional[str] = None
+    url: str | None = None
 
 
 class RecordingMetadata(BaseModel):
     """Metadata about the recording"""
+
     recordingId: str
     version: str = Field(default="1.0")
     recordingStartTime: datetime
@@ -96,12 +106,12 @@ class RecordingMetadata(BaseModel):
     targetApplication: TargetApplication
     frameRate: float = Field(..., gt=0)
     totalFrames: int = Field(..., ge=0)
-    annotations: Optional[Dict[str, Any]] = None
+    annotations: dict[str, Any] | None = None
 
-    @field_validator('recordingEndTime')
+    @field_validator("recordingEndTime")
     @classmethod
     def validate_end_time(cls, v, info):
-        start_time = info.data.get('recordingStartTime')
+        start_time = info.data.get("recordingStartTime")
         if start_time and v <= start_time:
             raise ValueError("recordingEndTime must be after recordingStartTime")
         return v
@@ -109,26 +119,31 @@ class RecordingMetadata(BaseModel):
 
 # Frame schemas
 
+
 class FrameData(BaseModel):
     """Individual frame data"""
+
     frameNumber: int = Field(..., ge=0)
     timestamp: datetime
-    imageUrl: Optional[str] = None  # For JSON format with URLs
-    relativeTime: Optional[int] = Field(None, description="Milliseconds since start")
-    windowInfo: Optional[Dict[str, Any]] = None
-    userAnnotations: Optional[Dict[str, Any]] = None
+    imageUrl: str | None = None  # For JSON format with URLs
+    relativeTime: int | None = Field(None, description="Milliseconds since start")
+    windowInfo: dict[str, Any] | None = None
+    userAnnotations: dict[str, Any] | None = None
 
 
 # Interaction schemas
 
+
 class Coordinates(BaseModel):
     """X, Y coordinates"""
+
     x: int
     y: int
 
 
 class DragPath(BaseModel):
     """Point in drag path"""
+
     x: int
     y: int
     time: int  # Milliseconds from drag start
@@ -136,130 +151,145 @@ class DragPath(BaseModel):
 
 class TargetElement(BaseModel):
     """Target UI element information"""
-    text: Optional[str] = None
-    role: Optional[str] = None
-    label: Optional[str] = None
-    placeholder: Optional[str] = None
-    boundingBox: Optional[Dict[str, int]] = None
+
+    text: str | None = None
+    role: str | None = None
+    label: str | None = None
+    placeholder: str | None = None
+    boundingBox: dict[str, int] | None = None
 
 
 class InteractionData(BaseModel):
     """User interaction event"""
+
     id: str
     timestamp: datetime
     relativeTime: int = Field(..., description="Milliseconds since recording start")
-    frameNumber: Optional[int] = None
+    frameNumber: int | None = None
     type: InteractionTypeEnum
 
     # Mouse/click fields
-    coordinates: Optional[Coordinates] = None
-    button: Optional[str] = Field(None, pattern="^(left|right|middle)$")
-    clickCount: Optional[int] = Field(default=1, ge=1)
+    coordinates: Coordinates | None = None
+    button: str | None = Field(None, pattern="^(left|right|middle)$")
+    clickCount: int | None = Field(default=1, ge=1)
 
     # Drag fields
-    startCoordinates: Optional[Coordinates] = None
-    endCoordinates: Optional[Coordinates] = None
-    path: Optional[List[DragPath]] = None
+    startCoordinates: Coordinates | None = None
+    endCoordinates: Coordinates | None = None
+    path: list[DragPath] | None = None
 
     # Keyboard fields
-    action: Optional[str] = Field(None, pattern="^(press|release|type)$")
-    key: Optional[str] = None
-    keyCode: Optional[int] = None
-    char: Optional[str] = None
-    text: Optional[str] = None
+    action: str | None = Field(None, pattern="^(press|release|type)$")
+    key: str | None = None
+    keyCode: int | None = None
+    char: str | None = None
+    text: str | None = None
 
     # Scroll fields
-    delta: Optional[Coordinates] = None
-    direction: Optional[str] = Field(None, pattern="^(up|down|left|right)$")
-    scrollType: Optional[str] = Field(None, pattern="^(wheel|trackpad|scrollbar)$")
+    delta: Coordinates | None = None
+    direction: str | None = Field(None, pattern="^(up|down|left|right)$")
+    scrollType: str | None = Field(None, pattern="^(wheel|trackpad|scrollbar)$")
 
     # Hover fields
-    hoverDuration: Optional[int] = None
-    hoverTriggered: Optional[bool] = None
+    hoverDuration: int | None = None
+    hoverTriggered: bool | None = None
 
     # Common fields
-    targetElement: Optional[TargetElement] = None
-    metadata: Optional[Dict[str, Any]] = None
+    targetElement: TargetElement | None = None
+    metadata: dict[str, Any] | None = None
 
 
 # Context schemas
 
+
 class WindowInfo(BaseModel):
     """Window information"""
-    title: Optional[str] = None
-    processName: Optional[str] = None
-    processId: Optional[int] = None
-    bounds: Optional[Dict[str, int]] = None
-    state: Optional[str] = Field(None, pattern="^(maximized|minimized|normal)$")
-    zIndex: Optional[int] = None
-    isModal: Optional[bool] = None
+
+    title: str | None = None
+    processName: str | None = None
+    processId: int | None = None
+    bounds: dict[str, int] | None = None
+    state: str | None = Field(None, pattern="^(maximized|minimized|normal)$")
+    zIndex: int | None = None
+    isModal: bool | None = None
 
 
 class WebContext(BaseModel):
     """Web application context"""
+
     url: str
-    previousUrl: Optional[str] = None
-    title: Optional[str] = None
-    domain: Optional[str] = None
-    pathname: Optional[str] = None
-    hash: Optional[str] = None
-    navigation: Optional[str] = Field(None, pattern="^(pushState|replaceState|reload|link)$")
-    loadTime: Optional[int] = None
-    loadComplete: Optional[bool] = None
+    previousUrl: str | None = None
+    title: str | None = None
+    domain: str | None = None
+    pathname: str | None = None
+    hash: str | None = None
+    navigation: str | None = Field(
+        None, pattern="^(pushState|replaceState|reload|link)$"
+    )
+    loadTime: int | None = None
+    loadComplete: bool | None = None
 
 
 class ContextEventData(BaseModel):
     """Context event"""
+
     timestamp: datetime
     relativeTime: int
-    frameNumber: Optional[int] = None
+    frameNumber: int | None = None
     eventType: ContextEventTypeEnum
-    windowInfo: Optional[WindowInfo] = None
-    webContext: Optional[WebContext] = None
-    previousWindow: Optional[Dict[str, Any]] = None
-    focusedElement: Optional[Dict[str, Any]] = None
-    previousFocus: Optional[Dict[str, Any]] = None
-    appState: Optional[Dict[str, Any]] = None
-    performance: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
-    description: Optional[str] = None
+    windowInfo: WindowInfo | None = None
+    webContext: WebContext | None = None
+    previousWindow: dict[str, Any] | None = None
+    focusedElement: dict[str, Any] | None = None
+    previousFocus: dict[str, Any] | None = None
+    appState: dict[str, Any] | None = None
+    performance: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+    description: str | None = None
 
 
 # Upload request schema
 
+
 class RecordingUploadRequest(BaseModel):
     """Request to upload a recording"""
+
     metadata: RecordingMetadata
-    frames: Optional[List[FrameData]] = None  # For JSON format
-    interactions: List[InteractionData] = Field(default_factory=list)
-    contextEvents: List[ContextEventData] = Field(default_factory=list)
-    annotations: Optional[Dict[str, Any]] = None
+    frames: list[FrameData] | None = None  # For JSON format
+    interactions: list[InteractionData] = Field(default_factory=list)
+    contextEvents: list[ContextEventData] = Field(default_factory=list)
+    annotations: dict[str, Any] | None = None
 
 
 # Recording response schemas
 
+
 class RecordingBase(BaseModel):
     """Base recording information"""
+
     name: str
-    description: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 class RecordingCreate(RecordingBase):
     """Create recording request"""
+
     project_id: str
     recording_data: RecordingUploadRequest
 
 
 class RecordingUpdate(BaseModel):
     """Update recording request"""
-    name: Optional[str] = None
-    description: Optional[str] = None
-    tags: Optional[List[str]] = None
+
+    name: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
 
 
 class RecordingStats(BaseModel):
     """Recording statistics"""
+
     total_frames: int
     total_interactions: int
     total_context_events: int
@@ -272,20 +302,21 @@ class RecordingStats(BaseModel):
 
 class RecordingResponse(RecordingBase):
     """Recording response"""
+
     id: str
     project_id: str
     created_by_id: str
     status: RecordingStatusEnum
-    processing_phase: Optional[ProcessingPhaseEnum] = None
+    processing_phase: ProcessingPhaseEnum | None = None
     processing_progress: float = Field(default=0.0, ge=0.0, le=1.0)
     created_at: datetime
     updated_at: datetime
     recording_start_time: datetime
     recording_end_time: datetime
     stats: RecordingStats
-    validation_errors: List[str] = Field(default_factory=list)
-    validation_warnings: List[str] = Field(default_factory=list)
-    confidence: Optional[float] = None
+    validation_errors: list[str] = Field(default_factory=list)
+    validation_warnings: list[str] = Field(default_factory=list)
+    confidence: float | None = None
 
     class Config:
         from_attributes = True
@@ -293,7 +324,8 @@ class RecordingResponse(RecordingBase):
 
 class RecordingListResponse(BaseModel):
     """List of recordings response"""
-    recordings: List[RecordingResponse]
+
+    recordings: list[RecordingResponse]
     total: int
     page: int
     page_size: int
@@ -301,21 +333,23 @@ class RecordingListResponse(BaseModel):
 
 # Frame response schemas
 
+
 class FrameResponse(BaseModel):
     """Frame response"""
+
     id: str
     recording_id: str
     frame_number: int
     timestamp: datetime
     relative_time_ms: int
-    image_url: Optional[str] = None
+    image_url: str | None = None
     width: int
     height: int
-    perceptual_hash: Optional[str] = None
-    cluster_id: Optional[int] = None
-    state_id: Optional[str] = None
-    window_title: Optional[str] = None
-    url: Optional[str] = None
+    perceptual_hash: str | None = None
+    cluster_id: int | None = None
+    state_id: str | None = None
+    window_title: str | None = None
+    url: str | None = None
 
     class Config:
         from_attributes = True
@@ -323,25 +357,28 @@ class FrameResponse(BaseModel):
 
 # Processing job schemas
 
+
 class ProcessingJobStatus(BaseModel):
     """Processing job status"""
+
     recording_id: str
     status: RecordingStatusEnum
-    phase: Optional[ProcessingPhaseEnum] = None
+    phase: ProcessingPhaseEnum | None = None
     progress: float = Field(..., ge=0.0, le=1.0)
-    started_at: Optional[datetime] = None
-    estimated_completion: Optional[datetime] = None
-    error: Optional[str] = None
+    started_at: datetime | None = None
+    estimated_completion: datetime | None = None
+    error: str | None = None
 
 
 class ProcessingLogEntry(BaseModel):
     """Processing log entry"""
+
     timestamp: datetime
     phase: ProcessingPhaseEnum
     level: str
     message: str
-    data: Optional[Dict[str, Any]] = None
-    progress: Optional[float] = None
+    data: dict[str, Any] | None = None
+    progress: float | None = None
 
     class Config:
         from_attributes = True
@@ -349,26 +386,28 @@ class ProcessingLogEntry(BaseModel):
 
 # Discovered state schemas
 
+
 class DiscoveredStateResponse(BaseModel):
     """Discovered state response"""
+
     id: str
     recording_id: str
     name: str
-    description: Optional[str] = None
-    cluster_id: Optional[int] = None
-    state_images: List[Dict[str, Any]] = Field(default_factory=list)
-    regions: List[Dict[str, Any]] = Field(default_factory=list)
-    locations: List[Dict[str, Any]] = Field(default_factory=list)
-    strings: List[Dict[str, Any]] = Field(default_factory=list)
+    description: str | None = None
+    cluster_id: int | None = None
+    state_images: list[dict[str, Any]] = Field(default_factory=list)
+    regions: list[dict[str, Any]] = Field(default_factory=list)
+    locations: list[dict[str, Any]] = Field(default_factory=list)
+    strings: list[dict[str, Any]] = Field(default_factory=list)
     frame_count: int
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
+    position_x: float | None = None
+    position_y: float | None = None
     is_initial: bool = False
     is_error_state: bool = False
-    confidence: Optional[float] = None
+    confidence: float | None = None
     user_edited: bool = False
     user_approved: bool = False
-    converted_to_state_id: Optional[str] = None
+    converted_to_state_id: str | None = None
 
     class Config:
         from_attributes = True
@@ -376,25 +415,27 @@ class DiscoveredStateResponse(BaseModel):
 
 # Discovered transition schemas
 
+
 class DiscoveredTransitionResponse(BaseModel):
     """Discovered transition response"""
+
     id: str
     recording_id: str
     from_state_id: str
-    to_state_id: Optional[str] = None
-    activate_state_ids: List[str] = Field(default_factory=list)
-    deactivate_state_ids: List[str] = Field(default_factory=list)
+    to_state_id: str | None = None
+    activate_state_ids: list[str] = Field(default_factory=list)
+    deactivate_state_ids: list[str] = Field(default_factory=list)
     stays_visible: bool = False
-    trigger_type: Optional[str] = None
-    trigger_description: Optional[str] = None
-    latency_ms: Optional[int] = None
-    recommended_timeout_ms: Optional[int] = None
-    workflow: Optional[Dict[str, Any]] = None
-    workflow_name: Optional[str] = None
-    confidence: Optional[float] = None
+    trigger_type: str | None = None
+    trigger_description: str | None = None
+    latency_ms: int | None = None
+    recommended_timeout_ms: int | None = None
+    workflow: dict[str, Any] | None = None
+    workflow_name: str | None = None
+    confidence: float | None = None
     user_edited: bool = False
     user_approved: bool = False
-    converted_to_transition_id: Optional[str] = None
+    converted_to_transition_id: str | None = None
 
     class Config:
         from_attributes = True
@@ -402,53 +443,62 @@ class DiscoveredTransitionResponse(BaseModel):
 
 # State structure response
 
+
 class DiscoveredStateStructure(BaseModel):
     """Complete discovered state structure"""
+
     recording_id: str
-    states: List[DiscoveredStateResponse]
-    transitions: List[DiscoveredTransitionResponse]
-    stats: Dict[str, Any]
-    confidence: Optional[float] = None
+    states: list[DiscoveredStateResponse]
+    transitions: list[DiscoveredTransitionResponse]
+    stats: dict[str, Any]
+    confidence: float | None = None
 
 
 # Review and acceptance schemas
 
+
 class StateReviewUpdate(BaseModel):
     """Update for state review"""
+
     user_approved: bool
-    user_notes: Optional[str] = None
-    modifications: Optional[Dict[str, Any]] = None
+    user_notes: str | None = None
+    modifications: dict[str, Any] | None = None
 
 
 class TransitionReviewUpdate(BaseModel):
     """Update for transition review"""
+
     user_approved: bool
-    user_notes: Optional[str] = None
-    modifications: Optional[Dict[str, Any]] = None
+    user_notes: str | None = None
+    modifications: dict[str, Any] | None = None
 
 
 class AcceptanceRequest(BaseModel):
     """Request to accept discovered structure"""
+
     action: str = Field(..., pattern="^(accept|accept_selected|modify|discard)$")
-    selected_state_ids: Optional[List[str]] = None
-    selected_transition_ids: Optional[List[str]] = None
-    modifications: Optional[Dict[str, Any]] = None
+    selected_state_ids: list[str] | None = None
+    selected_transition_ids: list[str] | None = None
+    modifications: dict[str, Any] | None = None
 
 
 class AcceptanceResponse(BaseModel):
     """Response after accepting discovered structure"""
+
     success: bool
     message: str
-    created_states: List[str] = Field(default_factory=list)
-    created_transitions: List[str] = Field(default_factory=list)
-    created_workflows: List[str] = Field(default_factory=list)
-    errors: List[str] = Field(default_factory=list)
+    created_states: list[str] = Field(default_factory=list)
+    created_transitions: list[str] = Field(default_factory=list)
+    created_workflows: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 # Upload response
 
+
 class UploadResponse(BaseModel):
     """Response after upload"""
+
     success: bool
     recording_id: str
     uploaded_at: datetime
@@ -456,16 +506,18 @@ class UploadResponse(BaseModel):
     frame_count: int
     interaction_count: int
     status: RecordingStatusEnum
-    validation_errors: List[str] = Field(default_factory=list)
-    validation_warnings: List[str] = Field(default_factory=list)
-    message: Optional[str] = None
+    validation_errors: list[str] = Field(default_factory=list)
+    validation_warnings: list[str] = Field(default_factory=list)
+    message: str | None = None
 
 
 # Error response
 
+
 class RecordingError(BaseModel):
     """Error response"""
+
     success: bool = False
     error: str
     message: str
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None

@@ -5,13 +5,11 @@ Provides secure file loading with path validation, preventing directory
 traversal and unauthorized file access.
 """
 
-import os
 import re
 from pathlib import Path
-from typing import Optional
 
-from fastapi import HTTPException, status
 import structlog
+from fastapi import HTTPException, status
 
 logger = structlog.get_logger(__name__)
 
@@ -28,15 +26,15 @@ class FilePathValidator:
 
     # Dangerous path patterns
     DANGEROUS_PATTERNS = [
-        r'\.\.',  # Parent directory reference
-        r'^/',    # Absolute path (Unix)
-        r'^[A-Za-z]:',  # Absolute path (Windows)
-        r'~',     # Home directory
-        r'\$',    # Environment variables
+        r"\.\.",  # Parent directory reference
+        r"^/",  # Absolute path (Unix)
+        r"^[A-Za-z]:",  # Absolute path (Windows)
+        r"~",  # Home directory
+        r"\$",  # Environment variables
     ]
 
     @classmethod
-    def validate_path(cls, file_path: str, project_root: Optional[Path] = None) -> Path:
+    def validate_path(cls, file_path: str, project_root: Path | None = None) -> Path:
         """Validate and normalize file path.
 
         Args:
@@ -55,18 +53,18 @@ class FilePathValidator:
                 logger.warning(
                     "dangerous_path_pattern_detected",
                     file_path=file_path,
-                    pattern=pattern
+                    pattern=pattern,
                 )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid file path: contains forbidden pattern '{pattern}'"
+                    detail=f"Invalid file path: contains forbidden pattern '{pattern}'",
                 )
 
         # Ensure .py extension
-        if not file_path.endswith('.py'):
+        if not file_path.endswith(".py"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File path must have .py extension"
+                detail="File path must have .py extension",
             )
 
         # Normalize path relative to project root (or CWD if no project root)
@@ -85,31 +83,31 @@ class FilePathValidator:
                 logger.warning(
                     "path_outside_project_root",
                     file_path=str(normalized_path),
-                    project_root=str(base_path)
+                    project_root=str(base_path),
                 )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="File path must be within project directory"
+                    detail="File path must be within project directory",
                 )
 
         # Check if file exists
         if not normalized_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"File not found: {file_path}"
+                detail=f"File not found: {file_path}",
             )
 
         # Check if it's a file (not directory)
         if not normalized_path.is_file():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Path is not a file: {file_path}"
+                detail=f"Path is not a file: {file_path}",
             )
 
         logger.info(
             "file_path_validated",
             file_path=file_path,
-            resolved_path=str(normalized_path)
+            resolved_path=str(normalized_path),
         )
 
         return normalized_path
@@ -118,7 +116,7 @@ class FilePathValidator:
 class PythonFileLoader:
     """Loads and caches Python files for execution."""
 
-    def __init__(self, project_root: Optional[Path] = None):
+    def __init__(self, project_root: Path | None = None):
         """Initialize file loader.
 
         Args:
@@ -148,13 +146,12 @@ class PythonFileLoader:
 
         # Validate path
         absolute_path = self.validator.validate_path(
-            file_path,
-            project_root=self.project_root
+            file_path, project_root=self.project_root
         )
 
         # Load file content
         try:
-            with open(absolute_path, 'r', encoding='utf-8') as f:
+            with open(absolute_path, encoding="utf-8") as f:
                 content = f.read()
 
             # Cache content
@@ -162,45 +159,36 @@ class PythonFileLoader:
                 self._cache[file_path] = content
 
             logger.info(
-                "file_loaded_successfully",
-                file_path=file_path,
-                size_bytes=len(content)
+                "file_loaded_successfully", file_path=file_path, size_bytes=len(content)
             )
 
             return content
 
         except UnicodeDecodeError as e:
-            logger.error(
-                "file_encoding_error",
-                file_path=file_path,
-                error=str(e)
-            )
+            logger.error("file_encoding_error", file_path=file_path, error=str(e))
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File encoding error: {str(e)}"
+                detail=f"File encoding error: {str(e)}",
             )
         except PermissionError:
-            logger.error(
-                "file_permission_denied",
-                file_path=file_path
-            )
+            logger.error("file_permission_denied", file_path=file_path)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Permission denied: {file_path}"
+                detail=f"Permission denied: {file_path}",
             )
         except Exception as e:
             logger.error(
                 "file_load_error",
                 file_path=file_path,
                 error=str(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to load file: {str(e)}"
+                detail=f"Failed to load file: {str(e)}",
             )
 
-    def clear_cache(self, file_path: Optional[str] = None):
+    def clear_cache(self, file_path: str | None = None):
         """Clear file cache.
 
         Args:
@@ -228,13 +216,13 @@ class PythonFileLoader:
         if not dir_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Directory not found: {directory}"
+                detail=f"Directory not found: {directory}",
             )
 
         if not dir_path.is_dir():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Path is not a directory: {directory}"
+                detail=f"Path is not a directory: {directory}",
             )
 
         # Find all .py files
@@ -245,9 +233,7 @@ class PythonFileLoader:
             python_files.append(str(relative_path))
 
         logger.info(
-            "python_files_listed",
-            directory=directory,
-            file_count=len(python_files)
+            "python_files_listed", directory=directory, file_count=len(python_files)
         )
 
         return sorted(python_files)

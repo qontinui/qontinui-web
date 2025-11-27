@@ -13,8 +13,7 @@ import json
 import logging
 import os
 from io import BytesIO
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -46,15 +45,19 @@ class ActiveLearningDetector(BaseAnalyzer):
     Stores learned patterns for future sessions.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
 
         # Initialize learning state
-        self.positive_examples = []  # List of (features, bbox) for true buttons
-        self.negative_examples = []  # List of (features, bbox) for non-buttons
+        self.positive_examples: list[tuple[np.ndarray, BoundingBox]] = (
+            []
+        )  # List of (features, bbox) for true buttons
+        self.negative_examples: list[tuple[np.ndarray, BoundingBox]] = (
+            []
+        )  # List of (features, bbox) for non-buttons
 
         # Simple linear model weights (feature_dim,)
-        self.weights = None
+        self.weights: np.ndarray | None = None
         self.bias = 0.0
 
         # Learning rate
@@ -79,7 +82,7 @@ class ActiveLearningDetector(BaseAnalyzer):
     def required_screenshots(self) -> int:
         return 1
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             # Heuristic detection params
             "min_area": 500,
@@ -140,7 +143,7 @@ class ActiveLearningDetector(BaseAnalyzer):
             },
         )
 
-    def _load_images(self, screenshot_data: List[bytes]) -> List[np.ndarray]:
+    def _load_images(self, screenshot_data: list[bytes]) -> list[np.ndarray]:
         """Load screenshots as numpy arrays"""
         images = []
         for data in screenshot_data:
@@ -149,8 +152,8 @@ class ActiveLearningDetector(BaseAnalyzer):
         return images
 
     async def _analyze_screenshot(
-        self, img: np.ndarray, screenshot_idx: int, params: Dict[str, Any]
-    ) -> List[DetectedElement]:
+        self, img: np.ndarray, screenshot_idx: int, params: dict[str, Any]
+    ) -> list[DetectedElement]:
         """Analyze single screenshot"""
 
         # Step 1: Heuristic baseline detection
@@ -184,8 +187,8 @@ class ActiveLearningDetector(BaseAnalyzer):
         return elements
 
     def _heuristic_detection(
-        self, img: np.ndarray, params: Dict[str, Any]
-    ) -> List[Tuple[BoundingBox, float, str]]:
+        self, img: np.ndarray, params: dict[str, Any]
+    ) -> list[tuple[BoundingBox, float, str]]:
         """
         Baseline heuristic detection
 
@@ -234,9 +237,9 @@ class ActiveLearningDetector(BaseAnalyzer):
     def _apply_learned_model(
         self,
         img: np.ndarray,
-        candidates: List[Tuple[BoundingBox, float, str]],
-        params: Dict[str, Any],
-    ) -> List[Tuple[BoundingBox, float, str]]:
+        candidates: list[tuple[BoundingBox, float, str]],
+        params: dict[str, Any],
+    ) -> list[tuple[BoundingBox, float, str]]:
         """
         Apply learned model to refine candidates
 
@@ -359,12 +362,13 @@ class ActiveLearningDetector(BaseAnalyzer):
             return 0.5  # Neutral if not trained
 
         # Linear model: score = w^T * x + b
-        score = np.dot(self.weights, features) + self.bias
+        weights = self.weights  # Type narrowing
+        score = np.dot(weights, features) + self.bias
 
         # Apply sigmoid for probability
         prob = 1 / (1 + np.exp(-score))
 
-        return prob
+        return float(prob)
 
     def add_positive_example(self, img: np.ndarray, bbox: BoundingBox):
         """
@@ -416,10 +420,13 @@ class ActiveLearningDetector(BaseAnalyzer):
             (f, 0.0) for f, _ in self.negative_examples
         ]
 
-        # Shuffle
-        np.random.shuffle(examples)
+        # Shuffle using random module for list of tuples
+        import random
+
+        random.shuffle(examples)
 
         # Update
+        weights = self.weights  # Type narrowing
         for features, label in examples:
             # Predict
             prediction = self._predict(features)
@@ -430,8 +437,10 @@ class ActiveLearningDetector(BaseAnalyzer):
             gradient_b = error
 
             # Update weights
-            self.weights -= self.learning_rate * gradient_w
+            weights -= self.learning_rate * gradient_w
             self.bias -= self.learning_rate * gradient_b
+
+        self.weights = weights  # Update instance variable
 
         logger.info("Model updated with new examples")
 
@@ -466,12 +475,12 @@ class ActiveLearningDetector(BaseAnalyzer):
                 logger.info("No saved model found, starting fresh")
                 return
 
-            with open(model_path, "r") as f:
+            with open(model_path) as f:
                 model_data = json.load(f)
 
             if model_data["weights"] is not None:
                 self.weights = np.array(model_data["weights"], dtype=np.float32)
-                self.bias = model_data["bias"]
+                self.bias = float(model_data["bias"])
 
                 logger.info(
                     f"Model loaded from {model_path} "

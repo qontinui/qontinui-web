@@ -50,13 +50,13 @@ This service should primarily:
 Heavy CV operations should be delegated to qontinui library via runner.
 """
 
-from typing import List, Dict, Any, Tuple, Optional
 import uuid
+from typing import Any
+
 import numpy as np
-from PIL import Image
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 import structlog
-from collections import Counter
+from PIL import Image
 
 from app.services.frame_analysis_service import FrameAnalysisService
 
@@ -71,9 +71,9 @@ class FrameStateDiscoveryService:
 
     async def identify_states_from_clusters(
         self,
-        frames_by_cluster: Dict[int, List[Dict[str, Any]]],
-        all_frames_data: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        frames_by_cluster: dict[int, list[dict[str, Any]]],
+        all_frames_data: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """
         Identify states from frame clusters
 
@@ -92,7 +92,9 @@ class FrameStateDiscoveryService:
 
             try:
                 # Download representative frames for analysis
-                images = await self._download_cluster_frames(frames[:10])  # Limit to 10 for performance
+                images = await self._download_cluster_frames(
+                    frames[:10]
+                )  # Limit to 10 for performance
 
                 if not images:
                     logger.warning(f"No images downloaded for cluster {cluster_id}")
@@ -103,14 +105,16 @@ class FrameStateDiscoveryService:
                 # of reimplementing pixel variance analysis in FrameAnalysisService
 
                 # Detect stable regions across cluster frames
-                stable_regions, volatile_regions = self.frame_analysis.detect_stable_regions(images)
+                stable_regions, volatile_regions = (
+                    self.frame_analysis.detect_stable_regions(images)
+                )
 
                 # Extract StateImages from stable regions
                 state_images = await self._extract_state_images(
                     stable_regions,
                     images[0],  # Use first frame as representative
                     frames,
-                    all_frames_data
+                    all_frames_data,
                 )
 
                 # TODO [ARCHITECTURE]: Delegate OCR and state construction to qontinui library
@@ -127,15 +131,12 @@ class FrameStateDiscoveryService:
                     state_strings,
                     frames[0].get("window_title"),
                     frames[0].get("url"),
-                    cluster_id
+                    cluster_id,
                 )
 
                 # Calculate confidence scores
                 confidence_scores = self._calculate_confidence_scores(
-                    state_images,
-                    stable_regions,
-                    len(frames),
-                    all_frames_data
+                    state_images, stable_regions, len(frames), all_frames_data
                 )
 
                 # Determine if this is an error state
@@ -152,7 +153,7 @@ class FrameStateDiscoveryService:
                         {
                             "id": str(uuid.uuid4()),
                             "name": f"dynamic_region_{i}",
-                            **region
+                            **region,
                         }
                         for i, region in enumerate(volatile_regions[:5])  # Limit to 5
                     ],
@@ -169,7 +170,7 @@ class FrameStateDiscoveryService:
                     "distinctiveness_score": confidence_scores["distinctiveness"],
                     "window_context": {
                         "title": frames[0].get("window_title"),
-                        "bounds": frames[0].get("window_bounds")
+                        "bounds": frames[0].get("window_bounds"),
                     },
                     "url_context": frames[0].get("url"),
                 }
@@ -177,7 +178,11 @@ class FrameStateDiscoveryService:
                 discovered_states.append(state)
 
             except Exception as e:
-                logger.error(f"Failed to process cluster {cluster_id}", error=str(e), exc_info=True)
+                logger.error(
+                    f"Failed to process cluster {cluster_id}",
+                    error=str(e),
+                    exc_info=True,
+                )
                 continue
 
         # Set initial state (first cluster with frames)
@@ -187,9 +192,8 @@ class FrameStateDiscoveryService:
         return discovered_states
 
     async def _download_cluster_frames(
-        self,
-        frames: List[Dict[str, Any]]
-    ) -> List[Image.Image]:
+        self, frames: list[dict[str, Any]]
+    ) -> list[Image.Image]:
         """Download sample frames from a cluster"""
         images = []
 
@@ -206,11 +210,11 @@ class FrameStateDiscoveryService:
 
     async def _extract_state_images(
         self,
-        stable_regions: List[Dict[str, Any]],
+        stable_regions: list[dict[str, Any]],
         representative_image: Image.Image,
-        cluster_frames: List[Dict[str, Any]],
-        all_frames: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        cluster_frames: list[dict[str, Any]],
+        all_frames: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """
         Extract StateImages from stable regions
 
@@ -235,7 +239,9 @@ class FrameStateDiscoveryService:
                 is_shared = self._is_shared_element(region, all_frames, cluster_frames)
 
                 # Calculate stability score (how consistent across cluster)
-                stability_score = self._calculate_region_stability(region, cluster_frames)
+                stability_score = self._calculate_region_stability(
+                    region, cluster_frames
+                )
 
                 # Determine if position is fixed (appears at same coordinates)
                 is_fixed = self._is_fixed_position(region, cluster_frames)
@@ -247,12 +253,7 @@ class FrameStateDiscoveryService:
                         {
                             "id": str(uuid.uuid4()),
                             "searchRegions": [
-                                {
-                                    "x": x,
-                                    "y": y,
-                                    "width": w,
-                                    "height": h
-                                }
+                                {"x": x, "y": y, "width": w, "height": h}
                             ],
                             "fixed": is_fixed,
                             "similarity": 0.85,  # Default threshold
@@ -266,16 +267,18 @@ class FrameStateDiscoveryService:
                 state_images.append(state_image)
 
             except Exception as e:
-                logger.error(f"Failed to extract state image for region {i}", error=str(e))
+                logger.error(
+                    f"Failed to extract state image for region {i}", error=str(e)
+                )
                 continue
 
         return state_images
 
     def _is_shared_element(
         self,
-        region: Dict[str, Any],
-        all_frames: List[Dict[str, Any]],
-        cluster_frames: List[Dict[str, Any]]
+        region: dict[str, Any],
+        all_frames: list[dict[str, Any]],
+        cluster_frames: list[dict[str, Any]],
     ) -> bool:
         """Check if a region appears in frames outside this cluster"""
         # Simplified: assume element is shared if it's in top-left corner
@@ -286,9 +289,7 @@ class FrameStateDiscoveryService:
         return False
 
     def _calculate_region_stability(
-        self,
-        region: Dict[str, Any],
-        frames: List[Dict[str, Any]]
+        self, region: dict[str, Any], frames: list[dict[str, Any]]
     ) -> float:
         """
         Calculate how stable a region is across frames
@@ -302,15 +303,13 @@ class FrameStateDiscoveryService:
         return 0.95
 
     def _is_fixed_position(
-        self,
-        region: Dict[str, Any],
-        frames: List[Dict[str, Any]]
+        self, region: dict[str, Any], frames: list[dict[str, Any]]
     ) -> bool:
         """Check if region appears at fixed coordinates"""
         # Simplified: assume fixed if variance is low
         return True
 
-    def _extract_text_elements(self, image: Image.Image) -> List[Dict[str, Any]]:
+    def _extract_text_elements(self, image: Image.Image) -> list[dict[str, Any]]:
         """
         Extract text elements using OCR
 
@@ -329,7 +328,7 @@ class FrameStateDiscoveryService:
             text = pytesseract.image_to_string(image)
 
             # Split into lines and filter
-            lines = [line.strip() for line in text.split('\n') if line.strip()]
+            lines = [line.strip() for line in text.split("\n") if line.strip()]
 
             # Create StateString objects
             state_strings = []
@@ -350,10 +349,10 @@ class FrameStateDiscoveryService:
 
     def _generate_state_name(
         self,
-        state_strings: List[Dict[str, Any]],
-        window_title: Optional[str],
-        url: Optional[str],
-        cluster_id: int
+        state_strings: list[dict[str, Any]],
+        window_title: str | None,
+        url: str | None,
+        cluster_id: int,
     ) -> str:
         """
         Generate intelligent name for state
@@ -367,7 +366,7 @@ class FrameStateDiscoveryService:
         # Try window title first
         if window_title:
             # Clean up window title
-            name = window_title.split('-')[0].strip()
+            name = window_title.split("-")[0].strip()
             if len(name) > 3:
                 return self._sanitize_name(name)
 
@@ -382,9 +381,10 @@ class FrameStateDiscoveryService:
         if url:
             try:
                 from urllib.parse import urlparse
+
                 path = urlparse(url).path
-                if path and path != '/':
-                    parts = [p for p in path.split('/') if p]
+                if path and path != "/":
+                    parts = [p for p in path.split("/") if p]
                     if parts:
                         return self._sanitize_name(parts[-1].title())
             except:
@@ -397,16 +397,15 @@ class FrameStateDiscoveryService:
         """Sanitize state name"""
         # Remove special characters, limit length
         import re
-        name = re.sub(r'[^a-zA-Z0-9\s_-]', '', name)
+
+        name = re.sub(r"[^a-zA-Z0-9\s_-]", "", name)
         name = name.strip()
         if len(name) > 50:
             name = name[:50]
         return name or "UnnamedState"
 
     def _detect_error_state(
-        self,
-        state_strings: List[Dict[str, Any]],
-        state_images: List[Dict[str, Any]]
+        self, state_strings: list[dict[str, Any]], state_images: list[dict[str, Any]]
     ) -> bool:
         """
         Detect if this is an error state
@@ -415,7 +414,15 @@ class FrameStateDiscoveryService:
         - Error-related text ("error", "failed", "retry")
         - Red color schemes (simplified)
         """
-        error_keywords = ["error", "failed", "failure", "retry", "cancel", "warning", "problem"]
+        error_keywords = [
+            "error",
+            "failed",
+            "failure",
+            "retry",
+            "cancel",
+            "warning",
+            "problem",
+        ]
 
         for string_obj in state_strings:
             text = string_obj["value"].lower()
@@ -424,7 +431,7 @@ class FrameStateDiscoveryService:
 
         return False
 
-    def _is_transient_state(self, frames: List[Dict[str, Any]]) -> bool:
+    def _is_transient_state(self, frames: list[dict[str, Any]]) -> bool:
         """
         Determine if this is a transient state (like loading)
 
@@ -452,11 +459,11 @@ class FrameStateDiscoveryService:
 
     def _calculate_confidence_scores(
         self,
-        state_images: List[Dict[str, Any]],
-        stable_regions: List[Dict[str, Any]],
+        state_images: list[dict[str, Any]],
+        stable_regions: list[dict[str, Any]],
         frame_count: int,
-        all_frames: List[Dict[str, Any]]
-    ) -> Dict[str, float]:
+        all_frames: list[dict[str, Any]],
+    ) -> dict[str, float]:
         """
         Calculate confidence scores for state
 
@@ -465,14 +472,18 @@ class FrameStateDiscoveryService:
         """
         # Uniqueness: proportion of unique (non-shared) elements
         if state_images:
-            unique_count = sum(1 for img in state_images if not img.get("shared", False))
+            unique_count = sum(
+                1 for img in state_images if not img.get("shared", False)
+            )
             uniqueness = unique_count / len(state_images)
         else:
             uniqueness = 0.0
 
         # Stability: average stability of all elements
         if state_images:
-            stability = np.mean([img.get("stabilityScore", 0.5) for img in state_images])
+            stability = np.mean(
+                [img.get("stabilityScore", 0.5) for img in state_images]
+            )
         else:
             stability = 0.0
 
@@ -480,24 +491,18 @@ class FrameStateDiscoveryService:
         distinctiveness = min(len(state_images) / 5.0, 1.0)  # 5+ elements = 1.0
 
         # Overall: weighted average
-        overall = (
-            uniqueness * 0.4 +
-            stability * 0.3 +
-            distinctiveness * 0.3
-        )
+        overall = uniqueness * 0.4 + stability * 0.3 + distinctiveness * 0.3
 
         return {
             "uniqueness": float(uniqueness),
             "stability": float(stability),
             "distinctiveness": float(distinctiveness),
-            "overall": float(overall)
+            "overall": float(overall),
         }
 
     def merge_similar_states(
-        self,
-        states: List[Dict[str, Any]],
-        similarity_threshold: float = 0.90
-    ) -> List[Dict[str, Any]]:
+        self, states: list[dict[str, Any]], similarity_threshold: float = 0.90
+    ) -> list[dict[str, Any]]:
         """
         Merge states that are too similar (deduplication)
 
@@ -521,7 +526,7 @@ class FrameStateDiscoveryService:
             # Find similar states
             similar_indices = [i]
 
-            for j, state2 in enumerate(states[i + 1:], start=i + 1):
+            for j, state2 in enumerate(states[i + 1 :], start=i + 1):
                 if j in used:
                     continue
 
@@ -533,7 +538,9 @@ class FrameStateDiscoveryService:
 
             # Merge similar states
             if len(similar_indices) > 1:
-                merged_state = self._merge_states([states[idx] for idx in similar_indices])
+                merged_state = self._merge_states(
+                    [states[idx] for idx in similar_indices]
+                )
                 merged.append(merged_state)
             else:
                 merged.append(state1)
@@ -543,9 +550,7 @@ class FrameStateDiscoveryService:
         return merged
 
     def _calculate_state_similarity(
-        self,
-        state1: Dict[str, Any],
-        state2: Dict[str, Any]
+        self, state1: dict[str, Any], state2: dict[str, Any]
     ) -> float:
         """Calculate similarity between two states"""
         # Compare state images
@@ -564,7 +569,7 @@ class FrameStateDiscoveryService:
 
         return intersection / union if union > 0 else 0.0
 
-    def _merge_states(self, states: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _merge_states(self, states: list[dict[str, Any]]) -> dict[str, Any]:
         """Merge multiple similar states into one"""
         # Use the state with highest confidence as base
         base_state = max(states, key=lambda s: s.get("confidence", 0.0))
@@ -578,6 +583,8 @@ class FrameStateDiscoveryService:
         base_state["frame_count"] = len(base_state["frame_ids"])
 
         # Update description
-        base_state["description"] = f"Merged state from {len(states)} similar states ({base_state['frame_count']} frames)"
+        base_state["description"] = (
+            f"Merged state from {len(states)} similar states ({base_state['frame_count']} frames)"
+        )
 
         return base_state

@@ -10,6 +10,7 @@ Tests include:
 """
 
 import pytest
+
 from app.services.code_security import (
     CodeSecurityScanner,
     IssueSeverity,

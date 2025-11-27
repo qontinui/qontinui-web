@@ -10,7 +10,7 @@ Accuracy: 75-85% for windows with clear borders
 """
 
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -39,14 +39,14 @@ class WindowBorderDetector(BaseRegionAnalyzer):
         return "window_border_detector"
 
     @property
-    def supported_region_types(self) -> List[RegionType]:
+    def supported_region_types(self) -> list[RegionType]:
         return [RegionType.WINDOW]
 
     @property
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize Window Border detector.
 
@@ -66,7 +66,7 @@ class WindowBorderDetector(BaseRegionAnalyzer):
         self.border_thickness_threshold = params["border_thickness_threshold"]
         self.rectangularity_threshold = params["rectangularity_threshold"]
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "min_window_width": 150,
             "min_window_height": 100,
@@ -119,9 +119,9 @@ class WindowBorderDetector(BaseRegionAnalyzer):
 
     def _detect_windows(
         self, gray: np.ndarray, screenshot_index: int
-    ) -> List[DetectedRegion]:
+    ) -> list[DetectedRegion]:
         """Detect windows in an image."""
-        detected_regions = []
+        detected_regions: list[DetectedRegion] = []
         img_area = gray.shape[0] * gray.shape[1]
 
         # Apply edge detection
@@ -229,7 +229,7 @@ class WindowBorderDetector(BaseRegionAnalyzer):
         # Borders are typically darker or lighter than content
         intensity_diff = abs(edge_mean - interior_mean)
 
-        return intensity_diff > 10  # Threshold for border detection
+        return bool(intensity_diff > 10)  # Threshold for border detection
 
     def _calculate_window_confidence(
         self,
@@ -275,11 +275,11 @@ class WindowBorderDetector(BaseRegionAnalyzer):
         row_std = np.std(row_means)
 
         # Title bars typically have uniform rows
-        return row_std < 15
+        return bool(row_std < 15)
 
     def _remove_overlapping_windows(
-        self, windows: List[DetectedRegion]
-    ) -> List[DetectedRegion]:
+        self, windows: list[DetectedRegion]
+    ) -> list[DetectedRegion]:
         """Remove overlapping windows, keeping larger ones."""
         if len(windows) <= 1:
             return windows
@@ -291,7 +291,7 @@ class WindowBorderDetector(BaseRegionAnalyzer):
             reverse=True,
         )
 
-        keep = []
+        keep: list[DetectedRegion] = []
         for window in sorted_windows:
             # Check if it overlaps significantly with any kept window
             overlaps = False

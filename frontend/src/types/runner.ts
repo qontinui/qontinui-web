@@ -20,7 +20,7 @@ export interface RunnerTokenWithSecret extends RunnerToken {
 
 export interface RunnerConnection {
   id: number;
-  runner_token_id: string;
+  runner_token_id: string | null; // null for JWT auth connections (not using runner token)
   runner_name: string;
   connected_at: string;
   disconnected_at: string | null;
@@ -41,6 +41,7 @@ export interface ConnectionHistoryParams {
 export interface ConnectionHistoryResponse {
   connections: RunnerConnection[];
   total: number;
+  active_count: number;
   limit: number;
   offset: number;
 }
@@ -67,4 +68,15 @@ export interface RunnerTokenCardProps {
   onRevoke: (tokenId: string) => void;
   onDelete: (tokenId: string) => void;
   onViewConnections: (tokenId: string) => void;
+}
+
+export interface TestConnectionResponse {
+  success: boolean;
+  message: string;
+  user_id: string;
+  username: string;
+  auth_method: 'jwt' | 'runner_token';
+  token_name: string | null;
+  connection_id: number;
+  tested_at: string;
 }

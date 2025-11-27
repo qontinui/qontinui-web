@@ -37,8 +37,9 @@ import type {
   AdminProjectDetails,
 } from '@/lib/schemas'
 
-// Admin API base URL - use empty string to go through Next.js proxy, or direct URL if specified
-const getApiUrl = () => process.env.NEXT_PUBLIC_API_URL || ''
+// Admin API base URL - always use empty string for relative URLs through Next.js proxy
+// This ensures cookies are properly forwarded for authentication
+const getApiUrl = () => ''
 
 // Query keys for organizing cache
 export const adminKeys = {
@@ -66,11 +67,15 @@ export function useAdminStats() {
   // Check if user is authenticated (using hasValidToken which checks auth state)
   const isAuthenticated = authService.tokenManager.hasValidToken()
 
+  console.log('[useAdminStats] isAuthenticated:', isAuthenticated)
+
   return useQuery({
     queryKey: adminKeys.stats(),
     queryFn: async () => {
       const apiUrl = getApiUrl()
       const url = `${apiUrl}/api/v1/admin/stats`
+
+      console.log('[useAdminStats] Fetching from:', url)
 
       // Use credentials: 'include' to send HttpOnly cookies for authentication
       const response = await fetch(url, {
@@ -80,8 +85,11 @@ export function useAdminStats() {
         credentials: 'include',
       })
 
+      console.log('[useAdminStats] Response:', response.status, response.statusText)
+
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error')
+        console.error('[useAdminStats] Error:', errorText)
         throw new Error(`Failed to fetch admin stats: ${response.status} - ${errorText}`)
       }
 
@@ -103,6 +111,8 @@ export function useAdminStats() {
 export function useAdminUsers(params?: { limit?: number; offset?: number }) {
   const isAuthenticated = authService.tokenManager.hasValidToken()
 
+  console.log('[useAdminUsers] isAuthenticated:', isAuthenticated)
+
   return useQuery({
     queryKey: adminKeys.userList(params),
     queryFn: async () => {
@@ -114,6 +124,8 @@ export function useAdminUsers(params?: { limit?: number; offset?: number }) {
 
       const url = `${apiUrl}/api/v1/admin/users${searchParams.toString() ? `?${searchParams}` : ''}`
 
+      console.log('[useAdminUsers] Fetching from:', url)
+
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
@@ -121,8 +133,11 @@ export function useAdminUsers(params?: { limit?: number; offset?: number }) {
         credentials: 'include',
       })
 
+      console.log('[useAdminUsers] Response:', response.status, response.statusText)
+
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error')
+        console.error('[useAdminUsers] Error:', errorText)
         throw new Error(`Failed to fetch admin users: ${response.status} - ${errorText}`)
       }
 

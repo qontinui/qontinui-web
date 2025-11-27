@@ -374,7 +374,7 @@ export class MigrationEngine {
 
     // Estimate changes by checking isApplicable for each migration
     const estimatedChanges: string[] = [];
-    let previewConfig = structuredClone(config);
+    const previewConfig = structuredClone(config);
 
     for (const migration of path) {
       if (migration.isApplicable && !migration.isApplicable(previewConfig)) {

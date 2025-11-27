@@ -60,7 +60,7 @@ def is_sensitive_field(field_name: str) -> bool:
         bool: True if the field is sensitive, False otherwise
     """
     if not isinstance(field_name, str):
-        return False
+        return False  # type: ignore[unreachable]
 
     field_lower = field_name.lower()
 
@@ -102,9 +102,9 @@ def sanitize_log_data(data: dict) -> dict:
         {"username": "john", "password": "***REDACTED***"}
     """
     if not isinstance(data, dict):
-        return data
+        return data  # type: ignore[unreachable]
 
-    sanitized = {}
+    sanitized: dict[Any, Any] = {}
 
     for key, value in data.items():
         if is_sensitive_field(key):
@@ -141,7 +141,7 @@ def sanitize_url(url: str) -> str:
         "http://***REDACTED***@example.com/api?token=***REDACTED***"
     """
     if not isinstance(url, str):
-        return url
+        return url  # type: ignore[unreachable]
 
     from urllib.parse import parse_qs, urlparse, urlunparse
 
@@ -202,9 +202,9 @@ def sanitize_headers(headers: dict) -> dict:
         dict: Sanitized copy of headers with sensitive values redacted
     """
     if not isinstance(headers, dict):
-        return headers
+        return headers  # type: ignore[unreachable]
 
-    sanitized = {}
+    sanitized: dict[Any, Any] = {}
 
     for key, value in headers.items():
         if is_sensitive_field(key):
@@ -228,9 +228,9 @@ def sanitize_request_data(request_data: dict) -> dict:
         dict: Sanitized copy of request data
     """
     if not isinstance(request_data, dict):
-        return request_data
+        return request_data  # type: ignore[unreachable]
 
-    sanitized = {}
+    sanitized: dict[Any, Any] = {}
 
     for key, value in request_data.items():
         if key == "headers":
@@ -238,7 +238,9 @@ def sanitize_request_data(request_data: dict) -> dict:
         elif key == "url":
             sanitized[key] = sanitize_url(value)
         elif key in ("body", "data", "json", "form"):
-            sanitized[key] = sanitize_log_data(value) if isinstance(value, dict) else value
+            sanitized[key] = (
+                sanitize_log_data(value) if isinstance(value, dict) else value
+            )
         elif is_sensitive_field(key):
             sanitized[key] = REDACTED_VALUE
         else:

@@ -9,7 +9,7 @@ Accuracy: 70-80% for clear text with good edges
 """
 
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cv2
 import numpy as np
@@ -38,14 +38,14 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
         return "edge_morphology_text_detector"
 
     @property
-    def supported_region_types(self) -> List[RegionType]:
+    def supported_region_types(self) -> list[RegionType]:
         return [RegionType.TEXT_AREA]
 
     @property
     def version(self) -> str:
         return "1.0.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize Edge + Morphology text detector.
 
@@ -78,7 +78,7 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
         self.min_aspect_ratio = params["min_aspect_ratio"]
         self.max_aspect_ratio = params["max_aspect_ratio"]
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         return {
             "canny_low": 50,
             "canny_high": 150,
@@ -135,7 +135,7 @@ class EdgeMorphologyTextDetector(BaseRegionAnalyzer):
 
     def _detect_text_regions(
         self, gray: np.ndarray, screenshot_index: int
-    ) -> List[DetectedRegion]:
+    ) -> list[DetectedRegion]:
         """Detect text regions in a grayscale image."""
         # Apply Gaussian blur to reduce noise
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)

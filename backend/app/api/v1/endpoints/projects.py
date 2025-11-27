@@ -2,18 +2,15 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.core.error_codes import ErrorCode
-from app.crud.project import (
-    create_project,
-    delete_project,
-    get_project,
-    get_projects_by_owner,
-    update_project,
-)
+from app.crud.project import create_project, delete_project, get_project, update_project
 from app.middleware.error_handler import forbidden_error, not_found_error
 from app.middleware.rate_limit import user_limiter
-from app.models.organization import PermissionLevel, TeamRole
+from app.models.organization import PermissionLevel
 from app.models.user import User
 from app.schemas.project import Project, ProjectCreate, ProjectUpdate
 from app.services.limit_checker import LimitChecker
@@ -21,8 +18,6 @@ from app.services.object_storage import object_storage
 from app.services.permission_service import permission_service
 from app.services.storage_service import StorageService
 from app.utils.lock_utils import check_resource_lock, get_lock_info
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -193,7 +188,7 @@ async def create_new_project(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Personal organization not found. Please contact support.",
             )
-        organization_id = personal_org.id
+        organization_id = personal_org.id  # type: ignore[assignment]
 
     # Create the project
     project = await create_project(
@@ -301,7 +296,7 @@ async def update_existing_project(
     Checks if project is locked by another user before allowing updates.
     """
     print(f"\n\n{'='*60}")
-    print(f"UPDATE PROJECT STARTED")
+    print("UPDATE PROJECT STARTED")
     print(f"project_id: {project_id}")
     print(f"user_id: {current_user.id}")
     print(f"update_fields: {project_update.model_dump(exclude_unset=True)}")
@@ -381,6 +376,7 @@ async def update_existing_project(
         raise
     except Exception as e:
         import traceback
+
         error_traceback = traceback.format_exc()
         logger.error(
             "update_project_error",
@@ -464,7 +460,9 @@ async def delete_existing_project(
         raise not_found_error("Project", "project")
 
     # Get all image s3_keys from configuration
-    config = project.configuration or {}
+    config: dict[str, Any] = (
+        dict(project.configuration) if project.configuration else {}
+    )
     images = config.get("images", [])
 
     # Delete all images from S3
