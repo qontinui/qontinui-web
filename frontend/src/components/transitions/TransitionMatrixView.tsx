@@ -1,15 +1,19 @@
-"use client"
+"use client";
 
-import React from "react"
-import { Transition, State, OutgoingTransition } from "@/contexts/automation-context/types"
-import { Badge } from "@/components/ui/badge"
-import { TransitionValidation, COLORS } from "./types"
+import React from "react";
+import {
+  Transition,
+  State,
+  OutgoingTransition,
+} from "@/contexts/automation-context/types";
+import { Badge } from "@/components/ui/badge";
+import { TransitionValidation, COLORS } from "./types";
 
 interface TransitionMatrixViewProps {
-  transitions: Transition[]
-  states: State[]
-  validation: TransitionValidation
-  onTransitionClick: (fromState: string, toState: string) => void
+  transitions: Transition[];
+  states: State[];
+  validation: TransitionValidation;
+  onTransitionClick: (fromState: string, toState: string) => void;
 }
 
 function getTransitionCellColor(
@@ -20,25 +24,25 @@ function getTransitionCellColor(
 ): { color: string; count: number } {
   const matchingTransitions = transitions.filter(
     (t) => t.fromState === fromState && t.activateStates.includes(toState)
-  )
+  );
 
   if (matchingTransitions.length === 0) {
-    return { color: COLORS.gray, count: 0 }
+    return { color: COLORS.gray, count: 0 };
   }
 
   // Check if any matching transition is circular
   const hasCircular = matchingTransitions.some((t) =>
     validation.circular.includes(t.id)
-  )
+  );
   if (hasCircular) {
-    return { color: COLORS.danger, count: matchingTransitions.length }
+    return { color: COLORS.danger, count: matchingTransitions.length };
   }
 
   if (matchingTransitions.length > 1) {
-    return { color: COLORS.warning, count: matchingTransitions.length }
+    return { color: COLORS.warning, count: matchingTransitions.length };
   }
 
-  return { color: COLORS.success, count: matchingTransitions.length }
+  return { color: COLORS.success, count: matchingTransitions.length };
 }
 
 export function TransitionMatrixView({
@@ -49,7 +53,7 @@ export function TransitionMatrixView({
 }: TransitionMatrixViewProps) {
   const outgoingTransitions = transitions.filter(
     (t): t is OutgoingTransition => t.type === "OutgoingTransition"
-  )
+  );
 
   return (
     <div className="h-full overflow-auto">
@@ -85,7 +89,7 @@ export function TransitionMatrixView({
                   toState.id,
                   outgoingTransitions,
                   validation
-                )
+                );
                 return (
                   <td
                     key={toState.id}
@@ -106,12 +110,12 @@ export function TransitionMatrixView({
                       )}
                     </div>
                   </td>
-                )
+                );
               })}
             </tr>
           ))}
         </tbody>
       </table>
     </div>
-  )
+  );
 }

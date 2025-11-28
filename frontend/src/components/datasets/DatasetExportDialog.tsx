@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Dataset Export Dialog
@@ -11,14 +11,14 @@
  * - JSONL
  */
 
-import { useState, useEffect } from 'react'
-import { datasetService } from '@/services/dataset-service'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Progress } from '@/components/ui/progress'
+import { useState, useEffect } from "react";
+import { datasetService } from "@/services/dataset-service";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -26,14 +26,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from "@/components/ui/select";
 import {
   Download,
   FileJson,
@@ -43,50 +43,55 @@ import {
   Loader2,
   Package,
   SplitSquareHorizontal,
-} from 'lucide-react'
-import type { ExportFormat, DatasetExportJob } from '@/types/dataset'
+} from "lucide-react";
+import type { ExportFormat, DatasetExportJob } from "@/types/dataset";
 
 interface DatasetExportDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  datasetId: string
-  datasetName: string
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  datasetId: string;
+  datasetName: string;
 }
 
-type ExportStep = 'configure' | 'exporting' | 'complete' | 'error'
+type ExportStep = "configure" | "exporting" | "complete" | "error";
 
-const FORMAT_OPTIONS: { value: ExportFormat; label: string; description: string; icon: React.ReactNode }[] = [
+const FORMAT_OPTIONS: {
+  value: ExportFormat;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+}[] = [
   {
-    value: 'coco',
-    label: 'COCO',
-    description: 'Standard format for object detection (JSON)',
+    value: "coco",
+    label: "COCO",
+    description: "Standard format for object detection (JSON)",
     icon: <FileJson className="h-4 w-4" />,
   },
   {
-    value: 'yolo',
-    label: 'YOLO',
-    description: 'Ultralytics YOLO format (TXT per image)',
+    value: "yolo",
+    label: "YOLO",
+    description: "Ultralytics YOLO format (TXT per image)",
     icon: <FileText className="h-4 w-4" />,
   },
   {
-    value: 'pascal_voc',
-    label: 'Pascal VOC',
-    description: 'XML annotations per image',
+    value: "pascal_voc",
+    label: "Pascal VOC",
+    description: "XML annotations per image",
     icon: <FileText className="h-4 w-4" />,
   },
   {
-    value: 'csv',
-    label: 'CSV',
-    description: 'Simple spreadsheet format',
+    value: "csv",
+    label: "CSV",
+    description: "Simple spreadsheet format",
     icon: <FileText className="h-4 w-4" />,
   },
   {
-    value: 'jsonl',
-    label: 'JSONL',
-    description: 'JSON Lines format (one JSON per line)',
+    value: "jsonl",
+    label: "JSONL",
+    description: "JSON Lines format (one JSON per line)",
     icon: <FileJson className="h-4 w-4" />,
   },
-]
+];
 
 export function DatasetExportDialog({
   open,
@@ -94,45 +99,52 @@ export function DatasetExportDialog({
   datasetId,
   datasetName,
 }: DatasetExportDialogProps) {
-  const [step, setStep] = useState<ExportStep>('configure')
-  const [format, setFormat] = useState<ExportFormat>('coco')
-  const [includeImages, setIncludeImages] = useState(true)
-  const [useSplit, setUseSplit] = useState(false)
-  const [trainPercent, setTrainPercent] = useState(70)
-  const [valPercent, setValPercent] = useState(20)
-  const [testPercent, setTestPercent] = useState(10)
-  const [randomSeed, setRandomSeed] = useState<number | undefined>(42)
-  const [exportJob, setExportJob] = useState<DatasetExportJob | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [step, setStep] = useState<ExportStep>("configure");
+  const [format, setFormat] = useState<ExportFormat>("coco");
+  const [includeImages, setIncludeImages] = useState(true);
+  const [useSplit, setUseSplit] = useState(false);
+  const [trainPercent, setTrainPercent] = useState(70);
+  const [valPercent, setValPercent] = useState(20);
+  const [testPercent, setTestPercent] = useState(10);
+  const [randomSeed, setRandomSeed] = useState<number | undefined>(42);
+  const [exportJob, setExportJob] = useState<DatasetExportJob | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Poll for export job status
   useEffect(() => {
-    if (!exportJob || exportJob.status === 'completed' || exportJob.status === 'failed') {
-      return
+    if (
+      !exportJob ||
+      exportJob.status === "completed" ||
+      exportJob.status === "failed"
+    ) {
+      return;
     }
 
     const pollInterval = setInterval(async () => {
       try {
-        const updatedJob = await datasetService.getExportJob(datasetId, exportJob.id)
-        setExportJob(updatedJob)
+        const updatedJob = await datasetService.getExportJob(
+          datasetId,
+          exportJob.id
+        );
+        setExportJob(updatedJob);
 
-        if (updatedJob.status === 'completed') {
-          setStep('complete')
-        } else if (updatedJob.status === 'failed') {
-          setError(updatedJob.error || 'Export failed')
-          setStep('error')
+        if (updatedJob.status === "completed") {
+          setStep("complete");
+        } else if (updatedJob.status === "failed") {
+          setError(updatedJob.error || "Export failed");
+          setStep("error");
         }
       } catch (err) {
-        console.error('Error polling export job:', err)
+        console.error("Error polling export job:", err);
       }
-    }, 1000)
+    }, 1000);
 
-    return () => clearInterval(pollInterval)
-  }, [exportJob, datasetId])
+    return () => clearInterval(pollInterval);
+  }, [exportJob, datasetId]);
 
   const handleExport = async () => {
-    setStep('exporting')
-    setError(null)
+    setStep("exporting");
+    setError(null);
 
     try {
       const job = await datasetService.startExport(datasetId, {
@@ -146,52 +158,52 @@ export function DatasetExportDialog({
               random_seed: randomSeed,
             }
           : undefined,
-      })
+      });
 
-      setExportJob(job)
+      setExportJob(job);
 
-      if (job.status === 'completed') {
-        setStep('complete')
-      } else if (job.status === 'failed') {
-        setError(job.error || 'Export failed')
-        setStep('error')
+      if (job.status === "completed") {
+        setStep("complete");
+      } else if (job.status === "failed") {
+        setError(job.error || "Export failed");
+        setStep("error");
       }
     } catch (err) {
-      console.error('Export error:', err)
-      setError(err instanceof Error ? err.message : 'Export failed')
-      setStep('error')
+      console.error("Export error:", err);
+      setError(err instanceof Error ? err.message : "Export failed");
+      setStep("error");
     }
-  }
+  };
 
   const handleDownload = () => {
     if (exportJob?.download_url) {
-      window.open(exportJob.download_url, '_blank')
-      toast.success('Download started')
+      window.open(exportJob.download_url, "_blank");
+      toast.success("Download started");
     }
-  }
+  };
 
   const handleClose = () => {
-    setStep('configure')
-    setFormat('coco')
-    setIncludeImages(true)
-    setUseSplit(false)
-    setTrainPercent(70)
-    setValPercent(20)
-    setTestPercent(10)
-    setExportJob(null)
-    setError(null)
-    onOpenChange(false)
-  }
+    setStep("configure");
+    setFormat("coco");
+    setIncludeImages(true);
+    setUseSplit(false);
+    setTrainPercent(70);
+    setValPercent(20);
+    setTestPercent(10);
+    setExportJob(null);
+    setError(null);
+    onOpenChange(false);
+  };
 
   const handleReset = () => {
-    setStep('configure')
-    setExportJob(null)
-    setError(null)
-  }
+    setStep("configure");
+    setExportJob(null);
+    setError(null);
+  };
 
   // Validate split percentages
-  const splitTotal = trainPercent + valPercent + testPercent
-  const splitValid = Math.abs(splitTotal - 100) < 0.01
+  const splitTotal = trainPercent + valPercent + testPercent;
+  const splitValid = Math.abs(splitTotal - 100) < 0.01;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -204,12 +216,15 @@ export function DatasetExportDialog({
         </DialogHeader>
 
         {/* Step: Configure */}
-        {step === 'configure' && (
+        {step === "configure" && (
           <div className="space-y-6">
             {/* Format Selection */}
             <div className="space-y-2">
               <Label>Export Format</Label>
-              <Select value={format} onValueChange={(v) => setFormat(v as ExportFormat)}>
+              <Select
+                value={format}
+                onValueChange={(v) => setFormat(v as ExportFormat)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -236,7 +251,9 @@ export function DatasetExportDialog({
               <Checkbox
                 id="include-images"
                 checked={includeImages}
-                onCheckedChange={(checked) => setIncludeImages(checked === true)}
+                onCheckedChange={(checked) =>
+                  setIncludeImages(checked === true)
+                }
               />
               <Label htmlFor="include-images" className="cursor-pointer">
                 <div className="flex items-center gap-2">
@@ -244,7 +261,8 @@ export function DatasetExportDialog({
                   Include images in export
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  When enabled, the ZIP will contain all images. Disable for annotations only.
+                  When enabled, the ZIP will contain all images. Disable for
+                  annotations only.
                 </p>
               </Label>
             </div>
@@ -278,7 +296,9 @@ export function DatasetExportDialog({
                         min={0}
                         max={100}
                         value={trainPercent}
-                        onChange={(e) => setTrainPercent(Number(e.target.value))}
+                        onChange={(e) =>
+                          setTrainPercent(Number(e.target.value))
+                        }
                       />
                     </div>
                     <div className="space-y-1">
@@ -311,7 +331,8 @@ export function DatasetExportDialog({
 
                   {!splitValid && (
                     <p className="text-xs text-destructive">
-                      Split percentages must sum to 100% (currently {splitTotal}%)
+                      Split percentages must sum to 100% (currently {splitTotal}
+                      %)
                     </p>
                   )}
 
@@ -323,9 +344,11 @@ export function DatasetExportDialog({
                       id="random-seed"
                       type="number"
                       placeholder="42"
-                      value={randomSeed ?? ''}
+                      value={randomSeed ?? ""}
                       onChange={(e) =>
-                        setRandomSeed(e.target.value ? Number(e.target.value) : undefined)
+                        setRandomSeed(
+                          e.target.value ? Number(e.target.value) : undefined
+                        )
                       }
                       className="w-32"
                     />
@@ -340,7 +363,7 @@ export function DatasetExportDialog({
         )}
 
         {/* Step: Exporting */}
-        {step === 'exporting' && (
+        {step === "exporting" && (
           <div className="py-8 text-center">
             <Loader2 className="mx-auto h-12 w-12 text-primary animate-spin mb-4" />
             <p className="font-medium mb-4">Exporting dataset...</p>
@@ -352,7 +375,7 @@ export function DatasetExportDialog({
         )}
 
         {/* Step: Complete */}
-        {step === 'complete' && exportJob && (
+        {step === "complete" && exportJob && (
           <div className="py-4">
             <div className="flex items-center justify-center mb-6">
               <div className="h-16 w-16 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
@@ -377,7 +400,7 @@ export function DatasetExportDialog({
         )}
 
         {/* Step: Error */}
-        {step === 'error' && (
+        {step === "error" && (
           <div className="py-4">
             <div className="flex items-center justify-center mb-6">
               <div className="h-16 w-16 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center">
@@ -389,42 +412,37 @@ export function DatasetExportDialog({
             </h3>
             {error && (
               <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+                <p className="text-sm text-red-700 dark:text-red-300">
+                  {error}
+                </p>
               </div>
             )}
           </div>
         )}
 
         <DialogFooter>
-          {step === 'configure' && (
+          {step === "configure" && (
             <>
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
-              <Button
-                onClick={handleExport}
-                disabled={useSplit && !splitValid}
-              >
+              <Button onClick={handleExport} disabled={useSplit && !splitValid}>
                 <Download className="mr-2 h-4 w-4" />
                 Export Dataset
               </Button>
             </>
           )}
 
-          {step === 'exporting' && (
+          {step === "exporting" && (
             <Button variant="outline" disabled>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Exporting...
             </Button>
           )}
 
-          {step === 'complete' && (
-            <Button onClick={handleClose}>
-              Done
-            </Button>
-          )}
+          {step === "complete" && <Button onClick={handleClose}>Done</Button>}
 
-          {step === 'error' && (
+          {step === "error" && (
             <>
               <Button variant="outline" onClick={handleReset}>
                 Try Again
@@ -435,5 +453,5 @@ export function DatasetExportDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

@@ -20,13 +20,15 @@ interface UsageChartProps {
 
 export function UsageChart({ data }: UsageChartProps) {
   // Format data for chart
-  const chartData = Array.isArray(data) ? data.map((item) => ({
-    name: new Date(item.date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    }),
-    value: item.api_calls,
-  })) : [];
+  const chartData = Array.isArray(data)
+    ? data.map((item) => ({
+        name: new Date(item.date).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+        value: item.api_calls,
+      }))
+    : [];
 
   return (
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
@@ -44,11 +46,7 @@ export function UsageChart({ data }: UsageChartProps) {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis
-              dataKey="name"
-              stroke="#666"
-              style={{ fontSize: "12px" }}
-            />
+            <XAxis dataKey="name" stroke="#666" style={{ fontSize: "12px" }} />
             <YAxis stroke="#666" style={{ fontSize: "12px" }} />
             <Tooltip
               contentStyle={{

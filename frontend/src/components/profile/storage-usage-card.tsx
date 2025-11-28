@@ -1,38 +1,47 @@
-"use client"
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
-import { HardDrive } from "lucide-react"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { HardDrive } from "lucide-react";
 
 interface StorageUsageCardProps {
-  usedBytes: number
-  totalBytes: number
+  usedBytes: number;
+  totalBytes: number;
 }
 
-export function StorageUsageCard({ usedBytes, totalBytes }: StorageUsageCardProps) {
-  const usedPercentage = Math.round((usedBytes / totalBytes) * 100)
+export function StorageUsageCard({
+  usedBytes,
+  totalBytes,
+}: StorageUsageCardProps) {
+  const usedPercentage = Math.round((usedBytes / totalBytes) * 100);
 
   const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes'
+    if (bytes === 0) return "0 Bytes";
 
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
 
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
-  }
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+  };
 
   const getProgressColor = () => {
-    if (usedPercentage >= 90) return 'bg-red-500'
-    if (usedPercentage >= 75) return 'bg-yellow-500'
-    return 'bg-[#00D9FF]'
-  }
+    if (usedPercentage >= 90) return "bg-red-500";
+    if (usedPercentage >= 75) return "bg-yellow-500";
+    return "bg-[#00D9FF]";
+  };
 
   const getProgressGradient = () => {
-    if (usedPercentage >= 90) return 'from-red-500 to-red-600'
-    if (usedPercentage >= 75) return 'from-yellow-500 to-orange-500'
-    return 'from-[#00D9FF] to-[#BD00FF]'
-  }
+    if (usedPercentage >= 90) return "from-red-500 to-red-600";
+    if (usedPercentage >= 75) return "from-yellow-500 to-orange-500";
+    return "from-[#00D9FF] to-[#BD00FF]";
+  };
 
   return (
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
@@ -66,11 +75,15 @@ export function StorageUsageCard({ usedBytes, totalBytes }: StorageUsageCardProp
 
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-400">Usage</span>
-            <span className={`font-bold ${
-              usedPercentage >= 90 ? 'text-red-400' :
-              usedPercentage >= 75 ? 'text-yellow-400' :
-              'text-[#00D9FF]'
-            }`}>
+            <span
+              className={`font-bold ${
+                usedPercentage >= 90
+                  ? "text-red-400"
+                  : usedPercentage >= 75
+                    ? "text-yellow-400"
+                    : "text-[#00D9FF]"
+              }`}
+            >
               {usedPercentage}%
             </span>
           </div>
@@ -79,7 +92,8 @@ export function StorageUsageCard({ usedBytes, totalBytes }: StorageUsageCardProp
         {usedPercentage >= 90 && (
           <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
             <p className="text-sm text-red-400">
-              You're running low on storage space. Consider upgrading your plan or removing unused files.
+              You're running low on storage space. Consider upgrading your plan
+              or removing unused files.
             </p>
           </div>
         )}
@@ -87,7 +101,8 @@ export function StorageUsageCard({ usedBytes, totalBytes }: StorageUsageCardProp
         {usedPercentage >= 75 && usedPercentage < 90 && (
           <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
             <p className="text-sm text-yellow-400">
-              You're using more than 75% of your storage. Consider managing your files.
+              You're using more than 75% of your storage. Consider managing your
+              files.
             </p>
           </div>
         )}
@@ -95,14 +110,18 @@ export function StorageUsageCard({ usedBytes, totalBytes }: StorageUsageCardProp
         <div className="grid grid-cols-2 gap-4 pt-2">
           <div className="p-3 bg-[#0A0A0B]/50 rounded-lg border border-gray-800">
             <p className="text-xs text-gray-400 mb-1">Files</p>
-            <p className="text-lg font-bold text-white">{formatBytes(usedBytes)}</p>
+            <p className="text-lg font-bold text-white">
+              {formatBytes(usedBytes)}
+            </p>
           </div>
           <div className="p-3 bg-[#0A0A0B]/50 rounded-lg border border-gray-800">
             <p className="text-xs text-gray-400 mb-1">Available</p>
-            <p className="text-lg font-bold text-[#00FF88]">{formatBytes(totalBytes - usedBytes)}</p>
+            <p className="text-lg font-bold text-[#00FF88]">
+              {formatBytes(totalBytes - usedBytes)}
+            </p>
           </div>
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }

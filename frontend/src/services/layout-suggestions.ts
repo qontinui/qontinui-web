@@ -12,29 +12,29 @@
  * - Auto-fix capabilities
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import { LayoutStyle } from '@/lib/workflow-layout/auto-layout';
-import { calculateLayoutStatistics } from './layout-statistics';
-import { getLayoutService } from './layout-service';
-import type { LayoutStatistics } from './layout-statistics';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
+import { calculateLayoutStatistics } from "./layout-statistics";
+import { getLayoutService } from "./layout-service";
+import type { LayoutStatistics } from "./layout-statistics";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export type SuggestionType =
-  | 'overlap'
-  | 'alignment'
-  | 'spacing'
-  | 'edge-crossing'
-  | 'readability'
-  | 'compactness'
-  | 'unpositioned'
-  | 'aspect-ratio'
-  | 'density'
-  | 'symmetry';
+  | "overlap"
+  | "alignment"
+  | "spacing"
+  | "edge-crossing"
+  | "readability"
+  | "compactness"
+  | "unpositioned"
+  | "aspect-ratio"
+  | "density"
+  | "symmetry";
 
-export type SuggestionSeverity = 'error' | 'warning' | 'info';
+export type SuggestionSeverity = "error" | "warning" | "info";
 
 export interface LayoutSuggestion {
   /** Unique suggestion ID */
@@ -103,14 +103,21 @@ export function getLayoutSuggestions(workflow: Workflow): LayoutSuggestion[] {
 /**
  * Get high-priority suggestions only
  */
-export function getHighPrioritySuggestions(workflow: Workflow): LayoutSuggestion[] {
-  return getLayoutSuggestions(workflow).filter(s => s.severity === 'error' || s.severity === 'warning');
+export function getHighPrioritySuggestions(
+  workflow: Workflow
+): LayoutSuggestion[] {
+  return getLayoutSuggestions(workflow).filter(
+    (s) => s.severity === "error" || s.severity === "warning"
+  );
 }
 
 /**
  * Auto-fix all applicable suggestions
  */
-export function autoFixSuggestions(workflow: Workflow, suggestionTypes?: SuggestionType[]): Workflow {
+export function autoFixSuggestions(
+  workflow: Workflow,
+  suggestionTypes?: SuggestionType[]
+): Workflow {
   let fixed = cloneWorkflow(workflow);
   const suggestions = getLayoutSuggestions(fixed);
 
@@ -119,7 +126,7 @@ export function autoFixSuggestions(workflow: Workflow, suggestionTypes?: Suggest
       continue;
     }
 
-    if (suggestion.severity === 'error' || suggestion.severity === 'warning') {
+    if (suggestion.severity === "error" || suggestion.severity === "warning") {
       fixed = suggestion.quickFix(fixed);
     }
   }
@@ -140,19 +147,20 @@ function detectOverlapIssues(context: SuggestionContext): LayoutSuggestion[] {
 
   return [
     {
-      id: 'overlap-nodes',
-      type: 'overlap',
-      severity: 'error',
+      id: "overlap-nodes",
+      type: "overlap",
+      severity: "error",
       message: `${statistics.nodesOverlapping} nodes are overlapping`,
-      description: 'Overlapping nodes make the workflow hard to read and edit. Apply auto-layout to fix spacing.',
-      action: 'Apply auto-layout to fix overlaps',
+      description:
+        "Overlapping nodes make the workflow hard to read and edit. Apply auto-layout to fix spacing.",
+      action: "Apply auto-layout to fix overlaps",
       quickFix: (wf) => {
         const layoutService = getLayoutService();
         const fixed = cloneWorkflow(wf);
         layoutService.applyLayout(fixed, LayoutStyle.HIERARCHICAL);
         return fixed;
       },
-      icon: 'alert-circle',
+      icon: "alert-circle",
     },
   ];
 }
@@ -166,19 +174,20 @@ function detectAlignmentIssues(context: SuggestionContext): LayoutSuggestion[] {
 
   return [
     {
-      id: 'poor-alignment',
-      type: 'alignment',
-      severity: 'info',
-      message: 'Nodes could be better aligned',
-      description: 'Improving alignment makes the workflow cleaner and more professional.',
-      action: 'Align nodes',
+      id: "poor-alignment",
+      type: "alignment",
+      severity: "info",
+      message: "Nodes could be better aligned",
+      description:
+        "Improving alignment makes the workflow cleaner and more professional.",
+      action: "Align nodes",
       quickFix: (wf) => {
         const layoutService = getLayoutService();
         const fixed = cloneWorkflow(wf);
         layoutService.applyLayout(fixed, LayoutStyle.HIERARCHICAL);
         return fixed;
       },
-      icon: 'align-center',
+      icon: "align-center",
     },
   ];
 }
@@ -190,12 +199,13 @@ function detectSpacingIssues(context: SuggestionContext): LayoutSuggestion[] {
   // Too compact
   if (statistics.compactness > 0.8) {
     suggestions.push({
-      id: 'too-compact',
-      type: 'spacing',
-      severity: 'warning',
-      message: 'Layout is too dense',
-      description: 'Nodes are packed too tightly, making it hard to read and edit. Increase spacing for better readability.',
-      action: 'Increase spacing',
+      id: "too-compact",
+      type: "spacing",
+      severity: "warning",
+      message: "Layout is too dense",
+      description:
+        "Nodes are packed too tightly, making it hard to read and edit. Increase spacing for better readability.",
+      action: "Increase spacing",
       quickFix: (wf) => {
         const layoutService = getLayoutService();
         layoutService.updateDefaultOptions({
@@ -206,19 +216,20 @@ function detectSpacingIssues(context: SuggestionContext): LayoutSuggestion[] {
         layoutService.applyLayout(fixed);
         return fixed;
       },
-      icon: 'maximize',
+      icon: "maximize",
     });
   }
 
   // Too spread out
   if (statistics.compactness < 0.2 && statistics.nodeCount > 5) {
     suggestions.push({
-      id: 'too-spread',
-      type: 'spacing',
-      severity: 'info',
-      message: 'Layout is very spread out',
-      description: 'Nodes are far apart, making the workflow harder to see at once. Consider more compact spacing.',
-      action: 'Decrease spacing',
+      id: "too-spread",
+      type: "spacing",
+      severity: "info",
+      message: "Layout is very spread out",
+      description:
+        "Nodes are far apart, making the workflow harder to see at once. Consider more compact spacing.",
+      action: "Decrease spacing",
       quickFix: (wf) => {
         const layoutService = getLayoutService();
         layoutService.updateDefaultOptions({
@@ -229,42 +240,48 @@ function detectSpacingIssues(context: SuggestionContext): LayoutSuggestion[] {
         layoutService.applyLayout(fixed);
         return fixed;
       },
-      icon: 'minimize',
+      icon: "minimize",
     });
   }
 
   return suggestions;
 }
 
-function detectEdgeCrossingIssues(context: SuggestionContext): LayoutSuggestion[] {
+function detectEdgeCrossingIssues(
+  context: SuggestionContext
+): LayoutSuggestion[] {
   const { statistics } = context;
 
   if (statistics.edgeCrossings === 0) {
     return [];
   }
 
-  const severity: SuggestionSeverity = statistics.edgeCrossings > 10 ? 'warning' : 'info';
+  const severity: SuggestionSeverity =
+    statistics.edgeCrossings > 10 ? "warning" : "info";
 
   return [
     {
-      id: 'edge-crossings',
-      type: 'edge-crossing',
+      id: "edge-crossings",
+      type: "edge-crossing",
       severity,
       message: `${statistics.edgeCrossings} edge crossings detected`,
-      description: 'Edge crossings reduce readability. Try hierarchical or tree layout to minimize crossings.',
-      action: 'Minimize edge crossings',
+      description:
+        "Edge crossings reduce readability. Try hierarchical or tree layout to minimize crossings.",
+      action: "Minimize edge crossings",
       quickFix: (wf) => {
         const layoutService = getLayoutService();
         const fixed = cloneWorkflow(wf);
         layoutService.applyLayout(fixed, LayoutStyle.HIERARCHICAL);
         return fixed;
       },
-      icon: 'git-branch',
+      icon: "git-branch",
     },
   ];
 }
 
-function detectReadabilityIssues(context: SuggestionContext): LayoutSuggestion[] {
+function detectReadabilityIssues(
+  context: SuggestionContext
+): LayoutSuggestion[] {
   const { statistics } = context;
 
   if (statistics.readability >= 0.7) {
@@ -273,12 +290,13 @@ function detectReadabilityIssues(context: SuggestionContext): LayoutSuggestion[]
 
   return [
     {
-      id: 'low-readability',
-      type: 'readability',
-      severity: 'warning',
-      message: 'Layout readability is low',
-      description: 'The current layout has issues affecting readability. Apply auto-layout for better clarity.',
-      action: 'Improve readability',
+      id: "low-readability",
+      type: "readability",
+      severity: "warning",
+      message: "Layout readability is low",
+      description:
+        "The current layout has issues affecting readability. Apply auto-layout for better clarity.",
+      action: "Improve readability",
       quickFix: (wf) => {
         const layoutService = getLayoutService();
         const fixed = cloneWorkflow(wf);
@@ -288,12 +306,14 @@ function detectReadabilityIssues(context: SuggestionContext): LayoutSuggestion[]
         });
         return fixed;
       },
-      icon: 'eye',
+      icon: "eye",
     },
   ];
 }
 
-function detectCompactnessIssues(context: SuggestionContext): LayoutSuggestion[] {
+function detectCompactnessIssues(
+  context: SuggestionContext
+): LayoutSuggestion[] {
   const { statistics } = context;
 
   // Only suggest if extremely unbalanced
@@ -304,7 +324,9 @@ function detectCompactnessIssues(context: SuggestionContext): LayoutSuggestion[]
   return []; // Handled by spacing issues
 }
 
-function detectUnpositionedIssues(context: SuggestionContext): LayoutSuggestion[] {
+function detectUnpositionedIssues(
+  context: SuggestionContext
+): LayoutSuggestion[] {
   const { statistics } = context;
 
   if (statistics.nodesWithoutPosition === 0) {
@@ -313,24 +335,27 @@ function detectUnpositionedIssues(context: SuggestionContext): LayoutSuggestion[
 
   return [
     {
-      id: 'unpositioned-nodes',
-      type: 'unpositioned',
-      severity: 'error',
+      id: "unpositioned-nodes",
+      type: "unpositioned",
+      severity: "error",
       message: `${statistics.nodesWithoutPosition} nodes are not positioned`,
-      description: 'Some nodes have no position set. Apply auto-layout to position all nodes.',
-      action: 'Position all nodes',
+      description:
+        "Some nodes have no position set. Apply auto-layout to position all nodes.",
+      action: "Position all nodes",
       quickFix: (wf) => {
         const layoutService = getLayoutService();
         const fixed = cloneWorkflow(wf);
         layoutService.applyLayout(fixed);
         return fixed;
       },
-      icon: 'map-pin',
+      icon: "map-pin",
     },
   ];
 }
 
-function detectAspectRatioIssues(context: SuggestionContext): LayoutSuggestion[] {
+function detectAspectRatioIssues(
+  context: SuggestionContext
+): LayoutSuggestion[] {
   const { statistics } = context;
 
   const ratio = statistics.boundingBoxAspectRatio;
@@ -339,17 +364,18 @@ function detectAspectRatioIssues(context: SuggestionContext): LayoutSuggestion[]
     return []; // Acceptable range
   }
 
-  const severity: SuggestionSeverity = ratio > 5 || ratio < 0.2 ? 'warning' : 'info';
+  const severity: SuggestionSeverity =
+    ratio > 5 || ratio < 0.2 ? "warning" : "info";
   const isWide = ratio > 3;
 
   return [
     {
-      id: 'unbalanced-aspect-ratio',
-      type: 'aspect-ratio',
+      id: "unbalanced-aspect-ratio",
+      type: "aspect-ratio",
       severity,
-      message: `Layout is too ${isWide ? 'wide' : 'tall'}`,
+      message: `Layout is too ${isWide ? "wide" : "tall"}`,
       description: `The layout has an unbalanced aspect ratio (${ratio.toFixed(2)}:1). Adjust spacing to balance dimensions.`,
-      action: 'Balance layout dimensions',
+      action: "Balance layout dimensions",
       quickFix: (wf) => {
         const layoutService = getLayoutService();
         const fixed = cloneWorkflow(wf);
@@ -368,7 +394,7 @@ function detectAspectRatioIssues(context: SuggestionContext): LayoutSuggestion[]
 
         return fixed;
       },
-      icon: 'layout',
+      icon: "layout",
     },
   ];
 }
@@ -380,12 +406,13 @@ function detectDensityIssues(context: SuggestionContext): LayoutSuggestion[] {
   if (statistics.averageNodeDensity < 0.001 && statistics.nodeCount > 10) {
     return [
       {
-        id: 'low-density',
-        type: 'density',
-        severity: 'info',
-        message: 'Nodes are very spread out',
-        description: 'The workflow is using a lot of canvas space. Consider using a more compact layout.',
-        action: 'Use compact layout',
+        id: "low-density",
+        type: "density",
+        severity: "info",
+        message: "Nodes are very spread out",
+        description:
+          "The workflow is using a lot of canvas space. Consider using a more compact layout.",
+        action: "Use compact layout",
         quickFix: (wf) => {
           const layoutService = getLayoutService();
           const fixed = cloneWorkflow(wf);
@@ -395,7 +422,7 @@ function detectDensityIssues(context: SuggestionContext): LayoutSuggestion[] {
           });
           return fixed;
         },
-        icon: 'compress',
+        icon: "compress",
       },
     ];
   }
@@ -421,9 +448,9 @@ export function getSuggestionCounts(suggestions: LayoutSuggestion[]): {
   total: number;
 } {
   return {
-    error: suggestions.filter(s => s.severity === 'error').length,
-    warning: suggestions.filter(s => s.severity === 'warning').length,
-    info: suggestions.filter(s => s.severity === 'info').length,
+    error: suggestions.filter((s) => s.severity === "error").length,
+    warning: suggestions.filter((s) => s.severity === "warning").length,
+    info: suggestions.filter((s) => s.severity === "info").length,
     total: suggestions.length,
   };
 }
@@ -433,7 +460,7 @@ export function getSuggestionCounts(suggestions: LayoutSuggestion[]): {
  */
 export function hasCriticalIssues(workflow: Workflow): boolean {
   const suggestions = getLayoutSuggestions(workflow);
-  return suggestions.some(s => s.severity === 'error');
+  return suggestions.some((s) => s.severity === "error");
 }
 
 /**
@@ -497,12 +524,12 @@ export function groupSuggestionsByType(
  */
 export function getSeverityIcon(severity: SuggestionSeverity): string {
   switch (severity) {
-    case 'error':
-      return 'alert-circle';
-    case 'warning':
-      return 'alert-triangle';
-    case 'info':
-      return 'info';
+    case "error":
+      return "alert-circle";
+    case "warning":
+      return "alert-triangle";
+    case "info":
+      return "info";
   }
 }
 
@@ -511,11 +538,11 @@ export function getSeverityIcon(severity: SuggestionSeverity): string {
  */
 export function getSeverityColor(severity: SuggestionSeverity): string {
   switch (severity) {
-    case 'error':
-      return 'red';
-    case 'warning':
-      return 'yellow';
-    case 'info':
-      return 'blue';
+    case "error":
+      return "red";
+    case "warning":
+      return "yellow";
+    case "info":
+      return "blue";
   }
 }

@@ -10,31 +10,31 @@ import {
   Connection,
   getActionOutputCount,
   getActionInputCount,
-} from './action-types';
+} from "./action-types";
 import {
   getEntryPoints,
   hasCycles,
   findOrphanedActions,
   getActionById,
   getActionConnections,
-} from './workflow-utils';
+} from "./workflow-utils";
 
 // ============================================================================
 // Validation Types
 // ============================================================================
 
 export type ValidationErrorType =
-  | 'missing_action'
-  | 'invalid_connection'
-  | 'cycle_detected'
-  | 'missing_entry_point'
-  | 'invalid_output_index'
-  | 'invalid_input_index'
-  | 'duplicate_action_id'
-  | 'invalid_connection_type'
-  | 'missing_connections'
-  | 'invalid_position'
-  | 'orphaned_action';
+  | "missing_action"
+  | "invalid_connection"
+  | "cycle_detected"
+  | "missing_entry_point"
+  | "invalid_output_index"
+  | "invalid_input_index"
+  | "duplicate_action_id"
+  | "invalid_connection_type"
+  | "missing_connections"
+  | "invalid_position"
+  | "orphaned_action";
 
 /**
  * Validation error
@@ -70,45 +70,45 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
   // Basic structure validation
   if (!workflow.id) {
     errors.push({
-      type: 'missing_action',
-      message: 'Workflow must have an id',
+      type: "missing_action",
+      message: "Workflow must have an id",
     });
   }
 
   if (!workflow.name) {
     errors.push({
-      type: 'missing_action',
-      message: 'Workflow must have a name',
+      type: "missing_action",
+      message: "Workflow must have a name",
     });
   }
 
   if (!workflow.version) {
     errors.push({
-      type: 'missing_action',
-      message: 'Workflow must have a version',
+      type: "missing_action",
+      message: "Workflow must have a version",
     });
   }
 
   if (!workflow.actions || !Array.isArray(workflow.actions)) {
     errors.push({
-      type: 'missing_action',
-      message: 'Workflow must have an actions array',
+      type: "missing_action",
+      message: "Workflow must have an actions array",
     });
     return { valid: false, errors };
   }
 
   if (workflow.actions.length === 0) {
     errors.push({
-      type: 'missing_action',
-      message: 'Workflow must have at least one action',
+      type: "missing_action",
+      message: "Workflow must have at least one action",
     });
     return { valid: false, errors };
   }
 
   // Format must be 'graph'
-  if (workflow.format !== 'graph') {
+  if (workflow.format !== "graph") {
     errors.push({
-      type: 'invalid_connection',
+      type: "invalid_connection",
       message: `Workflow format must be 'graph', got '${workflow.format}'`,
     });
   }
@@ -116,8 +116,8 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
   // Must have connections
   if (!workflow.connections) {
     errors.push({
-      type: 'missing_connections',
-      message: 'Graph format workflows must have connections',
+      type: "missing_connections",
+      message: "Graph format workflows must have connections",
     });
     return { valid: false, errors };
   }
@@ -127,7 +127,7 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
   workflow.actions.forEach((action) => {
     if (actionIds.has(action.id)) {
       errors.push({
-        type: 'duplicate_action_id',
+        type: "duplicate_action_id",
         message: `Duplicate action ID: ${action.id}`,
         actionId: action.id,
       });
@@ -144,8 +144,8 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
   // Check for cycles
   if (hasCycles(workflow)) {
     errors.push({
-      type: 'cycle_detected',
-      message: 'Workflow contains circular dependencies (cycles)',
+      type: "cycle_detected",
+      message: "Workflow contains circular dependencies (cycles)",
     });
   }
 
@@ -153,8 +153,8 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
   const entryPoints = getEntryPoints(workflow);
   if (entryPoints.length === 0) {
     errors.push({
-      type: 'missing_entry_point',
-      message: 'Workflow has no entry points',
+      type: "missing_entry_point",
+      message: "Workflow has no entry points",
     });
   }
 
@@ -162,8 +162,8 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
   const orphans = findOrphanedActions(workflow);
   if (orphans.length > 0) {
     errors.push({
-      type: 'orphaned_action',
-      message: `Found ${orphans.length} orphaned action(s): ${orphans.join(', ')}`,
+      type: "orphaned_action",
+      message: `Found ${orphans.length} orphaned action(s): ${orphans.join(", ")}`,
       details: { orphans },
     });
   }
@@ -181,7 +181,10 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
 /**
  * Validate all connections reference valid actions and have correct indices
  */
-function validateConnections(workflow: Workflow, errors: ValidationError[]): void {
+function validateConnections(
+  workflow: Workflow,
+  errors: ValidationError[]
+): void {
   if (!workflow.connections) {
     return;
   }
@@ -192,7 +195,7 @@ function validateConnections(workflow: Workflow, errors: ValidationError[]): voi
     // Validate source action exists
     if (!actionIds.has(sourceId)) {
       errors.push({
-        type: 'missing_action',
+        type: "missing_action",
         message: `Connection source action not found: ${sourceId}`,
         actionId: sourceId,
       });
@@ -200,20 +203,26 @@ function validateConnections(workflow: Workflow, errors: ValidationError[]): voi
     }
 
     const sourceAction = getActionById(workflow, sourceId)!;
-    const outputCount = getActionOutputCount(sourceAction.type, sourceAction.config);
+    const outputCount = getActionOutputCount(
+      sourceAction.type,
+      sourceAction.config
+    );
 
     // Validate each connection type
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const connections = outputs[type as keyof typeof outputs];
       if (!connections) return;
 
       // Validate output index
       if (connections.length > outputCount) {
         errors.push({
-          type: 'invalid_output_index',
+          type: "invalid_output_index",
           message: `Action ${sourceId} (${sourceAction.type}) has ${outputCount} outputs but connections use ${connections.length} outputs`,
           actionId: sourceId,
-          details: { expectedOutputs: outputCount, actualOutputs: connections.length },
+          details: {
+            expectedOutputs: outputCount,
+            actualOutputs: connections.length,
+          },
         });
       }
 
@@ -223,22 +232,30 @@ function validateConnections(workflow: Workflow, errors: ValidationError[]): voi
           // Validate target action exists
           if (!actionIds.has(conn.action)) {
             errors.push({
-              type: 'missing_action',
+              type: "missing_action",
               message: `Connection target action not found: ${conn.action}`,
               actionId: sourceId,
-              details: { targetAction: conn.action, outputIndex, connectionIndex: connIndex },
+              details: {
+                targetAction: conn.action,
+                outputIndex,
+                connectionIndex: connIndex,
+              },
             });
             return;
           }
 
           // Validate connection type
-          const validTypes = ['main', 'error', 'success', 'parallel'];
+          const validTypes = ["main", "error", "success", "parallel"];
           if (!validTypes.includes(conn.type)) {
             errors.push({
-              type: 'invalid_connection_type',
+              type: "invalid_connection_type",
               message: `Invalid connection type: ${conn.type}`,
               actionId: sourceId,
-              details: { connection: conn, outputIndex, connectionIndex: connIndex },
+              details: {
+                connection: conn,
+                outputIndex,
+                connectionIndex: connIndex,
+              },
             });
           }
 
@@ -247,7 +264,7 @@ function validateConnections(workflow: Workflow, errors: ValidationError[]): voi
           const inputCount = getActionInputCount(targetAction.type);
           if (conn.index >= inputCount) {
             errors.push({
-              type: 'invalid_input_index',
+              type: "invalid_input_index",
               message: `Target action ${conn.action} (${targetAction.type}) has ${inputCount} inputs but connection uses index ${conn.index}`,
               actionId: sourceId,
               details: {
@@ -270,11 +287,14 @@ function validateConnections(workflow: Workflow, errors: ValidationError[]): voi
 /**
  * Validate action positions are present and valid
  */
-function validatePositions(workflow: Workflow, errors: ValidationError[]): void {
+function validatePositions(
+  workflow: Workflow,
+  errors: ValidationError[]
+): void {
   workflow.actions.forEach((action) => {
     if (!action.position) {
       errors.push({
-        type: 'invalid_position',
+        type: "invalid_position",
         message: `Action ${action.id} is missing position (required for graph format)`,
         actionId: action.id,
       });
@@ -284,7 +304,7 @@ function validatePositions(workflow: Workflow, errors: ValidationError[]): void 
     // Validate position format
     if (!Array.isArray(action.position) || action.position.length !== 2) {
       errors.push({
-        type: 'invalid_position',
+        type: "invalid_position",
         message: `Action ${action.id} has invalid position format (expected [x, y])`,
         actionId: action.id,
         details: { position: action.position },
@@ -295,9 +315,9 @@ function validatePositions(workflow: Workflow, errors: ValidationError[]): void 
     const [x, y] = action.position;
 
     // Validate position values are numbers
-    if (typeof x !== 'number' || typeof y !== 'number') {
+    if (typeof x !== "number" || typeof y !== "number") {
       errors.push({
-        type: 'invalid_position',
+        type: "invalid_position",
         message: `Action ${action.id} has non-numeric position values`,
         actionId: action.id,
         details: { position: action.position },
@@ -308,7 +328,7 @@ function validatePositions(workflow: Workflow, errors: ValidationError[]): void 
     // Validate positions are finite
     if (!isFinite(x) || !isFinite(y)) {
       errors.push({
-        type: 'invalid_position',
+        type: "invalid_position",
         message: `Action ${action.id} has invalid position values (NaN or Infinity)`,
         actionId: action.id,
         details: { position: action.position },
@@ -336,9 +356,9 @@ export function getValidationSummary(result: ValidationResult): string {
   const lines: string[] = [];
 
   if (result.valid) {
-    lines.push('Workflow is valid');
+    lines.push("Workflow is valid");
   } else {
-    lines.push('Workflow validation failed');
+    lines.push("Workflow validation failed");
   }
 
   if (result.errors.length > 0) {
@@ -354,5 +374,5 @@ export function getValidationSummary(result: ValidationResult): string {
     });
   }
 
-  return lines.join('\n');
+  return lines.join("\n");
 }

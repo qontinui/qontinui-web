@@ -12,26 +12,31 @@
  * - Center alignment
  */
 
-import type { Workflow, Connection, Connections, Action } from '../action-schema/action-types';
+import type {
+  Workflow,
+  Connection,
+  Connections,
+  Action,
+} from "../action-schema/action-types";
 
 /**
  * Layout style options
  */
 export enum LayoutStyle {
   /** Top-to-bottom hierarchical layers */
-  HIERARCHICAL = 'hierarchical',
+  HIERARCHICAL = "hierarchical",
 
   /** Tree-like structure */
-  TREE = 'tree',
+  TREE = "tree",
 
   /** Physics-based force-directed layout */
-  FORCE_DIRECTED = 'force',
+  FORCE_DIRECTED = "force",
 
   /** Circular arrangement */
-  CIRCULAR = 'circular',
+  CIRCULAR = "circular",
 
   /** Left-to-right flow */
-  HORIZONTAL = 'horizontal',
+  HORIZONTAL = "horizontal",
 }
 
 /**
@@ -177,10 +182,7 @@ export class AutoLayout {
     workflow.actions.forEach((action, i) => {
       const angle = (i / workflow.actions.length) * 2 * Math.PI;
       const radius = 200;
-      action.position = [
-        Math.cos(angle) * radius,
-        Math.sin(angle) * radius,
-      ];
+      action.position = [Math.cos(angle) * radius, Math.sin(angle) * radius];
     });
 
     // Run force simulation
@@ -192,7 +194,7 @@ export class AutoLayout {
       const forces = new Map<string, [number, number]>();
 
       // Initialize forces
-      workflow.actions.forEach(action => {
+      workflow.actions.forEach((action) => {
         forces.set(action.id, [0, 0]);
       });
 
@@ -222,9 +224,9 @@ export class AutoLayout {
       }
 
       // Attractive forces for connected nodes
-      workflow.actions.forEach(action => {
+      workflow.actions.forEach((action) => {
         const connections = this.getOutgoingConnections(action.id, workflow);
-        connections.forEach(conn => {
+        connections.forEach((conn) => {
           const target = this.getAction(workflow, conn.action);
           if (!target) return;
 
@@ -249,14 +251,11 @@ export class AutoLayout {
       });
 
       // Apply forces with cooling
-      const temp = 1 - (iter / iterations);
-      workflow.actions.forEach(action => {
+      const temp = 1 - iter / iterations;
+      workflow.actions.forEach((action) => {
         const [fx, fy] = forces.get(action.id)!;
         const [x, y] = action.position || [0, 0];
-        action.position = [
-          x + fx * c * temp,
-          y + fy * c * temp,
-        ];
+        action.position = [x + fx * c * temp, y + fy * c * temp];
       });
     }
 
@@ -274,10 +273,7 @@ export class AutoLayout {
 
     workflow.actions.forEach((action, i) => {
       const angle = i * angleStep;
-      action.position = [
-        Math.cos(angle) * radius,
-        Math.sin(angle) * radius,
-      ];
+      action.position = [Math.cos(angle) * radius, Math.sin(angle) * radius];
     });
 
     this.centerGraph(workflow);
@@ -292,15 +288,17 @@ export class AutoLayout {
 
     if (entryPoints.length === 0) {
       // No entry points, assign all to layer 0
-      workflow.actions.forEach(action => layers.set(action.id, 0));
+      workflow.actions.forEach((action) => layers.set(action.id, 0));
       return layers;
     }
 
     // BFS to assign layer numbers
-    const queue: Array<{ actionId: string; layer: number }> = entryPoints.map(id => ({
-      actionId: id,
-      layer: 0,
-    }));
+    const queue: Array<{ actionId: string; layer: number }> = entryPoints.map(
+      (id) => ({
+        actionId: id,
+        layer: 0,
+      })
+    );
 
     const visited = new Set<string>();
 
@@ -321,13 +319,13 @@ export class AutoLayout {
 
       // Add children to queue
       const nextActions = this.getNextActions(actionId, workflow);
-      nextActions.forEach(nextId => {
+      nextActions.forEach((nextId) => {
         queue.push({ actionId: nextId, layer: layer + 1 });
       });
     }
 
     // Handle any orphaned nodes
-    workflow.actions.forEach(action => {
+    workflow.actions.forEach((action) => {
       if (!layers.has(action.id)) {
         layers.set(action.id, 0);
       }
@@ -339,7 +337,10 @@ export class AutoLayout {
   /**
    * Position nodes within their assigned layers (vertical layout)
    */
-  private positionLayers(workflow: Workflow, layers: Map<string, number>): void {
+  private positionLayers(
+    workflow: Workflow,
+    layers: Map<string, number>
+  ): void {
     // Group actions by layer
     const layerGroups = new Map<number, string[]>();
     layers.forEach((layer, actionId) => {
@@ -351,7 +352,8 @@ export class AutoLayout {
 
     // Position each layer
     layerGroups.forEach((actionIds, layerNum) => {
-      const x = layerNum * (this.config.nodeWidth + this.config.horizontalSpacing);
+      const x =
+        layerNum * (this.config.nodeWidth + this.config.horizontalSpacing);
 
       // Center actions vertically
       const totalHeight =
@@ -359,7 +361,7 @@ export class AutoLayout {
         (actionIds.length - 1) * this.config.verticalSpacing;
       let y = -totalHeight / 2;
 
-      actionIds.forEach(actionId => {
+      actionIds.forEach((actionId) => {
         const action = this.getAction(workflow, actionId);
         if (action) {
           action.position = [x, y];
@@ -372,7 +374,10 @@ export class AutoLayout {
   /**
    * Position nodes within their assigned layers (horizontal layout)
    */
-  private positionLayersHorizontal(workflow: Workflow, layers: Map<string, number>): void {
+  private positionLayersHorizontal(
+    workflow: Workflow,
+    layers: Map<string, number>
+  ): void {
     // Group actions by layer
     const layerGroups = new Map<number, string[]>();
     layers.forEach((layer, actionId) => {
@@ -384,7 +389,8 @@ export class AutoLayout {
 
     // Position each layer (swap X and Y)
     layerGroups.forEach((actionIds, layerNum) => {
-      const y = layerNum * (this.config.nodeHeight + this.config.verticalSpacing);
+      const y =
+        layerNum * (this.config.nodeHeight + this.config.verticalSpacing);
 
       // Center actions horizontally
       const totalWidth =
@@ -392,7 +398,7 @@ export class AutoLayout {
         (actionIds.length - 1) * this.config.horizontalSpacing;
       let x = -totalWidth / 2;
 
-      actionIds.forEach(actionId => {
+      actionIds.forEach((actionId) => {
         const action = this.getAction(workflow, actionId);
         if (action) {
           action.position = [x, y];
@@ -426,7 +432,7 @@ export class AutoLayout {
     let currentY = y;
     let totalWidth = 0;
 
-    children.forEach(childId => {
+    children.forEach((childId) => {
       const width = this.layoutTree(
         workflow,
         childId,
@@ -434,14 +440,16 @@ export class AutoLayout {
         currentY,
         visited
       );
-      currentY += width * (this.config.nodeHeight + this.config.verticalSpacing);
+      currentY +=
+        width * (this.config.nodeHeight + this.config.verticalSpacing);
       totalWidth += width;
     });
 
     // Center parent over children
     if (children.length > 1) {
       const childrenHeight =
-        totalWidth * this.config.nodeHeight + (totalWidth - 1) * this.config.verticalSpacing;
+        totalWidth * this.config.nodeHeight +
+        (totalWidth - 1) * this.config.verticalSpacing;
       action.position[1] = y + (childrenHeight - this.config.nodeHeight) / 2;
     }
 
@@ -452,12 +460,12 @@ export class AutoLayout {
    * Handle branches (IF, LOOP, SWITCH actions)
    */
   private handleBranches(workflow: Workflow): void {
-    workflow.actions.forEach(action => {
-      if (action.type === 'IF' || action.type === 'TRY_CATCH') {
+    workflow.actions.forEach((action) => {
+      if (action.type === "IF" || action.type === "TRY_CATCH") {
         this.layoutIfBranch(workflow, action);
-      } else if (action.type === 'LOOP') {
+      } else if (action.type === "LOOP") {
         this.layoutLoopBranch(workflow, action);
-      } else if (action.type === 'SWITCH') {
+      } else if (action.type === "SWITCH") {
         this.layoutSwitchBranch(workflow, action);
       }
     });
@@ -467,10 +475,10 @@ export class AutoLayout {
    * Handle branches for horizontal layout
    */
   private handleBranchesHorizontal(workflow: Workflow): void {
-    workflow.actions.forEach(action => {
-      if (action.type === 'IF' || action.type === 'TRY_CATCH') {
+    workflow.actions.forEach((action) => {
+      if (action.type === "IF" || action.type === "TRY_CATCH") {
         this.layoutIfBranchHorizontal(workflow, action);
-      } else if (action.type === 'LOOP') {
+      } else if (action.type === "LOOP") {
         this.layoutLoopBranchHorizontal(workflow, action);
       }
     });
@@ -511,11 +519,19 @@ export class AutoLayout {
 
     // Position branches horizontally offset
     if (trueBranch && trueBranch.length > 0) {
-      this.offsetBranchHorizontal(workflow, trueBranch, -this.config.branchOffset);
+      this.offsetBranchHorizontal(
+        workflow,
+        trueBranch,
+        -this.config.branchOffset
+      );
     }
 
     if (falseBranch && falseBranch.length > 0) {
-      this.offsetBranchHorizontal(workflow, falseBranch, this.config.branchOffset);
+      this.offsetBranchHorizontal(
+        workflow,
+        falseBranch,
+        this.config.branchOffset
+      );
     }
   }
 
@@ -539,7 +555,10 @@ export class AutoLayout {
   /**
    * Layout LOOP branch horizontally
    */
-  private layoutLoopBranchHorizontal(workflow: Workflow, loopAction: Action): void {
+  private layoutLoopBranchHorizontal(
+    workflow: Workflow,
+    loopAction: Action
+  ): void {
     if (!workflow.connections) return;
 
     const connections = workflow.connections[loopAction.id];
@@ -548,7 +567,11 @@ export class AutoLayout {
     const [loopBody] = connections.main;
 
     if (loopBody && loopBody.length > 0) {
-      this.offsetBranchHorizontal(workflow, loopBody, this.config.branchOffset / 2);
+      this.offsetBranchHorizontal(
+        workflow,
+        loopBody,
+        this.config.branchOffset / 2
+      );
     }
   }
 
@@ -570,7 +593,7 @@ export class AutoLayout {
     const totalOffset = (numBranches - 1) * this.config.branchOffset;
     let currentOffset = -totalOffset / 2;
 
-    branches.forEach(branch => {
+    branches.forEach((branch) => {
       if (branch && branch.length > 0) {
         this.offsetBranch(workflow, branch, currentOffset);
       }
@@ -581,11 +604,15 @@ export class AutoLayout {
   /**
    * Apply Y offset to all actions in a branch
    */
-  private offsetBranch(workflow: Workflow, branch: Connection[], yOffset: number): void {
+  private offsetBranch(
+    workflow: Workflow,
+    branch: Connection[],
+    yOffset: number
+  ): void {
     const visited = new Set<string>();
 
     const applyOffset = (connections: Connection[], depth: number = 0) => {
-      connections.forEach(conn => {
+      connections.forEach((conn) => {
         if (visited.has(conn.action)) return;
         visited.add(conn.action);
 
@@ -596,7 +623,10 @@ export class AutoLayout {
           action.position[1] += yOffset * decay;
 
           // Recursively apply to children
-          const nextConnections = this.getOutgoingConnections(conn.action, workflow);
+          const nextConnections = this.getOutgoingConnections(
+            conn.action,
+            workflow
+          );
           applyOffset(nextConnections, depth + 1);
         }
       });
@@ -608,11 +638,15 @@ export class AutoLayout {
   /**
    * Apply X offset to all actions in a branch (horizontal layout)
    */
-  private offsetBranchHorizontal(workflow: Workflow, branch: Connection[], xOffset: number): void {
+  private offsetBranchHorizontal(
+    workflow: Workflow,
+    branch: Connection[],
+    xOffset: number
+  ): void {
     const visited = new Set<string>();
 
     const applyOffset = (connections: Connection[], depth: number = 0) => {
-      connections.forEach(conn => {
+      connections.forEach((conn) => {
         if (visited.has(conn.action)) return;
         visited.add(conn.action);
 
@@ -621,7 +655,10 @@ export class AutoLayout {
           const decay = Math.max(0.5, 1 - depth * 0.1);
           action.position[0] += xOffset * decay;
 
-          const nextConnections = this.getOutgoingConnections(conn.action, workflow);
+          const nextConnections = this.getOutgoingConnections(
+            conn.action,
+            workflow
+          );
           applyOffset(nextConnections, depth + 1);
         }
       });
@@ -660,8 +697,10 @@ export class AutoLayout {
     const [x1, y1] = action1.position;
     const [x2, y2] = action2.position;
 
-    const overlapX = Math.abs(x1 - x2) < this.config.nodeWidth + this.config.minNodeSpacing;
-    const overlapY = Math.abs(y1 - y2) < this.config.nodeHeight + this.config.minNodeSpacing;
+    const overlapX =
+      Math.abs(x1 - x2) < this.config.nodeWidth + this.config.minNodeSpacing;
+    const overlapY =
+      Math.abs(y1 - y2) < this.config.nodeHeight + this.config.minNodeSpacing;
 
     return overlapX && overlapY;
   }
@@ -706,7 +745,7 @@ export class AutoLayout {
     let minY = Infinity,
       maxY = -Infinity;
 
-    workflow.actions.forEach(action => {
+    workflow.actions.forEach((action) => {
       if (!action.position) return;
       const [x, y] = action.position;
       minX = Math.min(minX, x);
@@ -724,7 +763,7 @@ export class AutoLayout {
     const offsetY = targetY - graphCenterY;
 
     // Apply offset to all nodes
-    workflow.actions.forEach(action => {
+    workflow.actions.forEach((action) => {
       if (!action.position) return;
       action.position[0] += offsetX;
       action.position[1] += offsetY;
@@ -743,12 +782,12 @@ export class AutoLayout {
     const hasIncoming = new Set<string>();
 
     // Mark all actions that have incoming connections
-    Object.values(workflow.connections).forEach(connGroup => {
-      ['main', 'error', 'success', 'parallel'].forEach(type => {
+    Object.values(workflow.connections).forEach((connGroup) => {
+      ["main", "error", "success", "parallel"].forEach((type) => {
         const connections = connGroup[type as keyof typeof connGroup];
         if (connections) {
-          connections.forEach(connArray => {
-            connArray.forEach(conn => {
+          connections.forEach((connArray) => {
+            connArray.forEach((conn) => {
               hasIncoming.add(conn.action);
             });
           });
@@ -758,8 +797,8 @@ export class AutoLayout {
 
     // Entry points are actions without incoming connections
     const entryPoints = workflow.actions
-      .filter(action => !hasIncoming.has(action.id))
-      .map(action => action.id);
+      .filter((action) => !hasIncoming.has(action.id))
+      .map((action) => action.id);
 
     return entryPoints;
   }
@@ -775,11 +814,11 @@ export class AutoLayout {
 
     const nextActions: string[] = [];
 
-    ['main', 'error', 'success', 'parallel'].forEach(type => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const connArray = connections[type as keyof typeof connections];
       if (connArray) {
-        connArray.forEach(conns => {
-          conns.forEach(conn => {
+        connArray.forEach((conns) => {
+          conns.forEach((conn) => {
             nextActions.push(conn.action);
           });
         });
@@ -792,7 +831,10 @@ export class AutoLayout {
   /**
    * Get all outgoing connections from an action
    */
-  private getOutgoingConnections(actionId: string, workflow: Workflow): Connection[] {
+  private getOutgoingConnections(
+    actionId: string,
+    workflow: Workflow
+  ): Connection[] {
     if (!workflow.connections) return [];
 
     const connections = workflow.connections[actionId];
@@ -800,10 +842,10 @@ export class AutoLayout {
 
     const allConnections: Connection[] = [];
 
-    ['main', 'error', 'success', 'parallel'].forEach(type => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const connArray = connections[type as keyof typeof connections];
       if (connArray) {
-        connArray.forEach(conns => {
+        connArray.forEach((conns) => {
           allConnections.push(...conns);
         });
       }
@@ -816,7 +858,7 @@ export class AutoLayout {
    * Get action by ID
    */
   private getAction(workflow: Workflow, actionId: string): Action | undefined {
-    return workflow.actions.find(a => a.id === actionId);
+    return workflow.actions.find((a) => a.id === actionId);
   }
 
   /**

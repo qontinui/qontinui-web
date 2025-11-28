@@ -8,7 +8,9 @@
 .properties-panel {
   background-color: #1e1e1e;
   border-color: rgb(55, 65, 81);
-  transition: width 0.2s ease, height 0.2s ease;
+  transition:
+    width 0.2s ease,
+    height 0.2s ease;
 }
 
 .properties-panel.position-right {
@@ -80,7 +82,9 @@
 
 .collapsible-section-content {
   overflow: hidden;
-  transition: max-height 0.3s ease, opacity 0.3s ease;
+  transition:
+    max-height 0.3s ease,
+    opacity 0.3s ease;
 }
 
 .collapsible-section-content.collapsed {
@@ -96,7 +100,9 @@
   border-radius: 0.375rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .property-input:focus {
@@ -128,7 +134,7 @@
 }
 
 .property-label.required::after {
-  content: ' *';
+  content: " *";
   color: rgb(239, 68, 68);
 }
 
@@ -194,7 +200,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -291,7 +298,9 @@
   background-color: rgba(0, 0, 0, 0.3);
   border: 1px solid rgb(55, 65, 81);
   border-radius: 0.375rem;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .stat-card:hover {
@@ -329,7 +338,7 @@
 }
 
 .history-item::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 0.375rem;
   top: 0.5rem;

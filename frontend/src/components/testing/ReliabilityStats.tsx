@@ -1,17 +1,24 @@
-'use client';
+"use client";
 
-import { useReliabilityStats } from '@/hooks/useTesting';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, XCircle, TrendingUp, TrendingDown } from 'lucide-react';
+import { useReliabilityStats } from "@/hooks/useTesting";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { CheckCircle2, XCircle, TrendingUp, TrendingDown } from "lucide-react";
 
 interface ReliabilityStatsProps {
   projectId: string;
   workflowId?: string;
 }
 
-export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProps) {
-  const { data: stats, isLoading, error } = useReliabilityStats(projectId, workflowId);
+export function ReliabilityStats({
+  projectId,
+  workflowId,
+}: ReliabilityStatsProps) {
+  const {
+    data: stats,
+    isLoading,
+    error,
+  } = useReliabilityStats(projectId, workflowId);
 
   if (isLoading) {
     return (
@@ -27,7 +34,9 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
     return (
       <Card className="bg-[#1A1A1B]/50 border-gray-800/50">
         <CardContent className="p-12 text-center">
-          <div className="text-red-400">Error loading stats: {error.message}</div>
+          <div className="text-red-400">
+            Error loading stats: {error.message}
+          </div>
         </CardContent>
       </Card>
     );
@@ -47,9 +56,9 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
   }
 
   const getSuccessRateColor = (rate: number) => {
-    if (rate >= 90) return 'text-green-500';
-    if (rate >= 70) return 'text-yellow-500';
-    return 'text-red-500';
+    if (rate >= 90) return "text-green-500";
+    if (rate >= 70) return "text-yellow-500";
+    return "text-red-500";
   };
 
   return (
@@ -63,12 +72,16 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <div className="text-center">
               <div className="text-sm text-gray-400 mb-2">Success Rate</div>
-              <div className={`text-3xl font-bold ${getSuccessRateColor(stats.overall_success_rate)}`}>
+              <div
+                className={`text-3xl font-bold ${getSuccessRateColor(stats.overall_success_rate)}`}
+              >
                 {stats.overall_success_rate.toFixed(1)}%
               </div>
             </div>
             <div className="text-center">
-              <div className="text-sm text-gray-400 mb-2">Total Transitions</div>
+              <div className="text-sm text-gray-400 mb-2">
+                Total Transitions
+              </div>
               <div className="text-3xl font-bold text-[#00D9FF]">
                 {stats.total_transitions_tested}
               </div>
@@ -87,7 +100,9 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
             </div>
           </div>
           <div className="mt-6 p-4 bg-[#0A0A0B]/50 rounded-lg">
-            <div className="text-sm text-gray-400 mb-1">Average Transition Time</div>
+            <div className="text-sm text-gray-400 mb-1">
+              Average Transition Time
+            </div>
             <div className="text-2xl font-bold text-[#BD00FF]">
               {stats.average_transition_time_ms.toFixed(0)}ms
             </div>
@@ -105,7 +120,9 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
         </CardHeader>
         <CardContent>
           {stats.most_reliable_transitions.length === 0 ? (
-            <div className="text-center py-6 text-gray-400">No data available</div>
+            <div className="text-center py-6 text-gray-400">
+              No data available
+            </div>
           ) : (
             <div className="space-y-3">
               {stats.most_reliable_transitions.map((transition, index) => (
@@ -115,7 +132,9 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium">{transition.from_state}</span>
+                      <span className="font-medium">
+                        {transition.from_state}
+                      </span>
                       <span className="text-gray-500">→</span>
                       <span className="font-medium">{transition.to_state}</span>
                       <Badge variant="outline" className="ml-2 text-xs">
@@ -123,7 +142,8 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
                       </Badge>
                     </div>
                     <div className="text-sm text-gray-400">
-                      {transition.total_attempts} attempts • {transition.average_duration_ms.toFixed(0)}ms avg
+                      {transition.total_attempts} attempts •{" "}
+                      {transition.average_duration_ms.toFixed(0)}ms avg
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -149,7 +169,9 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
         </CardHeader>
         <CardContent>
           {stats.least_reliable_transitions.length === 0 ? (
-            <div className="text-center py-6 text-gray-400">No data available</div>
+            <div className="text-center py-6 text-gray-400">
+              No data available
+            </div>
           ) : (
             <div className="space-y-3">
               {stats.least_reliable_transitions.map((transition, index) => (
@@ -159,7 +181,9 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium">{transition.from_state}</span>
+                      <span className="font-medium">
+                        {transition.from_state}
+                      </span>
                       <span className="text-gray-500">→</span>
                       <span className="font-medium">{transition.to_state}</span>
                       <Badge variant="outline" className="ml-2 text-xs">
@@ -167,7 +191,8 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
                       </Badge>
                     </div>
                     <div className="text-sm text-gray-400">
-                      {transition.total_attempts} attempts • {transition.average_duration_ms.toFixed(0)}ms avg
+                      {transition.total_attempts} attempts •{" "}
+                      {transition.average_duration_ms.toFixed(0)}ms avg
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -190,7 +215,9 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
         </CardHeader>
         <CardContent>
           {stats.state_reliability.length === 0 ? (
-            <div className="text-center py-6 text-gray-400">No data available</div>
+            <div className="text-center py-6 text-gray-400">
+              No data available
+            </div>
           ) : (
             <div className="space-y-3">
               {stats.state_reliability.slice(0, 10).map((state, index) => (
@@ -201,25 +228,26 @@ export function ReliabilityStats({ projectId, workflowId }: ReliabilityStatsProp
                   <div className="flex-1">
                     <div className="font-medium mb-1">{state.state_name}</div>
                     <div className="text-sm text-gray-400">
-                      {state.visit_count} visits • {state.average_duration_ms.toFixed(0)}ms avg
+                      {state.visit_count} visits •{" "}
+                      {state.average_duration_ms.toFixed(0)}ms avg
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div
-                      className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden"
-                    >
+                    <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
                       <div
                         className={`h-full ${
                           state.success_rate >= 90
-                            ? 'bg-green-500'
+                            ? "bg-green-500"
                             : state.success_rate >= 70
-                            ? 'bg-yellow-500'
-                            : 'bg-red-500'
+                              ? "bg-yellow-500"
+                              : "bg-red-500"
                         }`}
                         style={{ width: `${state.success_rate}%` }}
                       />
                     </div>
-                    <span className={`text-sm font-medium ${getSuccessRateColor(state.success_rate)}`}>
+                    <span
+                      className={`text-sm font-medium ${getSuccessRateColor(state.success_rate)}`}
+                    >
                       {state.success_rate.toFixed(1)}%
                     </span>
                   </div>

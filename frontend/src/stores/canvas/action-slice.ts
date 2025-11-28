@@ -7,8 +7,8 @@
  * - Querying actions
  */
 
-import type { StateCreator } from 'zustand';
-import type { CanvasStore, ActionSlice, Action } from './types';
+import type { StateCreator } from "zustand";
+import type { CanvasStore, ActionSlice, Action } from "./types";
 
 /**
  * Generate a unique ID for actions
@@ -20,7 +20,10 @@ function generateActionId(): string {
 /**
  * Deep clone an action with a new ID
  */
-function cloneAction(action: Action, offset: { x: number; y: number } = { x: 0, y: 0 }): Action {
+function cloneAction(
+  action: Action,
+  offset: { x: number; y: number } = { x: 0, y: 0 }
+): Action {
   return {
     ...action,
     id: generateActionId(),
@@ -30,7 +33,7 @@ function cloneAction(action: Action, offset: { x: number; y: number } = { x: 0, 
 
 export const createActionSlice: StateCreator<
   CanvasStore,
-  [['zustand/immer', never]],
+  [["zustand/immer", never]],
   [],
   ActionSlice
 > = (set, get) => ({
@@ -66,7 +69,9 @@ export const createActionSlice: StateCreator<
       if (!state.workflow) return;
 
       // Remove action
-      state.workflow.actions = state.workflow.actions.filter((a) => a.id !== actionId);
+      state.workflow.actions = state.workflow.actions.filter(
+        (a) => a.id !== actionId
+      );
 
       // Remove connections
       delete state.workflow.connections[actionId];
@@ -95,7 +100,9 @@ export const createActionSlice: StateCreator<
       const idsSet = new Set(actionIds);
 
       // Remove actions
-      state.workflow.actions = state.workflow.actions.filter((a) => !idsSet.has(a.id));
+      state.workflow.actions = state.workflow.actions.filter(
+        (a) => !idsSet.has(a.id)
+      );
 
       // Remove connections
       for (const actionId of actionIds) {
@@ -132,12 +139,16 @@ export const createActionSlice: StateCreator<
     get().updateAction(actionId, { position });
   },
 
-  moveActions: (updates: { actionId: string; position: [number, number] }[]) => {
+  moveActions: (
+    updates: { actionId: string; position: [number, number] }[]
+  ) => {
     set((state) => {
       if (!state.workflow) return;
 
       for (const { actionId, position } of updates) {
-        const index = state.workflow.actions.findIndex((a) => a.id === actionId);
+        const index = state.workflow.actions.findIndex(
+          (a) => a.id === actionId
+        );
         if (index !== -1) {
           state.workflow.actions[index].position = position;
         }

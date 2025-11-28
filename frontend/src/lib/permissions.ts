@@ -7,7 +7,7 @@
  * Permission hierarchy: view < comment < edit < admin < owner
  */
 
-import type { User } from '@/lib/schemas';
+import type { User } from "@/lib/schemas";
 
 // ============================================================================
 // Permission Types
@@ -17,7 +17,13 @@ import type { User } from '@/lib/schemas';
  * Permission levels matching backend PermissionLevel enum
  * Backend: class PermissionLevel(str, Enum): VIEW, COMMENT, EDIT, ADMIN
  */
-export type PermissionLevel = 'none' | 'view' | 'comment' | 'edit' | 'admin' | 'owner';
+export type PermissionLevel =
+  | "none"
+  | "view"
+  | "comment"
+  | "edit"
+  | "admin"
+  | "owner";
 
 /**
  * Project with permission information
@@ -64,7 +70,7 @@ const PERMISSION_HIERARCHY: Record<PermissionLevel, number> = {
  */
 export function hasPermission(
   requiredLevel: PermissionLevel,
-  userLevel: PermissionLevel = 'none'
+  userLevel: PermissionLevel = "none"
 ): boolean {
   const requiredRank = PERMISSION_HIERARCHY[requiredLevel] ?? 0;
   const userRank = PERMISSION_HIERARCHY[userLevel] ?? 0;
@@ -83,12 +89,12 @@ export function getPermissionLevel(
   currentUser?: User | null
 ): PermissionLevel {
   if (!currentUser) {
-    return 'none';
+    return "none";
   }
 
   // Project owner always has 'owner' permission
   if (project.owner_id === currentUser.id) {
-    return 'owner';
+    return "owner";
   }
 
   // Use explicit permission level if provided
@@ -97,7 +103,7 @@ export function getPermissionLevel(
   }
 
   // Default to 'none' if no permission is set
-  return 'none';
+  return "none";
 }
 
 /**
@@ -112,7 +118,7 @@ export function canUserView(
   currentUser?: User | null
 ): boolean {
   const level = getPermissionLevel(project, currentUser);
-  return hasPermission('view', level);
+  return hasPermission("view", level);
 }
 
 /**
@@ -127,7 +133,7 @@ export function canUserComment(
   currentUser?: User | null
 ): boolean {
   const level = getPermissionLevel(project, currentUser);
-  return hasPermission('comment', level);
+  return hasPermission("comment", level);
 }
 
 /**
@@ -142,7 +148,7 @@ export function canUserEdit(
   currentUser?: User | null
 ): boolean {
   const level = getPermissionLevel(project, currentUser);
-  return hasPermission('edit', level);
+  return hasPermission("edit", level);
 }
 
 /**
@@ -157,7 +163,7 @@ export function canUserAdmin(
   currentUser?: User | null
 ): boolean {
   const level = getPermissionLevel(project, currentUser);
-  return hasPermission('admin', level);
+  return hasPermission("admin", level);
 }
 
 /**
@@ -186,14 +192,14 @@ export function isProjectOwner(
  */
 export function getPermissionLabel(level: PermissionLevel): string {
   const labels: Record<PermissionLevel, string> = {
-    none: 'No Access',
-    view: 'View Only',
-    comment: 'Can Comment',
-    edit: 'Can Edit',
-    admin: 'Admin',
-    owner: 'Owner',
+    none: "No Access",
+    view: "View Only",
+    comment: "Can Comment",
+    edit: "Can Edit",
+    admin: "Admin",
+    owner: "Owner",
   };
-  return labels[level] ?? 'Unknown';
+  return labels[level] ?? "Unknown";
 }
 
 /**
@@ -201,14 +207,14 @@ export function getPermissionLabel(level: PermissionLevel): string {
  */
 export function getPermissionDescription(level: PermissionLevel): string {
   const descriptions: Record<PermissionLevel, string> = {
-    none: 'No access to this project',
-    view: 'Can view workflows and configurations',
-    comment: 'Can view and add comments',
-    edit: 'Can view, comment, and edit workflows',
-    admin: 'Can manage project settings and permissions',
-    owner: 'Full control over the project',
+    none: "No access to this project",
+    view: "Can view workflows and configurations",
+    comment: "Can view and add comments",
+    edit: "Can view, comment, and edit workflows",
+    admin: "Can manage project settings and permissions",
+    owner: "Full control over the project",
   };
-  return descriptions[level] ?? '';
+  return descriptions[level] ?? "";
 }
 
 /**
@@ -216,7 +222,7 @@ export function getPermissionDescription(level: PermissionLevel): string {
  * Used for permission selection in UI
  */
 export function getAvailablePermissionLevels(): PermissionLevel[] {
-  return ['view', 'comment', 'edit', 'admin'];
+  return ["view", "comment", "edit", "admin"];
 }
 
 /**
@@ -241,16 +247,18 @@ export function getPermissionLevelOptions(): Array<{
 /**
  * Validate that a permission level is valid
  */
-export function isValidPermissionLevel(level: string): level is PermissionLevel {
-  return ['none', 'view', 'comment', 'edit', 'admin', 'owner'].includes(level);
+export function isValidPermissionLevel(
+  level: string
+): level is PermissionLevel {
+  return ["none", "view", "comment", "edit", "admin", "owner"].includes(level);
 }
 
 /**
  * Safely parse a permission level string
  */
 export function parsePermissionLevel(level: unknown): PermissionLevel {
-  if (typeof level === 'string' && isValidPermissionLevel(level)) {
+  if (typeof level === "string" && isValidPermissionLevel(level)) {
     return level;
   }
-  return 'none';
+  return "none";
 }

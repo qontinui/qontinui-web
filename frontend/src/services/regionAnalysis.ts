@@ -2,9 +2,9 @@
  * Region Analysis API service
  */
 
-import axios from 'axios';
+import axios from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export interface BoundingBox {
   x: number;
@@ -126,10 +126,15 @@ export interface QuickRegionAnalysisRequest {
 /**
  * Get list of available region analyzers
  */
-export async function listRegionAnalyzers(token: string): Promise<RegionAnalyzerInfo[]> {
-  const response = await axios.get(`${API_URL}/api/v1/region-analysis/analyzers`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+export async function listRegionAnalyzers(
+  token: string
+): Promise<RegionAnalyzerInfo[]> {
+  const response = await axios.get(
+    `${API_URL}/api/v1/region-analysis/analyzers`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
   return response.data.analyzers;
 }
 

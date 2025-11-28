@@ -81,9 +81,11 @@ The Canvas store has been refactored from a monolithic 945-line file into 8 focu
 ## Slice Responsibilities
 
 ### 1. Workflow Slice
+
 **Responsibility**: Core workflow data and validation
 
 **Owns**:
+
 - Current workflow object
 - Dirty state tracking
 - Validation results
@@ -96,14 +98,17 @@ The Canvas store has been refactored from a monolithic 945-line file into 8 focu
 ---
 
 ### 2. Action Slice
+
 **Responsibility**: Action CRUD operations
 
 **Owns**:
+
 - Action creation, updates, deletion
 - Action queries (getById, findByType)
 - Bulk action operations
 
 **Dependencies**:
+
 - Workflow Slice (reads/writes workflow.actions)
 - History Slice (records changes)
 - Selection Slice (updates selection on delete)
@@ -113,14 +118,17 @@ The Canvas store has been refactored from a monolithic 945-line file into 8 focu
 ---
 
 ### 3. Connection Slice
+
 **Responsibility**: Connection management
 
 **Owns**:
+
 - Connection creation/deletion
 - Connection dragging state
 - Connection queries
 
 **Dependencies**:
+
 - Workflow Slice (reads/writes workflow.connections)
 - History Slice (records changes)
 
@@ -129,30 +137,37 @@ The Canvas store has been refactored from a monolithic 945-line file into 8 focu
 ---
 
 ### 4. Selection Slice
+
 **Responsibility**: Selection state
 
 **Owns**:
+
 - Selected nodes/edges
 - Multi-selection logic
 - Select all/invert/clear
 
 **Dependencies**:
+
 - Workflow Slice (queries available nodes)
 
 **Used by**:
+
 - Clipboard Slice (copies selection)
 - Components that render selection
 
 ---
 
 ### 5. Clipboard Slice
+
 **Responsibility**: Copy/paste operations
 
 **Owns**:
+
 - Clipboard buffer (nodes + connections)
 - Copy/paste/cut/duplicate logic
 
 **Dependencies**:
+
 - Workflow Slice (reads/writes actions)
 - Selection Slice (reads selection)
 - Action Slice (uses action utilities)
@@ -163,27 +178,33 @@ The Canvas store has been refactored from a monolithic 945-line file into 8 focu
 ---
 
 ### 6. History Slice
+
 **Responsibility**: Undo/redo functionality
 
 **Owns**:
+
 - History stack
 - History index
 - Undo/redo logic
 - History size management
 
 **Dependencies**:
+
 - Workflow Slice (snapshots workflow)
 
 **Used by**:
+
 - All slices that modify state (via recordHistory)
 - Undo/redo UI controls
 
 ---
 
 ### 7. Viewport Slice
+
 **Responsibility**: Pan, zoom, viewport
 
 **Owns**:
+
 - Viewport position (x, y)
 - Zoom level
 - Pan/drag state
@@ -196,9 +217,11 @@ The Canvas store has been refactored from a monolithic 945-line file into 8 focu
 ---
 
 ### 8. Preferences Slice
+
 **Responsibility**: UI preferences
 
 **Owns**:
+
 - Grid settings
 - Minimap visibility
 - Snap to grid
@@ -207,6 +230,7 @@ The Canvas store has been refactored from a monolithic 945-line file into 8 focu
 **Dependencies**: None (independent)
 
 **Used by**:
+
 - Canvas rendering (grid, snap)
 - UI preference panels
 
@@ -291,26 +315,31 @@ Component ONLY re-renders when selectedNodes changes
 ## Benefits of This Architecture
 
 ### 1. Single Responsibility Principle
+
 - Each slice has ONE clear purpose
 - Easy to understand and maintain
 - Changes are localized
 
 ### 2. Testability
+
 - Test each slice independently
 - Mock only what you need
 - Clear test boundaries
 
 ### 3. Performance
+
 - Selective re-renders via selectors
 - Better code splitting
 - Tree-shaking friendly
 
 ### 4. Scalability
+
 - Easy to add new slices
 - No risk of merge conflicts (separate files)
 - Clear ownership
 
 ### 5. Developer Experience
+
 - IntelliSense works better
 - Easier to navigate
 - Self-documenting structure
@@ -318,11 +347,13 @@ Component ONLY re-renders when selectedNodes changes
 ## File Size Comparison
 
 **Before:**
+
 ```
 canvas-store.ts: 945 lines (monolithic)
 ```
 
 **After:**
+
 ```
 types.ts:              142 lines
 workflow-slice.ts:      93 lines

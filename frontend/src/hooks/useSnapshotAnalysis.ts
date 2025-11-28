@@ -1,7 +1,10 @@
 // hooks/useSnapshotAnalysis.ts
 
-import { useState, useEffect } from 'react';
-import type { SnapshotAnalysis, SnapshotDetail } from '@/types/snapshot-recommendations';
+import { useState, useEffect } from "react";
+import type {
+  SnapshotAnalysis,
+  SnapshotDetail,
+} from "@/types/snapshot-recommendations";
 
 interface UseSnapshotAnalysisParams {
   snapshotId?: number;
@@ -22,13 +25,13 @@ export function useSnapshotAnalysis(params?: UseSnapshotAnalysisParams) {
       const response = await fetch(`/api/v1/snapshots/${snapshotId}/analysis`);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch snapshot analysis');
+        throw new Error("Failed to fetch snapshot analysis");
       }
 
       const data: SnapshotAnalysis = await response.json();
       setAnalysis(data);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error');
+      const error = err instanceof Error ? err : new Error("Unknown error");
       setError(error);
     } finally {
       setLoading(false);
@@ -43,13 +46,13 @@ export function useSnapshotAnalysis(params?: UseSnapshotAnalysisParams) {
       const response = await fetch(`/api/v1/snapshots/${snapshotId}/detail`);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch snapshot detail');
+        throw new Error("Failed to fetch snapshot detail");
       }
 
       const data: SnapshotDetail = await response.json();
       setDetail(data);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error');
+      const error = err instanceof Error ? err : new Error("Unknown error");
       setError(error);
     } finally {
       setLoading(false);

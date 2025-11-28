@@ -25,7 +25,7 @@
  *   }
  */
 
-import { z } from 'zod'
+import { z } from "zod";
 
 // ============================================================================
 // User Schemas
@@ -45,23 +45,30 @@ export const UserSchema = z.object({
   company: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   avatar_url: z.string().nullable().optional(),
-  subscription_tier: z.enum(['free', 'hobby', 'pro']).default('free'),
+  subscription_tier: z.enum(["free", "hobby", "pro"]).default("free"),
   last_login: z.string().datetime().nullable().optional(), // ISO 8601 datetime string
-})
+});
 
-export type User = z.infer<typeof UserSchema>
+export type User = z.infer<typeof UserSchema>;
 
 // ============================================================================
 // Project Schemas
 // ============================================================================
 
-export const ProjectConfigurationSchema = z.record(z.unknown()).default({})
+export const ProjectConfigurationSchema = z.record(z.unknown()).default({});
 
 /**
  * Permission level enum matching backend PermissionLevel
  * Backend: class PermissionLevel(str, Enum): VIEW, COMMENT, EDIT, ADMIN
  */
-export const PermissionLevelSchema = z.enum(['none', 'view', 'comment', 'edit', 'admin', 'owner'])
+export const PermissionLevelSchema = z.enum([
+  "none",
+  "view",
+  "comment",
+  "edit",
+  "admin",
+  "owner",
+]);
 
 export const ProjectSchema = z.object({
   id: z.string().min(1),
@@ -72,25 +79,28 @@ export const ProjectSchema = z.object({
   created_at: z.string().datetime(), // ISO 8601 datetime string
   updated_at: z.string().datetime(), // ISO 8601 datetime string
   permission_level: PermissionLevelSchema.optional(), // User's permission level for this project
-})
+});
 
-export type Project = z.infer<typeof ProjectSchema>
+export type Project = z.infer<typeof ProjectSchema>;
 
 export const CreateProjectSchema = z.object({
-  name: z.string().min(1, 'Project name is required').max(255, 'Project name is too long'),
-  description: z.string().max(1000, 'Description is too long').optional(),
+  name: z
+    .string()
+    .min(1, "Project name is required")
+    .max(255, "Project name is too long"),
+  description: z.string().max(1000, "Description is too long").optional(),
   configuration: ProjectConfigurationSchema,
-})
+});
 
-export type CreateProject = z.infer<typeof CreateProjectSchema>
+export type CreateProject = z.infer<typeof CreateProjectSchema>;
 
 export const UpdateProjectSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().max(1000).nullable().optional(),
   configuration: ProjectConfigurationSchema.optional(),
-})
+});
 
-export type UpdateProject = z.infer<typeof UpdateProjectSchema>
+export type UpdateProject = z.infer<typeof UpdateProjectSchema>;
 
 // ============================================================================
 // Admin Schemas
@@ -103,9 +113,9 @@ export const AdminStatsSchema = z.object({
   total_projects: z.number().int().nonnegative(),
   projects_week: z.number().int().nonnegative(),
   active_users: z.number().int().nonnegative(),
-})
+});
 
-export type AdminStats = z.infer<typeof AdminStatsSchema>
+export type AdminStats = z.infer<typeof AdminStatsSchema>;
 
 export const AdminUserDataSchema = z.object({
   id: z.string().uuid(),
@@ -119,9 +129,9 @@ export const AdminUserDataSchema = z.object({
   project_count: z.number().int().nonnegative(),
   subscription_tier: z.string(), // Allow any subscription tier value
   last_login: z.string().nullable().optional(), // Optional, nullable datetime string
-})
+});
 
-export type AdminUserData = z.infer<typeof AdminUserDataSchema>
+export type AdminUserData = z.infer<typeof AdminUserDataSchema>;
 
 export const AdminProjectDataSchema = z.object({
   id: z.string().min(1),
@@ -134,9 +144,9 @@ export const AdminProjectDataSchema = z.object({
   updated_at: z.string(), // Accept any string, will be validated as datetime
   state_count: z.number().int().nonnegative(),
   transition_count: z.number().int().nonnegative(),
-})
+});
 
-export type AdminProjectData = z.infer<typeof AdminProjectDataSchema>
+export type AdminProjectData = z.infer<typeof AdminProjectDataSchema>;
 
 // Detailed project schema with full configuration
 export const AdminProjectDetailsSchema = z.object({
@@ -152,70 +162,75 @@ export const AdminProjectDetailsSchema = z.object({
   states: z.array(z.any()),
   state_count: z.number().int().nonnegative(),
   transition_count: z.number().int().nonnegative(),
-  image_library: z.array(z.object({
-    source: z.enum(['image_library', 'state']),
-    state_id: z.string().optional(),
-    state_name: z.string().optional(),
-    image: z.any(),
-  })),
-})
+  image_library: z.array(
+    z.object({
+      source: z.enum(["image_library", "state"]),
+      state_id: z.string().optional(),
+      state_name: z.string().optional(),
+      image: z.any(),
+    })
+  ),
+});
 
-export type AdminProjectDetails = z.infer<typeof AdminProjectDetailsSchema>
+export type AdminProjectDetails = z.infer<typeof AdminProjectDetailsSchema>;
 
 // ============================================================================
 // Authentication Schemas
 // ============================================================================
 
 export const LoginRequestSchema = z.object({
-  username: z.string().min(1, 'Username is required'),
-  password: z.string().min(1, 'Password is required'),
-})
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+});
 
-export type LoginRequest = z.infer<typeof LoginRequestSchema>
+export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 
 export const LoginResponseSchema = z.object({
   access_token: z.string(),
   refresh_token: z.string(),
   token_type: z.string(),
-})
+});
 
-export type LoginResponse = z.infer<typeof LoginResponseSchema>
+export type LoginResponse = z.infer<typeof LoginResponseSchema>;
 
 export const RegisterRequestSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().email("Invalid email address"),
   username: z
     .string()
-    .min(3, 'Username must be at least 3 characters')
-    .max(50, 'Username must be less than 50 characters')
-    .regex(/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, underscores, and hyphens'),
+    .min(3, "Username must be at least 3 characters")
+    .max(50, "Username must be less than 50 characters")
+    .regex(
+      /^[a-zA-Z0-9_-]+$/,
+      "Username can only contain letters, numbers, underscores, and hyphens"
+    ),
   password: z
     .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
   full_name: z.string().max(255).optional(),
-})
+});
 
-export type RegisterRequest = z.infer<typeof RegisterRequestSchema>
+export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 
 export const ForgotPasswordRequestSchema = z.object({
-  email: z.string().email('Invalid email address'),
-})
+  email: z.string().email("Invalid email address"),
+});
 
-export type ForgotPasswordRequest = z.infer<typeof ForgotPasswordRequestSchema>
+export type ForgotPasswordRequest = z.infer<typeof ForgotPasswordRequestSchema>;
 
 export const ResetPasswordRequestSchema = z.object({
-  token: z.string().min(1, 'Reset token is required'),
+  token: z.string().min(1, "Reset token is required"),
   password: z
     .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
-})
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
+});
 
-export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequestSchema>
+export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequestSchema>;
 
 // ============================================================================
 // API Error Schemas
@@ -231,17 +246,17 @@ export const ApiErrorSchema = z.object({
       })
     )
   ),
-})
+});
 
-export type ApiError = z.infer<typeof ApiErrorSchema>
+export type ApiError = z.infer<typeof ApiErrorSchema>;
 
 // ============================================================================
 // Array Schemas (for lists)
 // ============================================================================
 
-export const ProjectsArraySchema = z.array(ProjectSchema)
-export const AdminUsersArraySchema = z.array(AdminUserDataSchema)
-export const AdminProjectsArraySchema = z.array(AdminProjectDataSchema)
+export const ProjectsArraySchema = z.array(ProjectSchema);
+export const AdminUsersArraySchema = z.array(AdminUserDataSchema);
+export const AdminProjectsArraySchema = z.array(AdminProjectDataSchema);
 
 // ============================================================================
 // Helper Functions
@@ -255,16 +270,16 @@ export function safeParseApi<T>(
   data: unknown,
   context?: string
 ): { success: true; data: T } | { success: false; error: z.ZodError } {
-  const result = schema.safeParse(data)
+  const result = schema.safeParse(data);
 
   if (!result.success) {
-    console.error(`API validation error${context ? ` in ${context}` : ''}:`, {
+    console.error(`API validation error${context ? ` in ${context}` : ""}:`, {
       errors: result.error.errors,
       data,
-    })
+    });
   }
 
-  return result
+  return result;
 }
 
 /**
@@ -276,25 +291,27 @@ export function parseApi<T>(
   context?: string
 ): T {
   try {
-    const result = schema.parse(data)
-    return result
+    const result = schema.parse(data);
+    return result;
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.error(`❌ [parseApi] Validation error${context ? ` in ${context}` : ''}:`)
-      console.error('Validation errors:', error.errors)
-      console.error('Detailed errors:', JSON.stringify(error.errors, null, 2))
-      console.error('Data received:', data)
+      console.error(
+        `❌ [parseApi] Validation error${context ? ` in ${context}` : ""}:`
+      );
+      console.error("Validation errors:", error.errors);
+      console.error("Detailed errors:", JSON.stringify(error.errors, null, 2));
+      console.error("Data received:", data);
 
       // Log each validation error with more detail
       error.errors.forEach((err, index) => {
         console.error(`Error ${index + 1}:`, {
-          path: err.path.join('.'),
+          path: err.path.join("."),
           message: err.message,
           received: err.received,
           expected: err.expected,
-        })
-      })
+        });
+      });
     }
-    throw error
+    throw error;
   }
 }

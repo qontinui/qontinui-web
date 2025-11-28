@@ -1,34 +1,34 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 export interface ExpressionEditorProps {
   /** Current expression value */
-  value: string
+  value: string;
 
   /** Called when expression changes */
-  onChange: (expression: string) => void
+  onChange: (expression: string) => void;
 
   /** Optional label text */
-  label?: string
+  label?: string;
 
   /** Optional placeholder text with example expressions */
-  placeholder?: string
+  placeholder?: string;
 
   /** Optional class name */
-  className?: string
+  className?: string;
 
   /** Minimum number of rows */
-  minRows?: number
+  minRows?: number;
 
   /** Whether the field is required */
-  required?: boolean
+  required?: boolean;
 
   /** Optional helper text */
-  helperText?: string
+  helperText?: string;
 }
 
 /**
@@ -51,8 +51,8 @@ export function ExpressionEditor({
   helperText,
 }: ExpressionEditorProps) {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onChange(e.target.value)
-  }
+    onChange(e.target.value);
+  };
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -73,15 +73,14 @@ export function ExpressionEditor({
         }}
       />
 
-      {helperText && (
-        <p className="text-xs text-gray-500">{helperText}</p>
-      )}
+      {helperText && <p className="text-xs text-gray-500">{helperText}</p>}
 
       {!helperText && (
         <p className="text-xs text-gray-500">
-          JavaScript expression. You can use variables, operators, and functions.
+          JavaScript expression. You can use variables, operators, and
+          functions.
         </p>
       )}
     </div>
-  )
+  );
 }

@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 /**
  * Automation Builder Component
@@ -12,28 +12,24 @@
  * - useProjectNameEditor: Handle inline name editing
  */
 
-import { Suspense } from "react"
-import { AutomationBuilder as UnifiedAutomationBuilder } from "@/components/automation-builder/AutomationBuilder"
-import { useAutomation } from "@/contexts/automation-context"
-import { useProjectLoader } from "@/hooks/use-project-loader"
-import { useProjectAutoSave } from "@/hooks/use-project-auto-save"
-import { useProjectNameEditor } from "@/hooks/use-project-name-editor"
-import { projectLogger } from "@/lib/project-logger"
-import { Pencil, Check, X, Loader2 } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { Suspense } from "react";
+import { AutomationBuilder as UnifiedAutomationBuilder } from "@/components/automation-builder/AutomationBuilder";
+import { useAutomation } from "@/contexts/automation-context";
+import { useProjectLoader } from "@/hooks/use-project-loader";
+import { useProjectAutoSave } from "@/hooks/use-project-auto-save";
+import { useProjectNameEditor } from "@/hooks/use-project-name-editor";
+import { projectLogger } from "@/lib/project-logger";
+import { Pencil, Check, X, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 /**
  * Project Header Component
  *
  * Single Responsibility: Render the project name header with edit functionality.
  */
-function ProjectHeader({
-  projectId,
-}: {
-  projectId: string | null
-}) {
-  const { projectName, lastSaved } = useAutomation()
+function ProjectHeader({ projectId }: { projectId: string | null }) {
+  const { projectName, lastSaved } = useAutomation();
 
   const {
     isEditing,
@@ -44,7 +40,7 @@ function ProjectHeader({
     saveName,
     setEditedName,
     handleKeyDown,
-  } = useProjectNameEditor({ projectId })
+  } = useProjectNameEditor({ projectId });
 
   return (
     <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
@@ -85,7 +81,7 @@ function ProjectHeader({
             onClick={startEditing}
           >
             <h1 className="text-xl font-semibold text-white group-hover:text-[#00D9FF] transition-colors">
-              {projectName || 'Untitled Project'}
+              {projectName || "Untitled Project"}
             </h1>
             <Pencil className="h-4 w-4 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
@@ -97,7 +93,7 @@ function ProjectHeader({
         )}
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -111,7 +107,7 @@ function LoadingOverlay() {
         <span className="text-white">Loading project...</span>
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -121,19 +117,19 @@ function LoadingOverlay() {
  */
 function AutomationBuilderContent() {
   // Project loading from URL
-  const { projectId, isLoading, error } = useProjectLoader()
+  const { projectId, isLoading, error } = useProjectLoader();
 
-  projectLogger.debug('AutomationBuilder', 'Render', {
+  projectLogger.debug("AutomationBuilder", "Render", {
     projectId,
     isLoading,
     hasError: !!error,
-  })
+  });
 
   // Auto-save functionality
   useProjectAutoSave({
     projectId,
     enabled: !isLoading && projectId !== null,
-  })
+  });
 
   return (
     <div className="h-full w-full flex flex-col bg-[#1E1E1E] relative">
@@ -148,7 +144,7 @@ function AutomationBuilderContent() {
         <UnifiedAutomationBuilder />
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -168,5 +164,5 @@ export default function AutomationBuilder() {
     >
       <AutomationBuilderContent />
     </Suspense>
-  )
+  );
 }

@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import {
   Dialog,
@@ -7,21 +7,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { AlertTriangle } from "lucide-react"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
 
 export interface ImageUsageInfo {
-  states: Array<{ id: string; name: string }>
-  processes: Array<{ id: string; name: string; actionCount: number }>
+  states: Array<{ id: string; name: string }>;
+  processes: Array<{ id: string; name: string; actionCount: number }>;
 }
 
 interface ImageDeletionDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  imageName: string
-  usageInfo: ImageUsageInfo
-  onConfirmDelete: () => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  imageName: string;
+  usageInfo: ImageUsageInfo;
+  onConfirmDelete: () => void;
 }
 
 export function ImageDeletionDialog({
@@ -31,9 +31,10 @@ export function ImageDeletionDialog({
   usageInfo,
   onConfirmDelete,
 }: ImageDeletionDialogProps) {
-  const hasUsage = usageInfo.states.length > 0 || usageInfo.processes.length > 0
-  const totalStates = usageInfo.states.length
-  const totalProcesses = usageInfo.processes.length
+  const hasUsage =
+    usageInfo.states.length > 0 || usageInfo.processes.length > 0;
+  const totalStates = usageInfo.states.length;
+  const totalProcesses = usageInfo.processes.length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -59,7 +60,10 @@ export function ImageDeletionDialog({
                 </p>
                 <ul className="text-sm text-yellow-100 space-y-1 list-disc list-inside">
                   {totalStates > 0 && (
-                    <li>Remove it from {totalStates} state{totalStates > 1 ? "s" : ""}</li>
+                    <li>
+                      Remove it from {totalStates} state
+                      {totalStates > 1 ? "s" : ""}
+                    </li>
                   )}
                   {totalProcesses > 0 && (
                     <li>
@@ -77,7 +81,10 @@ export function ImageDeletionDialog({
                   </h4>
                   <div className="max-h-32 overflow-y-auto bg-gray-800/50 rounded-lg p-3 space-y-1">
                     {usageInfo.states.map((state) => (
-                      <div key={state.id} className="text-sm text-gray-300 flex items-center gap-2">
+                      <div
+                        key={state.id}
+                        className="text-sm text-gray-300 flex items-center gap-2"
+                      >
                         <span className="w-2 h-2 bg-[#00FF88] rounded-full flex-shrink-0" />
                         {state.name || state.id}
                       </div>
@@ -93,11 +100,15 @@ export function ImageDeletionDialog({
                   </h4>
                   <div className="max-h-32 overflow-y-auto bg-gray-800/50 rounded-lg p-3 space-y-1">
                     {usageInfo.processes.map((process) => (
-                      <div key={process.id} className="text-sm text-gray-300 flex items-center gap-2">
+                      <div
+                        key={process.id}
+                        className="text-sm text-gray-300 flex items-center gap-2"
+                      >
                         <span className="w-2 h-2 bg-[#BD00FF] rounded-full flex-shrink-0" />
                         {process.name || process.id}
                         <span className="text-xs text-gray-500">
-                          ({process.actionCount} action{process.actionCount > 1 ? "s" : ""})
+                          ({process.actionCount} action
+                          {process.actionCount > 1 ? "s" : ""})
                         </span>
                       </div>
                     ))}
@@ -108,8 +119,11 @@ export function ImageDeletionDialog({
               <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
                 <p className="text-sm text-red-200">
                   Images removed from workflows will be displayed as{" "}
-                  <span className="font-mono text-red-400">[REMOVED: {imageName}]</span> in red text.
-                  The workflow structure will be preserved but the image will be unavailable.
+                  <span className="font-mono text-red-400">
+                    [REMOVED: {imageName}]
+                  </span>{" "}
+                  in red text. The workflow structure will be preserved but the
+                  image will be unavailable.
                 </p>
               </div>
             </>
@@ -130,8 +144,8 @@ export function ImageDeletionDialog({
           </Button>
           <Button
             onClick={() => {
-              onConfirmDelete()
-              onOpenChange(false)
+              onConfirmDelete();
+              onOpenChange(false);
             }}
             className={
               hasUsage
@@ -144,5 +158,5 @@ export function ImageDeletionDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

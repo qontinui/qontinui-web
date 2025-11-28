@@ -1,16 +1,16 @@
-import { State, Transition } from "./types"
-import { StateIdManager } from "./state-id-manager"
-import { TransitionReferenceUpdater } from "./transition-reference-updater"
+import { State, Transition } from "./types";
+import { StateIdManager } from "./state-id-manager";
+import { TransitionReferenceUpdater } from "./transition-reference-updater";
 
 /**
  * Result of a state update operation
  */
 export interface StateUpdateResult {
-  updatedState: State
-  idChanged: boolean
-  oldId?: string
-  newId?: string
-  affectedTransitions: Transition[]
+  updatedState: State;
+  idChanged: boolean;
+  oldId?: string;
+  newId?: string;
+  affectedTransitions: Transition[];
 }
 
 /**
@@ -27,27 +27,32 @@ export class StateUpdateCoordinator {
     allStates: State[],
     allTransitions: Transition[]
   ): StateUpdateResult {
-    const updatedState = { ...currentState, ...updates }
+    const updatedState = { ...currentState, ...updates };
 
     // Check if name change requires ID change
     if (updates.name && updates.name !== currentState.name) {
-      const newId = StateIdManager.calculateNewId(currentState, updates.name, allStates)
+      const newId = StateIdManager.calculateNewId(
+        currentState,
+        updates.name,
+        allStates
+      );
 
       if (newId && newId !== currentState.id) {
         // ID needs to change
-        const stateWithNewId = { ...updatedState, id: newId }
-        const affectedTransitions = TransitionReferenceUpdater.getAffectedTransitions(
-          allTransitions,
-          currentState.id
-        )
+        const stateWithNewId = { ...updatedState, id: newId };
+        const affectedTransitions =
+          TransitionReferenceUpdater.getAffectedTransitions(
+            allTransitions,
+            currentState.id
+          );
 
         return {
           updatedState: stateWithNewId,
           idChanged: true,
           oldId: currentState.id,
           newId: newId,
-          affectedTransitions: affectedTransitions
-        }
+          affectedTransitions: affectedTransitions,
+        };
       }
     }
 
@@ -55,8 +60,8 @@ export class StateUpdateCoordinator {
     return {
       updatedState: updatedState,
       idChanged: false,
-      affectedTransitions: []
-    }
+      affectedTransitions: [],
+    };
   }
 
   /**
@@ -67,7 +72,11 @@ export class StateUpdateCoordinator {
     oldStateId: string,
     newStateId: string
   ): Transition[] {
-    return TransitionReferenceUpdater.updateStateReferences(transitions, oldStateId, newStateId)
+    return TransitionReferenceUpdater.updateStateReferences(
+      transitions,
+      oldStateId,
+      newStateId
+    );
   }
 
   /**
@@ -78,7 +87,10 @@ export class StateUpdateCoordinator {
     existingStates: State[],
     position: { x: number; y: number }
   ): State {
-    const uniqueId = StateIdManager.generateUniqueName(desiredName, existingStates)
+    const uniqueId = StateIdManager.generateUniqueName(
+      desiredName,
+      existingStates
+    );
 
     return {
       id: uniqueId,
@@ -89,7 +101,7 @@ export class StateUpdateCoordinator {
       locations: [],
       strings: [],
       position: position,
-    }
+    };
   }
 
   /**
@@ -99,17 +111,17 @@ export class StateUpdateCoordinator {
     existingStates: State[],
     position: { x: number; y: number }
   ): State {
-    const defaultName = StateIdManager.generateDefaultName(existingStates)
+    const defaultName = StateIdManager.generateDefaultName(existingStates);
 
     return {
       id: defaultName,
-      name: defaultName.replace(/_/g, ' '),
+      name: defaultName.replace(/_/g, " "),
       description: "",
       stateImages: [],
       regions: [],
       locations: [],
       strings: [],
       position: position,
-    }
+    };
   }
 }

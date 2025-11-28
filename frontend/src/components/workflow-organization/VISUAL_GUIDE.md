@@ -241,6 +241,7 @@ Total count (including subfolders):
 ## 🎯 States
 
 ### Empty State
+
 ```
 ┌─────────────────────────────┐
 │                             │
@@ -253,6 +254,7 @@ Total count (including subfolders):
 ```
 
 ### Loading State (if implemented)
+
 ```
 ┌─────────────────────────────┐
 │ ▢ ▢▢▢▢▢▢▢▢▢ ▢▢             │
@@ -262,6 +264,7 @@ Total count (including subfolders):
 ```
 
 ### Error State (if implemented)
+
 ```
 ┌─────────────────────────────┐
 │         ⚠️                  │
@@ -322,6 +325,7 @@ Mobile (Narrow):
 ## 🎨 Color Scheme
 
 ### Light Mode
+
 ```
 Background:      #ffffff (white)
 Hover:          #f3f4f6 (gray-100)
@@ -332,6 +336,7 @@ Muted Text:     #6b7280 (gray-500)
 ```
 
 ### Dark Mode
+
 ```
 Background:      #1f2937 (gray-800)
 Hover:          #374151 (gray-700)
@@ -344,6 +349,7 @@ Muted Text:     #9ca3af (gray-400)
 ## 🎬 Animations
 
 ### Expand/Collapse
+
 ```
 Collapsed ▶       Expanding...        Expanded ▼
 ┌─────────┐       ┌─────────┐        ┌─────────┐
@@ -354,6 +360,7 @@ Collapsed ▶       Expanding...        Expanded ▼
 ```
 
 ### Drag Preview
+
 ```
 Start Drag        Dragging            Drop
 ┌─────────┐      ┌─────────┐        ┌─────────┐

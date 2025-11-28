@@ -1,111 +1,127 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
-import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
-import { toast } from "sonner"
-import { Wifi, RefreshCcw, Info } from "lucide-react"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { httpClient } from "@/services/service-factory"
-import { ApiConfig } from "@/services/api-config"
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
+import { Wifi, RefreshCcw, Info } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { httpClient } from "@/services/service-factory";
+import { ApiConfig } from "@/services/api-config";
 
 interface AutomationStreamingSettings {
-  enabled: boolean
-  sessions_limit: number | null
-  sessions_used: number
-  sessions_reset_at: string | null
+  enabled: boolean;
+  sessions_limit: number | null;
+  sessions_used: number;
+  sessions_reset_at: string | null;
 }
 
 interface AutomationStreamingCardProps {
-  context?: 'profile' | 'connect-runner'
+  context?: "profile" | "connect-runner";
 }
 
-export function AutomationStreamingCard({ context = 'profile' }: AutomationStreamingCardProps) {
-  const [settings, setSettings] = useState<AutomationStreamingSettings | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [updating, setUpdating] = useState(false)
+export function AutomationStreamingCard({
+  context = "profile",
+}: AutomationStreamingCardProps) {
+  const [settings, setSettings] = useState<AutomationStreamingSettings | null>(
+    null
+  );
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
-    loadSettings()
-  }, [])
+    loadSettings();
+  }, []);
 
   const loadSettings = async () => {
     try {
-      setLoading(true)
-      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming`
-      console.log("[AutomationStreaming] Loading settings from:", url)
+      setLoading(true);
+      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming`;
+      console.log("[AutomationStreaming] Loading settings from:", url);
 
-      const response = await httpClient.fetch(url)
+      const response = await httpClient.fetch(url);
 
-      console.log("[AutomationStreaming] Response status:", response.status)
-      console.log("[AutomationStreaming] Response ok:", response.ok)
+      console.log("[AutomationStreaming] Response status:", response.status);
+      console.log("[AutomationStreaming] Response ok:", response.ok);
 
       if (response.ok) {
-        const data = await response.json()
-        console.log("[AutomationStreaming] Settings loaded:", data)
-        setSettings(data)
+        const data = await response.json();
+        console.log("[AutomationStreaming] Settings loaded:", data);
+        setSettings(data);
       } else {
-        const errorText = await response.text()
-        console.error("[AutomationStreaming] API error:", response.status, errorText)
-        toast.error("Failed to load streaming settings")
+        const errorText = await response.text();
+        console.error(
+          "[AutomationStreaming] API error:",
+          response.status,
+          errorText
+        );
+        toast.error("Failed to load streaming settings");
       }
     } catch (error) {
-      console.error("[AutomationStreaming] Exception:", error)
-      toast.error("Failed to load streaming settings")
+      console.error("[AutomationStreaming] Exception:", error);
+      toast.error("Failed to load streaming settings");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const toggleStreaming = async (enabled: boolean) => {
     try {
-      setUpdating(true)
-      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming/toggle`
+      setUpdating(true);
+      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming/toggle`;
       const response = await httpClient.fetch(url, {
         method: "POST",
         body: JSON.stringify({ enabled }),
-      })
+      });
 
       if (response.ok) {
-        const data = await response.json()
-        setSettings(data)
-        toast.success(`Streaming ${enabled ? "enabled" : "disabled"} successfully`)
+        const data = await response.json();
+        setSettings(data);
+        toast.success(
+          `Streaming ${enabled ? "enabled" : "disabled"} successfully`
+        );
       } else {
-        toast.error("Failed to update streaming settings")
+        toast.error("Failed to update streaming settings");
       }
     } catch (error) {
-      console.error("Failed to toggle streaming:", error)
-      toast.error("Failed to update streaming settings")
+      console.error("Failed to toggle streaming:", error);
+      toast.error("Failed to update streaming settings");
     } finally {
-      setUpdating(false)
+      setUpdating(false);
     }
-  }
+  };
 
   const resetLimit = async () => {
     try {
-      setUpdating(true)
-      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming/reset-limit`
+      setUpdating(true);
+      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/me/automation-streaming/reset-limit`;
       const response = await httpClient.fetch(url, {
         method: "POST",
-      })
+      });
 
       if (response.ok) {
-        const data = await response.json()
-        setSettings(data)
-        toast.success("Session limit reset successfully")
+        const data = await response.json();
+        setSettings(data);
+        toast.success("Session limit reset successfully");
       } else {
-        toast.error("Failed to reset session limit")
+        toast.error("Failed to reset session limit");
       }
     } catch (error) {
-      console.error("Failed to reset limit:", error)
-      toast.error("Failed to reset session limit")
+      console.error("Failed to reset limit:", error);
+      toast.error("Failed to reset session limit");
     } finally {
-      setUpdating(false)
+      setUpdating(false);
     }
-  }
+  };
 
   if (loading) {
     return (
@@ -115,16 +131,16 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
           <CardDescription>Loading...</CardDescription>
         </CardHeader>
       </Card>
-    )
+    );
   }
 
   if (!settings) {
-    return null
+    return null;
   }
 
   const usagePercentage = settings.sessions_limit
     ? (settings.sessions_used / settings.sessions_limit) * 100
-    : 0
+    : 0;
 
   const resetDate = settings.sessions_reset_at
     ? new Date(settings.sessions_reset_at).toLocaleDateString("en-US", {
@@ -132,9 +148,9 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
         day: "numeric",
         year: "numeric",
       })
-    : null
+    : null;
 
-  const isFreeUser = settings.sessions_limit !== null
+  const isFreeUser = settings.sessions_limit !== null;
 
   return (
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
@@ -146,9 +162,9 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
               <CardTitle className="text-xl">Automation Streaming</CardTitle>
             </div>
             <CardDescription>
-              {context === 'connect-runner'
-                ? 'Enable streaming to send automation data from the runner to the web interface'
-                : 'Real-time automation monitoring via WebSocket'}
+              {context === "connect-runner"
+                ? "Enable streaming to send automation data from the runner to the web interface"
+                : "Real-time automation monitoring via WebSocket"}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -170,8 +186,9 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
             <Alert className="bg-[#00D9FF]/10 border-[#00D9FF]/30">
               <Info className="w-4 h-4 text-[#00D9FF]" />
               <AlertDescription className="text-gray-300">
-                WebSocket streaming sends automation logs, screenshots, and events to the web
-                interface for real-time monitoring and integration testing.
+                WebSocket streaming sends automation logs, screenshots, and
+                events to the web interface for real-time monitoring and
+                integration testing.
               </AlertDescription>
             </Alert>
 
@@ -180,7 +197,8 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-400">Session Usage</span>
                   <span className="font-medium text-white">
-                    {settings.sessions_used} / {settings.sessions_limit} sessions
+                    {settings.sessions_used} / {settings.sessions_limit}{" "}
+                    sessions
                   </span>
                 </div>
                 <Progress value={usagePercentage} className="h-2" />
@@ -192,8 +210,8 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
                   <Alert className="bg-yellow-500/10 border-yellow-500/30">
                     <Info className="w-4 h-4 text-yellow-500" />
                     <AlertDescription className="text-gray-300">
-                      You've reached your monthly streaming limit. Upgrade to a paid plan for
-                      unlimited sessions.
+                      You've reached your monthly streaming limit. Upgrade to a
+                      paid plan for unlimited sessions.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -215,11 +233,11 @@ export function AutomationStreamingCard({ context = 'profile' }: AutomationStrea
 
         {!settings.enabled && (
           <div className="text-sm text-gray-400 py-2">
-            Enable streaming to send automation data to the web interface for real-time monitoring
-            and integration testing.
+            Enable streaming to send automation data to the web interface for
+            real-time monitoring and integration testing.
           </div>
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

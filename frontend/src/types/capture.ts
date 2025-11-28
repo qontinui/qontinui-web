@@ -8,15 +8,15 @@
 // Input Event Types (matches backend InputEventType enum)
 
 export type InputEventType =
-  | 'mouse_move'
-  | 'mouse_click'
-  | 'mouse_down'
-  | 'mouse_up'
-  | 'mouse_scroll'
-  | 'mouse_drag'
-  | 'key_press'
-  | 'key_down'
-  | 'key_up';
+  | "mouse_move"
+  | "mouse_click"
+  | "mouse_down"
+  | "mouse_up"
+  | "mouse_scroll"
+  | "mouse_drag"
+  | "key_press"
+  | "key_down"
+  | "key_up";
 
 // Backend API response format
 export interface InputEventApi {
@@ -119,7 +119,7 @@ export interface ScreenshotRequest {
   id: string;
   sessionId: string;
   filter: ScreenshotFilter;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: "pending" | "processing" | "completed" | "failed";
   createdAt: string;
   completedAt?: string;
   screenshotUrls?: string[];
@@ -147,7 +147,7 @@ export interface CaptureSessionDetailResponse extends CaptureSession {
 
 export interface ScreenshotRequestResponse {
   requestId: string;
-  status: 'processing' | 'queued';
+  status: "processing" | "queued";
   estimatedCompletionTime?: string;
   message: string;
 }
@@ -155,27 +155,27 @@ export interface ScreenshotRequestResponse {
 // Enums and Constants
 
 export const InputEventTypeLabels: Record<InputEventType, string> = {
-  mouse_move: 'Move',
-  mouse_click: 'Click',
-  mouse_down: 'Mouse Down',
-  mouse_up: 'Mouse Up',
-  mouse_scroll: 'Scroll',
-  mouse_drag: 'Drag',
-  key_press: 'Key Press',
-  key_down: 'Key Down',
-  key_up: 'Key Up',
+  mouse_move: "Move",
+  mouse_click: "Click",
+  mouse_down: "Mouse Down",
+  mouse_up: "Mouse Up",
+  mouse_scroll: "Scroll",
+  mouse_drag: "Drag",
+  key_press: "Key Press",
+  key_down: "Key Down",
+  key_up: "Key Up",
 };
 
 export const InputEventTypeColors: Record<InputEventType, string> = {
-  mouse_move: 'gray',
-  mouse_click: 'blue',
-  mouse_down: 'blue',
-  mouse_up: 'blue',
-  mouse_scroll: 'orange',
-  mouse_drag: 'purple',
-  key_press: 'green',
-  key_down: 'green',
-  key_up: 'gray',
+  mouse_move: "gray",
+  mouse_click: "blue",
+  mouse_down: "blue",
+  mouse_up: "blue",
+  mouse_scroll: "orange",
+  mouse_drag: "purple",
+  key_press: "green",
+  key_down: "green",
+  key_up: "gray",
 };
 
 // Helper Types for Components
@@ -217,18 +217,18 @@ export interface CaptureSessionError {
  * Format timestamp in seconds to MM:SS.mmm format
  */
 export function formatTimestamp(seconds: number): string {
-  if (!isFinite(seconds)) return '0:00.000';
+  if (!isFinite(seconds)) return "0:00.000";
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   const ms = Math.floor((seconds % 1) * 1000);
-  return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+  return `${mins}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(3, "0")}`;
 }
 
 /**
  * Format timestamp in seconds to human-readable format
  */
 export function formatDuration(seconds: number): string {
-  if (!isFinite(seconds)) return '0 seconds';
+  if (!isFinite(seconds)) return "0 seconds";
   const hours = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
@@ -238,7 +238,7 @@ export function formatDuration(seconds: number): string {
   if (mins > 0) parts.push(`${mins}m`);
   if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
 
-  return parts.join(' ');
+  return parts.join(" ");
 }
 
 /**
@@ -283,11 +283,13 @@ export function filterEventsByType(
 export function calculateEventStats(events: InputEvent[]): CaptureSessionStats {
   return {
     totalEvents: events.length,
-    mouseClicks: events.filter((e) => e.eventType === 'mouse_click').length,
-    mouseMoves: events.filter((e) => e.eventType === 'mouse_move').length,
-    keyPresses: events.filter((e) => ['key_press', 'key_down'].includes(e.eventType)).length,
-    scrolls: events.filter((e) => e.eventType === 'mouse_scroll').length,
-    dragOperations: events.filter((e) => e.eventType === 'mouse_drag').length,
+    mouseClicks: events.filter((e) => e.eventType === "mouse_click").length,
+    mouseMoves: events.filter((e) => e.eventType === "mouse_move").length,
+    keyPresses: events.filter((e) =>
+      ["key_press", "key_down"].includes(e.eventType)
+    ).length,
+    scrolls: events.filter((e) => e.eventType === "mouse_scroll").length,
+    dragOperations: events.filter((e) => e.eventType === "mouse_drag").length,
   };
 }
 
@@ -298,10 +300,10 @@ export function calculateEventStats(events: InputEvent[]): CaptureSessionStats {
  */
 export function transformInputEvent(apiEvent: InputEventApi): InputEvent {
   const modifiers: string[] = [];
-  if (apiEvent.shift_pressed) modifiers.push('shift');
-  if (apiEvent.ctrl_pressed) modifiers.push('ctrl');
-  if (apiEvent.alt_pressed) modifiers.push('alt');
-  if (apiEvent.meta_pressed) modifiers.push('meta');
+  if (apiEvent.shift_pressed) modifiers.push("shift");
+  if (apiEvent.ctrl_pressed) modifiers.push("ctrl");
+  if (apiEvent.alt_pressed) modifiers.push("alt");
+  if (apiEvent.meta_pressed) modifiers.push("meta");
 
   return {
     id: apiEvent.id,
@@ -358,9 +360,13 @@ export function transformCaptureSession(
  */
 export function getButtonName(button?: number): string {
   switch (button) {
-    case 1: return 'Left';
-    case 2: return 'Middle';
-    case 3: return 'Right';
-    default: return '';
+    case 1:
+      return "Left";
+    case 2:
+      return "Middle";
+    case 3:
+      return "Right";
+    default:
+      return "";
   }
 }

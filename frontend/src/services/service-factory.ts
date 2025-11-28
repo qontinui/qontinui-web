@@ -1,24 +1,24 @@
-import { TokenStorage } from './auth/token-storage';
-import { TokenValidator } from './auth/token-validator';
-import { TokenManager } from './auth/token-manager';
-import { TokenRefreshService } from './auth/token-refresh-service';
-import { AuthService } from './auth/auth-service';
-import { HttpClient } from './http-client';
-import { ProjectService } from './project-service';
-import { FileUploadService } from './file-upload-service';
-import { ProfileService } from './profile-service';
-import { AnalyticsService } from './analytics-service';
-import { BillingService } from './billing-service';
-import { RunnerService } from './runner-service';
-import { ApiConfig } from './api-config';
-import { OrganizationService } from './collaboration/organization-service';
-import { ProjectCollaborationService } from './collaboration/project-collaboration-service';
-import { LockService } from './collaboration/lock-service';
-import { CommentService } from './collaboration/comment-service';
-import { ActivityService } from './collaboration/activity-service';
-import { TestingService } from './testing-service';
-import { RecordingService } from './recording-service';
-import { CaptureService } from './capture-service';
+import { TokenStorage } from "./auth/token-storage";
+import { TokenValidator } from "./auth/token-validator";
+import { TokenManager } from "./auth/token-manager";
+import { TokenRefreshService } from "./auth/token-refresh-service";
+import { AuthService } from "./auth/auth-service";
+import { HttpClient } from "./http-client";
+import { ProjectService } from "./project-service";
+import { FileUploadService } from "./file-upload-service";
+import { ProfileService } from "./profile-service";
+import { AnalyticsService } from "./analytics-service";
+import { BillingService } from "./billing-service";
+import { RunnerService } from "./runner-service";
+import { ApiConfig } from "./api-config";
+import { OrganizationService } from "./collaboration/organization-service";
+import { ProjectCollaborationService } from "./collaboration/project-collaboration-service";
+import { LockService } from "./collaboration/lock-service";
+import { CommentService } from "./collaboration/comment-service";
+import { ActivityService } from "./collaboration/activity-service";
+import { TestingService } from "./testing-service";
+import { RecordingService } from "./recording-service";
+import { CaptureService } from "./capture-service";
 
 /**
  * ServiceFactory - Single Responsibility: Create and wire up services
@@ -52,9 +52,15 @@ export class ServiceFactory {
     // Initialize auth services in dependency order
     this.tokenStorage = new TokenStorage();
     this.tokenValidator = new TokenValidator();
-    this.tokenManager = new TokenManager(this.tokenStorage, this.tokenValidator);
+    this.tokenManager = new TokenManager(
+      this.tokenStorage,
+      this.tokenValidator
+    );
     this.tokenRefreshService = new TokenRefreshService(this.tokenManager);
-    this.authService = new AuthService(this.tokenManager, this.tokenRefreshService);
+    this.authService = new AuthService(
+      this.tokenManager,
+      this.tokenRefreshService
+    );
 
     // Initialize other services
     this.httpClient = new HttpClient(this.tokenManager);
@@ -67,7 +73,9 @@ export class ServiceFactory {
 
     // Initialize collaboration services
     this.organizationService = new OrganizationService(this.httpClient);
-    this.projectCollaborationService = new ProjectCollaborationService(this.httpClient);
+    this.projectCollaborationService = new ProjectCollaborationService(
+      this.httpClient
+    );
     this.lockService = new LockService(this.httpClient);
     this.commentService = new CommentService(this.httpClient);
     this.activityService = new ActivityService(this.httpClient);
@@ -84,8 +92,8 @@ export class ServiceFactory {
     // Wire up session expiry handling for 401 responses
     this.httpClient.setSessionExpiredHandler(() => {
       this.authService.logout();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('session-expired'));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("session-expired"));
       }
     });
   }

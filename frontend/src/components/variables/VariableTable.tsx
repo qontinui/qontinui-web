@@ -5,9 +5,9 @@
  * row actions and bulk operations support.
  */
 
-'use client';
+"use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from "react";
 import {
   Table,
   TableBody,
@@ -15,16 +15,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   MoreHorizontal,
   Edit,
@@ -33,10 +33,10 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { GlobalVariable } from '@/types/variables';
-import { formatDistanceToNow } from 'date-fns';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { GlobalVariable } from "@/types/variables";
+import { formatDistanceToNow } from "date-fns";
 
 interface VariableTableProps {
   variables: GlobalVariable[];
@@ -48,8 +48,8 @@ interface VariableTableProps {
   isLoading?: boolean;
 }
 
-type SortField = 'name' | 'type' | 'updated_at';
-type SortDirection = 'asc' | 'desc';
+type SortField = "name" | "type" | "updated_at";
+type SortDirection = "asc" | "desc";
 
 export function VariableTable({
   variables,
@@ -60,39 +60,39 @@ export function VariableTable({
   onSelectionChange,
   isLoading = false,
 }: VariableTableProps) {
-  const [sortField, setSortField] = useState<SortField>('name');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   // Handle sorting
   const handleSort = (field: SortField) => {
     if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
       setSortField(field);
-      setSortDirection('asc');
+      setSortDirection("asc");
     }
   };
 
   // Sort variables
   const sortedVariables = useMemo(() => {
     const sorted = [...variables].sort((a, b) => {
-      let aValue: string | number = '';
-      let bValue: string | number = '';
+      let aValue: string | number = "";
+      let bValue: string | number = "";
 
-      if (sortField === 'name') {
+      if (sortField === "name") {
         aValue = a.name.toLowerCase();
         bValue = b.name.toLowerCase();
-      } else if (sortField === 'type') {
+      } else if (sortField === "type") {
         aValue = a.type;
         bValue = b.type;
-      } else if (sortField === 'updated_at') {
-        aValue = a.updated_at || '';
-        bValue = b.updated_at || '';
+      } else if (sortField === "updated_at") {
+        aValue = a.updated_at || "";
+        bValue = b.updated_at || "";
       }
 
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      if (aValue < bValue) return sortDirection === "asc" ? -1 : 1;
+      if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
       return 0;
     });
 
@@ -131,7 +131,7 @@ export function VariableTable({
   // Render sort icon
   const renderSortIcon = (field: SortField) => {
     if (sortField !== field) return null;
-    return sortDirection === 'asc' ? (
+    return sortDirection === "asc" ? (
       <ChevronUp className="inline ml-1 h-4 w-4" />
     ) : (
       <ChevronDown className="inline ml-1 h-4 w-4" />
@@ -141,31 +141,31 @@ export function VariableTable({
   // Get type badge color
   const getTypeBadgeColor = (type: string) => {
     switch (type) {
-      case 'string':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'number':
-        return 'bg-green-500/20 text-green-400 border-green-500/30';
-      case 'boolean':
-        return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-      case 'object':
-        return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-      case 'array':
-        return 'bg-pink-500/20 text-pink-400 border-pink-500/30';
+      case "string":
+        return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+      case "number":
+        return "bg-green-500/20 text-green-400 border-green-500/30";
+      case "boolean":
+        return "bg-purple-500/20 text-purple-400 border-purple-500/30";
+      case "object":
+        return "bg-orange-500/20 text-orange-400 border-orange-500/30";
+      case "array":
+        return "bg-pink-500/20 text-pink-400 border-pink-500/30";
       default:
-        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+        return "bg-gray-500/20 text-gray-400 border-gray-500/30";
     }
   };
 
   // Format value for preview
   const formatValuePreview = (value: unknown): string => {
-    if (value === null) return 'null';
-    if (value === undefined) return 'undefined';
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number' || typeof value === 'boolean') {
+    if (value === null) return "null";
+    if (value === undefined) return "undefined";
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") {
       return String(value);
     }
     const str = JSON.stringify(value);
-    return str.length > 50 ? str.substring(0, 50) + '...' : str;
+    return str.length > 50 ? str.substring(0, 50) + "..." : str;
   };
 
   // Empty state
@@ -189,8 +189,8 @@ export function VariableTable({
         </div>
         <h3 className="text-lg font-semibold mb-2">No variables yet</h3>
         <p className="text-muted-foreground max-w-sm">
-          Create your first global variable to share data across all workflows in this
-          project.
+          Create your first global variable to share data across all workflows
+          in this project.
         </p>
       </div>
     );
@@ -201,14 +201,19 @@ export function VariableTable({
     return (
       <div className="space-y-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 bg-gray-100 dark:bg-gray-800 animate-pulse rounded" />
+          <div
+            key={i}
+            className="h-16 bg-gray-100 dark:bg-gray-800 animate-pulse rounded"
+          />
         ))}
       </div>
     );
   }
 
-  const allSelected = variables.length > 0 && selectedVariables.length === variables.length;
-  const someSelected = selectedVariables.length > 0 && selectedVariables.length < variables.length;
+  const allSelected =
+    variables.length > 0 && selectedVariables.length === variables.length;
+  const someSelected =
+    selectedVariables.length > 0 && selectedVariables.length < variables.length;
 
   return (
     <div className="rounded-md border">
@@ -220,28 +225,30 @@ export function VariableTable({
                 checked={allSelected}
                 onCheckedChange={handleSelectAll}
                 aria-label="Select all"
-                className={cn(someSelected && 'data-[state=checked]:bg-gray-500')}
+                className={cn(
+                  someSelected && "data-[state=checked]:bg-gray-500"
+                )}
               />
             </TableHead>
             <TableHead className="w-12"></TableHead>
             <TableHead
               className="cursor-pointer hover:bg-muted/50"
-              onClick={() => handleSort('name')}
+              onClick={() => handleSort("name")}
             >
-              Name {renderSortIcon('name')}
+              Name {renderSortIcon("name")}
             </TableHead>
             <TableHead
               className="cursor-pointer hover:bg-muted/50"
-              onClick={() => handleSort('type')}
+              onClick={() => handleSort("type")}
             >
-              Type {renderSortIcon('type')}
+              Type {renderSortIcon("type")}
             </TableHead>
             <TableHead>Value</TableHead>
             <TableHead
               className="cursor-pointer hover:bg-muted/50"
-              onClick={() => handleSort('updated_at')}
+              onClick={() => handleSort("updated_at")}
             >
-              Last Updated {renderSortIcon('updated_at')}
+              Last Updated {renderSortIcon("updated_at")}
             </TableHead>
             <TableHead className="w-12"></TableHead>
           </TableRow>
@@ -253,7 +260,7 @@ export function VariableTable({
 
             return (
               <React.Fragment key={variable.name}>
-                <TableRow className={cn(isSelected && 'bg-muted/50')}>
+                <TableRow className={cn(isSelected && "bg-muted/50")}>
                   <TableCell>
                     <Checkbox
                       checked={isSelected}
@@ -272,15 +279,20 @@ export function VariableTable({
                     >
                       <ChevronRight
                         className={cn(
-                          'h-4 w-4 transition-transform',
-                          isExpanded && 'rotate-90'
+                          "h-4 w-4 transition-transform",
+                          isExpanded && "rotate-90"
                         )}
                       />
                     </Button>
                   </TableCell>
-                  <TableCell className="font-mono font-medium">{variable.name}</TableCell>
+                  <TableCell className="font-mono font-medium">
+                    {variable.name}
+                  </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={cn('border', getTypeBadgeColor(variable.type))}>
+                    <Badge
+                      variant="outline"
+                      className={cn("border", getTypeBadgeColor(variable.type))}
+                    >
                       {variable.type}
                     </Badge>
                   </TableCell>
@@ -292,7 +304,7 @@ export function VariableTable({
                       ? formatDistanceToNow(new Date(variable.updated_at), {
                           addSuffix: true,
                         })
-                      : '-'}
+                      : "-"}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -331,7 +343,9 @@ export function VariableTable({
                             <div className="text-xs font-semibold text-muted-foreground mb-1">
                               Description
                             </div>
-                            <div className="text-sm">{variable.description}</div>
+                            <div className="text-sm">
+                              {variable.description}
+                            </div>
                           </div>
                         )}
                         <div>
@@ -344,10 +358,13 @@ export function VariableTable({
                         </div>
                         {variable.created_at && (
                           <div className="text-xs text-muted-foreground">
-                            Created{' '}
-                            {formatDistanceToNow(new Date(variable.created_at), {
-                              addSuffix: true,
-                            })}
+                            Created{" "}
+                            {formatDistanceToNow(
+                              new Date(variable.created_at),
+                              {
+                                addSuffix: true,
+                              }
+                            )}
                           </div>
                         )}
                       </div>

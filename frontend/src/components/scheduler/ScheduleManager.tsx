@@ -1,18 +1,33 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
-import { useAutomation } from "@/contexts/automation-context"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Play, Pause, Trash2, Edit, Plus, Calendar, Clock, RefreshCw } from "lucide-react"
-import { ScheduleEditor } from "./ScheduleEditor"
-import { ExecutionHistory } from "./ExecutionHistory"
-import type { Schedule } from "@/contexts/automation-context"
-import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog"
+import React, { useState } from "react";
+import { useAutomation } from "@/contexts/automation-context";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Play,
+  Pause,
+  Trash2,
+  Edit,
+  Plus,
+  Calendar,
+  Clock,
+  RefreshCw,
+} from "lucide-react";
+import { ScheduleEditor } from "./ScheduleEditor";
+import { ExecutionHistory } from "./ExecutionHistory";
+import type { Schedule } from "@/contexts/automation-context";
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
 
 export function ScheduleManager() {
   const {
@@ -21,66 +36,70 @@ export function ScheduleManager() {
     updateSchedule,
     deleteSchedule,
     getSchedulerStatistics,
-  } = useAutomation()
+  } = useAutomation();
 
-  const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null)
-  const [isEditorOpen, setIsEditorOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState("schedules")
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(null)
+  const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(
+    null
+  );
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("schedules");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(
+    null
+  );
 
-  const stats = getSchedulerStatistics()
+  const stats = getSchedulerStatistics();
 
   const handleToggleEnabled = (schedule: Schedule) => {
-    updateSchedule({ ...schedule, enabled: !schedule.enabled })
-  }
+    updateSchedule({ ...schedule, enabled: !schedule.enabled });
+  };
 
   const handleEdit = (schedule: Schedule) => {
-    setSelectedSchedule(schedule)
-    setIsEditorOpen(true)
-  }
+    setSelectedSchedule(schedule);
+    setIsEditorOpen(true);
+  };
 
   const handleDelete = (schedule: Schedule) => {
-    setScheduleToDelete(schedule)
-    setDeleteDialogOpen(true)
-  }
+    setScheduleToDelete(schedule);
+    setDeleteDialogOpen(true);
+  };
 
   const handleConfirmDelete = () => {
-    if (!scheduleToDelete) return
-    deleteSchedule(scheduleToDelete.id)
-    setDeleteDialogOpen(false)
-    setScheduleToDelete(null)
-  }
+    if (!scheduleToDelete) return;
+    deleteSchedule(scheduleToDelete.id);
+    setDeleteDialogOpen(false);
+    setScheduleToDelete(null);
+  };
 
   const handleCreateNew = () => {
-    setSelectedSchedule(null)
-    setIsEditorOpen(true)
-  }
+    setSelectedSchedule(null);
+    setIsEditorOpen(true);
+  };
 
   const handleCloseEditor = () => {
-    setIsEditorOpen(false)
-    setSelectedSchedule(null)
-  }
+    setIsEditorOpen(false);
+    setSelectedSchedule(null);
+  };
 
   const getTriggerDisplay = (schedule: Schedule): string => {
     switch (schedule.triggerType) {
       case "TIME":
-        return schedule.cronExpression || "Not configured"
+        return schedule.cronExpression || "Not configured";
       case "INTERVAL":
-        return `Every ${schedule.intervalSeconds || 0}s`
+        return `Every ${schedule.intervalSeconds || 0}s`;
       case "STATE":
-        return `State: ${schedule.triggerState || "Not configured"}`
+        return `State: ${schedule.triggerState || "Not configured"}`;
       case "MANUAL":
-        return "Manual only"
+        return "Manual only";
       default:
-        return "Unknown"
+        return "Unknown";
     }
-  }
+  };
 
   const getProcessName = (processId: string): string => {
-    const workflow = workflows.find(w => w.id === processId)
-    return workflow?.name || processId
-  }
+    const workflow = workflows.find((w) => w.id === processId);
+    return workflow?.name || processId;
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -117,7 +136,9 @@ export function ScheduleManager() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.activeSchedules}</div>
+            <div className="text-2xl font-bold text-green-600">
+              {stats.activeSchedules}
+            </div>
           </CardContent>
         </Card>
 
@@ -164,7 +185,8 @@ export function ScheduleManager() {
                     <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No schedules configured yet.</p>
                     <p className="text-sm mt-2">
-                      Click "New Schedule" to create your first automated schedule.
+                      Click "New Schedule" to create your first automated
+                      schedule.
                     </p>
                   </CardContent>
                 </Card>
@@ -176,10 +198,16 @@ export function ScheduleManager() {
                         <div className="flex-1">
                           <CardTitle className="flex items-center gap-2">
                             {schedule.name}
-                            <Badge variant={schedule.enabled ? "default" : "secondary"}>
+                            <Badge
+                              variant={
+                                schedule.enabled ? "default" : "secondary"
+                              }
+                            >
                               {schedule.enabled ? "Enabled" : "Disabled"}
                             </Badge>
-                            <Badge variant="outline">{schedule.triggerType}</Badge>
+                            <Badge variant="outline">
+                              {schedule.triggerType}
+                            </Badge>
                           </CardTitle>
                           <CardDescription>
                             {schedule.description || "No description"}
@@ -195,36 +223,62 @@ export function ScheduleManager() {
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <span className="text-muted-foreground">Process:</span>
-                            <p className="font-medium">{getProcessName(schedule.processId)}</p>
+                            <span className="text-muted-foreground">
+                              Process:
+                            </span>
+                            <p className="font-medium">
+                              {getProcessName(schedule.processId)}
+                            </p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Trigger:</span>
+                            <span className="text-muted-foreground">
+                              Trigger:
+                            </span>
                             <p className="font-medium flex items-center gap-2">
-                              {schedule.triggerType === "TIME" && <Clock className="h-4 w-4" />}
-                              {schedule.triggerType === "INTERVAL" && <RefreshCw className="h-4 w-4" />}
+                              {schedule.triggerType === "TIME" && (
+                                <Clock className="h-4 w-4" />
+                              )}
+                              {schedule.triggerType === "INTERVAL" && (
+                                <RefreshCw className="h-4 w-4" />
+                              )}
                               {getTriggerDisplay(schedule)}
                             </p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Check Mode:</span>
-                            <p className="font-medium">{schedule.checkMode.replace("_", " ")}</p>
+                            <span className="text-muted-foreground">
+                              Check Mode:
+                            </span>
+                            <p className="font-medium">
+                              {schedule.checkMode.replace("_", " ")}
+                            </p>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Schedule Type:</span>
-                            <p className="font-medium">{schedule.scheduleType.replace("_", " ")}</p>
+                            <span className="text-muted-foreground">
+                              Schedule Type:
+                            </span>
+                            <p className="font-medium">
+                              {schedule.scheduleType.replace("_", " ")}
+                            </p>
                           </div>
                           {schedule.maxIterations && (
                             <div>
-                              <span className="text-muted-foreground">Max Iterations:</span>
-                              <p className="font-medium">{schedule.maxIterations}</p>
+                              <span className="text-muted-foreground">
+                                Max Iterations:
+                              </span>
+                              <p className="font-medium">
+                                {schedule.maxIterations}
+                              </p>
                             </div>
                           )}
                           {schedule.lastExecutedAt && (
                             <div>
-                              <span className="text-muted-foreground">Last Executed:</span>
+                              <span className="text-muted-foreground">
+                                Last Executed:
+                              </span>
                               <p className="font-medium">
-                                {new Date(schedule.lastExecutedAt).toLocaleString()}
+                                {new Date(
+                                  schedule.lastExecutedAt
+                                ).toLocaleString()}
                               </p>
                             </div>
                           )}
@@ -275,14 +329,14 @@ export function ScheduleManager() {
       <DeleteConfirmationDialog
         open={deleteDialogOpen}
         title="Delete Schedule"
-        itemName={scheduleToDelete?.name || ''}
+        itemName={scheduleToDelete?.name || ""}
         description={`Are you sure you want to delete the schedule "${scheduleToDelete?.name}"? This will also remove all execution history for this schedule. This action cannot be undone.`}
         onClose={() => {
-          setDeleteDialogOpen(false)
-          setScheduleToDelete(null)
+          setDeleteDialogOpen(false);
+          setScheduleToDelete(null);
         }}
         onConfirm={handleConfirmDelete}
       />
     </div>
-  )
+  );
 }

@@ -438,9 +438,9 @@ Warn users before deleting workflows with dependents:
 
 ```typescript
 // hooks/useWorkflowDeletion.ts
-import { useCallback } from 'react';
-import { workflowDependencyAnalyzer } from '@/services/workflow-dependency-analyzer';
-import { Workflow } from '@/lib/action-schema/action-types';
+import { useCallback } from "react";
+import { workflowDependencyAnalyzer } from "@/services/workflow-dependency-analyzer";
+import { Workflow } from "@/lib/action-schema/action-types";
 
 export function useWorkflowDeletion(workflows: Workflow[]) {
   const deleteWorkflow = useCallback(
@@ -452,12 +452,12 @@ export function useWorkflowDeletion(workflows: Workflow[]) {
         const workflow = workflows.find((w) => w.id === workflowId);
         const dependentNames = dependents
           .map((id) => workflows.find((w) => w.id === id)?.name || id)
-          .join(', ');
+          .join(", ");
 
         const confirmed = confirm(
           `Warning: ${workflow?.name} is used by ${dependents.length} workflow(s):\n\n` +
-          `${dependentNames}\n\n` +
-          `Deleting it will break these workflows. Continue?`
+            `${dependentNames}\n\n` +
+            `Deleting it will break these workflows. Continue?`
         );
 
         if (!confirmed) {

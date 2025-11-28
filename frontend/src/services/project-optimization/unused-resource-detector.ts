@@ -8,10 +8,14 @@
  * - Orphaned states
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { State, ImageAsset, Transition } from '@/contexts/automation-context/types';
-import { WorkflowDependencyAnalyzer } from '../workflow-dependency-analyzer';
-import { analyzeImages, analyzeStates } from './resource-analyzer';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type {
+  State,
+  ImageAsset,
+  Transition,
+} from "@/contexts/automation-context/types";
+import { WorkflowDependencyAnalyzer } from "../workflow-dependency-analyzer";
+import { analyzeImages, analyzeStates } from "./resource-analyzer";
 
 /**
  * Find unused images
@@ -22,15 +26,18 @@ export function findUnusedImages(
   states: State[]
 ): string[] {
   const analyses = analyzeImages(images, workflows, states);
-  return analyses.filter(a => !a.isUsed).map(a => a.imageId);
+  return analyses.filter((a) => !a.isUsed).map((a) => a.imageId);
 }
 
 /**
  * Find unused states
  */
-export function findUnusedStates(states: State[], transitions: Transition[]): string[] {
+export function findUnusedStates(
+  states: State[],
+  transitions: Transition[]
+): string[] {
   const analyses = analyzeStates(states, transitions, []);
-  return analyses.filter(a => !a.isUsed).map(a => a.stateId);
+  return analyses.filter((a) => !a.isUsed).map((a) => a.stateId);
 }
 
 /**
@@ -44,20 +51,23 @@ export function findUnusedWorkflows(workflows: Workflow[]): string[] {
 /**
  * Find orphaned states (no transitions)
  */
-export function findOrphanedStates(states: State[], transitions: Transition[]): string[] {
+export function findOrphanedStates(
+  states: State[],
+  transitions: Transition[]
+): string[] {
   const statesInTransitions = new Set<string>();
 
-  transitions.forEach(t => {
-    if (t.type === 'OutgoingTransition') {
+  transitions.forEach((t) => {
+    if (t.type === "OutgoingTransition") {
       statesInTransitions.add(t.fromState);
       if (t.toState) statesInTransitions.add(t.toState);
-      t.activateStates.forEach(id => statesInTransitions.add(id));
+      t.activateStates.forEach((id) => statesInTransitions.add(id));
     } else {
       statesInTransitions.add(t.toState);
     }
   });
 
   return states
-    .filter(s => !statesInTransitions.has(s.id) && !s.initial)
-    .map(s => s.id);
+    .filter((s) => !statesInTransitions.has(s.id) && !s.initial)
+    .map((s) => s.id);
 }

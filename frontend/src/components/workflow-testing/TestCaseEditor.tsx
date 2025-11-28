@@ -11,9 +11,9 @@
  * - Keyboard shortcuts support
  */
 
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
   Plus,
   Trash2,
@@ -24,45 +24,52 @@ import {
   ChevronRight,
   AlertCircle,
   Loader2,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import type {
   TestCase,
   Assertion,
   AssertionType,
-} from "@/services/workflow-testing-service"
-import type { Workflow } from "@/lib/action-schema/action-types"
+} from "@/services/workflow-testing-service";
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface TestCaseEditorProps {
-  testCase?: TestCase
-  workflow: Workflow
-  onSave: (testCase: TestCase) => void
-  onCancel: () => void
-  className?: string
+  testCase?: TestCase;
+  workflow: Workflow;
+  onSave: (testCase: TestCase) => void;
+  onCancel: () => void;
+  className?: string;
 }
 
 interface ValidationErrors {
-  name?: string
-  assertions?: string
-  [key: string]: string | undefined
+  name?: string;
+  assertions?: string;
+  [key: string]: string | undefined;
 }
 
 // ============================================================================
@@ -80,77 +87,79 @@ export function TestCaseEditor({
   // State
   // ========================================================================
 
-  const [name, setName] = React.useState(testCase?.name || "")
-  const [description, setDescription] = React.useState(testCase?.description || "")
-  const [enabled, setEnabled] = React.useState(testCase?.enabled !== false)
+  const [name, setName] = React.useState(testCase?.name || "");
+  const [description, setDescription] = React.useState(
+    testCase?.description || ""
+  );
+  const [enabled, setEnabled] = React.useState(testCase?.enabled !== false);
 
   // Input configuration
   const [initialScreenshots, setInitialScreenshots] = React.useState<string[]>(
     testCase?.config.initialState?.screenshots || []
-  )
+  );
   const [initialStates, setInitialStates] = React.useState<string[]>(
     testCase?.config.initialState?.activeStates || []
-  )
-  const [inputVariables, setInputVariables] = React.useState<Record<string, any>>(
-    testCase?.config.inputs || {}
-  )
+  );
+  const [inputVariables, setInputVariables] = React.useState<
+    Record<string, any>
+  >(testCase?.config.inputs || {});
 
   // Expected outputs
-  const [expectedVariables, setExpectedVariables] = React.useState<Record<string, any>>(
-    testCase?.config.initialState?.variables || {}
-  )
+  const [expectedVariables, setExpectedVariables] = React.useState<
+    Record<string, any>
+  >(testCase?.config.initialState?.variables || {});
   const [expectedFinalAction, setExpectedFinalAction] = React.useState<string>(
     testCase?.config.expected?.finalActionId || ""
-  )
+  );
   const [maxDuration, setMaxDuration] = React.useState<number>(
     testCase?.config.expected?.maxDuration || 30000
-  )
+  );
   const [shouldSucceed, setShouldSucceed] = React.useState<boolean>(
     testCase?.config.expected?.shouldSucceed !== false
-  )
+  );
 
   // Assertions
   const [assertions, setAssertions] = React.useState<Assertion[]>(
     testCase?.config.assertions || []
-  )
+  );
 
   // Tags
-  const [tags, setTags] = React.useState<string[]>(testCase?.config.tags || [])
-  const [newTag, setNewTag] = React.useState("")
+  const [tags, setTags] = React.useState<string[]>(testCase?.config.tags || []);
+  const [newTag, setNewTag] = React.useState("");
 
   // Timeout
   const [timeout, setTimeout] = React.useState<number>(
     testCase?.config.timeout || 60000
-  )
+  );
 
   // UI state
-  const [isRunning, setIsRunning] = React.useState(false)
-  const [errors, setErrors] = React.useState<ValidationErrors>({})
+  const [isRunning, setIsRunning] = React.useState(false);
+  const [errors, setErrors] = React.useState<ValidationErrors>({});
   const [expandedSections, setExpandedSections] = React.useState({
     input: true,
     expected: true,
     assertions: true,
     advanced: false,
-  })
+  });
 
   // ========================================================================
   // Validation
   // ========================================================================
 
   const validate = React.useCallback((): boolean => {
-    const newErrors: ValidationErrors = {}
+    const newErrors: ValidationErrors = {};
 
     if (!name.trim()) {
-      newErrors.name = "Test name is required"
+      newErrors.name = "Test name is required";
     }
 
     if (assertions.length === 0) {
-      newErrors.assertions = "At least one assertion is required"
+      newErrors.assertions = "At least one assertion is required";
     }
 
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }, [name, assertions])
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [name, assertions]);
 
   // ========================================================================
   // Handlers
@@ -158,7 +167,7 @@ export function TestCaseEditor({
 
   const handleSave = React.useCallback(() => {
     if (!validate()) {
-      return
+      return;
     }
 
     const testCaseData: TestCase = {
@@ -188,9 +197,9 @@ export function TestCaseEditor({
         created: testCase?.metadata?.created || new Date().toISOString(),
         updated: new Date().toISOString(),
       },
-    }
+    };
 
-    onSave(testCaseData)
+    onSave(testCaseData);
   }, [
     validate,
     testCase,
@@ -209,18 +218,18 @@ export function TestCaseEditor({
     timeout,
     tags,
     onSave,
-  ])
+  ]);
 
   const handleRun = React.useCallback(() => {
     if (!validate()) {
-      return
+      return;
     }
-    setIsRunning(true)
+    setIsRunning(true);
     // TODO: Integrate with actual test runner
     setTimeout(() => {
-      setIsRunning(false)
-    }, 2000)
-  }, [validate])
+      setIsRunning(false);
+    }, 2000);
+  }, [validate]);
 
   // Assertions handlers
   const addAssertion = React.useCallback(() => {
@@ -230,61 +239,67 @@ export function TestCaseEditor({
       description: "",
       path: "",
       expected: "",
-    }
-    setAssertions((prev) => [...prev, newAssertion])
-  }, [])
+    };
+    setAssertions((prev) => [...prev, newAssertion]);
+  }, []);
 
-  const updateAssertion = React.useCallback((id: string, updates: Partial<Assertion>) => {
-    setAssertions((prev) =>
-      prev.map((assertion) =>
-        assertion.id === id ? { ...assertion, ...updates } : assertion
-      )
-    )
-  }, [])
+  const updateAssertion = React.useCallback(
+    (id: string, updates: Partial<Assertion>) => {
+      setAssertions((prev) =>
+        prev.map((assertion) =>
+          assertion.id === id ? { ...assertion, ...updates } : assertion
+        )
+      );
+    },
+    []
+  );
 
   const removeAssertion = React.useCallback((id: string) => {
-    setAssertions((prev) => prev.filter((assertion) => assertion.id !== id))
-  }, [])
+    setAssertions((prev) => prev.filter((assertion) => assertion.id !== id));
+  }, []);
 
   // Variable handlers
   const addInputVariable = React.useCallback((key: string, value: any) => {
-    setInputVariables((prev) => ({ ...prev, [key]: value }))
-  }, [])
+    setInputVariables((prev) => ({ ...prev, [key]: value }));
+  }, []);
 
   const removeInputVariable = React.useCallback((key: string) => {
     setInputVariables((prev) => {
-      const { [key]: _, ...rest } = prev
-      return rest
-    })
-  }, [])
+      const { [key]: _, ...rest } = prev;
+      return rest;
+    });
+  }, []);
 
   const addExpectedVariable = React.useCallback((key: string, value: any) => {
-    setExpectedVariables((prev) => ({ ...prev, [key]: value }))
-  }, [])
+    setExpectedVariables((prev) => ({ ...prev, [key]: value }));
+  }, []);
 
   const removeExpectedVariable = React.useCallback((key: string) => {
     setExpectedVariables((prev) => {
-      const { [key]: _, ...rest } = prev
-      return rest
-    })
-  }, [])
+      const { [key]: _, ...rest } = prev;
+      return rest;
+    });
+  }, []);
 
   // Tag handlers
   const addTag = React.useCallback(() => {
     if (newTag.trim() && !tags.includes(newTag.trim())) {
-      setTags((prev) => [...prev, newTag.trim()])
-      setNewTag("")
+      setTags((prev) => [...prev, newTag.trim()]);
+      setNewTag("");
     }
-  }, [newTag, tags])
+  }, [newTag, tags]);
 
   const removeTag = React.useCallback((tag: string) => {
-    setTags((prev) => prev.filter((t) => t !== tag))
-  }, [])
+    setTags((prev) => prev.filter((t) => t !== tag));
+  }, []);
 
   // Section toggle
-  const toggleSection = React.useCallback((section: keyof typeof expandedSections) => {
-    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }))
-  }, [])
+  const toggleSection = React.useCallback(
+    (section: keyof typeof expandedSections) => {
+      setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+    },
+    []
+  );
 
   // ========================================================================
   // Keyboard shortcuts
@@ -294,24 +309,24 @@ export function TestCaseEditor({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl/Cmd + S to save
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault()
-        handleSave()
+        e.preventDefault();
+        handleSave();
       }
       // Escape to cancel
       if (e.key === "Escape") {
-        e.preventDefault()
-        onCancel()
+        e.preventDefault();
+        onCancel();
       }
       // Ctrl/Cmd + Enter to run
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault()
-        handleRun()
+        e.preventDefault();
+        handleRun();
       }
-    }
+    };
 
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [handleSave, handleRun, onCancel])
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleSave, handleRun, onCancel]);
 
   // ========================================================================
   // Render
@@ -370,8 +385,8 @@ export function TestCaseEditor({
                 onChange={(e) => setNewTag(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    e.preventDefault()
-                    addTag()
+                    e.preventDefault();
+                    addTag();
                   }
                 }}
                 placeholder="Add tag..."
@@ -402,7 +417,10 @@ export function TestCaseEditor({
 
       {/* Input Configuration */}
       <Card>
-        <CardHeader className="cursor-pointer" onClick={() => toggleSection("input")}>
+        <CardHeader
+          className="cursor-pointer"
+          onClick={() => toggleSection("input")}
+        >
           <div className="flex items-center gap-2">
             {expandedSections.input ? (
               <ChevronDown className="size-4" />
@@ -455,7 +473,10 @@ export function TestCaseEditor({
 
       {/* Expected Outputs */}
       <Card>
-        <CardHeader className="cursor-pointer" onClick={() => toggleSection("expected")}>
+        <CardHeader
+          className="cursor-pointer"
+          onClick={() => toggleSection("expected")}
+        >
           <div className="flex items-center gap-2">
             {expandedSections.expected ? (
               <ChevronDown className="size-4" />
@@ -485,7 +506,10 @@ export function TestCaseEditor({
             {/* Expected Final Action */}
             <div className="space-y-2">
               <Label htmlFor="finalAction">Expected Final Action ID</Label>
-              <Select value={expectedFinalAction} onValueChange={setExpectedFinalAction}>
+              <Select
+                value={expectedFinalAction}
+                onValueChange={setExpectedFinalAction}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select action..." />
                 </SelectTrigger>
@@ -530,7 +554,10 @@ export function TestCaseEditor({
 
       {/* Assertions */}
       <Card>
-        <CardHeader className="cursor-pointer" onClick={() => toggleSection("assertions")}>
+        <CardHeader
+          className="cursor-pointer"
+          onClick={() => toggleSection("assertions")}
+        >
           <div className="flex items-center gap-2">
             {expandedSections.assertions ? (
               <ChevronDown className="size-4" />
@@ -571,7 +598,10 @@ export function TestCaseEditor({
 
       {/* Advanced Settings */}
       <Card>
-        <CardHeader className="cursor-pointer" onClick={() => toggleSection("advanced")}>
+        <CardHeader
+          className="cursor-pointer"
+          onClick={() => toggleSection("advanced")}
+        >
           <div className="flex items-center gap-2">
             {expandedSections.advanced ? (
               <ChevronDown className="size-4" />
@@ -618,7 +648,11 @@ export function TestCaseEditor({
             Cancel
           </Button>
           <div className="flex gap-2">
-            <Button onClick={handleRun} variant="secondary" disabled={isRunning}>
+            <Button
+              onClick={handleRun}
+              variant="secondary"
+              disabled={isRunning}
+            >
               {isRunning ? (
                 <>
                   <Loader2 className="animate-spin" />
@@ -641,10 +675,12 @@ export function TestCaseEditor({
 
       {/* Keyboard shortcuts hint */}
       <div className="text-xs text-muted-foreground text-center space-y-1">
-        <p>Keyboard shortcuts: Ctrl+S to save, Esc to cancel, Ctrl+Enter to run</p>
+        <p>
+          Keyboard shortcuts: Ctrl+S to save, Esc to cancel, Ctrl+Enter to run
+        </p>
       </div>
     </div>
-  )
+  );
 }
 
 // ============================================================================
@@ -652,12 +688,16 @@ export function TestCaseEditor({
 // ============================================================================
 
 interface AssertionEditorProps {
-  assertion: Assertion
-  onUpdate: (updates: Partial<Assertion>) => void
-  onRemove: () => void
+  assertion: Assertion;
+  onUpdate: (updates: Partial<Assertion>) => void;
+  onRemove: () => void;
 }
 
-function AssertionEditor({ assertion, onUpdate, onRemove }: AssertionEditorProps) {
+function AssertionEditor({
+  assertion,
+  onUpdate,
+  onRemove,
+}: AssertionEditorProps) {
   const assertionTypes: AssertionType[] = [
     "equals",
     "notEquals",
@@ -669,7 +709,7 @@ function AssertionEditor({ assertion, onUpdate, onRemove }: AssertionEditorProps
     "lessThan",
     "regex",
     "custom",
-  ]
+  ];
 
   const needsExpectedValue = [
     "equals",
@@ -678,10 +718,10 @@ function AssertionEditor({ assertion, onUpdate, onRemove }: AssertionEditorProps
     "notContains",
     "greaterThan",
     "lessThan",
-  ].includes(assertion.type)
+  ].includes(assertion.type);
 
-  const needsPattern = assertion.type === "regex"
-  const needsCustomFunction = assertion.type === "custom"
+  const needsPattern = assertion.type === "regex";
+  const needsCustomFunction = assertion.type === "custom";
 
   return (
     <Card className="p-4">
@@ -693,7 +733,9 @@ function AssertionEditor({ assertion, onUpdate, onRemove }: AssertionEditorProps
               <Label>Type</Label>
               <Select
                 value={assertion.type}
-                onValueChange={(value) => onUpdate({ type: value as AssertionType })}
+                onValueChange={(value) =>
+                  onUpdate({ type: value as AssertionType })
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -744,10 +786,10 @@ function AssertionEditor({ assertion, onUpdate, onRemove }: AssertionEditorProps
               onChange={(e) => {
                 // Try to parse as JSON for complex values
                 try {
-                  const parsed = JSON.parse(e.target.value)
-                  onUpdate({ expected: parsed })
+                  const parsed = JSON.parse(e.target.value);
+                  onUpdate({ expected: parsed });
                 } catch {
-                  onUpdate({ expected: e.target.value })
+                  onUpdate({ expected: e.target.value });
                 }
               }}
               placeholder="Expected value..."
@@ -781,32 +823,37 @@ function AssertionEditor({ assertion, onUpdate, onRemove }: AssertionEditorProps
         )}
       </div>
     </Card>
-  )
+  );
 }
 
 interface KeyValueEditorProps {
-  values: Record<string, any>
-  onAdd: (key: string, value: any) => void
-  onRemove: (key: string) => void
-  placeholder?: string
+  values: Record<string, any>;
+  onAdd: (key: string, value: any) => void;
+  onRemove: (key: string) => void;
+  placeholder?: string;
 }
 
-function KeyValueEditor({ values, onAdd, onRemove, placeholder }: KeyValueEditorProps) {
-  const [newKey, setNewKey] = React.useState("")
-  const [newValue, setNewValue] = React.useState("")
+function KeyValueEditor({
+  values,
+  onAdd,
+  onRemove,
+  placeholder,
+}: KeyValueEditorProps) {
+  const [newKey, setNewKey] = React.useState("");
+  const [newValue, setNewValue] = React.useState("");
 
   const handleAdd = () => {
     if (newKey.trim()) {
       try {
-        const parsed = JSON.parse(newValue)
-        onAdd(newKey.trim(), parsed)
+        const parsed = JSON.parse(newValue);
+        onAdd(newKey.trim(), parsed);
       } catch {
-        onAdd(newKey.trim(), newValue)
+        onAdd(newKey.trim(), newValue);
       }
-      setNewKey("")
-      setNewValue("")
+      setNewKey("");
+      setNewValue("");
     }
-  }
+  };
 
   return (
     <div className="space-y-2">
@@ -830,8 +877,8 @@ function KeyValueEditor({ values, onAdd, onRemove, placeholder }: KeyValueEditor
           placeholder={placeholder || "Key"}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              e.preventDefault()
-              handleAdd()
+              e.preventDefault();
+              handleAdd();
             }
           }}
         />
@@ -841,8 +888,8 @@ function KeyValueEditor({ values, onAdd, onRemove, placeholder }: KeyValueEditor
           placeholder="Value (JSON supported)"
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              e.preventDefault()
-              handleAdd()
+              e.preventDefault();
+              handleAdd();
             }
           }}
         />
@@ -851,35 +898,39 @@ function KeyValueEditor({ values, onAdd, onRemove, placeholder }: KeyValueEditor
         </Button>
       </div>
     </div>
-  )
+  );
 }
 
 interface ArrayEditorProps {
-  values: string[]
-  onChange: (values: string[]) => void
-  placeholder?: string
+  values: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
 }
 
 function ArrayEditor({ values, onChange, placeholder }: ArrayEditorProps) {
-  const [newValue, setNewValue] = React.useState("")
+  const [newValue, setNewValue] = React.useState("");
 
   const handleAdd = () => {
     if (newValue.trim() && !values.includes(newValue.trim())) {
-      onChange([...values, newValue.trim()])
-      setNewValue("")
+      onChange([...values, newValue.trim()]);
+      setNewValue("");
     }
-  }
+  };
 
   const handleRemove = (index: number) => {
-    onChange(values.filter((_, i) => i !== index))
-  }
+    onChange(values.filter((_, i) => i !== index));
+  };
 
   return (
     <div className="space-y-2">
       {values.map((value, index) => (
         <div key={index} className="flex items-center gap-2">
           <Input value={value} disabled className="flex-1" />
-          <Button onClick={() => handleRemove(index)} variant="ghost" size="icon">
+          <Button
+            onClick={() => handleRemove(index)}
+            variant="ghost"
+            size="icon"
+          >
             <Trash2 className="size-4" />
           </Button>
         </div>
@@ -891,8 +942,8 @@ function ArrayEditor({ values, onChange, placeholder }: ArrayEditorProps) {
           placeholder={placeholder || "Add value..."}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              e.preventDefault()
-              handleAdd()
+              e.preventDefault();
+              handleAdd();
             }
           }}
         />
@@ -901,5 +952,5 @@ function ArrayEditor({ values, onChange, placeholder }: ArrayEditorProps) {
         </Button>
       </div>
     </div>
-  )
+  );
 }

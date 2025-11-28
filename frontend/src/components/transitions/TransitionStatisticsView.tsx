@@ -1,8 +1,13 @@
-"use client"
+"use client";
 
-import React, { useMemo } from "react"
-import { Transition, State, OutgoingTransition, IncomingTransition } from "@/contexts/automation-context/types"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import React, { useMemo } from "react";
+import {
+  Transition,
+  State,
+  OutgoingTransition,
+  IncomingTransition,
+} from "@/contexts/automation-context/types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   BarChart,
   Bar,
@@ -15,13 +20,13 @@ import {
   Pie,
   Cell,
   Legend,
-} from "recharts"
-import { TransitionValidation, COLORS } from "./types"
+} from "recharts";
+import { TransitionValidation, COLORS } from "./types";
 
 interface TransitionStatisticsViewProps {
-  transitions: Transition[]
-  states: State[]
-  validation: TransitionValidation
+  transitions: Transition[];
+  states: State[];
+  validation: TransitionValidation;
 }
 
 export function TransitionStatisticsView({
@@ -32,25 +37,25 @@ export function TransitionStatisticsView({
   const stats = useMemo(() => {
     const outgoing = transitions.filter(
       (t): t is OutgoingTransition => t.type === "OutgoingTransition"
-    )
+    );
     const incoming = transitions.filter(
       (t): t is IncomingTransition => t.type === "IncomingTransition"
-    )
+    );
 
     // Count transitions per state
-    const transitionsPerState = new Map<string, number>()
+    const transitionsPerState = new Map<string, number>();
     outgoing.forEach((t) => {
       transitionsPerState.set(
         t.fromState,
         (transitionsPerState.get(t.fromState) || 0) + 1
-      )
-    })
+      );
+    });
 
     const avgTransitions =
       transitionsPerState.size > 0
         ? Array.from(transitionsPerState.values()).reduce((a, b) => a + b, 0) /
           transitionsPerState.size
-        : 0
+        : 0;
 
     // Most connected states
     const sortedStates = Array.from(transitionsPerState.entries())
@@ -59,16 +64,17 @@ export function TransitionStatisticsView({
       .map(([stateId, count]) => ({
         name: states.find((s) => s.id === stateId)?.name || "Unknown",
         count,
-      }))
+      }));
 
     // Coverage
     const statesWithTransitions = new Set([
       ...outgoing.map((t) => t.fromState),
       ...incoming.map((t) => t.toState),
-    ])
-    const coverage = states.length > 0
-      ? (statesWithTransitions.size / states.length) * 100
-      : 0
+    ]);
+    const coverage =
+      states.length > 0
+        ? (statesWithTransitions.size / states.length) * 100
+        : 0;
 
     return {
       total: transitions.length,
@@ -80,13 +86,13 @@ export function TransitionStatisticsView({
       orphaned: validation.unreachableStates.length,
       circular: validation.circular.length,
       deadEnd: validation.deadEndStates.length,
-    }
-  }, [transitions, states, validation])
+    };
+  }, [transitions, states, validation]);
 
   const pieData = [
     { name: "Outgoing", value: stats.outgoing, color: COLORS.success },
     { name: "Incoming", value: stats.incoming, color: COLORS.primary },
-  ]
+  ];
 
   return (
     <div className="h-full overflow-y-auto space-y-4 p-4">
@@ -205,5 +211,5 @@ export function TransitionStatisticsView({
         </Card>
       </div>
     </div>
-  )
+  );
 }

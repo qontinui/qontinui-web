@@ -33,18 +33,22 @@ transitions/
 ```
 
 **Total: 2,180 lines** (vs. original 2,031 lines)
+
 - The slight increase is due to proper separation, type safety, and removal of duplication
 
 ## Architecture Principles
 
 ### 1. Single Responsibility Principle
+
 Each file has ONE clear purpose:
+
 - **View components**: Render specific UI layouts
 - **Hooks**: Encapsulate reusable business logic
 - **UI components**: Handle specific user interactions
 - **Main component**: Orchestrates data flow only
 
 ### 2. Container/Presenter Pattern
+
 ```
 TransitionManager (Container)
     ↓ (passes data via props)
@@ -52,7 +56,9 @@ View Components (Presenters)
 ```
 
 ### 3. Custom Hooks for Logic
+
 Business logic is extracted into testable hooks:
+
 - `useTransitionValidation` - Circular detection, broken references, etc.
 - `useTransitionFilters` - Search, filtering, and data transformation
 - `useTransitionOperations` - CRUD operations with side effects
@@ -60,7 +66,9 @@ Business logic is extracted into testable hooks:
 ## Component Responsibilities
 
 ### TransitionManager.tsx (Main Orchestrator)
+
 **Responsibility**: Coordinate child components and manage application state
+
 - State management (view mode, filters, selections)
 - Event handler delegation
 - Data flow orchestration
@@ -84,26 +92,34 @@ return (
 ### View Components
 
 #### TransitionMatrixView.tsx
+
 **Responsibility**: Render transitions as a state-to-state grid
+
 - Cell color coding based on transition count
 - Circular transition highlighting
 - Click handling for cell selection
 
 #### TransitionListView.tsx
+
 **Responsibility**: Render transitions as a sortable, groupable list
+
 - Sort by: fromState, toState, type, modified
 - Group by: fromState, toState, type, none
 - Visual indicators for validation issues
 - Bulk selection support
 
 #### TransitionGraphView.tsx
+
 **Responsibility**: Visualize transitions as a directed graph using React Flow
+
 - Node positioning and styling
 - Edge animation for workflows
 - MiniMap and controls integration
 
 #### TransitionStatisticsView.tsx
+
 **Responsibility**: Display analytics and charts
+
 - Summary statistics (total, avg, coverage, issues)
 - Pie chart for transition types
 - Bar chart for most connected states
@@ -111,21 +127,27 @@ return (
 ### UI Components
 
 #### TransitionFilters.tsx
+
 **Responsibility**: Filter controls UI only
+
 - Search input
 - State dropdowns (from/to)
 - Action type selector
 - Receives filters via props, emits changes via callback
 
 #### TransitionDetailsPanel.tsx
+
 **Responsibility**: Edit single transition
+
 - Form inputs for transition properties
 - Workflow management
 - Save/delete actions
 - Empty state when no selection
 
 #### ValidationPanel.tsx
+
 **Responsibility**: Display validation issues
+
 - Circular transitions
 - Broken state references
 - Unreachable states
@@ -133,7 +155,9 @@ return (
 - Clickable items to highlight issues
 
 #### BulkCreationWizard.tsx
+
 **Responsibility**: Multi-step transition creation
+
 - Step 1: Select source states
 - Step 2: Select target states
 - Step 3: Configure properties
@@ -142,25 +166,30 @@ return (
 ### Custom Hooks
 
 #### useTransitionValidation.ts
+
 **Responsibility**: Analyze transitions for issues
+
 ```typescript
 interface TransitionValidation {
-  circular: string[]              // IDs of circular transitions
-  brokenStateReferences: string[] // Transitions with invalid state refs
-  missingWorkflows: string[]      // Transitions with missing workflows
-  unreachableStates: string[]     // States with no incoming transitions
-  deadEndStates: string[]         // States with no outgoing transitions
+  circular: string[]; // IDs of circular transitions
+  brokenStateReferences: string[]; // Transitions with invalid state refs
+  missingWorkflows: string[]; // Transitions with missing workflows
+  unreachableStates: string[]; // States with no incoming transitions
+  deadEndStates: string[]; // States with no outgoing transitions
 }
 ```
 
 **Logic**:
+
 - Detects circular transition pairs (A→B, B→A)
 - Validates state references exist
 - Identifies orphaned states
 - Finds dead-end states
 
 #### useTransitionFilters.ts
+
 **Responsibility**: Filter transitions based on criteria
+
 - Search query (matches state names)
 - From/To state filtering
 - Action type (with/without workflows)
@@ -170,7 +199,9 @@ interface TransitionValidation {
 **Returns**: Filtered transition array
 
 #### useTransitionOperations.ts
+
 **Responsibility**: CRUD operations with side effects
+
 ```typescript
 {
   handleBulkDelete: (ids: Set<string>) => void
@@ -183,6 +214,7 @@ interface TransitionValidation {
 ```
 
 **Side effects**:
+
 - Toast notifications
 - File downloads (export)
 - Context mutations (add/update/delete)
@@ -190,7 +222,9 @@ interface TransitionValidation {
 ## Benefits of This Architecture
 
 ### 1. Testability
+
 Each component/hook can be tested in isolation:
+
 ```typescript
 // Test validation logic without UI
 const validation = analyzeTransitions(mockTransitions, mockStates)
@@ -205,21 +239,25 @@ render(<TransitionMatrixView transitions={...} />)
 ```
 
 ### 2. Reusability
+
 Components can be used independently:
+
 ```typescript
 // Use just the list view elsewhere
-import { TransitionListView } from '@/components/transitions'
+import { TransitionListView } from "@/components/transitions";
 
 // Use validation logic in another feature
-import { useTransitionValidation } from '@/components/transitions'
+import { useTransitionValidation } from "@/components/transitions";
 ```
 
 ### 3. Maintainability
+
 - **Find bugs faster**: Issue in matrix view? Check `TransitionMatrixView.tsx` only
 - **Add features easily**: New view? Create `TransitionTimelineView.tsx`
 - **Update logic safely**: Change validation? Modify one hook, tests verify no breakage
 
 ### 4. Developer Experience
+
 - **Smaller files**: No scrolling through 2000+ lines
 - **Clear boundaries**: Know exactly where to look
 - **Type safety**: Props are explicitly typed
@@ -228,6 +266,7 @@ import { useTransitionValidation } from '@/components/transitions'
 ## Usage Examples
 
 ### Basic Usage
+
 ```typescript
 import { TransitionManager } from '@/components/transitions'
 
@@ -237,6 +276,7 @@ function App() {
 ```
 
 ### Using Individual Components
+
 ```typescript
 import {
   TransitionListView,
@@ -259,6 +299,7 @@ function CustomTransitionView() {
 ```
 
 ### Using Hooks Independently
+
 ```typescript
 import { useTransitionValidation } from '@/components/transitions'
 
@@ -278,6 +319,7 @@ function ValidationSummary() {
 ## Migration Guide
 
 ### Before (2031-line monolith)
+
 ```typescript
 // Everything in one file
 function TransitionManager() {
@@ -290,6 +332,7 @@ function TransitionManager() {
 ```
 
 ### After (Clean separation)
+
 ```typescript
 // Main component: orchestration only
 function TransitionManager() {
@@ -306,6 +349,7 @@ function TransitionManager() {
 With this architecture, adding features is straightforward:
 
 ### New View Type
+
 ```typescript
 // Create TransitionTimelineView.tsx
 export function TransitionTimelineView({ transitions, states }) {
@@ -317,16 +361,18 @@ export function TransitionTimelineView({ transitions, states }) {
 ```
 
 ### New Validation Rule
+
 ```typescript
 // Add to useTransitionValidation.ts
-validation.duplicateWorkflows = findDuplicateWorkflows(transitions)
+validation.duplicateWorkflows = findDuplicateWorkflows(transitions);
 ```
 
 ### New Filter Type
+
 ```typescript
 // Add to useTransitionFilters.ts
 if (filters.hasTag && !t.tags?.includes(filters.hasTag)) {
-  return false
+  return false;
 }
 ```
 
@@ -340,16 +386,17 @@ if (filters.hasTag && !t.tags?.includes(filters.hasTag)) {
 ## Type Safety
 
 All components have explicit prop types:
+
 ```typescript
 interface TransitionListViewProps {
-  transitions: Transition[]
-  states: State[]
-  workflows: Workflow[]
-  validation: TransitionValidation
-  selectedTransitions: Set<string>
-  onTransitionSelect: (id: string, selected: boolean) => void
-  onTransitionClick: (transition: Transition) => void
-  onTransitionDelete: (id: string) => void
+  transitions: Transition[];
+  states: State[];
+  workflows: Workflow[];
+  validation: TransitionValidation;
+  selectedTransitions: Set<string>;
+  onTransitionSelect: (id: string, selected: boolean) => void;
+  onTransitionClick: (transition: Transition) => void;
+  onTransitionDelete: (id: string) => void;
 }
 ```
 
@@ -358,6 +405,7 @@ interface TransitionListViewProps {
 This refactoring transforms a 2000+ line monolith into a maintainable, testable, and extensible architecture. Each file has a single, clear responsibility, making the codebase easier to understand, modify, and test.
 
 **Key Metrics**:
+
 - **Original**: 1 file, 2,031 lines, 9+ responsibilities
 - **Refactored**: 13 files, ~180 lines average, 1 responsibility each
 - **Maintainability**: ⬆️⬆️⬆️

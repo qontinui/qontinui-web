@@ -1,99 +1,110 @@
-"use client"
+"use client";
 
-import { useState, useRef } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
-import { Upload, Trash2, User, Loader2 } from "lucide-react"
+import { useState, useRef } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { Upload, Trash2, User, Loader2 } from "lucide-react";
 
 interface AvatarUploadProps {
-  currentAvatarUrl?: string
-  userName: string
-  onUpload: (file: File) => Promise<{ avatar_url: string }>
-  onDelete: () => Promise<void>
+  currentAvatarUrl?: string;
+  userName: string;
+  onUpload: (file: File) => Promise<{ avatar_url: string }>;
+  onDelete: () => Promise<void>;
 }
 
-export function AvatarUpload({ currentAvatarUrl, userName, onUpload, onDelete }: AvatarUploadProps) {
-  const [avatarUrl, setAvatarUrl] = useState(currentAvatarUrl)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
-  const [isDragOver, setIsDragOver] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+export function AvatarUpload({
+  currentAvatarUrl,
+  userName,
+  onUpload,
+  onDelete,
+}: AvatarUploadProps) {
+  const [avatarUrl, setAvatarUrl] = useState(currentAvatarUrl);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = async (file: File) => {
     // Validate file
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file')
-      return
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image size should be less than 5MB')
-      return
+      toast.error("Image size should be less than 5MB");
+      return;
     }
 
     // Show preview
-    const reader = new FileReader()
+    const reader = new FileReader();
     reader.onloadend = () => {
-      setPreviewUrl(reader.result as string)
-    }
-    reader.readAsDataURL(file)
+      setPreviewUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
 
     // Upload
-    setIsUploading(true)
+    setIsUploading(true);
     try {
-      const result = await onUpload(file)
-      setAvatarUrl(result.avatar_url)
-      setPreviewUrl(null)
-      toast.success('Avatar uploaded successfully')
+      const result = await onUpload(file);
+      setAvatarUrl(result.avatar_url);
+      setPreviewUrl(null);
+      toast.success("Avatar uploaded successfully");
     } catch (error: any) {
-      setPreviewUrl(null)
-      toast.error(error.message || 'Failed to upload avatar')
+      setPreviewUrl(null);
+      toast.error(error.message || "Failed to upload avatar");
     } finally {
-      setIsUploading(false)
+      setIsUploading(false);
     }
-  }
+  };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
+    e.preventDefault();
+    setIsDragOver(false);
 
-    const file = e.dataTransfer.files[0]
+    const file = e.dataTransfer.files[0];
     if (file) {
-      handleFileSelect(file)
+      handleFileSelect(file);
     }
-  }
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }
+    e.preventDefault();
+    setIsDragOver(true);
+  };
 
   const handleDragLeave = () => {
-    setIsDragOver(false)
-  }
+    setIsDragOver(false);
+  };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const file = e.target.files?.[0];
     if (file) {
-      handleFileSelect(file)
+      handleFileSelect(file);
     }
-  }
+  };
 
   const handleDeleteAvatar = async () => {
-    if (!confirm('Are you sure you want to delete your avatar?')) return
+    if (!confirm("Are you sure you want to delete your avatar?")) return;
 
     try {
-      await onDelete()
-      setAvatarUrl(undefined)
-      setPreviewUrl(null)
-      toast.success('Avatar deleted successfully')
+      await onDelete();
+      setAvatarUrl(undefined);
+      setPreviewUrl(null);
+      toast.success("Avatar deleted successfully");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to delete avatar')
+      toast.error(error.message || "Failed to delete avatar");
     }
-  }
+  };
 
-  const displayUrl = previewUrl || avatarUrl
+  const displayUrl = previewUrl || avatarUrl;
 
   return (
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
@@ -128,8 +139,8 @@ export function AvatarUpload({ currentAvatarUrl, userName, onUpload, onDelete }:
             <div
               className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
                 isDragOver
-                  ? 'border-[#00D9FF] bg-[#00D9FF]/10'
-                  : 'border-gray-700 hover:border-gray-600'
+                  ? "border-[#00D9FF] bg-[#00D9FF]/10"
+                  : "border-gray-700 hover:border-gray-600"
               }`}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -175,5 +186,5 @@ export function AvatarUpload({ currentAvatarUrl, userName, onUpload, onDelete }:
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }

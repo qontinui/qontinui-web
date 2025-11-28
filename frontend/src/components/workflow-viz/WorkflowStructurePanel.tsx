@@ -5,16 +5,16 @@
  * Highlights current action and allows manual selection
  */
 
-import React from 'react'
-import type { Workflow, Action } from '@/lib/action-schema/action-types'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Badge } from '@/components/ui/badge'
-import { CheckCircle2, Circle, AlertCircle } from 'lucide-react'
+import React from "react";
+import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { CheckCircle2, Circle, AlertCircle } from "lucide-react";
 
 interface WorkflowStructurePanelProps {
-  workflow: Workflow
-  currentActionIndex: number
-  onActionSelect: (index: number, success: boolean) => void
+  workflow: Workflow;
+  currentActionIndex: number;
+  onActionSelect: (index: number, success: boolean) => void;
 }
 
 export function WorkflowStructurePanel({
@@ -22,14 +22,14 @@ export function WorkflowStructurePanel({
   currentActionIndex,
   onActionSelect,
 }: WorkflowStructurePanelProps) {
-  const viewMode = workflow.metadata?.viewMode || 'sequential'
+  const viewMode = workflow.metadata?.viewMode || "sequential";
 
   // For now, we'll render as a sequential list
   // Graph visualization would require a more complex layout library
   return (
     <div className="h-full flex flex-col">
       <ScrollArea className="flex-1">
-        {viewMode === 'sequential' || viewMode === 'graph' ? (
+        {viewMode === "sequential" || viewMode === "graph" ? (
           <SequentialView
             actions={workflow.actions}
             currentActionIndex={currentActionIndex}
@@ -42,37 +42,41 @@ export function WorkflowStructurePanel({
         )}
       </ScrollArea>
     </div>
-  )
+  );
 }
 
 interface SequentialViewProps {
-  actions: Action[]
-  currentActionIndex: number
-  onActionSelect: (index: number, success: boolean) => void
+  actions: Action[];
+  currentActionIndex: number;
+  onActionSelect: (index: number, success: boolean) => void;
 }
 
-function SequentialView({ actions, currentActionIndex, onActionSelect }: SequentialViewProps) {
+function SequentialView({
+  actions,
+  currentActionIndex,
+  onActionSelect,
+}: SequentialViewProps) {
   return (
     <div className="space-y-2">
       {actions.map((action, index) => {
-        const isCurrent = index === currentActionIndex
-        const isPast = index < currentActionIndex
-        const isFuture = index > currentActionIndex
+        const isCurrent = index === currentActionIndex;
+        const isPast = index < currentActionIndex;
+        const isFuture = index > currentActionIndex;
 
         return (
           <button
             key={action.id}
             onClick={() => onActionSelect(index, true)}
             onContextMenu={(e) => {
-              e.preventDefault()
-              onActionSelect(index, false)
+              e.preventDefault();
+              onActionSelect(index, false);
             }}
             className={`w-full text-left p-3 rounded-lg border transition-all ${
               isCurrent
-                ? 'border-primary bg-primary/10 shadow-md scale-105'
+                ? "border-primary bg-primary/10 shadow-md scale-105"
                 : isPast
-                ? 'border-green-500/30 bg-green-500/5'
-                : 'border-border hover:bg-accent'
+                  ? "border-green-500/30 bg-green-500/5"
+                  : "border-border hover:bg-accent"
             }`}
             title="Left-click for success, right-click for failure"
           >
@@ -89,14 +93,21 @@ function SequentialView({ actions, currentActionIndex, onActionSelect }: Sequent
                 )}
 
                 {/* Action Number */}
-                <Badge variant={isCurrent ? 'default' : 'outline'} className="text-xs">
+                <Badge
+                  variant={isCurrent ? "default" : "outline"}
+                  className="text-xs"
+                >
                   {index + 1}
                 </Badge>
 
                 {/* Action Type */}
                 <span
                   className={`font-semibold truncate ${
-                    isCurrent ? 'text-primary' : isPast ? 'text-green-600' : 'text-foreground'
+                    isCurrent
+                      ? "text-primary"
+                      : isPast
+                        ? "text-green-600"
+                        : "text-foreground"
                   }`}
                   title={action.type}
                 >
@@ -106,7 +117,10 @@ function SequentialView({ actions, currentActionIndex, onActionSelect }: Sequent
 
               {/* Action Name (if available) */}
               {action.name && (
-                <span className="text-xs text-muted-foreground truncate max-w-[100px]" title={action.name}>
+                <span
+                  className="text-xs text-muted-foreground truncate max-w-[100px]"
+                  title={action.name}
+                >
                   {action.name}
                 </span>
               )}
@@ -126,7 +140,7 @@ function SequentialView({ actions, currentActionIndex, onActionSelect }: Sequent
               </div>
             )}
           </button>
-        )
+        );
       })}
 
       {/* Helper text */}
@@ -134,50 +148,50 @@ function SequentialView({ actions, currentActionIndex, onActionSelect }: Sequent
         Left-click: Execute as success • Right-click: Execute as failure
       </div>
     </div>
-  )
+  );
 }
 
 /**
  * Get a human-readable summary of the action configuration
  */
 function getActionSummary(action: Action): string {
-  const config = action.config as any
+  const config = action.config as any;
 
   switch (action.type) {
-    case 'FIND':
-    case 'FIND_STATE_IMAGE':
-      return config?.targetName || 'Find target'
+    case "FIND":
+    case "FIND_STATE_IMAGE":
+      return config?.targetName || "Find target";
 
-    case 'CLICK':
-      return `Click ${config?.targetName || 'target'}`
+    case "CLICK":
+      return `Click ${config?.targetName || "target"}`;
 
-    case 'TYPE_TEXT':
-      return `Type: "${config?.text?.substring(0, 30) || '...'}"`
+    case "TYPE_TEXT":
+      return `Type: "${config?.text?.substring(0, 30) || "..."}"`;
 
-    case 'WAIT':
-      return `Wait ${config?.duration || 1000}ms`
+    case "WAIT":
+      return `Wait ${config?.duration || 1000}ms`;
 
-    case 'STATE_ACTIVATOR':
-      const stateIds = config?.stateIds || []
-      return `Activate ${stateIds.length} state(s)`
+    case "STATE_ACTIVATOR":
+      const stateIds = config?.stateIds || [];
+      return `Activate ${stateIds.length} state(s)`;
 
-    case 'IF':
-      return `If ${config?.condition || 'condition'}`
+    case "IF":
+      return `If ${config?.condition || "condition"}`;
 
-    case 'LOOP':
-      return `Loop ${config?.iterations || '∞'} times`
+    case "LOOP":
+      return `Loop ${config?.iterations || "∞"} times`;
 
-    case 'SWITCH':
-      const cases = config?.cases || []
-      return `Switch: ${cases.length} case(s)`
+    case "SWITCH":
+      const cases = config?.cases || [];
+      return `Switch: ${cases.length} case(s)`;
 
-    case 'SET_VARIABLE':
-      return `Set ${config?.variableName || 'variable'}`
+    case "SET_VARIABLE":
+      return `Set ${config?.variableName || "variable"}`;
 
-    case 'GET_VARIABLE':
-      return `Get ${config?.variableName || 'variable'}`
+    case "GET_VARIABLE":
+      return `Get ${config?.variableName || "variable"}`;
 
     default:
-      return action.type.replace(/_/g, ' ').toLowerCase()
+      return action.type.replace(/_/g, " ").toLowerCase();
   }
 }

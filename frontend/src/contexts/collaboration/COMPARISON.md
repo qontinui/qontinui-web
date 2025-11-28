@@ -5,6 +5,7 @@ This document shows side-by-side comparisons of the refactoring to illustrate th
 ## File Structure Comparison
 
 ### Before (1 file, 408 lines)
+
 ```
 contexts/
 └── collaboration-context.tsx (408 lines)
@@ -18,6 +19,7 @@ contexts/
 ```
 
 ### After (11 files, well-organized)
+
 ```
 contexts/collaboration/
 ├── types.ts (30 lines)
@@ -48,7 +50,9 @@ export function CollaborationProvider({ children, projectId, workflowId }) {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
 
   // Permission state
-  const [projectAccess, setProjectAccess] = useState<PermissionLevel | null>(null);
+  const [projectAccess, setProjectAccess] = useState<PermissionLevel | null>(
+    null
+  );
 
   // Presence state
   const [activeUsers, setActiveUsers] = useState<UserPresence[]>([]);
@@ -69,13 +73,31 @@ export function CollaborationProvider({ children, projectId, workflowId }) {
 
   const value = {
     // All features mixed together
-    currentOrg, organizations, switchOrganization,
-    projectAccess, canView, canComment, canEdit, canAdmin,
-    activeUsers, currentLock, acquireEditLock, releaseEditLock,
-    comments, addComment, activityFeed, isConnected, connect, disconnect
+    currentOrg,
+    organizations,
+    switchOrganization,
+    projectAccess,
+    canView,
+    canComment,
+    canEdit,
+    canAdmin,
+    activeUsers,
+    currentLock,
+    acquireEditLock,
+    releaseEditLock,
+    comments,
+    addComment,
+    activityFeed,
+    isConnected,
+    connect,
+    disconnect,
   };
 
-  return <CollaborationContext.Provider value={value}>{children}</CollaborationContext.Provider>;
+  return (
+    <CollaborationContext.Provider value={value}>
+      {children}
+    </CollaborationContext.Provider>
+  );
 }
 ```
 
@@ -88,23 +110,37 @@ export function OrganizationProvider({ children }) {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
 
   // Only organization-related logic
-  const loadOrganizations = async () => { /* ... */ };
-  const switchOrganization = async (orgId: string) => { /* ... */ };
+  const loadOrganizations = async () => {
+    /* ... */
+  };
+  const switchOrganization = async (orgId: string) => {
+    /* ... */
+  };
 
   const value = { currentOrg, organizations, switchOrganization };
-  return <OrganizationContext.Provider value={value}>{children}</OrganizationContext.Provider>;
+  return (
+    <OrganizationContext.Provider value={value}>
+      {children}
+    </OrganizationContext.Provider>
+  );
 }
 
 // PermissionsContext.tsx (focused, ~90 lines)
 export function PermissionsProvider({ children }) {
-  const [projectAccess, setProjectAccess] = useState<PermissionLevel | null>(null);
+  const [projectAccess, setProjectAccess] = useState<PermissionLevel | null>(
+    null
+  );
 
   // Only permission-related logic
-  const canView = hasPermission('view', projectAccess || 'none');
-  const canEdit = hasPermission('edit', projectAccess || 'none');
+  const canView = hasPermission("view", projectAccess || "none");
+  const canEdit = hasPermission("edit", projectAccess || "none");
 
   const value = { projectAccess, canView, canEdit, canAdmin, hasPermission };
-  return <PermissionsContext.Provider value={value}>{children}</PermissionsContext.Provider>;
+  return (
+    <PermissionsContext.Provider value={value}>
+      {children}
+    </PermissionsContext.Provider>
+  );
 }
 
 // ... and 5 more focused contexts ...
@@ -157,7 +193,7 @@ function MyComponent() {
     activityFeed,
     isConnected,
     connect,
-    disconnect
+    disconnect,
   } = useCollaboration();
 
   // Component re-renders when ANY of these change,
@@ -167,6 +203,7 @@ function MyComponent() {
 ```
 
 **Problems:**
+
 - Unnecessary re-renders
 - Unclear what the component actually uses
 - Large bundle size (imports everything)
@@ -198,6 +235,7 @@ function AnotherComponent() {
 ```
 
 **Benefits:**
+
 - Components only re-render when their specific data changes
 - Clear what each component uses
 - Smaller bundle size (tree-shaking works better)
@@ -209,18 +247,28 @@ function AnotherComponent() {
 
 ```tsx
 // Testing a component that only uses comments
-import { CollaborationProvider } from '@/contexts/collaboration-context';
+import { CollaborationProvider } from "@/contexts/collaboration-context";
 
 // Need to mock EVERYTHING
-jest.mock('@/services/service-factory', () => ({
-  organizationService: { /* mock */ },
-  lockService: { /* mock */ },
-  commentService: { /* mock */ },
-  activityService: { /* mock */ },
+jest.mock("@/services/service-factory", () => ({
+  organizationService: {
+    /* mock */
+  },
+  lockService: {
+    /* mock */
+  },
+  commentService: {
+    /* mock */
+  },
+  activityService: {
+    /* mock */
+  },
 }));
 
-jest.mock('@/services/websocket-collaboration-service', () => ({
-  websocketCollaborationService: { /* mock */ },
+jest.mock("@/services/websocket-collaboration-service", () => ({
+  websocketCollaborationService: {
+    /* mock */
+  },
 }));
 
 const wrapper = ({ children }) => (
@@ -229,12 +277,13 @@ const wrapper = ({ children }) => (
   </CollaborationProvider>
 );
 
-test('should add a comment', async () => {
+test("should add a comment", async () => {
   // Test implementation
 });
 ```
 
 **Problems:**
+
 - Must mock all services, even unused ones
 - Test setup is complex
 - Hard to isolate what's being tested
@@ -244,11 +293,13 @@ test('should add a comment', async () => {
 
 ```tsx
 // Testing a component that only uses comments
-import { CommentsProvider } from '@/contexts/collaboration';
+import { CommentsProvider } from "@/contexts/collaboration";
 
 // Only mock what you need
-jest.mock('@/services/service-factory', () => ({
-  commentService: { /* mock only comment service */ },
+jest.mock("@/services/service-factory", () => ({
+  commentService: {
+    /* mock only comment service */
+  },
 }));
 
 const wrapper = ({ children }) => (
@@ -257,12 +308,13 @@ const wrapper = ({ children }) => (
   </CommentsProvider>
 );
 
-test('should add a comment', async () => {
+test("should add a comment", async () => {
   // Test implementation
 });
 ```
 
 **Benefits:**
+
 - Only mock what's needed
 - Simple, focused test setup
 - Clear what's being tested
@@ -286,7 +338,13 @@ function UserList() {
   // - activity changes (NOT needed)
   // - connection status changes (NOT needed)
 
-  return <div>{activeUsers.map(u => <User key={u.id} {...u} />)}</div>;
+  return (
+    <div>
+      {activeUsers.map((u) => (
+        <User key={u.id} {...u} />
+      ))}
+    </div>
+  );
 }
 ```
 
@@ -300,7 +358,13 @@ function UserList() {
   // ✅ Only re-renders when:
   // - activeUsers change (needed)
 
-  return <div>{activeUsers.map(u => <User key={u.id} {...u} />)}</div>;
+  return (
+    <div>
+      {activeUsers.map((u) => (
+        <User key={u.id} {...u} />
+      ))}
+    </div>
+  );
 }
 ```
 
@@ -309,11 +373,13 @@ function UserList() {
 Assuming 10 components using collaboration context:
 
 **Before:**
+
 - Single comment added → 10 components re-render (even if only 1 uses comments)
 - User presence updates → 10 components re-render (even if only 2 use presence)
 - **Total: 10 re-renders per any change**
 
 **After:**
+
 - Single comment added → 1 component re-renders (only the one using comments)
 - User presence updates → 2 components re-render (only those using presence)
 - **Total: 1-2 re-renders per change**
@@ -350,6 +416,7 @@ export function CollaborationProvider({ ... }) {
 ```
 
 **Problems:**
+
 - One large file with 400+ lines
 - Changes risk breaking other features
 - High merge conflict probability
@@ -383,6 +450,7 @@ export function CommentsProvider({ ... }) {
 ```
 
 **Benefits:**
+
 - Small, focused file (127 lines)
 - Zero risk to other features
 - Low merge conflict probability
@@ -412,12 +480,18 @@ interface CollaborationContextValue {
 
   // Locks
   currentLock: Lock | null;
-  acquireEditLock: (resourceType: ResourceType, resourceId: string) => Promise<void>;
+  acquireEditLock: (
+    resourceType: ResourceType,
+    resourceId: string
+  ) => Promise<void>;
   releaseEditLock: () => Promise<void>;
 
   // Comments
   comments: Comment[];
-  addComment: (content: string, position?: { x: number; y: number }) => Promise<void>;
+  addComment: (
+    content: string,
+    position?: { x: number; y: number }
+  ) => Promise<void>;
 
   // Activity
   activityFeed: Activity[];
@@ -457,7 +531,10 @@ interface PermissionsContextValue {
 // CommentsContext.tsx
 interface CommentsContextValue {
   comments: Comment[];
-  addComment: (content: string, position?: { x: number; y: number }) => Promise<void>;
+  addComment: (
+    content: string,
+    position?: { x: number; y: number }
+  ) => Promise<void>;
   updateComment: (commentId: string, content: string) => Promise<void>;
   deleteComment: (commentId: string) => Promise<void>;
   refreshComments: () => Promise<void>;
@@ -501,9 +578,10 @@ Component imports = only needed chunks loaded
 ```
 
 **Example:**
+
 ```tsx
 // Component only needs permissions
-import { usePermissions } from '@/contexts/collaboration';
+import { usePermissions } from "@/contexts/collaboration";
 
 // Before: Loads ~50KB (entire collaboration context)
 // After: Loads ~8KB (only PermissionsContext)
@@ -547,18 +625,18 @@ import { usePermissions } from '@/contexts/collaboration';
 
 ## Summary: Key Improvements
 
-| Aspect | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| **File Organization** | 1 file, 408 lines | 11 files, ~100 lines each | ✅ Much easier to navigate |
-| **Code Clarity** | Mixed responsibilities | Single responsibility per file | ✅ Clear purpose |
-| **Re-renders** | All components re-render | Only affected components | ✅ 80-90% reduction |
-| **Bundle Size** | Everything loaded | Only needed features | ✅ 50-85% reduction per component |
-| **Testability** | Complex setup, mock everything | Simple setup, mock only needed | ✅ Faster, clearer tests |
-| **Maintainability** | Changes risk breaking other features | Isolated changes | ✅ Safer modifications |
-| **Type Safety** | One large interface | Multiple focused interfaces | ✅ Better IDE support |
-| **Merge Conflicts** | High probability | Low probability | ✅ Team can work in parallel |
-| **Onboarding** | Hard to understand 408 lines | Easy to understand small files | ✅ Faster learning curve |
-| **Debugging** | Hard to trace issues | Easy to find relevant code | ✅ Faster bug fixes |
+| Aspect                | Before                               | After                          | Improvement                       |
+| --------------------- | ------------------------------------ | ------------------------------ | --------------------------------- |
+| **File Organization** | 1 file, 408 lines                    | 11 files, ~100 lines each      | ✅ Much easier to navigate        |
+| **Code Clarity**      | Mixed responsibilities               | Single responsibility per file | ✅ Clear purpose                  |
+| **Re-renders**        | All components re-render             | Only affected components       | ✅ 80-90% reduction               |
+| **Bundle Size**       | Everything loaded                    | Only needed features           | ✅ 50-85% reduction per component |
+| **Testability**       | Complex setup, mock everything       | Simple setup, mock only needed | ✅ Faster, clearer tests          |
+| **Maintainability**   | Changes risk breaking other features | Isolated changes               | ✅ Safer modifications            |
+| **Type Safety**       | One large interface                  | Multiple focused interfaces    | ✅ Better IDE support             |
+| **Merge Conflicts**   | High probability                     | Low probability                | ✅ Team can work in parallel      |
+| **Onboarding**        | Hard to understand 408 lines         | Easy to understand small files | ✅ Faster learning curve          |
+| **Debugging**         | Hard to trace issues                 | Easy to find relevant code     | ✅ Faster bug fixes               |
 
 ## Conclusion
 

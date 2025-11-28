@@ -1,20 +1,27 @@
 // components/integration-testing/SnapshotDetailDialog.tsx
 
-'use client';
+"use client";
 
-import { useEffect } from 'react';
+import { useEffect } from "react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, CheckCircle2, Activity, ImageIcon, Clock, AlertCircle } from 'lucide-react';
-import { useSnapshotAnalysis } from '@/hooks/useSnapshotAnalysis';
-import { formatDistanceToNow } from 'date-fns';
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Loader2,
+  CheckCircle2,
+  Activity,
+  ImageIcon,
+  Clock,
+  AlertCircle,
+} from "lucide-react";
+import { useSnapshotAnalysis } from "@/hooks/useSnapshotAnalysis";
+import { formatDistanceToNow } from "date-fns";
 
 interface SnapshotDetailDialogProps {
   snapshotId: number | null;
@@ -37,12 +44,24 @@ export function SnapshotDetailDialog({
 
   const getRecencyBadge = (recency: string) => {
     switch (recency) {
-      case 'new':
-        return <Badge className="bg-green-100 text-green-800 border-green-300">New</Badge>;
-      case 'recent':
-        return <Badge className="bg-blue-100 text-blue-800 border-blue-300">Recent</Badge>;
-      case 'old':
-        return <Badge className="bg-gray-100 text-gray-800 border-gray-300">Old</Badge>;
+      case "new":
+        return (
+          <Badge className="bg-green-100 text-green-800 border-green-300">
+            New
+          </Badge>
+        );
+      case "recent":
+        return (
+          <Badge className="bg-blue-100 text-blue-800 border-blue-300">
+            Recent
+          </Badge>
+        );
+      case "old":
+        return (
+          <Badge className="bg-gray-100 text-gray-800 border-gray-300">
+            Old
+          </Badge>
+        );
       default:
         return null;
     }
@@ -50,12 +69,24 @@ export function SnapshotDetailDialog({
 
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
-      case 'high':
-        return <Badge className="bg-red-100 text-red-800 border-red-300">High Priority</Badge>;
-      case 'medium':
-        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">Medium Priority</Badge>;
-      case 'low':
-        return <Badge className="bg-gray-100 text-gray-800 border-gray-300">Low Priority</Badge>;
+      case "high":
+        return (
+          <Badge className="bg-red-100 text-red-800 border-red-300">
+            High Priority
+          </Badge>
+        );
+      case "medium":
+        return (
+          <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+            Medium Priority
+          </Badge>
+        );
+      case "low":
+        return (
+          <Badge className="bg-gray-100 text-gray-800 border-gray-300">
+            Low Priority
+          </Badge>
+        );
       default:
         return null;
     }
@@ -97,10 +128,15 @@ export function SnapshotDetailDialog({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {detail.metadata.recency && getRecencyBadge(detail.metadata.recency)}
-                  {detail.metadata.priority && getPriorityBadge(detail.metadata.priority)}
+                  {detail.metadata.recency &&
+                    getRecencyBadge(detail.metadata.recency)}
+                  {detail.metadata.priority &&
+                    getPriorityBadge(detail.metadata.priority)}
                   {detail.metadata.has_duplicates && (
-                    <Badge variant="outline" className="bg-orange-50 text-orange-800 border-orange-300">
+                    <Badge
+                      variant="outline"
+                      className="bg-orange-50 text-orange-800 border-orange-300"
+                    >
                       <AlertCircle className="w-3 h-3 mr-1" />
                       Has Duplicates
                     </Badge>
@@ -139,7 +175,10 @@ export function SnapshotDetailDialog({
                     <span className="text-xs font-medium">Success Rate</span>
                   </div>
                   <div className="text-2xl font-bold text-purple-900 mt-1">
-                    {Math.round((detail.successful_actions / detail.total_actions) * 100)}%
+                    {Math.round(
+                      (detail.successful_actions / detail.total_actions) * 100
+                    )}
+                    %
                   </div>
                 </div>
 
@@ -149,7 +188,9 @@ export function SnapshotDetailDialog({
                     <span className="text-xs font-medium">Duration</span>
                   </div>
                   <div className="text-2xl font-bold text-orange-900 mt-1">
-                    {detail.duration_seconds ? Math.round(detail.duration_seconds) : 'N/A'}
+                    {detail.duration_seconds
+                      ? Math.round(detail.duration_seconds)
+                      : "N/A"}
                   </div>
                   {detail.duration_seconds && (
                     <div className="text-xs text-orange-700 mt-1">seconds</div>
@@ -159,9 +200,11 @@ export function SnapshotDetailDialog({
 
               {/* Timestamp */}
               <div className="text-sm text-gray-600">
-                Created{' '}
+                Created{" "}
                 <span className="font-medium">
-                  {formatDistanceToNow(new Date(detail.start_time), { addSuffix: true })}
+                  {formatDistanceToNow(new Date(detail.start_time), {
+                    addSuffix: true,
+                  })}
                 </span>
               </div>
 
@@ -186,7 +229,11 @@ export function SnapshotDetailDialog({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {detail.action_types.map((actionType) => (
-                    <Badge key={actionType} variant="outline" className="bg-green-50">
+                    <Badge
+                      key={actionType}
+                      variant="outline"
+                      className="bg-green-50"
+                    >
                       {actionType}
                     </Badge>
                   ))}
@@ -210,7 +257,7 @@ export function SnapshotDetailDialog({
                         </div>
                         <div className="p-2">
                           <div className="text-xs text-gray-600 truncate">
-                            {screenshot.states.join(', ')}
+                            {screenshot.states.join(", ")}
                           </div>
                         </div>
                       </div>
@@ -232,7 +279,9 @@ export function SnapshotDetailDialog({
               {/* Tags */}
               {detail.tags && detail.tags.length > 0 && (
                 <div>
-                  <div className="text-sm font-medium text-gray-900 mb-2">Tags</div>
+                  <div className="text-sm font-medium text-gray-900 mb-2">
+                    Tags
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {detail.tags.map((tag) => (
                       <Badge key={tag} variant="secondary">
@@ -246,7 +295,9 @@ export function SnapshotDetailDialog({
               {/* Notes */}
               {detail.notes && (
                 <div>
-                  <div className="text-sm font-medium text-gray-900 mb-2">Notes</div>
+                  <div className="text-sm font-medium text-gray-900 mb-2">
+                    Notes
+                  </div>
                   <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-200">
                     {detail.notes}
                   </div>

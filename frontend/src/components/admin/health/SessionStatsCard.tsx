@@ -5,20 +5,38 @@
  * between standard and remember_me sessions.
  */
 
-import { Users, Clock, TrendingUp, Activity } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts'
-import type { SessionStats } from '@/services/admin/health-service'
+import { Users, Clock, TrendingUp, Activity } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Legend,
+} from "recharts";
+import type { SessionStats } from "@/services/admin/health-service";
 
 interface SessionStatsCardProps {
-  data: SessionStats | null
-  loading?: boolean
+  data: SessionStats | null;
+  loading?: boolean;
 }
 
 const COLORS = {
-  standard: '#3b82f6', // blue
-  remember_me: '#10b981', // green
-}
+  standard: "#3b82f6", // blue
+  remember_me: "#10b981", // green
+};
 
 export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
   if (loading) {
@@ -31,10 +49,12 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center text-muted-foreground py-8">Loading session data...</div>
+          <div className="text-center text-muted-foreground py-8">
+            Loading session data...
+          </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   if (!data) {
@@ -52,15 +72,23 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
           </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   const pieChartData = [
-    { name: 'Standard Sessions', value: data.standard_sessions, color: COLORS.standard },
-    { name: 'Remember Me', value: data.remember_me_sessions, color: COLORS.remember_me },
-  ]
+    {
+      name: "Standard Sessions",
+      value: data.standard_sessions,
+      color: COLORS.standard,
+    },
+    {
+      name: "Remember Me",
+      value: data.remember_me_sessions,
+      color: COLORS.remember_me,
+    },
+  ];
 
-  const hourlyData = (data.hourly_sessions || []).slice(-12) // Last 12 hours
+  const hourlyData = (data.hourly_sessions || []).slice(-12); // Last 12 hours
 
   return (
     <Card>
@@ -69,7 +97,9 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
           <Users className="h-5 w-5" />
           Session Statistics
         </CardTitle>
-        <CardDescription>Active sessions and user engagement metrics</CardDescription>
+        <CardDescription>
+          Active sessions and user engagement metrics
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Key Metrics */}
@@ -79,7 +109,9 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
               <Users className="h-4 w-4" />
               Active Sessions
             </div>
-            <div className="text-2xl font-bold">{(data.total_active_sessions ?? 0).toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              {(data.total_active_sessions ?? 0).toLocaleString()}
+            </div>
           </div>
 
           <div className="space-y-1">
@@ -87,7 +119,9 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
               <Activity className="h-4 w-4" />
               Active Users
             </div>
-            <div className="text-2xl font-bold">{(data.active_users_now ?? 0).toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              {(data.active_users_now ?? 0).toLocaleString()}
+            </div>
           </div>
 
           <div className="space-y-1">
@@ -95,7 +129,9 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
               <TrendingUp className="h-4 w-4" />
               Sessions Today
             </div>
-            <div className="text-2xl font-bold">{(data.sessions_today ?? 0).toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              {(data.sessions_today ?? 0).toLocaleString()}
+            </div>
           </div>
 
           <div className="space-y-1">
@@ -114,7 +150,9 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Standard Sessions</span>
-              <span className="font-medium">{(data.standard_sessions ?? 0).toLocaleString()}</span>
+              <span className="font-medium">
+                {(data.standard_sessions ?? 0).toLocaleString()}
+              </span>
             </div>
             <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
@@ -122,7 +160,8 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
                 style={{
                   width: `${
                     data.total_active_sessions > 0
-                      ? (data.standard_sessions / data.total_active_sessions) * 100
+                      ? (data.standard_sessions / data.total_active_sessions) *
+                        100
                       : 0
                   }%`,
                 }}
@@ -132,8 +171,12 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Remember Me Sessions</span>
-              <span className="font-medium">{(data.remember_me_sessions ?? 0).toLocaleString()}</span>
+              <span className="text-muted-foreground">
+                Remember Me Sessions
+              </span>
+              <span className="font-medium">
+                {(data.remember_me_sessions ?? 0).toLocaleString()}
+              </span>
             </div>
             <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
@@ -141,7 +184,9 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
                 style={{
                   width: `${
                     data.total_active_sessions > 0
-                      ? (data.remember_me_sessions / data.total_active_sessions) * 100
+                      ? (data.remember_me_sessions /
+                          data.total_active_sessions) *
+                        100
                       : 0
                   }%`,
                 }}
@@ -154,14 +199,18 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
         <div className="p-4 rounded-lg bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-muted-foreground">Remember Me Adoption</div>
+              <div className="text-sm text-muted-foreground">
+                Remember Me Adoption
+              </div>
               <div className="text-3xl font-bold text-green-600 dark:text-green-400">
                 {(data.remember_me_percentage ?? 0).toFixed(1)}%
               </div>
             </div>
             {data.total_active_sessions > 0 && (
               <div className="text-right text-sm text-muted-foreground">
-                <div>{data.remember_me_sessions} of {data.total_active_sessions}</div>
+                <div>
+                  {data.remember_me_sessions} of {data.total_active_sessions}
+                </div>
                 <div>sessions</div>
               </div>
             )}
@@ -181,7 +230,9 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) =>
+                      `${name}: ${(percent * 100).toFixed(0)}%`
+                    }
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
@@ -198,10 +249,15 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
             {/* Hourly Sessions Bar Chart */}
             {hourlyData.length > 0 && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium">Sessions (Last 12 Hours)</h4>
+                <h4 className="text-sm font-medium">
+                  Sessions (Last 12 Hours)
+                </h4>
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={hourlyData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      className="stroke-muted"
+                    />
                     <XAxis
                       dataKey="hour"
                       className="text-xs"
@@ -210,9 +266,9 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
                     <YAxis className="text-xs" tick={{ fontSize: 10 }} />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '6px',
+                        backgroundColor: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "6px",
                       }}
                     />
                     <Bar dataKey="count" fill={COLORS.standard} />
@@ -235,5 +291,5 @@ export function SessionStatsCard({ data, loading }: SessionStatsCardProps) {
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

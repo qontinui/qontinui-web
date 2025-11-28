@@ -1,5 +1,5 @@
-import { HttpClient } from './http-client';
-import { ApiConfig } from './api-config';
+import { HttpClient } from "./http-client";
+import { ApiConfig } from "./api-config";
 import type {
   Recording,
   RecordingListResponse,
@@ -10,7 +10,7 @@ import type {
   AcceptanceRequest,
   AcceptanceResponse,
   RecordingStatus,
-} from '@/types/recording';
+} from "@/types/recording";
 
 export class RecordingService {
   private httpClient: HttpClient;
@@ -32,18 +32,18 @@ export class RecordingService {
     onProgress?: (progress: number) => void
   ): Promise<UploadResponse> {
     const formData = new FormData();
-    formData.append('project_id', projectId);
-    formData.append('file', file);
+    formData.append("project_id", projectId);
+    formData.append("file", file);
 
     if (description) {
-      formData.append('description', description);
+      formData.append("description", description);
     }
 
     if (tags && tags.length > 0) {
-      formData.append('tags', JSON.stringify(tags));
+      formData.append("tags", JSON.stringify(tags));
     }
 
-    console.log('[RecordingService] Uploading recording:', {
+    console.log("[RecordingService] Uploading recording:", {
       projectId,
       fileName: file.name,
       fileSize: file.size,
@@ -53,47 +53,47 @@ export class RecordingService {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
-      xhr.upload.addEventListener('progress', (e) => {
+      xhr.upload.addEventListener("progress", (e) => {
         if (e.lengthComputable && onProgress) {
           const progress = (e.loaded / e.total) * 100;
           onProgress(progress);
         }
       });
 
-      xhr.addEventListener('load', () => {
+      xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const response = JSON.parse(xhr.responseText);
-            console.log('[RecordingService] Upload successful:', response);
+            console.log("[RecordingService] Upload successful:", response);
             resolve(response);
           } catch (error) {
-            reject(new Error('Failed to parse response'));
+            reject(new Error("Failed to parse response"));
           }
         } else {
           try {
             const error = JSON.parse(xhr.responseText);
-            reject(new Error(error.detail || 'Upload failed'));
+            reject(new Error(error.detail || "Upload failed"));
           } catch {
             reject(new Error(`Upload failed: ${xhr.statusText}`));
           }
         }
       });
 
-      xhr.addEventListener('error', () => {
-        reject(new Error('Network error during upload'));
+      xhr.addEventListener("error", () => {
+        reject(new Error("Network error during upload"));
       });
 
-      xhr.addEventListener('abort', () => {
-        reject(new Error('Upload cancelled'));
+      xhr.addEventListener("abort", () => {
+        reject(new Error("Upload cancelled"));
       });
 
       // Get auth token
-      const accessToken = this.httpClient['tokenManager'].getAccessToken();
+      const accessToken = this.httpClient["tokenManager"].getAccessToken();
 
-      xhr.open('POST', `${this.apiUrl}/api/v1/recordings/upload`);
+      xhr.open("POST", `${this.apiUrl}/api/v1/recordings/upload`);
 
       if (accessToken) {
-        xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+        xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
       }
 
       xhr.send(formData);
@@ -115,14 +115,17 @@ export class RecordingService {
     });
 
     if (projectId) {
-      params.append('project_id', projectId);
+      params.append("project_id", projectId);
     }
 
     if (status) {
-      params.append('status', status);
+      params.append("status", status);
     }
 
-    console.log('[RecordingService] Listing recordings:', Object.fromEntries(params));
+    console.log(
+      "[RecordingService] Listing recordings:",
+      Object.fromEntries(params)
+    );
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/?${params.toString()}`
@@ -130,7 +133,7 @@ export class RecordingService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('[RecordingService] Failed to list recordings:', {
+      console.error("[RecordingService] Failed to list recordings:", {
         status: response.status,
         statusText: response.statusText,
         errorData,
@@ -145,14 +148,14 @@ export class RecordingService {
    * Get a single recording by ID
    */
   async getRecording(recordingId: string): Promise<Recording> {
-    console.log('[RecordingService] Getting recording:', recordingId);
+    console.log("[RecordingService] Getting recording:", recordingId);
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}`
     );
 
     if (!response.ok) {
-      throw new Error('Failed to get recording');
+      throw new Error("Failed to get recording");
     }
 
     return response.json();
@@ -171,14 +174,18 @@ export class RecordingService {
       limit: limit.toString(),
     });
 
-    console.log('[RecordingService] Getting frames:', { recordingId, skip, limit });
+    console.log("[RecordingService] Getting frames:", {
+      recordingId,
+      skip,
+      limit,
+    });
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}/frames?${params.toString()}`
     );
 
     if (!response.ok) {
-      throw new Error('Failed to get recording frames');
+      throw new Error("Failed to get recording frames");
     }
 
     return response.json();
@@ -187,19 +194,21 @@ export class RecordingService {
   /**
    * Start processing a recording
    */
-  async startProcessing(recordingId: string): Promise<{ success: boolean; message: string }> {
-    console.log('[RecordingService] Starting processing:', recordingId);
+  async startProcessing(
+    recordingId: string
+  ): Promise<{ success: boolean; message: string }> {
+    console.log("[RecordingService] Starting processing:", recordingId);
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}/process`,
       {
-        method: 'POST',
+        method: "POST",
       }
     );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to start processing');
+      throw new Error(errorData.detail || "Failed to start processing");
     }
 
     return response.json();
@@ -214,7 +223,7 @@ export class RecordingService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to get processing status');
+      throw new Error("Failed to get processing status");
     }
 
     return response.json();
@@ -238,11 +247,14 @@ export class RecordingService {
           }
 
           // Check if complete or failed
-          if (status.status === 'completed') {
+          if (status.status === "completed") {
             resolve(status);
             return;
-          } else if (status.status === 'failed' || status.status === 'cancelled') {
-            reject(new Error(status.error || 'Processing failed'));
+          } else if (
+            status.status === "failed" ||
+            status.status === "cancelled"
+          ) {
+            reject(new Error(status.error || "Processing failed"));
             return;
           }
 
@@ -260,8 +272,10 @@ export class RecordingService {
   /**
    * Get discovered state structure
    */
-  async getStateStructure(recordingId: string): Promise<DiscoveredStateStructure> {
-    console.log('[RecordingService] Getting state structure:', recordingId);
+  async getStateStructure(
+    recordingId: string
+  ): Promise<DiscoveredStateStructure> {
+    console.log("[RecordingService] Getting state structure:", recordingId);
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}/state-structure`
@@ -269,7 +283,7 @@ export class RecordingService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to get state structure');
+      throw new Error(errorData.detail || "Failed to get state structure");
     }
 
     return response.json();
@@ -282,19 +296,22 @@ export class RecordingService {
     recordingId: string,
     request: AcceptanceRequest
   ): Promise<AcceptanceResponse> {
-    console.log('[RecordingService] Accepting state structure:', { recordingId, request });
+    console.log("[RecordingService] Accepting state structure:", {
+      recordingId,
+      request,
+    });
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}/state-structure/review`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(request),
       }
     );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to accept state structure');
+      throw new Error(errorData.detail || "Failed to accept state structure");
     }
 
     return response.json();
@@ -304,17 +321,17 @@ export class RecordingService {
    * Delete a recording
    */
   async deleteRecording(recordingId: string): Promise<void> {
-    console.log('[RecordingService] Deleting recording:', recordingId);
+    console.log("[RecordingService] Deleting recording:", recordingId);
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
-      throw new Error('Failed to delete recording');
+      throw new Error("Failed to delete recording");
     }
   }
 }

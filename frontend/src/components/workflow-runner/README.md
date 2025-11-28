@@ -21,7 +21,7 @@ Real-time variable monitoring components for workflow execution. Track variable 
 Main component for monitoring workflow variables.
 
 ```tsx
-import { VariableMonitor } from '@/components/workflow-runner';
+import { VariableMonitor } from "@/components/workflow-runner";
 
 function WorkflowRunner({ runId }: { runId: string }) {
   return (
@@ -29,13 +29,14 @@ function WorkflowRunner({ runId }: { runId: string }) {
       runId={runId}
       refreshInterval={1000}
       defaultTab="current"
-      onRefreshIntervalChange={(interval) => console.log('Interval:', interval)}
+      onRefreshIntervalChange={(interval) => console.log("Interval:", interval)}
     />
   );
 }
 ```
 
 **Props:**
+
 - `runId` (string, required): Workflow run ID
 - `refreshInterval` (number, optional): Auto-refresh interval in ms (default: 1000, 0 = disabled)
 - `defaultTab` (string, optional): Initial tab - "current" | "history" | "global" (default: "current")
@@ -46,7 +47,7 @@ function WorkflowRunner({ runId }: { runId: string }) {
 Standalone timeline component for variable changes.
 
 ```tsx
-import { VariableHistory } from '@/components/workflow-runner';
+import { VariableHistory } from "@/components/workflow-runner";
 
 function ChangeLog({ runId }: { runId: string }) {
   return <VariableHistory runId={runId} refreshInterval={1000} />;
@@ -54,6 +55,7 @@ function ChangeLog({ runId }: { runId: string }) {
 ```
 
 **Props:**
+
 - `runId` (string, required): Workflow run ID
 - `refreshInterval` (number, optional): Auto-refresh interval in ms (default: 1000, 0 = disabled)
 
@@ -64,18 +66,18 @@ function ChangeLog({ runId }: { runId: string }) {
 Custom hook for fetching and managing workflow variables with auto-refresh.
 
 ```tsx
-import { useWorkflowVariables } from '@/hooks/useWorkflowVariables';
+import { useWorkflowVariables } from "@/hooks/useWorkflowVariables";
 
 function CustomMonitor({ runId }: { runId: string }) {
   const {
-    variables,           // Full API response
-    variablesSnapshot,   // Current snapshot
-    flattenedVariables,  // Flat array of WorkflowVariable objects
-    history,             // Array of changes
-    historyTotal,        // Total number of changes
-    isLoading,           // Combined loading state
-    error,               // Combined error state
-    refetch,             // Refetch all data
+    variables, // Full API response
+    variablesSnapshot, // Current snapshot
+    flattenedVariables, // Flat array of WorkflowVariable objects
+    history, // Array of changes
+    historyTotal, // Total number of changes
+    isLoading, // Combined loading state
+    error, // Combined error state
+    refetch, // Refetch all data
   } = useWorkflowVariables(runId, 1000);
 
   if (isLoading) return <div>Loading...</div>;
@@ -94,11 +96,13 @@ function CustomMonitor({ runId }: { runId: string }) {
 ```
 
 **Parameters:**
+
 - `runId` (string): Workflow run ID
 - `refreshInterval` (number, optional): Auto-refresh interval in ms (default: 1000)
 - `enabled` (boolean, optional): Whether to run the query (default: true)
 
 **Returns:**
+
 - `variables`: Full API response (`VariablesResponse`)
 - `variablesSnapshot`: Current snapshot (`VariableSnapshot`)
 - `flattenedVariables`: Flat array of all variables (`WorkflowVariable[]`)
@@ -114,7 +118,7 @@ function CustomMonitor({ runId }: { runId: string }) {
 Standalone hook for fetching only variable change history.
 
 ```tsx
-import { useVariableHistory } from '@/hooks/useWorkflowVariables';
+import { useVariableHistory } from "@/hooks/useWorkflowVariables";
 
 function HistoryPanel({ runId }: { runId: string }) {
   const { data, isLoading, error } = useVariableHistory(runId, 1000);
@@ -140,12 +144,12 @@ function HistoryPanel({ runId }: { runId: string }) {
 
 ```typescript
 interface WorkflowVariable {
-  name: string;                 // Variable name/key
-  value: VariableValue;         // Current value
-  scope: VariableScope;         // 'execution' | 'workflow' | 'global'
-  last_updated: string;         // ISO timestamp
-  last_modified_by?: string;    // Action ID
-  type?: string;                // Inferred type
+  name: string; // Variable name/key
+  value: VariableValue; // Current value
+  scope: VariableScope; // 'execution' | 'workflow' | 'global'
+  last_updated: string; // ISO timestamp
+  last_modified_by?: string; // Action ID
+  type?: string; // Inferred type
 }
 ```
 
@@ -153,15 +157,15 @@ interface WorkflowVariable {
 
 ```typescript
 interface VariableChange {
-  id: string;                   // Unique change ID
-  variable_name: string;        // Variable that changed
-  scope: VariableScope;         // Variable scope
-  old_value: VariableValue | null;  // Previous value
-  new_value: VariableValue | null;  // New value
-  timestamp: string;            // ISO timestamp
-  action_id?: string;           // Action that caused change
-  action_name?: string;         // Action name/label
-  change_type: 'created' | 'updated' | 'deleted';
+  id: string; // Unique change ID
+  variable_name: string; // Variable that changed
+  scope: VariableScope; // Variable scope
+  old_value: VariableValue | null; // Previous value
+  new_value: VariableValue | null; // New value
+  timestamp: string; // ISO timestamp
+  action_id?: string; // Action that caused change
+  action_name?: string; // Action name/label
+  change_type: "created" | "updated" | "deleted";
 }
 ```
 
@@ -189,6 +193,7 @@ GET /api/v1/workflow-runs/{run_id}/variables
 ```
 
 **Response:**
+
 ```json
 {
   "run_id": "workflow-run-123",
@@ -216,6 +221,7 @@ GET /api/v1/workflow-runs/{run_id}/variable-changes
 ```
 
 **Response:**
+
 ```json
 {
   "run_id": "workflow-run-123",
@@ -246,9 +252,13 @@ GET /api/v1/workflow-runs/{run_id}/variable-changes
 
 ```tsx
 // app/(app)/workflows/[id]/run/page.tsx
-import { VariableMonitor } from '@/components/workflow-runner';
+import { VariableMonitor } from "@/components/workflow-runner";
 
-export default function WorkflowRunPage({ params }: { params: { id: string } }) {
+export default function WorkflowRunPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const runId = params.id;
 
   return (
@@ -274,8 +284,8 @@ export default function WorkflowRunPage({ params }: { params: { id: string } }) 
 ### Step 2: Add to Tabs Layout
 
 ```tsx
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { VariableMonitor } from '@/components/workflow-runner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { VariableMonitor } from "@/components/workflow-runner";
 
 function WorkflowRunnerTabs({ runId }: { runId: string }) {
   return (
@@ -305,10 +315,16 @@ function WorkflowRunnerTabs({ runId }: { runId: string }) {
 ### Step 3: Customize Refresh Interval
 
 ```tsx
-import { useState } from 'react';
-import { VariableMonitor } from '@/components/workflow-runner';
+import { useState } from "react";
+import { VariableMonitor } from "@/components/workflow-runner";
 
-function AdaptiveMonitor({ runId, isRunning }: { runId: string; isRunning: boolean }) {
+function AdaptiveMonitor({
+  runId,
+  isRunning,
+}: {
+  runId: string;
+  isRunning: boolean;
+}) {
   const [interval, setInterval] = useState(1000);
 
   return (
@@ -339,6 +355,7 @@ All components are responsive and follow the existing design system.
 ## Keyboard Shortcuts
 
 Coming soon:
+
 - `Ctrl/Cmd + F`: Focus search
 - `Ctrl/Cmd + R`: Manual refresh
 - `Ctrl/Cmd + E`: Export variables
@@ -356,6 +373,7 @@ Coming soon:
 ### Optimization Tips
 
 1. **Disable refresh for completed workflows**:
+
    ```tsx
    <VariableMonitor runId={runId} refreshInterval={isComplete ? 0 : 1000} />
    ```
@@ -394,6 +412,7 @@ Coming soon:
 ## Examples
 
 See `VariableMonitor.example.tsx` for complete examples including:
+
 - Basic usage
 - Custom refresh intervals
 - Dynamic run IDs
@@ -408,22 +427,22 @@ See `VariableMonitor.example.tsx` for complete examples including:
 ### Unit Tests (Coming Soon)
 
 ```tsx
-import { render, screen } from '@testing-library/react';
-import { VariableMonitor } from './VariableMonitor';
+import { render, screen } from "@testing-library/react";
+import { VariableMonitor } from "./VariableMonitor";
 
-test('renders variable monitor', () => {
+test("renders variable monitor", () => {
   render(<VariableMonitor runId="test-run-123" />);
-  expect(screen.getByText('Variable Monitor')).toBeInTheDocument();
+  expect(screen.getByText("Variable Monitor")).toBeInTheDocument();
 });
 ```
 
 ### Integration Tests (Coming Soon)
 
 ```tsx
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 
-test('displays variables in real-time', async ({ page }) => {
-  await page.goto('/workflows/123/run');
+test("displays variables in real-time", async ({ page }) => {
+  await page.goto("/workflows/123/run");
   await expect(page.locator('[data-testid="variable-monitor"]')).toBeVisible();
   // Wait for auto-refresh
   await page.waitForTimeout(1000);
@@ -434,6 +453,7 @@ test('displays variables in real-time', async ({ page }) => {
 ## Contributing
 
 When adding new features:
+
 1. Update TypeScript types in `/src/types/workflow-variables.ts`
 2. Add corresponding hook functions in `/src/hooks/useWorkflowVariables.ts`
 3. Update component props and documentation

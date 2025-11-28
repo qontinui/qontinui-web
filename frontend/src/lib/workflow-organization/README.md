@@ -27,7 +27,7 @@ import type {
   TestCase,
   DependencyGraph,
   WorkflowMetrics,
-} from '@/lib/workflow-organization';
+} from "@/lib/workflow-organization";
 ```
 
 ## Usage Examples
@@ -35,17 +35,17 @@ import type {
 ### Folder System
 
 ```typescript
-import type { WorkflowFolder, FolderTree } from '@/lib/workflow-organization';
+import type { WorkflowFolder, FolderTree } from "@/lib/workflow-organization";
 
 const folder: WorkflowFolder = {
-  id: 'folder-1',
-  name: 'Authentication',
+  id: "folder-1",
+  name: "Authentication",
   parentId: null,
-  path: '/authentication',
-  children: ['folder-2', 'folder-3'],
-  workflowIds: ['wf-1', 'wf-2'],
-  color: '#3b82f6',
-  icon: 'lock',
+  path: "/authentication",
+  children: ["folder-2", "folder-3"],
+  workflowIds: ["wf-1", "wf-2"],
+  color: "#3b82f6",
+  icon: "lock",
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
@@ -54,26 +54,26 @@ const folder: WorkflowFolder = {
 ### Testing
 
 ```typescript
-import type { TestCase, TestAssertion } from '@/lib/workflow-organization';
+import type { TestCase, TestAssertion } from "@/lib/workflow-organization";
 
 const testCase: TestCase = {
-  id: 'test-1',
-  name: 'Login flow validation',
-  workflowId: 'wf-1',
-  description: 'Validates successful login',
+  id: "test-1",
+  name: "Login flow validation",
+  workflowId: "wf-1",
+  description: "Validates successful login",
   inputs: {
-    username: 'test@example.com',
-    password: 'password123',
+    username: "test@example.com",
+    password: "password123",
   },
   assertions: [
     {
-      type: 'equals',
-      path: 'output.success',
+      type: "equals",
+      path: "output.success",
       expected: true,
-      description: 'Login should succeed',
+      description: "Login should succeed",
     },
   ],
-  status: 'pending',
+  status: "pending",
   enabled: true,
 };
 ```
@@ -81,23 +81,29 @@ const testCase: TestCase = {
 ### Dependencies
 
 ```typescript
-import type { WorkflowDependency, DependencyGraph } from '@/lib/workflow-organization';
+import type {
+  WorkflowDependency,
+  DependencyGraph,
+} from "@/lib/workflow-organization";
 
 const dependency: WorkflowDependency = {
-  sourceWorkflowId: 'wf-1',
-  targetWorkflowId: 'wf-2',
-  actionId: 'action-5',
-  type: 'workflow-call',
+  sourceWorkflowId: "wf-1",
+  targetWorkflowId: "wf-2",
+  actionId: "action-5",
+  type: "workflow-call",
 };
 ```
 
 ### Metrics
 
 ```typescript
-import type { WorkflowMetrics, ComplexityMetrics } from '@/lib/workflow-organization';
+import type {
+  WorkflowMetrics,
+  ComplexityMetrics,
+} from "@/lib/workflow-organization";
 
 const metrics: WorkflowMetrics = {
-  workflowId: 'wf-1',
+  workflowId: "wf-1",
   executionCount: 100,
   avgDuration: 1500,
   minDuration: 800,
@@ -105,18 +111,18 @@ const metrics: WorkflowMetrics = {
   successRate: 0.95,
   errorRate: 0.05,
   lastRun: new Date().toISOString(),
-  lastStatus: 'success',
+  lastStatus: "success",
 };
 
 const complexity: ComplexityMetrics = {
-  workflowId: 'wf-1',
+  workflowId: "wf-1",
   actionCount: 15,
   connectionCount: 18,
   maxDepth: 5,
   branchingFactor: 1.2,
   cyclomaticComplexity: 8,
   score: 45,
-  rating: 'moderate',
+  rating: "moderate",
   actionTypeDistribution: {
     CLICK: 5,
     TYPE: 3,
@@ -129,18 +135,18 @@ const complexity: ComplexityMetrics = {
 ### Search & Filter
 
 ```typescript
-import type { SearchFilter, SearchResult } from '@/lib/workflow-organization';
+import type { SearchFilter, SearchResult } from "@/lib/workflow-organization";
 
 const filter: SearchFilter = {
-  text: 'login',
-  tags: ['authentication', 'critical'],
-  folders: ['folder-1'],
+  text: "login",
+  tags: ["authentication", "critical"],
+  folders: ["folder-1"],
   complexity: {
-    rating: ['simple', 'moderate'],
+    rating: ["simple", "moderate"],
     maxActions: 25,
   },
-  sortBy: 'updated',
-  sortOrder: 'desc',
+  sortBy: "updated",
+  sortOrder: "desc",
   limit: 20,
 };
 ```
@@ -148,13 +154,16 @@ const filter: SearchFilter = {
 ### Bulk Operations
 
 ```typescript
-import type { BulkOperation, BulkOperationResult } from '@/lib/workflow-organization';
+import type {
+  BulkOperation,
+  BulkOperationResult,
+} from "@/lib/workflow-organization";
 
 const operation: BulkOperation = {
-  type: 'move',
-  workflowIds: ['wf-1', 'wf-2', 'wf-3'],
+  type: "move",
+  workflowIds: ["wf-1", "wf-2", "wf-3"],
   parameters: {
-    targetFolderId: 'folder-5',
+    targetFolderId: "folder-5",
   },
   requireConfirmation: true,
 };
@@ -170,21 +179,27 @@ import {
   isTestSuccessful,
   hasCircularDependencies,
   isRootFolder,
-} from '@/lib/workflow-organization';
+} from "@/lib/workflow-organization";
 
-const assertion: TestAssertion = { /* ... */ };
+const assertion: TestAssertion = {
+  /* ... */
+};
 if (isAssertionPassed(assertion)) {
-  console.log('Assertion passed!');
+  console.log("Assertion passed!");
 }
 
-const result: TestResult = { /* ... */ };
+const result: TestResult = {
+  /* ... */
+};
 if (isTestSuccessful(result)) {
-  console.log('Test passed!');
+  console.log("Test passed!");
 }
 
-const analysis: DependencyAnalysis = { /* ... */ };
+const analysis: DependencyAnalysis = {
+  /* ... */
+};
 if (hasCircularDependencies(analysis)) {
-  console.warn('Circular dependencies detected!');
+  console.warn("Circular dependencies detected!");
 }
 ```
 
@@ -197,7 +212,7 @@ import {
   COMPLEXITY_THRESHOLDS,
   DEFAULT_TEST_TIMEOUT,
   MAX_FOLDER_DEPTH,
-} from '@/lib/workflow-organization';
+} from "@/lib/workflow-organization";
 
 console.log(COMPLEXITY_THRESHOLDS.SIMPLE.maxActions); // 10
 console.log(DEFAULT_TEST_TIMEOUT); // 60000 (60 seconds)

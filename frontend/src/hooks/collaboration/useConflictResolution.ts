@@ -5,7 +5,7 @@
  * Handles conflict checking, resolution, auto-resolution, and real-time notifications.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Conflict,
   ResolutionStrategy,
@@ -14,10 +14,10 @@ import {
   AutoResolutionResult,
   ResourceType,
   UseConflictResolutionOptions,
-  UseConflictResolutionReturn
-} from './types'
-import { conflictResolutionService } from '../../services/collaboration/conflict-resolution-service'
-import { syncService } from '../../services/collaboration/sync-service'
+  UseConflictResolutionReturn,
+} from "./types";
+import { conflictResolutionService } from "../../services/collaboration/conflict-resolution-service";
+import { syncService } from "../../services/collaboration/sync-service";
 
 /**
  * Hook for managing conflict resolution
@@ -38,23 +38,23 @@ export function useConflictResolution(
     autoCheck = false,
     autoResolve: autoResolveEnabled = false,
     pollingInterval = 5000,
-    enableRealtimeNotifications = true
-  } = options
+    enableRealtimeNotifications = true,
+  } = options;
 
-  const [conflicts, setConflicts] = useState<Conflict[]>([])
-  const [hasConflicts, setHasConflicts] = useState(false)
-  const [isChecking, setIsChecking] = useState(false)
-  const [isResolving, setIsResolving] = useState(false)
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [hasConflicts, setHasConflicts] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
 
-  const pollingIntervalRef = useRef<number | null>(null)
-  const lastCheckRef = useRef<Date>(new Date())
+  const pollingIntervalRef = useRef<number | null>(null);
+  const lastCheckRef = useRef<Date>(new Date());
 
   /**
    * Check for conflicts
    */
   const checkForConflicts = useCallback(
     async (localChanges: any): Promise<ConflictCheckResult> => {
-      setIsChecking(true)
+      setIsChecking(true);
 
       try {
         const result = await conflictResolutionService.checkForConflicts(
@@ -62,32 +62,32 @@ export function useConflictResolution(
           resourceType,
           resourceId,
           localChanges
-        )
+        );
 
         if (result.conflicts.length > 0) {
-          setConflicts(result.conflicts)
-          setHasConflicts(true)
+          setConflicts(result.conflicts);
+          setHasConflicts(true);
 
           // Auto-resolve if enabled and possible
           if (autoResolveEnabled && result.canSave) {
-            await autoResolveConflicts()
+            await autoResolveConflicts();
           }
         } else {
-          setConflicts([])
-          setHasConflicts(false)
+          setConflicts([]);
+          setHasConflicts(false);
         }
 
-        lastCheckRef.current = new Date()
-        return result
+        lastCheckRef.current = new Date();
+        return result;
       } catch (error) {
-        console.error('Error checking for conflicts:', error)
-        throw error
+        console.error("Error checking for conflicts:", error);
+        throw error;
       } finally {
-        setIsChecking(false)
+        setIsChecking(false);
       }
     },
     [projectId, resourceType, resourceId, autoResolveEnabled]
-  )
+  );
 
   /**
    * Resolve a specific conflict
@@ -98,53 +98,54 @@ export function useConflictResolution(
       strategy: ResolutionStrategy,
       resolution?: any
     ): Promise<void> => {
-      setIsResolving(true)
+      setIsResolving(true);
 
       try {
         await conflictResolutionService.resolveConflict(
           conflictId,
           strategy,
           resolution
-        )
+        );
 
         // Remove resolved conflict from state
-        setConflicts(prev => prev.filter(c => c.id !== conflictId))
+        setConflicts((prev) => prev.filter((c) => c.id !== conflictId));
 
         // Update hasConflicts flag
         if (conflicts.length === 1) {
-          setHasConflicts(false)
+          setHasConflicts(false);
         }
       } catch (error) {
-        console.error('Error resolving conflict:', error)
-        throw error
+        console.error("Error resolving conflict:", error);
+        throw error;
       } finally {
-        setIsResolving(false)
+        setIsResolving(false);
       }
     },
     [conflicts.length]
-  )
+  );
 
   /**
    * Auto-resolve all resolvable conflicts
    */
-  const autoResolveConflicts = useCallback(async (): Promise<AutoResolutionResult> => {
-    setIsResolving(true)
+  const autoResolveConflicts =
+    useCallback(async (): Promise<AutoResolutionResult> => {
+      setIsResolving(true);
 
-    try {
-      const result = await conflictResolutionService.autoResolve(conflicts)
+      try {
+        const result = await conflictResolutionService.autoResolve(conflicts);
 
-      // Update conflicts to only show those requiring manual resolution
-      setConflicts(result.requiresManual)
-      setHasConflicts(result.requiresManual.length > 0)
+        // Update conflicts to only show those requiring manual resolution
+        setConflicts(result.requiresManual);
+        setHasConflicts(result.requiresManual.length > 0);
 
-      return result
-    } catch (error) {
-      console.error('Error auto-resolving conflicts:', error)
-      throw error
-    } finally {
-      setIsResolving(false)
-    }
-  }, [conflicts])
+        return result;
+      } catch (error) {
+        console.error("Error auto-resolving conflicts:", error);
+        throw error;
+      } finally {
+        setIsResolving(false);
+      }
+    }, [conflicts]);
 
   /**
    * Get detailed information about a conflict
@@ -152,22 +153,22 @@ export function useConflictResolution(
   const getConflictDetails = useCallback(
     async (conflictId: string): Promise<ConflictDetails> => {
       try {
-        return await conflictResolutionService.getConflictDetails(conflictId)
+        return await conflictResolutionService.getConflictDetails(conflictId);
       } catch (error) {
-        console.error('Error fetching conflict details:', error)
-        throw error
+        console.error("Error fetching conflict details:", error);
+        throw error;
       }
     },
     []
-  )
+  );
 
   /**
    * Clear all conflicts
    */
   const clearConflicts = useCallback(() => {
-    setConflicts([])
-    setHasConflicts(false)
-  }, [])
+    setConflicts([]);
+    setHasConflicts(false);
+  }, []);
 
   /**
    * Refresh conflict state
@@ -175,15 +176,15 @@ export function useConflictResolution(
   const refresh = useCallback(async (): Promise<void> => {
     // Re-check for conflicts by fetching latest server version
     // This would need to be implemented based on current state
-    console.log('Refreshing conflict state...')
-  }, [])
+    console.log("Refreshing conflict state...");
+  }, []);
 
   /**
    * Handle real-time conflict notifications
    */
   useEffect(() => {
     if (!enableRealtimeNotifications) {
-      return
+      return;
     }
 
     const handleConflict = (conflict: Conflict) => {
@@ -192,32 +193,32 @@ export function useConflictResolution(
         conflict.resourceType === resourceType &&
         conflict.resourceId === resourceId
       ) {
-        setConflicts(prev => {
+        setConflicts((prev) => {
           // Check if conflict already exists
-          const exists = prev.some(c => c.id === conflict.id)
+          const exists = prev.some((c) => c.id === conflict.id);
           if (exists) {
-            return prev.map(c => (c.id === conflict.id ? conflict : c))
+            return prev.map((c) => (c.id === conflict.id ? conflict : c));
           }
-          return [...prev, conflict]
-        })
-        setHasConflicts(true)
+          return [...prev, conflict];
+        });
+        setHasConflicts(true);
       }
-    }
+    };
 
     // Register with sync service
-    syncService.onConflictDetected(handleConflict)
+    syncService.onConflictDetected(handleConflict);
 
     return () => {
       // Cleanup would go here if we had an unregister method
-    }
-  }, [resourceType, resourceId, enableRealtimeNotifications])
+    };
+  }, [resourceType, resourceId, enableRealtimeNotifications]);
 
   /**
    * Setup polling for conflict checking
    */
   useEffect(() => {
     if (!autoCheck || pollingInterval <= 0) {
-      return
+      return;
     }
 
     pollingIntervalRef.current = window.setInterval(() => {
@@ -225,17 +226,17 @@ export function useConflictResolution(
       if (!isChecking && !isResolving) {
         // This would need current state to check against
         // For now, we just track that polling is active
-        console.log('Polling for conflicts...')
+        console.log("Polling for conflicts...");
       }
-    }, pollingInterval)
+    }, pollingInterval);
 
     return () => {
       if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-        pollingIntervalRef.current = null
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
-    }
-  }, [autoCheck, pollingInterval, isChecking, isResolving])
+    };
+  }, [autoCheck, pollingInterval, isChecking, isResolving]);
 
   /**
    * Cleanup on unmount
@@ -243,10 +244,10 @@ export function useConflictResolution(
   useEffect(() => {
     return () => {
       if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
+        clearInterval(pollingIntervalRef.current);
       }
-    }
-  }, [])
+    };
+  }, []);
 
   return {
     conflicts,
@@ -258,6 +259,6 @@ export function useConflictResolution(
     autoResolve: autoResolveConflicts,
     getConflictDetails,
     clearConflicts,
-    refresh
-  }
+    refresh,
+  };
 }

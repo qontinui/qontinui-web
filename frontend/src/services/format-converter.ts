@@ -5,25 +5,25 @@
  * Handles conversion, validation, preview, and integration with stores.
  */
 
-import type { Workflow, Action } from '../lib/action-schema/action-types';
+import type { Workflow, Action } from "../lib/action-schema/action-types";
 import {
   SequentialToGraphConverter,
   type ConverterOptions as SeqToGraphOptions,
   type ConversionResult as SeqToGraphResult,
-} from '../lib/workflow-converter/sequential-to-graph-converter';
+} from "../lib/workflow-converter/sequential-to-graph-converter";
 import {
   GraphToSequentialConverter,
   type ConversionOptions as GraphToSeqOptions,
-} from '../lib/workflow-converter/graph-to-sequential-converter';
+} from "../lib/workflow-converter/graph-to-sequential-converter";
 import {
   LinearizabilityChecker,
   type LinearizabilityResult,
-} from '../lib/workflow-converter/linearizability-checker';
+} from "../lib/workflow-converter/linearizability-checker";
 import {
   validateConversion,
   type ConversionValidationResult,
   type ValidationIssue,
-} from './conversion-validation';
+} from "./conversion-validation";
 
 // ============================================================================
 // Types
@@ -86,10 +86,10 @@ export interface ConversionPreview {
   canConvert: boolean;
 
   /** Source format */
-  fromFormat: 'sequential' | 'graph';
+  fromFormat: "sequential" | "graph";
 
   /** Target format */
-  toFormat: 'sequential' | 'graph';
+  toFormat: "sequential" | "graph";
 
   /** Linearizability check (for graph to sequential) */
   linearizability?: LinearizabilityResult;
@@ -106,10 +106,10 @@ export interface ConversionPreview {
   warnings: ConversionWarning[];
 
   /** Estimated impact */
-  impact: 'none' | 'low' | 'medium' | 'high';
+  impact: "none" | "low" | "medium" | "high";
 
   /** Recommended action */
-  recommendation: 'safe' | 'review' | 'caution' | 'not_recommended';
+  recommendation: "safe" | "review" | "caution" | "not_recommended";
 }
 
 export interface ConversionOptions {
@@ -120,7 +120,7 @@ export interface ConversionOptions {
   autoLayout?: boolean;
 
   /** Layout style for auto-layout */
-  layoutStyle?: 'hierarchical' | 'horizontal' | 'tree';
+  layoutStyle?: "hierarchical" | "horizontal" | "tree";
 
   /** Preserve action IDs */
   preserveIds?: boolean;
@@ -159,14 +159,14 @@ export class FormatConverter {
 
     try {
       // If already in graph format, return as-is
-      if (workflow.format === 'graph') {
+      if (workflow.format === "graph") {
         return {
           success: true,
           workflow,
           warnings: [
             {
-              code: 'ALREADY_GRAPH_FORMAT',
-              message: 'Workflow is already in graph format',
+              code: "ALREADY_GRAPH_FORMAT",
+              message: "Workflow is already in graph format",
             },
           ],
           statistics: {
@@ -203,7 +203,7 @@ export class FormatConverter {
           ...workflow.metadata,
           ...result.workflow.metadata,
           converted: new Date().toISOString(),
-          convertedFrom: 'sequential',
+          convertedFrom: "sequential",
         },
         tags: workflow.tags,
       };
@@ -226,7 +226,7 @@ export class FormatConverter {
 
       // Convert warnings
       const warnings: ConversionWarning[] = result.warnings.map((w) => ({
-        code: 'CONVERTER_WARNING',
+        code: "CONVERTER_WARNING",
         message: w,
       }));
 
@@ -242,8 +242,9 @@ export class FormatConverter {
         success: false,
         errors: [
           {
-            code: 'CONVERSION_FAILED',
-            message: error.message || 'Failed to convert workflow to graph format',
+            code: "CONVERSION_FAILED",
+            message:
+              error.message || "Failed to convert workflow to graph format",
             details: error,
           },
         ],
@@ -276,13 +277,13 @@ export class FormatConverter {
           success: false,
           errors: [
             {
-              code: 'NOT_LINEARIZABLE',
-              message: 'Workflow cannot be converted to sequential format',
+              code: "NOT_LINEARIZABLE",
+              message: "Workflow cannot be converted to sequential format",
               details: linearizability.issues,
             },
           ],
           warnings: linearizability.issues.map((issue) => ({
-            code: 'LINEARIZABILITY_ISSUE',
+            code: "LINEARIZABILITY_ISSUE",
             message: issue,
           })),
         };
@@ -295,7 +296,10 @@ export class FormatConverter {
         validateOutput: options.validate ?? true,
       };
 
-      const actions = this.graphToSeqConverter.convert(workflow, converterOptions);
+      const actions = this.graphToSeqConverter.convert(
+        workflow,
+        converterOptions
+      );
 
       // Create sequential workflow
       // Note: Sequential format uses same Workflow structure but without connections
@@ -303,7 +307,7 @@ export class FormatConverter {
         id: workflow.id,
         name: workflow.name,
         version: workflow.version,
-        format: 'graph', // Still use graph format (sequential is just a special case)
+        format: "graph", // Still use graph format (sequential is just a special case)
         actions,
         connections: {}, // Empty connections for sequential
         variables: workflow.variables,
@@ -311,7 +315,7 @@ export class FormatConverter {
         metadata: {
           ...workflow.metadata,
           converted: new Date().toISOString(),
-          convertedFrom: 'graph',
+          convertedFrom: "graph",
         },
         tags: workflow.tags,
       };
@@ -344,8 +348,10 @@ export class FormatConverter {
         success: false,
         errors: [
           {
-            code: 'CONVERSION_FAILED',
-            message: error.message || 'Failed to convert workflow to sequential format',
+            code: "CONVERSION_FAILED",
+            message:
+              error.message ||
+              "Failed to convert workflow to sequential format",
             details: error,
           },
         ],
@@ -381,11 +387,11 @@ export class FormatConverter {
    */
   previewConversion(
     workflow: Workflow,
-    toFormat: 'sequential' | 'graph'
+    toFormat: "sequential" | "graph"
   ): ConversionPreview {
-    const fromFormat = workflow.format === 'graph' ? 'graph' : 'sequential';
+    const fromFormat = workflow.format === "graph" ? "graph" : "sequential";
 
-    if (toFormat === 'graph') {
+    if (toFormat === "graph") {
       return this.previewToGraph(workflow);
     } else {
       return this.previewToSequential(workflow);
@@ -401,23 +407,24 @@ export class FormatConverter {
 
     // Check for control flow that will become explicit connections
     const controlFlowCount = workflow.actions.filter((a) =>
-      ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH'].includes(a.type)
+      ["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(a.type)
     ).length;
 
     if (controlFlowCount > 0) {
       warnings.push({
-        code: 'CONTROL_FLOW_EXPANSION',
+        code: "CONTROL_FLOW_EXPANSION",
         message: `${controlFlowCount} control flow actions will be expanded into graph connections`,
       });
     }
 
     // Estimate connection count
-    const estimatedConnections = workflow.actions.length - 1 + controlFlowCount * 2;
+    const estimatedConnections =
+      workflow.actions.length - 1 + controlFlowCount * 2;
 
     return {
       canConvert: true,
-      fromFormat: 'sequential',
-      toFormat: 'graph',
+      fromFormat: "sequential",
+      toFormat: "graph",
       changes: {
         actionsAdded: 0,
         actionsRemoved: 0,
@@ -425,8 +432,8 @@ export class FormatConverter {
         connectionsChanged: estimatedConnections,
       },
       warnings,
-      impact: controlFlowCount > 5 ? 'medium' : 'low',
-      recommendation: 'safe',
+      impact: controlFlowCount > 5 ? "medium" : "low",
+      recommendation: "safe",
     };
   }
 
@@ -440,8 +447,8 @@ export class FormatConverter {
     if (!linearizability.linearizable) {
       return {
         canConvert: false,
-        fromFormat: 'graph',
-        toFormat: 'sequential',
+        fromFormat: "graph",
+        toFormat: "sequential",
         linearizability,
         changes: {
           actionsAdded: 0,
@@ -450,11 +457,11 @@ export class FormatConverter {
           connectionsChanged: 0,
         },
         warnings: linearizability.issues.map((issue) => ({
-          code: 'LINEARIZABILITY_ISSUE',
+          code: "LINEARIZABILITY_ISSUE",
           message: issue,
         })),
-        impact: 'high',
-        recommendation: 'not_recommended',
+        impact: "high",
+        recommendation: "not_recommended",
       };
     }
 
@@ -463,14 +470,14 @@ export class FormatConverter {
     if (details) {
       if (details.mergeNodeCount > 0) {
         warnings.push({
-          code: 'MERGE_NODES',
+          code: "MERGE_NODES",
           message: `${details.mergeNodeCount} merge nodes will need to be linearized`,
         });
       }
 
       if (details.parallelBranchCount > 0) {
         warnings.push({
-          code: 'PARALLEL_BRANCHES',
+          code: "PARALLEL_BRANCHES",
           message: `${details.parallelBranchCount} parallel branches will be serialized`,
         });
       }
@@ -480,25 +487,25 @@ export class FormatConverter {
     const connectionCount = Object.keys(workflow.connections || {}).length;
 
     // Determine impact and recommendation
-    let impact: ConversionPreview['impact'] = 'low';
-    let recommendation: ConversionPreview['recommendation'] = 'safe';
+    let impact: ConversionPreview["impact"] = "low";
+    let recommendation: ConversionPreview["recommendation"] = "safe";
 
     if (details) {
       if (details.mergeNodeCount > 0 || details.parallelBranchCount > 0) {
-        impact = 'medium';
-        recommendation = 'review';
+        impact = "medium";
+        recommendation = "review";
       }
 
       if (details.mergeNodeCount > 3 || details.parallelBranchCount > 3) {
-        impact = 'high';
-        recommendation = 'caution';
+        impact = "high";
+        recommendation = "caution";
       }
     }
 
     return {
       canConvert: true,
-      fromFormat: 'graph',
-      toFormat: 'sequential',
+      fromFormat: "graph",
+      toFormat: "sequential",
       linearizability,
       changes: {
         actionsAdded: 0,
@@ -519,7 +526,10 @@ export class FormatConverter {
   /**
    * Validate a converted workflow
    */
-  validateConversion(original: Workflow, converted: Workflow): ConversionValidationResult {
+  validateConversion(
+    original: Workflow,
+    converted: Workflow
+  ): ConversionValidationResult {
     return validateConversion(original, converted);
   }
 }

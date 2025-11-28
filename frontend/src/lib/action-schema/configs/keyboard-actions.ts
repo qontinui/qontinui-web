@@ -2,7 +2,7 @@
  * Keyboard action configurations
  */
 
-import { TargetConfig } from '../shared/target-config';
+import { TargetConfig } from "../shared/target-config";
 
 /**
  * TYPE - Type text

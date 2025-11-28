@@ -7,16 +7,20 @@
  */
 export async function calculateImageHash(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const hashHex = hashArray
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
   return hashHex;
 }
 
 /**
  * Calculate hashes for multiple image files
  */
-export async function calculateImageHashes(files: File[]): Promise<Map<string, string>> {
+export async function calculateImageHashes(
+  files: File[]
+): Promise<Map<string, string>> {
   const hashes = new Map<string, string>();
 
   for (const file of files) {
@@ -34,7 +38,10 @@ export async function calculateImageHashes(files: File[]): Promise<Map<string, s
 /**
  * Check if an image hash exists in a list of existing hashes
  */
-export function isDuplicateImage(hash: string, existingHashes: string[]): boolean {
+export function isDuplicateImage(
+  hash: string,
+  existingHashes: string[]
+): boolean {
   return existingHashes.includes(hash);
 }
 
@@ -44,7 +51,7 @@ export function isDuplicateImage(hash: string, existingHashes: string[]): boolea
 export async function filterDuplicateImages(
   files: File[],
   existingHashes: string[]
-): Promise<{ unique: File[], duplicates: File[] }> {
+): Promise<{ unique: File[]; duplicates: File[] }> {
   const unique: File[] = [];
   const duplicates: File[] = [];
 

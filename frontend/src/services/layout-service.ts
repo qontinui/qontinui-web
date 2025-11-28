@@ -12,10 +12,14 @@
  * - Calculate layout quality metrics
  */
 
-import { AutoLayout, LayoutStyle, LayoutConfig } from '@/lib/workflow-layout/auto-layout';
-import type { Workflow, Action } from '@/lib/action-schema/action-types';
-import { calculateLayoutStatistics, compareLayouts } from './layout-statistics';
-import type { LayoutStatistics, LayoutComparison } from './layout-statistics';
+import {
+  AutoLayout,
+  LayoutStyle,
+  LayoutConfig,
+} from "@/lib/workflow-layout/auto-layout";
+import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import { calculateLayoutStatistics, compareLayouts } from "./layout-statistics";
+import type { LayoutStatistics, LayoutComparison } from "./layout-statistics";
 
 // ============================================================================
 // Types
@@ -128,7 +132,7 @@ export class LayoutService {
     const preservedPositions = new Map<string, [number, number]>();
     if (opts.preserveManualPositions && opts.preservedNodeIds) {
       for (const nodeId of opts.preservedNodeIds) {
-        const action = workflow.actions.find(a => a.id === nodeId);
+        const action = workflow.actions.find((a) => a.id === nodeId);
         if (action?.position) {
           preservedPositions.set(nodeId, [...action.position]);
         }
@@ -141,7 +145,7 @@ export class LayoutService {
     // Restore preserved positions
     if (preservedPositions.size > 0) {
       for (const [nodeId, position] of preservedPositions.entries()) {
-        const action = workflow.actions.find(a => a.id === nodeId);
+        const action = workflow.actions.find((a) => a.id === nodeId);
         if (action) {
           action.position = position;
         }
@@ -206,8 +210,10 @@ export class LayoutService {
         const [x1, y1] = a1.position;
         const [x2, y2] = a2.position;
 
-        const overlapX = Math.abs(x1 - x2) < config.nodeWidth + config.minNodeSpacing;
-        const overlapY = Math.abs(y1 - y2) < config.nodeHeight + config.minNodeSpacing;
+        const overlapX =
+          Math.abs(x1 - x2) < config.nodeWidth + config.minNodeSpacing;
+        const overlapY =
+          Math.abs(y1 - y2) < config.nodeHeight + config.minNodeSpacing;
 
         if (overlapX && overlapY) return true;
       }
@@ -220,7 +226,11 @@ export class LayoutService {
    * Check if workflow has unpositioned nodes
    */
   hasUnpositioned(workflow: Workflow): boolean {
-    return workflow.actions.some(action => !action.position || action.position[0] === 0 && action.position[1] === 0);
+    return workflow.actions.some(
+      (action) =>
+        !action.position ||
+        (action.position[0] === 0 && action.position[1] === 0)
+    );
   }
 
   /**
@@ -238,67 +248,80 @@ export class LayoutService {
 
     // Hierarchical - default, good for most workflows
     let hierarchicalScore = 0.7;
-    let hierarchicalReason = 'Good general-purpose layout';
+    let hierarchicalReason = "Good general-purpose layout";
 
     if (branchingCount > 0) {
       hierarchicalScore += 0.15;
-      hierarchicalReason = 'Optimal for workflows with branching logic';
+      hierarchicalReason = "Optimal for workflows with branching logic";
     }
 
     if (depth > 5) {
       hierarchicalScore += 0.1;
-      hierarchicalReason = 'Best for deep hierarchical structures';
+      hierarchicalReason = "Best for deep hierarchical structures";
     }
 
-    scores.set(LayoutStyle.HIERARCHICAL, { score: hierarchicalScore, reason: hierarchicalReason });
+    scores.set(LayoutStyle.HIERARCHICAL, {
+      score: hierarchicalScore,
+      reason: hierarchicalReason,
+    });
 
     // Horizontal - good for linear flows
     let horizontalScore = 0.5;
-    let horizontalReason = 'Alternative left-to-right flow';
+    let horizontalReason = "Alternative left-to-right flow";
 
     if (branchingCount === 0 && depth <= 10) {
       horizontalScore = 0.8;
-      horizontalReason = 'Optimal for linear sequential flows';
+      horizontalReason = "Optimal for linear sequential flows";
     }
 
-    scores.set(LayoutStyle.HORIZONTAL, { score: horizontalScore, reason: horizontalReason });
+    scores.set(LayoutStyle.HORIZONTAL, {
+      score: horizontalScore,
+      reason: horizontalReason,
+    });
 
     // Tree - good for hierarchical structures
     let treeScore = 0.6;
-    let treeReason = 'Compact tree structure';
+    let treeReason = "Compact tree structure";
 
     if (depth > 8 && width < 5) {
       treeScore = 0.85;
-      treeReason = 'Most compact for deeply nested workflows';
+      treeReason = "Most compact for deeply nested workflows";
     }
 
     scores.set(LayoutStyle.TREE, { score: treeScore, reason: treeReason });
 
     // Force-directed - good for complex interconnected graphs
     let forceScore = 0.4;
-    let forceReason = 'Physics-based organic layout';
+    let forceReason = "Physics-based organic layout";
 
     if (cycleCount > 0 || actionCount > 20) {
       forceScore = 0.75;
-      forceReason = 'Best for complex interconnected workflows';
+      forceReason = "Best for complex interconnected workflows";
     }
 
-    scores.set(LayoutStyle.FORCE_DIRECTED, { score: forceScore, reason: forceReason });
+    scores.set(LayoutStyle.FORCE_DIRECTED, {
+      score: forceScore,
+      reason: forceReason,
+    });
 
     // Circular - good for small workflows and cycles
     let circularScore = 0.3;
-    let circularReason = 'Circular arrangement';
+    let circularReason = "Circular arrangement";
 
     if (actionCount <= 10 && cycleCount > 0) {
       circularScore = 0.7;
-      circularReason = 'Visually appealing for small workflows with cycles';
+      circularReason = "Visually appealing for small workflows with cycles";
     }
 
-    scores.set(LayoutStyle.CIRCULAR, { score: circularScore, reason: circularReason });
+    scores.set(LayoutStyle.CIRCULAR, {
+      score: circularScore,
+      reason: circularReason,
+    });
 
     // Find best and alternatives
-    const sorted = Array.from(scores.entries())
-      .sort((a, b) => b[1].score - a[1].score);
+    const sorted = Array.from(scores.entries()).sort(
+      (a, b) => b[1].score - a[1].score
+    );
 
     const [bestStyle, bestInfo] = sorted[0];
     const alternatives = sorted.slice(1).map(([style, info]) => ({
@@ -348,7 +371,7 @@ export class LayoutService {
     const changes: LayoutChange[] = [];
 
     for (const action of before.actions) {
-      const afterAction = after.actions.find(a => a.id === action.id);
+      const afterAction = after.actions.find((a) => a.id === action.id);
       if (!afterAction) continue;
 
       if (!action.position || !afterAction.position) continue;
@@ -378,10 +401,11 @@ export class LayoutService {
    * Count actions with branching outputs
    */
   private countBranchingActions(workflow: Workflow): number {
-    return workflow.actions.filter(action =>
-      action.type === 'IF' ||
-      action.type === 'SWITCH' ||
-      action.type === 'TRY_CATCH'
+    return workflow.actions.filter(
+      (action) =>
+        action.type === "IF" ||
+        action.type === "SWITCH" ||
+        action.type === "TRY_CATCH"
     ).length;
   }
 
@@ -400,7 +424,12 @@ export class LayoutService {
 
       let maxChildDepth = 0;
 
-      for (const outputType of ['main', 'error', 'success', 'parallel'] as const) {
+      for (const outputType of [
+        "main",
+        "error",
+        "success",
+        "parallel",
+      ] as const) {
         const outputs = connections[outputType];
         if (!outputs) continue;
 
@@ -437,7 +466,9 @@ export class LayoutService {
     const visited = new Set<string>();
 
     const bfs = (startId: string) => {
-      const queue: Array<{ id: string; level: number }> = [{ id: startId, level: 0 }];
+      const queue: Array<{ id: string; level: number }> = [
+        { id: startId, level: 0 },
+      ];
 
       while (queue.length > 0) {
         const { id, level } = queue.shift()!;
@@ -450,7 +481,12 @@ export class LayoutService {
         const connections = workflow.connections[id];
         if (!connections) continue;
 
-        for (const outputType of ['main', 'error', 'success', 'parallel'] as const) {
+        for (const outputType of [
+          "main",
+          "error",
+          "success",
+          "parallel",
+        ] as const) {
           const outputs = connections[outputType];
           if (!outputs) continue;
 
@@ -485,7 +521,12 @@ export class LayoutService {
 
       const connections = workflow.connections[actionId];
       if (connections) {
-        for (const outputType of ['main', 'error', 'success', 'parallel'] as const) {
+        for (const outputType of [
+          "main",
+          "error",
+          "success",
+          "parallel",
+        ] as const) {
           const outputs = connections[outputType];
           if (!outputs) continue;
 
@@ -529,7 +570,12 @@ export class LayoutService {
     const hasIncoming = new Set<string>();
 
     for (const connections of Object.values(workflow.connections)) {
-      for (const outputType of ['main', 'error', 'success', 'parallel'] as const) {
+      for (const outputType of [
+        "main",
+        "error",
+        "success",
+        "parallel",
+      ] as const) {
         const outputs = connections[outputType];
         if (!outputs) continue;
 
@@ -542,8 +588,8 @@ export class LayoutService {
     }
 
     return workflow.actions
-      .filter(action => !hasIncoming.has(action.id))
-      .map(action => action.id);
+      .filter((action) => !hasIncoming.has(action.id))
+      .map((action) => action.id);
   }
 }
 

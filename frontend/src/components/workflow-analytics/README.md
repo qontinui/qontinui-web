@@ -9,6 +9,7 @@ Comprehensive analytics and performance monitoring UI components for workflow an
 A comprehensive analytics dashboard for monitoring workflow performance across your entire project.
 
 **Features:**
+
 - Time range selector (today, week, month, quarter, year, custom)
 - Key metrics cards: total executions, success rate, average duration, total workflows
 - Interactive charts:
@@ -25,6 +26,7 @@ A comprehensive analytics dashboard for monitoring workflow performance across y
 - Refresh data button
 
 **Props:**
+
 ```typescript
 interface AnalyticsDashboardProps {
   workflows: Workflow[];
@@ -36,15 +38,16 @@ interface AnalyticsDashboardProps {
 ```
 
 **Usage:**
+
 ```tsx
-import { AnalyticsDashboard } from '@/components/workflow-analytics';
+import { AnalyticsDashboard } from "@/components/workflow-analytics";
 
 <AnalyticsDashboard
   workflows={workflows}
   metrics={metricsMap}
   timeRange={{ start: startDate, end: endDate }}
   onTimeRangeChange={handleTimeRangeChange}
-/>
+/>;
 ```
 
 ### 2. WorkflowMetricsPanel
@@ -52,6 +55,7 @@ import { AnalyticsDashboard } from '@/components/workflow-analytics';
 Detailed metrics and analysis for a single workflow.
 
 **Features:**
+
 - Overview cards:
   - Total runs
   - Success rate with trend
@@ -72,6 +76,7 @@ Detailed metrics and analysis for a single workflow.
   - Statistical summary
 
 **Props:**
+
 ```typescript
 interface WorkflowMetricsPanelProps {
   workflow: Workflow;
@@ -83,18 +88,20 @@ interface WorkflowMetricsPanelProps {
 ```
 
 **Usage:**
-```tsx
-import { WorkflowMetricsPanel } from '@/components/workflow-analytics';
-import { workflowComplexityAnalyzer } from '@/services/workflow-complexity-analyzer';
 
-const complexityMetrics = workflowComplexityAnalyzer.analyzeComplexity(workflow);
+```tsx
+import { WorkflowMetricsPanel } from "@/components/workflow-analytics";
+import { workflowComplexityAnalyzer } from "@/services/workflow-complexity-analyzer";
+
+const complexityMetrics =
+  workflowComplexityAnalyzer.analyzeComplexity(workflow);
 
 <WorkflowMetricsPanel
   workflow={workflow}
   metrics={metrics}
   complexityMetrics={complexityMetrics}
   executionHistory={executionHistory}
-/>
+/>;
 ```
 
 ### 3. PerformanceAnalyzer
@@ -102,6 +109,7 @@ const complexityMetrics = workflowComplexityAnalyzer.analyzeComplexity(workflow)
 Performance analysis and optimization suggestions for workflows.
 
 **Features:**
+
 - Analyze button to run performance analysis
 - Summary cards:
   - Current duration
@@ -131,6 +139,7 @@ Performance analysis and optimization suggestions for workflows.
   - Optimization suggestions
 
 **Props:**
+
 ```typescript
 interface PerformanceAnalyzerProps {
   workflow: Workflow;
@@ -142,19 +151,21 @@ interface PerformanceAnalyzerProps {
 ```
 
 **Usage:**
+
 ```tsx
-import { PerformanceAnalyzer } from '@/components/workflow-analytics';
+import { PerformanceAnalyzer } from "@/components/workflow-analytics";
 
 <PerformanceAnalyzer
   workflow={workflow}
   onAnalyze={handleAnalyze}
   onApplySuggestion={handleApplySuggestion}
-/>
+/>;
 ```
 
 ## Dependencies
 
 All components use:
+
 - **recharts** - For charts and data visualization
 - **lucide-react** - For icons
 - **shadcn/ui** - For UI components (Card, Button, Badge, Tabs, etc.)
@@ -163,6 +174,7 @@ All components use:
 ## Type Definitions
 
 The components use types from:
+
 - `@/lib/action-schema/action-types` - Workflow and Action types
 - `@/services/workflow-analytics-service` - WorkflowMetrics, ExecutionRecord
 - `@/services/workflow-complexity-analyzer` - ComplexityAnalysis
@@ -244,10 +256,7 @@ function AnalyticsPage() {
 All components accept a `className` prop for additional styling:
 
 ```tsx
-<AnalyticsDashboard
-  className="custom-analytics-styles"
-  {...props}
-/>
+<AnalyticsDashboard className="custom-analytics-styles" {...props} />
 ```
 
 ## Accessibility
@@ -261,6 +270,7 @@ All components accept a `className` prop for additional styling:
 ## Browser Support
 
 Components support all modern browsers:
+
 - Chrome/Edge (latest)
 - Firefox (latest)
 - Safari (latest)
@@ -269,6 +279,7 @@ Components support all modern browsers:
 ## Future Enhancements
 
 Potential improvements for future versions:
+
 - Real-time data updates via WebSockets
 - Custom date range picker
 - Comparison mode (compare two workflows)

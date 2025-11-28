@@ -4,15 +4,28 @@
  * Displays Redis health, memory usage, connection status, and performance metrics.
  */
 
-import { Database, Activity, HardDrive, Users, TrendingUp, Server } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
-import { AlertBadge, StatusDot } from './AlertBadge'
-import type { RedisStatus } from '@/services/admin/health-service'
+import {
+  Database,
+  Activity,
+  HardDrive,
+  Users,
+  TrendingUp,
+  Server,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { AlertBadge, StatusDot } from "./AlertBadge";
+import type { RedisStatus } from "@/services/admin/health-service";
 
 interface RedisStatusCardProps {
-  data: RedisStatus | null
-  loading?: boolean
+  data: RedisStatus | null;
+  loading?: boolean;
 }
 
 export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
@@ -26,10 +39,12 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center text-muted-foreground py-8">Loading Redis status...</div>
+          <div className="text-center text-muted-foreground py-8">
+            Loading Redis status...
+          </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   if (!data) {
@@ -47,26 +62,26 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
           </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   const formatUptime = (seconds: number) => {
-    const days = Math.floor(seconds / 86400)
-    const hours = Math.floor((seconds % 86400) / 3600)
-    const minutes = Math.floor((seconds % 3600) / 60)
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
 
-    if (days > 0) return `${days}d ${hours}h`
-    if (hours > 0) return `${hours}h ${minutes}m`
-    return `${minutes}m`
-  }
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
 
   const getMemoryStatus = (percent: number) => {
-    if (percent >= 90) return 'critical'
-    if (percent >= 75) return 'warning'
-    return 'healthy'
-  }
+    if (percent >= 90) return "critical";
+    if (percent >= 75) return "warning";
+    return "healthy";
+  };
 
-  const memoryStatus = getMemoryStatus(data.memory_percent ?? 0)
+  const memoryStatus = getMemoryStatus(data.memory_percent ?? 0);
 
   return (
     <Card>
@@ -78,18 +93,28 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
               Redis Cache Status
             </CardTitle>
             <CardDescription>
-              {data.enabled ? 'Redis cache active' : 'Using in-memory fallback'}
+              {data.enabled ? "Redis cache active" : "Using in-memory fallback"}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <StatusDot
-              status={data.connected ? 'healthy' : data.enabled ? 'down' : 'disabled'}
+              status={
+                data.connected ? "healthy" : data.enabled ? "down" : "disabled"
+              }
               pulsing={data.connected}
               size="lg"
             />
             <AlertBadge
-              status={data.connected ? 'healthy' : data.enabled ? 'down' : 'disabled'}
-              label={data.connected ? 'Connected' : data.enabled ? 'Disconnected' : 'Disabled'}
+              status={
+                data.connected ? "healthy" : data.enabled ? "down" : "disabled"
+              }
+              label={
+                data.connected
+                  ? "Connected"
+                  : data.enabled
+                    ? "Disconnected"
+                    : "Disabled"
+              }
             />
           </div>
         </div>
@@ -103,10 +128,14 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
               <span className="text-sm font-medium">Mode</span>
             </div>
             <div className="text-sm font-mono">
-              {data.mode === 'redis' ? (
-                <span className="text-green-600 dark:text-green-400">Redis (Production)</span>
+              {data.mode === "redis" ? (
+                <span className="text-green-600 dark:text-green-400">
+                  Redis (Production)
+                </span>
               ) : (
-                <span className="text-yellow-600 dark:text-yellow-400">In-Memory (Fallback)</span>
+                <span className="text-yellow-600 dark:text-yellow-400">
+                  In-Memory (Fallback)
+                </span>
               )}
             </div>
           </div>
@@ -125,14 +154,14 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {(data.memory_usage_mb ?? 0).toFixed(1)} MB / {(data.memory_limit_mb ?? 0).toFixed(1)} MB
+                  {(data.memory_usage_mb ?? 0).toFixed(1)} MB /{" "}
+                  {(data.memory_limit_mb ?? 0).toFixed(1)} MB
                 </span>
-                <span className="font-medium">{(data.memory_percent ?? 0).toFixed(1)}%</span>
+                <span className="font-medium">
+                  {(data.memory_percent ?? 0).toFixed(1)}%
+                </span>
               </div>
-              <Progress
-                value={data.memory_percent ?? 0}
-                className="h-2"
-              />
+              <Progress value={data.memory_percent ?? 0} className="h-2" />
             </div>
           </div>
         )}
@@ -146,7 +175,9 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
                 <Users className="h-4 w-4" />
                 Clients
               </div>
-              <div className="text-2xl font-bold">{data.connected_clients ?? 0}</div>
+              <div className="text-2xl font-bold">
+                {data.connected_clients ?? 0}
+              </div>
             </div>
           )}
 
@@ -157,7 +188,9 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
                 <Database className="h-4 w-4" />
                 Keys
               </div>
-              <div className="text-2xl font-bold">{(data.total_keys ?? 0).toLocaleString()}</div>
+              <div className="text-2xl font-bold">
+                {(data.total_keys ?? 0).toLocaleString()}
+              </div>
             </div>
           )}
 
@@ -168,7 +201,9 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
                 <Activity className="h-4 w-4" />
                 Uptime
               </div>
-              <div className="text-2xl font-bold">{formatUptime(data.uptime_seconds)}</div>
+              <div className="text-2xl font-bold">
+                {formatUptime(data.uptime_seconds)}
+              </div>
             </div>
           )}
 
@@ -179,7 +214,9 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
                 <TrendingUp className="h-4 w-4" />
                 Hit Rate
               </div>
-              <div className="text-2xl font-bold">{(data.hit_rate ?? 0).toFixed(1)}%</div>
+              <div className="text-2xl font-bold">
+                {(data.hit_rate ?? 0).toFixed(1)}%
+              </div>
             </div>
           )}
         </div>
@@ -191,8 +228,9 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
             <div>
               <div className="font-medium text-yellow-600">Redis Disabled</div>
               <div className="text-sm text-yellow-600/80 mt-1">
-                The system is using in-memory storage. Session data and caches will not persist across restarts.
-                Enable Redis for production environments.
+                The system is using in-memory storage. Session data and caches
+                will not persist across restarts. Enable Redis for production
+                environments.
               </div>
             </div>
           </div>
@@ -204,8 +242,9 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
             <div>
               <div className="font-medium text-red-600">Connection Failed</div>
               <div className="text-sm text-red-600/80 mt-1">
-                Redis is enabled but connection failed. The system has fallen back to in-memory storage.
-                Check Redis server status and connection settings.
+                Redis is enabled but connection failed. The system has fallen
+                back to in-memory storage. Check Redis server status and
+                connection settings.
               </div>
             </div>
           </div>
@@ -217,26 +256,32 @@ export function RedisStatusCard({ data, loading }: RedisStatusCardProps) {
             <div>
               <div className="font-medium text-red-600">Memory Critical</div>
               <div className="text-sm text-red-600/80 mt-1">
-                Redis memory usage is at {(data.memory_percent ?? 0).toFixed(1)}%. Consider increasing the memory limit
-                or clearing old keys to prevent performance issues.
+                Redis memory usage is at {(data.memory_percent ?? 0).toFixed(1)}
+                %. Consider increasing the memory limit or clearing old keys to
+                prevent performance issues.
               </div>
             </div>
           </div>
         )}
 
-        {data.memory_percent >= 75 && data.memory_percent < 90 && data.connected && (
-          <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-start gap-3">
-            <HardDrive className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <div className="font-medium text-yellow-600">Memory Warning</div>
-              <div className="text-sm text-yellow-600/80 mt-1">
-                Redis memory usage is at {(data.memory_percent ?? 0).toFixed(1)}%. Monitor memory usage and
-                consider cleanup if it continues to increase.
+        {data.memory_percent >= 75 &&
+          data.memory_percent < 90 &&
+          data.connected && (
+            <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-start gap-3">
+              <HardDrive className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="font-medium text-yellow-600">
+                  Memory Warning
+                </div>
+                <div className="text-sm text-yellow-600/80 mt-1">
+                  Redis memory usage is at{" "}
+                  {(data.memory_percent ?? 0).toFixed(1)}%. Monitor memory usage
+                  and consider cleanup if it continues to increase.
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
       </CardContent>
     </Card>
-  )
+  );
 }

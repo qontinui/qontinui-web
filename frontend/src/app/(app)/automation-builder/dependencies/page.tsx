@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from "react";
 import {
   ReactFlow,
   Background,
@@ -13,8 +13,8 @@ import {
   ReactFlowProvider,
   Panel,
   MarkerType,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import {
   NetworkIcon,
   GitBranch,
@@ -40,26 +40,32 @@ import {
   AlertTriangle,
   Info,
   CheckCircle2,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { RequireProject } from '@/components/require-project';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAutomation } from '@/contexts/automation-context';
-import { workflowDependencyAnalyzer } from '@/services/workflow-dependency-analyzer';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { RequireProject } from "@/components/require-project";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAutomation } from "@/contexts/automation-context";
+import { workflowDependencyAnalyzer } from "@/services/workflow-dependency-analyzer";
 import type {
   DependencyGraph,
   DependencyNode,
   DependencyStats,
   ImpactAnalysis,
-} from '@/services/workflow-dependency-analyzer';
-import type { Workflow } from '@/lib/action-schema/action-types';
-import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+} from "@/services/workflow-dependency-analyzer";
+import type { Workflow } from "@/lib/action-schema/action-types";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -72,7 +78,7 @@ interface FilterState {
   showOnlyIssues: boolean;
   showCriticalPath: boolean;
   selectedWorkflowId: string | null;
-  viewMode: 'all' | 'dependencies' | 'dependents';
+  viewMode: "all" | "dependencies" | "dependents";
 }
 
 interface SelectedWorkflowData {
@@ -86,25 +92,52 @@ interface SelectedWorkflowData {
 // ============================================================================
 
 function getNodeColor(node: DependencyNode): string {
-  if (node.isCircular) return '#ef4444'; // red - circular
-  if (node.inDegree === 0) return '#10b981'; // green - leaf/unused
-  if (node.inDegree >= 3) return '#f59e0b'; // amber - critical
-  return '#3b82f6'; // blue - normal
+  if (node.isCircular) return "#ef4444"; // red - circular
+  if (node.inDegree === 0) return "#10b981"; // green - leaf/unused
+  if (node.inDegree >= 3) return "#f59e0b"; // amber - critical
+  return "#3b82f6"; // blue - normal
 }
 
 function getSeverityBadge(count: number) {
-  if (count === 0) return { variant: 'default' as const, label: 'None', color: 'text-green-600' };
-  if (count <= 2) return { variant: 'secondary' as const, label: 'Low', color: 'text-yellow-600' };
-  if (count <= 5) return { variant: 'default' as const, label: 'Medium', color: 'text-orange-600' };
-  return { variant: 'destructive' as const, label: 'High', color: 'text-red-600' };
+  if (count === 0)
+    return {
+      variant: "default" as const,
+      label: "None",
+      color: "text-green-600",
+    };
+  if (count <= 2)
+    return {
+      variant: "secondary" as const,
+      label: "Low",
+      color: "text-yellow-600",
+    };
+  if (count <= 5)
+    return {
+      variant: "default" as const,
+      label: "Medium",
+      color: "text-orange-600",
+    };
+  return {
+    variant: "destructive" as const,
+    label: "High",
+    color: "text-red-600",
+  };
 }
 
-function getImpactBadge(level: 'low' | 'medium' | 'high' | 'critical') {
+function getImpactBadge(level: "low" | "medium" | "high" | "critical") {
   const variants = {
-    low: { variant: 'secondary' as const, label: 'Low', icon: Info },
-    medium: { variant: 'default' as const, label: 'Medium', icon: AlertTriangle },
-    high: { variant: 'default' as const, label: 'High', icon: AlertCircle },
-    critical: { variant: 'destructive' as const, label: 'Critical', icon: AlertCircle },
+    low: { variant: "secondary" as const, label: "Low", icon: Info },
+    medium: {
+      variant: "default" as const,
+      label: "Medium",
+      icon: AlertTriangle,
+    },
+    high: { variant: "default" as const, label: "High", icon: AlertCircle },
+    critical: {
+      variant: "destructive" as const,
+      label: "Critical",
+      icon: AlertCircle,
+    },
   };
   return variants[level];
 }
@@ -115,10 +148,11 @@ function getImpactBadge(level: 'low' | 'medium' | 'high' | 'critical') {
 
 function DependenciesPageInner() {
   const { workflows = [] } = useAutomation();
-  const [activeTab, setActiveTab] = useState('overview');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState("overview");
+  const [searchQuery, setSearchQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [selectedWorkflow, setSelectedWorkflow] = useState<SelectedWorkflowData | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] =
+    useState<SelectedWorkflowData | null>(null);
   const [filters, setFilters] = useState<FilterState>({
     folders: [],
     tags: [],
@@ -126,7 +160,7 @@ function DependenciesPageInner() {
     showOnlyIssues: false,
     showCriticalPath: false,
     selectedWorkflowId: null,
-    viewMode: 'all',
+    viewMode: "all",
   });
 
   // Build dependency graph
@@ -162,7 +196,7 @@ function DependenciesPageInner() {
       const node = graph.nodes.get(n.id);
       return {
         id: n.id,
-        type: 'default',
+        type: "default",
         position: n.position,
         data: {
           ...n.data,
@@ -170,11 +204,11 @@ function DependenciesPageInner() {
         },
         style: {
           background: getNodeColor(node!),
-          color: 'white',
-          border: '2px solid #666',
-          borderRadius: '8px',
-          padding: '10px',
-          fontSize: '12px',
+          color: "white",
+          border: "2px solid #666",
+          borderRadius: "8px",
+          padding: "10px",
+          fontSize: "12px",
           fontWeight: 500,
         },
       };
@@ -184,16 +218,16 @@ function DependenciesPageInner() {
       id: e.id,
       source: e.source,
       target: e.target,
-      type: 'default',
+      type: "default",
       animated: e.animated || false,
       label: e.label,
       style: {
-        stroke: e.data?.isCyclic ? '#ef4444' : '#666',
+        stroke: e.data?.isCyclic ? "#ef4444" : "#666",
         strokeWidth: 2,
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: e.data?.isCyclic ? '#ef4444' : '#666',
+        color: e.data?.isCyclic ? "#ef4444" : "#666",
       },
     }));
 
@@ -213,12 +247,18 @@ function DependenciesPageInner() {
   const filteredWorkflows = useMemo(() => {
     return workflows.filter((w) => {
       // Search filter
-      if (searchQuery && !w.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+      if (
+        searchQuery &&
+        !w.name.toLowerCase().includes(searchQuery.toLowerCase())
+      ) {
         return false;
       }
 
       // Category filter
-      if (filters.categories.length > 0 && !filters.categories.includes(w.category || '')) {
+      if (
+        filters.categories.length > 0 &&
+        !filters.categories.includes(w.category || "")
+      ) {
         return false;
       }
 
@@ -252,7 +292,9 @@ function DependenciesPageInner() {
       .filter((n) => n.inDegree >= 2)
       .sort((a, b) => b.inDegree - a.inDegree)
       .slice(0, 10);
-    return critical.map((n) => workflows.find((w) => w.id === n.id)!).filter(Boolean);
+    return critical
+      .map((n) => workflows.find((w) => w.id === n.id)!)
+      .filter(Boolean);
   }, [graph, workflows]);
 
   // Handle node click
@@ -264,7 +306,10 @@ function DependenciesPageInner() {
       const depNode = graph.nodes.get(node.id);
       if (!depNode) return;
 
-      const impact = workflowDependencyAnalyzer.getImpactAnalysis(workflow.id, workflows);
+      const impact = workflowDependencyAnalyzer.getImpactAnalysis(
+        workflow.id,
+        workflows
+      );
 
       setSelectedWorkflow({
         workflow,
@@ -278,54 +323,56 @@ function DependenciesPageInner() {
   // Export functions
   const handleExportReport = useCallback(() => {
     const report = workflowDependencyAnalyzer.exportDependencyReport(workflows);
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(report, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `workflow-dependencies-${new Date().toISOString()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Dependency report exported');
+    toast.success("Dependency report exported");
   }, [workflows]);
 
   const handleExportGraphML = useCallback(() => {
     const graphml = workflowDependencyAnalyzer.exportGraphML(workflows);
-    const blob = new Blob([graphml], { type: 'application/xml' });
+    const blob = new Blob([graphml], { type: "application/xml" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `workflow-dependencies-${new Date().toISOString()}.graphml`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('GraphML exported');
+    toast.success("GraphML exported");
   }, [workflows]);
 
   const handleAnalyzeAll = useCallback(() => {
     workflowDependencyAnalyzer.invalidateCache();
-    toast.success('Dependency analysis refreshed');
+    toast.success("Dependency analysis refreshed");
   }, []);
 
   const handleDetectCircular = useCallback(() => {
     const cycles = graph.cycles;
     if (cycles.length === 0) {
-      toast.success('No circular dependencies found');
+      toast.success("No circular dependencies found");
     } else {
       toast.warning(`Found ${cycles.length} circular dependencies`, {
-        description: 'View the Circular Dependencies tab for details',
+        description: "View the Circular Dependencies tab for details",
       });
-      setActiveTab('circular');
+      setActiveTab("circular");
     }
   }, [graph.cycles]);
 
   const handleFindUnused = useCallback(() => {
     const unused = unusedWorkflows.length;
     if (unused === 0) {
-      toast.success('No unused workflows found');
+      toast.success("No unused workflows found");
     } else {
       toast.info(`Found ${unused} unused workflows`, {
-        description: 'View the Unused Workflows tab for details',
+        description: "View the Unused Workflows tab for details",
       });
-      setActiveTab('unused');
+      setActiveTab("unused");
     }
   }, [unusedWorkflows]);
 
@@ -336,8 +383,10 @@ function DependenciesPageInner() {
         ...node,
         style: {
           ...node.style,
-          border: cycle.includes(node.id) ? '3px solid #ef4444' : node.style?.border,
-          boxShadow: cycle.includes(node.id) ? '0 0 10px #ef4444' : undefined,
+          border: cycle.includes(node.id)
+            ? "3px solid #ef4444"
+            : node.style?.border,
+          boxShadow: cycle.includes(node.id) ? "0 0 10px #ef4444" : undefined,
         },
       }));
       setNodes(highlightedNodes);
@@ -359,7 +408,8 @@ function DependenciesPageInner() {
             <NetworkIcon className="size-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Workflows Found</h3>
             <p className="text-muted-foreground text-center max-w-md">
-              Create some workflows in the Automation Builder to see dependency analysis
+              Create some workflows in the Automation Builder to see dependency
+              analysis
             </p>
           </CardContent>
         </Card>
@@ -419,7 +469,11 @@ function DependenciesPageInner() {
           >
             <Filter className="size-4" />
             Filters
-            {filtersOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+            {filtersOpen ? (
+              <ChevronDown className="size-4" />
+            ) : (
+              <ChevronRight className="size-4" />
+            )}
           </Button>
         </div>
 
@@ -429,12 +483,18 @@ function DependenciesPageInner() {
             <CardContent className="py-4 space-y-4">
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <label className="text-sm font-medium mb-2 block">Category</label>
+                  <label className="text-sm font-medium mb-2 block">
+                    Category
+                  </label>
                   <div className="flex flex-wrap gap-2">
-                    {['Main', 'Helper', 'Utility', 'Test'].map((cat) => (
+                    {["Main", "Helper", "Utility", "Test"].map((cat) => (
                       <Button
                         key={cat}
-                        variant={filters.categories.includes(cat) ? 'default' : 'outline'}
+                        variant={
+                          filters.categories.includes(cat)
+                            ? "default"
+                            : "outline"
+                        }
                         size="sm"
                         onClick={() => {
                           setFilters((prev) => ({
@@ -451,20 +511,25 @@ function DependenciesPageInner() {
                   </div>
                 </div>
                 <div className="flex-1">
-                  <label className="text-sm font-medium mb-2 block">Options</label>
+                  <label className="text-sm font-medium mb-2 block">
+                    Options
+                  </label>
                   <div className="flex flex-wrap gap-2">
                     <Button
-                      variant={filters.showOnlyIssues ? 'default' : 'outline'}
+                      variant={filters.showOnlyIssues ? "default" : "outline"}
                       size="sm"
                       onClick={() =>
-                        setFilters((prev) => ({ ...prev, showOnlyIssues: !prev.showOnlyIssues }))
+                        setFilters((prev) => ({
+                          ...prev,
+                          showOnlyIssues: !prev.showOnlyIssues,
+                        }))
                       }
                     >
                       <AlertCircle className="size-4" />
                       Only Issues
                     </Button>
                     <Button
-                      variant={filters.showCriticalPath ? 'default' : 'outline'}
+                      variant={filters.showCriticalPath ? "default" : "outline"}
                       size="sm"
                       onClick={() =>
                         setFilters((prev) => ({
@@ -503,11 +568,14 @@ function DependenciesPageInner() {
             <MiniMap
               nodeColor={(node) => {
                 const depNode = graph.nodes.get(node.id);
-                return depNode ? getNodeColor(depNode) : '#3b82f6';
+                return depNode ? getNodeColor(depNode) : "#3b82f6";
               }}
               className="bg-background border"
             />
-            <Panel position="top-right" className="bg-background border rounded-lg p-3 m-4 space-y-2">
+            <Panel
+              position="top-right"
+              className="bg-background border rounded-lg p-3 m-4 space-y-2"
+            >
               <div className="text-xs font-semibold mb-2">Legend</div>
               <div className="flex items-center gap-2 text-xs">
                 <div className="size-3 rounded bg-[#3b82f6]" />
@@ -531,7 +599,11 @@ function DependenciesPageInner() {
 
         {/* Right Column - Analysis Panel (30%) */}
         <div className="w-[400px] flex flex-col bg-background">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="flex-1 flex flex-col"
+          >
             <div className="border-b px-4 py-2">
               <TabsList className="w-full">
                 <TabsTrigger value="overview" className="flex-1">
@@ -558,33 +630,57 @@ function DependenciesPageInner() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Total Workflows</span>
-                      <span className="font-semibold">{stats?.totalWorkflows || 0}</span>
+                      <span className="text-muted-foreground">
+                        Total Workflows
+                      </span>
+                      <span className="font-semibold">
+                        {stats?.totalWorkflows || 0}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Total Dependencies</span>
-                      <span className="font-semibold">{stats?.totalDependencies || 0}</span>
+                      <span className="text-muted-foreground">
+                        Total Dependencies
+                      </span>
+                      <span className="font-semibold">
+                        {stats?.totalDependencies || 0}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Avg. Dependencies</span>
+                      <span className="text-muted-foreground">
+                        Avg. Dependencies
+                      </span>
                       <span className="font-semibold">
                         {stats?.avgDependenciesPerWorkflow.toFixed(1) || 0}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Max Depth</span>
-                      <span className="font-semibold">{stats?.maxDepth || 0}</span>
+                      <span className="font-semibold">
+                        {stats?.maxDepth || 0}
+                      </span>
                     </div>
                     <Separator />
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Circular Dependencies</span>
-                      <Badge variant={graph.cycles.length > 0 ? 'destructive' : 'secondary'}>
+                      <span className="text-muted-foreground">
+                        Circular Dependencies
+                      </span>
+                      <Badge
+                        variant={
+                          graph.cycles.length > 0 ? "destructive" : "secondary"
+                        }
+                      >
                         {graph.cycles.length}
                       </Badge>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Unused Workflows</span>
-                      <Badge variant={unusedWorkflows.length > 0 ? 'default' : 'secondary'}>
+                      <span className="text-muted-foreground">
+                        Unused Workflows
+                      </span>
+                      <Badge
+                        variant={
+                          unusedWorkflows.length > 0 ? "default" : "secondary"
+                        }
+                      >
                         {unusedWorkflows.length}
                       </Badge>
                     </div>
@@ -594,11 +690,16 @@ function DependenciesPageInner() {
                 {stats && stats.mostDepended.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-sm">Most Depended On</CardTitle>
+                      <CardTitle className="text-sm">
+                        Most Depended On
+                      </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2">
                       {stats.mostDepended.slice(0, 5).map((item) => (
-                        <div key={item.id} className="flex justify-between text-sm">
+                        <div
+                          key={item.id}
+                          className="flex justify-between text-sm"
+                        >
                           <span className="truncate flex-1">{item.name}</span>
                           <Badge variant="secondary">{item.count}</Badge>
                         </div>
@@ -610,11 +711,16 @@ function DependenciesPageInner() {
                 {stats && stats.mostDependencies.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-sm">Most Dependencies</CardTitle>
+                      <CardTitle className="text-sm">
+                        Most Dependencies
+                      </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2">
                       {stats.mostDependencies.slice(0, 5).map((item) => (
-                        <div key={item.id} className="flex justify-between text-sm">
+                        <div
+                          key={item.id}
+                          className="flex justify-between text-sm"
+                        >
                           <span className="truncate flex-1">{item.name}</span>
                           <Badge variant="secondary">{item.count}</Badge>
                         </div>
@@ -640,12 +746,18 @@ function DependenciesPageInner() {
                     <div className="flex items-center gap-2 text-sm">
                       <AlertCircle className="size-4 text-destructive" />
                       <span className="font-semibold">
-                        {graph.cycles.length} circular {graph.cycles.length === 1 ? 'dependency' : 'dependencies'} detected
+                        {graph.cycles.length} circular{" "}
+                        {graph.cycles.length === 1
+                          ? "dependency"
+                          : "dependencies"}{" "}
+                        detected
                       </span>
                     </div>
                     {graph.cycles.map((cycle, idx) => {
                       const workflowNames = cycle
-                        .map((id) => workflows.find((w) => w.id === id)?.name || id)
+                        .map(
+                          (id) => workflows.find((w) => w.id === id)?.name || id
+                        )
                         .slice(0, -1); // Remove duplicate last item
                       return (
                         <Card key={idx}>
@@ -653,13 +765,18 @@ function DependenciesPageInner() {
                             <CardTitle className="text-sm flex items-center gap-2">
                               <GitBranch className="size-4" />
                               Cycle {idx + 1}
-                              <Badge variant="destructive">{workflowNames.length} workflows</Badge>
+                              <Badge variant="destructive">
+                                {workflowNames.length} workflows
+                              </Badge>
                             </CardTitle>
                           </CardHeader>
                           <CardContent className="space-y-3">
                             <div className="text-xs space-y-1">
                               {workflowNames.map((name, i) => (
-                                <div key={i} className="flex items-center gap-2">
+                                <div
+                                  key={i}
+                                  className="flex items-center gap-2"
+                                >
                                   <span className="truncate">{name}</span>
                                   {i < workflowNames.length - 1 && (
                                     <ArrowRight className="size-3 text-muted-foreground shrink-0" />
@@ -668,7 +785,9 @@ function DependenciesPageInner() {
                               ))}
                               <div className="flex items-center gap-2 text-destructive">
                                 <ArrowRight className="size-3 shrink-0" />
-                                <span className="font-semibold">Back to {workflowNames[0]}</span>
+                                <span className="font-semibold">
+                                  Back to {workflowNames[0]}
+                                </span>
                               </div>
                             </div>
                             <Button
@@ -704,7 +823,10 @@ function DependenciesPageInner() {
                     <div className="flex items-center gap-2 text-sm">
                       <Info className="size-4 text-blue-500" />
                       <span className="font-semibold">
-                        {unusedWorkflows.length} unused {unusedWorkflows.length === 1 ? 'workflow' : 'workflows'}
+                        {unusedWorkflows.length} unused{" "}
+                        {unusedWorkflows.length === 1
+                          ? "workflow"
+                          : "workflows"}
                       </span>
                     </div>
                     {unusedWorkflows.map((workflow) => {
@@ -712,30 +834,45 @@ function DependenciesPageInner() {
                       return (
                         <Card key={workflow.id}>
                           <CardHeader>
-                            <CardTitle className="text-sm">{workflow.name}</CardTitle>
+                            <CardTitle className="text-sm">
+                              {workflow.name}
+                            </CardTitle>
                             {workflow.category && (
                               <CardDescription>
-                                <Badge variant="outline">{workflow.category}</Badge>
+                                <Badge variant="outline">
+                                  {workflow.category}
+                                </Badge>
                               </CardDescription>
                             )}
                           </CardHeader>
                           <CardContent className="space-y-3">
                             <div className="text-xs space-y-1">
                               <div className="flex justify-between">
-                                <span className="text-muted-foreground">Actions</span>
-                                <span className="font-medium">{workflow.actions.length}</span>
+                                <span className="text-muted-foreground">
+                                  Actions
+                                </span>
+                                <span className="font-medium">
+                                  {workflow.actions.length}
+                                </span>
                               </div>
                               <div className="flex justify-between">
-                                <span className="text-muted-foreground">Dependencies</span>
-                                <span className="font-medium">{node?.outDegree || 0}</span>
+                                <span className="text-muted-foreground">
+                                  Dependencies
+                                </span>
+                                <span className="font-medium">
+                                  {node?.outDegree || 0}
+                                </span>
                               </div>
                             </div>
                             <Separator />
                             <div className="text-xs text-muted-foreground">
                               <p className="font-semibold mb-1">Suggestions:</p>
                               <ul className="list-disc list-inside space-y-0.5">
-                                {workflow.category !== 'Main' && (
-                                  <li>Convert to Main category if useful standalone</li>
+                                {workflow.category !== "Main" && (
+                                  <li>
+                                    Convert to Main category if useful
+                                    standalone
+                                  </li>
                                 )}
                                 <li>Delete if no longer needed</li>
                                 <li>Add to test suite for verification</li>
@@ -765,15 +902,19 @@ function DependenciesPageInner() {
                     <div className="flex items-center gap-2 text-sm">
                       <TrendingUp className="size-4 text-orange-500" />
                       <span className="font-semibold">
-                        {criticalWorkflows.length} critical {criticalWorkflows.length === 1 ? 'workflow' : 'workflows'}
+                        {criticalWorkflows.length} critical{" "}
+                        {criticalWorkflows.length === 1
+                          ? "workflow"
+                          : "workflows"}
                       </span>
                     </div>
                     {criticalWorkflows.map((workflow) => {
                       const node = graph.nodes.get(workflow.id)!;
-                      const impact = workflowDependencyAnalyzer.getImpactAnalysis(
-                        workflow.id,
-                        workflows
-                      );
+                      const impact =
+                        workflowDependencyAnalyzer.getImpactAnalysis(
+                          workflow.id,
+                          workflows
+                        );
                       const impactBadge = getImpactBadge(impact.impactLevel);
                       const Icon = impactBadge.icon;
 
@@ -791,11 +932,17 @@ function DependenciesPageInner() {
                           <CardContent className="space-y-3">
                             <div className="text-xs space-y-1">
                               <div className="flex justify-between">
-                                <span className="text-muted-foreground">Dependents</span>
-                                <span className="font-medium">{node.inDegree}</span>
+                                <span className="text-muted-foreground">
+                                  Dependents
+                                </span>
+                                <span className="font-medium">
+                                  {node.inDegree}
+                                </span>
                               </div>
                               <div className="flex justify-between">
-                                <span className="text-muted-foreground">Impact</span>
+                                <span className="text-muted-foreground">
+                                  Impact
+                                </span>
                                 <span className="font-medium">
                                   {impact.affectedCount} workflows affected
                                 </span>
@@ -803,11 +950,15 @@ function DependenciesPageInner() {
                             </div>
                             <Separator />
                             <div className="text-xs text-muted-foreground">
-                              <p className="font-semibold mb-1">Recommendations:</p>
+                              <p className="font-semibold mb-1">
+                                Recommendations:
+                              </p>
                               <ul className="list-disc list-inside space-y-0.5">
                                 <li>Add comprehensive tests</li>
                                 <li>Document expected behavior</li>
-                                <li>Consider breaking into smaller workflows</li>
+                                <li>
+                                  Consider breaking into smaller workflows
+                                </li>
                                 <li>Monitor execution carefully</li>
                               </ul>
                             </div>
@@ -829,14 +980,16 @@ function DependenciesPageInner() {
           <div className="flex items-start justify-between mb-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-lg">{selectedWorkflow.workflow.name}</h3>
+                <h3 className="font-semibold text-lg">
+                  {selectedWorkflow.workflow.name}
+                </h3>
                 {selectedWorkflow.node.isCircular && (
                   <Badge variant="destructive">
                     <AlertCircle className="size-3" />
                     Circular
                   </Badge>
                 )}
-                {selectedWorkflow.impact.impactLevel === 'critical' && (
+                {selectedWorkflow.impact.impactLevel === "critical" && (
                   <Badge variant="destructive">
                     <Zap className="size-3" />
                     Critical
@@ -844,10 +997,16 @@ function DependenciesPageInner() {
                 )}
               </div>
               {selectedWorkflow.workflow.category && (
-                <Badge variant="outline">{selectedWorkflow.workflow.category}</Badge>
+                <Badge variant="outline">
+                  {selectedWorkflow.workflow.category}
+                </Badge>
               )}
             </div>
-            <Button variant="ghost" size="icon" onClick={() => setSelectedWorkflow(null)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSelectedWorkflow(null)}
+            >
               <X className="size-4" />
             </Button>
           </div>
@@ -867,23 +1026,33 @@ function DependenciesPageInner() {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-center">
-                  <div className="text-2xl font-bold">{selectedWorkflow.node.outDegree}</div>
-                  <div className="text-xs text-muted-foreground">Dependencies</div>
+                  <div className="text-2xl font-bold">
+                    {selectedWorkflow.node.outDegree}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Dependencies
+                  </div>
                 </div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-6">
                 <div className="text-center">
-                  <div className="text-2xl font-bold">{selectedWorkflow.node.inDegree}</div>
-                  <div className="text-xs text-muted-foreground">Dependents</div>
+                  <div className="text-2xl font-bold">
+                    {selectedWorkflow.node.inDegree}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Dependents
+                  </div>
                 </div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-6">
                 <div className="text-center">
-                  <div className="text-2xl font-bold">{selectedWorkflow.impact.affectedCount}</div>
+                  <div className="text-2xl font-bold">
+                    {selectedWorkflow.impact.affectedCount}
+                  </div>
                   <div className="text-xs text-muted-foreground">Impact</div>
                 </div>
               </CardContent>

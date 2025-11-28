@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { Play, Loader2, CheckCircle, AlertCircle, Shuffle } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import type { TestExecutionPanelProps } from '@/types/integration-tests';
+import React from "react";
+import { Play, Loader2, CheckCircle, AlertCircle, Shuffle } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import type { TestExecutionPanelProps } from "@/types/integration-tests";
 
 export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
   execution,
@@ -15,11 +15,11 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
     if (!execution) return <Play className="w-4 h-4" />;
 
     switch (execution.status) {
-      case 'running':
+      case "running":
         return <Loader2 className="w-4 h-4 animate-spin text-blue-600" />;
-      case 'passed':
+      case "passed":
         return <CheckCircle className="w-4 h-4 text-green-600" />;
-      case 'failed':
+      case "failed":
         return <AlertCircle className="w-4 h-4 text-red-600" />;
       default:
         return <Play className="w-4 h-4" />;
@@ -27,21 +27,21 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
   };
 
   const getStatusText = () => {
-    if (!execution) return 'Ready to run';
+    if (!execution) return "Ready to run";
 
     switch (execution.status) {
-      case 'pending':
-        return 'Waiting to start';
-      case 'running':
-        return 'Running';
-      case 'passed':
-        return 'Completed successfully';
-      case 'failed':
-        return 'Failed';
-      case 'skipped':
-        return 'Skipped';
+      case "pending":
+        return "Waiting to start";
+      case "running":
+        return "Running";
+      case "passed":
+        return "Completed successfully";
+      case "failed":
+        return "Failed";
+      case "skipped":
+        return "Skipped";
       default:
-        return 'Unknown status';
+        return "Unknown status";
     }
   };
 
@@ -69,21 +69,25 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
           <div className="text-center py-8 text-gray-500">
             <Play className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">No test running</p>
-            <p className="text-xs mt-1">Select workflows and click Run All to start</p>
+            <p className="text-xs mt-1">
+              Select workflows and click Run All to start
+            </p>
           </div>
         ) : (
           <>
             {/* Current Workflow */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500 font-medium">Current Workflow</span>
+                <span className="text-xs text-gray-500 font-medium">
+                  Current Workflow
+                </span>
                 <span className="text-xs text-gray-500">
                   {completedWorkflows + 1} of {totalWorkflows}
                 </span>
               </div>
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <div className="flex items-start gap-2">
-                  {execution.status === 'running' && (
+                  {execution.status === "running" && (
                     <Loader2 className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0 mt-0.5" />
                   )}
                   <div className="flex-1 min-w-0">
@@ -99,27 +103,31 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
             </div>
 
             {/* Current Step */}
-            {execution.status === 'running' && execution.currentStep && execution.totalSteps && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500 font-medium">Current Step</span>
-                  <span className="text-xs text-gray-500">
-                    Step {execution.currentStep} of {execution.totalSteps}
-                  </span>
-                </div>
-                {execution.currentAction && (
-                  <div className="p-2 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-900 font-mono truncate">
-                      {execution.currentAction}
-                    </p>
+            {execution.status === "running" &&
+              execution.currentStep &&
+              execution.totalSteps && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500 font-medium">
+                      Current Step
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      Step {execution.currentStep} of {execution.totalSteps}
+                    </span>
                   </div>
-                )}
-                <Progress value={getProgressPercentage()} className="h-2" />
-              </div>
-            )}
+                  {execution.currentAction && (
+                    <div className="p-2 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-900 font-mono truncate">
+                        {execution.currentAction}
+                      </p>
+                    </div>
+                  )}
+                  <Progress value={getProgressPercentage()} className="h-2" />
+                </div>
+              )}
 
             {/* Random Match Selection */}
-            {execution.status === 'running' && execution.selectedMatch && (
+            {execution.status === "running" && execution.selectedMatch && (
               <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
                 <div className="flex items-start gap-2">
                   <Shuffle className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
@@ -128,12 +136,13 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
                       Random Match Selection
                     </p>
                     <p className="text-sm text-purple-900">
-                      Match #{execution.selectedMatch.matchNumber} of{' '}
+                      Match #{execution.selectedMatch.matchNumber} of{" "}
                       {execution.selectedMatch.totalMatches} available
                     </p>
                     {execution.selectedMatch.confidence && (
                       <p className="text-xs text-purple-700 mt-1">
-                        Confidence: {(execution.selectedMatch.confidence * 100).toFixed(1)}%
+                        Confidence:{" "}
+                        {(execution.selectedMatch.confidence * 100).toFixed(1)}%
                       </p>
                     )}
                   </div>
@@ -142,7 +151,7 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
             )}
 
             {/* Error Display */}
-            {execution.status === 'failed' && execution.error && (
+            {execution.status === "failed" && execution.error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
@@ -156,16 +165,23 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
                     <p className="text-xs text-red-700 mt-2">
                       {execution.error.message}
                     </p>
-                    {execution.error.expectedState && execution.error.actualState && (
-                      <div className="mt-2 text-xs space-y-1">
-                        <p className="text-red-700">
-                          Expected: <span className="font-mono">{execution.error.expectedState}</span>
-                        </p>
-                        <p className="text-red-700">
-                          Actual: <span className="font-mono">{execution.error.actualState}</span>
-                        </p>
-                      </div>
-                    )}
+                    {execution.error.expectedState &&
+                      execution.error.actualState && (
+                        <div className="mt-2 text-xs space-y-1">
+                          <p className="text-red-700">
+                            Expected:{" "}
+                            <span className="font-mono">
+                              {execution.error.expectedState}
+                            </span>
+                          </p>
+                          <p className="text-red-700">
+                            Actual:{" "}
+                            <span className="font-mono">
+                              {execution.error.actualState}
+                            </span>
+                          </p>
+                        </div>
+                      )}
                   </div>
                 </div>
               </div>
@@ -175,7 +191,9 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
             {totalWorkflows > 1 && (
               <div className="pt-3 border-t space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500 font-medium">Overall Progress</span>
+                  <span className="text-xs text-gray-500 font-medium">
+                    Overall Progress
+                  </span>
                   <span className="text-xs text-gray-500">
                     {getOverallProgress()}%
                   </span>

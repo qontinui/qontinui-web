@@ -1,9 +1,16 @@
-'use client';
+"use client";
 
-import React, { Component, ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, RefreshCw, Undo2 } from 'lucide-react';
+import React, { Component, ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { AlertCircle, RefreshCw, Undo2 } from "lucide-react";
 
 interface Props {
   children: ReactNode;
@@ -47,25 +54,32 @@ export class CanvasErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     // Log canvas-specific errors with additional context
-    console.error('CanvasErrorBoundary caught an error:', {
+    console.error("CanvasErrorBoundary caught an error:", {
       error,
       errorInfo,
       timestamp: new Date().toISOString(),
-      userAgent: typeof window !== 'undefined' ? window.navigator.userAgent : 'N/A',
+      userAgent:
+        typeof window !== "undefined" ? window.navigator.userAgent : "N/A",
     });
 
     // Check for common canvas errors
     const errorMessage = error.message.toLowerCase();
-    if (errorMessage.includes('canvas')) {
-      console.error('Canvas rendering error detected');
-    } else if (errorMessage.includes('reactflow') || errorMessage.includes('xyflow')) {
-      console.error('React Flow library error detected');
-    } else if (errorMessage.includes('node') || errorMessage.includes('edge')) {
-      console.error('Canvas node/edge manipulation error detected');
+    if (errorMessage.includes("canvas")) {
+      console.error("Canvas rendering error detected");
+    } else if (
+      errorMessage.includes("reactflow") ||
+      errorMessage.includes("xyflow")
+    ) {
+      console.error("React Flow library error detected");
+    } else if (errorMessage.includes("node") || errorMessage.includes("edge")) {
+      console.error("Canvas node/edge manipulation error detected");
     }
 
     // Log to error reporting service (e.g., Sentry) in production
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production') {
+    if (
+      typeof window !== "undefined" &&
+      process.env.NODE_ENV === "production"
+    ) {
       // Example: window.Sentry?.captureException(error, {
       //   tags: { component: 'canvas' },
       //   extra: { errorInfo, canvasType: 'workflow' }
@@ -102,7 +116,7 @@ export class CanvasErrorBoundary extends Component<Props, State> {
         return <>{this.props.fallback}</>;
       }
 
-      const isDevelopment = process.env.NODE_ENV === 'development';
+      const isDevelopment = process.env.NODE_ENV === "development";
 
       return (
         <div className="flex items-center justify-center w-full h-full min-h-[400px] p-4">
@@ -113,7 +127,8 @@ export class CanvasErrorBoundary extends Component<Props, State> {
                 <CardTitle>Canvas Error</CardTitle>
               </div>
               <CardDescription>
-                The canvas encountered an error and could not render. Your data is safe.
+                The canvas encountered an error and could not render. Your data
+                is safe.
               </CardDescription>
             </CardHeader>
 
@@ -127,7 +142,9 @@ export class CanvasErrorBoundary extends Component<Props, State> {
 
                 {this.state.errorInfo && (
                   <details className="cursor-pointer">
-                    <summary className="text-sm font-medium">Component Stack</summary>
+                    <summary className="text-sm font-medium">
+                      Component Stack
+                    </summary>
                     <pre className="mt-2 text-xs overflow-auto rounded-lg bg-muted p-4 max-h-64">
                       {this.state.errorInfo.componentStack}
                     </pre>

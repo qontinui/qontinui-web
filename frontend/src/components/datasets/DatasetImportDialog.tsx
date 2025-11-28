@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Dataset Import Dialog
@@ -8,14 +8,14 @@
  * - Direct folder upload (manifest.jsonl + images/ + annotations/)
  */
 
-import { useState, useRef } from 'react'
-import { datasetService } from '@/services/dataset-service'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Progress } from '@/components/ui/progress'
+import { useState, useRef } from "react";
+import { datasetService } from "@/services/dataset-service";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -23,90 +23,96 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from "@/components/ui/dialog";
 import {
   Upload,
   FileArchive,
   CheckCircle2,
   AlertCircle,
   Loader2,
-} from 'lucide-react'
+} from "lucide-react";
 
 interface DatasetImportDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onImportComplete: () => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImportComplete: () => void;
 }
 
-type ImportStep = 'select' | 'configure' | 'uploading' | 'processing' | 'complete' | 'error'
+type ImportStep =
+  | "select"
+  | "configure"
+  | "uploading"
+  | "processing"
+  | "complete"
+  | "error";
 
 export function DatasetImportDialog({
   open,
   onOpenChange,
   onImportComplete,
 }: DatasetImportDialogProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [step, setStep] = useState<ImportStep>('select')
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [datasetName, setDatasetName] = useState('')
-  const [description, setDescription] = useState('')
-  const [uploadProgress, setUploadProgress] = useState(0)
+  const [step, setStep] = useState<ImportStep>("select");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [datasetName, setDatasetName] = useState("");
+  const [description, setDescription] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [importResult, setImportResult] = useState<{
-    images: number
-    annotations: number
-    warnings: string[]
-    errors: string[]
-  } | null>(null)
-  const [error, setError] = useState<string | null>(null)
+    images: number;
+    annotations: number;
+    warnings: string[];
+    errors: string[];
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const file = e.target.files?.[0];
+    if (!file) return;
 
     // Validate file type
-    if (!file.name.endsWith('.zip')) {
-      toast.error('Please select a ZIP file')
-      return
+    if (!file.name.endsWith(".zip")) {
+      toast.error("Please select a ZIP file");
+      return;
     }
 
-    setSelectedFile(file)
+    setSelectedFile(file);
     // Auto-generate name from filename
-    const baseName = file.name.replace('.zip', '').replace(/_/g, ' ')
-    setDatasetName(baseName)
-    setStep('configure')
-  }
+    const baseName = file.name.replace(".zip", "").replace(/_/g, " ");
+    setDatasetName(baseName);
+    setStep("configure");
+  };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
+    e.preventDefault();
 
-    const file = e.dataTransfer.files[0]
-    if (!file) return
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
 
-    if (!file.name.endsWith('.zip')) {
-      toast.error('Please drop a ZIP file')
-      return
+    if (!file.name.endsWith(".zip")) {
+      toast.error("Please drop a ZIP file");
+      return;
     }
 
-    setSelectedFile(file)
-    const baseName = file.name.replace('.zip', '').replace(/_/g, ' ')
-    setDatasetName(baseName)
-    setStep('configure')
-  }
+    setSelectedFile(file);
+    const baseName = file.name.replace(".zip", "").replace(/_/g, " ");
+    setDatasetName(baseName);
+    setStep("configure");
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-  }
+    e.preventDefault();
+  };
 
   const handleImport = async () => {
     if (!selectedFile || !datasetName.trim()) {
-      toast.error('Please provide a dataset name')
-      return
+      toast.error("Please provide a dataset name");
+      return;
     }
 
-    setStep('uploading')
-    setUploadProgress(0)
-    setError(null)
+    setStep("uploading");
+    setUploadProgress(0);
+    setError(null);
 
     try {
       const result = await datasetService.importDataset(
@@ -114,59 +120,59 @@ export function DatasetImportDialog({
         datasetName.trim(),
         description.trim() || undefined,
         (progress) => {
-          setUploadProgress(progress)
+          setUploadProgress(progress);
           if (progress === 100) {
-            setStep('processing')
+            setStep("processing");
           }
         }
-      )
+      );
 
       setImportResult({
         images: result.images_imported,
         annotations: result.annotations_imported,
         warnings: result.warnings,
         errors: result.errors,
-      })
+      });
 
       if (result.errors.length > 0) {
-        setStep('error')
+        setStep("error");
       } else {
-        setStep('complete')
+        setStep("complete");
       }
     } catch (err) {
-      console.error('Import error:', err)
-      setError(err instanceof Error ? err.message : 'Import failed')
-      setStep('error')
+      console.error("Import error:", err);
+      setError(err instanceof Error ? err.message : "Import failed");
+      setStep("error");
     }
-  }
+  };
 
   const handleClose = () => {
     // Reset state
-    setStep('select')
-    setSelectedFile(null)
-    setDatasetName('')
-    setDescription('')
-    setUploadProgress(0)
-    setImportResult(null)
-    setError(null)
+    setStep("select");
+    setSelectedFile(null);
+    setDatasetName("");
+    setDescription("");
+    setUploadProgress(0);
+    setImportResult(null);
+    setError(null);
 
-    onOpenChange(false)
+    onOpenChange(false);
 
     // Notify parent if import was successful
-    if (step === 'complete') {
-      onImportComplete()
+    if (step === "complete") {
+      onImportComplete();
     }
-  }
+  };
 
   const handleReset = () => {
-    setStep('select')
-    setSelectedFile(null)
-    setDatasetName('')
-    setDescription('')
-    setUploadProgress(0)
-    setImportResult(null)
-    setError(null)
-  }
+    setStep("select");
+    setSelectedFile(null);
+    setDatasetName("");
+    setDescription("");
+    setUploadProgress(0);
+    setImportResult(null);
+    setError(null);
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -174,13 +180,14 @@ export function DatasetImportDialog({
         <DialogHeader>
           <DialogTitle>Import Training Dataset</DialogTitle>
           <DialogDescription>
-            Import a dataset exported from the Training Data Exporter. The ZIP file
-            should contain manifest.jsonl, images/, and annotations/ directories.
+            Import a dataset exported from the Training Data Exporter. The ZIP
+            file should contain manifest.jsonl, images/, and annotations/
+            directories.
           </DialogDescription>
         </DialogHeader>
 
         {/* Step: Select File */}
-        {step === 'select' && (
+        {step === "select" && (
           <div
             className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-accent/50 transition-colors"
             onClick={() => fileInputRef.current?.click()}
@@ -209,7 +216,7 @@ export function DatasetImportDialog({
         )}
 
         {/* Step: Configure */}
-        {step === 'configure' && selectedFile && (
+        {step === "configure" && selectedFile && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 p-3 bg-accent/50 rounded-lg">
               <FileArchive className="h-8 w-8 text-primary" />
@@ -248,17 +255,19 @@ export function DatasetImportDialog({
         )}
 
         {/* Step: Uploading */}
-        {step === 'uploading' && (
+        {step === "uploading" && (
           <div className="py-8 text-center">
             <Loader2 className="mx-auto h-12 w-12 text-primary animate-spin mb-4" />
             <p className="font-medium mb-4">Uploading dataset...</p>
             <Progress value={uploadProgress} className="w-full" />
-            <p className="text-sm text-muted-foreground mt-2">{uploadProgress}%</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              {uploadProgress}%
+            </p>
           </div>
         )}
 
         {/* Step: Processing */}
-        {step === 'processing' && (
+        {step === "processing" && (
           <div className="py-8 text-center">
             <Loader2 className="mx-auto h-12 w-12 text-primary animate-spin mb-4" />
             <p className="font-medium">Processing dataset...</p>
@@ -269,7 +278,7 @@ export function DatasetImportDialog({
         )}
 
         {/* Step: Complete */}
-        {step === 'complete' && importResult && (
+        {step === "complete" && importResult && (
           <div className="py-4">
             <div className="flex items-center justify-center mb-6">
               <div className="h-16 w-16 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
@@ -286,7 +295,9 @@ export function DatasetImportDialog({
               </div>
               <div className="text-center p-4 bg-accent/50 rounded-lg">
                 <p className="text-3xl font-bold">{importResult.annotations}</p>
-                <p className="text-sm text-muted-foreground">Annotations Imported</p>
+                <p className="text-sm text-muted-foreground">
+                  Annotations Imported
+                </p>
               </div>
             </div>
             {importResult.warnings.length > 0 && (
@@ -308,7 +319,7 @@ export function DatasetImportDialog({
         )}
 
         {/* Step: Error */}
-        {step === 'error' && (
+        {step === "error" && (
           <div className="py-4">
             <div className="flex items-center justify-center mb-6">
               <div className="h-16 w-16 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center">
@@ -316,11 +327,13 @@ export function DatasetImportDialog({
               </div>
             </div>
             <h3 className="text-xl font-semibold text-center mb-4">
-              Import {importResult ? 'Completed with Errors' : 'Failed'}
+              Import {importResult ? "Completed with Errors" : "Failed"}
             </h3>
             {error && (
               <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-lg mb-4">
-                <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+                <p className="text-sm text-red-700 dark:text-red-300">
+                  {error}
+                </p>
               </div>
             )}
             {importResult && (
@@ -328,11 +341,17 @@ export function DatasetImportDialog({
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="text-center p-4 bg-accent/50 rounded-lg">
                     <p className="text-3xl font-bold">{importResult.images}</p>
-                    <p className="text-sm text-muted-foreground">Images Imported</p>
+                    <p className="text-sm text-muted-foreground">
+                      Images Imported
+                    </p>
                   </div>
                   <div className="text-center p-4 bg-accent/50 rounded-lg">
-                    <p className="text-3xl font-bold">{importResult.annotations}</p>
-                    <p className="text-sm text-muted-foreground">Annotations Imported</p>
+                    <p className="text-3xl font-bold">
+                      {importResult.annotations}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Annotations Imported
+                    </p>
                   </div>
                 </div>
                 {importResult.errors.length > 0 && (
@@ -356,13 +375,13 @@ export function DatasetImportDialog({
         )}
 
         <DialogFooter>
-          {step === 'select' && (
+          {step === "select" && (
             <Button variant="outline" onClick={handleClose}>
               Cancel
             </Button>
           )}
 
-          {step === 'configure' && (
+          {step === "configure" && (
             <>
               <Button variant="outline" onClick={handleReset}>
                 Back
@@ -374,21 +393,21 @@ export function DatasetImportDialog({
             </>
           )}
 
-          {(step === 'uploading' || step === 'processing') && (
+          {(step === "uploading" || step === "processing") && (
             <Button variant="outline" disabled>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Processing...
             </Button>
           )}
 
-          {step === 'complete' && (
+          {step === "complete" && (
             <Button onClick={handleClose}>
               <CheckCircle2 className="mr-2 h-4 w-4" />
               Done
             </Button>
           )}
 
-          {step === 'error' && (
+          {step === "error" && (
             <>
               <Button variant="outline" onClick={handleReset}>
                 Try Again
@@ -399,5 +418,5 @@ export function DatasetImportDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

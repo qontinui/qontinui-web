@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,11 +8,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { AlertCircle } from 'lucide-react';
-import { authService } from '@/services/service-factory';
-import { toast } from 'sonner';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { AlertCircle } from "lucide-react";
+import { authService } from "@/services/service-factory";
+import { toast } from "sonner";
 
 export function RefreshTokenExpiryWarning() {
   const [showWarning, setShowWarning] = useState(false);
@@ -29,15 +29,20 @@ export function RefreshTokenExpiryWarning() {
 
       const now = Date.now();
       const timeUntilExpiry = refreshExpiry - now;
-      const daysUntilExpiry = Math.ceil(timeUntilExpiry / (24 * 60 * 60 * 1000));
+      const daysUntilExpiry = Math.ceil(
+        timeUntilExpiry / (24 * 60 * 60 * 1000)
+      );
 
       // Show warning if refresh token expires in 7 days or less
       if (daysUntilExpiry <= 7 && daysUntilExpiry > 0 && !showWarning) {
-        console.log('[RefreshTokenExpiryWarning] Refresh token expiring soon:', {
-          timestamp: new Date().toISOString(),
-          expiryDate: new Date(refreshExpiry).toISOString(),
-          daysRemaining: daysUntilExpiry,
-        });
+        console.log(
+          "[RefreshTokenExpiryWarning] Refresh token expiring soon:",
+          {
+            timestamp: new Date().toISOString(),
+            expiryDate: new Date(refreshExpiry).toISOString(),
+            daysRemaining: daysUntilExpiry,
+          }
+        );
         setDaysRemaining(daysUntilExpiry);
         setShowWarning(true);
       }
@@ -53,28 +58,33 @@ export function RefreshTokenExpiryWarning() {
   }, [showWarning]);
 
   const handleDismiss = () => {
-    console.log('[RefreshTokenExpiryWarning] User dismissed warning');
+    console.log("[RefreshTokenExpiryWarning] User dismissed warning");
     setShowWarning(false);
 
     // Show reminder again in 24 hours if still expiring
-    setTimeout(() => {
-      const refreshExpiry = authService.tokenManager.getRefreshTokenExpiry();
-      if (refreshExpiry) {
-        const timeUntilExpiry = refreshExpiry - Date.now();
-        const daysUntilExpiry = Math.ceil(timeUntilExpiry / (24 * 60 * 60 * 1000));
-        if (daysUntilExpiry <= 7 && daysUntilExpiry > 0) {
-          setDaysRemaining(daysUntilExpiry);
-          setShowWarning(true);
+    setTimeout(
+      () => {
+        const refreshExpiry = authService.tokenManager.getRefreshTokenExpiry();
+        if (refreshExpiry) {
+          const timeUntilExpiry = refreshExpiry - Date.now();
+          const daysUntilExpiry = Math.ceil(
+            timeUntilExpiry / (24 * 60 * 60 * 1000)
+          );
+          if (daysUntilExpiry <= 7 && daysUntilExpiry > 0) {
+            setDaysRemaining(daysUntilExpiry);
+            setShowWarning(true);
+          }
         }
-      }
-    }, 24 * 60 * 60 * 1000);
+      },
+      24 * 60 * 60 * 1000
+    );
   };
 
   const handleReLogin = () => {
-    console.log('[RefreshTokenExpiryWarning] User chose to re-login');
-    toast.info('Please log in again to extend your session');
+    console.log("[RefreshTokenExpiryWarning] User chose to re-login");
+    toast.info("Please log in again to extend your session");
     authService.logout();
-    window.location.href = '/';
+    window.location.href = "/";
   };
 
   if (!showWarning) {
@@ -90,22 +100,16 @@ export function RefreshTokenExpiryWarning() {
             <DialogTitle>Session Expiring Soon</DialogTitle>
           </div>
           <DialogDescription>
-            Your long-term session will expire in {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'}.
-            To maintain uninterrupted access, please log in again soon.
+            Your long-term session will expire in {daysRemaining}{" "}
+            {daysRemaining === 1 ? "day" : "days"}. To maintain uninterrupted
+            access, please log in again soon.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            variant="outline"
-            onClick={handleDismiss}
-          >
+          <Button variant="outline" onClick={handleDismiss}>
             Remind Me Tomorrow
           </Button>
-          <Button
-            onClick={handleReLogin}
-          >
-            Log In Now
-          </Button>
+          <Button onClick={handleReLogin}>Log In Now</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

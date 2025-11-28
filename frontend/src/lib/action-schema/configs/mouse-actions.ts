@@ -2,9 +2,9 @@
  * Mouse action configurations
  */
 
-import { TargetConfig } from '../shared/target-config';
-import { Coordinates, MouseButton, Region } from '../shared/common-types';
-import { VerificationConfig } from '../shared/verification-config';
+import { TargetConfig } from "../shared/target-config";
+import { Coordinates, MouseButton, Region } from "../shared/common-types";
+import { VerificationConfig } from "../shared/verification-config";
 
 /**
  * CLICK - Click on a target
@@ -100,7 +100,7 @@ export interface DragActionConfig {
  */
 export interface ScrollActionConfig {
   /** Scroll direction */
-  direction: 'up' | 'down' | 'left' | 'right';
+  direction: "up" | "down" | "left" | "right";
 
   /** Number of scroll clicks */
   clicks?: number;

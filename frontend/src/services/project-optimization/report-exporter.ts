@@ -4,10 +4,14 @@
  * Responsible for exporting optimization reports
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { State, ImageAsset, Transition } from '@/contexts/automation-context/types';
-import type { OptimizationReport } from './types';
-import { getHealthReport } from './health-analyzer';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type {
+  State,
+  ImageAsset,
+  Transition,
+} from "@/contexts/automation-context/types";
+import type { OptimizationReport } from "./types";
+import { getHealthReport } from "./health-analyzer";
 
 /**
  * Export optimization report
@@ -23,8 +27,8 @@ export function exportOptimizationReport(
   return {
     metadata: {
       generatedAt: new Date().toISOString(),
-      projectName: 'qontinui-project',
-      version: '1.0.0',
+      projectName: "qontinui-project",
+      version: "1.0.0",
     },
     health: healthReport.health,
     suggestions: healthReport.suggestions,

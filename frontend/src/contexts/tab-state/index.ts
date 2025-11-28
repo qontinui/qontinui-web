@@ -16,17 +16,17 @@ export type {
   ScreenshotAnnotationState,
   PatternOptimizationState,
   TabStates,
-} from './types'
+} from "./types";
 
 export {
   DEFAULT_IMAGE_EXTRACTION_STATE,
   DEFAULT_PATTERN_MATCHING_STATE,
   DEFAULT_SCREENSHOT_ANNOTATION_STATE,
   DEFAULT_PATTERN_OPTIMIZATION_STATE,
-} from './types'
+} from "./types";
 
 // Storage utilities
-export { loadTabStates, saveTabStates, clearTabStates } from './storage'
+export { loadTabStates, saveTabStates, clearTabStates } from "./storage";
 
 // Context and hooks
 export {
@@ -38,4 +38,4 @@ export {
   usePatternMatchingState,
   useScreenshotAnnotationState,
   usePatternOptimizationState,
-} from './context'
+} from "./context";

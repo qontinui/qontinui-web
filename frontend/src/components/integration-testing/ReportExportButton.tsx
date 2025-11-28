@@ -1,9 +1,9 @@
 // components/integration-testing/ReportExportButton.tsx
 
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,20 +11,20 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { FileText, Download, Loader2 } from 'lucide-react';
-import type { MockExecutionResponse } from '@/types/integration-testing';
-import { generatePDFReport } from '@/lib/api/integration-testing';
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { FileText, Download, Loader2 } from "lucide-react";
+import type { MockExecutionResponse } from "@/types/integration-testing";
+import { generatePDFReport } from "@/lib/api/integration-testing";
 
 interface ReportExportButtonProps {
   result: MockExecutionResponse;
@@ -38,8 +38,8 @@ interface PDFOptions {
   includeTimeline: boolean;
   includeRecommendations: boolean;
   includeAppendices: boolean;
-  screenshotQuality: 'low' | 'medium' | 'high';
-  pageSize: 'letter' | 'a4';
+  screenshotQuality: "low" | "medium" | "high";
+  pageSize: "letter" | "a4";
   title?: string;
 }
 
@@ -58,8 +58,8 @@ export function ReportExportButton({
     includeTimeline: true,
     includeRecommendations: true,
     includeAppendices: true,
-    screenshotQuality: 'medium',
-    pageSize: 'letter',
+    screenshotQuality: "medium",
+    pageSize: "letter",
     title: undefined,
   });
 
@@ -81,9 +81,9 @@ export function ReportExportButton({
 
       // Create download link
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `${result.process_name}_report_${new Date().toISOString().split('T')[0]}.pdf`;
+      a.download = `${result.process_name}_report_${new Date().toISOString().split("T")[0]}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -92,9 +92,9 @@ export function ReportExportButton({
       // Close dialog
       setShowOptions(false);
     } catch (err) {
-      console.error('Failed to generate PDF:', err);
+      console.error("Failed to generate PDF:", err);
       setError(
-        err instanceof Error ? err.message : 'Failed to generate PDF report'
+        err instanceof Error ? err.message : "Failed to generate PDF report"
       );
     } finally {
       setIsGenerating(false);
@@ -215,7 +215,7 @@ export function ReportExportButton({
                 <Label htmlFor="quality">Screenshot Quality</Label>
                 <Select
                   value={options.screenshotQuality}
-                  onValueChange={(value: 'low' | 'medium' | 'high') =>
+                  onValueChange={(value: "low" | "medium" | "high") =>
                     setOptions((prev) => ({
                       ...prev,
                       screenshotQuality: value,
@@ -243,7 +243,7 @@ export function ReportExportButton({
               <Label htmlFor="pageSize">Page Size</Label>
               <Select
                 value={options.pageSize}
-                onValueChange={(value: 'letter' | 'a4') =>
+                onValueChange={(value: "letter" | "a4") =>
                   setOptions((prev) => ({ ...prev, pageSize: value }))
                 }
               >
@@ -265,7 +265,7 @@ export function ReportExportButton({
               <Input
                 id="title"
                 placeholder="Integration Test Report"
-                value={options.title || ''}
+                value={options.title || ""}
                 onChange={(e) =>
                   setOptions((prev) => ({ ...prev, title: e.target.value }))
                 }
@@ -282,11 +282,12 @@ export function ReportExportButton({
             {/* File Size Estimate */}
             <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded">
               <p className="text-sm">
-                <strong>Estimated file size:</strong>{' '}
+                <strong>Estimated file size:</strong>{" "}
                 {estimateFileSize(result, options)}
               </p>
               <p className="text-xs mt-1 text-blue-600">
-                Actual size may vary based on screenshot content and compression.
+                Actual size may vary based on screenshot content and
+                compression.
               </p>
             </div>
           </div>
@@ -333,9 +334,9 @@ function estimateFileSize(
   // Screenshots contribution
   if (options.includeScreenshots) {
     const screenshotSizePerImage =
-      options.screenshotQuality === 'high'
+      options.screenshotQuality === "high"
         ? 200
-        : options.screenshotQuality === 'medium'
+        : options.screenshotQuality === "medium"
           ? 100
           : 50;
 

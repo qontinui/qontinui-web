@@ -9,7 +9,7 @@
  * - Export search results
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Search,
   Filter,
@@ -27,23 +27,28 @@ import {
   BookOpen,
   TrendingUp,
   RotateCcw,
-} from 'lucide-react';
-import { Workflow } from '../../lib/action-schema/action-types';
-import { WorkflowFolder, SearchFilter, SavedFilter, ComplexityLevel } from './types';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Badge } from '../ui/badge';
-import { Slider } from '../ui/slider';
-import { Separator } from '../ui/separator';
-import { ScrollArea } from '../ui/scroll-area';
+} from "lucide-react";
+import { Workflow } from "../../lib/action-schema/action-types";
+import {
+  WorkflowFolder,
+  SearchFilter,
+  SavedFilter,
+  ComplexityLevel,
+} from "./types";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Badge } from "../ui/badge";
+import { Slider } from "../ui/slider";
+import { Separator } from "../ui/separator";
+import { ScrollArea } from "../ui/scroll-area";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../ui/select';
+} from "../ui/select";
 import {
   Dialog,
   DialogContent,
@@ -51,10 +56,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../ui/dialog';
-import { Checkbox } from '../ui/checkbox';
-import { cn } from '../../lib/utils';
-import { toast } from 'sonner';
+} from "../ui/dialog";
+import { Checkbox } from "../ui/checkbox";
+import { cn } from "../../lib/utils";
+import { toast } from "sonner";
 
 // ============================================================================
 // Types
@@ -103,16 +108,16 @@ function useDebounce<T>(value: T, delay: number): T {
 function calculateComplexity(workflow: Workflow): ComplexityLevel {
   const actionCount = workflow.actions.length;
   const hasControlFlow = workflow.actions.some((a) =>
-    ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH'].includes(a.type)
+    ["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(a.type)
   );
   const hasDataOps = workflow.actions.some((a) =>
-    ['MAP', 'REDUCE', 'FILTER', 'SORT'].includes(a.type)
+    ["MAP", "REDUCE", "FILTER", "SORT"].includes(a.type)
   );
 
-  if (actionCount <= 5 && !hasControlFlow && !hasDataOps) return 'low';
-  if (actionCount <= 15 && (!hasControlFlow || !hasDataOps)) return 'medium';
-  if (actionCount <= 30) return 'high';
-  return 'very-high';
+  if (actionCount <= 5 && !hasControlFlow && !hasDataOps) return "low";
+  if (actionCount <= 15 && (!hasControlFlow || !hasDataOps)) return "medium";
+  if (actionCount <= 30) return "high";
+  return "very-high";
 }
 
 /**
@@ -124,10 +129,10 @@ function matchesFilter(workflow: Workflow, filter: SearchFilter): boolean {
     const query = filter.query.toLowerCase();
     const searchableText = [
       workflow.name,
-      workflow.description || '',
+      workflow.description || "",
       ...(workflow.tags || []),
     ]
-      .join(' ')
+      .join(" ")
       .toLowerCase();
 
     if (!searchableText.includes(query)) {
@@ -146,7 +151,7 @@ function matchesFilter(workflow: Workflow, filter: SearchFilter): boolean {
   // Tag filter
   if (filter.tags && filter.tags.length > 0) {
     const workflowTags = workflow.tags || [];
-    if (filter.tagOperator === 'AND') {
+    if (filter.tagOperator === "AND") {
       // All tags must match
       if (!filter.tags.every((tag) => workflowTags.includes(tag))) {
         return false;
@@ -221,8 +226,13 @@ function matchesFilter(workflow: Workflow, filter: SearchFilter): boolean {
   }
 
   // Has documentation filter
-  if (filter.hasDocumentation !== null && filter.hasDocumentation !== undefined) {
-    const hasDoc = Boolean(workflow.description && workflow.description.length > 0);
+  if (
+    filter.hasDocumentation !== null &&
+    filter.hasDocumentation !== undefined
+  ) {
+    const hasDoc = Boolean(
+      workflow.description && workflow.description.length > 0
+    );
     if (hasDoc !== filter.hasDocumentation) {
       return false;
     }
@@ -284,21 +294,29 @@ export function AdvancedSearch({
   // State
   const [isExpanded, setIsExpanded] = useState(true);
   const [filter, setFilter] = useState<SearchFilter>({});
-  const [textQuery, setTextQuery] = useState('');
+  const [textQuery, setTextQuery] = useState("");
   const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [filterName, setFilterName] = useState('');
+  const [filterName, setFilterName] = useState("");
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedActionTypes, setSelectedActionTypes] = useState<string[]>([]);
-  const [selectedComplexity, setSelectedComplexity] = useState<ComplexityLevel[]>([]);
+  const [selectedComplexity, setSelectedComplexity] = useState<
+    ComplexityLevel[]
+  >([]);
 
   // Debounce text query
   const debouncedQuery = useDebounce(textQuery, 300);
 
   // Extract available options
   const availableTags = useMemo(() => getAllTags(workflows), [workflows]);
-  const availableActionTypes = useMemo(() => getAllActionTypes(workflows), [workflows]);
-  const availableCategories = useMemo(() => getAllCategories(workflows), [workflows]);
+  const availableActionTypes = useMemo(
+    () => getAllActionTypes(workflows),
+    [workflows]
+  );
+  const availableCategories = useMemo(
+    () => getAllCategories(workflows),
+    [workflows]
+  );
 
   // Build filter object
   useEffect(() => {
@@ -308,7 +326,7 @@ export function AdvancedSearch({
     if (selectedFolderIds.length > 0) newFilter.folderIds = selectedFolderIds;
     if (selectedTags.length > 0) {
       newFilter.tags = selectedTags;
-      newFilter.tagOperator = filter.tagOperator || 'OR';
+      newFilter.tagOperator = filter.tagOperator || "OR";
     }
     if (filter.createdDateRange?.from || filter.createdDateRange?.to) {
       newFilter.createdDateRange = filter.createdDateRange;
@@ -316,13 +334,18 @@ export function AdvancedSearch({
     if (filter.modifiedDateRange?.from || filter.modifiedDateRange?.to) {
       newFilter.modifiedDateRange = filter.modifiedDateRange;
     }
-    if (selectedActionTypes.length > 0) newFilter.actionTypes = selectedActionTypes;
-    if (selectedComplexity.length > 0) newFilter.complexityLevel = selectedComplexity;
+    if (selectedActionTypes.length > 0)
+      newFilter.actionTypes = selectedActionTypes;
+    if (selectedComplexity.length > 0)
+      newFilter.complexityLevel = selectedComplexity;
     if (filter.category) newFilter.category = filter.category;
     if (filter.hasTests !== undefined && filter.hasTests !== null) {
       newFilter.hasTests = filter.hasTests;
     }
-    if (filter.hasDocumentation !== undefined && filter.hasDocumentation !== null) {
+    if (
+      filter.hasDocumentation !== undefined &&
+      filter.hasDocumentation !== null
+    ) {
       newFilter.hasDocumentation = filter.hasDocumentation;
     }
     if (filter.minSuccessRate !== undefined) {
@@ -357,30 +380,30 @@ export function AdvancedSearch({
 
   // Handlers
   const handleClearAll = useCallback(() => {
-    setTextQuery('');
+    setTextQuery("");
     setSelectedFolderIds([]);
     setSelectedTags([]);
     setSelectedActionTypes([]);
     setSelectedComplexity([]);
     setFilter({});
-    toast.success('Filters cleared');
+    toast.success("Filters cleared");
   }, []);
 
   const handleSaveFilter = useCallback(() => {
     if (!filterName.trim()) {
-      toast.error('Please enter a filter name');
+      toast.error("Please enter a filter name");
       return;
     }
 
     onSaveFilter(filterName.trim(), filter);
     setShowSaveDialog(false);
-    setFilterName('');
+    setFilterName("");
     toast.success(`Filter "${filterName}" saved`);
   }, [filterName, filter, onSaveFilter]);
 
   const handleLoadFilter = useCallback((savedFilter: SavedFilter) => {
     const f = savedFilter.filter;
-    setTextQuery(f.query || '');
+    setTextQuery(f.query || "");
     setSelectedFolderIds(f.folderIds || []);
     setSelectedTags(f.tags || []);
     setSelectedActionTypes(f.actionTypes || []);
@@ -391,20 +414,20 @@ export function AdvancedSearch({
 
   const handleExportResults = useCallback(() => {
     const data = JSON.stringify(filteredWorkflows, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
+    const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `workflow-search-results-${new Date().toISOString()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Results exported');
+    toast.success("Results exported");
   }, [filteredWorkflows]);
 
   const isFilterActive = Object.keys(filter).length > 0;
 
   return (
-    <div className={cn('border rounded-lg bg-card', className)}>
+    <div className={cn("border rounded-lg bg-card", className)}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-2">
@@ -423,7 +446,11 @@ export function AdvancedSearch({
                 <RotateCcw className="h-4 w-4 mr-2" />
                 Clear All
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowSaveDialog(true)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSaveDialog(true)}
+              >
                 <Save className="h-4 w-4 mr-2" />
                 Save Filter
               </Button>
@@ -472,10 +499,12 @@ export function AdvancedSearch({
               <>
                 <div className="space-y-2">
                   <Label>Saved Filters</Label>
-                  <Select onValueChange={(id) => {
-                    const savedFilter = savedFilters.find((f) => f.id === id);
-                    if (savedFilter) handleLoadFilter(savedFilter);
-                  }}>
+                  <Select
+                    onValueChange={(id) => {
+                      const savedFilter = savedFilters.find((f) => f.id === id);
+                      if (savedFilter) handleLoadFilter(savedFilter);
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Load a saved filter..." />
                     </SelectTrigger>
@@ -508,7 +537,10 @@ export function AdvancedSearch({
                       checked={selectedFolderIds.includes(folder.id)}
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedFolderIds([...selectedFolderIds, folder.id]);
+                          setSelectedFolderIds([
+                            ...selectedFolderIds,
+                            folder.id,
+                          ]);
                         } else {
                           setSelectedFolderIds(
                             selectedFolderIds.filter((id) => id !== folder.id)
@@ -533,21 +565,21 @@ export function AdvancedSearch({
                 </div>
                 <div className="flex items-center gap-1">
                   <Button
-                    variant={filter.tagOperator === 'AND' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() =>
-                      setFilter({ ...filter, tagOperator: 'AND' })
+                    variant={
+                      filter.tagOperator === "AND" ? "default" : "outline"
                     }
+                    size="sm"
+                    onClick={() => setFilter({ ...filter, tagOperator: "AND" })}
                     className="h-7 px-2 text-xs"
                   >
                     AND
                   </Button>
                   <Button
-                    variant={filter.tagOperator === 'OR' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() =>
-                      setFilter({ ...filter, tagOperator: 'OR' })
+                    variant={
+                      filter.tagOperator === "OR" ? "default" : "outline"
                     }
+                    size="sm"
+                    onClick={() => setFilter({ ...filter, tagOperator: "OR" })}
                     className="h-7 px-2 text-xs"
                   >
                     OR
@@ -566,7 +598,9 @@ export function AdvancedSearch({
                         if (checked) {
                           setSelectedTags([...selectedTags, tag]);
                         } else {
-                          setSelectedTags(selectedTags.filter((t) => t !== tag));
+                          setSelectedTags(
+                            selectedTags.filter((t) => t !== tag)
+                          );
                         }
                       }}
                     />
@@ -596,7 +630,9 @@ export function AdvancedSearch({
                     type="date"
                     placeholder="From"
                     onChange={(e) => {
-                      const date = e.target.value ? new Date(e.target.value) : undefined;
+                      const date = e.target.value
+                        ? new Date(e.target.value)
+                        : undefined;
                       setFilter({
                         ...filter,
                         createdDateRange: {
@@ -610,7 +646,9 @@ export function AdvancedSearch({
                     type="date"
                     placeholder="To"
                     onChange={(e) => {
-                      const date = e.target.value ? new Date(e.target.value) : undefined;
+                      const date = e.target.value
+                        ? new Date(e.target.value)
+                        : undefined;
                       setFilter({
                         ...filter,
                         createdDateRange: {
@@ -634,7 +672,9 @@ export function AdvancedSearch({
                     type="date"
                     placeholder="From"
                     onChange={(e) => {
-                      const date = e.target.value ? new Date(e.target.value) : undefined;
+                      const date = e.target.value
+                        ? new Date(e.target.value)
+                        : undefined;
                       setFilter({
                         ...filter,
                         modifiedDateRange: {
@@ -648,7 +688,9 @@ export function AdvancedSearch({
                     type="date"
                     placeholder="To"
                     onChange={(e) => {
-                      const date = e.target.value ? new Date(e.target.value) : undefined;
+                      const date = e.target.value
+                        ? new Date(e.target.value)
+                        : undefined;
                       setFilter({
                         ...filter,
                         modifiedDateRange: {
@@ -680,7 +722,10 @@ export function AdvancedSearch({
                       checked={selectedActionTypes.includes(type)}
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedActionTypes([...selectedActionTypes, type]);
+                          setSelectedActionTypes([
+                            ...selectedActionTypes,
+                            type,
+                          ]);
                         } else {
                           setSelectedActionTypes(
                             selectedActionTypes.filter((t) => t !== type)
@@ -703,28 +748,30 @@ export function AdvancedSearch({
                 <Label>Complexity</Label>
               </div>
               <div className="space-y-1">
-                {(['low', 'medium', 'high', 'very-high'] as ComplexityLevel[]).map(
-                  (level) => (
-                    <label
-                      key={level}
-                      className="flex items-center gap-2 py-1 px-2 hover:bg-accent rounded cursor-pointer"
-                    >
-                      <Checkbox
-                        checked={selectedComplexity.includes(level)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setSelectedComplexity([...selectedComplexity, level]);
-                          } else {
-                            setSelectedComplexity(
-                              selectedComplexity.filter((l) => l !== level)
-                            );
-                          }
-                        }}
-                      />
-                      <span className="text-sm capitalize">{level.replace('-', ' ')}</span>
-                    </label>
-                  )
-                )}
+                {(
+                  ["low", "medium", "high", "very-high"] as ComplexityLevel[]
+                ).map((level) => (
+                  <label
+                    key={level}
+                    className="flex items-center gap-2 py-1 px-2 hover:bg-accent rounded cursor-pointer"
+                  >
+                    <Checkbox
+                      checked={selectedComplexity.includes(level)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedComplexity([...selectedComplexity, level]);
+                        } else {
+                          setSelectedComplexity(
+                            selectedComplexity.filter((l) => l !== level)
+                          );
+                        }
+                      }}
+                    />
+                    <span className="text-sm capitalize">
+                      {level.replace("-", " ")}
+                    </span>
+                  </label>
+                ))}
               </div>
             </div>
 
@@ -734,7 +781,7 @@ export function AdvancedSearch({
             <div className="space-y-2">
               <Label>Category</Label>
               <Select
-                value={filter.category || ''}
+                value={filter.category || ""}
                 onValueChange={(value) =>
                   setFilter({ ...filter, category: value || undefined })
                 }
@@ -766,15 +813,15 @@ export function AdvancedSearch({
                 <Select
                   value={
                     filter.hasTests === null || filter.hasTests === undefined
-                      ? 'all'
+                      ? "all"
                       : filter.hasTests
-                      ? 'yes'
-                      : 'no'
+                        ? "yes"
+                        : "no"
                   }
                   onValueChange={(value) => {
                     setFilter({
                       ...filter,
-                      hasTests: value === 'all' ? null : value === 'yes',
+                      hasTests: value === "all" ? null : value === "yes",
                     });
                   }}
                 >
@@ -799,15 +846,16 @@ export function AdvancedSearch({
                   value={
                     filter.hasDocumentation === null ||
                     filter.hasDocumentation === undefined
-                      ? 'all'
+                      ? "all"
                       : filter.hasDocumentation
-                      ? 'yes'
-                      : 'no'
+                        ? "yes"
+                        : "no"
                   }
                   onValueChange={(value) => {
                     setFilter({
                       ...filter,
-                      hasDocumentation: value === 'all' ? null : value === 'yes',
+                      hasDocumentation:
+                        value === "all" ? null : value === "yes",
                     });
                   }}
                 >

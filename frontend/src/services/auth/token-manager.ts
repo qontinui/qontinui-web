@@ -1,6 +1,6 @@
-import { TokenResponse } from '@/types/auth-types';
-import { TokenStorage } from './token-storage';
-import { TokenValidator } from './token-validator';
+import { TokenResponse } from "@/types/auth-types";
+import { TokenStorage } from "./token-storage";
+import { TokenValidator } from "./token-validator";
 
 /**
  * TokenManager - Single Responsibility: Coordinate token operations
@@ -81,7 +81,7 @@ export class TokenManager {
     // Check token expiry for proactive refresh logic
     const expiry = this.storage.getTokenExpiry();
 
-    console.log('[TokenManager] hasValidToken check:', {
+    console.log("[TokenManager] hasValidToken check:", {
       isAuthenticated,
       expiry,
       expiryDate: expiry ? new Date(expiry).toISOString() : null,
@@ -93,15 +93,21 @@ export class TokenManager {
 
     // If not authenticated flag, definitely not valid
     if (!isAuthenticated) {
-      console.log('[TokenManager] hasValidToken: returning false (not authenticated flag)');
+      console.log(
+        "[TokenManager] hasValidToken: returning false (not authenticated flag)"
+      );
       return false;
     }
 
     // If authenticated flag is set, check expiry
     // If access token is expired, we might need to refresh (but session is still valid)
-    const isValid = this.validator.hasValidSession(isAuthenticated, isAuthenticated, expiry);
+    const isValid = this.validator.hasValidSession(
+      isAuthenticated,
+      isAuthenticated,
+      expiry
+    );
 
-    console.log('[TokenManager] hasValidToken: returning', isValid);
+    console.log("[TokenManager] hasValidToken: returning", isValid);
     return isValid;
   }
 
@@ -151,7 +157,9 @@ export class TokenManager {
   /**
    * Check if refresh token will expire soon
    */
-  isRefreshTokenExpiringSoon(thresholdMs: number = 7 * 24 * 60 * 60 * 1000): boolean {
+  isRefreshTokenExpiringSoon(
+    thresholdMs: number = 7 * 24 * 60 * 60 * 1000
+  ): boolean {
     const expiry = this.storage.getRefreshTokenExpiry();
     if (!expiry) return false;
     return this.validator.isTokenExpiringSoon(expiry, thresholdMs);

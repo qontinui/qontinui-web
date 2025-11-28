@@ -4,8 +4,8 @@
  * This hook aggregates unique states across all snapshots for filtering purposes.
  */
 
-import { useState, useEffect } from 'react';
-import { useSnapshotList } from './useSnapshotList';
+import { useState, useEffect } from "react";
+import { useSnapshotList } from "./useSnapshotList";
 
 interface UseAvailableStatesResult {
   availableStates: string[];
@@ -45,7 +45,9 @@ export function useAvailableStates(): UseAvailableStatesResult {
             );
 
             if (!response.ok) {
-              console.warn(`Failed to load screenshots for snapshot ${snapshot.run_id}`);
+              console.warn(
+                `Failed to load screenshots for snapshot ${snapshot.run_id}`
+              );
               continue;
             }
 
@@ -58,7 +60,10 @@ export function useAvailableStates(): UseAvailableStatesResult {
               });
             });
           } catch (err) {
-            console.warn(`Error fetching screenshots for snapshot ${snapshot.run_id}:`, err);
+            console.warn(
+              `Error fetching screenshots for snapshot ${snapshot.run_id}:`,
+              err
+            );
             // Continue with other snapshots
           }
         }
@@ -67,9 +72,12 @@ export function useAvailableStates(): UseAvailableStatesResult {
         const states = Array.from(stateSet).sort();
         setAvailableStates(states);
       } catch (err) {
-        const error = err instanceof Error ? err : new Error('Failed to fetch available states');
+        const error =
+          err instanceof Error
+            ? err
+            : new Error("Failed to fetch available states");
         setError(error);
-        console.error('Error fetching available states:', error);
+        console.error("Error fetching available states:", error);
       } finally {
         setLoading(false);
       }

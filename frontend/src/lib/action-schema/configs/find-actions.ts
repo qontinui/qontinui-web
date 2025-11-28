@@ -2,9 +2,9 @@
  * Find action configurations
  */
 
-import { TargetConfig } from '../shared/target-config';
-import { SearchOptions } from '../shared/search-options';
-import { VerificationConfig } from '../shared/verification-config';
+import { TargetConfig } from "../shared/target-config";
+import { SearchOptions } from "../shared/search-options";
+import { VerificationConfig } from "../shared/verification-config";
 
 /**
  * FIND - Search for a target on screen
@@ -47,7 +47,7 @@ export interface ExistsActionConfig {
  */
 export interface WaitActionConfig {
   /** What to wait for */
-  waitFor: 'time' | 'target' | 'state' | 'condition';
+  waitFor: "time" | "target" | "state" | "condition";
 
   /** Wait duration (milliseconds) - for 'time' mode */
   duration?: number;
@@ -60,7 +60,7 @@ export interface WaitActionConfig {
 
   /** Custom condition - for 'condition' mode */
   condition?: {
-    type: 'javascript' | 'variable';
+    type: "javascript" | "variable";
     expression: string;
   };
 

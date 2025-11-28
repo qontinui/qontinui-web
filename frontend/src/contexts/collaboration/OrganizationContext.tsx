@@ -1,8 +1,14 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import type { Organization } from './types';
-import { organizationService } from '@/services/service-factory';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import type { Organization } from "./types";
+import { organizationService } from "@/services/service-factory";
 
 // ============================================================================
 // Context Types
@@ -60,7 +66,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
         setCurrentOrg(orgs[0]);
       }
     } catch (error) {
-      console.error('[Organization] Failed to load organizations:', error);
+      console.error("[Organization] Failed to load organizations:", error);
     }
   };
 
@@ -69,7 +75,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       const org = await organizationService.getOrganization(orgId);
       setCurrentOrg(org);
     } catch (error) {
-      console.error('[Organization] Failed to switch organization:', error);
+      console.error("[Organization] Failed to switch organization:", error);
       throw error;
     }
   };
@@ -103,7 +109,9 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
 export function useOrganization() {
   const context = useContext(OrganizationContext);
   if (context === undefined) {
-    throw new Error('useOrganization must be used within an OrganizationProvider');
+    throw new Error(
+      "useOrganization must be used within an OrganizationProvider"
+    );
   }
   return context;
 }

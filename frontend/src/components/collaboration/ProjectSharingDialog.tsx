@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import * as React from 'react';
+import * as React from "react";
 import {
   Share2,
   Users,
@@ -16,31 +16,31 @@ import {
   Crown,
   X,
   Loader2,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Avatar } from '@/components/ui/avatar';
-import { Separator } from '@/components/ui/separator';
-import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
-export type PermissionLevel = 'view' | 'comment' | 'edit' | 'admin';
+export type PermissionLevel = "view" | "comment" | "edit" | "admin";
 
 export interface Collaborator {
   id: string;
@@ -48,7 +48,7 @@ export interface Collaborator {
   email: string;
   avatar_url?: string;
   permission: PermissionLevel;
-  type: 'user' | 'organization';
+  type: "user" | "organization";
 }
 
 export interface Organization {
@@ -65,8 +65,14 @@ interface ProjectSharingDialogProps {
   organizations: Organization[];
   shareLink?: string;
   onAddUser: (email: string, permission: PermissionLevel) => Promise<void>;
-  onAddOrganization: (orgId: string, permission: PermissionLevel) => Promise<void>;
-  onChangePermission: (collaboratorId: string, permission: PermissionLevel) => Promise<void>;
+  onAddOrganization: (
+    orgId: string,
+    permission: PermissionLevel
+  ) => Promise<void>;
+  onChangePermission: (
+    collaboratorId: string,
+    permission: PermissionLevel
+  ) => Promise<void>;
   onRevoke: (collaboratorId: string) => Promise<void>;
   onGenerateLink: () => Promise<string>;
 }
@@ -79,10 +85,10 @@ const permissionIcons = {
 };
 
 const permissionColors = {
-  view: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
-  comment: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  edit: 'bg-green-500/10 text-green-500 border-green-500/20',
-  admin: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+  view: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  comment: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  edit: "bg-green-500/10 text-green-500 border-green-500/20",
+  admin: "bg-purple-500/10 text-purple-500 border-purple-500/20",
 };
 
 export function ProjectSharingDialog({
@@ -98,10 +104,13 @@ export function ProjectSharingDialog({
   onRevoke,
   onGenerateLink,
 }: ProjectSharingDialogProps) {
-  const [shareMode, setShareMode] = React.useState<'user' | 'organization'>('user');
-  const [emailInput, setEmailInput] = React.useState('');
-  const [selectedOrg, setSelectedOrg] = React.useState('');
-  const [selectedPermission, setSelectedPermission] = React.useState<PermissionLevel>('view');
+  const [shareMode, setShareMode] = React.useState<"user" | "organization">(
+    "user"
+  );
+  const [emailInput, setEmailInput] = React.useState("");
+  const [selectedOrg, setSelectedOrg] = React.useState("");
+  const [selectedPermission, setSelectedPermission] =
+    React.useState<PermissionLevel>("view");
   const [loading, setLoading] = React.useState(false);
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
   const [linkCopied, setLinkCopied] = React.useState(false);
@@ -109,7 +118,7 @@ export function ProjectSharingDialog({
 
   const handleAddUser = async () => {
     if (!emailInput.trim()) {
-      toast.error('Please enter an email address');
+      toast.error("Please enter an email address");
       return;
     }
 
@@ -117,9 +126,9 @@ export function ProjectSharingDialog({
     try {
       await onAddUser(emailInput, selectedPermission);
       toast.success(`Shared with ${emailInput}`);
-      setEmailInput('');
+      setEmailInput("");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to share project');
+      toast.error(error.message || "Failed to share project");
     } finally {
       setLoading(false);
     }
@@ -127,7 +136,7 @@ export function ProjectSharingDialog({
 
   const handleAddOrganization = async () => {
     if (!selectedOrg) {
-      toast.error('Please select an organization');
+      toast.error("Please select an organization");
       return;
     }
 
@@ -136,34 +145,40 @@ export function ProjectSharingDialog({
       await onAddOrganization(selectedOrg, selectedPermission);
       const org = organizations.find((o) => o.id === selectedOrg);
       toast.success(`Shared with ${org?.name}`);
-      setSelectedOrg('');
+      setSelectedOrg("");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to share project');
+      toast.error(error.message || "Failed to share project");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChangePermission = async (collaboratorId: string, permission: PermissionLevel) => {
+  const handleChangePermission = async (
+    collaboratorId: string,
+    permission: PermissionLevel
+  ) => {
     setActionLoading(collaboratorId);
     try {
       await onChangePermission(collaboratorId, permission);
-      toast.success('Permission updated');
+      toast.success("Permission updated");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update permission');
+      toast.error(error.message || "Failed to update permission");
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleRevoke = async (collaboratorId: string, collaboratorName: string) => {
+  const handleRevoke = async (
+    collaboratorId: string,
+    collaboratorName: string
+  ) => {
     if (!confirm(`Remove access for ${collaboratorName}?`)) return;
     setActionLoading(collaboratorId);
     try {
       await onRevoke(collaboratorId);
-      toast.success('Access revoked');
+      toast.success("Access revoked");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to revoke access');
+      toast.error(error.message || "Failed to revoke access");
     } finally {
       setActionLoading(null);
     }
@@ -177,26 +192,26 @@ export function ProjectSharingDialog({
         setGeneratedLink(link);
         await navigator.clipboard.writeText(link);
         setLinkCopied(true);
-        toast.success('Link copied to clipboard');
+        toast.success("Link copied to clipboard");
         setTimeout(() => setLinkCopied(false), 2000);
       } catch (error: any) {
-        toast.error(error.message || 'Failed to generate link');
+        toast.error(error.message || "Failed to generate link");
       } finally {
         setLoading(false);
       }
     } else {
       await navigator.clipboard.writeText(generatedLink);
       setLinkCopied(true);
-      toast.success('Link copied to clipboard');
+      toast.success("Link copied to clipboard");
       setTimeout(() => setLinkCopied(false), 2000);
     }
   };
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
@@ -219,18 +234,18 @@ export function ProjectSharingDialog({
           {/* Mode Tabs */}
           <div className="flex gap-2 p-1 bg-muted rounded-lg">
             <Button
-              variant={shareMode === 'user' ? 'secondary' : 'ghost'}
+              variant={shareMode === "user" ? "secondary" : "ghost"}
               size="sm"
-              onClick={() => setShareMode('user')}
+              onClick={() => setShareMode("user")}
               className="flex-1"
             >
               <Mail className="mr-2 h-4 w-4" />
               Specific User
             </Button>
             <Button
-              variant={shareMode === 'organization' ? 'secondary' : 'ghost'}
+              variant={shareMode === "organization" ? "secondary" : "ghost"}
               size="sm"
-              onClick={() => setShareMode('organization')}
+              onClick={() => setShareMode("organization")}
               className="flex-1"
             >
               <Building2 className="mr-2 h-4 w-4" />
@@ -239,7 +254,7 @@ export function ProjectSharingDialog({
           </div>
 
           {/* User Share */}
-          {shareMode === 'user' && (
+          {shareMode === "user" && (
             <div className="space-y-3">
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
@@ -251,7 +266,7 @@ export function ProjectSharingDialog({
                   onChange={(e) => setEmailInput(e.target.value)}
                   disabled={loading}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (e.key === "Enter") {
                       e.preventDefault();
                       handleAddUser();
                     }
@@ -261,7 +276,9 @@ export function ProjectSharingDialog({
               <div className="flex gap-2">
                 <Select
                   value={selectedPermission}
-                  onValueChange={(value) => setSelectedPermission(value as PermissionLevel)}
+                  onValueChange={(value) =>
+                    setSelectedPermission(value as PermissionLevel)
+                  }
                   disabled={loading}
                 >
                   <SelectTrigger className="w-[180px]">
@@ -274,7 +291,11 @@ export function ProjectSharingDialog({
                     <SelectItem value="admin">Admin</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button onClick={handleAddUser} disabled={loading} className="flex-1">
+                <Button
+                  onClick={handleAddUser}
+                  disabled={loading}
+                  className="flex-1"
+                >
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
@@ -287,7 +308,7 @@ export function ProjectSharingDialog({
           )}
 
           {/* Organization Share */}
-          {shareMode === 'organization' && (
+          {shareMode === "organization" && (
             <div className="space-y-3">
               <div className="space-y-2">
                 <Label htmlFor="organization">Organization</Label>
@@ -311,7 +332,9 @@ export function ProjectSharingDialog({
               <div className="flex gap-2">
                 <Select
                   value={selectedPermission}
-                  onValueChange={(value) => setSelectedPermission(value as PermissionLevel)}
+                  onValueChange={(value) =>
+                    setSelectedPermission(value as PermissionLevel)
+                  }
                   disabled={loading}
                 >
                   <SelectTrigger className="w-[180px]">
@@ -324,7 +347,11 @@ export function ProjectSharingDialog({
                     <SelectItem value="admin">Admin</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button onClick={handleAddOrganization} disabled={loading} className="flex-1">
+                <Button
+                  onClick={handleAddOrganization}
+                  disabled={loading}
+                  className="flex-1"
+                >
                   {loading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
@@ -344,14 +371,14 @@ export function ProjectSharingDialog({
           <Label>Share Link</Label>
           <div className="flex gap-2">
             <Input
-              value={generatedLink || 'Generate a shareable link'}
+              value={generatedLink || "Generate a shareable link"}
               readOnly
               className="flex-1"
             />
             <Button
               onClick={handleCopyLink}
               disabled={loading}
-              variant={linkCopied ? 'default' : 'outline'}
+              variant={linkCopied ? "default" : "outline"}
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -395,7 +422,7 @@ export function ProjectSharingDialog({
                     <Avatar
                       src={collaborator.avatar_url}
                       fallback={
-                        collaborator.type === 'organization' ? (
+                        collaborator.type === "organization" ? (
                           <Building2 className="h-4 w-4" />
                         ) : (
                           <span className="text-xs font-medium">
@@ -406,7 +433,9 @@ export function ProjectSharingDialog({
                       className="h-8 w-8"
                     />
                     <div className="flex flex-col min-w-0 flex-1">
-                      <span className="font-medium truncate">{collaborator.name}</span>
+                      <span className="font-medium truncate">
+                        {collaborator.name}
+                      </span>
                       <span className="text-xs text-muted-foreground truncate">
                         {collaborator.email}
                       </span>
@@ -416,12 +445,18 @@ export function ProjectSharingDialog({
                     <Select
                       value={collaborator.permission}
                       onValueChange={(value) =>
-                        handleChangePermission(collaborator.id, value as PermissionLevel)
+                        handleChangePermission(
+                          collaborator.id,
+                          value as PermissionLevel
+                        )
                       }
                       disabled={isUpdating}
                     >
                       <SelectTrigger
-                        className={cn('w-[130px]', permissionColors[collaborator.permission])}
+                        className={cn(
+                          "w-[130px]",
+                          permissionColors[collaborator.permission]
+                        )}
                       >
                         <div className="flex items-center gap-2">
                           <PermissionIcon className="h-3 w-3" />
@@ -438,7 +473,9 @@ export function ProjectSharingDialog({
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleRevoke(collaborator.id, collaborator.name)}
+                      onClick={() =>
+                        handleRevoke(collaborator.id, collaborator.name)
+                      }
                       disabled={isUpdating}
                       aria-label={`Remove ${collaborator.name}`}
                     >

@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Copy, Download, QrCode } from "lucide-react"
-import { toast } from "sonner"
-import { QRCodeSVG } from "qrcode.react"
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Copy, Download, QrCode } from "lucide-react";
+import { toast } from "sonner";
+import { QRCodeSVG } from "qrcode.react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
+} from "@/components/ui/dialog";
 
 interface ConnectionStringProps {
   token: string;
@@ -53,25 +53,25 @@ export function ConnectionString({
     try {
       await navigator.clipboard.writeText(connectionString);
       setCopied(true);
-      toast.success('Connection string copied to clipboard!');
+      toast.success("Connection string copied to clipboard!");
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      console.error('Failed to copy:', error);
-      toast.error('Failed to copy connection string');
+      console.error("Failed to copy:", error);
+      toast.error("Failed to copy connection string");
     }
   };
 
   const handleDownload = () => {
-    const blob = new Blob([connectionString], { type: 'application/json' });
+    const blob = new Blob([connectionString], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'qontinui-runner-config.json';
+    a.download = "qontinui-runner-config.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success('Configuration file downloaded!');
+    toast.success("Configuration file downloaded!");
   };
 
   return (
@@ -125,7 +125,8 @@ export function ConnectionString({
               <DialogHeader>
                 <DialogTitle>Scan QR Code</DialogTitle>
                 <DialogDescription>
-                  Scan this QR code with the desktop runner app to connect instantly
+                  Scan this QR code with the desktop runner app to connect
+                  instantly
                 </DialogDescription>
               </DialogHeader>
               <div className="flex justify-center py-6">

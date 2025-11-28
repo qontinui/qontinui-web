@@ -8,7 +8,11 @@
  * - Overall layout quality scores
  */
 
-import type { Workflow, Action, Connection } from '@/lib/action-schema/action-types';
+import type {
+  Workflow,
+  Action,
+  Connection,
+} from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -102,13 +106,23 @@ export function calculateLayoutStatistics(
   const bbox = calculateBoundingBox(actions, nodeWidth, nodeHeight);
 
   // Calculate node metrics
-  const nodeMetrics = calculateNodeMetrics(actions, nodeWidth, nodeHeight, bbox);
+  const nodeMetrics = calculateNodeMetrics(
+    actions,
+    nodeWidth,
+    nodeHeight,
+    bbox
+  );
 
   // Calculate edge metrics
   const edgeMetrics = calculateEdgeMetrics(workflow, actions);
 
   // Calculate spatial metrics
-  const spatialMetrics = calculateSpatialMetrics(actions, bbox, nodeWidth, nodeHeight);
+  const spatialMetrics = calculateSpatialMetrics(
+    actions,
+    bbox,
+    nodeWidth,
+    nodeHeight
+  );
 
   // Calculate quality metrics
   const qualityMetrics = calculateQualityMetrics(
@@ -151,14 +165,19 @@ export function calculateLayoutStatistics(
 /**
  * Compare two layouts and provide detailed analysis
  */
-export function compareLayouts(before: Workflow, after: Workflow): LayoutComparison {
+export function compareLayouts(
+  before: Workflow,
+  after: Workflow
+): LayoutComparison {
   const beforeStats = calculateLayoutStatistics(before);
   const afterStats = calculateLayoutStatistics(after);
 
   // Calculate metric changes
-  const overlapChange = beforeStats.nodesOverlapping - afterStats.nodesOverlapping;
+  const overlapChange =
+    beforeStats.nodesOverlapping - afterStats.nodesOverlapping;
   const crossingChange = beforeStats.edgeCrossings - afterStats.edgeCrossings;
-  const lengthChange = beforeStats.averageEdgeLength - afterStats.averageEdgeLength;
+  const lengthChange =
+    beforeStats.averageEdgeLength - afterStats.averageEdgeLength;
   const compactnessChange = afterStats.compactness - beforeStats.compactness;
   const readabilityChange = afterStats.readability - beforeStats.readability;
 
@@ -210,11 +229,31 @@ export function compareLayouts(before: Workflow, after: Workflow): LayoutCompari
     isImprovement: improvementScore > 0,
     summary,
     metrics: {
-      overlaps: { before: beforeStats.nodesOverlapping, after: afterStats.nodesOverlapping, change: overlapChange },
-      edgeCrossings: { before: beforeStats.edgeCrossings, after: afterStats.edgeCrossings, change: crossingChange },
-      edgeLength: { before: beforeStats.averageEdgeLength, after: afterStats.averageEdgeLength, change: lengthChange },
-      compactness: { before: beforeStats.compactness, after: afterStats.compactness, change: compactnessChange },
-      readability: { before: beforeStats.readability, after: afterStats.readability, change: readabilityChange },
+      overlaps: {
+        before: beforeStats.nodesOverlapping,
+        after: afterStats.nodesOverlapping,
+        change: overlapChange,
+      },
+      edgeCrossings: {
+        before: beforeStats.edgeCrossings,
+        after: afterStats.edgeCrossings,
+        change: crossingChange,
+      },
+      edgeLength: {
+        before: beforeStats.averageEdgeLength,
+        after: afterStats.averageEdgeLength,
+        change: lengthChange,
+      },
+      compactness: {
+        before: beforeStats.compactness,
+        after: afterStats.compactness,
+        change: compactnessChange,
+      },
+      readability: {
+        before: beforeStats.readability,
+        after: afterStats.readability,
+        change: readabilityChange,
+      },
     },
     recommendations,
   };
@@ -269,7 +308,16 @@ function calculateBoundingBox(
   }
 
   if (minX === Infinity) {
-    return { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0, centerX: 0, centerY: 0 };
+    return {
+      minX: 0,
+      maxX: 0,
+      minY: 0,
+      maxY: 0,
+      width: 0,
+      height: 0,
+      centerX: 0,
+      centerY: 0,
+    };
   }
 
   const width = maxX - minX;
@@ -336,16 +384,21 @@ function calculateEdgeMetrics(workflow: Workflow, actions: Action[]) {
 
   // Build edge list
   for (const [sourceId, connections] of Object.entries(workflow.connections)) {
-    const source = actions.find(a => a.id === sourceId);
+    const source = actions.find((a) => a.id === sourceId);
     if (!source?.position) continue;
 
-    for (const outputType of ['main', 'error', 'success', 'parallel'] as const) {
+    for (const outputType of [
+      "main",
+      "error",
+      "success",
+      "parallel",
+    ] as const) {
       const outputs = connections[outputType];
       if (!outputs) continue;
 
       for (const conns of outputs) {
         for (const conn of conns) {
-          const target = actions.find(a => a.id === conn.action);
+          const target = actions.find((a) => a.id === conn.action);
           if (!target?.position) continue;
 
           const [x1, y1] = source.position;
@@ -371,8 +424,11 @@ function calculateEdgeMetrics(workflow: Workflow, actions: Action[]) {
   }
 
   // Calculate length statistics
-  const lengths = edges.map(e => e.length);
-  const avgLength = lengths.length > 0 ? lengths.reduce((a, b) => a + b, 0) / lengths.length : 0;
+  const lengths = edges.map((e) => e.length);
+  const avgLength =
+    lengths.length > 0
+      ? lengths.reduce((a, b) => a + b, 0) / lengths.length
+      : 0;
   const minLength = lengths.length > 0 ? Math.min(...lengths) : 0;
   const maxLength = lengths.length > 0 ? Math.max(...lengths) : 0;
 
@@ -392,8 +448,12 @@ function edgesIntersect(e1: EdgeInfo, e2: EdgeInfo): boolean {
   const [x4, y4] = e2.target.position!;
 
   // Skip if edges share a node
-  if (e1.source.id === e2.source.id || e1.source.id === e2.target.id ||
-      e1.target.id === e2.source.id || e1.target.id === e2.target.id) {
+  if (
+    e1.source.id === e2.source.id ||
+    e1.source.id === e2.target.id ||
+    e1.target.id === e2.source.id ||
+    e1.target.id === e2.target.id
+  ) {
     return false;
   }
 
@@ -449,12 +509,8 @@ function calculateQualityMetrics(
   readability = Math.max(0, readability);
 
   // Overall score (0-100)
-  const score = (
-    compactness * 25 +
-    symmetry * 20 +
-    alignment * 20 +
-    readability * 35
-  );
+  const score =
+    compactness * 25 + symmetry * 20 + alignment * 20 + readability * 35;
 
   return {
     score,
@@ -467,53 +523,75 @@ function calculateQualityMetrics(
 
 function generateComparisonSummary(
   improvementScore: number,
-  changes: { overlaps: number; crossings: number; compactness: number; readability: number }
+  changes: {
+    overlaps: number;
+    crossings: number;
+    compactness: number;
+    readability: number;
+  }
 ): string {
   if (improvementScore > 50) {
-    return 'Significant improvement - layout is much better';
+    return "Significant improvement - layout is much better";
   } else if (improvementScore > 20) {
-    return 'Good improvement - layout quality increased';
+    return "Good improvement - layout quality increased";
   } else if (improvementScore > 5) {
-    return 'Minor improvement - slight layout enhancement';
+    return "Minor improvement - slight layout enhancement";
   } else if (improvementScore > -5) {
-    return 'No significant change - layout quality similar';
+    return "No significant change - layout quality similar";
   } else if (improvementScore > -20) {
-    return 'Minor degradation - layout slightly worse';
+    return "Minor degradation - layout slightly worse";
   } else {
-    return 'Significant degradation - previous layout was better';
+    return "Significant degradation - previous layout was better";
   }
 }
 
 function generateRecommendations(
   stats: LayoutStatistics,
-  changes: { overlaps: number; crossings: number; compactness: number; readability: number }
+  changes: {
+    overlaps: number;
+    crossings: number;
+    compactness: number;
+    readability: number;
+  }
 ): string[] {
   const recommendations: string[] = [];
 
   if (stats.nodesOverlapping > 0) {
-    recommendations.push(`${stats.nodesOverlapping} nodes are still overlapping - try a different layout style`);
+    recommendations.push(
+      `${stats.nodesOverlapping} nodes are still overlapping - try a different layout style`
+    );
   }
 
   if (stats.edgeCrossings > 10) {
-    recommendations.push(`High number of edge crossings (${stats.edgeCrossings}) - consider hierarchical layout`);
+    recommendations.push(
+      `High number of edge crossings (${stats.edgeCrossings}) - consider hierarchical layout`
+    );
   }
 
   if (stats.compactness < 0.2) {
-    recommendations.push('Layout is very spread out - increase spacing or try tree layout for more compact result');
+    recommendations.push(
+      "Layout is very spread out - increase spacing or try tree layout for more compact result"
+    );
   } else if (stats.compactness > 0.8) {
-    recommendations.push('Layout is very dense - decrease spacing for better readability');
+    recommendations.push(
+      "Layout is very dense - decrease spacing for better readability"
+    );
   }
 
   if (stats.readability < 0.6) {
-    recommendations.push('Layout readability is low - try adjusting spacing or using a different layout style');
+    recommendations.push(
+      "Layout readability is low - try adjusting spacing or using a different layout style"
+    );
   }
 
   if (stats.boundingBoxAspectRatio > 3 || stats.boundingBoxAspectRatio < 0.33) {
-    recommendations.push('Layout aspect ratio is unbalanced - adjust horizontal/vertical spacing');
+    recommendations.push(
+      "Layout aspect ratio is unbalanced - adjust horizontal/vertical spacing"
+    );
   }
 
   if (recommendations.length === 0) {
-    recommendations.push('Layout looks good - no major issues detected');
+    recommendations.push("Layout looks good - no major issues detected");
   }
 
   return recommendations;
@@ -522,17 +600,19 @@ function generateRecommendations(
 /**
  * Format statistics for display
  */
-export function formatStatistics(stats: LayoutStatistics): Record<string, string> {
+export function formatStatistics(
+  stats: LayoutStatistics
+): Record<string, string> {
   return {
-    'Nodes': stats.nodeCount.toString(),
-    'Edges': stats.edgeCount.toString(),
-    'Overlaps': stats.nodesOverlapping.toString(),
-    'Edge Crossings': stats.edgeCrossings.toString(),
-    'Avg Edge Length': `${Math.round(stats.averageEdgeLength)}px`,
-    'Canvas Size': `${Math.round(stats.canvasWidth)} × ${Math.round(stats.canvasHeight)}`,
-    'Utilization': `${Math.round(stats.canvasUtilization * 100)}%`,
-    'Layout Score': `${Math.round(stats.layoutScore)}/100`,
-    'Compactness': `${Math.round(stats.compactness * 100)}%`,
-    'Readability': `${Math.round(stats.readability * 100)}%`,
+    Nodes: stats.nodeCount.toString(),
+    Edges: stats.edgeCount.toString(),
+    Overlaps: stats.nodesOverlapping.toString(),
+    "Edge Crossings": stats.edgeCrossings.toString(),
+    "Avg Edge Length": `${Math.round(stats.averageEdgeLength)}px`,
+    "Canvas Size": `${Math.round(stats.canvasWidth)} × ${Math.round(stats.canvasHeight)}`,
+    Utilization: `${Math.round(stats.canvasUtilization * 100)}%`,
+    "Layout Score": `${Math.round(stats.layoutScore)}/100`,
+    Compactness: `${Math.round(stats.compactness * 100)}%`,
+    Readability: `${Math.round(stats.readability * 100)}%`,
   };
 }

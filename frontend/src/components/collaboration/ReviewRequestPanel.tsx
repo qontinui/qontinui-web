@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
+import * as React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import {
   GitPullRequest,
   Check,
@@ -17,41 +17,51 @@ import {
   Loader2,
   User,
   Calendar,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Avatar } from '@/components/ui/avatar';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
+} from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 const reviewRequestSchema = z.object({
-  reviewer_ids: z.array(z.string()).min(1, 'Select at least one reviewer'),
-  description: z.string().min(10, 'Description must be at least 10 characters'),
+  reviewer_ids: z.array(z.string()).min(1, "Select at least one reviewer"),
+  description: z.string().min(10, "Description must be at least 10 characters"),
 });
 
 type ReviewRequestFormData = z.infer<typeof reviewRequestSchema>;
 
 const reviewCommentSchema = z.object({
-  comment: z.string().min(1, 'Comment cannot be empty'),
-  decision: z.enum(['approve', 'request_changes', 'comment']),
+  comment: z.string().min(1, "Comment cannot be empty"),
+  decision: z.enum(["approve", "request_changes", "comment"]),
 });
 
 type ReviewCommentFormData = z.infer<typeof reviewCommentSchema>;
 
-export type ReviewStatus = 'pending' | 'approved' | 'changes_requested' | 'rejected';
+export type ReviewStatus =
+  | "pending"
+  | "approved"
+  | "changes_requested"
+  | "rejected";
 
 export interface Reviewer {
   id: string;
@@ -66,7 +76,7 @@ export interface ReviewComment {
   reviewer_name: string;
   reviewer_avatar?: string;
   comment: string;
-  decision: 'approve' | 'request_changes' | 'reject' | 'comment';
+  decision: "approve" | "request_changes" | "reject" | "comment";
   created_at: Date | string;
 }
 
@@ -106,10 +116,10 @@ const statusIcons = {
 };
 
 const statusColors = {
-  pending: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-  approved: 'bg-green-500/10 text-green-500 border-green-500/20',
-  changes_requested: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-  rejected: 'bg-red-500/10 text-red-500 border-red-500/20',
+  pending: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+  approved: "bg-green-500/10 text-green-500 border-green-500/20",
+  changes_requested: "bg-orange-500/10 text-orange-500 border-orange-500/20",
+  rejected: "bg-red-500/10 text-red-500 border-red-500/20",
 };
 
 const decisionIcons = {
@@ -120,10 +130,10 @@ const decisionIcons = {
 };
 
 const decisionColors = {
-  approve: 'text-green-500',
-  request_changes: 'text-orange-500',
-  reject: 'text-red-500',
-  comment: 'text-blue-500',
+  approve: "text-green-500",
+  request_changes: "text-orange-500",
+  reject: "text-red-500",
+  comment: "text-blue-500",
 };
 
 export function ReviewRequestPanel({
@@ -138,35 +148,37 @@ export function ReviewRequestPanel({
   className,
 }: ReviewRequestPanelProps) {
   const [loading, setLoading] = React.useState(false);
-  const [selectedReviewers, setSelectedReviewers] = React.useState<string[]>([]);
+  const [selectedReviewers, setSelectedReviewers] = React.useState<string[]>(
+    []
+  );
 
   const createForm = useForm<ReviewRequestFormData>({
     resolver: zodResolver(reviewRequestSchema),
     defaultValues: {
       reviewer_ids: [],
-      description: '',
+      description: "",
     },
   });
 
   const reviewForm = useForm<ReviewCommentFormData>({
     resolver: zodResolver(reviewCommentSchema),
     defaultValues: {
-      comment: '',
-      decision: 'comment',
+      comment: "",
+      decision: "comment",
     },
   });
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
 
   const formatDate = (date: Date | string) => {
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    const dateObj = typeof date === "string" ? new Date(date) : date;
     return formatDistanceToNow(dateObj, { addSuffix: true });
   };
 
@@ -174,11 +186,11 @@ export function ReviewRequestPanel({
     setLoading(true);
     try {
       await onCreateReview(data);
-      toast.success('Review request created');
+      toast.success("Review request created");
       createForm.reset();
       setSelectedReviewers([]);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to create review request');
+      toast.error(error.message || "Failed to create review request");
     } finally {
       setLoading(false);
     }
@@ -188,25 +200,25 @@ export function ReviewRequestPanel({
     setLoading(true);
     try {
       await onSubmitReview(data);
-      toast.success('Review submitted');
+      toast.success("Review submitted");
       reviewForm.reset();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to submit review');
+      toast.error(error.message || "Failed to submit review");
     } finally {
       setLoading(false);
     }
   };
 
   const handleCancelReview = async () => {
-    if (!confirm('Cancel this review request?')) return;
+    if (!confirm("Cancel this review request?")) return;
     if (!onCancelReview) return;
 
     setLoading(true);
     try {
       await onCancelReview();
-      toast.success('Review request cancelled');
+      toast.success("Review request cancelled");
     } catch (error: any) {
-      toast.error(error.message || 'Failed to cancel review');
+      toast.error(error.message || "Failed to cancel review");
     } finally {
       setLoading(false);
     }
@@ -219,7 +231,7 @@ export function ReviewRequestPanel({
         : [...prev, reviewerId]
     );
     createForm.setValue(
-      'reviewer_ids',
+      "reviewer_ids",
       selectedReviewers.includes(reviewerId)
         ? selectedReviewers.filter((id) => id !== reviewerId)
         : [...selectedReviewers, reviewerId]
@@ -251,10 +263,10 @@ export function ReviewRequestPanel({
                   <div
                     key={reviewer.id}
                     className={cn(
-                      'flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors',
+                      "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
                       selectedReviewers.includes(reviewer.id)
-                        ? 'bg-primary/10 border border-primary'
-                        : 'hover:bg-muted border border-transparent'
+                        ? "bg-primary/10 border border-primary"
+                        : "hover:bg-muted border border-transparent"
                     )}
                     onClick={() => toggleReviewer(reviewer.id)}
                   >
@@ -268,7 +280,9 @@ export function ReviewRequestPanel({
                       className="h-8 w-8"
                     />
                     <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-sm font-medium">{reviewer.name}</span>
+                      <span className="text-sm font-medium">
+                        {reviewer.name}
+                      </span>
                       <span className="text-xs text-muted-foreground truncate">
                         {reviewer.email}
                       </span>
@@ -291,7 +305,7 @@ export function ReviewRequestPanel({
               <Textarea
                 id="description"
                 placeholder="Describe what needs to be reviewed..."
-                {...createForm.register('description')}
+                {...createForm.register("description")}
                 disabled={loading}
                 className="min-h-[100px]"
               />
@@ -336,9 +350,12 @@ export function ReviewRequestPanel({
             <GitPullRequest className="h-5 w-5" />
             Review Request
           </CardTitle>
-          <Badge variant="outline" className={statusColors[reviewRequest.status]}>
+          <Badge
+            variant="outline"
+            className={statusColors[reviewRequest.status]}
+          >
             <StatusIcon className="mr-1 h-3 w-3" />
-            {reviewRequest.status.replace('_', ' ')}
+            {reviewRequest.status.replace("_", " ")}
           </Badge>
         </div>
         <CardDescription className="flex items-center gap-2 mt-2">
@@ -352,7 +369,7 @@ export function ReviewRequestPanel({
             className="h-6 w-6"
           />
           <span>
-            {reviewRequest.requester_name} requested review{' '}
+            {reviewRequest.requester_name} requested review{" "}
             {formatDate(reviewRequest.created_at)}
           </span>
         </CardDescription>
@@ -400,16 +417,16 @@ export function ReviewRequestPanel({
                     <span className="text-sm font-medium">{reviewer.name}</span>
                     {review && (
                       <span className="text-xs text-muted-foreground">
-                        {review.decision.replace('_', ' ')}
+                        {review.decision.replace("_", " ")}
                       </span>
                     )}
                   </div>
                   <DecisionIcon
                     className={cn(
-                      'h-4 w-4',
+                      "h-4 w-4",
                       review
                         ? decisionColors[review.decision]
-                        : 'text-muted-foreground'
+                        : "text-muted-foreground"
                     )}
                   />
                 </div>
@@ -431,7 +448,10 @@ export function ReviewRequestPanel({
                   {reviewRequest.comments.map((comment) => {
                     const DecisionIcon = decisionIcons[comment.decision];
                     return (
-                      <div key={comment.id} className="flex gap-3 p-3 border rounded-lg">
+                      <div
+                        key={comment.id}
+                        className="flex gap-3 p-3 border rounded-lg"
+                      >
                         <Avatar
                           src={comment.reviewer_avatar}
                           fallback={
@@ -447,15 +467,18 @@ export function ReviewRequestPanel({
                               {comment.reviewer_name}
                             </span>
                             <DecisionIcon
-                              className={cn('h-3 w-3', decisionColors[comment.decision])}
+                              className={cn(
+                                "h-3 w-3",
+                                decisionColors[comment.decision]
+                              )}
                             />
                             <span
                               className={cn(
-                                'text-xs',
+                                "text-xs",
                                 decisionColors[comment.decision]
                               )}
                             >
-                              {comment.decision.replace('_', ' ')}
+                              {comment.decision.replace("_", " ")}
                             </span>
                             <span className="text-xs text-muted-foreground ml-auto">
                               {formatDate(comment.created_at)}
@@ -477,63 +500,69 @@ export function ReviewRequestPanel({
         <Separator />
 
         {/* Actions */}
-        {isReviewer && !hasUserReviewed && reviewRequest.status === 'pending' && (
-          <form
-            onSubmit={reviewForm.handleSubmit(handleSubmitReview)}
-            className="space-y-3"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="comment">Your Review</Label>
-              <Textarea
-                id="comment"
-                placeholder="Add your feedback..."
-                {...reviewForm.register('comment')}
-                disabled={loading}
-                className="min-h-[100px]"
-              />
-              {reviewForm.formState.errors.comment && (
-                <p className="text-sm text-destructive">
-                  {reviewForm.formState.errors.comment.message}
-                </p>
-              )}
-            </div>
+        {isReviewer &&
+          !hasUserReviewed &&
+          reviewRequest.status === "pending" && (
+            <form
+              onSubmit={reviewForm.handleSubmit(handleSubmitReview)}
+              className="space-y-3"
+            >
+              <div className="space-y-2">
+                <Label htmlFor="comment">Your Review</Label>
+                <Textarea
+                  id="comment"
+                  placeholder="Add your feedback..."
+                  {...reviewForm.register("comment")}
+                  disabled={loading}
+                  className="min-h-[100px]"
+                />
+                {reviewForm.formState.errors.comment && (
+                  <p className="text-sm text-destructive">
+                    {reviewForm.formState.errors.comment.message}
+                  </p>
+                )}
+              </div>
 
-            <div className="flex gap-2">
-              <Button
-                type="submit"
-                variant="outline"
-                className="flex-1 border-green-500/30 hover:bg-green-500/10 text-green-500"
-                onClick={() => reviewForm.setValue('decision', 'approve')}
-                disabled={loading}
-              >
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Approve
-              </Button>
-              <Button
-                type="submit"
-                variant="outline"
-                className="flex-1 border-orange-500/30 hover:bg-orange-500/10 text-orange-500"
-                onClick={() => reviewForm.setValue('decision', 'request_changes')}
-                disabled={loading}
-              >
-                <AlertCircle className="mr-2 h-4 w-4" />
-                Request Changes
-              </Button>
-            </div>
-          </form>
-        )}
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  variant="outline"
+                  className="flex-1 border-green-500/30 hover:bg-green-500/10 text-green-500"
+                  onClick={() => reviewForm.setValue("decision", "approve")}
+                  disabled={loading}
+                >
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Approve
+                </Button>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  className="flex-1 border-orange-500/30 hover:bg-orange-500/10 text-orange-500"
+                  onClick={() =>
+                    reviewForm.setValue("decision", "request_changes")
+                  }
+                  disabled={loading}
+                >
+                  <AlertCircle className="mr-2 h-4 w-4" />
+                  Request Changes
+                </Button>
+              </div>
+            </form>
+          )}
 
-        {isRequester && onCancelReview && reviewRequest.status === 'pending' && (
-          <Button
-            variant="outline"
-            className="w-full border-red-500/30 hover:bg-red-500/10 text-red-500"
-            onClick={handleCancelReview}
-            disabled={loading}
-          >
-            <X className="mr-2 h-4 w-4" />
-            Cancel Review Request
-          </Button>
-        )}
+        {isRequester &&
+          onCancelReview &&
+          reviewRequest.status === "pending" && (
+            <Button
+              variant="outline"
+              className="w-full border-red-500/30 hover:bg-red-500/10 text-red-500"
+              onClick={handleCancelReview}
+              disabled={loading}
+            >
+              <X className="mr-2 h-4 w-4" />
+              Cancel Review Request
+            </Button>
+          )}
 
         {hasUserReviewed && (
           <div className="text-center text-sm text-muted-foreground">

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search,
   Upload,
@@ -17,13 +17,13 @@ import {
   Camera,
   Target,
   Layers,
-  Grid
-} from 'lucide-react';
-import { Screenshot } from '../../contexts/automation-context/types';
-import { useAutomation } from '../../contexts/automation-context';
-import { usePatternMatchingState } from '../../contexts/tab-state';
-import { qontinuiAPI } from '../../lib/qontinui-api-client';
-import { ScreenshotPicker } from '../common/ScreenshotPicker';
+  Grid,
+} from "lucide-react";
+import { Screenshot } from "../../contexts/automation-context/types";
+import { useAutomation } from "../../contexts/automation-context";
+import { usePatternMatchingState } from "../../contexts/tab-state";
+import { qontinuiAPI } from "../../lib/qontinui-api-client";
+import { ScreenshotPicker } from "../common/ScreenshotPicker";
 
 interface PatternMatchingTestProps {
   screenshots: Screenshot[];
@@ -35,31 +35,51 @@ interface MatchResult {
   index?: number;
 }
 
-export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screenshots }) => {
-  const { states, images, screenshots: contextScreenshots, resolvePatternImage } = useAutomation();
-  const { state: persistedState, setState: setPersistedState } = usePatternMatchingState();
+export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
+  screenshots,
+}) => {
+  const {
+    states,
+    images,
+    screenshots: contextScreenshots,
+    resolvePatternImage,
+  } = useAutomation();
+  const { state: persistedState, setState: setPersistedState } =
+    usePatternMatchingState();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const templateCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Use context screenshots if available, otherwise fall back to prop screenshots
-  const activeScreenshots = contextScreenshots.length > 0 ? contextScreenshots : screenshots;
+  const activeScreenshots =
+    contextScreenshots.length > 0 ? contextScreenshots : screenshots;
 
   // State
-  const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(
-    activeScreenshots.length > 0 ? activeScreenshots[0] : null
-  );
-  const [screenshotDimensions, setScreenshotDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [selectedScreenshot, setSelectedScreenshot] =
+    useState<Screenshot | null>(
+      activeScreenshots.length > 0 ? activeScreenshots[0] : null
+    );
+  const [screenshotDimensions, setScreenshotDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const [currentDisplayScale, setCurrentDisplayScale] = useState<number>(1);
   const [templateImage, setTemplateImage] = useState<string | null>(null);
-  const [templateSource, setTemplateSource] = useState<'upload' | 'state' | 'asset'>('upload');
-  const [selectedStateImage, setSelectedStateImage] = useState<string>('');
-  const [selectedAssetImage, setSelectedAssetImage] = useState<string>('');
+  const [templateSource, setTemplateSource] = useState<
+    "upload" | "state" | "asset"
+  >("upload");
+  const [selectedStateImage, setSelectedStateImage] = useState<string>("");
+  const [selectedAssetImage, setSelectedAssetImage] = useState<string>("");
 
   // Matching parameters
   const [similarity, setSimilarity] = useState(0.8);
   const [findAll, setFindAll] = useState(true);
-  const [searchRegion, setSearchRegion] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [searchRegion, setSearchRegion] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [isDrawingRegion, setIsDrawingRegion] = useState(false);
 
   // Results
@@ -93,30 +113,42 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
   useEffect(() => {
     // Restore screenshot
     if (persistedState.selectedScreenshotId) {
-      const screenshot = activeScreenshots.find(s => s.id === persistedState.selectedScreenshotId);
+      const screenshot = activeScreenshots.find(
+        (s) => s.id === persistedState.selectedScreenshotId
+      );
       if (screenshot) {
         setSelectedScreenshot(screenshot);
       }
     }
 
     // Restore template based on source
-    if (persistedState.templateSource === 'state' && persistedState.selectedStateImageId) {
+    if (
+      persistedState.templateSource === "state" &&
+      persistedState.selectedStateImageId
+    ) {
       // Find the state image and restore template
-      const stateImage = states.flatMap(s => s.stateImages || []).find(si => si.id === persistedState.selectedStateImageId);
+      const stateImage = states
+        .flatMap((s) => s.stateImages || [])
+        .find((si) => si.id === persistedState.selectedStateImageId);
       if (stateImage?.patterns?.[0]) {
         const imageData = resolvePatternImage(stateImage.patterns[0]);
         if (imageData) {
           setTemplateImage(imageData.url);
-          setTemplateSource('state');
+          setTemplateSource("state");
           setSelectedStateImage(persistedState.selectedStateImageId);
         }
       }
-    } else if (persistedState.templateSource === 'asset' && persistedState.selectedAssetImageId) {
+    } else if (
+      persistedState.templateSource === "asset" &&
+      persistedState.selectedAssetImageId
+    ) {
       // Find the asset image and restore template
-      const asset = images.find(img => img.id === persistedState.selectedAssetImageId);
+      const asset = images.find(
+        (img) => img.id === persistedState.selectedAssetImageId
+      );
       if (asset) {
         setTemplateImage(asset.url);
-        setTemplateSource('asset');
+        setTemplateSource("asset");
         setSelectedAssetImage(persistedState.selectedAssetImageId);
       }
     }
@@ -131,8 +163,10 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
     setPersistedState({
       templateSource,
       selectedScreenshotId: selectedScreenshot?.id || null,
-      selectedStateImageId: templateSource === 'state' ? selectedStateImage : null,
-      selectedAssetImageId: templateSource === 'asset' ? selectedAssetImage : null,
+      selectedStateImageId:
+        templateSource === "state" ? selectedStateImage : null,
+      selectedAssetImageId:
+        templateSource === "asset" ? selectedAssetImage : null,
       threshold: similarity,
       findAll,
     });
@@ -143,12 +177,23 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
     selectedAssetImage,
     similarity,
     findAll,
-    setPersistedState
+    setPersistedState,
   ]);
 
   useEffect(() => {
     drawVisualization();
-  }, [selectedScreenshot, matches, scale, selectedMatch, showMatches, showScores, showHeatmap, highlightBest, zoom, panOffset]);
+  }, [
+    selectedScreenshot,
+    matches,
+    scale,
+    selectedMatch,
+    showMatches,
+    showScores,
+    showHeatmap,
+    highlightBest,
+    zoom,
+    panOffset,
+  ]);
 
   useEffect(() => {
     drawTemplate();
@@ -161,7 +206,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
       if (connected) {
         setApiError(null);
       } else {
-        setApiError('API health check returned unhealthy status');
+        setApiError("API health check returned unhealthy status");
       }
     } catch (error) {
       setApiConnected(false);
@@ -186,7 +231,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
   };
 
   const handleSelectProjectScreenshot = async (screenshotId: string) => {
-    const projectScreenshot = activeScreenshots.find(s => s.id === screenshotId);
+    const projectScreenshot = activeScreenshots.find(
+      (s) => s.id === screenshotId
+    );
     if (projectScreenshot) {
       setSelectedScreenshot(projectScreenshot);
       setMatches([]);
@@ -200,11 +247,11 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type.startsWith('image/')) {
+    if (file && file.type.startsWith("image/")) {
       const reader = new FileReader();
       reader.onload = (e) => {
         setTemplateImage(e.target?.result as string);
-        setTemplateSource('upload');
+        setTemplateSource("upload");
       };
       reader.readAsDataURL(file);
     }
@@ -212,26 +259,30 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
 
   const handleStateImageSelect = (imageData: string) => {
     setTemplateImage(imageData);
-    setTemplateSource('state');
+    setTemplateSource("state");
   };
 
   const handleAssetImageSelect = (imageUrl: string) => {
     setTemplateImage(imageUrl);
-    setTemplateSource('asset');
+    setTemplateSource("asset");
   };
 
   const drawVisualization = useCallback(() => {
     if (!selectedScreenshot || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     // Draw screenshot
     const img = new Image();
     img.onload = () => {
       // Update dimensions when image loads
-      if (!screenshotDimensions || screenshotDimensions.width !== img.width || screenshotDimensions.height !== img.height) {
+      if (
+        !screenshotDimensions ||
+        screenshotDimensions.width !== img.width ||
+        screenshotDimensions.height !== img.height
+      ) {
         setScreenshotDimensions({ width: img.width, height: img.height });
       }
 
@@ -240,7 +291,11 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
       const maxHeight = window.innerHeight - 200; // Subtract header and controls
 
       // Calculate base scale to fit within viewport while maintaining aspect ratio
-      const scaleToFit = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
+      const scaleToFit = Math.min(
+        maxWidth / img.width,
+        maxHeight / img.height,
+        1
+      );
       // Apply zoom factor on top of fit-to-screen scale
       const displayScale = scaleToFit * zoom;
 
@@ -261,7 +316,13 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
       ctx.translate(panOffset.x, panOffset.y);
 
       // Draw image with zoom applied
-      ctx.drawImage(img, 0, 0, img.width * displayScale, img.height * displayScale);
+      ctx.drawImage(
+        img,
+        0,
+        0,
+        img.width * displayScale,
+        img.height * displayScale
+      );
 
       ctx.restore();
 
@@ -269,7 +330,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
       if (searchRegion) {
         ctx.save();
         ctx.translate(panOffset.x, panOffset.y);
-        ctx.strokeStyle = '#0066ff';
+        ctx.strokeStyle = "#0066ff";
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
         ctx.strokeRect(
@@ -289,7 +350,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
         ctx.save();
         ctx.translate(panOffset.x, panOffset.y);
         ctx.globalAlpha = 0.3;
-        matches.forEach(match => {
+        matches.forEach((match) => {
           const intensity = match.score;
           const red = Math.floor((1 - intensity) * 255);
           const green = Math.floor(intensity * 255);
@@ -317,21 +378,21 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
         const isSelected = selectedMatch === match;
 
         // Calculate color based on score
-        let color = '#00ff00';
+        let color = "#00ff00";
         if (match.score >= 0.95) {
-          color = '#00ff00'; // Green - excellent
+          color = "#00ff00"; // Green - excellent
         } else if (match.score >= 0.9) {
-          color = '#88ff00'; // Light green - very good
+          color = "#88ff00"; // Light green - very good
         } else if (match.score >= 0.8) {
-          color = '#ffff00'; // Yellow - good
+          color = "#ffff00"; // Yellow - good
         } else if (match.score >= 0.7) {
-          color = '#ff8800'; // Orange - acceptable
+          color = "#ff8800"; // Orange - acceptable
         } else {
-          color = '#ff0000'; // Red - poor
+          color = "#ff0000"; // Red - poor
         }
 
-        if (isBest) color = '#00ffff'; // Cyan for best
-        if (isSelected) color = '#ff00ff'; // Magenta for selected
+        if (isBest) color = "#00ffff"; // Cyan for best
+        if (isSelected) color = "#ff00ff"; // Magenta for selected
 
         const x = match.region.x * displayScale;
         const y = match.region.y * displayScale;
@@ -344,7 +405,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
         ctx.strokeRect(x, y, width, height);
 
         // Draw semi-transparent fill
-        ctx.fillStyle = color + '20';
+        ctx.fillStyle = color + "20";
         ctx.fillRect(x, y, width, height);
 
         // Draw center crosshair
@@ -367,7 +428,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
           const padding = 3 * displayScale;
 
           // Score background
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+          ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
           ctx.fillRect(
             x,
             y - 20 * displayScale,
@@ -383,24 +444,45 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
         // Draw match number
         if (matches.length > 1) {
           ctx.font = `${10 * displayScale}px sans-serif`;
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+          ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
           const numText = `#${match.index || index + 1}`;
-          ctx.fillRect(x + width - 25 * displayScale, y + height - 18 * displayScale, 23 * displayScale, 16 * displayScale);
-          ctx.fillStyle = '#ffffff';
-          ctx.fillText(numText, x + width - 22 * displayScale, y + height - 6 * displayScale);
+          ctx.fillRect(
+            x + width - 25 * displayScale,
+            y + height - 18 * displayScale,
+            23 * displayScale,
+            16 * displayScale
+          );
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(
+            numText,
+            x + width - 22 * displayScale,
+            y + height - 6 * displayScale
+          );
         }
       });
 
       ctx.restore(); // Restore context after drawing matches
     };
     img.src = selectedScreenshot.url;
-  }, [selectedScreenshot, matches, scale, selectedMatch, showMatches, showScores, showHeatmap, highlightBest, searchRegion, zoom, panOffset]);
+  }, [
+    selectedScreenshot,
+    matches,
+    scale,
+    selectedMatch,
+    showMatches,
+    showScores,
+    showHeatmap,
+    highlightBest,
+    searchRegion,
+    zoom,
+    panOffset,
+  ]);
 
   const drawTemplate = useCallback(() => {
     if (!templateImage || !templateCanvasRef.current) return;
 
     const canvas = templateCanvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const img = new Image();
@@ -422,14 +504,23 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
   const performPatternMatching = async () => {
     if (!selectedScreenshot || !templateImage || !apiConnected) return;
 
-    console.log('[PatternMatching] Starting pattern matching...');
-    console.log('[PatternMatching] Screenshot URL length:', selectedScreenshot.url.length);
-    console.log('[PatternMatching] Screenshot URL prefix:', selectedScreenshot.url.substring(0, 50));
-    console.log('[PatternMatching] Template URL length:', templateImage.length);
-    console.log('[PatternMatching] Template URL prefix:', templateImage.substring(0, 50));
-    console.log('[PatternMatching] Similarity threshold:', similarity);
-    console.log('[PatternMatching] Find all:', findAll);
-    console.log('[PatternMatching] Search region:', searchRegion);
+    console.log("[PatternMatching] Starting pattern matching...");
+    console.log(
+      "[PatternMatching] Screenshot URL length:",
+      selectedScreenshot.url.length
+    );
+    console.log(
+      "[PatternMatching] Screenshot URL prefix:",
+      selectedScreenshot.url.substring(0, 50)
+    );
+    console.log("[PatternMatching] Template URL length:", templateImage.length);
+    console.log(
+      "[PatternMatching] Template URL prefix:",
+      templateImage.substring(0, 50)
+    );
+    console.log("[PatternMatching] Similarity threshold:", similarity);
+    console.log("[PatternMatching] Find all:", findAll);
+    console.log("[PatternMatching] Search region:", searchRegion);
 
     setIsSearching(true);
     setMatches([]);
@@ -438,61 +529,72 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
     try {
       let result;
       if (findAll) {
-        console.log('[PatternMatching] Calling findAll...');
+        console.log("[PatternMatching] Calling findAll...");
         result = await qontinuiAPI.findAll(
           selectedScreenshot.url,
           templateImage,
           similarity,
-          searchRegion ? {
-            bounds: searchRegion,
-            id: 'search-region',
-            name: 'Search Region'
-          } : undefined
+          searchRegion
+            ? {
+                bounds: searchRegion,
+                id: "search-region",
+                name: "Search Region",
+              }
+            : undefined
         );
 
-        console.log('[PatternMatching] findAll result:', result);
+        console.log("[PatternMatching] findAll result:", result);
 
         if (result.found && result.matches) {
-          const matchResults: MatchResult[] = result.matches.map((m: any, idx: number) => ({
-            region: m.region,
-            score: m.score,
-            index: idx + 1
-          }));
-          console.log('[PatternMatching] Found matches:', matchResults.length);
+          const matchResults: MatchResult[] = result.matches.map(
+            (m: any, idx: number) => ({
+              region: m.region,
+              score: m.score,
+              index: idx + 1,
+            })
+          );
+          console.log("[PatternMatching] Found matches:", matchResults.length);
           setMatches(matchResults);
         } else {
-          console.log('[PatternMatching] No matches found');
+          console.log("[PatternMatching] No matches found");
         }
       } else {
-        console.log('[PatternMatching] Calling find...');
+        console.log("[PatternMatching] Calling find...");
         result = await qontinuiAPI.find(
           selectedScreenshot.url,
           templateImage,
           similarity,
-          searchRegion ? {
-            bounds: searchRegion,
-            id: 'search-region',
-            name: 'Search Region'
-          } : undefined
+          searchRegion
+            ? {
+                bounds: searchRegion,
+                id: "search-region",
+                name: "Search Region",
+              }
+            : undefined
         );
 
-        console.log('[PatternMatching] find result:', result);
+        console.log("[PatternMatching] find result:", result);
 
         if (result.found && result.region) {
-          console.log('[PatternMatching] Found match with score:', result.score);
-          setMatches([{
-            region: result.region,
-            score: result.score,
-            index: 1
-          }]);
+          console.log(
+            "[PatternMatching] Found match with score:",
+            result.score
+          );
+          setMatches([
+            {
+              region: result.region,
+              score: result.score,
+              index: 1,
+            },
+          ]);
         } else {
-          console.log('[PatternMatching] No match found');
+          console.log("[PatternMatching] No match found");
         }
       }
 
       setSearchTime(Date.now() - startTime);
     } catch (error) {
-      console.error('Pattern matching failed:', error);
+      console.error("Pattern matching failed:", error);
       setMatches([]);
     } finally {
       setIsSearching(false);
@@ -507,11 +609,12 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
     const y = (e.clientY - rect.top) / currentDisplayScale;
 
     // Check if clicking on a match
-    const clickedMatch = matches.find(m =>
-      x >= m.region.x &&
-      x <= m.region.x + m.region.width &&
-      y >= m.region.y &&
-      y <= m.region.y + m.region.height
+    const clickedMatch = matches.find(
+      (m) =>
+        x >= m.region.x &&
+        x <= m.region.x + m.region.width &&
+        y >= m.region.y &&
+        y <= m.region.y + m.region.height
     );
 
     if (clickedMatch) {
@@ -528,20 +631,26 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
       similarity,
       searchRegion,
       searchTime,
-      matches: matches.map(m => ({
+      matches: matches.map((m) => ({
         region: m.region,
-        score: m.score
+        score: m.score,
       })),
       statistics: {
         totalMatches: matches.length,
-        bestScore: matches.length > 0 ? Math.max(...matches.map(m => m.score)) : 0,
-        avgScore: matches.length > 0 ? matches.reduce((sum, m) => sum + m.score, 0) / matches.length : 0
-      }
+        bestScore:
+          matches.length > 0 ? Math.max(...matches.map((m) => m.score)) : 0,
+        avgScore:
+          matches.length > 0
+            ? matches.reduce((sum, m) => sum + m.score, 0) / matches.length
+            : 0,
+      },
     };
 
-    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(results, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `pattern-matching-${Date.now()}.json`;
     a.click();
@@ -549,7 +658,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
   };
 
   const handleZoomIn = () => {
-    setZoom(prev => Math.min(prev * 1.2, 10)); // Allow up to 10x zoom
+    setZoom((prev) => Math.min(prev * 1.2, 10)); // Allow up to 10x zoom
   };
 
   const handleZoomOut = () => {
@@ -567,45 +676,55 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
   };
 
   // Mouse wheel zoom with native event listener to support preventDefault
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    const delta = -e.deltaY / 1000;
-    const newZoom = Math.max(0.1, Math.min(10, zoom * (1 + delta)));
-    setZoom(newZoom);
+  const handleWheel = useCallback(
+    (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = -e.deltaY / 1000;
+      const newZoom = Math.max(0.1, Math.min(10, zoom * (1 + delta)));
+      setZoom(newZoom);
 
-    // Reset pan if zooming out to fit
-    if (newZoom <= 1) {
-      setPanOffset({ x: 0, y: 0 });
-    }
-  }, [zoom]);
+      // Reset pan if zooming out to fit
+      if (newZoom <= 1) {
+        setPanOffset({ x: 0, y: 0 });
+      }
+    },
+    [zoom]
+  );
 
   // Attach native wheel event listener to support preventDefault
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => {
-      canvas.removeEventListener('wheel', handleWheel);
+      canvas.removeEventListener("wheel", handleWheel);
     };
   }, [handleWheel]);
 
   // Pan handlers
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (zoom > 1) { // Only allow panning when zoomed in
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
-    }
-  }, [zoom, panOffset]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (zoom > 1) {
+        // Only allow panning when zoomed in
+        setIsPanning(true);
+        setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+      }
+    },
+    [zoom, panOffset]
+  );
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isPanning) {
-      setPanOffset({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y
-      });
-    }
-  }, [isPanning, panStart]);
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (isPanning) {
+        setPanOffset({
+          x: e.clientX - panStart.x,
+          y: e.clientY - panStart.y,
+        });
+      }
+    },
+    [isPanning, panStart]
+  );
 
   const handleMouseUp = useCallback(() => {
     setIsPanning(false);
@@ -619,8 +738,8 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
   const getMatchImageData = (match: MatchResult): string | null => {
     if (!selectedScreenshot) return null;
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
     const img = new Image();
@@ -633,8 +752,14 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
     // Draw the cropped region
     ctx.drawImage(
       img,
-      match.region.x, match.region.y, match.region.width, match.region.height,
-      0, 0, match.region.width, match.region.height
+      match.region.x,
+      match.region.y,
+      match.region.width,
+      match.region.height,
+      0,
+      0,
+      match.region.width,
+      match.region.height
     );
 
     return canvas.toDataURL();
@@ -650,17 +775,26 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
             <div>
               <h2 className="text-xl font-semibold">Pattern Matching Test</h2>
               <p className="text-sm text-gray-400">
-                Test image pattern matching on screenshots with real Qontinui engine
+                Test image pattern matching on screenshots with real Qontinui
+                engine
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
-              apiConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-            }`}>
-              {apiConnected ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-              {apiConnected ? 'API Connected' : 'API Disconnected'}
+            <div
+              className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+                apiConnected
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-700"
+              }`}
+            >
+              {apiConnected ? (
+                <CheckCircle className="w-4 h-4" />
+              ) : (
+                <AlertCircle className="w-4 h-4" />
+              )}
+              {apiConnected ? "API Connected" : "API Disconnected"}
             </div>
             {!apiConnected && (
               <button
@@ -672,7 +806,10 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
               </button>
             )}
             {apiError && (
-              <div className="px-3 py-1 bg-red-900/20 border border-red-700 rounded text-xs text-red-200 max-w-md truncate" title={apiError}>
+              <div
+                className="px-3 py-1 bg-red-900/20 border border-red-700 rounded text-xs text-red-200 max-w-md truncate"
+                title={apiError}
+              >
                 {apiError}
               </div>
             )}
@@ -687,11 +824,15 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
             {/* Screenshot Selection */}
             <div className="bg-[#27272A]/50 rounded-lg border border-gray-800">
               <ScreenshotPicker
-                currentScreenshot={selectedScreenshot ? {
-                  id: selectedScreenshot.id,
-                  name: selectedScreenshot.name,
-                  url: selectedScreenshot.url,
-                } : null}
+                currentScreenshot={
+                  selectedScreenshot
+                    ? {
+                        id: selectedScreenshot.id,
+                        name: selectedScreenshot.name,
+                        url: selectedScreenshot.url,
+                      }
+                    : null
+                }
                 onUploadScreenshot={handleUploadScreenshot}
                 onSelectProjectScreenshot={handleSelectProjectScreenshot}
                 onClearScreenshot={handleClearScreenshot}
@@ -707,38 +848,38 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
 
               <div className="flex gap-2 mb-2">
                 <button
-                  onClick={() => setTemplateSource('upload')}
+                  onClick={() => setTemplateSource("upload")}
                   className={`flex-1 px-3 py-1.5 text-sm rounded font-medium transition-colors ${
-                    templateSource === 'upload'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-[#27272A]/50 text-gray-300 border border-gray-800 border-gray-700 hover:bg-gray-50'
+                    templateSource === "upload"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-[#27272A]/50 text-gray-300 border border-gray-800 border-gray-700 hover:bg-gray-50"
                   }`}
                 >
                   Upload
                 </button>
                 <button
-                  onClick={() => setTemplateSource('state')}
+                  onClick={() => setTemplateSource("state")}
                   className={`flex-1 px-3 py-1.5 text-sm rounded font-medium transition-colors ${
-                    templateSource === 'state'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-[#27272A]/50 text-gray-300 border border-gray-800 border-gray-700 hover:bg-gray-50'
+                    templateSource === "state"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-[#27272A]/50 text-gray-300 border border-gray-800 border-gray-700 hover:bg-gray-50"
                   }`}
                 >
                   State Image
                 </button>
                 <button
-                  onClick={() => setTemplateSource('asset')}
+                  onClick={() => setTemplateSource("asset")}
                   className={`flex-1 px-3 py-1.5 text-sm rounded font-medium transition-colors ${
-                    templateSource === 'asset'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-[#27272A]/50 text-gray-300 border border-gray-800 border-gray-700 hover:bg-gray-50'
+                    templateSource === "asset"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-[#27272A]/50 text-gray-300 border border-gray-800 border-gray-700 hover:bg-gray-50"
                   }`}
                 >
                   Asset
                 </button>
               </div>
 
-              {templateSource === 'upload' && (
+              {templateSource === "upload" && (
                 <div>
                   <input
                     ref={fileInputRef}
@@ -757,7 +898,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                 </div>
               )}
 
-              {templateSource === 'state' && (
+              {templateSource === "state" && (
                 <div className="space-y-2">
                   <select
                     value={selectedStateImage}
@@ -765,10 +906,15 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                       setSelectedStateImage(e.target.value);
                       if (e.target.value) {
                         // Find the state image data
-                        states.forEach(state => {
-                          state.stateImages?.forEach(img => {
-                            if (img.id === e.target.value && img.patterns?.[0]) {
-                              const imageData = resolvePatternImage(img.patterns[0]);
+                        states.forEach((state) => {
+                          state.stateImages?.forEach((img) => {
+                            if (
+                              img.id === e.target.value &&
+                              img.patterns?.[0]
+                            ) {
+                              const imageData = resolvePatternImage(
+                                img.patterns[0]
+                              );
                               if (imageData) {
                                 handleStateImageSelect(imageData.url);
                               }
@@ -779,11 +925,21 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                     }}
                     className="w-full px-3 py-2 border border-gray-800 border-gray-400 rounded-lg text-sm text-white bg-[#27272A]/50 font-medium focus:outline-none focus:ring-2 focus:ring-[#00D9FF] focus:border-blue-500"
                   >
-                    <option value="" className="text-gray-400 font-normal">Select state image</option>
-                    {states.map(state => (
-                      <optgroup key={state.id} label={state.name} className="text-white font-bold">
-                        {state.stateImages?.map(img => (
-                          <option key={img.id} value={img.id} className="text-gray-800 font-medium">
+                    <option value="" className="text-gray-400 font-normal">
+                      Select state image
+                    </option>
+                    {states.map((state) => (
+                      <optgroup
+                        key={state.id}
+                        label={state.name}
+                        className="text-white font-bold"
+                      >
+                        {state.stateImages?.map((img) => (
+                          <option
+                            key={img.id}
+                            value={img.id}
+                            className="text-gray-800 font-medium"
+                          >
                             {img.name}
                           </option>
                         ))}
@@ -792,17 +948,21 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                   </select>
 
                   {/* Visual preview of state images */}
-                  {states.some(s => s.stateImages && s.stateImages.length > 0) && (
+                  {states.some(
+                    (s) => s.stateImages && s.stateImages.length > 0
+                  ) && (
                     <div className="max-h-48 overflow-y-auto bg-[#27272A]/50 p-2 rounded-lg border border-gray-800 border-gray-700">
                       <div className="grid grid-cols-4 gap-2">
-                        {states.flatMap(state =>
-                          (state.stateImages || []).map(img => (
+                        {states.flatMap((state) =>
+                          (state.stateImages || []).map((img) => (
                             <button
                               key={img.id}
                               onClick={() => {
                                 setSelectedStateImage(img.id);
                                 if (img.patterns?.[0]) {
-                                  const imageData = resolvePatternImage(img.patterns[0]);
+                                  const imageData = resolvePatternImage(
+                                    img.patterns[0]
+                                  );
                                   if (imageData) {
                                     handleStateImageSelect(imageData.url);
                                   }
@@ -810,13 +970,15 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                               }}
                               className={`p-1 border-2 rounded transition-all ${
                                 selectedStateImage === img.id
-                                  ? 'border-blue-500 bg-blue-100 shadow-lg ring-2 ring-blue-300'
-                                  : 'border-gray-700 bg-[#0A0A0B] hover:border-gray-500 hover:bg-white'
+                                  ? "border-blue-500 bg-blue-100 shadow-lg ring-2 ring-blue-300"
+                                  : "border-gray-700 bg-[#0A0A0B] hover:border-gray-500 hover:bg-white"
                               }`}
                               title={`${state.name} - ${img.name}`}
                             >
                               {(() => {
-                                const imageData = img.patterns?.[0] ? resolvePatternImage(img.patterns[0]) : null;
+                                const imageData = img.patterns?.[0]
+                                  ? resolvePatternImage(img.patterns[0])
+                                  : null;
                                 return imageData ? (
                                   <img
                                     src={imageData.url}
@@ -825,7 +987,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                                   />
                                 ) : (
                                   <div className="w-full h-12 bg-gray-700 flex items-center justify-center border border-gray-800 border-gray-700 rounded">
-                                    <span className="text-xs text-gray-400 font-medium">No image</span>
+                                    <span className="text-xs text-gray-400 font-medium">
+                                      No image
+                                    </span>
                                   </div>
                                 );
                               })()}
@@ -839,20 +1003,25 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                     </div>
                   )}
 
-                  {!states.some(s => s.stateImages && s.stateImages.length > 0) && (
+                  {!states.some(
+                    (s) => s.stateImages && s.stateImages.length > 0
+                  ) && (
                     <div className="text-sm text-gray-300 bg-yellow-50 border border-gray-800 border-yellow-200 p-3 rounded-lg text-center font-medium">
-                      No state images available. Define them in the State Structure tab.
+                      No state images available. Define them in the State
+                      Structure tab.
                     </div>
                   )}
                 </div>
               )}
 
-              {templateSource === 'asset' && (
+              {templateSource === "asset" && (
                 <select
                   value={selectedAssetImage}
                   onChange={(e) => {
                     setSelectedAssetImage(e.target.value);
-                    const asset = images.find(img => img.id === e.target.value);
+                    const asset = images.find(
+                      (img) => img.id === e.target.value
+                    );
                     if (asset) {
                       handleAssetImageSelect(asset.url);
                     }
@@ -860,8 +1029,10 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                   className="w-full px-3 py-2 border border-gray-800 border-gray-400 rounded-lg text-sm text-white bg-[#27272A]/50 font-medium"
                 >
                   <option value="">Select asset image</option>
-                  {images.map(img => (
-                    <option key={img.id} value={img.id}>{img.name}</option>
+                  {images.map((img) => (
+                    <option key={img.id} value={img.id}>
+                      {img.name}
+                    </option>
                   ))}
                 </select>
               )}
@@ -869,7 +1040,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
               {/* Template Preview */}
               {templateImage && (
                 <div className="mt-3 p-3 bg-[#27272A] rounded-lg border border-gray-800 border-gray-700">
-                  <div className="text-xs font-bold text-gray-800 mb-2 uppercase tracking-wide">Template Preview</div>
+                  <div className="text-xs font-bold text-gray-800 mb-2 uppercase tracking-wide">
+                    Template Preview
+                  </div>
                   <div className="flex justify-center">
                     <canvas
                       ref={templateCanvasRef}
@@ -889,7 +1062,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
 
               <div className="space-y-3">
                 <div>
-                  <label className="text-sm text-gray-300 font-medium">Similarity Threshold</label>
+                  <label className="text-sm text-gray-300 font-medium">
+                    Similarity Threshold
+                  </label>
                   <div className="flex items-center gap-2">
                     <input
                       type="range"
@@ -897,10 +1072,14 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                       max="1"
                       step="0.01"
                       value={similarity}
-                      onChange={(e) => setSimilarity(parseFloat(e.target.value))}
+                      onChange={(e) =>
+                        setSimilarity(parseFloat(e.target.value))
+                      }
                       className="flex-1"
                     />
-                    <span className="text-sm font-mono font-bold text-white w-12 bg-[#27272A]/50 px-1 py-0.5 rounded border border-gray-800 border-gray-700">{(similarity * 100).toFixed(0)}%</span>
+                    <span className="text-sm font-mono font-bold text-white w-12 bg-[#27272A]/50 px-1 py-0.5 rounded border border-gray-800 border-gray-700">
+                      {(similarity * 100).toFixed(0)}%
+                    </span>
                   </div>
                 </div>
 
@@ -911,12 +1090,16 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                     onChange={(e) => setFindAll(e.target.checked)}
                     className="w-4 h-4"
                   />
-                  <span className="text-sm text-gray-800 font-medium">Find all matches</span>
+                  <span className="text-sm text-gray-800 font-medium">
+                    Find all matches
+                  </span>
                 </label>
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-sm text-gray-300 font-medium">Search Region</label>
+                    <label className="text-sm text-gray-300 font-medium">
+                      Search Region
+                    </label>
                     {searchRegion && (
                       <button
                         onClick={clearSearchRegion}
@@ -928,7 +1111,8 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                   </div>
                   {searchRegion ? (
                     <div className="text-xs bg-[#27272A]/50 p-2 rounded border border-gray-800 border-gray-700 font-mono font-semibold text-white">
-                      ({searchRegion.x}, {searchRegion.y}) - {searchRegion.width}×{searchRegion.height}
+                      ({searchRegion.x}, {searchRegion.y}) -{" "}
+                      {searchRegion.width}×{searchRegion.height}
                     </div>
                   ) : (
                     <div className="text-xs text-gray-400 bg-[#27272A]/50 p-2 rounded border border-gray-800 border-gray-700 italic">
@@ -943,11 +1127,19 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
             <div className="pt-4 border-t">
               <button
                 onClick={performPatternMatching}
-                disabled={!selectedScreenshot || !templateImage || !apiConnected || isSearching}
+                disabled={
+                  !selectedScreenshot ||
+                  !templateImage ||
+                  !apiConnected ||
+                  isSearching
+                }
                 className={`w-full px-4 py-2 rounded-lg flex items-center justify-center gap-2 font-medium ${
-                  !selectedScreenshot || !templateImage || !apiConnected || isSearching
-                    ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                  !selectedScreenshot ||
+                  !templateImage ||
+                  !apiConnected ||
+                  isSearching
+                    ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                    : "bg-blue-600 text-white hover:bg-blue-700"
                 }`}
               >
                 {isSearching ? (
@@ -964,20 +1156,36 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
               </button>
 
               {/* Show why button is disabled */}
-              {(!selectedScreenshot || !templateImage || !apiConnected) && !isSearching && (
-                <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-700 rounded text-xs text-yellow-200">
-                  <div className="font-semibold mb-1">Requirements:</div>
-                  <div className={selectedScreenshot ? 'text-green-400' : 'text-yellow-200'}>
-                    {selectedScreenshot ? '✓' : '○'} Select a screenshot
+              {(!selectedScreenshot || !templateImage || !apiConnected) &&
+                !isSearching && (
+                  <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-700 rounded text-xs text-yellow-200">
+                    <div className="font-semibold mb-1">Requirements:</div>
+                    <div
+                      className={
+                        selectedScreenshot
+                          ? "text-green-400"
+                          : "text-yellow-200"
+                      }
+                    >
+                      {selectedScreenshot ? "✓" : "○"} Select a screenshot
+                    </div>
+                    <div
+                      className={
+                        templateImage ? "text-green-400" : "text-yellow-200"
+                      }
+                    >
+                      {templateImage ? "✓" : "○"} Select a pattern image
+                    </div>
+                    <div
+                      className={
+                        apiConnected ? "text-green-400" : "text-red-400"
+                      }
+                    >
+                      {apiConnected ? "✓" : "✗"} API connection{" "}
+                      {!apiConnected && "(Start the backend)"}
+                    </div>
                   </div>
-                  <div className={templateImage ? 'text-green-400' : 'text-yellow-200'}>
-                    {templateImage ? '✓' : '○'} Select a pattern image
-                  </div>
-                  <div className={apiConnected ? 'text-green-400' : 'text-red-400'}>
-                    {apiConnected ? '✓' : '✗'} API connection {!apiConnected && '(Start the backend)'}
-                  </div>
-                </div>
-              )}
+                )}
 
               {matches.length > 0 && (
                 <button
@@ -993,21 +1201,35 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
             {/* Debug Panel */}
             {templateImage && selectedScreenshot && (
               <div className="pt-4 border-t">
-                <h3 className="font-bold text-white mb-3 text-sm">Debug Info</h3>
+                <h3 className="font-bold text-white mb-3 text-sm">
+                  Debug Info
+                </h3>
                 <div className="space-y-3">
                   {/* Template Preview */}
                   <div className="bg-[#0A0A0B] p-2 rounded border border-gray-700">
-                    <div className="text-xs text-gray-400 mb-1">Template Image:</div>
+                    <div className="text-xs text-gray-400 mb-1">
+                      Template Image:
+                    </div>
                     <img
                       src={templateImage}
                       alt="Template"
                       className="max-w-full h-auto border border-[#00D9FF] rounded"
-                      style={{ maxHeight: '100px', imageRendering: 'pixelated' }}
+                      style={{
+                        maxHeight: "100px",
+                        imageRendering: "pixelated",
+                      }}
                       onLoad={(e) => {
                         const img = e.target as HTMLImageElement;
-                        console.log('[PatternMatching] Template dimensions:', img.naturalWidth, 'x', img.naturalHeight);
+                        console.log(
+                          "[PatternMatching] Template dimensions:",
+                          img.naturalWidth,
+                          "x",
+                          img.naturalHeight
+                        );
                         if (img.naturalWidth < 20 || img.naturalHeight < 20) {
-                          console.warn('[PatternMatching] Template is very small! This may cause unreliable matching.');
+                          console.warn(
+                            "[PatternMatching] Template is very small! This may cause unreliable matching."
+                          );
                         }
                       }}
                     />
@@ -1017,14 +1239,18 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                     {templateImage.length < 2000 && (
                       <div className="text-xs text-amber-400 mt-1 flex items-start gap-1">
                         <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>Very small template - may cause false matches</span>
+                        <span>
+                          Very small template - may cause false matches
+                        </span>
                       </div>
                     )}
                   </div>
 
                   {/* Quick Test Buttons */}
                   <div className="space-y-2">
-                    <div className="text-xs text-gray-400 mb-1">Quick Tests:</div>
+                    <div className="text-xs text-gray-400 mb-1">
+                      Quick Tests:
+                    </div>
                     <button
                       onClick={() => setSimilarity(0.5)}
                       className="w-full px-2 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700"
@@ -1049,23 +1275,35 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-400">Matches Found:</span>
-                    <span className="font-medium text-white">{matches.length}</span>
+                    <span className="font-medium text-white">
+                      {matches.length}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Best Score:</span>
                     <span className="font-medium text-green-400">
-                      {Math.max(...matches.map(m => m.score * 100)).toFixed(1)}%
+                      {Math.max(...matches.map((m) => m.score * 100)).toFixed(
+                        1
+                      )}
+                      %
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Avg Score:</span>
                     <span className="font-medium text-white">
-                      {(matches.reduce((sum, m) => sum + m.score, 0) / matches.length * 100).toFixed(1)}%
+                      {(
+                        (matches.reduce((sum, m) => sum + m.score, 0) /
+                          matches.length) *
+                        100
+                      ).toFixed(1)}
+                      %
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Search Time:</span>
-                    <span className="font-medium text-white">{searchTime}ms</span>
+                    <span className="font-medium text-white">
+                      {searchTime}ms
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1101,7 +1339,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                   >
                     <ZoomIn className="w-4 h-4" />
                   </button>
-                  <span className="text-sm font-mono font-bold text-white px-2 py-0.5 bg-[#27272A] rounded border border-gray-800 border-gray-700">{Math.round(zoom * 100)}%</span>
+                  <span className="text-sm font-mono font-bold text-white px-2 py-0.5 bg-[#27272A] rounded border border-gray-800 border-gray-700">
+                    {Math.round(zoom * 100)}%
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-3 border-l pl-4">
@@ -1112,7 +1352,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                       onChange={(e) => setShowMatches(e.target.checked)}
                       className="w-4 h-4 accent-blue-600"
                     />
-                    <span className="text-sm font-semibold text-gray-800">Matches</span>
+                    <span className="text-sm font-semibold text-gray-800">
+                      Matches
+                    </span>
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -1121,7 +1363,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                       onChange={(e) => setShowScores(e.target.checked)}
                       className="w-4 h-4 accent-blue-600"
                     />
-                    <span className="text-sm font-semibold text-gray-800">Scores</span>
+                    <span className="text-sm font-semibold text-gray-800">
+                      Scores
+                    </span>
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -1130,7 +1374,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                       onChange={(e) => setShowHeatmap(e.target.checked)}
                       className="w-4 h-4 accent-blue-600"
                     />
-                    <span className="text-sm font-semibold text-gray-800">Heatmap</span>
+                    <span className="text-sm font-semibold text-gray-800">
+                      Heatmap
+                    </span>
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -1139,7 +1385,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                       onChange={(e) => setHighlightBest(e.target.checked)}
                       className="w-4 h-4 accent-blue-600"
                     />
-                    <span className="text-sm font-semibold text-gray-800">Best Match</span>
+                    <span className="text-sm font-semibold text-gray-800">
+                      Best Match
+                    </span>
                   </label>
                 </div>
               </div>
@@ -1147,7 +1395,9 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
               {matches.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Target className="w-4 h-4 text-gray-400" />
-                  <span className="text-sm font-bold text-white">{matches.length} matches</span>
+                  <span className="text-sm font-bold text-white">
+                    {matches.length} matches
+                  </span>
                 </div>
               )}
             </div>
@@ -1160,7 +1410,13 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                 <canvas
                   ref={canvasRef}
                   className="border border-gray-800 border-gray-700 shadow-lg max-w-full max-h-full"
-                  style={{ cursor: isPanning ? 'grabbing' : (zoom > 1 ? 'grab' : 'crosshair') }}
+                  style={{
+                    cursor: isPanning
+                      ? "grabbing"
+                      : zoom > 1
+                        ? "grab"
+                        : "crosshair",
+                  }}
                   onClick={handleCanvasClick}
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
@@ -1181,14 +1437,33 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                       </button>
                     </div>
                     <div className="space-y-1 text-xs">
-                      <div>Score: <strong>{(selectedMatch.score * 100).toFixed(2)}%</strong></div>
-                      <div>Position: ({selectedMatch.region.x}, {selectedMatch.region.y})</div>
-                      <div>Size: {selectedMatch.region.width} × {selectedMatch.region.height}</div>
-                      <div>Center: ({
-                        Math.round(selectedMatch.region.x + selectedMatch.region.width / 2)
-                      }, {
-                        Math.round(selectedMatch.region.y + selectedMatch.region.height / 2)
-                      })</div>
+                      <div>
+                        Score:{" "}
+                        <strong>
+                          {(selectedMatch.score * 100).toFixed(2)}%
+                        </strong>
+                      </div>
+                      <div>
+                        Position: ({selectedMatch.region.x},{" "}
+                        {selectedMatch.region.y})
+                      </div>
+                      <div>
+                        Size: {selectedMatch.region.width} ×{" "}
+                        {selectedMatch.region.height}
+                      </div>
+                      <div>
+                        Center: (
+                        {Math.round(
+                          selectedMatch.region.x +
+                            selectedMatch.region.width / 2
+                        )}
+                        ,{" "}
+                        {Math.round(
+                          selectedMatch.region.y +
+                            selectedMatch.region.height / 2
+                        )}
+                        )
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1200,7 +1475,6 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
               </div>
             )}
           </div>
-
         </div>
 
         {/* Right Panel - Match Results */}
@@ -1222,20 +1496,23 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
               <div className="text-center py-12 text-gray-500">
                 <Target className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p className="text-sm">No matches found</p>
-                <p className="text-xs mt-1">Adjust similarity or search region</p>
+                <p className="text-xs mt-1">
+                  Adjust similarity or search region
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
                 {matches.map((match, index) => {
-                  const isBest = match.score === Math.max(...matches.map(m => m.score));
+                  const isBest =
+                    match.score === Math.max(...matches.map((m) => m.score));
                   return (
                     <button
                       key={index}
                       onClick={() => setSelectedMatch(match)}
                       className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
                         selectedMatch === match
-                          ? 'border-blue-500 bg-blue-50 shadow-md'
-                          : 'border-gray-700 hover:border-gray-700 hover:bg-gray-50'
+                          ? "border-blue-500 bg-blue-50 shadow-md"
+                          : "border-gray-700 hover:border-gray-700 hover:bg-gray-50"
                       }`}
                     >
                       {/* Match Header */}
@@ -1250,11 +1527,15 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                             </span>
                           )}
                         </div>
-                        <div className={`text-lg font-bold ${
-                          match.score >= 0.9 ? 'text-green-600' :
-                          match.score >= 0.8 ? 'text-yellow-600' :
-                          'text-red-600'
-                        }`}>
+                        <div
+                          className={`text-lg font-bold ${
+                            match.score >= 0.9
+                              ? "text-green-600"
+                              : match.score >= 0.8
+                                ? "text-yellow-600"
+                                : "text-red-600"
+                          }`}
+                        >
                           {(match.score * 100).toFixed(1)}%
                         </div>
                       </div>
@@ -1270,17 +1551,33 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
                       {/* Match Details */}
                       <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
                         <div>
-                          <div className="font-medium text-gray-500">Position</div>
-                          <div className="font-mono">({match.region.x}, {match.region.y})</div>
+                          <div className="font-medium text-gray-500">
+                            Position
+                          </div>
+                          <div className="font-mono">
+                            ({match.region.x}, {match.region.y})
+                          </div>
                         </div>
                         <div>
                           <div className="font-medium text-gray-500">Size</div>
-                          <div className="font-mono">{match.region.width} × {match.region.height}</div>
+                          <div className="font-mono">
+                            {match.region.width} × {match.region.height}
+                          </div>
                         </div>
                         <div className="col-span-2">
-                          <div className="font-medium text-gray-500">Center</div>
+                          <div className="font-medium text-gray-500">
+                            Center
+                          </div>
                           <div className="font-mono">
-                            ({Math.round(match.region.x + match.region.width / 2)}, {Math.round(match.region.y + match.region.height / 2)})
+                            (
+                            {Math.round(
+                              match.region.x + match.region.width / 2
+                            )}
+                            ,{" "}
+                            {Math.round(
+                              match.region.y + match.region.height / 2
+                            )}
+                            )
                           </div>
                         </div>
                       </div>
@@ -1297,18 +1594,21 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({ screen
 };
 
 // Helper component to render match thumbnail
-const MatchThumbnail: React.FC<{ screenshot: Screenshot | null, match: MatchResult }> = ({ screenshot, match }) => {
+const MatchThumbnail: React.FC<{
+  screenshot: Screenshot | null;
+  match: MatchResult;
+}> = ({ screenshot, match }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (!screenshot || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       // Set canvas size to match region
       canvas.width = match.region.width;
@@ -1317,8 +1617,14 @@ const MatchThumbnail: React.FC<{ screenshot: Screenshot | null, match: MatchResu
       // Draw the cropped region
       ctx.drawImage(
         img,
-        match.region.x, match.region.y, match.region.width, match.region.height,
-        0, 0, match.region.width, match.region.height
+        match.region.x,
+        match.region.y,
+        match.region.width,
+        match.region.height,
+        0,
+        0,
+        match.region.width,
+        match.region.height
       );
     };
     img.src = screenshot.url;
@@ -1328,7 +1634,7 @@ const MatchThumbnail: React.FC<{ screenshot: Screenshot | null, match: MatchResu
     <canvas
       ref={canvasRef}
       className="w-full h-auto"
-      style={{ imageRendering: 'pixelated' }}
+      style={{ imageRendering: "pixelated" }}
     />
   );
 };

@@ -5,7 +5,10 @@ interface FindVisualizationProps {
   actionRegion?: { x: number; y: number; w: number; h: number };
 }
 
-export function FindVisualization({ matches, actionRegion }: FindVisualizationProps) {
+export function FindVisualization({
+  matches,
+  actionRegion,
+}: FindVisualizationProps) {
   return (
     <svg className="absolute inset-0 pointer-events-none w-full h-full">
       {/* Draw all match regions */}
@@ -18,9 +21,9 @@ export function FindVisualization({ matches, actionRegion }: FindVisualizationPr
             width={match.w}
             height={match.h}
             fill="none"
-            stroke={i === 0 ? '#10b981' : '#eab308'}
+            stroke={i === 0 ? "#10b981" : "#eab308"}
             strokeWidth="2"
-            strokeDasharray={i === 0 ? '0' : '5,5'}
+            strokeDasharray={i === 0 ? "0" : "5,5"}
             className="animate-pulse"
           />
 
@@ -28,7 +31,7 @@ export function FindVisualization({ matches, actionRegion }: FindVisualizationPr
           <text
             x={match.x + 4}
             y={match.y + 16}
-            fill={i === 0 ? '#10b981' : '#eab308'}
+            fill={i === 0 ? "#10b981" : "#eab308"}
             fontSize="12"
             fontWeight="bold"
           >

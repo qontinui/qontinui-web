@@ -166,7 +166,9 @@
     padding: 1px;
     background: linear-gradient(45deg, #00d9ff, #bd00ff, #00ff88);
     border-radius: inherit;
-    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
     mask-composite: xor;
     -webkit-mask-composite: xor;
     pointer-events: none;

@@ -1,9 +1,16 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { Database, Clock, Activity, GitBranch, Loader2, AlertCircle } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { HistoricalDataStatusProps } from '@/types/integration-tests';
+import React from "react";
+import {
+  Database,
+  Clock,
+  Activity,
+  GitBranch,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { HistoricalDataStatusProps } from "@/types/integration-tests";
 
 export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
   stats,
@@ -15,7 +22,7 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
   };
 
   const formatDate = (dateStr: string | null): string => {
-    if (!dateStr) return 'Never';
+    if (!dateStr) return "Never";
 
     const date = new Date(dateStr);
     const now = new Date();
@@ -24,10 +31,11 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? "s" : ""} ago`;
+    if (diffHours < 24)
+      return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
 
     return date.toLocaleDateString();
   };
@@ -49,7 +57,9 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
           <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
             <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-red-900">Error loading data</p>
+              <p className="text-sm font-medium text-red-900">
+                Error loading data
+              </p>
               <p className="text-xs text-red-700 mt-1">{error}</p>
             </div>
           </div>
@@ -95,12 +105,14 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
                 <div
                   className={`h-full rounded-full transition-all ${
                     stats.stateCoveragePercentage >= 80
-                      ? 'bg-green-500'
+                      ? "bg-green-500"
                       : stats.stateCoveragePercentage >= 50
-                      ? 'bg-yellow-500'
-                      : 'bg-orange-500'
+                        ? "bg-yellow-500"
+                        : "bg-orange-500"
                   }`}
-                  style={{ width: `${Math.min(100, stats.stateCoveragePercentage)}%` }}
+                  style={{
+                    width: `${Math.min(100, stats.stateCoveragePercentage)}%`,
+                  }}
                 />
               </div>
               <div className="flex items-center justify-between mt-1">
@@ -127,8 +139,8 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
             {/* Info Note */}
             <div className="pt-2 border-t">
               <p className="text-xs text-gray-500 leading-relaxed">
-                Historical data is used to simulate automation runs. Tests randomly select
-                from recorded matches for realistic variation.
+                Historical data is used to simulate automation runs. Tests
+                randomly select from recorded matches for realistic variation.
               </p>
             </div>
           </div>

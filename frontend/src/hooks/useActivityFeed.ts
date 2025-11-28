@@ -8,15 +8,15 @@
  * - Real-time updates via WebSocket
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import type {
   Activity,
   ActivityFeedOptions,
   ActivityActionType,
   ResourceType,
-} from '@/types/collaboration';
-import { activityService } from '@/services/activity-service';
-import { websocketCollaborationService } from '@/services/websocket-collaboration-service';
+} from "@/types/collaboration";
+import { activityService } from "@/services/activity-service";
+import { websocketCollaborationService } from "@/services/websocket-collaboration-service";
 
 // ============================================================================
 // Hook Return Type
@@ -66,28 +66,35 @@ export function useActivityFeed(
    */
   useEffect(() => {
     loadActivities(true);
-  }, [projectId, filters.action_types, filters.resource_types, filters.user_id]);
+  }, [
+    projectId,
+    filters.action_types,
+    filters.resource_types,
+    filters.user_id,
+  ]);
 
   /**
    * Setup WebSocket listeners for real-time activity updates
    */
   useEffect(() => {
-    const unsubscribe = websocketCollaborationService.onActivityUpdate((activity) => {
-      // Check if activity matches current filters
-      const matchesFilters = isActivityMatchingFilters(activity);
+    const unsubscribe = websocketCollaborationService.onActivityUpdate(
+      (activity) => {
+        // Check if activity matches current filters
+        const matchesFilters = isActivityMatchingFilters(activity);
 
-      if (matchesFilters) {
-        setActivities((prev) => {
-          // Avoid duplicates
-          if (prev.some((a) => a.id === activity.id)) {
-            return prev;
-          }
-          // Add to the beginning of the list
-          return [activity, ...prev];
-        });
-        setTotal((prev) => prev + 1);
+        if (matchesFilters) {
+          setActivities((prev) => {
+            // Avoid duplicates
+            if (prev.some((a) => a.id === activity.id)) {
+              return prev;
+            }
+            // Add to the beginning of the list
+            return [activity, ...prev];
+          });
+          setTotal((prev) => prev + 1);
+        }
       }
-    });
+    );
 
     return unsubscribe;
   }, [filters]);
@@ -131,7 +138,10 @@ export function useActivityFeed(
           offset: reset ? 0 : filters.offset,
         };
 
-        const response = await activityService.getActivities(projectId, options);
+        const response = await activityService.getActivities(
+          projectId,
+          options
+        );
 
         if (reset) {
           setActivities(response.activities);
@@ -145,10 +155,12 @@ export function useActivityFeed(
         // Update offset for next load
         setFilters((prev) => ({
           ...prev,
-          offset: reset ? response.activities.length : prev.offset! + response.activities.length,
+          offset: reset
+            ? response.activities.length
+            : prev.offset! + response.activities.length,
         }));
       } catch (err) {
-        console.error('[useActivityFeed] Failed to load activities:', err);
+        console.error("[useActivityFeed] Failed to load activities:", err);
         setError(err as Error);
       } finally {
         setLoading(false);
@@ -179,13 +191,16 @@ export function useActivityFeed(
   /**
    * Filter by action type
    */
-  const filterByActionType = useCallback((types: ActivityActionType[]): void => {
-    setFilters((prev) => ({
-      ...prev,
-      action_types: types.length > 0 ? types : undefined,
-      offset: 0,
-    }));
-  }, []);
+  const filterByActionType = useCallback(
+    (types: ActivityActionType[]): void => {
+      setFilters((prev) => ({
+        ...prev,
+        action_types: types.length > 0 ? types : undefined,
+        offset: 0,
+      }));
+    },
+    []
+  );
 
   /**
    * Filter by resource type

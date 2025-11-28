@@ -4,18 +4,35 @@
  * Main overview card showing critical system health metrics at a glance.
  */
 
-import { Activity, Database, Server, AlertCircle, Users, Clock } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertBadge, StatusDot } from './AlertBadge'
-import type { HealthOverview } from '@/services/admin/health-service'
+import {
+  Activity,
+  Database,
+  Server,
+  AlertCircle,
+  Users,
+  Clock,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { AlertBadge, StatusDot } from "./AlertBadge";
+import type { HealthOverview } from "@/services/admin/health-service";
 
 interface HealthOverviewCardProps {
-  data: HealthOverview | null
-  loading?: boolean
-  lastUpdated?: Date
+  data: HealthOverview | null;
+  loading?: boolean;
+  lastUpdated?: Date;
 }
 
-export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOverviewCardProps) {
+export function HealthOverviewCard({
+  data,
+  loading,
+  lastUpdated,
+}: HealthOverviewCardProps) {
   if (loading) {
     return (
       <Card>
@@ -26,10 +43,12 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center text-muted-foreground py-8">Loading health data...</div>
+          <div className="text-center text-muted-foreground py-8">
+            Loading health data...
+          </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   if (!data) {
@@ -47,16 +66,16 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
           </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   const formatUptime = (hours: number | undefined) => {
-    if (!hours || hours === 0) return '0h'
-    if (hours < 24) return `${Math.round(hours)}h`
-    const days = Math.floor(hours / 24)
-    const remainingHours = Math.round(hours % 24)
-    return `${days}d ${remainingHours}h`
-  }
+    if (!hours || hours === 0) return "0h";
+    if (hours < 24) return `${Math.round(hours)}h`;
+    const days = Math.floor(hours / 24);
+    const remainingHours = Math.round(hours % 24);
+    return `${days}d ${remainingHours}h`;
+  };
 
   return (
     <Card>
@@ -88,7 +107,10 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
               API Server
             </div>
             <div className="flex items-center gap-2">
-              <StatusDot status={data.api_status} pulsing={data.api_status === 'healthy'} />
+              <StatusDot
+                status={data.api_status}
+                pulsing={data.api_status === "healthy"}
+              />
               <AlertBadge status={data.api_status} showIcon={false} />
             </div>
           </div>
@@ -100,7 +122,10 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
               Database
             </div>
             <div className="flex items-center gap-2">
-              <StatusDot status={data.database_status} pulsing={data.database_status === 'healthy'} />
+              <StatusDot
+                status={data.database_status}
+                pulsing={data.database_status === "healthy"}
+              />
               <AlertBadge status={data.database_status} showIcon={false} />
             </div>
           </div>
@@ -112,7 +137,10 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
               Redis Cache
             </div>
             <div className="flex items-center gap-2">
-              <StatusDot status={data.redis_status} pulsing={data.redis_status === 'healthy'} />
+              <StatusDot
+                status={data.redis_status}
+                pulsing={data.redis_status === "healthy"}
+              />
               <AlertBadge status={data.redis_status} showIcon={false} />
             </div>
           </div>
@@ -123,7 +151,9 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
               <Clock className="h-4 w-4" />
               Uptime
             </div>
-            <div className="text-2xl font-bold">{formatUptime(data.uptime_hours)}</div>
+            <div className="text-2xl font-bold">
+              {formatUptime(data.uptime_hours)}
+            </div>
           </div>
 
           {/* Active Sessions */}
@@ -132,7 +162,9 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
               <Users className="h-4 w-4" />
               Active Sessions
             </div>
-            <div className="text-2xl font-bold">{(data.active_sessions ?? 0).toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              {(data.active_sessions ?? 0).toLocaleString()}
+            </div>
           </div>
 
           {/* Critical Alerts */}
@@ -142,7 +174,9 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
               Critical Alerts
             </div>
             <div className="flex items-center gap-2">
-              <div className={`text-2xl font-bold ${(data.critical_alerts ?? 0) > 0 ? 'text-red-600' : ''}`}>
+              <div
+                className={`text-2xl font-bold ${(data.critical_alerts ?? 0) > 0 ? "text-red-600" : ""}`}
+              >
                 {data.critical_alerts ?? 0}
               </div>
               {(data.critical_alerts ?? 0) > 0 && (
@@ -157,16 +191,20 @@ export function HealthOverviewCard({ data, loading, lastUpdated }: HealthOvervie
           <div className="mt-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div>
-              <div className="font-medium text-red-600">Critical Alerts Detected</div>
+              <div className="font-medium text-red-600">
+                Critical Alerts Detected
+              </div>
               <div className="text-sm text-red-600/80 mt-1">
-                There {data.critical_alerts === 1 ? 'is' : 'are'} {data.critical_alerts} critical{' '}
-                {data.critical_alerts === 1 ? 'alert' : 'alerts'} requiring immediate attention.
-                Check the Security Warnings section for details.
+                There {data.critical_alerts === 1 ? "is" : "are"}{" "}
+                {data.critical_alerts} critical{" "}
+                {data.critical_alerts === 1 ? "alert" : "alerts"} requiring
+                immediate attention. Check the Security Warnings section for
+                details.
               </div>
             </div>
           </div>
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

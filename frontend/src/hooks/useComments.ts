@@ -9,10 +9,10 @@
  * - Real-time updates via WebSocket
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import type { Comment, CommentPosition } from '@/types/collaboration';
-import { commentService } from '@/services/comment-service';
-import { websocketCollaborationService } from '@/services/websocket-collaboration-service';
+import { useState, useEffect, useCallback } from "react";
+import type { Comment, CommentPosition } from "@/types/collaboration";
+import { commentService } from "@/services/comment-service";
+import { websocketCollaborationService } from "@/services/websocket-collaboration-service";
 
 // ============================================================================
 // Hook Return Type
@@ -110,10 +110,13 @@ export function useComments(
     setError(null);
 
     try {
-      const loadedComments = await commentService.getComments(projectId, workflowId);
+      const loadedComments = await commentService.getComments(
+        projectId,
+        workflowId
+      );
       setComments(loadedComments);
     } catch (err) {
-      console.error('[useComments] Failed to load comments:', err);
+      console.error("[useComments] Failed to load comments:", err);
       setError(err as Error);
     } finally {
       setLoading(false);
@@ -145,7 +148,7 @@ export function useComments(
 
         return newComment;
       } catch (err) {
-        console.error('[useComments] Failed to add comment:', err);
+        console.error("[useComments] Failed to add comment:", err);
         setError(err as Error);
         throw err;
       }
@@ -170,7 +173,7 @@ export function useComments(
           prev.map((c) => (c.id === commentId ? updatedComment : c))
         );
       } catch (err) {
-        console.error('[useComments] Failed to update comment:', err);
+        console.error("[useComments] Failed to update comment:", err);
         setError(err as Error);
         throw err;
       }
@@ -181,60 +184,69 @@ export function useComments(
   /**
    * Delete a comment
    */
-  const deleteComment = useCallback(async (commentId: string): Promise<void> => {
-    setError(null);
+  const deleteComment = useCallback(
+    async (commentId: string): Promise<void> => {
+      setError(null);
 
-    try {
-      await commentService.deleteComment(commentId);
+      try {
+        await commentService.deleteComment(commentId);
 
-      // Remove from local state
-      setComments((prev) => prev.filter((c) => c.id !== commentId));
-    } catch (err) {
-      console.error('[useComments] Failed to delete comment:', err);
-      setError(err as Error);
-      throw err;
-    }
-  }, []);
+        // Remove from local state
+        setComments((prev) => prev.filter((c) => c.id !== commentId));
+      } catch (err) {
+        console.error("[useComments] Failed to delete comment:", err);
+        setError(err as Error);
+        throw err;
+      }
+    },
+    []
+  );
 
   /**
    * Resolve a comment
    */
-  const resolveComment = useCallback(async (commentId: string): Promise<void> => {
-    setError(null);
+  const resolveComment = useCallback(
+    async (commentId: string): Promise<void> => {
+      setError(null);
 
-    try {
-      const resolvedComment = await commentService.resolveComment(commentId);
+      try {
+        const resolvedComment = await commentService.resolveComment(commentId);
 
-      // Update in local state
-      setComments((prev) =>
-        prev.map((c) => (c.id === commentId ? resolvedComment : c))
-      );
-    } catch (err) {
-      console.error('[useComments] Failed to resolve comment:', err);
-      setError(err as Error);
-      throw err;
-    }
-  }, []);
+        // Update in local state
+        setComments((prev) =>
+          prev.map((c) => (c.id === commentId ? resolvedComment : c))
+        );
+      } catch (err) {
+        console.error("[useComments] Failed to resolve comment:", err);
+        setError(err as Error);
+        throw err;
+      }
+    },
+    []
+  );
 
   /**
    * Reopen a resolved comment
    */
-  const reopenComment = useCallback(async (commentId: string): Promise<void> => {
-    setError(null);
+  const reopenComment = useCallback(
+    async (commentId: string): Promise<void> => {
+      setError(null);
 
-    try {
-      const reopenedComment = await commentService.reopenComment(commentId);
+      try {
+        const reopenedComment = await commentService.reopenComment(commentId);
 
-      // Update in local state
-      setComments((prev) =>
-        prev.map((c) => (c.id === commentId ? reopenedComment : c))
-      );
-    } catch (err) {
-      console.error('[useComments] Failed to reopen comment:', err);
-      setError(err as Error);
-      throw err;
-    }
-  }, []);
+        // Update in local state
+        setComments((prev) =>
+          prev.map((c) => (c.id === commentId ? reopenedComment : c))
+        );
+      } catch (err) {
+        console.error("[useComments] Failed to reopen comment:", err);
+        setError(err as Error);
+        throw err;
+      }
+    },
+    []
+  );
 
   /**
    * Reply to a comment
@@ -255,7 +267,7 @@ export function useComments(
 
         return reply;
       } catch (err) {
-        console.error('[useComments] Failed to reply to comment:', err);
+        console.error("[useComments] Failed to reply to comment:", err);
         setError(err as Error);
         throw err;
       }

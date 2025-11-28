@@ -12,7 +12,11 @@
  * - Search, filtering, and bulk operations
  */
 
-import type { Workflow, Action, ActionType } from '@/lib/action-schema/action-types';
+import type {
+  Workflow,
+  Action,
+  ActionType,
+} from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Folder System
@@ -109,10 +113,10 @@ export type FolderPath = FolderPathComponent[];
  * Type of dependency between workflows
  */
 export type DependencyType =
-  | 'workflow-call'     // Direct RUN_WORKFLOW action
-  | 'subflow'           // Embedded subflow component
-  | 'state-reference'   // Reference to shared state
-  | 'variable-reference'; // Reference to shared variable
+  | "workflow-call" // Direct RUN_WORKFLOW action
+  | "subflow" // Embedded subflow component
+  | "state-reference" // Reference to shared state
+  | "variable-reference"; // Reference to shared variable
 
 /**
  * Dependency relationship between two workflows
@@ -228,7 +232,7 @@ export interface ImpactAnalysis {
   affectedCount: number;
 
   /** Risk level based on dependency count */
-  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  riskLevel: "low" | "medium" | "high" | "critical";
 }
 
 /**
@@ -259,20 +263,20 @@ export interface DependencyAnalysis {
  * Test assertion types
  */
 export type AssertionType =
-  | 'equals'          // Exact equality
-  | 'notEquals'       // Inequality
-  | 'contains'        // String/array contains
-  | 'notContains'     // Does not contain
-  | 'exists'          // Value exists (not null/undefined)
-  | 'notExists'       // Value doesn't exist
-  | 'greaterThan'     // Numeric comparison
-  | 'lessThan'        // Numeric comparison
-  | 'greaterOrEqual'  // Numeric comparison
-  | 'lessOrEqual'     // Numeric comparison
-  | 'matches'         // Regex match
-  | 'hasProperty'     // Object has property
-  | 'hasLength'       // Array/string length
-  | 'isType';         // Type checking
+  | "equals" // Exact equality
+  | "notEquals" // Inequality
+  | "contains" // String/array contains
+  | "notContains" // Does not contain
+  | "exists" // Value exists (not null/undefined)
+  | "notExists" // Value doesn't exist
+  | "greaterThan" // Numeric comparison
+  | "lessThan" // Numeric comparison
+  | "greaterOrEqual" // Numeric comparison
+  | "lessOrEqual" // Numeric comparison
+  | "matches" // Regex match
+  | "hasProperty" // Object has property
+  | "hasLength" // Array/string length
+  | "isType"; // Type checking
 
 /**
  * Test assertion definition
@@ -303,7 +307,13 @@ export interface TestAssertion {
 /**
  * Test case status
  */
-export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'error';
+export type TestStatus =
+  | "pending"
+  | "running"
+  | "passed"
+  | "failed"
+  | "skipped"
+  | "error";
 
 /**
  * Test case for a workflow
@@ -487,7 +497,7 @@ export interface WorkflowMetrics {
   lastRun?: string;
 
   /** Last execution status */
-  lastStatus?: 'success' | 'failure' | 'error';
+  lastStatus?: "success" | "failure" | "error";
 
   /** Execution count by time period */
   executionsByPeriod?: {
@@ -523,7 +533,7 @@ export interface ComplexityMetrics {
   score: number;
 
   /** Complexity rating */
-  rating: 'simple' | 'moderate' | 'complex' | 'very-complex';
+  rating: "simple" | "moderate" | "complex" | "very-complex";
 
   /** Action type distribution */
   actionTypeDistribution: Record<ActionType, number>;
@@ -569,7 +579,7 @@ export interface PerformanceMetrics {
   memoryUsage?: {
     average: number;
     peak: number;
-    unit: 'MB' | 'GB';
+    unit: "MB" | "GB";
   };
 }
 
@@ -584,7 +594,7 @@ export interface TimeRange {
   end: string;
 
   /** Granularity */
-  granularity: 'hour' | 'day' | 'week' | 'month';
+  granularity: "hour" | "day" | "week" | "month";
 }
 
 /**
@@ -635,7 +645,7 @@ export interface ComponentParameter {
   name: string;
 
   /** Parameter data type */
-  type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'any';
+  type: "string" | "number" | "boolean" | "object" | "array" | "any";
 
   /** Whether parameter is required */
   required: boolean;
@@ -821,7 +831,7 @@ export interface WorkflowDocumentation {
   relatedLinks?: Array<{
     title: string;
     url: string;
-    type: 'internal' | 'external';
+    type: "internal" | "external";
   }>;
 
   /** Custom metadata */
@@ -894,13 +904,13 @@ export interface WorkflowBranch {
  * Change type in a version
  */
 export type ChangeType =
-  | 'action-added'
-  | 'action-removed'
-  | 'action-modified'
-  | 'connection-added'
-  | 'connection-removed'
-  | 'metadata-changed'
-  | 'settings-changed';
+  | "action-added"
+  | "action-removed"
+  | "action-modified"
+  | "connection-added"
+  | "connection-removed"
+  | "metadata-changed"
+  | "settings-changed";
 
 /**
  * Individual change in a version
@@ -1023,7 +1033,7 @@ export interface WorkflowLock {
   expiresAt?: string;
 
   /** Lock type */
-  type: 'edit' | 'view';
+  type: "edit" | "view";
 }
 
 /**
@@ -1067,7 +1077,11 @@ export interface WorkflowComment {
 /**
  * Review request status
  */
-export type ReviewStatus = 'pending' | 'approved' | 'changes-requested' | 'rejected';
+export type ReviewStatus =
+  | "pending"
+  | "approved"
+  | "changes-requested"
+  | "rejected";
 
 /**
  * Workflow review request
@@ -1125,7 +1139,13 @@ export interface DateRangeFilter {
   end?: string;
 
   /** Preset (e.g., 'last-7-days', 'last-month') */
-  preset?: 'today' | 'yesterday' | 'last-7-days' | 'last-30-days' | 'last-90-days' | 'custom';
+  preset?:
+    | "today"
+    | "yesterday"
+    | "last-7-days"
+    | "last-30-days"
+    | "last-90-days"
+    | "custom";
 }
 
 /**
@@ -1139,7 +1159,7 @@ export interface ComplexityFilter {
   maxActions?: number;
 
   /** Complexity rating */
-  rating?: Array<'simple' | 'moderate' | 'complex' | 'very-complex'>;
+  rating?: Array<"simple" | "moderate" | "complex" | "very-complex">;
 
   /** Minimum complexity score */
   minScore?: number;
@@ -1156,7 +1176,7 @@ export interface SearchFilter {
   text?: string;
 
   /** Search in specific fields */
-  fields?: Array<'name' | 'description' | 'tags' | 'author' | 'content'>;
+  fields?: Array<"name" | "description" | "tags" | "author" | "content">;
 
   /** Filter by tags */
   tags?: string[];
@@ -1180,13 +1200,13 @@ export interface SearchFilter {
   authors?: string[];
 
   /** Filter by status */
-  status?: Array<'active' | 'archived' | 'draft'>;
+  status?: Array<"active" | "archived" | "draft">;
 
   /** Sort field */
-  sortBy?: 'name' | 'created' | 'updated' | 'executions' | 'complexity';
+  sortBy?: "name" | "created" | "updated" | "executions" | "complexity";
 
   /** Sort direction */
-  sortOrder?: 'asc' | 'desc';
+  sortOrder?: "asc" | "desc";
 
   /** Maximum results to return */
   limit?: number;
@@ -1258,19 +1278,24 @@ export interface SearchResult {
  * Bulk operation type
  */
 export type BulkOperationType =
-  | 'move'        // Move to folder
-  | 'tag'         // Add/remove tags
-  | 'delete'      // Delete workflows
-  | 'archive'     // Archive workflows
-  | 'export'      // Export workflows
-  | 'test'        // Run tests
-  | 'duplicate'   // Duplicate workflows
-  | 'update';     // Update metadata/settings
+  | "move" // Move to folder
+  | "tag" // Add/remove tags
+  | "delete" // Delete workflows
+  | "archive" // Archive workflows
+  | "export" // Export workflows
+  | "test" // Run tests
+  | "duplicate" // Duplicate workflows
+  | "update"; // Update metadata/settings
 
 /**
  * Bulk operation status
  */
-export type BulkOperationStatus = 'pending' | 'running' | 'completed' | 'failed' | 'partial';
+export type BulkOperationStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "partial";
 
 /**
  * Bulk operation configuration
@@ -1353,7 +1378,7 @@ export function isAssertionPassed(assertion: TestAssertion): boolean {
  * Type guard to check if a test result is successful
  */
 export function isTestSuccessful(result: TestResult): boolean {
-  return result.status === 'passed';
+  return result.status === "passed";
 }
 
 /**
@@ -1384,17 +1409,19 @@ export function isComponentUsed(component: SubflowComponent): boolean {
 /**
  * Partial update type for workflows
  */
-export type WorkflowUpdate = Partial<Omit<Workflow, 'id' | 'version' | 'format'>>;
+export type WorkflowUpdate = Partial<
+  Omit<Workflow, "id" | "version" | "format">
+>;
 
 /**
  * Partial update type for folders
  */
-export type FolderUpdate = Partial<Omit<WorkflowFolder, 'id' | 'createdAt'>>;
+export type FolderUpdate = Partial<Omit<WorkflowFolder, "id" | "createdAt">>;
 
 /**
  * Partial update type for test cases
  */
-export type TestCaseUpdate = Partial<Omit<TestCase, 'id' | 'workflowId'>>;
+export type TestCaseUpdate = Partial<Omit<TestCase, "id" | "workflowId">>;
 
 /**
  * Extract type from array
@@ -1409,7 +1436,8 @@ export type RequireProperties<T, K extends keyof T> = T & Required<Pick<T, K>>;
 /**
  * Make specific properties optional
  */
-export type OptionalProperties<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+export type OptionalProperties<T, K extends keyof T> = Omit<T, K> &
+  Partial<Pick<T, K>>;
 
 // ============================================================================
 // Constants

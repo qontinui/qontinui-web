@@ -4,8 +4,13 @@
  * Defines the bridge between qontinui's workflow format and React Flow's node/edge system.
  */
 
-import { Node, Edge, Viewport, XYPosition } from '@xyflow/react';
-import { Action, Workflow, Connection, ActionType } from '@/lib/action-schema/action-types';
+import { Node, Edge, Viewport, XYPosition } from "@xyflow/react";
+import {
+  Action,
+  Workflow,
+  Connection,
+  ActionType,
+} from "@/lib/action-schema/action-types";
 
 // Re-export ActionType for convenience
 export type { ActionType };
@@ -28,7 +33,7 @@ export interface CanvasNodeData {
   multiSelected?: boolean;
 
   /** Visual state for execution/debugging */
-  executionState?: 'idle' | 'running' | 'success' | 'error' | 'warning';
+  executionState?: "idle" | "running" | "success" | "error" | "warning";
 
   /** Error message if execution failed */
   errorMessage?: string;
@@ -67,7 +72,7 @@ export interface CanvasEdgeData {
   connection: Connection;
 
   /** Connection type for styling */
-  connectionType: 'main' | 'error' | 'success' | 'parallel';
+  connectionType: "main" | "error" | "success" | "parallel";
 
   /** Output index from source node */
   outputIndex: number;
@@ -92,7 +97,7 @@ export interface CanvasEdgeData {
  * Canvas edge wrapping a Connection for React Flow
  */
 export interface CanvasEdge extends Edge {
-  type: 'custom'; // Always use custom edge component
+  type: "custom"; // Always use custom edge component
   data: CanvasEdgeData;
   animated?: boolean;
   style?: React.CSSProperties;
@@ -182,10 +187,20 @@ export interface CanvasSettings {
   showEdgeLabels: boolean;
 
   /** Connection line type */
-  connectionLineType: 'default' | 'straight' | 'step' | 'smoothstep' | 'simplebezier';
+  connectionLineType:
+    | "default"
+    | "straight"
+    | "step"
+    | "smoothstep"
+    | "simplebezier";
 
   /** Default edge type */
-  defaultEdgeType: 'default' | 'straight' | 'step' | 'smoothstep' | 'simplebezier';
+  defaultEdgeType:
+    | "default"
+    | "straight"
+    | "step"
+    | "smoothstep"
+    | "simplebezier";
 }
 
 /**
@@ -211,8 +226,8 @@ export const DEFAULT_CANVAS_SETTINGS: CanvasSettings = {
   edgesSelectable: true,
   showNodeLabels: true,
   showEdgeLabels: true,
-  connectionLineType: 'smoothstep',
-  defaultEdgeType: 'smoothstep',
+  connectionLineType: "smoothstep",
+  defaultEdgeType: "smoothstep",
 };
 
 // ============================================================================
@@ -223,12 +238,12 @@ export const DEFAULT_CANVAS_SETTINGS: CanvasSettings = {
  * Action categories for visual grouping
  */
 export enum ActionCategory {
-  FIND = 'find',
-  MOUSE = 'mouse',
-  KEYBOARD = 'keyboard',
-  CONTROL_FLOW = 'control_flow',
-  DATA = 'data',
-  STATE = 'state',
+  FIND = "find",
+  MOUSE = "mouse",
+  KEYBOARD = "keyboard",
+  CONTROL_FLOW = "control_flow",
+  DATA = "data",
+  STATE = "state",
 }
 
 /**
@@ -379,13 +394,13 @@ export interface ConnectionCreatedEvent {
  * Maps action categories to React Flow node types
  */
 export const NODE_TYPES = {
-  default: 'default',
-  find: 'find',
-  mouse: 'mouse',
-  keyboard: 'keyboard',
-  control_flow: 'control_flow',
-  data: 'data',
-  state: 'state',
+  default: "default",
+  find: "find",
+  mouse: "mouse",
+  keyboard: "keyboard",
+  control_flow: "control_flow",
+  data: "data",
+  state: "state",
 } as const;
 
 export type NodeTypeKey = keyof typeof NODE_TYPES;
@@ -399,7 +414,14 @@ export type NodeTypeKey = keyof typeof NODE_TYPES;
  */
 export function getNodeType(action: Action): string {
   // Control flow nodes need specific components for proper handle IDs
-  const controlFlowActions = ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH', 'BREAK', 'CONTINUE'];
+  const controlFlowActions = [
+    "IF",
+    "LOOP",
+    "SWITCH",
+    "TRY_CATCH",
+    "BREAK",
+    "CONTINUE",
+  ];
   if (controlFlowActions.includes(action.type)) {
     return action.type; // Return 'TRY_CATCH', 'IF', etc.
   }
@@ -416,14 +438,14 @@ export function getNodeType(action: Action): string {
 /**
  * Handle position on a node
  */
-export type HandlePosition = 'top' | 'right' | 'bottom' | 'left';
+export type HandlePosition = "top" | "right" | "bottom" | "left";
 
 /**
  * Handle definition for inputs/outputs
  */
 export interface HandleDefinition {
   id: string;
-  type: 'source' | 'target';
+  type: "source" | "target";
   position: HandlePosition;
   label?: string;
 }

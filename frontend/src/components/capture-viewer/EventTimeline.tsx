@@ -1,22 +1,16 @@
-'use client';
+"use client";
 
-import React, { useRef, useState } from 'react';
-import { Badge } from '@/components/ui/badge';
+import React, { useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  MousePointer2,
-  Mouse,
-  Keyboard,
-  ArrowDown,
-  Move,
-} from 'lucide-react';
-import type { InputEvent, InputEventType } from '@/types/capture';
-import { getButtonName } from '@/types/capture';
+} from "@/components/ui/tooltip";
+import { MousePointer2, Mouse, Keyboard, ArrowDown, Move } from "lucide-react";
+import type { InputEvent, InputEventType } from "@/types/capture";
+import { getButtonName } from "@/types/capture";
 
 export interface EventTimelineProps {
   events: InputEvent[];
@@ -26,18 +20,21 @@ export interface EventTimelineProps {
 }
 
 const EVENT_COLORS: Record<InputEventType, string> = {
-  mouse_move: 'bg-gray-400',
-  mouse_click: 'bg-blue-500',
-  mouse_down: 'bg-blue-400',
-  mouse_up: 'bg-blue-300',
-  mouse_scroll: 'bg-orange-500',
-  mouse_drag: 'bg-purple-500',
-  key_press: 'bg-green-500',
-  key_down: 'bg-green-400',
-  key_up: 'bg-gray-400',
+  mouse_move: "bg-gray-400",
+  mouse_click: "bg-blue-500",
+  mouse_down: "bg-blue-400",
+  mouse_up: "bg-blue-300",
+  mouse_scroll: "bg-orange-500",
+  mouse_drag: "bg-purple-500",
+  key_press: "bg-green-500",
+  key_down: "bg-green-400",
+  key_up: "bg-gray-400",
 };
 
-const EVENT_ICONS: Record<InputEventType, React.ComponentType<{ className?: string }>> = {
+const EVENT_ICONS: Record<
+  InputEventType,
+  React.ComponentType<{ className?: string }>
+> = {
   mouse_move: Move,
   mouse_click: MousePointer2,
   mouse_down: MousePointer2,
@@ -50,15 +47,15 @@ const EVENT_ICONS: Record<InputEventType, React.ComponentType<{ className?: stri
 };
 
 const EVENT_LABELS: Record<InputEventType, string> = {
-  mouse_move: 'Move',
-  mouse_click: 'Click',
-  mouse_down: 'Mouse Down',
-  mouse_up: 'Mouse Up',
-  mouse_scroll: 'Scroll',
-  mouse_drag: 'Drag',
-  key_press: 'Key Press',
-  key_down: 'Key Down',
-  key_up: 'Key Up',
+  mouse_move: "Move",
+  mouse_click: "Click",
+  mouse_down: "Mouse Down",
+  mouse_up: "Mouse Up",
+  mouse_scroll: "Scroll",
+  mouse_drag: "Drag",
+  key_press: "Key Press",
+  key_down: "Key Down",
+  key_up: "Key Up",
 };
 
 export const EventTimeline: React.FC<EventTimelineProps> = ({
@@ -74,30 +71,30 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     const ms = Math.floor((seconds % 1) * 1000);
-    return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(3, "0")}`;
   };
 
   const getEventDescription = (event: InputEvent): string => {
     switch (event.eventType) {
-      case 'mouse_click':
-      case 'mouse_down':
-      case 'mouse_up':
+      case "mouse_click":
+      case "mouse_down":
+      case "mouse_up":
         return `${EVENT_LABELS[event.eventType]} ${getButtonName(event.button)} at (${event.x}, ${event.y})`;
-      case 'mouse_drag':
+      case "mouse_drag":
         return `Drag at (${event.x}, ${event.y})`;
-      case 'mouse_move':
+      case "mouse_move":
         return `Move to (${event.x}, ${event.y})`;
-      case 'key_press':
-      case 'key_down':
+      case "key_press":
+      case "key_down":
         return `Press ${event.key}${
-          event.modifiers?.length ? ' + ' + event.modifiers.join(' + ') : ''
+          event.modifiers?.length ? " + " + event.modifiers.join(" + ") : ""
         }`;
-      case 'key_up':
+      case "key_up":
         return `Release ${event.key}`;
-      case 'mouse_scroll':
-        return `Scroll at (${event.x}, ${event.y})${event.scrollDy ? ` (${event.scrollDy > 0 ? 'down' : 'up'})` : ''}`;
+      case "mouse_scroll":
+        return `Scroll at (${event.x}, ${event.y})${event.scrollDy ? ` (${event.scrollDy > 0 ? "down" : "up"})` : ""}`;
       default:
-        return 'Unknown event';
+        return "Unknown event";
     }
   };
 
@@ -180,10 +177,10 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
               <div
                 key={i}
                 className="flex-1 border-l border-gray-300 relative"
-                style={{ flexBasis: '10%' }}
+                style={{ flexBasis: "10%" }}
               >
                 <span className="absolute -bottom-5 left-0 text-xs text-gray-500 transform -translate-x-1/2">
-                  {formatTime(time).split('.')[0]}
+                  {formatTime(time).split(".")[0]}
                 </span>
               </div>
             );
@@ -216,9 +213,13 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-xs">
                   <div className="space-y-1">
-                    <div className="font-semibold text-xs">{EVENT_LABELS[event.eventType]}</div>
+                    <div className="font-semibold text-xs">
+                      {EVENT_LABELS[event.eventType]}
+                    </div>
                     <div className="text-xs">{formatTime(event.timestamp)}</div>
-                    <div className="text-xs text-gray-300">{getEventDescription(event)}</div>
+                    <div className="text-xs text-gray-300">
+                      {getEventDescription(event)}
+                    </div>
                   </div>
                 </TooltipContent>
               </Tooltip>
@@ -253,24 +254,30 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
           </span>
           <span>
             <span className="font-medium">
-              {events.filter((e) => e.eventType === 'mouse_click').length}
-            </span>{' '}
+              {events.filter((e) => e.eventType === "mouse_click").length}
+            </span>{" "}
             clicks
           </span>
           <span>
             <span className="font-medium">
-              {events.filter((e) => ['key_press', 'key_down'].includes(e.eventType)).length}
-            </span>{' '}
+              {
+                events.filter((e) =>
+                  ["key_press", "key_down"].includes(e.eventType)
+                ).length
+              }
+            </span>{" "}
             keys
           </span>
           <span>
             <span className="font-medium">
-              {events.filter((e) => e.eventType === 'mouse_scroll').length}
-            </span>{' '}
+              {events.filter((e) => e.eventType === "mouse_scroll").length}
+            </span>{" "}
             scrolls
           </span>
         </div>
-        <div className="text-xs text-gray-500">Click on timeline or markers to seek</div>
+        <div className="text-xs text-gray-500">
+          Click on timeline or markers to seek
+        </div>
       </div>
 
       {/* Event density visualization */}
@@ -279,7 +286,10 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
           {Object.entries(eventClusters).map(([key, clusterEvents]) => {
             const firstEvent = clusterEvents[0];
             const position = (firstEvent.timestamp / duration) * 100;
-            const height = Math.min(100, (clusterEvents.length / events.length) * 100 * 10);
+            const height = Math.min(
+              100,
+              (clusterEvents.length / events.length) * 100 * 10
+            );
 
             return (
               <div
@@ -288,7 +298,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
                 style={{
                   left: `${position}%`,
                   height: `${height}%`,
-                  width: '2%',
+                  width: "2%",
                 }}
               />
             );

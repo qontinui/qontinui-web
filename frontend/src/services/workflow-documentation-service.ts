@@ -19,7 +19,7 @@ import {
   Connections,
   WorkflowVariables,
   getActionOutputCount,
-} from '../lib/action-schema/action-types';
+} from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -28,7 +28,7 @@ import {
 export interface WorkflowDocumentation {
   workflowId: string;
   content: string;
-  format: 'markdown' | 'html' | 'plain';
+  format: "markdown" | "html" | "plain";
   created: string;
   updated: string;
   version: number;
@@ -57,20 +57,26 @@ export interface DocumentationVersion {
 export interface DocumentationTemplate {
   name: string;
   description: string;
-  category: 'standard' | 'api' | 'ui-test' | 'data-processing' | 'error-handling' | 'custom';
+  category:
+    | "standard"
+    | "api"
+    | "ui-test"
+    | "data-processing"
+    | "error-handling"
+    | "custom";
   content: string;
 }
 
 export interface VariableInfo {
   name: string;
-  scope: 'local' | 'process' | 'global';
+  scope: "local" | "process" | "global";
   type: string;
   usage: string;
   actions: string[];
 }
 
 export interface DependencyInfo {
-  type: 'workflow' | 'external' | 'resource';
+  type: "workflow" | "external" | "resource";
   name: string;
   description: string;
   required: boolean;
@@ -92,7 +98,7 @@ export interface DocumentationSection {
 }
 
 export interface ExportOptions {
-  format: 'markdown' | 'html' | 'pdf';
+  format: "markdown" | "html" | "pdf";
   includeTOC?: boolean;
   includeMetadata?: boolean;
   includeDiagrams?: boolean;
@@ -108,9 +114,9 @@ export class WorkflowDocumentationService {
   private documentations: Map<string, WorkflowDocumentation> = new Map();
   private comments: Map<string, ActionComment> = new Map();
   private versions: Map<string, DocumentationVersion[]> = new Map();
-  private readonly DOCS_STORAGE_KEY = 'workflow-documentation';
-  private readonly COMMENTS_STORAGE_KEY = 'workflow-action-comments';
-  private readonly VERSIONS_STORAGE_KEY = 'workflow-documentation-versions';
+  private readonly DOCS_STORAGE_KEY = "workflow-documentation";
+  private readonly COMMENTS_STORAGE_KEY = "workflow-action-comments";
+  private readonly VERSIONS_STORAGE_KEY = "workflow-documentation-versions";
 
   private constructor() {
     this.loadFromStorage();
@@ -118,7 +124,8 @@ export class WorkflowDocumentationService {
 
   static getInstance(): WorkflowDocumentationService {
     if (!WorkflowDocumentationService.instance) {
-      WorkflowDocumentationService.instance = new WorkflowDocumentationService();
+      WorkflowDocumentationService.instance =
+        new WorkflowDocumentationService();
     }
     return WorkflowDocumentationService.instance;
   }
@@ -134,7 +141,7 @@ export class WorkflowDocumentationService {
     workflowId: string,
     content: string,
     options?: {
-      format?: 'markdown' | 'html' | 'plain';
+      format?: "markdown" | "html" | "plain";
       author?: string;
       tags?: string[];
     }
@@ -142,7 +149,7 @@ export class WorkflowDocumentationService {
     const doc: WorkflowDocumentation = {
       workflowId,
       content,
-      format: options?.format || 'markdown',
+      format: options?.format || "markdown",
       created: new Date().toISOString(),
       updated: new Date().toISOString(),
       version: 1,
@@ -151,7 +158,7 @@ export class WorkflowDocumentationService {
     };
 
     this.documentations.set(workflowId, doc);
-    this.saveDocumentationVersion(workflowId, content, 'Initial documentation');
+    this.saveDocumentationVersion(workflowId, content, "Initial documentation");
     this.saveToStorage();
 
     return doc;
@@ -243,7 +250,10 @@ export class WorkflowDocumentationService {
   /**
    * Update an action comment
    */
-  updateActionComment(commentId: string, comment: string): ActionComment | null {
+  updateActionComment(
+    commentId: string,
+    comment: string
+  ): ActionComment | null {
     const commentObj = this.comments.get(commentId);
     if (!commentObj) {
       return null;
@@ -271,14 +281,19 @@ export class WorkflowDocumentationService {
    * Get comment for a specific action
    */
   getActionComment(actionId: string): ActionComment | null {
-    return Array.from(this.comments.values()).find((c) => c.actionId === actionId) || null;
+    return (
+      Array.from(this.comments.values()).find((c) => c.actionId === actionId) ||
+      null
+    );
   }
 
   /**
    * Get all comments for a workflow
    */
   getAllActionComments(workflowId: string): ActionComment[] {
-    return Array.from(this.comments.values()).filter((c) => c.workflowId === workflowId);
+    return Array.from(this.comments.values()).filter(
+      (c) => c.workflowId === workflowId
+    );
   }
 
   // ==========================================================================
@@ -327,18 +342,18 @@ export class WorkflowDocumentationService {
     // Recent Changes
     sections.push(this.generateRecentChanges(workflow));
 
-    return sections.join('\n\n');
+    return sections.join("\n\n");
   }
 
   /**
    * Generate overview section
    */
   private generateOverview(workflow: Workflow): string {
-    const parts: string[] = ['## Overview\n'];
+    const parts: string[] = ["## Overview\n"];
 
     parts.push(`**Name:** ${workflow.name}`);
     parts.push(`**Version:** ${workflow.version}`);
-    parts.push(`**Category:** ${workflow.category || 'Uncategorized'}`);
+    parts.push(`**Category:** ${workflow.category || "Uncategorized"}`);
     parts.push(`**Format:** Graph-based workflow`);
 
     if (workflow.description) {
@@ -346,11 +361,15 @@ export class WorkflowDocumentationService {
     }
 
     if (workflow.metadata?.created) {
-      parts.push(`**Created:** ${new Date(workflow.metadata.created).toLocaleString()}`);
+      parts.push(
+        `**Created:** ${new Date(workflow.metadata.created).toLocaleString()}`
+      );
     }
 
     if (workflow.metadata?.updated) {
-      parts.push(`**Last Updated:** ${new Date(workflow.metadata.updated).toLocaleString()}`);
+      parts.push(
+        `**Last Updated:** ${new Date(workflow.metadata.updated).toLocaleString()}`
+      );
     }
 
     if (workflow.metadata?.author) {
@@ -358,87 +377,102 @@ export class WorkflowDocumentationService {
     }
 
     if (workflow.tags && workflow.tags.length > 0) {
-      parts.push(`**Tags:** ${workflow.tags.join(', ')}`);
+      parts.push(`**Tags:** ${workflow.tags.join(", ")}`);
     }
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate purpose and use cases section
    */
   private generatePurposeSection(workflow: Workflow): string {
-    const parts: string[] = ['## Purpose and Use Cases\n'];
+    const parts: string[] = ["## Purpose and Use Cases\n"];
 
     // Try to infer purpose from workflow structure
     const actionTypes = new Set(workflow.actions.map((a) => a.type));
     const hasControlFlow = Array.from(actionTypes).some((t) =>
-      ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH'].includes(t)
+      ["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(t)
     );
     const hasUI = Array.from(actionTypes).some((t) =>
-      ['CLICK', 'TYPE', 'FIND', 'EXISTS'].includes(t)
+      ["CLICK", "TYPE", "FIND", "EXISTS"].includes(t)
     );
     const hasData = Array.from(actionTypes).some((t) =>
-      ['FILTER', 'MAP', 'REDUCE', 'SORT'].includes(t)
+      ["FILTER", "MAP", "REDUCE", "SORT"].includes(t)
     );
 
     if (workflow.description) {
       parts.push(workflow.description);
-      parts.push('');
+      parts.push("");
     }
 
-    parts.push('**Characteristics:**');
+    parts.push("**Characteristics:**");
     if (hasControlFlow) {
-      parts.push('- Contains conditional logic and control flow');
+      parts.push("- Contains conditional logic and control flow");
     }
     if (hasUI) {
-      parts.push('- Includes UI automation actions');
+      parts.push("- Includes UI automation actions");
     }
     if (hasData) {
-      parts.push('- Performs data processing operations');
+      parts.push("- Performs data processing operations");
     }
     parts.push(`- Total of ${workflow.actions.length} action(s)`);
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate input requirements section
    */
   private generateInputRequirements(workflow: Workflow): string {
-    const parts: string[] = ['## Input Requirements\n'];
+    const parts: string[] = ["## Input Requirements\n"];
 
     // Variables
     if (workflow.variables) {
-      parts.push('### Required Variables:\n');
+      parts.push("### Required Variables:\n");
 
-      if (workflow.variables.local && Object.keys(workflow.variables.local).length > 0) {
-        parts.push('**Local Variables:**');
+      if (
+        workflow.variables.local &&
+        Object.keys(workflow.variables.local).length > 0
+      ) {
+        parts.push("**Local Variables:**");
         Object.entries(workflow.variables.local).forEach(([key, value]) => {
-          parts.push(`- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`);
+          parts.push(
+            `- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`
+          );
         });
       }
 
-      if (workflow.variables.process && Object.keys(workflow.variables.process).length > 0) {
-        parts.push('\n**Process Variables:**');
+      if (
+        workflow.variables.process &&
+        Object.keys(workflow.variables.process).length > 0
+      ) {
+        parts.push("\n**Process Variables:**");
         Object.entries(workflow.variables.process).forEach(([key, value]) => {
-          parts.push(`- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`);
+          parts.push(
+            `- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`
+          );
         });
       }
 
-      if (workflow.variables.global && Object.keys(workflow.variables.global).length > 0) {
-        parts.push('\n**Global Variables:**');
+      if (
+        workflow.variables.global &&
+        Object.keys(workflow.variables.global).length > 0
+      ) {
+        parts.push("\n**Global Variables:**");
         Object.entries(workflow.variables.global).forEach(([key, value]) => {
-          parts.push(`- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`);
+          parts.push(
+            `- \`${key}\`: ${typeof value} = ${JSON.stringify(value)}`
+          );
         });
       }
     } else {
-      parts.push('*No predefined variables required.*');
+      parts.push("*No predefined variables required.*");
     }
 
     // Initial states
     if (workflow.initialStateIds && workflow.initialStateIds.length > 0) {
-      parts.push('\n### Required Initial States:\n');
+      parts.push("\n### Required Initial States:\n");
       workflow.initialStateIds.forEach((stateId) => {
         parts.push(`- ${stateId}`);
       });
@@ -446,55 +480,61 @@ export class WorkflowDocumentationService {
 
     // Initial screenshot
     if (workflow.initialScreenshotId) {
-      parts.push(`\n### Initial Screenshot: \`${workflow.initialScreenshotId}\``);
+      parts.push(
+        `\n### Initial Screenshot: \`${workflow.initialScreenshotId}\``
+      );
     }
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate output/side effects section
    */
   private generateOutputSection(workflow: Workflow): string {
-    const parts: string[] = ['## Output & Side Effects\n'];
+    const parts: string[] = ["## Output & Side Effects\n"];
 
     // Look for actions that produce output
     const outputActions = workflow.actions.filter((a) =>
-      ['SCREENSHOT', 'SET_VARIABLE', 'RUN_WORKFLOW'].includes(a.type)
+      ["SCREENSHOT", "SET_VARIABLE", "RUN_WORKFLOW"].includes(a.type)
     );
 
     if (outputActions.length > 0) {
-      parts.push('### Actions with Output:\n');
+      parts.push("### Actions with Output:\n");
       outputActions.forEach((action) => {
         const name = action.name || action.id;
         parts.push(`- **${name}** (${action.type})`);
 
-        if (action.type === 'SCREENSHOT') {
+        if (action.type === "SCREENSHOT") {
           const config = action.config as any;
-          parts.push(`  - Saves screenshot: \`${config.filename || 'screenshot.png'}\``);
-        } else if (action.type === 'SET_VARIABLE') {
+          parts.push(
+            `  - Saves screenshot: \`${config.filename || "screenshot.png"}\``
+          );
+        } else if (action.type === "SET_VARIABLE") {
           const config = action.config as any;
           parts.push(`  - Sets variable: \`${config.variable}\``);
-          parts.push(`  - Scope: ${config.scope || 'local'}`);
-        } else if (action.type === 'RUN_WORKFLOW') {
+          parts.push(`  - Scope: ${config.scope || "local"}`);
+        } else if (action.type === "RUN_WORKFLOW") {
           const config = action.config as any;
           parts.push(`  - Executes workflow: \`${config.workflowId}\``);
         }
       });
     } else {
-      parts.push('*No explicit outputs defined. Side effects may include UI interactions.*');
+      parts.push(
+        "*No explicit outputs defined. Side effects may include UI interactions.*"
+      );
     }
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate action flow section
    */
   private generateActionFlow(workflow: Workflow): string {
-    const parts: string[] = ['## Action Flow\n'];
+    const parts: string[] = ["## Action Flow\n"];
 
-    parts.push('Step-by-step execution flow:\n');
+    parts.push("Step-by-step execution flow:\n");
 
     // Find entry point (action with no incoming connections)
     const entryPoints = this.findEntryPoints(workflow);
@@ -507,7 +547,7 @@ export class WorkflowDocumentationService {
     let stepNumber = 1;
     const visited = new Set<string>();
 
-    const processAction = (actionId: string, indent: string = '') => {
+    const processAction = (actionId: string, indent: string = "") => {
       if (visited.has(actionId)) {
         return;
       }
@@ -519,7 +559,9 @@ export class WorkflowDocumentationService {
       const actionName = action.name || action.id;
       const comment = this.getActionComment(actionId);
 
-      parts.push(`${indent}${stepNumber}. **${actionName}** (\`${action.type}\`)`);
+      parts.push(
+        `${indent}${stepNumber}. **${actionName}** (\`${action.type}\`)`
+      );
       if (comment) {
         parts.push(`${indent}   *${comment.comment}*`);
       }
@@ -531,7 +573,7 @@ export class WorkflowDocumentationService {
       if (connections?.main) {
         connections.main.forEach((outputs, outputIndex) => {
           outputs.forEach((conn) => {
-            processAction(conn.action, indent + '   ');
+            processAction(conn.action, indent + "   ");
           });
         });
       }
@@ -541,63 +583,63 @@ export class WorkflowDocumentationService {
       processAction(entryId);
     });
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate variables table
    */
   generateVariablesTable(workflow: Workflow): string {
-    const parts: string[] = ['## Variables Used\n'];
+    const parts: string[] = ["## Variables Used\n"];
 
     const variableUsage = this.analyzeVariableUsage(workflow);
 
     if (variableUsage.length === 0) {
-      parts.push('*No variables detected in this workflow.*');
-      return parts.join('\n');
+      parts.push("*No variables detected in this workflow.*");
+      return parts.join("\n");
     }
 
-    parts.push('| Variable | Scope | Type | Usage | Actions |');
-    parts.push('|----------|-------|------|-------|---------|');
+    parts.push("| Variable | Scope | Type | Usage | Actions |");
+    parts.push("|----------|-------|------|-------|---------|");
 
     variableUsage.forEach((v) => {
       parts.push(
-        `| \`${v.name}\` | ${v.scope} | ${v.type} | ${v.usage} | ${v.actions.join(', ')} |`
+        `| \`${v.name}\` | ${v.scope} | ${v.type} | ${v.usage} | ${v.actions.join(", ")} |`
       );
     });
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate dependencies list
    */
   generateDependenciesList(workflow: Workflow): string {
-    const parts: string[] = ['## Dependencies\n'];
+    const parts: string[] = ["## Dependencies\n"];
 
     const dependencies = this.analyzeDependencies(workflow);
 
     if (dependencies.length === 0) {
-      parts.push('*No external dependencies detected.*');
-      return parts.join('\n');
+      parts.push("*No external dependencies detected.*");
+      return parts.join("\n");
     }
 
     dependencies.forEach((dep) => {
-      const required = dep.required ? '**[Required]**' : '[Optional]';
+      const required = dep.required ? "**[Required]**" : "[Optional]";
       parts.push(`- ${required} **${dep.name}** (${dep.type})`);
       if (dep.description) {
         parts.push(`  ${dep.description}`);
       }
     });
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate complexity metrics
    */
   private generateComplexityMetrics(workflow: Workflow): string {
-    const parts: string[] = ['## Complexity Metrics\n'];
+    const parts: string[] = ["## Complexity Metrics\n"];
 
     const metrics = this.calculateComplexity(workflow);
 
@@ -611,34 +653,34 @@ export class WorkflowDocumentationService {
     // Complexity assessment
     const complexity =
       metrics.cyclomaticComplexity <= 5
-        ? 'Low'
+        ? "Low"
         : metrics.cyclomaticComplexity <= 10
-        ? 'Medium'
-        : 'High';
+          ? "Medium"
+          : "High";
     parts.push(`\n**Overall Complexity:** ${complexity}`);
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate Mermaid flowchart
    */
   generateFlowchart(workflow: Workflow): string {
-    const parts: string[] = ['## Visual Flowchart\n'];
+    const parts: string[] = ["## Visual Flowchart\n"];
 
-    parts.push('```mermaid');
-    parts.push('graph TD');
+    parts.push("```mermaid");
+    parts.push("graph TD");
 
     // Add nodes
     workflow.actions.forEach((action) => {
       const name = (action.name || action.id).replace(/"/g, '\\"');
       const shape = this.getMermaidNodeShape(action.type);
 
-      if (shape === 'diamond') {
+      if (shape === "diamond") {
         parts.push(`    ${action.id}{"${name}<br/>(${action.type})"}`);
-      } else if (shape === 'round') {
+      } else if (shape === "round") {
         parts.push(`    ${action.id}(["${name}<br/>(${action.type})"])`);
-      } else if (shape === 'stadium') {
+      } else if (shape === "stadium") {
         parts.push(`    ${action.id}(["${name}<br/>(${action.type})"])`);
       } else {
         parts.push(`    ${action.id}["${name}<br/>(${action.type})"]`);
@@ -650,7 +692,12 @@ export class WorkflowDocumentationService {
       if (outputs.main) {
         outputs.main.forEach((connections, outputIndex) => {
           connections.forEach((conn) => {
-            const label = outputIndex === 0 ? '' : outputIndex === 1 ? '|false|' : `|${outputIndex}|`;
+            const label =
+              outputIndex === 0
+                ? ""
+                : outputIndex === 1
+                  ? "|false|"
+                  : `|${outputIndex}|`;
             parts.push(`    ${sourceId} -->${label} ${conn.action}`);
           });
         });
@@ -673,53 +720,65 @@ export class WorkflowDocumentationService {
       }
     });
 
-    parts.push('```');
+    parts.push("```");
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate error handling section
    */
   private generateErrorHandlingSection(workflow: Workflow): string {
-    const parts: string[] = ['## Error Handling\n'];
+    const parts: string[] = ["## Error Handling\n"];
 
-    const errorHandlers = workflow.actions.filter((a) => a.type === 'TRY_CATCH');
+    const errorHandlers = workflow.actions.filter(
+      (a) => a.type === "TRY_CATCH"
+    );
 
     if (errorHandlers.length > 0) {
-      parts.push(`This workflow includes ${errorHandlers.length} error handling block(s):\n`);
+      parts.push(
+        `This workflow includes ${errorHandlers.length} error handling block(s):\n`
+      );
       errorHandlers.forEach((handler) => {
         const name = handler.name || handler.id;
-        parts.push(`- **${name}**: Catches and handles errors from its try block`);
+        parts.push(
+          `- **${name}**: Catches and handles errors from its try block`
+        );
       });
     } else {
-      parts.push('*No explicit error handling defined.*');
-      parts.push('\nNote: Model-based automation is resilient by design and continues execution even if individual actions fail.');
+      parts.push("*No explicit error handling defined.*");
+      parts.push(
+        "\nNote: Model-based automation is resilient by design and continues execution even if individual actions fail."
+      );
     }
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
    * Generate recent changes section
    */
   private generateRecentChanges(workflow: Workflow): string {
-    const parts: string[] = ['## Recent Changes\n'];
+    const parts: string[] = ["## Recent Changes\n"];
 
     if (workflow.metadata?.updated) {
-      parts.push(`Last updated: ${new Date(workflow.metadata.updated).toLocaleString()}`);
+      parts.push(
+        `Last updated: ${new Date(workflow.metadata.updated).toLocaleString()}`
+      );
     }
 
     const versions = this.getDocumentationHistory(workflow.id);
     if (versions.length > 1) {
-      parts.push('\n### Version History:\n');
+      parts.push("\n### Version History:\n");
       versions.slice(0, 5).forEach((v) => {
-        const desc = v.changeDescription ? `: ${v.changeDescription}` : '';
-        parts.push(`- Version ${v.version} (${new Date(v.timestamp).toLocaleString()})${desc}`);
+        const desc = v.changeDescription ? `: ${v.changeDescription}` : "";
+        parts.push(
+          `- Version ${v.version} (${new Date(v.timestamp).toLocaleString()})${desc}`
+        );
       });
     }
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   // ==========================================================================
@@ -732,9 +791,9 @@ export class WorkflowDocumentationService {
   getTemplates(): DocumentationTemplate[] {
     return [
       {
-        name: 'Standard Workflow',
-        description: 'Basic workflow documentation template',
-        category: 'standard',
+        name: "Standard Workflow",
+        description: "Basic workflow documentation template",
+        category: "standard",
         content: `# {workflow.name}
 
 ## Overview
@@ -761,9 +820,9 @@ Any additional notes or considerations.
 `,
       },
       {
-        name: 'API Integration',
-        description: 'Template for API integration workflows',
-        category: 'api',
+        name: "API Integration",
+        description: "Template for API integration workflows",
+        category: "api",
         content: `# {workflow.name} - API Integration
 
 ## API Endpoint
@@ -794,9 +853,9 @@ Describe how to use this integration.
 `,
       },
       {
-        name: 'UI Test',
-        description: 'Template for UI testing workflows',
-        category: 'ui-test',
+        name: "UI Test",
+        description: "Template for UI testing workflows",
+        category: "ui-test",
         content: `# {workflow.name} - UI Test
 
 ## Test Objective
@@ -827,9 +886,9 @@ List any known issues or limitations.
 `,
       },
       {
-        name: 'Data Processing',
-        description: 'Template for data processing workflows',
-        category: 'data-processing',
+        name: "Data Processing",
+        description: "Template for data processing workflows",
+        category: "data-processing",
         content: `# {workflow.name} - Data Processing
 
 ## Input Data
@@ -867,9 +926,9 @@ List any known issues or limitations.
 `,
       },
       {
-        name: 'Error Handling',
-        description: 'Template for error handling workflows',
-        category: 'error-handling',
+        name: "Error Handling",
+        description: "Template for error handling workflows",
+        category: "error-handling",
         content: `# {workflow.name} - Error Handling
 
 ## Error Types Handled
@@ -911,7 +970,11 @@ How errors are detected in this workflow.
   /**
    * Apply template to workflow
    */
-  applyTemplate(workflowId: string, templateName: string, workflow: Workflow): boolean {
+  applyTemplate(
+    workflowId: string,
+    templateName: string,
+    workflow: Workflow
+  ): boolean {
     const template = this.getTemplates().find((t) => t.name === templateName);
     if (!template) {
       return false;
@@ -920,7 +983,10 @@ How errors are detected in this workflow.
     // Replace placeholders
     let content = template.content;
     content = content.replace(/{workflow\.name}/g, workflow.name);
-    content = content.replace(/{workflow\.description}/g, workflow.description || '');
+    content = content.replace(
+      /{workflow\.description}/g,
+      workflow.description || ""
+    );
     content = content.replace(/{workflow\.version}/g, workflow.version);
 
     this.createDocumentation(workflowId, content, {
@@ -938,7 +1004,7 @@ How errors are detected in this workflow.
    * Generate table of contents from markdown content
    */
   generateTOC(content: string): string {
-    const lines = content.split('\n');
+    const lines = content.split("\n");
     const headers: Array<{ level: number; text: string; anchor: string }> = [];
 
     lines.forEach((line) => {
@@ -948,25 +1014,25 @@ How errors are detected in this workflow.
         const text = match[2].trim();
         const anchor = text
           .toLowerCase()
-          .replace(/[^\w\s-]/g, '')
-          .replace(/\s+/g, '-');
+          .replace(/[^\w\s-]/g, "")
+          .replace(/\s+/g, "-");
 
         headers.push({ level, text, anchor });
       }
     });
 
     if (headers.length === 0) {
-      return '';
+      return "";
     }
 
-    const toc: string[] = ['## Table of Contents\n'];
+    const toc: string[] = ["## Table of Contents\n"];
 
     headers.forEach((header) => {
-      const indent = '  '.repeat(header.level - 1);
+      const indent = "  ".repeat(header.level - 1);
       toc.push(`${indent}- [${header.text}](#${header.anchor})`);
     });
 
-    return toc.join('\n');
+    return toc.join("\n");
   }
 
   /**
@@ -981,18 +1047,21 @@ How errors are detected in this workflow.
     const toc = this.generateTOC(doc.content);
 
     // Remove existing TOC if present
-    let content = doc.content.replace(/## Table of Contents\n\n([\s\S]*?)\n\n##/m, '##');
+    let content = doc.content.replace(
+      /## Table of Contents\n\n([\s\S]*?)\n\n##/m,
+      "##"
+    );
 
     // Add new TOC after title
-    const lines = content.split('\n');
-    const titleIndex = lines.findIndex((l) => l.startsWith('#'));
+    const lines = content.split("\n");
+    const titleIndex = lines.findIndex((l) => l.startsWith("#"));
 
     if (titleIndex !== -1) {
-      lines.splice(titleIndex + 1, 0, '', toc);
-      content = lines.join('\n');
+      lines.splice(titleIndex + 1, 0, "", toc);
+      content = lines.join("\n");
     }
 
-    this.updateDocumentation(workflowId, content, 'Updated table of contents');
+    this.updateDocumentation(workflowId, content, "Updated table of contents");
 
     return true;
   }
@@ -1021,14 +1090,14 @@ How errors are detected in this workflow.
 
     this.documentations.forEach((doc, workflowId) => {
       const content = doc.content.toLowerCase();
-      const matches = (content.match(new RegExp(lowerQuery, 'g')) || []).length;
+      const matches = (content.match(new RegExp(lowerQuery, "g")) || []).length;
 
       if (matches > 0) {
         // Find first occurrence for excerpt
         const index = content.indexOf(lowerQuery);
         const start = Math.max(0, index - 50);
         const end = Math.min(content.length, index + query.length + 50);
-        const excerpt = '...' + doc.content.substring(start, end) + '...';
+        const excerpt = "..." + doc.content.substring(start, end) + "...";
 
         results.push({
           workflowId,
@@ -1100,8 +1169,8 @@ How errors are detected in this workflow.
     removed: string[];
     modified: string[];
   } {
-    const lines1 = version1.content.split('\n');
-    const lines2 = version2.content.split('\n');
+    const lines1 = version1.content.split("\n");
+    const lines2 = version2.content.split("\n");
 
     const added: string[] = [];
     const removed: string[] = [];
@@ -1134,7 +1203,7 @@ How errors are detected in this workflow.
    */
   exportDocumentation(
     workflowId: string,
-    options: ExportOptions = { format: 'markdown' }
+    options: ExportOptions = { format: "markdown" }
   ): string | null {
     const doc = this.getDocumentation(workflowId);
     if (!doc) {
@@ -1146,7 +1215,7 @@ How errors are detected in this workflow.
     // Add TOC if requested
     if (options.includeTOC) {
       const toc = this.generateTOC(content);
-      content = toc + '\n\n' + content;
+      content = toc + "\n\n" + content;
     }
 
     // Add metadata if requested
@@ -1156,8 +1225,8 @@ Workflow ID: ${workflowId}
 Version: ${doc.version}
 Created: ${doc.created}
 Updated: ${doc.updated}
-${doc.author ? `Author: ${doc.author}` : ''}
-${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
+${doc.author ? `Author: ${doc.author}` : ""}
+${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
 ---
 
 `;
@@ -1168,7 +1237,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
     if (options.includeComments) {
       const comments = this.getAllActionComments(workflowId);
       if (comments.length > 0) {
-        content += '\n\n## Action Comments\n\n';
+        content += "\n\n## Action Comments\n\n";
         comments.forEach((comment) => {
           content += `- **${comment.actionId}**: ${comment.comment}\n`;
         });
@@ -1176,9 +1245,9 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
     }
 
     // Convert format if needed
-    if (options.format === 'html') {
+    if (options.format === "html") {
       return this.markdownToHTML(content);
-    } else if (options.format === 'pdf') {
+    } else if (options.format === "pdf") {
       // PDF would require a library like jsPDF
       return `[PDF Export] ${content}`;
     }
@@ -1189,15 +1258,17 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
   /**
    * Export all documentation
    */
-  exportAllDocumentation(options: ExportOptions = { format: 'markdown' }): string {
+  exportAllDocumentation(
+    options: ExportOptions = { format: "markdown" }
+  ): string {
     const parts: string[] = [];
 
-    parts.push('# Workflow Documentation\n');
+    parts.push("# Workflow Documentation\n");
     parts.push(`Generated: ${new Date().toISOString()}\n`);
     parts.push(`Total Workflows: ${this.documentations.size}\n`);
 
     this.documentations.forEach((doc, workflowId) => {
-      parts.push('\n---\n');
+      parts.push("\n---\n");
       const exported = this.exportDocumentation(workflowId, {
         ...options,
         includeMetadata: true,
@@ -1207,7 +1278,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
       }
     });
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   /**
@@ -1216,22 +1287,24 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
   exportProjectReadme(workflows: Workflow[]): string {
     const parts: string[] = [];
 
-    parts.push('# Workflow Project Documentation\n');
+    parts.push("# Workflow Project Documentation\n");
     parts.push(`Generated: ${new Date().toISOString()}\n`);
 
     // Group by category
     const byCategory = new Map<string, Workflow[]>();
     workflows.forEach((wf) => {
-      const category = wf.category || 'Uncategorized';
+      const category = wf.category || "Uncategorized";
       const list = byCategory.get(category) || [];
       list.push(wf);
       byCategory.set(category, list);
     });
 
     // Table of contents
-    parts.push('## Table of Contents\n');
+    parts.push("## Table of Contents\n");
     byCategory.forEach((wfs, category) => {
-      parts.push(`- [${category}](#${category.toLowerCase().replace(/\s+/g, '-')})`);
+      parts.push(
+        `- [${category}](#${category.toLowerCase().replace(/\s+/g, "-")})`
+      );
     });
 
     // Workflows by category
@@ -1246,19 +1319,19 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
         parts.push(`- **Version:** ${wf.version}`);
         parts.push(`- **Actions:** ${wf.actions.length}`);
         if (wf.tags && wf.tags.length > 0) {
-          parts.push(`- **Tags:** ${wf.tags.join(', ')}`);
+          parts.push(`- **Tags:** ${wf.tags.join(", ")}`);
         }
 
         const doc = this.getDocumentation(wf.id);
         if (doc) {
-          parts.push('\n[View Full Documentation →]');
+          parts.push("\n[View Full Documentation →]");
         }
 
-        parts.push('');
+        parts.push("");
       });
     });
 
-    return parts.join('\n');
+    return parts.join("\n");
   }
 
   // ==========================================================================
@@ -1272,7 +1345,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
     const hasIncoming = new Set<string>();
 
     Object.values(workflow.connections).forEach((outputs) => {
-      ['main', 'error', 'success', 'parallel'].forEach((type) => {
+      ["main", "error", "success", "parallel"].forEach((type) => {
         const connections = (outputs as any)[type];
         if (connections) {
           connections.forEach((conns: any[]) => {
@@ -1282,7 +1355,9 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
       });
     });
 
-    return workflow.actions.filter((a) => !hasIncoming.has(a.id)).map((a) => a.id);
+    return workflow.actions
+      .filter((a) => !hasIncoming.has(a.id))
+      .map((a) => a.id);
   }
 
   /**
@@ -1293,7 +1368,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
 
     // Check workflow variables
     if (workflow.variables) {
-      ['local', 'process', 'global'].forEach((scope) => {
+      ["local", "process", "global"].forEach((scope) => {
         const vars = (workflow.variables as any)[scope];
         if (vars) {
           Object.entries(vars).forEach(([name, value]) => {
@@ -1301,7 +1376,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
               name,
               scope: scope as any,
               type: typeof value,
-              usage: 'Predefined',
+              usage: "Predefined",
               actions: [],
             });
           });
@@ -1311,18 +1386,18 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
 
     // Check action configs for variable usage
     workflow.actions.forEach((action) => {
-      if (action.type === 'SET_VARIABLE' || action.type === 'GET_VARIABLE') {
+      if (action.type === "SET_VARIABLE" || action.type === "GET_VARIABLE") {
         const config = action.config as any;
         const varName = config.variable;
-        const scope = config.scope || 'local';
+        const scope = config.scope || "local";
 
         let varInfo = variables.find((v) => v.name === varName);
         if (!varInfo) {
           varInfo = {
             name: varName,
             scope: scope as any,
-            type: 'unknown',
-            usage: action.type === 'SET_VARIABLE' ? 'Set' : 'Get',
+            type: "unknown",
+            usage: action.type === "SET_VARIABLE" ? "Set" : "Get",
             actions: [],
           };
           variables.push(varInfo);
@@ -1342,22 +1417,22 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
     const dependencies: DependencyInfo[] = [];
 
     workflow.actions.forEach((action) => {
-      if (action.type === 'RUN_WORKFLOW') {
+      if (action.type === "RUN_WORKFLOW") {
         const config = action.config as any;
         dependencies.push({
-          type: 'workflow',
-          name: config.workflowId || 'Unknown workflow',
+          type: "workflow",
+          name: config.workflowId || "Unknown workflow",
           description: `Called from action: ${action.name || action.id}`,
           required: true,
         });
       }
 
       // Check for image dependencies
-      if ('target' in action.config) {
+      if ("target" in action.config) {
         const target = (action.config as any).target;
         if (target?.image) {
           dependencies.push({
-            type: 'resource',
+            type: "resource",
             name: target.image,
             description: `Image used in action: ${action.name || action.id}`,
             required: true,
@@ -1377,11 +1452,11 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
 
     // Count branching points
     const branchingPoints = workflow.actions.filter((a) =>
-      ['IF', 'SWITCH', 'TRY_CATCH'].includes(a.type)
+      ["IF", "SWITCH", "TRY_CATCH"].includes(a.type)
     ).length;
 
     // Count loops
-    const loopCount = workflow.actions.filter((a) => a.type === 'LOOP').length;
+    const loopCount = workflow.actions.filter((a) => a.type === "LOOP").length;
 
     // Calculate max depth (simplified)
     let maxDepth = 0;
@@ -1436,17 +1511,17 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
    */
   private getMermaidNodeShape(
     actionType: ActionType
-  ): 'rectangle' | 'diamond' | 'round' | 'stadium' {
-    if (['IF', 'SWITCH'].includes(actionType)) {
-      return 'diamond';
+  ): "rectangle" | "diamond" | "round" | "stadium" {
+    if (["IF", "SWITCH"].includes(actionType)) {
+      return "diamond";
     }
-    if (actionType === 'LOOP') {
-      return 'stadium';
+    if (actionType === "LOOP") {
+      return "stadium";
     }
-    if (['TRY_CATCH', 'BREAK', 'CONTINUE'].includes(actionType)) {
-      return 'round';
+    if (["TRY_CATCH", "BREAK", "CONTINUE"].includes(actionType)) {
+      return "round";
     }
-    return 'rectangle';
+    return "rectangle";
   }
 
   /**
@@ -1456,25 +1531,25 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
     let html = markdown;
 
     // Headers
-    html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-    html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-    html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+    html = html.replace(/^### (.*$)/gim, "<h3>$1</h3>");
+    html = html.replace(/^## (.*$)/gim, "<h2>$1</h2>");
+    html = html.replace(/^# (.*$)/gim, "<h1>$1</h1>");
 
     // Bold
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 
     // Italic
-    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
 
     // Code
-    html = html.replace(/`(.*?)`/g, '<code>$1</code>');
+    html = html.replace(/`(.*?)`/g, "<code>$1</code>");
 
     // Lists
-    html = html.replace(/^\- (.*$)/gim, '<li>$1</li>');
+    html = html.replace(/^\- (.*$)/gim, "<li>$1</li>");
 
     // Paragraphs
-    html = html.replace(/\n\n/g, '</p><p>');
-    html = '<p>' + html + '</p>';
+    html = html.replace(/\n\n/g, "</p><p>");
+    html = "<p>" + html + "</p>";
 
     return html;
   }
@@ -1494,13 +1569,19 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
 
       // Save comments
       const commentsArray = Array.from(this.comments.entries());
-      localStorage.setItem(this.COMMENTS_STORAGE_KEY, JSON.stringify(commentsArray));
+      localStorage.setItem(
+        this.COMMENTS_STORAGE_KEY,
+        JSON.stringify(commentsArray)
+      );
 
       // Save versions
       const versionsArray = Array.from(this.versions.entries());
-      localStorage.setItem(this.VERSIONS_STORAGE_KEY, JSON.stringify(versionsArray));
+      localStorage.setItem(
+        this.VERSIONS_STORAGE_KEY,
+        JSON.stringify(versionsArray)
+      );
     } catch (error) {
-      console.error('Failed to save documentation to storage:', error);
+      console.error("Failed to save documentation to storage:", error);
     }
   }
 
@@ -1530,7 +1611,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(', ')}` : ''}
         this.versions = new Map(versionsArray);
       }
     } catch (error) {
-      console.error('Failed to load documentation from storage:', error);
+      console.error("Failed to load documentation from storage:", error);
     }
   }
 

@@ -11,7 +11,7 @@ The component is already part of qontinui-web. No installation needed!
 ### 1. Import the Component
 
 ```tsx
-import { EnhancedImageLibrary } from '@/components/image-library';
+import { EnhancedImageLibrary } from "@/components/image-library";
 ```
 
 ### 2. Add to Your Page
@@ -41,11 +41,13 @@ That's it! The component automatically connects to AutomationContext.
 ### Uploading Images
 
 **Method 1: Drag & Drop**
+
 1. Drag image files from your computer
 2. Drop them anywhere in the grid
 3. Watch the upload progress
 
 **Method 2: Upload Button**
+
 1. Click **Upload** button (top right)
 2. Select image files
 3. Images are added to library
@@ -55,17 +57,20 @@ That's it! The component automatically connects to AutomationContext.
 ### Organizing Images
 
 **Move to Folder**
+
 1. Select images (click checkbox on hover)
 2. Click **Move to Folder** in bulk toolbar
 3. Choose destination folder
 
 **Add Tags**
+
 1. Select images
 2. Click **Add Tags**
 3. Enter tag name
 4. Press Enter
 
 **Create Collection**
+
 1. Click **Collections** tab
 2. Click **New Collection**
 3. Enter collection name
@@ -74,15 +79,18 @@ That's it! The component automatically connects to AutomationContext.
 ### Filtering Images
 
 **Quick Filters**
+
 1. Click **Filters** button (top right)
 2. Click source badges to filter
 3. Click usage filter (All/Used/Unused)
 
 **Search**
+
 1. Type in search box
 2. Results filter in real-time
 
 **Clear All**
+
 - Click **Clear All** in filter panel
 
 ### Viewing Image Details
@@ -94,12 +102,14 @@ That's it! The component automatically connects to AutomationContext.
 ### Editing Images
 
 **Edit Mask**
+
 1. Select image
 2. Click **Edit Mask** button
 3. Use mask editor
 4. Save changes
 
 **Delete Image**
+
 1. Select image
 2. Click **Delete** button
 3. Confirm deletion (shows usage info)
@@ -226,8 +236,8 @@ export default function ImagesPage() {
 ### In Modal/Dialog
 
 ```tsx
-import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { EnhancedImageLibrary } from '@/components/image-library';
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { EnhancedImageLibrary } from "@/components/image-library";
 
 function ImagePicker({ open, onClose }) {
   return (
@@ -243,8 +253,8 @@ function ImagePicker({ open, onClose }) {
 ### In Tab Layout
 
 ```tsx
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { EnhancedImageLibrary } from '@/components/image-library';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EnhancedImageLibrary } from "@/components/image-library";
 
 function ProjectAssets() {
   return (
@@ -265,23 +275,27 @@ function ProjectAssets() {
 ## Troubleshooting
 
 ### Images not showing?
+
 - Check AutomationContext is available
 - Verify project is loaded
 - Check browser console for errors
 
 ### Upload failing?
+
 - Ensure project ID is set
 - Check file is valid image
 - Check file size (max 10MB)
 - Check network connection
 
 ### Slow performance?
+
 - Use smaller grid size
 - Switch to list view
 - Apply filters to reduce images shown
 - Check browser memory
 
 ### Can't find image?
+
 - Clear all filters
 - Check search query
 - Select "All Images" folder
@@ -304,6 +318,7 @@ function ProjectAssets() {
 ## Feature Requests
 
 Future enhancements planned:
+
 - Virtual scrolling for 1000+ images
 - Slideshow mode
 - Keyboard shortcuts

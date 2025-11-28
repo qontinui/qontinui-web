@@ -2,7 +2,13 @@
 
 import * as React from "react";
 import { useOnboardingStore } from "@/stores/onboarding-store";
-import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardAction,
+} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -50,32 +56,38 @@ const CHECKLIST_TASKS: ChecklistTask[] = [
   {
     id: "upload-screenshot",
     label: "Upload your first screenshot",
-    helpText: "Take a screenshot of your application and upload it to start building your automation.",
+    helpText:
+      "Take a screenshot of your application and upload it to start building your automation.",
   },
   {
     id: "define-state",
     label: "Define a state",
-    helpText: "Create a state to represent a screen or condition in your automation flow.",
+    helpText:
+      "Create a state to represent a screen or condition in your automation flow.",
   },
   {
     id: "create-transition",
     label: "Create a transition",
-    helpText: "Connect states with transitions to define how your automation moves between screens.",
+    helpText:
+      "Connect states with transitions to define how your automation moves between screens.",
   },
   {
     id: "test-automation",
     label: "Test your automation (mock run)",
-    helpText: "Run a simulation to verify your automation logic before deploying it.",
+    helpText:
+      "Run a simulation to verify your automation logic before deploying it.",
   },
   {
     id: "export-configuration",
     label: "Export configuration",
-    helpText: "Export your automation configuration to use with the Qontinui runtime.",
+    helpText:
+      "Export your automation configuration to use with the Qontinui runtime.",
   },
   {
     id: "watch-tutorial",
     label: "Watch tutorial video",
-    helpText: "Learn best practices and advanced features by watching our tutorial video.",
+    helpText:
+      "Learn best practices and advanced features by watching our tutorial video.",
   },
 ];
 
@@ -84,7 +96,9 @@ const CHECKLIST_TASKS: ChecklistTask[] = [
 // ============================================================================
 
 const ConfettiCelebration: React.FC<{ show: boolean }> = ({ show }) => {
-  const [particles, setParticles] = React.useState<Array<{ id: number; left: number; color: string }>>([]);
+  const [particles, setParticles] = React.useState<
+    Array<{ id: number; left: number; color: string }>
+  >([]);
 
   React.useEffect(() => {
     if (show) {
@@ -161,7 +175,12 @@ export const QuickStartChecklist: React.FC = () => {
         }, 3000);
       }
     }
-  }, [completedTasks, lastCompletedCount, isComplete, toggleQuickStartChecklist]);
+  }, [
+    completedTasks,
+    lastCompletedCount,
+    isComplete,
+    toggleQuickStartChecklist,
+  ]);
 
   // Don't render if dismissed or permanently hidden after completion
   if (!showQuickStartChecklist) {
@@ -264,7 +283,8 @@ export const QuickStartChecklist: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    You've completed all quick start tasks. You're ready to build amazing automations!
+                    You've completed all quick start tasks. You're ready to
+                    build amazing automations!
                   </p>
                 </div>
               ) : (

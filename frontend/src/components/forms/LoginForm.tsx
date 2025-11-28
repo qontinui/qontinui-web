@@ -11,19 +11,19 @@
  * - Integrates with existing auth service
  */
 
-'use client'
+"use client";
 
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { loginFormSchema, type LoginFormData } from '@/lib/schemas'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { toast } from 'sonner'
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { loginFormSchema, type LoginFormData } from "@/lib/schemas";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 interface LoginFormProps {
-  onSuccess?: () => void
-  onError?: (error: Error) => void
+  onSuccess?: () => void;
+  onError?: (error: Error) => void;
 }
 
 export function LoginForm({ onSuccess, onError }: LoginFormProps) {
@@ -33,24 +33,25 @@ export function LoginForm({ onSuccess, onError }: LoginFormProps) {
     formState: { errors, isSubmitting },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginFormSchema),
-    mode: 'onBlur', // Validate on blur for better UX
-  })
+    mode: "onBlur", // Validate on blur for better UX
+  });
 
   const onSubmit = async (data: LoginFormData) => {
     try {
       // Here you would call your auth service
-      console.log('Login data:', data)
+      console.log("Login data:", data);
 
       // Example: await authService.login(data)
 
-      toast.success('Login successful!')
-      onSuccess?.()
+      toast.success("Login successful!");
+      onSuccess?.();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Login failed'
-      toast.error(errorMessage)
-      onError?.(error instanceof Error ? error : new Error(errorMessage))
+      const errorMessage =
+        error instanceof Error ? error.message : "Login failed";
+      toast.error(errorMessage);
+      onError?.(error instanceof Error ? error : new Error(errorMessage));
     }
-  }
+  };
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -60,8 +61,8 @@ export function LoginForm({ onSuccess, onError }: LoginFormProps) {
           id="username"
           type="text"
           placeholder="Enter your username"
-          {...register('username')}
-          className={errors.username ? 'border-red-500' : ''}
+          {...register("username")}
+          className={errors.username ? "border-red-500" : ""}
         />
         {errors.username && (
           <p className="text-sm text-red-500">{errors.username.message}</p>
@@ -74,21 +75,17 @@ export function LoginForm({ onSuccess, onError }: LoginFormProps) {
           id="password"
           type="password"
           placeholder="Enter your password"
-          {...register('password')}
-          className={errors.password ? 'border-red-500' : ''}
+          {...register("password")}
+          className={errors.password ? "border-red-500" : ""}
         />
         {errors.password && (
           <p className="text-sm text-red-500">{errors.password.message}</p>
         )}
       </div>
 
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={isSubmitting}
-      >
-        {isSubmitting ? 'Logging in...' : 'Login'}
+      <Button type="submit" className="w-full" disabled={isSubmitting}>
+        {isSubmitting ? "Logging in..." : "Login"}
       </Button>
     </form>
-  )
+  );
 }

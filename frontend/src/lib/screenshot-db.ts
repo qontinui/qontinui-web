@@ -23,8 +23,8 @@
  * Server is the source of truth for all screenshot data.
  */
 
-const DB_NAME = 'qontinui-screenshots-db';
-const STORE_NAME = 'screenshots';
+const DB_NAME = "qontinui-screenshots-db";
+const STORE_NAME = "screenshots";
 const DB_VERSION = 3; // Version 3: Added s3Key, projectId, urlExpiresAt for URL refresh
 
 /**
@@ -65,8 +65,8 @@ class ScreenshotDB {
     if (this.dbPromise) return this.dbPromise;
 
     this.dbPromise = new Promise((resolve, reject) => {
-      if (typeof window === 'undefined') {
-        reject(new Error('IndexedDB not available on server'));
+      if (typeof window === "undefined") {
+        reject(new Error("IndexedDB not available on server"));
         return;
       }
 
@@ -91,10 +91,10 @@ class ScreenshotDB {
 
         // Create object store if it doesn't exist
         if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-          store.createIndex('name', 'name', { unique: false });
-          store.createIndex('uploadedAt', 'uploadedAt', { unique: false });
-          store.createIndex('projectName', 'projectName', { unique: false });
+          const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
+          store.createIndex("name", "name", { unique: false });
+          store.createIndex("uploadedAt", "uploadedAt", { unique: false });
+          store.createIndex("projectName", "projectName", { unique: false });
         } else {
           // Handle incremental upgrades
           const transaction = (event.target as IDBOpenDBRequest).transaction;
@@ -102,8 +102,10 @@ class ScreenshotDB {
             const store = transaction.objectStore(STORE_NAME);
 
             // Version 1 → 2: add projectName index
-            if (oldVersion < 2 && !store.indexNames.contains('projectName')) {
-              store.createIndex('projectName', 'projectName', { unique: false });
+            if (oldVersion < 2 && !store.indexNames.contains("projectName")) {
+              store.createIndex("projectName", "projectName", {
+                unique: false,
+              });
             }
 
             // Version 2 → 3: No new indexes needed (just added optional fields)
@@ -120,7 +122,7 @@ class ScreenshotDB {
   private isConnectionClosed(db: IDBDatabase): boolean {
     try {
       // Try to create a transaction - will throw if connection is closed
-      db.transaction(STORE_NAME, 'readonly');
+      db.transaction(STORE_NAME, "readonly");
       return false;
     } catch {
       return true;
@@ -131,21 +133,21 @@ class ScreenshotDB {
     try {
       const db = await this.getDB();
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readonly');
+        const transaction = db.transaction(STORE_NAME, "readonly");
         const store = transaction.objectStore(STORE_NAME);
         const request = store.getAll();
 
         request.onsuccess = () => {
           const screenshots = request.result.map((s: any) => ({
             ...s,
-            uploadedAt: new Date(s.uploadedAt)
+            uploadedAt: new Date(s.uploadedAt),
           }));
           resolve(screenshots);
         };
         request.onerror = () => reject(request.error);
       });
     } catch (error) {
-      console.error('Error getting screenshots from IndexedDB:', error);
+      console.error("Error getting screenshots from IndexedDB:", error);
       return [];
     }
   }
@@ -154,22 +156,25 @@ class ScreenshotDB {
     try {
       const db = await this.getDB();
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readonly');
+        const transaction = db.transaction(STORE_NAME, "readonly");
         const store = transaction.objectStore(STORE_NAME);
-        const index = store.index('projectName');
+        const index = store.index("projectName");
         const request = index.getAll(projectName);
 
         request.onsuccess = () => {
           const screenshots = request.result.map((s: any) => ({
             ...s,
-            uploadedAt: new Date(s.uploadedAt)
+            uploadedAt: new Date(s.uploadedAt),
           }));
           resolve(screenshots);
         };
         request.onerror = () => reject(request.error);
       });
     } catch (error) {
-      console.error(`Error getting screenshots for project ${projectName} from IndexedDB:`, error);
+      console.error(
+        `Error getting screenshots for project ${projectName} from IndexedDB:`,
+        error
+      );
       return [];
     }
   }
@@ -178,7 +183,7 @@ class ScreenshotDB {
     try {
       const db = await this.getDB();
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readonly');
+        const transaction = db.transaction(STORE_NAME, "readonly");
         const store = transaction.objectStore(STORE_NAME);
         const request = store.get(id);
 
@@ -201,7 +206,7 @@ class ScreenshotDB {
     try {
       const db = await this.getDB();
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const transaction = db.transaction(STORE_NAME, "readwrite");
         const store = transaction.objectStore(STORE_NAME);
         const request = store.add(screenshot);
 
@@ -209,7 +214,7 @@ class ScreenshotDB {
         request.onerror = () => reject(request.error);
       });
     } catch (error) {
-      console.error('Error adding screenshot to IndexedDB:', error);
+      console.error("Error adding screenshot to IndexedDB:", error);
       throw error;
     }
   }
@@ -218,7 +223,7 @@ class ScreenshotDB {
     try {
       const db = await this.getDB();
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const transaction = db.transaction(STORE_NAME, "readwrite");
         const store = transaction.objectStore(STORE_NAME);
         const request = store.put(screenshot);
 
@@ -226,7 +231,7 @@ class ScreenshotDB {
         request.onerror = () => reject(request.error);
       });
     } catch (error) {
-      console.error('Error updating screenshot in IndexedDB:', error);
+      console.error("Error updating screenshot in IndexedDB:", error);
       throw error;
     }
   }
@@ -235,7 +240,7 @@ class ScreenshotDB {
     try {
       const db = await this.getDB();
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const transaction = db.transaction(STORE_NAME, "readwrite");
         const store = transaction.objectStore(STORE_NAME);
         const request = store.delete(id);
 
@@ -252,7 +257,7 @@ class ScreenshotDB {
     try {
       const db = await this.getDB();
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const transaction = db.transaction(STORE_NAME, "readwrite");
         const store = transaction.objectStore(STORE_NAME);
         const request = store.clear();
 
@@ -260,7 +265,7 @@ class ScreenshotDB {
         request.onerror = () => reject(request.error);
       });
     } catch (error) {
-      console.error('Error clearing screenshots from IndexedDB:', error);
+      console.error("Error clearing screenshots from IndexedDB:", error);
       throw error;
     }
   }
@@ -269,7 +274,7 @@ class ScreenshotDB {
     try {
       const db = await this.getDB();
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readonly');
+        const transaction = db.transaction(STORE_NAME, "readonly");
         const store = transaction.objectStore(STORE_NAME);
         const request = store.count();
 
@@ -277,23 +282,29 @@ class ScreenshotDB {
         request.onerror = () => reject(request.error);
       });
     } catch (error) {
-      console.error('Error counting screenshots in IndexedDB:', error);
+      console.error("Error counting screenshots in IndexedDB:", error);
       return 0;
     }
   }
 
-  async renameProject(oldProjectName: string, newProjectName: string): Promise<void> {
+  async renameProject(
+    oldProjectName: string,
+    newProjectName: string
+  ): Promise<void> {
     try {
       const screenshots = await this.getByProject(oldProjectName);
 
       for (const screenshot of screenshots) {
         await this.update({
           ...screenshot,
-          projectName: newProjectName
+          projectName: newProjectName,
         });
       }
     } catch (error) {
-      console.error(`Error renaming project from ${oldProjectName} to ${newProjectName}:`, error);
+      console.error(
+        `Error renaming project from ${oldProjectName} to ${newProjectName}:`,
+        error
+      );
       throw error;
     }
   }
@@ -310,7 +321,7 @@ class ScreenshotDB {
       if (!screenshot) return null;
 
       // Skip refresh for base64 data URLs
-      if (screenshot.url.startsWith('data:')) {
+      if (screenshot.url.startsWith("data:")) {
         return screenshot;
       }
 
@@ -320,7 +331,7 @@ class ScreenshotDB {
       if (needsRefresh && screenshot.s3Key && screenshot.projectId) {
         try {
           // Dynamically import apiClient to avoid circular dependencies
-          const { apiClient } = await import('./api-client');
+          const { apiClient } = await import("./api-client");
 
           // Refresh presigned URL from server
           const refreshed = await apiClient.refreshPresignedUrl(
@@ -359,7 +370,7 @@ class ScreenshotDB {
    */
   private shouldRefreshUrl(screenshot: StoredScreenshot): boolean {
     // No refresh needed for base64 URLs
-    if (screenshot.url.startsWith('data:')) {
+    if (screenshot.url.startsWith("data:")) {
       return false;
     }
 
@@ -401,12 +412,12 @@ class ScreenshotDB {
         let shouldDelete = false;
 
         // Delete base64 URLs older than 7 days
-        if (screenshot.url.startsWith('data:') && uploadedAt < sevenDaysAgo) {
+        if (screenshot.url.startsWith("data:") && uploadedAt < sevenDaysAgo) {
           shouldDelete = true;
         }
 
         // Delete presigned URLs that are expired and older than 1 day
-        if (!screenshot.url.startsWith('data:')) {
+        if (!screenshot.url.startsWith("data:")) {
           const urlExpired = screenshot.urlExpiresAt
             ? new Date(screenshot.urlExpiresAt).getTime() < now
             : true; // Treat unknown expiration as expired
@@ -423,12 +434,14 @@ class ScreenshotDB {
       }
 
       if (deletedCount > 0) {
-        console.log(`Cleaned up ${deletedCount} expired screenshots from IndexedDB`);
+        console.log(
+          `Cleaned up ${deletedCount} expired screenshots from IndexedDB`
+        );
       }
 
       return deletedCount;
     } catch (error) {
-      console.error('Error cleaning up expired screenshots:', error);
+      console.error("Error cleaning up expired screenshots:", error);
       return 0;
     }
   }

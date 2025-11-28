@@ -1,82 +1,104 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowRightLeft, ChevronLeft, ChevronRight } from "lucide-react"
-import { toast } from "sonner"
-import { useAutomation } from "@/contexts/automation-context"
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ArrowRightLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { toast } from "sonner";
+import { useAutomation } from "@/contexts/automation-context";
 
 interface OutgoingTransitionBuilderProps {
-  preselectedWorkflow?: string
-  onClose?: () => void
+  preselectedWorkflow?: string;
+  onClose?: () => void;
 }
 
-export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: OutgoingTransitionBuilderProps = {}) {
-  const { states, workflows, addTransition } = useAutomation()
-  const [open, setOpen] = useState(!!preselectedWorkflow)
+export function OutgoingTransitionBuilder({
+  preselectedWorkflow,
+  onClose,
+}: OutgoingTransitionBuilderProps = {}) {
+  const { states, workflows, addTransition } = useAutomation();
+  const [open, setOpen] = useState(!!preselectedWorkflow);
 
   // OutgoingTransition fields
-  const [fromState, setFromState] = useState("")
-  const [staysVisible, setStaysVisible] = useState(false)
-  const [activateStates, setActivateStates] = useState<string[]>([])
-  const [deactivateStates, setDeactivateStates] = useState<string[]>([])
-  const [selectedWorkflows, setSelectedWorkflows] = useState<string[]>(preselectedWorkflow ? [preselectedWorkflow] : [])
-  const [workflowCategoryFilter, setWorkflowCategoryFilter] = useState<string>("Transitions")
+  const [fromState, setFromState] = useState("");
+  const [staysVisible, setStaysVisible] = useState(false);
+  const [activateStates, setActivateStates] = useState<string[]>([]);
+  const [deactivateStates, setDeactivateStates] = useState<string[]>([]);
+  const [selectedWorkflows, setSelectedWorkflows] = useState<string[]>(
+    preselectedWorkflow ? [preselectedWorkflow] : []
+  );
+  const [workflowCategoryFilter, setWorkflowCategoryFilter] =
+    useState<string>("Transitions");
 
   // Handle from state selection
   const handleFromStateChange = (stateId: string) => {
-    setFromState(stateId)
+    setFromState(stateId);
     // Remove the selected state from both activate and deactivate lists
-    setActivateStates(prev => prev.filter(id => id !== stateId))
-    setDeactivateStates(prev => prev.filter(id => id !== stateId))
-  }
+    setActivateStates((prev) => prev.filter((id) => id !== stateId));
+    setDeactivateStates((prev) => prev.filter((id) => id !== stateId));
+  };
 
   const handleStaysVisibleChange = (checked: boolean) => {
-    setStaysVisible(checked)
+    setStaysVisible(checked);
     if (checked && fromState) {
       // Remove from deactivate states if stays visible is checked
-      setDeactivateStates(prev => prev.filter(id => id !== fromState))
+      setDeactivateStates((prev) => prev.filter((id) => id !== fromState));
     }
-  }
+  };
 
   // Move state between lists
   const moveToActivate = (stateId: string) => {
-    setDeactivateStates(prev => prev.filter(id => id !== stateId))
+    setDeactivateStates((prev) => prev.filter((id) => id !== stateId));
     if (!activateStates.includes(stateId)) {
-      setActivateStates(prev => [...prev, stateId])
+      setActivateStates((prev) => [...prev, stateId]);
     }
-  }
+  };
 
   const moveToDeactivate = (stateId: string) => {
-    setActivateStates(prev => prev.filter(id => id !== stateId))
+    setActivateStates((prev) => prev.filter((id) => id !== stateId));
     if (!deactivateStates.includes(stateId)) {
-      setDeactivateStates(prev => [...prev, stateId])
+      setDeactivateStates((prev) => [...prev, stateId]);
     }
-  }
+  };
 
-  const moveToAvailable = (stateId: string, from: 'activate' | 'deactivate') => {
-    if (from === 'activate') {
-      setActivateStates(prev => prev.filter(id => id !== stateId))
+  const moveToAvailable = (
+    stateId: string,
+    from: "activate" | "deactivate"
+  ) => {
+    if (from === "activate") {
+      setActivateStates((prev) => prev.filter((id) => id !== stateId));
     } else {
-      setDeactivateStates(prev => prev.filter(id => id !== stateId))
+      setDeactivateStates((prev) => prev.filter((id) => id !== stateId));
     }
-  }
+  };
 
   const handleCreate = () => {
     if (!fromState) {
-      toast.error("Please select an origin state")
-      return
+      toast.error("Please select an origin state");
+      return;
     }
 
     if (activateStates.length === 0) {
-      toast.error("Please select at least one state to activate")
-      return
+      toast.error("Please select at least one state to activate");
+      return;
     }
 
     const newTransition = {
@@ -88,36 +110,37 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
       deactivateStates,
       workflows: selectedWorkflows,
       timeout: 10000,
-      retryCount: 0
-    }
+      retryCount: 0,
+    };
 
-    addTransition(newTransition)
-    toast.success("Outgoing transition created")
+    addTransition(newTransition);
+    toast.success("Outgoing transition created");
 
     // Reset form
-    setFromState("")
-    setStaysVisible(false)
-    setActivateStates([])
-    setDeactivateStates([])
-    setSelectedWorkflows([])
-    setWorkflowCategoryFilter("Transitions")
-    setOpen(false)
-    onClose?.()
-  }
+    setFromState("");
+    setStaysVisible(false);
+    setActivateStates([]);
+    setDeactivateStates([]);
+    setSelectedWorkflows([]);
+    setWorkflowCategoryFilter("Transitions");
+    setOpen(false);
+    onClose?.();
+  };
 
   // Get available states (not in activate or deactivate lists, and not the from state)
   const availableStates = states.filter(
-    state => state.id !== fromState &&
-             !activateStates.includes(state.id) &&
-             !deactivateStates.includes(state.id)
-  )
+    (state) =>
+      state.id !== fromState &&
+      !activateStates.includes(state.id) &&
+      !deactivateStates.includes(state.id)
+  );
 
   const handleOpenChange = (newOpen: boolean) => {
-    setOpen(newOpen)
+    setOpen(newOpen);
     if (!newOpen) {
-      onClose?.()
+      onClose?.();
     }
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -132,10 +155,12 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
 
       <DialogContent
         className="bg-[#27272A] border-gray-700"
-        style={{ maxWidth: '1400px', width: '95vw' }}
+        style={{ maxWidth: "1400px", width: "95vw" }}
       >
         <DialogHeader>
-          <DialogTitle className="text-[#00FF88]">Create Outgoing Transition</DialogTitle>
+          <DialogTitle className="text-[#00FF88]">
+            Create Outgoing Transition
+          </DialogTitle>
           <DialogDescription className="text-gray-400 text-sm">
             Define a transition from one state to multiple target states
           </DialogDescription>
@@ -172,25 +197,31 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
           <div className="grid grid-cols-3 gap-6">
             {/* States to Deactivate Column - LEFT */}
             <div>
-              <Label className="text-sm font-semibold mb-2 text-red-400">States to Deactivate</Label>
+              <Label className="text-sm font-semibold mb-2 text-red-400">
+                States to Deactivate
+              </Label>
               <Card className="bg-gray-800 border-red-400/50">
                 <CardContent className="p-3 h-[400px] overflow-y-auto">
                   {deactivateStates.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center pt-8">No states selected</p>
+                    <p className="text-sm text-gray-500 text-center pt-8">
+                      No states selected
+                    </p>
                   ) : (
                     <div className="space-y-2">
-                      {deactivateStates.map(stateId => {
-                        const state = states.find(s => s.id === stateId)
+                      {deactivateStates.map((stateId) => {
+                        const state = states.find((s) => s.id === stateId);
                         return state ? (
                           <div
                             key={stateId}
                             className="p-2 bg-gray-900 rounded flex items-center justify-between hover:bg-gray-700 cursor-pointer transition-colors"
-                            onClick={() => moveToAvailable(stateId, 'deactivate')}
+                            onClick={() =>
+                              moveToAvailable(stateId, "deactivate")
+                            }
                           >
                             <span className="text-sm">{state.name}</span>
                             <ChevronRight className="w-4 h-4 text-gray-400" />
                           </div>
-                        ) : null
+                        ) : null;
                       })}
                     </div>
                   )}
@@ -200,16 +231,22 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
 
             {/* Available States Column - MIDDLE */}
             <div>
-              <Label className="text-sm font-semibold mb-2">Available States</Label>
+              <Label className="text-sm font-semibold mb-2">
+                Available States
+              </Label>
               <Card className="bg-gray-800">
                 <CardContent className="p-3 h-[400px] overflow-y-auto">
                   {!fromState ? (
-                    <p className="text-sm text-gray-500 text-center pt-8">Select origin state first</p>
+                    <p className="text-sm text-gray-500 text-center pt-8">
+                      Select origin state first
+                    </p>
                   ) : availableStates.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center pt-8">No states available</p>
+                    <p className="text-sm text-gray-500 text-center pt-8">
+                      No states available
+                    </p>
                   ) : (
                     <div className="space-y-2">
-                      {availableStates.map(state => (
+                      {availableStates.map((state) => (
                         <div
                           key={state.id}
                           className="p-2 bg-gray-900 rounded hover:bg-gray-700 transition-colors"
@@ -224,7 +261,9 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
                               <ChevronLeft className="w-4 h-4 text-red-400" />
                             </Button>
 
-                            <span className="text-sm mx-2 flex-1 text-center">{state.name}</span>
+                            <span className="text-sm mx-2 flex-1 text-center">
+                              {state.name}
+                            </span>
 
                             <Button
                               variant="ghost"
@@ -245,25 +284,29 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
 
             {/* States to Activate Column - RIGHT */}
             <div>
-              <Label className="text-sm font-semibold mb-2 text-green-400">States to Activate</Label>
+              <Label className="text-sm font-semibold mb-2 text-green-400">
+                States to Activate
+              </Label>
               <Card className="bg-gray-800 border-green-400/50">
                 <CardContent className="p-3 h-[400px] overflow-y-auto">
                   {activateStates.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center pt-8">No states selected</p>
+                    <p className="text-sm text-gray-500 text-center pt-8">
+                      No states selected
+                    </p>
                   ) : (
                     <div className="space-y-2">
-                      {activateStates.map(stateId => {
-                        const state = states.find(s => s.id === stateId)
+                      {activateStates.map((stateId) => {
+                        const state = states.find((s) => s.id === stateId);
                         return state ? (
                           <div
                             key={stateId}
                             className="p-2 bg-gray-900 rounded flex items-center justify-between hover:bg-gray-700 cursor-pointer transition-colors"
-                            onClick={() => moveToAvailable(stateId, 'activate')}
+                            onClick={() => moveToAvailable(stateId, "activate")}
                           >
                             <ChevronLeft className="w-4 h-4 text-gray-400" />
                             <span className="text-sm">{state.name}</span>
                           </div>
-                        ) : null
+                        ) : null;
                       })}
                     </div>
                   )}
@@ -277,8 +320,13 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
 
             {/* Category Filter */}
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Filter by Category</Label>
-              <Select value={workflowCategoryFilter} onValueChange={setWorkflowCategoryFilter}>
+              <Label className="text-xs text-gray-400">
+                Filter by Category
+              </Label>
+              <Select
+                value={workflowCategoryFilter}
+                onValueChange={setWorkflowCategoryFilter}
+              >
                 <SelectTrigger className="bg-transparent border-gray-600">
                   <SelectValue />
                 </SelectTrigger>
@@ -286,8 +334,10 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
                   <SelectItem value="All">All Categories</SelectItem>
                   <SelectItem value="Transitions">Transitions</SelectItem>
                   <SelectItem value="Main">Main</SelectItem>
-                  {Array.from(new Set(workflows.map(w => w.category || "Main")))
-                    .filter(c => c !== "Main" && c !== "Transitions")
+                  {Array.from(
+                    new Set(workflows.map((w) => w.category || "Main"))
+                  )
+                    .filter((c) => c !== "Main" && c !== "Transitions")
                     .map((category) => (
                       <SelectItem key={category} value={category}>
                         {category}
@@ -299,64 +349,86 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
 
             {/* Workflow Selection */}
             <div className="space-y-2">
-              <Label className="text-xs text-gray-400">Available Workflows</Label>
+              <Label className="text-xs text-gray-400">
+                Available Workflows
+              </Label>
               <div className="max-h-[180px] overflow-y-auto space-y-1 border border-gray-700 rounded p-2">
                 {workflows
-                  .filter(w => {
-                    const category = w.category || "Main"
-                    return workflowCategoryFilter === "All" || category === workflowCategoryFilter
+                  .filter((w) => {
+                    const category = w.category || "Main";
+                    return (
+                      workflowCategoryFilter === "All" ||
+                      category === workflowCategoryFilter
+                    );
                   })
-                  .filter(w => !selectedWorkflows.includes(w.id))
-                  .length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center py-4">
-                      {workflowCategoryFilter === "Transitions"
-                        ? "No workflows in Transitions category. Try 'All Categories' to see all workflows."
-                        : "No available workflows"}
-                    </p>
-                  ) : (
-                    workflows
-                      .filter(w => {
-                        const category = w.category || "Main"
-                        return workflowCategoryFilter === "All" || category === workflowCategoryFilter
-                      })
-                      .filter(w => !selectedWorkflows.includes(w.id))
-                      .map((workflow) => (
-                        <button
-                          key={workflow.id}
-                          type="button"
-                          onClick={() => setSelectedWorkflows(prev => [...prev, workflow.id])}
-                          className="w-full text-left p-2 bg-gray-800 hover:bg-gray-700 rounded text-sm transition-colors"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span>{workflow.name}</span>
-                            <Badge className="text-xs">{workflow.category || "Main"}</Badge>
-                          </div>
-                          {workflow.description && (
-                            <p className="text-xs text-gray-400 mt-1">{workflow.description}</p>
-                          )}
-                        </button>
-                      ))
-                  )}
+                  .filter((w) => !selectedWorkflows.includes(w.id)).length ===
+                0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    {workflowCategoryFilter === "Transitions"
+                      ? "No workflows in Transitions category. Try 'All Categories' to see all workflows."
+                      : "No available workflows"}
+                  </p>
+                ) : (
+                  workflows
+                    .filter((w) => {
+                      const category = w.category || "Main";
+                      return (
+                        workflowCategoryFilter === "All" ||
+                        category === workflowCategoryFilter
+                      );
+                    })
+                    .filter((w) => !selectedWorkflows.includes(w.id))
+                    .map((workflow) => (
+                      <button
+                        key={workflow.id}
+                        type="button"
+                        onClick={() =>
+                          setSelectedWorkflows((prev) => [...prev, workflow.id])
+                        }
+                        className="w-full text-left p-2 bg-gray-800 hover:bg-gray-700 rounded text-sm transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{workflow.name}</span>
+                          <Badge className="text-xs">
+                            {workflow.category || "Main"}
+                          </Badge>
+                        </div>
+                        {workflow.description && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            {workflow.description}
+                          </p>
+                        )}
+                      </button>
+                    ))
+                )}
               </div>
             </div>
 
             {/* Selected Workflows */}
             {selectedWorkflows.length > 0 && (
               <div className="space-y-2">
-                <Label className="text-xs text-gray-400">Selected Workflows (will execute in order)</Label>
+                <Label className="text-xs text-gray-400">
+                  Selected Workflows (will execute in order)
+                </Label>
                 <div className="space-y-1">
                   {selectedWorkflows.map((workflowId, index) => {
-                    const workflow = workflows.find(w => w.id === workflowId)
+                    const workflow = workflows.find((w) => w.id === workflowId);
                     return (
                       <div
                         key={workflowId}
                         className="flex items-center justify-between p-2 bg-gray-800 rounded"
                       >
                         <div className="flex items-center gap-2 flex-1">
-                          <Badge className="text-xs bg-[#00FF88] text-black">{index + 1}</Badge>
-                          <span className="text-sm">{workflow?.name || "Unknown"}</span>
+                          <Badge className="text-xs bg-[#00FF88] text-black">
+                            {index + 1}
+                          </Badge>
+                          <span className="text-sm">
+                            {workflow?.name || "Unknown"}
+                          </span>
                           {workflow?.category && (
-                            <Badge variant="outline" className="text-xs">{workflow.category}</Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {workflow.category}
+                            </Badge>
                           )}
                         </div>
                         <Button
@@ -364,12 +436,16 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
                           variant="ghost"
                           size="sm"
                           className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
-                          onClick={() => setSelectedWorkflows(prev => prev.filter(id => id !== workflowId))}
+                          onClick={() =>
+                            setSelectedWorkflows((prev) =>
+                              prev.filter((id) => id !== workflowId)
+                            )
+                          }
                         >
                           <span className="text-lg">×</span>
                         </Button>
                       </div>
-                    )
+                    );
                   })}
                 </div>
               </div>
@@ -394,5 +470,5 @@ export function OutgoingTransitionBuilder({ preselectedWorkflow, onClose }: Outg
         </div>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

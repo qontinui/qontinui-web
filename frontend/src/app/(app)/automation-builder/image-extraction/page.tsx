@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Image Extraction Page
@@ -14,13 +14,13 @@
  * - Generate patterns from extracted elements
  */
 
-import { ImageExtractionTab } from '@/components/image-extraction/ImageExtractionTab'
-import { RequireProject } from '@/components/require-project'
+import { ImageExtractionTab } from "@/components/image-extraction/ImageExtractionTab";
+import { RequireProject } from "@/components/require-project";
 
 export default function ImageExtractionPage() {
   return (
     <RequireProject pageName="Extract Images">
       <ImageExtractionTab />
     </RequireProject>
-  )
+  );
 }

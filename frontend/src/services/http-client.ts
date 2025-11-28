@@ -1,7 +1,7 @@
-import { TokenManager } from './auth/token-manager';
-import { ApiConfig } from './api-config';
-import { csrfService } from './csrf-service';
-import { RetryStrategy } from './retry-strategy';
+import { TokenManager } from "./auth/token-manager";
+import { ApiConfig } from "./api-config";
+import { csrfService } from "./csrf-service";
+import { RetryStrategy } from "./retry-strategy";
 
 export interface HttpOptions extends RequestInit {
   skipAuth?: boolean;
@@ -45,15 +45,17 @@ export class HttpClient {
 
     // Handle 401 Unauthorized with token refresh
     if (response.status === 401 && !skipAuth && attempt === 1) {
-      console.warn('[HttpClient] Received 401, attempting token refresh...');
+      console.warn("[HttpClient] Received 401, attempting token refresh...");
       const refreshed = await this.refreshAccessToken();
       if (refreshed) {
-        console.log('[HttpClient] Token refresh successful, retrying request');
+        console.log("[HttpClient] Token refresh successful, retrying request");
         return this.executeSingleRequest(url, options, skipAuth);
       } else {
         // DISABLED: Automatic logout on 401
         // Users should be able to stay logged in even if some API calls fail
-        console.warn('[HttpClient] Token refresh failed - returning 401 response without auto-logout');
+        console.warn(
+          "[HttpClient] Token refresh failed - returning 401 response without auto-logout"
+        );
         return response;
 
         // Original auto-logout logic (disabled):
@@ -86,28 +88,31 @@ export class HttpClient {
     skipAuth: boolean
   ): Promise<Response> {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...(options.headers as Record<string, string>),
     };
 
     if (!skipAuth) {
       const accessToken = this.tokenManager.getAccessToken();
-      console.log('[HttpClient] executeSingleRequest:', {
+      console.log("[HttpClient] executeSingleRequest:", {
         url,
-        method: options.method || 'GET',
+        method: options.method || "GET",
         skipAuth,
         hasAccessToken: !!accessToken,
         accessTokenLength: accessToken?.length || 0,
       });
       if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
+        headers["Authorization"] = `Bearer ${accessToken}`;
       }
     }
 
     // Add CSRF token for state-changing requests
     const csrfToken = csrfService.getToken();
-    if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method || 'GET')) {
-      headers['X-CSRF-Token'] = csrfToken;
+    if (
+      csrfToken &&
+      ["POST", "PUT", "DELETE", "PATCH"].includes(options.method || "GET")
+    ) {
+      headers["X-CSRF-Token"] = csrfToken;
     }
 
     const controller = new AbortController();
@@ -117,14 +122,14 @@ export class HttpClient {
       const response = await fetch(url, {
         ...options,
         headers,
-        credentials: 'include',
+        credentials: "include",
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
 
       // Debug logging for response
-      console.log('[HttpClient] Response:', {
+      console.log("[HttpClient] Response:", {
         url,
         status: response.status,
         statusText: response.statusText,
@@ -135,12 +140,12 @@ export class HttpClient {
     } catch (error: any) {
       clearTimeout(timeoutId);
 
-      if (error.name === 'AbortError') {
-        throw new Error('Request timeout');
+      if (error.name === "AbortError") {
+        throw new Error("Request timeout");
       }
 
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        throw new Error('No internet connection. Please check your network.');
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        throw new Error("No internet connection. Please check your network.");
       }
 
       throw error;
@@ -163,28 +168,33 @@ export class HttpClient {
     if (!refreshToken) return false;
 
     try {
-      console.log('[HttpClient] Refreshing token at:', ApiConfig.AUTH_REFRESH);
+      console.log("[HttpClient] Refreshing token at:", ApiConfig.AUTH_REFRESH);
 
       const response = await fetch(ApiConfig.AUTH_REFRESH, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        credentials: 'include',
+        credentials: "include",
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
 
       if (response.ok) {
         const tokens = await response.json();
-        console.log('[HttpClient] Token refresh successful');
+        console.log("[HttpClient] Token refresh successful");
         this.tokenManager.setTokens(tokens);
         return true;
       } else {
-        console.error('[HttpClient] Token refresh failed with status:', response.status);
+        console.error(
+          "[HttpClient] Token refresh failed with status:",
+          response.status
+        );
 
         // If refresh token is invalid (401/403), session has truly expired
         if (response.status === 401 || response.status === 403) {
-          console.error('[HttpClient] Refresh token is invalid - triggering session expiry');
+          console.error(
+            "[HttpClient] Refresh token is invalid - triggering session expiry"
+          );
           this.tokenManager.clearTokens();
 
           // Trigger session expired handler (which dispatches the event)
@@ -193,13 +203,17 @@ export class HttpClient {
           }
         } else {
           // For other errors, keep tokens and allow retry
-          console.warn('[HttpClient] Refresh failed but keeping tokens - may be temporary server issue');
+          console.warn(
+            "[HttpClient] Refresh failed but keeping tokens - may be temporary server issue"
+          );
         }
       }
     } catch (error) {
-      console.error('[HttpClient] Failed to refresh token:', error);
+      console.error("[HttpClient] Failed to refresh token:", error);
       // Network errors - keep tokens for retry
-      console.warn('[HttpClient] Network error during refresh - keeping tokens for retry');
+      console.warn(
+        "[HttpClient] Network error during refresh - keeping tokens for retry"
+      );
     }
 
     return false;
@@ -209,11 +223,13 @@ export class HttpClient {
    * Helper method for GET requests
    */
   async get<T>(url: string, options?: HttpOptions): Promise<T> {
-    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
-    const response = await this.fetch(fullUrl, { ...options, method: 'GET' });
+    const fullUrl = url.startsWith("http")
+      ? url
+      : `${ApiConfig.getBaseUrl()}${url}`;
+    const response = await this.fetch(fullUrl, { ...options, method: "GET" });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
+      const errorText = await response.text().catch(() => "Unknown error");
       throw new Error(`GET ${url} failed: ${response.status} - ${errorText}`);
     }
 
@@ -223,16 +239,22 @@ export class HttpClient {
   /**
    * Helper method for POST requests
    */
-  async post<T>(url: string, body?: unknown, options?: HttpOptions): Promise<T> {
-    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
+  async post<T>(
+    url: string,
+    body?: unknown,
+    options?: HttpOptions
+  ): Promise<T> {
+    const fullUrl = url.startsWith("http")
+      ? url
+      : `${ApiConfig.getBaseUrl()}${url}`;
     const response = await this.fetch(fullUrl, {
       ...options,
-      method: 'POST',
+      method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
+      const errorText = await response.text().catch(() => "Unknown error");
       throw new Error(`POST ${url} failed: ${response.status} - ${errorText}`);
     }
 
@@ -243,15 +265,17 @@ export class HttpClient {
    * Helper method for PUT requests
    */
   async put<T>(url: string, body?: unknown, options?: HttpOptions): Promise<T> {
-    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
+    const fullUrl = url.startsWith("http")
+      ? url
+      : `${ApiConfig.getBaseUrl()}${url}`;
     const response = await this.fetch(fullUrl, {
       ...options,
-      method: 'PUT',
+      method: "PUT",
       body: body ? JSON.stringify(body) : undefined,
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
+      const errorText = await response.text().catch(() => "Unknown error");
       throw new Error(`PUT ${url} failed: ${response.status} - ${errorText}`);
     }
 
@@ -261,16 +285,22 @@ export class HttpClient {
   /**
    * Helper method for PATCH requests
    */
-  async patch<T>(url: string, body?: unknown, options?: HttpOptions): Promise<T> {
-    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
+  async patch<T>(
+    url: string,
+    body?: unknown,
+    options?: HttpOptions
+  ): Promise<T> {
+    const fullUrl = url.startsWith("http")
+      ? url
+      : `${ApiConfig.getBaseUrl()}${url}`;
     const response = await this.fetch(fullUrl, {
       ...options,
-      method: 'PATCH',
+      method: "PATCH",
       body: body ? JSON.stringify(body) : undefined,
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
+      const errorText = await response.text().catch(() => "Unknown error");
       throw new Error(`PATCH ${url} failed: ${response.status} - ${errorText}`);
     }
 
@@ -281,12 +311,19 @@ export class HttpClient {
    * Helper method for DELETE requests
    */
   async delete<T>(url: string, options?: HttpOptions): Promise<T> {
-    const fullUrl = url.startsWith('http') ? url : `${ApiConfig.getBaseUrl()}${url}`;
-    const response = await this.fetch(fullUrl, { ...options, method: 'DELETE' });
+    const fullUrl = url.startsWith("http")
+      ? url
+      : `${ApiConfig.getBaseUrl()}${url}`;
+    const response = await this.fetch(fullUrl, {
+      ...options,
+      method: "DELETE",
+    });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
-      throw new Error(`DELETE ${url} failed: ${response.status} - ${errorText}`);
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new Error(
+        `DELETE ${url} failed: ${response.status} - ${errorText}`
+      );
     }
 
     // DELETE may return 204 No Content

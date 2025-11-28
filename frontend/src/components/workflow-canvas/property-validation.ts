@@ -9,13 +9,13 @@
  * - Cross-property validation
  */
 
-import type { Action, ActionType } from '@/lib/action-schema/action-types';
+import type { Action, ActionType } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Validation Types
 // ============================================================================
 
-export type ValidationSeverity = 'error' | 'warning' | 'info';
+export type ValidationSeverity = "error" | "warning" | "info";
 
 export interface ValidationError {
   property: string;
@@ -42,14 +42,17 @@ export type ValidatorFunction = (
 /**
  * Validate required field
  */
-export function required(fieldName: string, message?: string): ValidatorFunction {
+export function required(
+  fieldName: string,
+  message?: string
+): ValidatorFunction {
   return (value: any) => {
-    if (value === undefined || value === null || value === '') {
+    if (value === undefined || value === null || value === "") {
       return {
         property: fieldName,
         message: message || `${fieldName} is required`,
-        severity: 'error',
-        code: 'REQUIRED',
+        severity: "error",
+        code: "REQUIRED",
       };
     }
     return null;
@@ -66,14 +69,14 @@ export function numberRange(
   message?: string
 ): ValidatorFunction {
   return (value: any) => {
-    if (typeof value !== 'number') return null;
+    if (typeof value !== "number") return null;
 
     if (value < min || value > max) {
       return {
         property: fieldName,
         message: message || `${fieldName} must be between ${min} and ${max}`,
-        severity: 'error',
-        code: 'OUT_OF_RANGE',
+        severity: "error",
+        code: "OUT_OF_RANGE",
       };
     }
     return null;
@@ -83,16 +86,20 @@ export function numberRange(
 /**
  * Validate minimum value
  */
-export function minValue(fieldName: string, min: number, message?: string): ValidatorFunction {
+export function minValue(
+  fieldName: string,
+  min: number,
+  message?: string
+): ValidatorFunction {
   return (value: any) => {
-    if (typeof value !== 'number') return null;
+    if (typeof value !== "number") return null;
 
     if (value < min) {
       return {
         property: fieldName,
         message: message || `${fieldName} must be at least ${min}`,
-        severity: 'error',
-        code: 'MIN_VALUE',
+        severity: "error",
+        code: "MIN_VALUE",
       };
     }
     return null;
@@ -102,16 +109,20 @@ export function minValue(fieldName: string, min: number, message?: string): Vali
 /**
  * Validate maximum value
  */
-export function maxValue(fieldName: string, max: number, message?: string): ValidatorFunction {
+export function maxValue(
+  fieldName: string,
+  max: number,
+  message?: string
+): ValidatorFunction {
   return (value: any) => {
-    if (typeof value !== 'number') return null;
+    if (typeof value !== "number") return null;
 
     if (value > max) {
       return {
         property: fieldName,
         message: message || `${fieldName} must be at most ${max}`,
-        severity: 'error',
-        code: 'MAX_VALUE',
+        severity: "error",
+        code: "MAX_VALUE",
       };
     }
     return null;
@@ -128,23 +139,25 @@ export function stringLength(
   message?: string
 ): ValidatorFunction {
   return (value: any) => {
-    if (typeof value !== 'string') return null;
+    if (typeof value !== "string") return null;
 
     if (value.length < minLength) {
       return {
         property: fieldName,
-        message: message || `${fieldName} must be at least ${minLength} characters`,
-        severity: 'error',
-        code: 'MIN_LENGTH',
+        message:
+          message || `${fieldName} must be at least ${minLength} characters`,
+        severity: "error",
+        code: "MIN_LENGTH",
       };
     }
 
     if (maxLength !== undefined && value.length > maxLength) {
       return {
         property: fieldName,
-        message: message || `${fieldName} must be at most ${maxLength} characters`,
-        severity: 'error',
-        code: 'MAX_LENGTH',
+        message:
+          message || `${fieldName} must be at most ${maxLength} characters`,
+        severity: "error",
+        code: "MAX_LENGTH",
       };
     }
 
@@ -161,14 +174,14 @@ export function pattern(
   message?: string
 ): ValidatorFunction {
   return (value: any) => {
-    if (typeof value !== 'string') return null;
+    if (typeof value !== "string") return null;
 
     if (!regex.test(value)) {
       return {
         property: fieldName,
         message: message || `${fieldName} has invalid format`,
-        severity: 'error',
-        code: 'PATTERN',
+        severity: "error",
+        code: "PATTERN",
       };
     }
     return null;
@@ -187,9 +200,10 @@ export function enumValue(
     if (!allowedValues.includes(value)) {
       return {
         property: fieldName,
-        message: message || `${fieldName} must be one of: ${allowedValues.join(', ')}`,
-        severity: 'error',
-        code: 'INVALID_ENUM',
+        message:
+          message || `${fieldName} must be one of: ${allowedValues.join(", ")}`,
+        severity: "error",
+        code: "INVALID_ENUM",
       };
     }
     return null;
@@ -211,9 +225,10 @@ export function arrayLength(
     if (value.length < minLength) {
       return {
         property: fieldName,
-        message: message || `${fieldName} must have at least ${minLength} items`,
-        severity: 'error',
-        code: 'MIN_ARRAY_LENGTH',
+        message:
+          message || `${fieldName} must have at least ${minLength} items`,
+        severity: "error",
+        code: "MIN_ARRAY_LENGTH",
       };
     }
 
@@ -221,8 +236,8 @@ export function arrayLength(
       return {
         property: fieldName,
         message: message || `${fieldName} must have at most ${maxLength} items`,
-        severity: 'error',
-        code: 'MAX_ARRAY_LENGTH',
+        severity: "error",
+        code: "MAX_ARRAY_LENGTH",
       };
     }
 
@@ -235,9 +250,13 @@ export function arrayLength(
  */
 export function custom(
   fieldName: string,
-  validatorFn: (value: any, config: Record<string, any>, action: Action) => boolean,
+  validatorFn: (
+    value: any,
+    config: Record<string, any>,
+    action: Action
+  ) => boolean,
   message: string,
-  severity: ValidationSeverity = 'error'
+  severity: ValidationSeverity = "error"
 ): ValidatorFunction {
   return (value: any, config: Record<string, any>, action: Action) => {
     if (!validatorFn(value, config, action)) {
@@ -261,114 +280,118 @@ export function custom(
 const ACTION_VALIDATORS: Partial<Record<ActionType, ValidatorFunction[]>> = {
   CLICK: [
     // Target is optional - defaults to current position (pure action)
-    enumValue('mouseButton', ['LEFT', 'RIGHT', 'MIDDLE'], 'Invalid mouse button'),
-    minValue('numberOfClicks', 1, 'Number of clicks must be at least 1'),
-    minValue('hold_duration', 0, 'Hold duration cannot be negative'),
+    enumValue(
+      "mouseButton",
+      ["LEFT", "RIGHT", "MIDDLE"],
+      "Invalid mouse button"
+    ),
+    minValue("numberOfClicks", 1, "Number of clicks must be at least 1"),
+    minValue("hold_duration", 0, "Hold duration cannot be negative"),
   ],
 
   TYPE: [
-    required('text', 'Text to type is required'),
-    minValue('delay', 0, 'Delay cannot be negative'),
-    minValue('interval', 0, 'Interval cannot be negative'),
+    required("text", "Text to type is required"),
+    minValue("delay", 0, "Delay cannot be negative"),
+    minValue("interval", 0, "Interval cannot be negative"),
   ],
 
   FIND: [
-    required('targetImages', 'At least one target image is required'),
+    required("targetImages", "At least one target image is required"),
     custom(
-      'targetImages',
+      "targetImages",
       (value) => Array.isArray(value) && value.length > 0,
-      'At least one target image is required',
-      'error'
+      "At least one target image is required",
+      "error"
     ),
-    numberRange('similarity', 0, 1, 'Similarity must be between 0 and 1'),
-    minValue('timeout', 0, 'Timeout cannot be negative'),
+    numberRange("similarity", 0, 1, "Similarity must be between 0 and 1"),
+    minValue("timeout", 0, "Timeout cannot be negative"),
   ],
 
   WAIT: [
-    required('duration', 'Wait duration is required'),
-    minValue('duration', 0, 'Duration cannot be negative'),
+    required("duration", "Wait duration is required"),
+    minValue("duration", 0, "Duration cannot be negative"),
   ],
 
   IF: [
-    required('condition', 'Condition is required'),
-    stringLength('condition', 1, undefined, 'Condition cannot be empty'),
+    required("condition", "Condition is required"),
+    stringLength("condition", 1, undefined, "Condition cannot be empty"),
   ],
 
   LOOP: [
-    required('loopType', 'Loop type is required'),
-    enumValue('loopType', ['count', 'while', 'foreach'], 'Invalid loop type'),
+    required("loopType", "Loop type is required"),
+    enumValue("loopType", ["count", "while", "foreach"], "Invalid loop type"),
     custom(
-      'count',
+      "count",
       (value, config) => {
-        if (config.loopType === 'count') {
-          return typeof value === 'number' && value > 0;
+        if (config.loopType === "count") {
+          return typeof value === "number" && value > 0;
         }
         return true;
       },
-      'Loop count must be a positive number',
-      'error'
+      "Loop count must be a positive number",
+      "error"
     ),
     custom(
-      'condition',
+      "condition",
       (value, config) => {
-        if (config.loopType === 'while') {
-          return typeof value === 'string' && value.length > 0;
+        if (config.loopType === "while") {
+          return typeof value === "string" && value.length > 0;
         }
         return true;
       },
-      'While condition is required',
-      'error'
+      "While condition is required",
+      "error"
     ),
   ],
 
   SET_VARIABLE: [
-    required('variableName', 'Variable name is required'),
+    required("variableName", "Variable name is required"),
     pattern(
-      'variableName',
+      "variableName",
       /^[a-zA-Z_][a-zA-Z0-9_]*$/,
-      'Variable name must start with letter or underscore and contain only letters, numbers, and underscores'
+      "Variable name must start with letter or underscore and contain only letters, numbers, and underscores"
     ),
-    required('value', 'Value is required'),
+    required("value", "Value is required"),
   ],
 
   GET_VARIABLE: [
-    required('variableName', 'Variable name is required'),
+    required("variableName", "Variable name is required"),
     pattern(
-      'variableName',
+      "variableName",
       /^[a-zA-Z_][a-zA-Z0-9_]*$/,
-      'Variable name must start with letter or underscore'
+      "Variable name must start with letter or underscore"
     ),
   ],
 
   DRAG: [
-    required('startPoint', 'Start point is required'),
-    required('endPoint', 'End point is required'),
-    minValue('duration', 0, 'Duration cannot be negative'),
+    required("startPoint", "Start point is required"),
+    required("endPoint", "End point is required"),
+    minValue("duration", 0, "Duration cannot be negative"),
   ],
 
   SCROLL: [
-    required('direction', 'Scroll direction is required'),
-    enumValue('direction', ['up', 'down', 'left', 'right'], 'Invalid scroll direction'),
-    minValue('amount', 1, 'Scroll amount must be at least 1'),
+    required("direction", "Scroll direction is required"),
+    enumValue(
+      "direction",
+      ["up", "down", "left", "right"],
+      "Invalid scroll direction"
+    ),
+    minValue("amount", 1, "Scroll amount must be at least 1"),
   ],
 
   SWITCH: [
-    required('expression', 'Switch expression is required'),
+    required("expression", "Switch expression is required"),
     custom(
-      'cases',
+      "cases",
       (value) => Array.isArray(value) && value.length > 0,
-      'At least one case is required',
-      'error'
+      "At least one case is required",
+      "error"
     ),
   ],
 
-  RUN_WORKFLOW: [
-    required('workflowId', 'Workflow ID is required'),
-  ],
+  RUN_WORKFLOW: [required("workflowId", "Workflow ID is required")],
 
-  GO_TO_STATE: [
-    required('stateId', 'State ID is required'),
-  ],
+  GO_TO_STATE: [required("stateId", "State ID is required")],
 };
 
 // ============================================================================
@@ -392,7 +415,7 @@ export function validateAction(action: Action): ValidationResult {
     // This is a bit hacky but works for our validators
     const validatorStr = validator.toString();
     const propertyMatch = validatorStr.match(/property:\s*["']([^"']+)["']/);
-    const propertyName = propertyMatch ? propertyMatch[1] : 'unknown';
+    const propertyName = propertyMatch ? propertyMatch[1] : "unknown";
 
     const value = config[propertyName];
     const error = validator(value, config, action);
@@ -406,46 +429,52 @@ export function validateAction(action: Action): ValidationResult {
   if (action.base) {
     if (action.base.pauseBefore !== undefined && action.base.pauseBefore < 0) {
       errors.push({
-        property: 'base.pauseBefore',
-        message: 'Pause before cannot be negative',
-        severity: 'error',
-        code: 'INVALID_VALUE',
+        property: "base.pauseBefore",
+        message: "Pause before cannot be negative",
+        severity: "error",
+        code: "INVALID_VALUE",
       });
     }
 
     if (action.base.pauseAfter !== undefined && action.base.pauseAfter < 0) {
       errors.push({
-        property: 'base.pauseAfter',
-        message: 'Pause after cannot be negative',
-        severity: 'error',
-        code: 'INVALID_VALUE',
+        property: "base.pauseAfter",
+        message: "Pause after cannot be negative",
+        severity: "error",
+        code: "INVALID_VALUE",
       });
     }
   }
 
   // Validate execution settings if present
   if (action.execution) {
-    if (action.execution.timeout !== undefined && action.execution.timeout < 0) {
+    if (
+      action.execution.timeout !== undefined &&
+      action.execution.timeout < 0
+    ) {
       errors.push({
-        property: 'execution.timeout',
-        message: 'Timeout cannot be negative',
-        severity: 'error',
-        code: 'INVALID_VALUE',
+        property: "execution.timeout",
+        message: "Timeout cannot be negative",
+        severity: "error",
+        code: "INVALID_VALUE",
       });
     }
 
-    if (action.execution.maxRetries !== undefined && action.execution.maxRetries < 0) {
+    if (
+      action.execution.maxRetries !== undefined &&
+      action.execution.maxRetries < 0
+    ) {
       errors.push({
-        property: 'execution.maxRetries',
-        message: 'Max retries cannot be negative',
-        severity: 'error',
-        code: 'INVALID_VALUE',
+        property: "execution.maxRetries",
+        message: "Max retries cannot be negative",
+        severity: "error",
+        code: "INVALID_VALUE",
       });
     }
   }
 
   return {
-    valid: errors.filter((e) => e.severity === 'error').length === 0,
+    valid: errors.filter((e) => e.severity === "error").length === 0,
     errors,
   };
 }
@@ -478,7 +507,9 @@ export function validateProperty(
 /**
  * Get validation rules for an action type
  */
-export function getValidationRules(actionType: ActionType): ValidatorFunction[] {
+export function getValidationRules(
+  actionType: ActionType
+): ValidatorFunction[] {
   return ACTION_VALIDATORS[actionType] || [];
 }
 

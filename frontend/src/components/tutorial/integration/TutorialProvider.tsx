@@ -5,15 +5,21 @@
  * Integrates with tutorial store and manages contextual vs overlay mode switching.
  */
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
-import { useTutorialStore } from '@/stores/tutorial-store';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
+import { useLocation } from "react-router-dom";
+import { useTutorialStore } from "@/stores/tutorial-store";
 import type {
   Tutorial,
   TutorialStep,
   TutorialMode,
   TutorialProgress,
-} from '@/types/tutorial';
+} from "@/types/tutorial";
 
 // ============================================================================
 // Types
@@ -69,13 +75,13 @@ interface TutorialProviderProps {
 
 export const TutorialProvider: React.FC<TutorialProviderProps> = ({
   children,
-  defaultMode = 'overlay',
+  defaultMode = "overlay",
 }) => {
   const location = useLocation();
   const [mode, setMode] = useState<TutorialMode>(defaultMode);
-  const [targetElements, setTargetElements] = useState<Map<string, HTMLElement>>(
-    new Map()
-  );
+  const [targetElements, setTargetElements] = useState<
+    Map<string, HTMLElement>
+  >(new Map());
   const [progress, setProgress] = useState<TutorialProgress | null>(null);
 
   // Get store state and actions
@@ -137,7 +143,8 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({
     // Update progress
     if (progress && currentTutorial) {
       const updatedProgress = { ...progress };
-      const currentStepProgress = updatedProgress.stepProgress[currentStepIndex];
+      const currentStepProgress =
+        updatedProgress.stepProgress[currentStepIndex];
       if (currentStepProgress) {
         currentStepProgress.completed = true;
         currentStepProgress.timestamp = Date.now();
@@ -149,7 +156,13 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({
       updatedProgress.completionPercentage = getCompletionPercentage();
       setProgress(updatedProgress);
     }
-  }, [storeNextStep, progress, currentTutorial, currentStepIndex, getCompletionPercentage]);
+  }, [
+    storeNextStep,
+    progress,
+    currentTutorial,
+    currentStepIndex,
+    getCompletionPercentage,
+  ]);
 
   const previousStep = useCallback(() => {
     storePreviousStep();
@@ -232,23 +245,25 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({
 
   // Handle step changes for contextual mode
   useEffect(() => {
-    if (mode === 'contextual' && currentStep?.targetElement) {
+    if (mode === "contextual" && currentStep?.targetElement) {
       const { selector, scrollIntoView, delay } = currentStep.targetElement;
 
       const focusTarget = () => {
-        const element = getTarget(selector.replace('[data-tutorial-id="', '').replace('"]', ''));
+        const element = getTarget(
+          selector.replace('[data-tutorial-id="', "").replace('"]', "")
+        );
 
         if (element) {
           if (scrollIntoView) {
             element.scrollIntoView({
-              behavior: 'smooth',
-              block: 'center',
-              inline: 'center',
+              behavior: "smooth",
+              block: "center",
+              inline: "center",
             });
           }
 
           // Add focus highlight
-          element.classList.add('tutorial-target-active');
+          element.classList.add("tutorial-target-active");
         }
       };
 
@@ -262,15 +277,15 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({
 
     // Cleanup focus highlights when step changes
     return () => {
-      document.querySelectorAll('.tutorial-target-active').forEach((el) => {
-        el.classList.remove('tutorial-target-active');
+      document.querySelectorAll(".tutorial-target-active").forEach((el) => {
+        el.classList.remove("tutorial-target-active");
       });
     };
   }, [currentStep, mode, getTarget]);
 
   // Handle route changes - close contextual tutorials when navigating away
   useEffect(() => {
-    if (mode === 'contextual' && currentTutorial?.targetPage) {
+    if (mode === "contextual" && currentTutorial?.targetPage) {
       if (!location.pathname.includes(currentTutorial.targetPage)) {
         stopTutorial();
       }
@@ -320,7 +335,7 @@ export const useTutorial = (): TutorialContextValue => {
   const context = useContext(TutorialContext);
 
   if (!context) {
-    throw new Error('useTutorial must be used within a TutorialProvider');
+    throw new Error("useTutorial must be used within a TutorialProvider");
   }
 
   return context;

@@ -35,7 +35,9 @@ project-optimization/
 ## Module Responsibilities
 
 ### 1. `types.ts` - Shared Types
+
 All TypeScript interfaces and types used across modules:
+
 - `ProjectHealth`, `HealthFactor`, `HealthReport`
 - `WorkflowAnalysis`, `StateAnalysis`, `ImageAnalysis`, `TransitionAnalysis`
 - `OptimizationSuggestion`, `ProjectIssue`
@@ -46,14 +48,18 @@ All TypeScript interfaces and types used across modules:
 - `HealthAlert`, `HealthAlertTrigger`
 
 ### 2. `index.ts` - Main Orchestrator
+
 Main entry point that:
+
 - Maintains the original `ProjectOptimizationService` singleton class
 - Delegates to specialized modules
 - Provides backward compatibility
 - Re-exports all types and functions
 
 ### 3. `health-analyzer.ts` - Health Scoring
+
 Calculates project health metrics:
+
 - `calculateProjectHealth()` - Overall health score (0-100)
 - `getHealthReport()` - Detailed health breakdown
 - `createMetricsSnapshot()` - Current metrics snapshot
@@ -61,6 +67,7 @@ Calculates project health metrics:
 - `checkAlerts()` - Health alert monitoring
 
 Health factors (weighted):
+
 - Test coverage (25%)
 - Documentation coverage (20%)
 - Organization (15%)
@@ -69,66 +76,85 @@ Health factors (weighted):
 - Broken references (10%)
 
 ### 4. `resource-analyzer.ts` - Resource Analysis
+
 Analyzes different resource types:
+
 - `analyzeWorkflows()` - Complexity, testing, documentation, dependencies
 - `analyzeStates()` - Usage, images, complexity, broken references
 - `analyzeImages()` - Usage, duplicates, optimization potential
 - `analyzeTransitions()` - Valid references, circular dependencies
 
 ### 5. `unused-resource-detector.ts` - Unused Resources
+
 Detects orphaned/unused resources:
+
 - `findUnusedImages()` - Images not referenced anywhere
 - `findUnusedStates()` - States not used in transitions
 - `findUnusedWorkflows()` - Workflows never called
 - `findOrphanedStates()` - States with no transitions
 
 ### 6. `duplicate-detector.ts` - Duplication Detection
+
 Finds potential duplicates using:
+
 - Exact name matching
 - Size similarity (within 5%)
 - String similarity (Levenshtein distance)
 - Structure similarity (action sequences)
 
 Functions:
+
 - `findDuplicateImages()`
 - `findDuplicateStates()`
 - `findDuplicateWorkflows()`
 
 ### 7. `reference-validator.ts` - Reference Validation
+
 Validates references between resources:
+
 - `validateAllReferences()` - Complete project validation
 - `findBrokenWorkflowReferences()` - Missing workflow/state/image references
 - `findBrokenStateReferences()` - Missing image references
 - `findBrokenTransitionReferences()` - Missing state/workflow references
 
 ### 8. `storage-analyzer.ts` - Storage Analysis
+
 Analyzes storage usage:
+
 - `getStorageUsage()` - Total and breakdown by type/folder
 - `estimateStorageSavings()` - Potential savings from optimizations
 - `getImageStorageBreakdown()` - Storage by image source
 
 ### 9. `complexity-analyzer.ts` - Complexity Analysis
+
 Analyzes code complexity:
+
 - `getComplexityDistribution()` - Distribution across low/medium/high/very-high
 - `findHighComplexityResources()` - Resources above threshold
 - `suggestComplexityReductions()` - Simplification suggestions
 
 ### 10. `coverage-analyzer.ts` - Coverage Analysis
+
 Test and documentation coverage:
+
 - `calculateTestCoverage()` - Overall and per-folder test coverage
 - `calculateDocumentationCoverage()` - Documentation coverage metrics
 - `getUndocumentedResources()` - Resources lacking documentation
 - `getUntestedResources()` - Resources lacking tests
 
 ### 11. `dependency-analyzer.ts` - Dependency Analysis
+
 Dependency and impact analysis:
+
 - `analyzeProjectDependencies()` - Build dependency graph
 - `findCriticalResources()` - Most depended-on resources
 - `findCircularDependencies()` - Circular dependency detection
 - `getImpactAnalysis()` - Impact of modifying/removing a resource
 
 ### 12. `suggestion-generator.ts` - Suggestions
+
 Generates optimization suggestions with priorities:
+
 - Delete unused images/states/workflows
 - Add tests/documentation
 - Organize into folders
@@ -138,18 +164,24 @@ Generates optimization suggestions with priorities:
 - Optimize storage
 
 ### 13. `auto-optimizer.ts` - Auto-Optimization
+
 Automatic optimizations:
+
 - `autoOptimize()` - Apply optimizations based on options
 - `exportBackup()` - Create backup before optimization
 - Dry-run support
 - Category suggestions
 
 ### 14. `report-exporter.ts` - Report Export
+
 Export functionality:
+
 - `exportOptimizationReport()` - Generate comprehensive report
 
 ### 15. `utils.ts` - Utilities
+
 Shared helper functions:
+
 - `calculateStringSimilarity()` - Levenshtein distance
 - `formatBytes()` - Human-readable byte formatting
 
@@ -158,21 +190,29 @@ Shared helper functions:
 ### Basic Usage (Singleton)
 
 ```typescript
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 
 // Calculate health
 const health = projectOptimizationService.calculateProjectHealth(
-  workflows, states, images, transitions
+  workflows,
+  states,
+  images,
+  transitions
 );
 
 // Get detailed report
 const report = projectOptimizationService.getHealthReport(
-  workflows, states, images, transitions
+  workflows,
+  states,
+  images,
+  transitions
 );
 
 // Find unused resources
 const unusedImages = projectOptimizationService.findUnusedImages(
-  images, workflows, states
+  images,
+  workflows,
+  states
 );
 ```
 
@@ -184,12 +224,17 @@ import {
   getHealthReport,
   findUnusedImages,
   validateAllReferences,
-} from '@/services/project-optimization';
+} from "@/services/project-optimization";
 
 // Use functions directly
 const health = calculateProjectHealth(workflows, states, images, transitions);
 const unusedImages = findUnusedImages(images, workflows, states);
-const brokenRefs = validateAllReferences(workflows, states, images, transitions);
+const brokenRefs = validateAllReferences(
+  workflows,
+  states,
+  images,
+  transitions
+);
 ```
 
 ### Type Imports
@@ -200,12 +245,13 @@ import type {
   HealthReport,
   OptimizationSuggestion,
   BrokenReference,
-} from '@/services/project-optimization';
+} from "@/services/project-optimization";
 ```
 
 ## Migration Guide
 
 ### Before (Original)
+
 ```typescript
 import { projectOptimizationService } from '@/services/project-optimization-service';
 
@@ -213,6 +259,7 @@ const health = projectOptimizationService.calculateProjectHealth(...);
 ```
 
 ### After (Refactored)
+
 ```typescript
 // Same API - no changes needed!
 import { projectOptimizationService } from '@/services/project-optimization';
@@ -245,15 +292,15 @@ Each module can be tested independently:
 
 ```typescript
 // Test health analyzer
-import { calculateProjectHealth } from './health-analyzer';
+import { calculateProjectHealth } from "./health-analyzer";
 // Mock only what's needed
 
 // Test resource analyzer
-import { analyzeWorkflows } from './resource-analyzer';
+import { analyzeWorkflows } from "./resource-analyzer";
 // Test in isolation
 
 // Test suggestion generator
-import { generateSuggestions } from './suggestion-generator';
+import { generateSuggestions } from "./suggestion-generator";
 // Pass mock analysis results
 ```
 

@@ -7,6 +7,7 @@ The Architecture Display is an interactive visualization system for the Qontinui
 **Location**: `/admin/architecture`
 
 **Key Features**:
+
 - Interactive SVG-based diagram with hover tooltips
 - Relationship highlighting (dependencies and dependents)
 - Comprehensive component analysis (pros, cons, suggestions)
@@ -37,27 +38,28 @@ Located in `ComponentDetailPanel.tsx`:
 
 ```typescript
 interface ComponentDetail {
-  id: ComponentType                        // Unique identifier
-  name: string                             // Display name
-  tagline: string                          // Short description
-  description: string                      // Full description (2-3 sentences)
-  technologies: string[]                   // Tech stack (5-8 items)
-  features: string[]                       // Key features (7-11 items)
-  status: 'stable' | 'beta' | 'development'
-  repository: string                       // GitHub URL
-  documentation?: string                   // Docs URL (optional)
-  keyComponents: string[]                  // Main modules (4-6 items)
-  useCases: string[]                       // Real-world applications (5-7 items)
-  integrations: Array<{                    // Related components (1-3 items)
-    name: string
-    description: string
-  }>
-  version?: string                         // Semantic version (optional)
+  id: ComponentType; // Unique identifier
+  name: string; // Display name
+  tagline: string; // Short description
+  description: string; // Full description (2-3 sentences)
+  technologies: string[]; // Tech stack (5-8 items)
+  features: string[]; // Key features (7-11 items)
+  status: "stable" | "beta" | "development";
+  repository: string; // GitHub URL
+  documentation?: string; // Docs URL (optional)
+  keyComponents: string[]; // Main modules (4-6 items)
+  useCases: string[]; // Real-world applications (5-7 items)
+  integrations: Array<{
+    // Related components (1-3 items)
+    name: string;
+    description: string;
+  }>;
+  version?: string; // Semantic version (optional)
   analysis: {
-    pros: string[]                         // Strengths (6-7 items)
-    cons: string[]                         // Limitations (5-7 items)
-    suggestions: string[]                  // Improvements (7-11 items)
-  }
+    pros: string[]; // Strengths (6-7 items)
+    cons: string[]; // Limitations (5-7 items)
+    suggestions: string[]; // Improvements (7-11 items)
+  };
 }
 ```
 
@@ -67,18 +69,18 @@ Located in `ArchitectureDiagram.tsx`:
 
 ```typescript
 interface Component {
-  id: ComponentType
-  name: string
-  x: number                                // SVG x-coordinate
-  y: number                                // SVG y-coordinate
-  width: number                            // Box width
-  height: number                           // Box height
-  color: string                            // Primary color (hex)
-  hoverColor: string                       // Hover state color (hex)
-  type: 'library' | 'application' | 'service'
-  shortDesc: string                        // Tooltip description (3-5 words)
-  dependencies: ComponentType[]            // What this depends on
-  dependents: ComponentType[]              // What depends on this
+  id: ComponentType;
+  name: string;
+  x: number; // SVG x-coordinate
+  y: number; // SVG y-coordinate
+  width: number; // Box width
+  height: number; // Box height
+  color: string; // Primary color (hex)
+  hoverColor: string; // Hover state color (hex)
+  type: "library" | "application" | "service";
+  shortDesc: string; // Tooltip description (3-5 words)
+  dependencies: ComponentType[]; // What this depends on
+  dependents: ComponentType[]; // What depends on this
 }
 ```
 
@@ -92,13 +94,13 @@ In `page.tsx`, add to the ComponentType union:
 
 ```typescript
 export type ComponentType =
-  | 'qontinui'
-  | 'multistate'
-  | 'qontinui-runner'
-  | 'qontinui-web'
-  | 'qontinui-api'
-  | 'new-component'  // Add here
-  | null
+  | "qontinui"
+  | "multistate"
+  | "qontinui-runner"
+  | "qontinui-web"
+  | "qontinui-api"
+  | "new-component" // Add here
+  | null;
 ```
 
 ### Step 2: Add Diagram Component
@@ -250,6 +252,7 @@ analysis: {
 ```
 
 **Best Practices for Analysis**:
+
 - **Pros**: Focus on concrete benefits and differentiators
 - **Cons**: Be honest but constructive, mention workarounds if available
 - **Suggestions**: Be specific and actionable, not vague wishes
@@ -294,19 +297,19 @@ Color scheme by type:
 
 ```typescript
 // Libraries (Blue)
-color: '#3B82F6'
-hoverColor: '#2563EB'
-gradient: 'gradient-blue'
+color: "#3B82F6";
+hoverColor: "#2563EB";
+gradient: "gradient-blue";
 
 // Applications (Green)
-color: '#10B981'
-hoverColor: '#059669'
-gradient: 'gradient-green'
+color: "#10B981";
+hoverColor: "#059669";
+gradient: "gradient-green";
 
 // Services (Purple)
-color: '#8B5CF6'
-hoverColor: '#7C3AED'
-gradient: 'gradient-purple'
+color: "#8B5CF6";
+hoverColor: "#7C3AED";
+gradient: "gradient-purple";
 ```
 
 ### SVG Gradients
@@ -356,11 +359,13 @@ Layer 3 (y: 390):    Services
 ```
 
 **Horizontal Spacing**:
+
 - Left column: x = 50
 - Right column: x = 350
 - Center: x = 200
 
 **Standard Dimensions**:
+
 - Width: 200px
 - Height: 100px
 - Horizontal gap: 150px
@@ -495,6 +500,7 @@ After making changes, verify:
 ### Browser Testing
 
 Test in:
+
 - Chrome/Edge (Chromium)
 - Firefox
 - Safari
@@ -517,6 +523,7 @@ Test in:
 ❌ "Nice to use"
 
 **Guidelines**:
+
 - Be specific about benefits
 - Quantify when possible
 - Mention differentiators
@@ -535,6 +542,7 @@ Test in:
 ❌ "Has issues"
 
 **Guidelines**:
+
 - Be honest but constructive
 - Mention workarounds if available
 - Note temporary vs. fundamental limitations
@@ -553,6 +561,7 @@ Test in:
 ❌ "Improve performance"
 
 **Guidelines**:
+
 - Be specific and actionable
 - Mention specific technologies/approaches
 - Consider feasibility
@@ -638,6 +647,7 @@ Add descriptive labels:
 Ideas for future development:
 
 ### Interactive Features
+
 - Zoom and pan functionality
 - Component search/filter
 - Export diagram as image
@@ -645,18 +655,21 @@ Ideas for future development:
 - Timeline view showing evolution
 
 ### Data Features
+
 - Load component data from API
 - Real-time status updates
 - Version history tracking
 - Comparison view between versions
 
 ### Analysis Features
+
 - Rating system for pros/cons
 - Community voting on suggestions
 - Implementation progress tracking
 - Related components recommendations
 
 ### Visualization Features
+
 - Multiple layout algorithms
 - 3D visualization option
 - Animation of data flow

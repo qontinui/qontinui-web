@@ -6,14 +6,14 @@
  * Persists to localStorage to track completion across sessions.
  */
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type {
   Tutorial,
   TutorialStep,
   TutorialMode,
   StepValidation,
-} from '@/types/tutorial';
+} from "@/types/tutorial";
 
 // ============================================================================
 // Types
@@ -303,7 +303,7 @@ export const useTutorialStore = create<TutorialStore>()(
 
       openTutorial: (tutorial: Tutorial, mode?: TutorialMode) => {
         // Determine mode: use provided mode, or tutorial's default mode, or 'overlay'
-        const tutorialMode = mode || tutorial.mode || 'overlay';
+        const tutorialMode = mode || tutorial.mode || "overlay";
 
         set({
           currentTutorial: tutorial,
@@ -314,7 +314,7 @@ export const useTutorialStore = create<TutorialStore>()(
         get().markInProgress(tutorial.id);
 
         // If contextual mode, try to highlight the first step's target element
-        if (tutorialMode === 'contextual' || tutorialMode === 'hybrid') {
+        if (tutorialMode === "contextual" || tutorialMode === "hybrid") {
           const firstStep = tutorial.steps[0];
           if (firstStep?.targetElement?.selector) {
             get().highlightElement(firstStep.targetElement.selector);
@@ -363,7 +363,7 @@ export const useTutorialStore = create<TutorialStore>()(
           set({ currentStepIndex: nextStepIndex, validationState: null });
 
           // If contextual mode, highlight the next step's target element
-          if (currentMode === 'contextual' || currentMode === 'hybrid') {
+          if (currentMode === "contextual" || currentMode === "hybrid") {
             const nextStep = currentTutorial.steps[nextStepIndex];
             if (nextStep?.targetElement?.selector) {
               get().highlightElement(nextStep.targetElement.selector);
@@ -387,7 +387,7 @@ export const useTutorialStore = create<TutorialStore>()(
           // If contextual mode, highlight the previous step's target element
           if (
             currentTutorial &&
-            (currentMode === 'contextual' || currentMode === 'hybrid')
+            (currentMode === "contextual" || currentMode === "hybrid")
           ) {
             const prevStep = currentTutorial.steps[prevStepIndex];
             if (prevStep?.targetElement?.selector) {
@@ -411,7 +411,7 @@ export const useTutorialStore = create<TutorialStore>()(
         set({ currentStepIndex: clampedIndex, validationState: null });
 
         // If contextual mode, highlight the target step's element
-        if (currentMode === 'contextual' || currentMode === 'hybrid') {
+        if (currentMode === "contextual" || currentMode === "hybrid") {
           const targetStep = currentTutorial.steps[clampedIndex];
           if (targetStep?.targetElement?.selector) {
             get().highlightElement(targetStep.targetElement.selector);
@@ -424,7 +424,8 @@ export const useTutorialStore = create<TutorialStore>()(
       // ========================================================================
 
       completeTutorial: () => {
-        const { currentTutorial, completedTutorials, inProgressTutorials } = get();
+        const { currentTutorial, completedTutorials, inProgressTutorials } =
+          get();
         if (!currentTutorial) return;
 
         // Clean up highlights
@@ -574,9 +575,9 @@ export const useTutorialStore = create<TutorialStore>()(
             const currentStep = get().getCurrentStep();
             if (currentStep?.targetElement?.scrollIntoView !== false) {
               element.scrollIntoView({
-                behavior: 'smooth',
-                block: 'center',
-                inline: 'center',
+                behavior: "smooth",
+                block: "center",
+                inline: "center",
               });
             }
 
@@ -584,7 +585,7 @@ export const useTutorialStore = create<TutorialStore>()(
           }
           return false;
         } catch (error) {
-          console.error('Failed to highlight element:', error);
+          console.error("Failed to highlight element:", error);
           return false;
         }
       },
@@ -617,7 +618,7 @@ export const useTutorialStore = create<TutorialStore>()(
           validationState: {
             isValidating: true,
             isValid: false,
-            feedback: '',
+            feedback: "",
           },
         });
 
@@ -629,10 +630,13 @@ export const useTutorialStore = create<TutorialStore>()(
           try {
             // Create a function from the condition string
             // The condition should return a boolean
-            const validationFn = new Function('context', `return ${validation.condition}`);
+            const validationFn = new Function(
+              "context",
+              `return ${validation.condition}`
+            );
             isValid = await validationFn(context);
           } catch (error) {
-            console.error('Validation error:', error);
+            console.error("Validation error:", error);
             isValid = false;
           }
 
@@ -652,7 +656,7 @@ export const useTutorialStore = create<TutorialStore>()(
 
           return isValid;
         } catch (error) {
-          console.error('Validation failed:', error);
+          console.error("Validation failed:", error);
 
           set({
             validationState: {
@@ -731,7 +735,8 @@ export const useTutorialStore = create<TutorialStore>()(
       },
 
       shouldShowTrigger: (tutorialId: string): boolean => {
-        const { triggerHistory, completedTutorials, dontShowTutorialsAgain } = get();
+        const { triggerHistory, completedTutorials, dontShowTutorialsAgain } =
+          get();
 
         // Don't show if user disabled tutorials
         if (dontShowTutorialsAgain) {
@@ -764,7 +769,7 @@ export const useTutorialStore = create<TutorialStore>()(
       },
     }),
     {
-      name: 'qontinui-tutorial-state',
+      name: "qontinui-tutorial-state",
       version: 2, // Incremented version for new fields
       partialize: (state) => ({
         completedTutorials: state.completedTutorials,

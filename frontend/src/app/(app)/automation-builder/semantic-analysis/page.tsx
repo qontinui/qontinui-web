@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Semantic Analysis Page
@@ -14,13 +14,13 @@
  * - Export semantic analysis results
  */
 
-import { SemanticAnalysisTab } from '@/components/SemanticAnalysis/SemanticAnalysisTab'
-import { RequireProject } from '@/components/require-project'
+import { SemanticAnalysisTab } from "@/components/SemanticAnalysis/SemanticAnalysisTab";
+import { RequireProject } from "@/components/require-project";
 
 export default function SemanticAnalysisPage() {
   return (
     <RequireProject pageName="Semantic Analysis">
       <SemanticAnalysisTab />
     </RequireProject>
-  )
+  );
 }

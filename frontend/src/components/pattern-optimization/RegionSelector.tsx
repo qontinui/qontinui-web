@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Region } from '@/types/pattern-optimization';
-import { patternOptimizationStorage } from '@/lib/pattern-optimization-storage';
+import React, { useState, useRef, useEffect } from "react";
+import { Region } from "@/types/pattern-optimization";
+import { patternOptimizationStorage } from "@/lib/pattern-optimization-storage";
 
 interface RegionSelectorProps {
   screenshotId: string;
@@ -22,10 +22,17 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
-  const [currentRegion, setCurrentRegion] = useState<Region | null>(initialRegion || null);
+  const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [currentRegion, setCurrentRegion] = useState<Region | null>(
+    initialRegion || null
+  );
   const [imageData, setImageData] = useState<string | null>(null);
-  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   // Load image from IndexedDB
   useEffect(() => {
@@ -43,7 +50,7 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
           img.src = data;
         }
       } catch (error) {
-        console.error('Failed to load image:', error);
+        console.error("Failed to load image:", error);
         // Fallback: treat URL as data URL
         setImageData(screenshotUrl);
       }
@@ -57,7 +64,7 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
     if (!canvasRef.current || !imageData || !imageDimensions) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const img = new Image();
@@ -90,33 +97,63 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
         };
 
         // Draw semi-transparent overlay
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Clear the selected region (make it visible)
-        ctx.clearRect(scaledRegion.x, scaledRegion.y, scaledRegion.width, scaledRegion.height);
+        ctx.clearRect(
+          scaledRegion.x,
+          scaledRegion.y,
+          scaledRegion.width,
+          scaledRegion.height
+        );
 
         // Draw selection border
-        ctx.strokeStyle = '#3B82F6';
+        ctx.strokeStyle = "#3B82F6";
         ctx.lineWidth = 2;
-        ctx.strokeRect(scaledRegion.x, scaledRegion.y, scaledRegion.width, scaledRegion.height);
+        ctx.strokeRect(
+          scaledRegion.x,
+          scaledRegion.y,
+          scaledRegion.width,
+          scaledRegion.height
+        );
 
         // Draw corner handles
         const handleSize = 8;
-        ctx.fillStyle = '#3B82F6';
+        ctx.fillStyle = "#3B82F6";
 
         // Top-left
-        ctx.fillRect(scaledRegion.x - handleSize/2, scaledRegion.y - handleSize/2, handleSize, handleSize);
+        ctx.fillRect(
+          scaledRegion.x - handleSize / 2,
+          scaledRegion.y - handleSize / 2,
+          handleSize,
+          handleSize
+        );
         // Top-right
-        ctx.fillRect(scaledRegion.x + scaledRegion.width - handleSize/2, scaledRegion.y - handleSize/2, handleSize, handleSize);
+        ctx.fillRect(
+          scaledRegion.x + scaledRegion.width - handleSize / 2,
+          scaledRegion.y - handleSize / 2,
+          handleSize,
+          handleSize
+        );
         // Bottom-left
-        ctx.fillRect(scaledRegion.x - handleSize/2, scaledRegion.y + scaledRegion.height - handleSize/2, handleSize, handleSize);
+        ctx.fillRect(
+          scaledRegion.x - handleSize / 2,
+          scaledRegion.y + scaledRegion.height - handleSize / 2,
+          handleSize,
+          handleSize
+        );
         // Bottom-right
-        ctx.fillRect(scaledRegion.x + scaledRegion.width - handleSize/2, scaledRegion.y + scaledRegion.height - handleSize/2, handleSize, handleSize);
+        ctx.fillRect(
+          scaledRegion.x + scaledRegion.width - handleSize / 2,
+          scaledRegion.y + scaledRegion.height - handleSize / 2,
+          handleSize,
+          handleSize
+        );
 
         // Draw dimensions
-        ctx.fillStyle = '#3B82F6';
-        ctx.font = '12px monospace';
+        ctx.fillStyle = "#3B82F6";
+        ctx.font = "12px monospace";
         ctx.fillText(
           `${Math.round(currentRegion.width)} × ${Math.round(currentRegion.height)}`,
           scaledRegion.x + scaledRegion.width / 2 - 30,
@@ -143,7 +180,8 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !startPoint || !canvasRef.current || !imageDimensions) return;
+    if (!isDrawing || !startPoint || !canvasRef.current || !imageDimensions)
+      return;
 
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
@@ -178,7 +216,9 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
     <div className="w-full h-full flex flex-col">
       <div className="p-2 bg-gray-100 border-b text-sm text-gray-700">
         <p className="font-medium">Draw a rectangle around the UI element</p>
-        <p className="text-xs text-gray-600 mt-1">Click and drag to select the region</p>
+        <p className="text-xs text-gray-600 mt-1">
+          Click and drag to select the region
+        </p>
       </div>
 
       <div ref={containerRef} className="flex-1 bg-gray-50 p-4 overflow-hidden">
@@ -190,7 +230,7 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
             className="cursor-crosshair mx-auto shadow-lg"
-            style={{ maxWidth: '100%', maxHeight: '100%' }}
+            style={{ maxWidth: "100%", maxHeight: "100%" }}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-gray-400">
@@ -202,8 +242,14 @@ export const RegionSelector: React.FC<RegionSelectorProps> = ({
       {currentRegion && (
         <div className="p-2 bg-gray-100 border-t text-xs text-gray-700">
           <div className="flex justify-between">
-            <span>Position: ({Math.round(currentRegion.x)}, {Math.round(currentRegion.y)})</span>
-            <span>Size: {Math.round(currentRegion.width)} × {Math.round(currentRegion.height)}</span>
+            <span>
+              Position: ({Math.round(currentRegion.x)},{" "}
+              {Math.round(currentRegion.y)})
+            </span>
+            <span>
+              Size: {Math.round(currentRegion.width)} ×{" "}
+              {Math.round(currentRegion.height)}
+            </span>
           </div>
         </div>
       )}

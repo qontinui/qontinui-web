@@ -9,6 +9,7 @@ This directory contains components for Python code execution features, allowing 
 A file browser component that displays Python files in a tree view with search, filtering, and selection capabilities.
 
 **Features:**
+
 - Tree view of Python files organized by directory
 - Search/filter by filename or path
 - File metadata display (size, last modified)
@@ -19,8 +20,8 @@ A file browser component that displays Python files in a tree view with search, 
 **Usage:**
 
 ```tsx
-import { PythonFileBrowser } from '@/components/code-execution';
-import { useCodeExecutionFiles } from '@/hooks/useCodeExecutionFiles';
+import { PythonFileBrowser } from "@/components/code-execution";
+import { useCodeExecutionFiles } from "@/hooks/useCodeExecutionFiles";
 
 function MyComponent() {
   const { files, isLoading, error, refresh } = useCodeExecutionFiles({
@@ -46,17 +47,17 @@ function MyComponent() {
 
 **Props:**
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `selectedPath` | `string` | - | Currently selected file path |
-| `onSelectFile` | `(path: string) => void` | - | Callback when file is selected |
-| `files` | `PythonFile[]` | `[]` | List of Python files |
-| `isLoading` | `boolean` | `false` | Loading state |
-| `error` | `string \| null` | `null` | Error message |
-| `onRefresh` | `() => void` | - | Refresh callback |
-| `validateOnSelect` | `boolean` | `false` | Validate file on selection |
-| `height` | `string` | `'400px'` | Component height |
-| `showMetadata` | `boolean` | `true` | Show file size and date |
+| Prop               | Type                     | Default   | Description                    |
+| ------------------ | ------------------------ | --------- | ------------------------------ |
+| `selectedPath`     | `string`                 | -         | Currently selected file path   |
+| `onSelectFile`     | `(path: string) => void` | -         | Callback when file is selected |
+| `files`            | `PythonFile[]`           | `[]`      | List of Python files           |
+| `isLoading`        | `boolean`                | `false`   | Loading state                  |
+| `error`            | `string \| null`         | `null`    | Error message                  |
+| `onRefresh`        | `() => void`             | -         | Refresh callback               |
+| `validateOnSelect` | `boolean`                | `false`   | Validate file on selection     |
+| `height`           | `string`                 | `'400px'` | Component height               |
+| `showMetadata`     | `boolean`                | `true`    | Show file size and date        |
 
 ## Hooks
 
@@ -67,7 +68,7 @@ A hook for fetching and validating Python files from the backend.
 **Usage:**
 
 ```tsx
-import { useCodeExecutionFiles } from '@/hooks/useCodeExecutionFiles';
+import { useCodeExecutionFiles } from "@/hooks/useCodeExecutionFiles";
 
 function MyComponent() {
   const {
@@ -86,41 +87,37 @@ function MyComponent() {
 
   // Validate a file path
   const handleValidate = async () => {
-    const result = await validateFile('scripts/my_script.py');
+    const result = await validateFile("scripts/my_script.py");
     if (result.valid) {
-      console.log('File is valid');
+      console.log("File is valid");
     } else {
-      console.error('File is invalid:', result.errors);
+      console.error("File is invalid:", result.errors);
     }
   };
 
-  return (
-    <div>
-      {/* Use files, isLoading, error, etc. */}
-    </div>
-  );
+  return <div>{/* Use files, isLoading, error, etc. */}</div>;
 }
 ```
 
 **Options:**
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `projectId` | `number` | - | Project ID |
-| `autoLoad` | `boolean` | `true` | Auto-load files on mount |
-| `autoRefresh` | `number` | - | Auto-refresh interval (ms) |
+| Option        | Type      | Default | Description                |
+| ------------- | --------- | ------- | -------------------------- |
+| `projectId`   | `number`  | -       | Project ID                 |
+| `autoLoad`    | `boolean` | `true`  | Auto-load files on mount   |
+| `autoRefresh` | `number`  | -       | Auto-refresh interval (ms) |
 
 **Returns:**
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `files` | `PythonFile[]` | List of Python files |
-| `isLoading` | `boolean` | Loading state |
-| `error` | `string \| null` | Error message |
-| `projectRoot` | `string` | Project root directory |
-| `fetchFiles` | `() => Promise<void>` | Fetch files from backend |
-| `validateFile` | `(path: string) => Promise<ValidateFileResponse>` | Validate file path |
-| `refresh` | `() => void` | Refresh file list |
+| Property       | Type                                              | Description              |
+| -------------- | ------------------------------------------------- | ------------------------ |
+| `files`        | `PythonFile[]`                                    | List of Python files     |
+| `isLoading`    | `boolean`                                         | Loading state            |
+| `error`        | `string \| null`                                  | Error message            |
+| `projectRoot`  | `string`                                          | Project root directory   |
+| `fetchFiles`   | `() => Promise<void>`                             | Fetch files from backend |
+| `validateFile` | `(path: string) => Promise<ValidateFileResponse>` | Validate file path       |
+| `refresh`      | `() => void`                                      | Refresh file list        |
 
 ## Action Properties
 
@@ -129,6 +126,7 @@ function MyComponent() {
 Configuration UI for CODE_BLOCK actions.
 
 **Features:**
+
 - Code source selection (inline vs. file)
 - Monaco editor for inline code
 - File browser for external Python files
@@ -203,11 +201,11 @@ Content-Type: application/json
 
 ```typescript
 interface PythonFile {
-  path: string;        // Relative path from project root
-  name: string;        // File name
-  size: number;        // File size in bytes
+  path: string; // Relative path from project root
+  name: string; // File name
+  size: number; // File size in bytes
   lastModified: string; // ISO date string
-  isValid: boolean;    // Validation status
+  isValid: boolean; // Validation status
 }
 ```
 
@@ -217,7 +215,7 @@ interface PythonFile {
 interface FileTreeNode {
   name: string;
   path: string;
-  type: 'file' | 'directory';
+  type: "file" | "directory";
   children?: FileTreeNode[];
   file?: PythonFile;
 }
@@ -270,6 +268,7 @@ The components follow the existing Qontinui design system:
 ## Accessibility
 
 All components include:
+
 - ARIA labels and roles
 - Keyboard navigation
 - Focus management
@@ -325,6 +324,7 @@ Potential improvements for future iterations:
 **Problem:** File browser shows "No Python files found"
 
 **Solutions:**
+
 - Check that project has Python files in the directory
 - Verify backend API is running (port 8000)
 - Check browser console for API errors
@@ -335,6 +335,7 @@ Potential improvements for future iterations:
 **Problem:** Selected file shows invalid status
 
 **Solutions:**
+
 - Ensure file exists in project directory
 - Check file has .py extension
 - Verify file path doesn't use `../` (path traversal blocked)
@@ -345,6 +346,7 @@ Potential improvements for future iterations:
 **Problem:** Code editor doesn't appear
 
 **Solutions:**
+
 - Check that @monaco-editor/react is installed
 - Verify component is wrapped in client boundary ("use client")
 - Check browser console for loading errors
@@ -365,6 +367,7 @@ When adding new features:
 ## Support
 
 For issues or questions:
+
 - Check backend logs for API errors
 - Review browser console for frontend errors
 - Verify network requests in DevTools

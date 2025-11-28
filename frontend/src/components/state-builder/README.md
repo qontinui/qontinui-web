@@ -11,6 +11,7 @@ The Enhanced State Builder provides a professional, scalable interface for manag
 ### 1. Layout
 
 The component uses a three-column layout:
+
 - **Left Sidebar**: State navigator with groups, search, and filtering
 - **Center Panel**: Visual state canvas showing StateImages, regions, and locations
 - **Right Panel**: Tabbed properties editor for the selected state
@@ -53,23 +54,27 @@ Visual representation of the current state:
 Tabbed interface for editing state details:
 
 #### Overview Tab
+
 - State name and description
 - Initial state checkbox
 - Complexity score display
 - Summary statistics (count of images, regions, locations, strings)
 
 #### Images Tab
+
 - List of all StateImages
 - Add/remove StateImages
 - Preview of first pattern for each StateImage
 - Pattern count display
 
 #### Regions Tab
+
 - List of all regions
 - Add/remove regions
 - Region properties display (position, dimensions)
 
 #### Locations Tab
+
 - List of all locations
 - Add/remove locations
 - Location properties (coordinates, anchor, fixed)
@@ -77,6 +82,7 @@ Tabbed interface for editing state details:
 ### 5. State Templates
 
 Pre-configured state structures for common patterns:
+
 - **Basic Menu State**: Template for menu interfaces
 - **Login Form State**: Template with username/password strings
 
@@ -85,6 +91,7 @@ Create states from templates via the template dialog.
 ### 6. Bulk Operations
 
 Select multiple states and perform operations:
+
 - **Duplicate**: Create copies of all selected states
 - **Export**: Export selected states to JSON file
 - **Delete**: Delete all selected states (with confirmation)
@@ -94,6 +101,7 @@ Select multiple states and perform operations:
 ### 7. Advanced Features (Planned)
 
 The component is designed to support:
+
 - **State Comparison**: Compare two states to find differences
 - **Relationship Graph**: Visualize state transitions and connections
 - **Find Similar States**: AI-powered similarity detection
@@ -113,7 +121,7 @@ The component is designed to support:
 ### Basic Usage
 
 ```tsx
-import { EnhancedStateBuilder } from '@/components/state-builder';
+import { EnhancedStateBuilder } from "@/components/state-builder";
 
 function MyPage() {
   return <EnhancedStateBuilder />;
@@ -143,22 +151,22 @@ Templates can be defined in the component or loaded from a service:
 
 ```typescript
 const template: StateTemplate = {
-  id: 'custom-template',
-  name: 'My Custom Template',
-  description: 'Template description',
+  id: "custom-template",
+  name: "My Custom Template",
+  description: "Template description",
   template: {
-    name: 'New State Name',
-    description: 'State description',
+    name: "New State Name",
+    description: "State description",
     stateImages: [],
     regions: [
       {
-        id: 'region-1',
-        name: 'Main Region',
+        id: "region-1",
+        name: "Main Region",
         x: 0,
         y: 0,
         width: 800,
         height: 600,
-      }
+      },
     ],
     locations: [],
     strings: [],
@@ -181,6 +189,7 @@ EnhancedStateBuilder/
 ### State Management
 
 The component uses React hooks for local UI state:
+
 - `useState` for UI state (selected items, filters, dialogs)
 - `useMemo` for computed values (filtered lists, complexity scores)
 - `useCallback` for memoized handlers
@@ -201,11 +210,13 @@ The component uses React hooks for local UI state:
 To add a new filter:
 
 1. Add state variable:
+
 ```tsx
 const [filterCustom, setFilterCustom] = useState<boolean | null>(null);
 ```
 
 2. Update `filteredStates` computation:
+
 ```tsx
 if (filterCustom !== null) {
   filtered = filtered.filter((s) => /* your logic */);
@@ -219,15 +230,15 @@ if (filterCustom !== null) {
 To add a new property tab:
 
 1. Add tab trigger:
+
 ```tsx
 <TabsTrigger value="custom">Custom</TabsTrigger>
 ```
 
 2. Add tab content:
+
 ```tsx
-<TabsContent value="custom">
-  {/* Your custom content */}
-</TabsContent>
+<TabsContent value="custom">{/* Your custom content */}</TabsContent>
 ```
 
 ### Implementing Graph Visualization
@@ -242,6 +253,7 @@ For the relationship graph feature:
 ## Styling
 
 The component uses:
+
 - **Tailwind CSS**: For utility classes
 - **shadcn/ui**: For base component styling
 - **CSS Grid**: For responsive three-column layout
@@ -304,6 +316,7 @@ Planned features for future versions:
 ### States not appearing
 
 Check that:
+
 1. AutomationContext is properly initialized
 2. Project has states loaded
 3. Filters are not hiding all states
@@ -311,6 +324,7 @@ Check that:
 ### Performance issues
 
 Try:
+
 1. Reducing the number of visible states
 2. Disabling previews/thumbnails
 3. Clearing browser cache
@@ -319,6 +333,7 @@ Try:
 ### Styling issues
 
 Ensure:
+
 1. Tailwind CSS is properly configured
 2. shadcn/ui components are installed
 3. No conflicting CSS classes

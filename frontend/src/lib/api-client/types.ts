@@ -8,37 +8,43 @@
  *   import type { User, Project, ApiResponse } from '@/lib/api-client/types'
  */
 
-import type { paths, components } from './generated-types';
+import type { paths, components } from "./generated-types";
 
 // ============================================================================
 // Component Schemas (Models)
 // ============================================================================
 
-export type User = components['schemas']['UserRead'];
-export type UserCreate = components['schemas']['UserCreate'];
-export type UserUpdate = components['schemas']['UserUpdate'];
+export type User = components["schemas"]["UserRead"];
+export type UserCreate = components["schemas"]["UserCreate"];
+export type UserUpdate = components["schemas"]["UserUpdate"];
 
-export type Project = components['schemas']['Project'];
-export type ProjectCreate = components['schemas']['ProjectCreate'];
-export type ProjectUpdate = components['schemas']['ProjectUpdate'];
+export type Project = components["schemas"]["Project"];
+export type ProjectCreate = components["schemas"]["ProjectCreate"];
+export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 
-export type BearerResponse = components['schemas']['BearerResponse'];
-export type ErrorModel = components['schemas']['ErrorModel'];
-export type HTTPValidationError = components['schemas']['HTTPValidationError'];
+export type BearerResponse = components["schemas"]["BearerResponse"];
+export type ErrorModel = components["schemas"]["ErrorModel"];
+export type HTTPValidationError = components["schemas"]["HTTPValidationError"];
 
-export type StorageQuotaResponse = components['schemas']['StorageQuotaResponse'];
-export type UserProfileResponse = components['schemas']['UserProfileResponse'];
-export type UserProfileUpdate = components['schemas']['UserProfileUpdate'];
-export type ActivityLogResponse = components['schemas']['ActivityLogResponse'];
+export type StorageQuotaResponse =
+  components["schemas"]["StorageQuotaResponse"];
+export type UserProfileResponse = components["schemas"]["UserProfileResponse"];
+export type UserProfileUpdate = components["schemas"]["UserProfileUpdate"];
+export type ActivityLogResponse = components["schemas"]["ActivityLogResponse"];
 
-export type OptimizePatternRequest = components['schemas']['OptimizePatternRequest'];
-export type OptimizePatternResponse = components['schemas']['OptimizePatternResponse'];
-export type CreateStateImageRequest = components['schemas']['CreateStateImageRequest'];
+export type OptimizePatternRequest =
+  components["schemas"]["OptimizePatternRequest"];
+export type OptimizePatternResponse =
+  components["schemas"]["OptimizePatternResponse"];
+export type CreateStateImageRequest =
+  components["schemas"]["CreateStateImageRequest"];
 
-export type RemoveBackgroundRequest = components['schemas']['RemoveBackgroundRequest'];
-export type RemoveBackgroundResponse = components['schemas']['RemoveBackgroundResponse'];
+export type RemoveBackgroundRequest =
+  components["schemas"]["RemoveBackgroundRequest"];
+export type RemoveBackgroundResponse =
+  components["schemas"]["RemoveBackgroundResponse"];
 
-export type ValidationResult = components['schemas']['ValidationResult'];
+export type ValidationResult = components["schemas"]["ValidationResult"];
 
 // ============================================================================
 // API Response Types
@@ -52,8 +58,10 @@ export type ValidationResult = components['schemas']['ValidationResult'];
  */
 export type ApiResponse<
   Method extends keyof Route,
-  Route extends keyof paths
-> = paths[Route][Method] extends { responses: { 200: { content: { 'application/json': infer T } } } }
+  Route extends keyof paths,
+> = paths[Route][Method] extends {
+  responses: { 200: { content: { "application/json": infer T } } };
+}
   ? T
   : never;
 
@@ -65,8 +73,10 @@ export type ApiResponse<
  */
 export type ApiRequestBody<
   Method extends keyof Route,
-  Route extends keyof paths
-> = paths[Route][Method] extends { requestBody: { content: { 'application/json': infer T } } }
+  Route extends keyof paths,
+> = paths[Route][Method] extends {
+  requestBody: { content: { "application/json": infer T } };
+}
   ? T
   : never;
 
@@ -75,20 +85,26 @@ export type ApiRequestBody<
 // ============================================================================
 
 // Auth operations
-export type LoginRequest = ApiRequestBody<'post', '/api/v1/auth/jwt/login'>;
-export type LoginResponse = ApiResponse<'post', '/api/v1/auth/jwt/login'>;
-export type RegisterRequest = ApiRequestBody<'post', '/api/v1/auth/register'>;
-export type RegisterResponse = ApiResponse<'post', '/api/v1/auth/register'>;
+export type LoginRequest = ApiRequestBody<"post", "/api/v1/auth/jwt/login">;
+export type LoginResponse = ApiResponse<"post", "/api/v1/auth/jwt/login">;
+export type RegisterRequest = ApiRequestBody<"post", "/api/v1/auth/register">;
+export type RegisterResponse = ApiResponse<"post", "/api/v1/auth/register">;
 
 // User operations
-export type CurrentUser = ApiResponse<'get', '/api/v1/auth/users/me'>;
-export type UpdateUserRequest = ApiRequestBody<'patch', '/api/v1/auth/users/me'>;
+export type CurrentUser = ApiResponse<"get", "/api/v1/auth/users/me">;
+export type UpdateUserRequest = ApiRequestBody<
+  "patch",
+  "/api/v1/auth/users/me"
+>;
 
 // Project operations
-export type ProjectsList = ApiResponse<'get', '/api/v1/projects/'>;
-export type SingleProject = ApiResponse<'get', '/api/v1/projects/{project_id}'>;
-export type CreateProjectRequest = ApiRequestBody<'post', '/api/v1/projects/'>;
-export type UpdateProjectRequest = ApiRequestBody<'put', '/api/v1/projects/{project_id}'>;
+export type ProjectsList = ApiResponse<"get", "/api/v1/projects/">;
+export type SingleProject = ApiResponse<"get", "/api/v1/projects/{project_id}">;
+export type CreateProjectRequest = ApiRequestBody<"post", "/api/v1/projects/">;
+export type UpdateProjectRequest = ApiRequestBody<
+  "put",
+  "/api/v1/projects/{project_id}"
+>;
 
 // ============================================================================
 // Utility types for better type safety
@@ -111,16 +127,18 @@ export type ApiOperations = {
  */
 export type ApiMethod<
   Method extends string,
-  Path extends ApiPaths
+  Path extends ApiPaths,
 > = paths[Path] extends { [K in Method]: infer Operation }
   ? Operation extends {
-      responses: { 200: { content: { 'application/json': infer Response } } };
-      requestBody?: { content: { 'application/json': infer Body } };
+      responses: { 200: { content: { "application/json": infer Response } } };
+      requestBody?: { content: { "application/json": infer Body } };
       parameters?: { path?: infer PathParams; query?: infer QueryParams };
     }
     ? (
         params: (PathParams extends Record<string, unknown> ? PathParams : {}) &
-          (QueryParams extends Record<string, unknown> ? { query?: QueryParams } : {}),
+          (QueryParams extends Record<string, unknown>
+            ? { query?: QueryParams }
+            : {}),
         body?: Body
       ) => Promise<Response>
     : never
@@ -135,20 +153,20 @@ export type ApiMethod<
  */
 export function isApiError(response: unknown): response is ErrorModel {
   return (
-    typeof response === 'object' &&
-    response !== null &&
-    'detail' in response
+    typeof response === "object" && response !== null && "detail" in response
   );
 }
 
 /**
  * Type guard to check if a response is a validation error
  */
-export function isValidationError(response: unknown): response is HTTPValidationError {
+export function isValidationError(
+  response: unknown
+): response is HTTPValidationError {
   return (
-    typeof response === 'object' &&
+    typeof response === "object" &&
     response !== null &&
-    'detail' in response &&
+    "detail" in response &&
     Array.isArray((response as any).detail)
   );
 }

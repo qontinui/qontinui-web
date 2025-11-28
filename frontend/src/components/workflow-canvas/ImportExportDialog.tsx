@@ -9,11 +9,21 @@
  * - Progress indicators
  */
 
-import React, { useState, useCallback } from 'react';
-import { Workflow } from '../../lib/action-schema/action-types';
-import { workflowFileManager, LoadResult } from '../../services/workflow-file-manager';
-import { canvasExport, ExportFormat, ExportOptions } from '../../services/canvas-export';
-import { workflowTemplates, WorkflowTemplate } from '../../services/workflow-templates';
+import React, { useState, useCallback } from "react";
+import { Workflow } from "../../lib/action-schema/action-types";
+import {
+  workflowFileManager,
+  LoadResult,
+} from "../../services/workflow-file-manager";
+import {
+  canvasExport,
+  ExportFormat,
+  ExportOptions,
+} from "../../services/canvas-export";
+import {
+  workflowTemplates,
+  WorkflowTemplate,
+} from "../../services/workflow-templates";
 
 // ============================================================================
 // Export Dialog
@@ -26,11 +36,18 @@ interface ExportDialogProps {
   open: boolean;
 }
 
-export function ExportDialog({ workflow, canvasElement, onClose, open }: ExportDialogProps) {
-  const [format, setFormat] = useState<ExportFormat>('json');
+export function ExportDialog({
+  workflow,
+  canvasElement,
+  onClose,
+  open,
+}: ExportDialogProps) {
+  const [format, setFormat] = useState<ExportFormat>("json");
   const [filename, setFilename] = useState(workflow.name);
   const [quality, setQuality] = useState(0.95);
-  const [background, setBackground] = useState<'transparent' | 'white' | 'grid'>('white');
+  const [background, setBackground] = useState<
+    "transparent" | "white" | "grid"
+  >("white");
   const [includeMetadata, setIncludeMetadata] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,19 +65,32 @@ export function ExportDialog({ workflow, canvasElement, onClose, open }: ExportD
         includeMetadata,
       };
 
-      const result = await canvasExport.export(workflow, canvasElement || null, options);
+      const result = await canvasExport.export(
+        workflow,
+        canvasElement || null,
+        options
+      );
 
       if (!result.success) {
-        setError(result.error || 'Export failed');
+        setError(result.error || "Export failed");
       } else {
         onClose();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed');
+      setError(err instanceof Error ? err.message : "Export failed");
     } finally {
       setExporting(false);
     }
-  }, [format, filename, quality, background, includeMetadata, workflow, canvasElement, onClose]);
+  }, [
+    format,
+    filename,
+    quality,
+    background,
+    includeMetadata,
+    workflow,
+    canvasElement,
+    onClose,
+  ]);
 
   if (!open) return null;
 
@@ -78,7 +108,9 @@ export function ExportDialog({ workflow, canvasElement, onClose, open }: ExportD
         <div className="space-y-4">
           {/* Format Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Format</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Format
+            </label>
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value as ExportFormat)}
@@ -93,7 +125,9 @@ export function ExportDialog({ workflow, canvasElement, onClose, open }: ExportD
 
           {/* Filename */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Filename</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Filename
+            </label>
             <input
               type="text"
               value={filename}
@@ -104,7 +138,7 @@ export function ExportDialog({ workflow, canvasElement, onClose, open }: ExportD
           </div>
 
           {/* Quality (for PNG) */}
-          {format === 'png' && (
+          {format === "png" && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Quality: {Math.round(quality * 100)}%
@@ -122,13 +156,17 @@ export function ExportDialog({ workflow, canvasElement, onClose, open }: ExportD
           )}
 
           {/* Background (for images) */}
-          {(format === 'png' || format === 'svg') && (
+          {(format === "png" || format === "svg") && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Background</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Background
+              </label>
               <select
                 value={background}
                 onChange={(e) =>
-                  setBackground(e.target.value as 'transparent' | 'white' | 'grid')
+                  setBackground(
+                    e.target.value as "transparent" | "white" | "grid"
+                  )
                 }
                 className="w-full border border-gray-300 rounded-md px-3 py-2"
               >
@@ -140,7 +178,7 @@ export function ExportDialog({ workflow, canvasElement, onClose, open }: ExportD
           )}
 
           {/* Include Metadata (for JSON) */}
-          {format === 'json' && (
+          {format === "json" && (
             <div className="flex items-center">
               <input
                 type="checkbox"
@@ -149,7 +187,10 @@ export function ExportDialog({ workflow, canvasElement, onClose, open }: ExportD
                 onChange={(e) => setIncludeMetadata(e.target.checked)}
                 className="mr-2"
               />
-              <label htmlFor="includeMetadata" className="text-sm text-gray-700">
+              <label
+                htmlFor="includeMetadata"
+                className="text-sm text-gray-700"
+              >
                 Include metadata
               </label>
             </div>
@@ -170,7 +211,7 @@ export function ExportDialog({ workflow, canvasElement, onClose, open }: ExportD
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             disabled={exporting}
           >
-            {exporting ? 'Exporting...' : 'Export'}
+            {exporting ? "Exporting..." : "Export"}
           </button>
         </div>
       </div>
@@ -189,8 +230,10 @@ interface ImportDialogProps {
 }
 
 export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
-  const [importMethod, setImportMethod] = useState<'file' | 'url' | 'clipboard'>('file');
-  const [url, setUrl] = useState('');
+  const [importMethod, setImportMethod] = useState<
+    "file" | "url" | "clipboard"
+  >("file");
+  const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<LoadResult | null>(null);
 
@@ -213,7 +256,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
     } catch (err) {
       setResult({
         success: false,
-        errors: [{ type: 'missing_action', message: 'Import failed' }],
+        errors: [{ type: "missing_action", message: "Import failed" }],
         warnings: [],
         migrated: false,
       });
@@ -243,7 +286,7 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
     } catch (err) {
       setResult({
         success: false,
-        errors: [{ type: 'missing_action', message: 'URL import failed' }],
+        errors: [{ type: "missing_action", message: "URL import failed" }],
         warnings: [],
         migrated: false,
       });
@@ -271,7 +314,9 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
     } catch (err) {
       setResult({
         success: false,
-        errors: [{ type: 'missing_action', message: 'Clipboard import failed' }],
+        errors: [
+          { type: "missing_action", message: "Clipboard import failed" },
+        ],
         warnings: [],
         migrated: false,
       });
@@ -290,23 +335,25 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
         <div className="space-y-4">
           {/* Import Method Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Import From</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Import From
+            </label>
             <div className="flex space-x-2">
               <button
-                onClick={() => setImportMethod('file')}
-                className={`flex-1 px-3 py-2 rounded-md ${importMethod === 'file' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
+                onClick={() => setImportMethod("file")}
+                className={`flex-1 px-3 py-2 rounded-md ${importMethod === "file" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
               >
                 File
               </button>
               <button
-                onClick={() => setImportMethod('url')}
-                className={`flex-1 px-3 py-2 rounded-md ${importMethod === 'url' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
+                onClick={() => setImportMethod("url")}
+                className={`flex-1 px-3 py-2 rounded-md ${importMethod === "url" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
               >
                 URL
               </button>
               <button
-                onClick={() => setImportMethod('clipboard')}
-                className={`flex-1 px-3 py-2 rounded-md ${importMethod === 'clipboard' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
+                onClick={() => setImportMethod("clipboard")}
+                className={`flex-1 px-3 py-2 rounded-md ${importMethod === "clipboard" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
               >
                 Clipboard
               </button>
@@ -314,9 +361,11 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
           </div>
 
           {/* URL Input */}
-          {importMethod === 'url' && (
+          {importMethod === "url" && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Workflow URL</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Workflow URL
+              </label>
               <input
                 type="url"
                 value={url}
@@ -330,11 +379,13 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
           {/* Result Display */}
           {result && (
             <div
-              className={`px-4 py-3 rounded ${result.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}
+              className={`px-4 py-3 rounded ${result.success ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}
             >
               {result.success ? (
                 <>
-                  <p className="text-green-800 font-medium">Import Successful</p>
+                  <p className="text-green-800 font-medium">
+                    Import Successful
+                  </p>
                   {result.warnings.length > 0 && (
                     <ul className="mt-2 text-sm text-green-700 list-disc list-inside">
                       {result.warnings.map((warning, i) => (
@@ -368,14 +419,14 @@ export function ImportDialog({ onImport, onClose, open }: ImportDialogProps) {
           </button>
           <button
             onClick={() => {
-              if (importMethod === 'file') handleFileImport();
-              else if (importMethod === 'url') handleUrlImport();
+              if (importMethod === "file") handleFileImport();
+              else if (importMethod === "url") handleUrlImport();
               else handleClipboardImport();
             }}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-            disabled={loading || (importMethod === 'url' && !url)}
+            disabled={loading || (importMethod === "url" && !url)}
           >
-            {loading ? 'Importing...' : 'Import'}
+            {loading ? "Importing..." : "Import"}
           </button>
         </div>
       </div>
@@ -393,16 +444,21 @@ interface TemplateDialogProps {
   open: boolean;
 }
 
-export function TemplateDialog({ onSelect, onClose, open }: TemplateDialogProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+export function TemplateDialog({
+  onSelect,
+  onClose,
+  open,
+}: TemplateDialogProps) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
   const templates = workflowTemplates.getTemplates({
     search: searchQuery,
-    category: selectedCategory === 'all' ? undefined : (selectedCategory as any),
+    category:
+      selectedCategory === "all" ? undefined : (selectedCategory as any),
   });
 
-  const categories = ['all', ...workflowTemplates.getCategories()];
+  const categories = ["all", ...workflowTemplates.getCategories()];
 
   const handleSelectTemplate = useCallback(
     (template: WorkflowTemplate) => {
@@ -438,7 +494,7 @@ export function TemplateDialog({ onSelect, onClose, open }: TemplateDialogProps)
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
-                className={`px-4 py-2 rounded-md whitespace-nowrap ${selectedCategory === category ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
+                className={`px-4 py-2 rounded-md whitespace-nowrap ${selectedCategory === category ? "bg-blue-600 text-white" : "bg-gray-100"}`}
               >
                 {category.charAt(0).toUpperCase() + category.slice(1)}
               </button>
@@ -463,7 +519,9 @@ export function TemplateDialog({ onSelect, onClose, open }: TemplateDialogProps)
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-600 mb-3">{template.description}</p>
+                <p className="text-sm text-gray-600 mb-3">
+                  {template.description}
+                </p>
                 <div className="flex flex-wrap gap-1">
                   {template.tags.slice(0, 3).map((tag) => (
                     <span

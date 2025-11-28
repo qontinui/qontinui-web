@@ -1,15 +1,25 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
-import { Transition, State, OutgoingTransition } from "@/contexts/automation-context/types"
-import { Workflow } from "@/lib/action-schema/action-types"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import React, { useState } from "react";
+import {
+  Transition,
+  State,
+  OutgoingTransition,
+} from "@/contexts/automation-context/types";
+import { Workflow } from "@/lib/action-schema/action-types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -18,13 +28,13 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogFooter,
-} from "@/components/ui/dialog"
-import { Layers, ArrowRight, X } from "lucide-react"
+} from "@/components/ui/dialog";
+import { Layers, ArrowRight, X } from "lucide-react";
 
 interface BulkCreationWizardProps {
-  states: State[]
-  workflows: Workflow[]
-  onComplete: (transitions: Transition[]) => void
+  states: State[];
+  workflows: Workflow[];
+  onComplete: (transitions: Transition[]) => void;
 }
 
 export function BulkCreationWizard({
@@ -32,19 +42,19 @@ export function BulkCreationWizard({
   workflows,
   onComplete,
 }: BulkCreationWizardProps) {
-  const [open, setOpen] = useState(false)
-  const [step, setStep] = useState(1)
-  const [sourceStates, setSourceStates] = useState<string[]>([])
-  const [targetStates, setTargetStates] = useState<string[]>([])
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("")
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState(1);
+  const [sourceStates, setSourceStates] = useState<string[]>([]);
+  const [targetStates, setTargetStates] = useState<string[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [config, setConfig] = useState({
     timeout: 10000,
     retryCount: 0,
     workflows: [] as string[],
-  })
+  });
 
   const handleComplete = () => {
-    const newTransitions: Transition[] = []
+    const newTransitions: Transition[] = [];
 
     sourceStates.forEach((fromStateId) => {
       targetStates.forEach((toStateId) => {
@@ -58,19 +68,19 @@ export function BulkCreationWizard({
           workflows: config.workflows,
           timeout: config.timeout,
           retryCount: config.retryCount,
-        }
-        newTransitions.push(transition)
-      })
-    })
+        };
+        newTransitions.push(transition);
+      });
+    });
 
-    onComplete(newTransitions)
-    setOpen(false)
-    setStep(1)
-    setSourceStates([])
-    setTargetStates([])
-    setSelectedTemplate("")
-    setConfig({ timeout: 10000, retryCount: 0, workflows: [] })
-  }
+    onComplete(newTransitions);
+    setOpen(false);
+    setStep(1);
+    setSourceStates([]);
+    setTargetStates([]);
+    setSelectedTemplate("");
+    setConfig({ timeout: 10000, retryCount: 0, workflows: [] });
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -103,11 +113,11 @@ export function BulkCreationWizard({
                         checked={sourceStates.includes(state.id)}
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            setSourceStates([...sourceStates, state.id])
+                            setSourceStates([...sourceStates, state.id]);
                           } else {
                             setSourceStates(
                               sourceStates.filter((id) => id !== state.id)
-                            )
+                            );
                           }
                         }}
                       />
@@ -133,11 +143,11 @@ export function BulkCreationWizard({
                         checked={targetStates.includes(state.id)}
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            setTargetStates([...targetStates, state.id])
+                            setTargetStates([...targetStates, state.id]);
                           } else {
                             setTargetStates(
                               targetStates.filter((id) => id !== state.id)
-                            )
+                            );
                           }
                         }}
                       />
@@ -214,7 +224,7 @@ export function BulkCreationWizard({
                   {config.workflows.length > 0 && (
                     <div className="space-y-1">
                       {config.workflows.map((wId) => {
-                        const workflow = workflows.find((w) => w.id === wId)
+                        const workflow = workflows.find((w) => w.id === wId);
                         return (
                           <div
                             key={wId}
@@ -239,7 +249,7 @@ export function BulkCreationWizard({
                               <X className="w-3 h-3" />
                             </Button>
                           </div>
-                        )
+                        );
                       })}
                     </div>
                   )}
@@ -271,9 +281,7 @@ export function BulkCreationWizard({
                             {states.find((s) => s.id === fromId)?.name}
                           </span>
                           <ArrowRight className="w-3 h-3" />
-                          <span>
-                            {states.find((s) => s.id === toId)?.name}
-                          </span>
+                          <span>{states.find((s) => s.id === toId)?.name}</span>
                         </div>
                       ))
                     )}
@@ -294,9 +302,7 @@ export function BulkCreationWizard({
             >
               Previous
             </Button>
-            <span className="text-xs text-gray-400">
-              Step {step} of 4
-            </span>
+            <span className="text-xs text-gray-400">Step {step} of 4</span>
             {step < 4 ? (
               <Button
                 onClick={() => setStep(Math.min(4, step + 1))}
@@ -320,5 +326,5 @@ export function BulkCreationWizard({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

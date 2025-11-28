@@ -9,6 +9,7 @@ This directory contains the core integration components for the Qontinui tutoria
 React context provider that manages tutorial state throughout the application.
 
 **Features:**
+
 - Tutorial state management (current tutorial, step, mode)
 - Integration with tutorial store (Zustand)
 - Mode switching (overlay, contextual, hybrid)
@@ -18,7 +19,7 @@ React context provider that manages tutorial state throughout the application.
 **Usage:**
 
 ```tsx
-import { TutorialProvider } from '@/components/tutorial/integration';
+import { TutorialProvider } from "@/components/tutorial/integration";
 
 function App() {
   return (
@@ -32,7 +33,7 @@ function App() {
 **Hook:**
 
 ```tsx
-import { useTutorial } from '@/components/tutorial/integration';
+import { useTutorial } from "@/components/tutorial/integration";
 
 function MyComponent() {
   const {
@@ -48,9 +49,7 @@ function MyComponent() {
   return (
     <div>
       {isActive && <p>Tutorial is active: {currentTutorial?.title}</p>}
-      <button onClick={() => startTutorial(myTutorial)}>
-        Start Tutorial
-      </button>
+      <button onClick={() => startTutorial(myTutorial)}>Start Tutorial</button>
     </div>
   );
 }
@@ -63,6 +62,7 @@ function MyComponent() {
 Custom hook for marking elements as tutorial targets.
 
 **Features:**
+
 - Automatic element registration with tutorial system
 - Data attribute assignment (`data-tutorial-id`)
 - Focus and scroll-into-view handling
@@ -72,13 +72,13 @@ Custom hook for marking elements as tutorial targets.
 **Usage:**
 
 ```tsx
-import { useTutorialTarget } from '@/components/tutorial/integration';
+import { useTutorialTarget } from "@/components/tutorial/integration";
 
 function AddActionButton() {
-  const targetProps = useTutorialTarget('add-action-button', {
-    ariaLabel: 'Add new action',
+  const targetProps = useTutorialTarget("add-action-button", {
+    ariaLabel: "Add new action",
     focusable: true,
-    onFocus: () => console.log('Tutorial focused this button'),
+    onFocus: () => console.log("Tutorial focused this button"),
   });
 
   return <button {...targetProps}>Add Action</button>;
@@ -86,6 +86,7 @@ function AddActionButton() {
 ```
 
 **The hook returns:**
+
 - `ref`: React ref to attach to the element
 - `data-tutorial-id`: Tutorial identifier attribute
 - `className`: Auto-managed classes for highlighting
@@ -96,10 +97,10 @@ function AddActionButton() {
 
 ```tsx
 // Check if a target is currently active
-const isActive = useIsTargetActive('add-action-button');
+const isActive = useIsTargetActive("add-action-button");
 
 // Scroll to a target programmatically
-const scrollToTarget = useScrollToTarget('settings-panel');
+const scrollToTarget = useScrollToTarget("settings-panel");
 scrollToTarget(); // Call to scroll
 ```
 
@@ -110,6 +111,7 @@ scrollToTarget(); // Call to scroll
 Component that monitors conditions and auto-triggers tutorials.
 
 **Features:**
+
 - Page load monitoring
 - Route change detection
 - Contextual trigger evaluation
@@ -120,17 +122,13 @@ Component that monitors conditions and auto-triggers tutorials.
 **Usage:**
 
 ```tsx
-import { TutorialTrigger } from '@/components/tutorial/integration';
-import { tutorials } from '@/data/tutorials';
+import { TutorialTrigger } from "@/components/tutorial/integration";
+import { tutorials } from "@/data/tutorials";
 
 function App() {
   return (
     <TutorialProvider>
-      <TutorialTrigger
-        tutorials={tutorials}
-        enabled={true}
-        delay={1000}
-      />
+      <TutorialTrigger tutorials={tutorials} enabled={true} delay={1000} />
       <YourApp />
     </TutorialProvider>
   );
@@ -144,13 +142,13 @@ import {
   triggerTutorialById,
   dismissTutorial,
   resetTriggerHistory,
-} from '@/components/tutorial/integration';
+} from "@/components/tutorial/integration";
 
 // Trigger a tutorial programmatically
-triggerTutorialById('getting-started');
+triggerTutorialById("getting-started");
 
 // Mark tutorial as dismissed
-dismissTutorial('getting-started');
+dismissTutorial("getting-started");
 
 // Reset all trigger history
 resetTriggerHistory();
@@ -160,8 +158,8 @@ resetTriggerHistory();
 
 ```tsx
 // Dispatch custom trigger event
-const event = new CustomEvent('trigger-tutorial', {
-  detail: { tutorialId: 'advanced-patterns' }
+const event = new CustomEvent("trigger-tutorial", {
+  detail: { tutorialId: "advanced-patterns" },
 });
 window.dispatchEvent(event);
 ```
@@ -173,6 +171,7 @@ window.dispatchEvent(event);
 UI component for browsing and launching tutorials.
 
 **Features:**
+
 - Tutorial listing with metadata
 - Search functionality
 - Category filtering
@@ -185,18 +184,16 @@ UI component for browsing and launching tutorials.
 **Usage:**
 
 ```tsx
-import { useState } from 'react';
-import { TutorialMenu } from '@/components/tutorial/integration';
-import { tutorials } from '@/data/tutorials';
+import { useState } from "react";
+import { TutorialMenu } from "@/components/tutorial/integration";
+import { tutorials } from "@/data/tutorials";
 
 function HelpMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <>
-      <button onClick={() => setMenuOpen(true)}>
-        Show Tutorials
-      </button>
+      <button onClick={() => setMenuOpen(true)}>Show Tutorials</button>
       <TutorialMenu
         tutorials={tutorials}
         isOpen={menuOpen}
@@ -215,7 +212,7 @@ function HelpMenu() {
   tutorials={tutorials}
   isOpen={menuOpen}
   onClose={() => setMenuOpen(false)}
-  customFilter={(tutorial) => tutorial.category === 'gaming'}
+  customFilter={(tutorial) => tutorial.category === "gaming"}
 />
 ```
 
@@ -227,7 +224,7 @@ Import the tutorial target CSS in your application:
 
 ```tsx
 // In your main app file or layout
-import '@/components/tutorial/integration/tutorial-targets.css';
+import "@/components/tutorial/integration/tutorial-targets.css";
 ```
 
 ### CSS Classes
@@ -252,10 +249,10 @@ Here's a complete example integrating all components:
 
 ```tsx
 // App.tsx
-import { TutorialProvider } from '@/components/tutorial/integration';
-import { TutorialTrigger } from '@/components/tutorial/integration';
-import '@/components/tutorial/integration/tutorial-targets.css';
-import { tutorials } from '@/data/tutorials';
+import { TutorialProvider } from "@/components/tutorial/integration";
+import { TutorialTrigger } from "@/components/tutorial/integration";
+import "@/components/tutorial/integration/tutorial-targets.css";
+import { tutorials } from "@/data/tutorials";
 
 function App() {
   return (
@@ -267,9 +264,9 @@ function App() {
 }
 
 // MainLayout.tsx
-import { useState } from 'react';
-import { TutorialMenu } from '@/components/tutorial/integration';
-import { tutorials } from '@/data/tutorials';
+import { useState } from "react";
+import { TutorialMenu } from "@/components/tutorial/integration";
+import { tutorials } from "@/data/tutorials";
 
 function MainLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -288,11 +285,11 @@ function MainLayout() {
 }
 
 // SomeComponent.tsx
-import { useTutorialTarget } from '@/components/tutorial/integration';
+import { useTutorialTarget } from "@/components/tutorial/integration";
 
 function AddActionButton() {
-  const targetProps = useTutorialTarget('add-action-button', {
-    ariaLabel: 'Add new action button',
+  const targetProps = useTutorialTarget("add-action-button", {
+    ariaLabel: "Add new action button",
     focusable: true,
   });
 
@@ -313,31 +310,31 @@ Tutorials should follow the `Tutorial` type from `/home/user/qontinui-web/fronte
 **Example Tutorial:**
 
 ```tsx
-import type { Tutorial } from '@/types/tutorial';
+import type { Tutorial } from "@/types/tutorial";
 
 const gettingStartedTutorial: Tutorial = {
-  id: 'getting-started',
-  title: 'Getting Started with Qontinui',
-  description: 'Learn the basics of creating automations',
-  duration: '10 minutes',
-  difficulty: 'beginner',
-  mode: 'contextual',
-  category: 'getting-started',
-  tags: ['basics', 'beginner', 'introduction'],
-  targetPage: '/workflows',
+  id: "getting-started",
+  title: "Getting Started with Qontinui",
+  description: "Learn the basics of creating automations",
+  duration: "10 minutes",
+  difficulty: "beginner",
+  mode: "contextual",
+  category: "getting-started",
+  tags: ["basics", "beginner", "introduction"],
+  targetPage: "/workflows",
   triggers: {
     automatic: true,
     manual: true,
   },
   steps: [
     {
-      id: 'step-1',
-      title: 'Welcome to Qontinui',
-      content: 'Let\'s start by exploring the interface...',
+      id: "step-1",
+      title: "Welcome to Qontinui",
+      content: "Let's start by exploring the interface...",
       targetElement: {
         selector: '[data-tutorial-id="workflow-canvas"]',
-        highlightType: 'spotlight',
-        position: 'center',
+        highlightType: "spotlight",
+        position: "center",
         allowInteraction: true,
         scrollIntoView: true,
       },
@@ -369,7 +366,7 @@ import type {
   TutorialTargetProps,
   TutorialTriggerProps,
   TutorialMenuProps,
-} from '@/components/tutorial/integration';
+} from "@/components/tutorial/integration";
 ```
 
 ---

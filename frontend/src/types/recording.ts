@@ -8,28 +8,23 @@
 // Enums
 
 export type RecordingStatus =
-  | 'uploaded'
-  | 'validating'
-  | 'processing'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
+  | "uploaded"
+  | "validating"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export type ProcessingPhase =
-  | 'frame_analysis'
-  | 'state_identification'
-  | 'interaction_processing'
-  | 'transition_discovery'
-  | 'state_machine_assembly'
-  | 'optimization'
-  | 'completed';
+  | "frame_analysis"
+  | "state_identification"
+  | "interaction_processing"
+  | "transition_discovery"
+  | "state_machine_assembly"
+  | "optimization"
+  | "completed";
 
-export type InteractionType =
-  | 'click'
-  | 'drag'
-  | 'key'
-  | 'scroll'
-  | 'hover';
+export type InteractionType = "click" | "drag" | "key" | "scroll" | "hover";
 
 // Recording Types
 
@@ -267,7 +262,7 @@ export interface TransitionReviewUpdate {
 }
 
 export interface AcceptanceRequest {
-  action: 'accept' | 'accept_selected' | 'modify' | 'discard';
+  action: "accept" | "accept_selected" | "modify" | "discard";
   selected_state_ids?: string[];
   selected_transition_ids?: string[];
   modifications?: Record<string, any>;
@@ -287,7 +282,7 @@ export interface AcceptanceResponse {
 export interface RecordingUploadProgress {
   file: File;
   progress: number; // 0-100
-  status: 'pending' | 'uploading' | 'processing' | 'complete' | 'error';
+  status: "pending" | "uploading" | "processing" | "complete" | "error";
   error?: string;
   recording_id?: string;
 }
@@ -306,42 +301,42 @@ export interface TransitionEdgeData {
 
 // Helper type for phase display
 export const ProcessingPhaseLabels: Record<ProcessingPhase, string> = {
-  frame_analysis: 'Analyzing Frames',
-  state_identification: 'Identifying States',
-  interaction_processing: 'Processing Interactions',
-  transition_discovery: 'Discovering Transitions',
-  state_machine_assembly: 'Assembling State Machine',
-  optimization: 'Optimizing',
-  completed: 'Complete'
+  frame_analysis: "Analyzing Frames",
+  state_identification: "Identifying States",
+  interaction_processing: "Processing Interactions",
+  transition_discovery: "Discovering Transitions",
+  state_machine_assembly: "Assembling State Machine",
+  optimization: "Optimizing",
+  completed: "Complete",
 };
 
 // Helper type for status display
 export const RecordingStatusLabels: Record<RecordingStatus, string> = {
-  uploaded: 'Uploaded',
-  validating: 'Validating',
-  processing: 'Processing',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled'
+  uploaded: "Uploaded",
+  validating: "Validating",
+  processing: "Processing",
+  completed: "Completed",
+  failed: "Failed",
+  cancelled: "Cancelled",
 };
 
 // Helper type for confidence colors
-export type ConfidenceLevel = 'high' | 'medium' | 'low';
+export type ConfidenceLevel = "high" | "medium" | "low";
 
 export function getConfidenceLevel(confidence?: number): ConfidenceLevel {
-  if (!confidence) return 'low';
-  if (confidence >= 0.8) return 'high';
-  if (confidence >= 0.5) return 'medium';
-  return 'low';
+  if (!confidence) return "low";
+  if (confidence >= 0.8) return "high";
+  if (confidence >= 0.5) return "medium";
+  return "low";
 }
 
 export function getConfidenceColor(level: ConfidenceLevel): string {
   switch (level) {
-    case 'high':
-      return 'text-green-600 bg-green-50';
-    case 'medium':
-      return 'text-yellow-600 bg-yellow-50';
-    case 'low':
-      return 'text-red-600 bg-red-50';
+    case "high":
+      return "text-green-600 bg-green-50";
+    case "medium":
+      return "text-yellow-600 bg-yellow-50";
+    case "low":
+      return "text-red-600 bg-red-50";
   }
 }

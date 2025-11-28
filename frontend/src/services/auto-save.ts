@@ -11,14 +11,14 @@
  * - Version history (last 5 auto-saves)
  */
 
-import { Workflow } from '../lib/action-schema/action-types';
-import { workflowFileManager } from './workflow-file-manager';
+import { Workflow } from "../lib/action-schema/action-types";
+import { workflowFileManager } from "./workflow-file-manager";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 export interface AutoSaveConfig {
   enabled: boolean;
@@ -65,7 +65,7 @@ export class AutoSaveService {
   private currentWorkflow: Workflow | null = null;
   private currentHash: string | null = null;
   private saveState: SaveState = {
-    status: 'idle',
+    status: "idle",
     hasUnsavedChanges: false,
   };
 
@@ -224,7 +224,7 @@ export class AutoSaveService {
       return false; // No changes, skip save
     }
 
-    this.updateState({ status: 'saving' });
+    this.updateState({ status: "saving" });
 
     try {
       // Detect conflicts
@@ -233,7 +233,7 @@ export class AutoSaveService {
         if (hasConflict) {
           const resolved = await this.resolveConflict(this.currentWorkflow);
           if (!resolved) {
-            throw new Error('Save conflict detected and could not be resolved');
+            throw new Error("Save conflict detected and could not be resolved");
           }
         }
       }
@@ -245,7 +245,7 @@ export class AutoSaveService {
       );
 
       if (!result.success) {
-        throw new Error(result.error || 'Save failed');
+        throw new Error(result.error || "Save failed");
       }
 
       // Add to history
@@ -254,7 +254,7 @@ export class AutoSaveService {
       // Update state
       this.currentHash = currentHash;
       this.updateState({
-        status: 'saved',
+        status: "saved",
         lastSaved: new Date(),
         hasUnsavedChanges: false,
         lastError: undefined,
@@ -262,12 +262,13 @@ export class AutoSaveService {
 
       return true;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       this.updateState({
-        status: 'error',
+        status: "error",
         lastError: errorMessage,
       });
-      console.error('Auto-save failed:', error);
+      console.error("Auto-save failed:", error);
       return false;
     }
   }
@@ -309,7 +310,10 @@ export class AutoSaveService {
     const limited = history.slice(0, this.config.maxHistorySize);
 
     // Save to localStorage
-    localStorage.setItem(this.getHistoryKey(workflow.id), JSON.stringify(limited));
+    localStorage.setItem(
+      this.getHistoryKey(workflow.id),
+      JSON.stringify(limited)
+    );
   }
 
   /**
@@ -323,7 +327,7 @@ export class AutoSaveService {
       }
       return JSON.parse(json);
     } catch (error) {
-      console.error('Failed to load history:', error);
+      console.error("Failed to load history:", error);
       return [];
     }
   }
@@ -338,7 +342,10 @@ export class AutoSaveService {
   /**
    * Restore from history entry
    */
-  async restoreFromHistory(workflowId: string, index: number): Promise<Workflow | null> {
+  async restoreFromHistory(
+    workflowId: string,
+    index: number
+  ): Promise<Workflow | null> {
     const history = this.getHistory(workflowId);
     const entry = history[index];
 
@@ -373,7 +380,7 @@ export class AutoSaveService {
         workflowId: data.workflow?.id,
       };
     } catch (error) {
-      console.error('Failed to check recovery:', error);
+      console.error("Failed to check recovery:", error);
       return { hasRecovery: false };
     }
   }
@@ -410,7 +417,8 @@ export class AutoSaveService {
   private async detectConflict(workflow: Workflow): Promise<boolean> {
     try {
       const savedKey = this.getAutoSaveKey(workflow.id);
-      const result = await workflowFileManager.loadWorkflowFromStorage(savedKey);
+      const result =
+        await workflowFileManager.loadWorkflowFromStorage(savedKey);
 
       if (!result.success || !result.workflow) {
         return false; // No saved version, no conflict
@@ -436,7 +444,9 @@ export class AutoSaveService {
     // - Merge changes automatically
     // - Create a conflict snapshot for manual resolution
 
-    console.warn('Save conflict detected - using current version (last-write-wins)');
+    console.warn(
+      "Save conflict detected - using current version (last-write-wins)"
+    );
     return true; // Continue with save
   }
 
@@ -482,7 +492,7 @@ export class AutoSaveService {
       try {
         listener(this.saveState);
       } catch (error) {
-        console.error('Error in auto-save listener:', error);
+        console.error("Error in auto-save listener:", error);
       }
     });
   }
@@ -525,7 +535,7 @@ export class AutoSaveService {
    * Get recovery key
    */
   private getRecoveryKey(): string {
-    return 'workflow-recovery';
+    return "workflow-recovery";
   }
 
   /**
@@ -536,7 +546,7 @@ export class AutoSaveService {
     this.currentWorkflow = null;
     this.currentHash = null;
     this.updateState({
-      status: 'idle',
+      status: "idle",
       hasUnsavedChanges: false,
       lastError: undefined,
     });

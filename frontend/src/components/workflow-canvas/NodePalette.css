@@ -924,7 +924,10 @@
   border-radius: 8px;
   padding: 8px 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
 
 .ghost-content {

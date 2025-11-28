@@ -1,15 +1,24 @@
 // components/integration-testing/StateCoveragePanel.tsx
 
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Download, RefreshCw, AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { CoverageMatrix } from './CoverageMatrix';
-import { StateTransitionGraph } from './StateTransitionGraph';
-import type { CoverageReport, CoverageAnalysisRequest } from '@/types/integration-testing';
+import { useState, useEffect } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Download,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
+import { CoverageMatrix } from "./CoverageMatrix";
+import { StateTransitionGraph } from "./StateTransitionGraph";
+import type {
+  CoverageReport,
+  CoverageAnalysisRequest,
+} from "@/types/integration-testing";
 
 interface StateCoveragePanelProps {
   processId?: string;
@@ -46,23 +55,30 @@ export function StateCoveragePanel({
         expected_states: expectedStates,
       };
 
-      const response = await fetch('/api/integration-testing/coverage/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(request),
-      });
+      const response = await fetch(
+        "/api/integration-testing/coverage/analyze",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(request),
+        }
+      );
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(errorData.detail || 'Failed to analyze coverage');
+        const errorData = await response
+          .json()
+          .catch(() => ({ detail: "Unknown error" }));
+        throw new Error(errorData.detail || "Failed to analyze coverage");
       }
 
       const data: CoverageReport = await response.json();
       setCoverage(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to analyze coverage');
+      setError(
+        err instanceof Error ? err.message : "Failed to analyze coverage"
+      );
     } finally {
       setLoading(false);
     }
@@ -78,9 +94,9 @@ export function StateCoveragePanel({
     if (!coverage) return;
 
     const dataStr = JSON.stringify(coverage, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
     link.download = `coverage-report-${coverage.process_id}-${Date.now()}.json`;
     link.click();
@@ -88,10 +104,10 @@ export function StateCoveragePanel({
   };
 
   const getCoverageColor = (percentage: number): string => {
-    if (percentage === 0) return 'text-red-600';
-    if (percentage < 50) return 'text-yellow-600';
-    if (percentage < 80) return 'text-blue-600';
-    return 'text-green-600';
+    if (percentage === 0) return "text-red-600";
+    if (percentage < 50) return "text-yellow-600";
+    if (percentage < 80) return "text-blue-600";
+    return "text-green-600";
   };
 
   if (!processId || snapshotRunIds.length === 0) {
@@ -99,7 +115,9 @@ export function StateCoveragePanel({
       <Card className="p-8">
         <div className="text-center text-gray-500">
           <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-          <p className="text-lg font-medium">No process or snapshots selected</p>
+          <p className="text-lg font-medium">
+            No process or snapshots selected
+          </p>
           <p className="text-sm mt-1">
             Select a process and snapshots to view coverage analysis
           </p>
@@ -125,8 +143,10 @@ export function StateCoveragePanel({
             variant="outline"
             size="sm"
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            {loading ? 'Analyzing...' : 'Analyze'}
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
+            {loading ? "Analyzing..." : "Analyze"}
           </Button>
           {coverage && (
             <Button onClick={exportReport} variant="outline" size="sm">
@@ -153,7 +173,9 @@ export function StateCoveragePanel({
         <Card className="p-12">
           <div className="text-center">
             <RefreshCw className="w-12 h-12 mx-auto mb-4 text-blue-600 animate-spin" />
-            <p className="text-lg font-medium text-gray-900">Analyzing coverage...</p>
+            <p className="text-lg font-medium text-gray-900">
+              Analyzing coverage...
+            </p>
             <p className="text-sm text-gray-600 mt-1">
               Processing {snapshotRunIds.length} snapshot run(s)
             </p>
@@ -184,12 +206,12 @@ export function StateCoveragePanel({
                       r="56"
                       stroke={
                         coverage.overall_coverage_percentage >= 80
-                          ? '#10b981'
+                          ? "#10b981"
                           : coverage.overall_coverage_percentage >= 50
-                          ? '#3b82f6'
-                          : coverage.overall_coverage_percentage > 0
-                          ? '#f59e0b'
-                          : '#ef4444'
+                            ? "#3b82f6"
+                            : coverage.overall_coverage_percentage > 0
+                              ? "#f59e0b"
+                              : "#ef4444"
                       }
                       strokeWidth="12"
                       fill="none"
@@ -235,7 +257,9 @@ export function StateCoveragePanel({
                   <div className="text-2xl font-bold text-gray-900">
                     {coverage.covered_transitions}/{coverage.total_transitions}
                   </div>
-                  <div className="text-sm text-gray-600">Transitions Covered</div>
+                  <div className="text-sm text-gray-600">
+                    Transitions Covered
+                  </div>
                 </div>
                 <CheckCircle2 className="w-8 h-8 text-blue-500" />
               </div>
@@ -258,7 +282,11 @@ export function StateCoveragePanel({
               </div>
               {coverage.coverage_gaps.length > 0 && (
                 <div className="mt-2 text-xs text-yellow-600">
-                  {coverage.coverage_gaps.filter((g) => g.severity === 'high').length} high priority
+                  {
+                    coverage.coverage_gaps.filter((g) => g.severity === "high")
+                      .length
+                  }{" "}
+                  high priority
                 </div>
               )}
             </Card>
@@ -295,7 +323,9 @@ export function StateCoveragePanel({
                 {/* Recommendations */}
                 {coverage.recommendations.length > 0 && (
                   <Card className="p-6">
-                    <h3 className="text-lg font-semibold mb-4">Recommendations</h3>
+                    <h3 className="text-lg font-semibold mb-4">
+                      Recommendations
+                    </h3>
                     <ul className="space-y-2">
                       {coverage.recommendations.map((rec, index) => (
                         <li key={index} className="flex items-start gap-2">
@@ -314,11 +344,11 @@ export function StateCoveragePanel({
                       <Card
                         key={index}
                         className={`p-4 border-l-4 ${
-                          gap.severity === 'high'
-                            ? 'border-l-red-500 bg-red-50'
-                            : gap.severity === 'medium'
-                            ? 'border-l-yellow-500 bg-yellow-50'
-                            : 'border-l-blue-500 bg-blue-50'
+                          gap.severity === "high"
+                            ? "border-l-red-500 bg-red-50"
+                            : gap.severity === "medium"
+                              ? "border-l-yellow-500 bg-yellow-50"
+                              : "border-l-blue-500 bg-blue-50"
                         }`}
                       >
                         <div className="flex items-start justify-between">
@@ -326,11 +356,11 @@ export function StateCoveragePanel({
                             <div className="flex items-center gap-2 mb-1">
                               <span
                                 className={`text-xs font-semibold px-2 py-0.5 rounded uppercase ${
-                                  gap.severity === 'high'
-                                    ? 'bg-red-200 text-red-800'
-                                    : gap.severity === 'medium'
-                                    ? 'bg-yellow-200 text-yellow-800'
-                                    : 'bg-blue-200 text-blue-800'
+                                  gap.severity === "high"
+                                    ? "bg-red-200 text-red-800"
+                                    : gap.severity === "medium"
+                                      ? "bg-yellow-200 text-yellow-800"
+                                      : "bg-blue-200 text-blue-800"
                                 }`}
                               >
                                 {gap.severity}
@@ -364,9 +394,12 @@ export function StateCoveragePanel({
                   <Card className="p-8">
                     <div className="text-center text-gray-500">
                       <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-green-500" />
-                      <p className="text-lg font-medium">No coverage gaps found</p>
+                      <p className="text-lg font-medium">
+                        No coverage gaps found
+                      </p>
                       <p className="text-sm mt-1">
-                        Your coverage looks great! Consider adding edge case scenarios.
+                        Your coverage looks great! Consider adding edge case
+                        scenarios.
                       </p>
                     </div>
                   </Card>

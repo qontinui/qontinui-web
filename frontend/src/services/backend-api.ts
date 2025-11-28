@@ -14,7 +14,7 @@
  * - Type-safe interfaces for all operations
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -24,39 +24,39 @@ import type { Workflow } from '@/lib/action-schema/action-types';
  * Execution status enum
  */
 export type ExecutionStatus =
-  | 'pending'
-  | 'starting'
-  | 'running'
-  | 'paused'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
+  | "pending"
+  | "starting"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 /**
  * Execution event types
  */
 export type ExecutionEventType =
-  | 'workflow_start'
-  | 'workflow_complete'
-  | 'workflow_error'
-  | 'action_start'
-  | 'action_complete'
-  | 'action_error'
-  | 'action_skip'
-  | 'breakpoint'
-  | 'variable_update'
-  | 'log';
+  | "workflow_start"
+  | "workflow_complete"
+  | "workflow_error"
+  | "action_start"
+  | "action_complete"
+  | "action_error"
+  | "action_skip"
+  | "breakpoint"
+  | "variable_update"
+  | "log";
 
 /**
  * Action execution state
  */
 export type ActionExecutionStatus =
-  | 'idle'
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'skipped';
+  | "idle"
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
 
 /**
  * Options for workflow execution
@@ -196,7 +196,7 @@ export interface ExecutionEvent {
     message?: string;
 
     /** Log level */
-    level?: 'debug' | 'info' | 'warning' | 'error';
+    level?: "debug" | "info" | "warning" | "error";
 
     /** Execution duration (ms) */
     duration?: number;
@@ -292,8 +292,8 @@ export interface BackendAPIConfig {
  * Default configuration
  */
 const DEFAULT_CONFIG: BackendAPIConfig = {
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
-  wsUrl: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000',
+  baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+  wsUrl: process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000",
   timeout: 30000,
   retries: 3,
   retryDelay: 1000,
@@ -340,8 +340,8 @@ export class BackendAPI {
       start_time: string;
       status: string;
       stream_url: string;
-    }>('/api/execute', {
-      method: 'POST',
+    }>("/api/execute", {
+      method: "POST",
       body: {
         workflow,
         options: options || {},
@@ -367,10 +367,12 @@ export class BackendAPI {
    * @returns Detailed execution status
    * @throws ApiError if execution not found
    */
-  async getExecutionStatus(executionId: string): Promise<ExecutionStatusDetail> {
+  async getExecutionStatus(
+    executionId: string
+  ): Promise<ExecutionStatusDetail> {
     const response = await this.request<any>(
       `/api/execution/${executionId}/status`,
-      { method: 'GET' }
+      { method: "GET" }
     );
 
     return {
@@ -408,7 +410,7 @@ export class BackendAPI {
    */
   async pauseExecution(executionId: string): Promise<void> {
     await this.request(`/api/execution/${executionId}/pause`, {
-      method: 'POST',
+      method: "POST",
     });
   }
 
@@ -422,7 +424,7 @@ export class BackendAPI {
    */
   async resumeExecution(executionId: string): Promise<void> {
     await this.request(`/api/execution/${executionId}/resume`, {
-      method: 'POST',
+      method: "POST",
     });
   }
 
@@ -436,7 +438,7 @@ export class BackendAPI {
    */
   async stepExecution(executionId: string): Promise<void> {
     await this.request(`/api/execution/${executionId}/step`, {
-      method: 'POST',
+      method: "POST",
     });
   }
 
@@ -450,7 +452,7 @@ export class BackendAPI {
    */
   async cancelExecution(executionId: string): Promise<void> {
     await this.request(`/api/execution/${executionId}/cancel`, {
-      method: 'POST',
+      method: "POST",
     });
 
     // Close WebSocket if active
@@ -476,12 +478,12 @@ export class BackendAPI {
   ): Promise<ExecutionRecord[]> {
     const params = new URLSearchParams();
     if (limit) {
-      params.set('limit', limit.toString());
+      params.set("limit", limit.toString());
     }
 
     const response = await this.request<any[]>(
       `/api/workflow/${workflowId}/history?${params}`,
-      { method: 'GET' }
+      { method: "GET" }
     );
 
     return response.map((record) => ({
@@ -510,13 +512,12 @@ export class BackendAPI {
   async getAllExecutions(limit?: number): Promise<ExecutionRecord[]> {
     const params = new URLSearchParams();
     if (limit) {
-      params.set('limit', limit.toString());
+      params.set("limit", limit.toString());
     }
 
-    const response = await this.request<any[]>(
-      `/api/executions?${params}`,
-      { method: 'GET' }
-    );
+    const response = await this.request<any[]>(`/api/executions?${params}`, {
+      method: "GET",
+    });
 
     return response.map((record) => ({
       executionId: record.execution_id,
@@ -587,7 +588,7 @@ export class BackendAPI {
 
         onEvent(event);
       } catch (error) {
-        console.error('[BackendAPI] Error parsing WebSocket message:', error);
+        console.error("[BackendAPI] Error parsing WebSocket message:", error);
         if (onError) {
           onError(error as Error);
         }
@@ -595,9 +596,9 @@ export class BackendAPI {
     };
 
     ws.onerror = (event) => {
-      console.error('[BackendAPI] WebSocket error:', event);
+      console.error("[BackendAPI] WebSocket error:", event);
       if (onError) {
-        onError(new Error('WebSocket error'));
+        onError(new Error("WebSocket error"));
       }
     };
 
@@ -614,7 +615,10 @@ export class BackendAPI {
 
     // Return cleanup function
     return () => {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      if (
+        ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING
+      ) {
         ws.close();
       }
       this.activeWebSockets.delete(executionId);
@@ -642,7 +646,7 @@ export class BackendAPI {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      await this.request('/api/health', { method: 'GET' });
+      await this.request("/api/health", { method: "GET" });
       return true;
     } catch {
       return false;
@@ -659,7 +663,7 @@ export class BackendAPI {
     apiVersion: string;
     pythonVersion: string;
   }> {
-    return await this.request('/api/version', { method: 'GET' });
+    return await this.request("/api/version", { method: "GET" });
   }
 
   // ==========================================================================
@@ -683,12 +687,12 @@ export class BackendAPI {
     for (let attempt = 0; attempt <= (this.config.retries || 0); attempt++) {
       try {
         const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           ...options.headers,
         };
 
         if (this.config.authToken) {
-          headers['Authorization'] = `Bearer ${this.config.authToken}`;
+          headers["Authorization"] = `Bearer ${this.config.authToken}`;
         }
 
         const controller = new AbortController();
@@ -709,7 +713,8 @@ export class BackendAPI {
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           throw this.createApiError(
-            errorData.message || `HTTP ${response.status}: ${response.statusText}`,
+            errorData.message ||
+              `HTTP ${response.status}: ${response.statusText}`,
             errorData.code,
             response.status,
             errorData.details
@@ -717,8 +722,8 @@ export class BackendAPI {
         }
 
         // Handle empty responses
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
           return await response.json();
         } else {
           return {} as T;
@@ -727,9 +732,13 @@ export class BackendAPI {
         lastError = error as Error;
 
         // Don't retry on client errors (4xx)
-        if (error instanceof Error && 'status' in error) {
+        if (error instanceof Error && "status" in error) {
           const apiError = error as ApiError;
-          if (apiError.status && apiError.status >= 400 && apiError.status < 500) {
+          if (
+            apiError.status &&
+            apiError.status >= 400 &&
+            apiError.status < 500
+          ) {
             throw error;
           }
         }
@@ -742,7 +751,7 @@ export class BackendAPI {
       }
     }
 
-    throw lastError || new Error('Request failed after retries');
+    throw lastError || new Error("Request failed after retries");
   }
 
   /**
@@ -782,6 +791,8 @@ export const backendAPI = new BackendAPI();
 /**
  * Create a new backend API instance with custom configuration
  */
-export function createBackendAPI(config: Partial<BackendAPIConfig>): BackendAPI {
+export function createBackendAPI(
+  config: Partial<BackendAPIConfig>
+): BackendAPI {
   return new BackendAPI(config);
 }

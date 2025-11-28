@@ -9,15 +9,19 @@ interface DefineVisualizationProps {
 export function DefineVisualization({
   location,
   actionRegion,
-  stateName = 'New State',
+  stateName = "New State",
 }: DefineVisualizationProps) {
   // Determine region - prefer actionRegion, fall back to location-based region
-  const region = actionRegion || (location ? {
-    x: location[0] - 75,
-    y: location[1] - 75,
-    w: 150,
-    h: 150,
-  } : null);
+  const region =
+    actionRegion ||
+    (location
+      ? {
+          x: location[0] - 75,
+          y: location[1] - 75,
+          w: 150,
+          h: 150,
+        }
+      : null);
 
   if (!region) return null;
 
@@ -43,7 +47,7 @@ export function DefineVisualization({
       const py = cy + Math.sin(angle) * radius;
       points.push(`${px},${py}`);
     }
-    return points.join(' ');
+    return points.join(" ");
   };
 
   return (
@@ -54,10 +58,10 @@ export function DefineVisualization({
       <defs>
         {/* Glow filter */}
         <filter id="defineGlow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+          <feGaussianBlur stdDeviation="4" result="coloredBlur" />
           <feMerge>
-            <feMergeNode in="coloredBlur"/>
-            <feMergeNode in="SourceGraphic"/>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
       </defs>
@@ -201,7 +205,9 @@ export function DefineVisualization({
           fontWeight="600"
           className="truncate"
         >
-          {stateName.length > 20 ? stateName.substring(0, 20) + '...' : stateName}
+          {stateName.length > 20
+            ? stateName.substring(0, 20) + "..."
+            : stateName}
         </text>
       </g>
 

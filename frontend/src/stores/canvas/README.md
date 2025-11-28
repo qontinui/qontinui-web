@@ -36,12 +36,14 @@ canvas/
 **Responsibility**: Manages workflow state and validation
 
 **State**:
+
 - `workflow`: Current workflow data
 - `isDirty`: Whether workflow has unsaved changes
 - `validationResult`: Validation errors/warnings
 - `isValidating`: Validation in progress
 
 **Actions**:
+
 - `setWorkflow()`: Load a workflow
 - `clearWorkflow()`: Clear current workflow
 - `saveWorkflow()`: Save workflow to backend
@@ -53,6 +55,7 @@ canvas/
 **Responsibility**: Manages action CRUD operations
 
 **Actions**:
+
 - `addAction()`: Add a new action
 - `updateAction()`: Update an existing action
 - `deleteAction()`: Delete a single action
@@ -68,10 +71,12 @@ canvas/
 **Responsibility**: Manages connections between actions
 
 **State**:
+
 - `isConnecting`: Whether user is currently dragging a connection
 - `connectingFrom`: Source action/output being connected
 
 **Actions**:
+
 - `addConnection()`: Create a new connection
 - `deleteConnection()`: Remove a connection
 - `deleteConnectionsForAction()`: Remove all connections for an action
@@ -85,10 +90,12 @@ canvas/
 **Responsibility**: Manages node and edge selection
 
 **State**:
+
 - `selectedNodes`: Array of selected node IDs
 - `selectedEdges`: Array of selected edge IDs
 
 **Actions**:
+
 - `selectNode()`: Select a single node
 - `selectNodes()`: Select multiple nodes
 - `selectEdge()`: Select an edge
@@ -101,10 +108,12 @@ canvas/
 **Responsibility**: Manages copy/paste/cut/duplicate operations
 
 **State**:
+
 - `clipboardNodes`: Copied actions
 - `clipboardConnections`: Copied connections
 
 **Actions**:
+
 - `copy()`: Copy selected nodes to clipboard
 - `paste()`: Paste from clipboard
 - `cut()`: Cut selected nodes (copy + delete)
@@ -115,11 +124,13 @@ canvas/
 **Responsibility**: Manages undo/redo functionality
 
 **State**:
+
 - `history`: Stack of workflow snapshots
 - `historyIndex`: Current position in history
 - `maxHistorySize`: Maximum history entries
 
 **Actions**:
+
 - `undo()`: Undo last change
 - `redo()`: Redo next change
 - `canUndo()`: Check if undo is available
@@ -132,11 +143,13 @@ canvas/
 **Responsibility**: Manages viewport state, pan, and zoom
 
 **State**:
+
 - `viewport`: { x, y, zoom }
 - `isDragging`: Whether nodes are being dragged
 - `isPanning`: Whether viewport is being panned
 
 **Actions**:
+
 - `setViewport()`: Set viewport position/zoom
 - `fitView()`: Fit all actions in view
 - `zoomIn()`: Zoom in
@@ -150,12 +163,14 @@ canvas/
 **Responsibility**: Manages UI preferences
 
 **State**:
+
 - `showMinimap`: Minimap visibility
 - `showGrid`: Grid visibility
 - `snapToGrid`: Snap to grid enabled
 - `gridSize`: Grid size in pixels
 
 **Actions**:
+
 - `toggleMinimap()`: Toggle minimap
 - `toggleGrid()`: Toggle grid
 - `toggleSnapToGrid()`: Toggle snap to grid
@@ -166,7 +181,7 @@ canvas/
 ### Basic Usage
 
 ```typescript
-import { useCanvasStore } from '@/stores/canvas';
+import { useCanvasStore } from "@/stores/canvas";
 
 function MyComponent() {
   const workflow = useCanvasStore((state) => state.workflow);
@@ -181,7 +196,7 @@ function MyComponent() {
 For better performance, use the provided selector hooks:
 
 ```typescript
-import { useWorkflow, useSelectedNodes, useCanUndo } from '@/stores/canvas';
+import { useWorkflow, useSelectedNodes, useCanUndo } from "@/stores/canvas";
 
 function MyComponent() {
   const workflow = useWorkflow();
@@ -195,15 +210,15 @@ function MyComponent() {
 ### Accessing Actions
 
 ```typescript
-import { useCanvasStore } from '@/stores/canvas';
+import { useCanvasStore } from "@/stores/canvas";
 
 function MyComponent() {
   const { addAction, deleteAction, selectNode } = useCanvasStore();
 
   const handleAddAction = () => {
     const newAction = {
-      id: 'action-123',
-      type: 'http-request',
+      id: "action-123",
+      type: "http-request",
       position: [100, 100],
       // ... other properties
     };
@@ -238,14 +253,16 @@ function WorkflowEditor() {
 Each slice can be tested independently:
 
 ```typescript
-import { createWorkflowSlice } from './workflow-slice';
-import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
+import { createWorkflowSlice } from "./workflow-slice";
+import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
 
-describe('WorkflowSlice', () => {
-  it('should set workflow', () => {
+describe("WorkflowSlice", () => {
+  it("should set workflow", () => {
     const store = create(immer(createWorkflowSlice));
-    const workflow = { /* ... */ };
+    const workflow = {
+      /* ... */
+    };
 
     store.getState().setWorkflow(workflow);
 
@@ -260,15 +277,17 @@ describe('WorkflowSlice', () => {
 If you're migrating from the old monolithic store:
 
 ### Before (Old)
+
 ```typescript
-import { useCanvasStore } from '@/stores/canvas-store';
+import { useCanvasStore } from "@/stores/canvas-store";
 ```
 
 ### After (New)
+
 ```typescript
-import { useCanvasStore } from '@/stores/canvas';
+import { useCanvasStore } from "@/stores/canvas";
 // or
-import { useWorkflow, useSelectedNodes } from '@/stores/canvas';
+import { useWorkflow, useSelectedNodes } from "@/stores/canvas";
 ```
 
 The API is identical, so no code changes are needed beyond the import path.

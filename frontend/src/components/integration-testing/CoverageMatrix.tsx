@@ -1,39 +1,44 @@
 // components/integration-testing/CoverageMatrix.tsx
 
-'use client';
+"use client";
 
-import { formatDistanceToNow } from 'date-fns';
-import type { StateCoverageMetrics } from '@/types/integration-testing';
+import { formatDistanceToNow } from "date-fns";
+import type { StateCoverageMetrics } from "@/types/integration-testing";
 
 interface CoverageMatrixProps {
   stateMetrics: Record<string, StateCoverageMetrics>;
   onStateClick?: (stateName: string) => void;
 }
 
-export function CoverageMatrix({ stateMetrics, onStateClick }: CoverageMatrixProps) {
-  const states = Object.values(stateMetrics).sort((a, b) =>
-    b.coverage_percentage - a.coverage_percentage
+export function CoverageMatrix({
+  stateMetrics,
+  onStateClick,
+}: CoverageMatrixProps) {
+  const states = Object.values(stateMetrics).sort(
+    (a, b) => b.coverage_percentage - a.coverage_percentage
   );
 
   const getCoverageColor = (percentage: number): string => {
-    if (percentage === 0) return 'bg-red-100 text-red-800';
-    if (percentage < 50) return 'bg-yellow-100 text-yellow-800';
-    if (percentage < 100) return 'bg-blue-100 text-blue-800';
-    return 'bg-green-100 text-green-800';
+    if (percentage === 0) return "bg-red-100 text-red-800";
+    if (percentage < 50) return "bg-yellow-100 text-yellow-800";
+    if (percentage < 100) return "bg-blue-100 text-blue-800";
+    return "bg-green-100 text-green-800";
   };
 
   const getCoverageBorderColor = (percentage: number): string => {
-    if (percentage === 0) return 'border-red-300';
-    if (percentage < 50) return 'border-yellow-300';
-    if (percentage < 100) return 'border-blue-300';
-    return 'border-green-300';
+    if (percentage === 0) return "border-red-300";
+    if (percentage < 50) return "border-yellow-300";
+    if (percentage < 100) return "border-blue-300";
+    return "border-green-300";
   };
 
   if (states.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500">
         <p className="text-lg font-medium">No states found</p>
-        <p className="text-sm mt-1">Run a process execution to generate coverage data</p>
+        <p className="text-sm mt-1">
+          Run a process execution to generate coverage data
+        </p>
       </div>
     );
   }
@@ -72,7 +77,7 @@ export function CoverageMatrix({ stateMetrics, onStateClick }: CoverageMatrixPro
               key={state.state_name}
               className={`
                 border-b border-gray-200 hover:bg-gray-50 transition-colors
-                ${onStateClick ? 'cursor-pointer' : ''}
+                ${onStateClick ? "cursor-pointer" : ""}
               `}
               onClick={() => onStateClick?.(state.state_name)}
             >
@@ -140,7 +145,9 @@ export function CoverageMatrix({ stateMetrics, onStateClick }: CoverageMatrixPro
               <td className="px-4 py-3 text-sm text-gray-600">
                 {state.last_tested ? (
                   <span title={new Date(state.last_tested).toLocaleString()}>
-                    {formatDistanceToNow(new Date(state.last_tested), { addSuffix: true })}
+                    {formatDistanceToNow(new Date(state.last_tested), {
+                      addSuffix: true,
+                    })}
                   </span>
                 ) : (
                   <span className="text-gray-400">Never</span>
@@ -155,24 +162,31 @@ export function CoverageMatrix({ stateMetrics, onStateClick }: CoverageMatrixPro
       <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
           <div>
-            <div className="text-2xl font-bold text-gray-900">{states.length}</div>
+            <div className="text-2xl font-bold text-gray-900">
+              {states.length}
+            </div>
             <div className="text-sm text-gray-600">Total States</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-green-600">
-              {states.filter(s => s.coverage_percentage === 100).length}
+              {states.filter((s) => s.coverage_percentage === 100).length}
             </div>
             <div className="text-sm text-gray-600">Fully Covered</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-yellow-600">
-              {states.filter(s => s.coverage_percentage > 0 && s.coverage_percentage < 100).length}
+              {
+                states.filter(
+                  (s) =>
+                    s.coverage_percentage > 0 && s.coverage_percentage < 100
+                ).length
+              }
             </div>
             <div className="text-sm text-gray-600">Partial</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-red-600">
-              {states.filter(s => s.coverage_percentage === 0).length}
+              {states.filter((s) => s.coverage_percentage === 0).length}
             </div>
             <div className="text-sm text-gray-600">Uncovered</div>
           </div>

@@ -11,27 +11,27 @@ The Canvas store has been refactored into 8 focused slices, each with a single r
 ### Step 1: Update Imports
 
 **Before:**
+
 ```typescript
-import { useCanvasStore } from '@/stores/canvas-store';
+import { useCanvasStore } from "@/stores/canvas-store";
 ```
 
 **After (Option 1 - Backward Compatible):**
+
 ```typescript
-import { useCanvasStore } from '@/stores/canvas-store'; // Still works via re-export
+import { useCanvasStore } from "@/stores/canvas-store"; // Still works via re-export
 ```
 
 **After (Option 2 - Recommended):**
+
 ```typescript
-import { useCanvasStore } from '@/stores/canvas';
+import { useCanvasStore } from "@/stores/canvas";
 ```
 
 **After (Option 3 - Best Performance):**
+
 ```typescript
-import {
-  useWorkflow,
-  useSelectedNodes,
-  useCanUndo
-} from '@/stores/canvas';
+import { useWorkflow, useSelectedNodes, useCanUndo } from "@/stores/canvas";
 ```
 
 ### Step 2: Use Selector Hooks (Optional but Recommended)
@@ -39,6 +39,7 @@ import {
 The new architecture provides optimized selector hooks that prevent unnecessary re-renders.
 
 **Before:**
+
 ```typescript
 function MyComponent() {
   const workflow = useCanvasStore((state) => state.workflow);
@@ -48,6 +49,7 @@ function MyComponent() {
 ```
 
 **After:**
+
 ```typescript
 function MyComponent() {
   const workflow = useWorkflow();
@@ -110,75 +112,83 @@ const {
 ## Available Selector Hooks
 
 ### Workflow Selectors
+
 ```typescript
 import {
-  useWorkflow,           // () => Workflow | null
-  useIsDirty,           // () => boolean
-  useValidationResult,  // () => ValidationResult | null
-} from '@/stores/canvas';
+  useWorkflow, // () => Workflow | null
+  useIsDirty, // () => boolean
+  useValidationResult, // () => ValidationResult | null
+} from "@/stores/canvas";
 ```
 
 ### Action Selectors
+
 ```typescript
 import {
-  useActions,           // () => Action[]
-  useActionById,        // (id: string) => Action | undefined
-} from '@/stores/canvas';
+  useActions, // () => Action[]
+  useActionById, // (id: string) => Action | undefined
+} from "@/stores/canvas";
 ```
 
 ### Connection Selectors
+
 ```typescript
 import {
-  useConnections,       // () => Connections
-  useIsConnecting,      // () => boolean
-  useConnectingFrom,    // () => { actionId, outputType, outputIndex } | null
-} from '@/stores/canvas';
+  useConnections, // () => Connections
+  useIsConnecting, // () => boolean
+  useConnectingFrom, // () => { actionId, outputType, outputIndex } | null
+} from "@/stores/canvas";
 ```
 
 ### Selection Selectors
+
 ```typescript
 import {
-  useSelectedNodes,     // () => string[]
-  useSelectedEdges,     // () => string[]
-  useHasSelection,      // () => boolean
-} from '@/stores/canvas';
+  useSelectedNodes, // () => string[]
+  useSelectedEdges, // () => string[]
+  useHasSelection, // () => boolean
+} from "@/stores/canvas";
 ```
 
 ### Clipboard Selectors
+
 ```typescript
 import {
-  useCanPaste,          // () => boolean
-} from '@/stores/canvas';
+  useCanPaste, // () => boolean
+} from "@/stores/canvas";
 ```
 
 ### History Selectors
+
 ```typescript
 import {
-  useCanUndo,           // () => boolean
-  useCanRedo,           // () => boolean
-  useHistoryIndex,      // () => number
-  useHistoryLength,     // () => number
-} from '@/stores/canvas';
+  useCanUndo, // () => boolean
+  useCanRedo, // () => boolean
+  useHistoryIndex, // () => number
+  useHistoryLength, // () => number
+} from "@/stores/canvas";
 ```
 
 ### Viewport Selectors
+
 ```typescript
 import {
-  useViewport,          // () => Viewport
-  useZoom,              // () => number
-  useIsDragging,        // () => boolean
-  useIsPanning,         // () => boolean
-} from '@/stores/canvas';
+  useViewport, // () => Viewport
+  useZoom, // () => number
+  useIsDragging, // () => boolean
+  useIsPanning, // () => boolean
+} from "@/stores/canvas";
 ```
 
 ### Preferences Selectors
+
 ```typescript
 import {
-  useShowMinimap,       // () => boolean
-  useShowGrid,          // () => boolean
-  useSnapToGrid,        // () => boolean
-  useGridSize,          // () => number
-} from '@/stores/canvas';
+  useShowMinimap, // () => boolean
+  useShowGrid, // () => boolean
+  useSnapToGrid, // () => boolean
+  useGridSize, // () => number
+} from "@/stores/canvas";
 ```
 
 ## Migration Examples
@@ -186,6 +196,7 @@ import {
 ### Example 1: Simple Component
 
 **Before:**
+
 ```typescript
 import { useCanvasStore } from '@/stores/canvas-store';
 
@@ -204,6 +215,7 @@ function ActionList() {
 ```
 
 **After (Optimized):**
+
 ```typescript
 import { useActions } from '@/stores/canvas';
 import { useCanvasStore } from '@/stores/canvas';
@@ -225,6 +237,7 @@ function ActionList() {
 ### Example 2: Toolbar Component
 
 **Before:**
+
 ```typescript
 import { useCanvasStore } from '@/stores/canvas-store';
 
@@ -244,6 +257,7 @@ function Toolbar() {
 ```
 
 **After (Optimized):**
+
 ```typescript
 import { useCanUndo, useCanRedo } from '@/stores/canvas';
 import { useCanvasStore } from '@/stores/canvas';
@@ -265,6 +279,7 @@ function Toolbar() {
 ### Example 3: Selection Panel
 
 **Before:**
+
 ```typescript
 import { useCanvasStore } from '@/stores/canvas-store';
 
@@ -292,6 +307,7 @@ function SelectionPanel() {
 ```
 
 **After (Optimized):**
+
 ```typescript
 import { useSelectedNodes, useActions } from '@/stores/canvas';
 import { useCanvasStore } from '@/stores/canvas';
@@ -324,11 +340,13 @@ function SelectionPanel() {
 ## Performance Benefits
 
 ### Before (Monolithic Store)
+
 - Component re-renders on ANY store change
 - Hard to track which state is used where
 - Difficult to optimize
 
 ### After (Modular Store)
+
 - Components only re-render when their specific selectors change
 - Clear separation of concerns
 - Easy to optimize individual slices
@@ -336,20 +354,22 @@ function SelectionPanel() {
 ## Testing
 
 ### Before
+
 ```typescript
-import { useCanvasStore } from '@/stores/canvas-store';
+import { useCanvasStore } from "@/stores/canvas-store";
 
 // Had to mock entire store
 ```
 
 ### After
-```typescript
-import { createActionSlice } from '@/stores/canvas/action-slice';
-import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
 
-describe('ActionSlice', () => {
-  it('should add action', () => {
+```typescript
+import { createActionSlice } from "@/stores/canvas/action-slice";
+import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
+
+describe("ActionSlice", () => {
+  it("should add action", () => {
     const store = create(immer(createActionSlice));
     // Test only the action slice
   });
@@ -363,8 +383,9 @@ describe('ActionSlice', () => {
 **Error:** `Module not found: Can't resolve '@/stores/canvas'`
 
 **Solution:** Make sure you're using the correct path. The old path still works:
+
 ```typescript
-import { useCanvasStore } from '@/stores/canvas-store'; // Works
+import { useCanvasStore } from "@/stores/canvas-store"; // Works
 ```
 
 ### Issue 2: Type Errors
@@ -372,8 +393,9 @@ import { useCanvasStore } from '@/stores/canvas-store'; // Works
 **Error:** Type mismatch after migration
 
 **Solution:** Import types from the new location:
+
 ```typescript
-import type { CanvasStore, Workflow, Action } from '@/stores/canvas';
+import type { CanvasStore, Workflow, Action } from "@/stores/canvas";
 ```
 
 ### Issue 3: Selector Not Found
@@ -381,14 +403,16 @@ import type { CanvasStore, Workflow, Action } from '@/stores/canvas';
 **Error:** `useWorkflow` is not exported
 
 **Solution:** Import from the main index:
+
 ```typescript
-import { useWorkflow } from '@/stores/canvas'; // Correct
+import { useWorkflow } from "@/stores/canvas"; // Correct
 // Not from individual slices
 ```
 
 ## Rollback Plan
 
 If you need to rollback, the old monolithic store is preserved at:
+
 ```
 /mnt/c/qontinui/qontinui-web/frontend/src/stores/canvas-store.ts.backup
 ```

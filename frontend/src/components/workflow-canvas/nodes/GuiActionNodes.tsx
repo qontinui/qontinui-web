@@ -8,9 +8,9 @@
  * - Screenshot actions: SCREENSHOT
  */
 
-import React from 'react';
-import { NodeProps } from '@xyflow/react';
-import { BaseNode, BaseNodeData, CompactNode } from './BaseNode';
+import React from "react";
+import { NodeProps } from "@xyflow/react";
+import { BaseNode, BaseNodeData, CompactNode } from "./BaseNode";
 import type {
   ClickActionConfig,
   DoubleClickActionConfig,
@@ -18,19 +18,19 @@ import type {
   DragActionConfig,
   ScrollActionConfig,
   MouseMoveActionConfig,
-} from '@/lib/action-schema/configs/mouse-actions';
+} from "@/lib/action-schema/configs/mouse-actions";
 import type {
   TypeActionConfig,
   KeyPressActionConfig,
   HotkeyActionConfig,
-} from '@/lib/action-schema/configs/keyboard-actions';
+} from "@/lib/action-schema/configs/keyboard-actions";
 import type {
   FindActionConfig,
   VanishActionConfig,
   ExistsActionConfig,
   WaitActionConfig,
-} from '@/lib/action-schema/configs/find-actions';
-import type { ScreenshotActionConfig } from '@/lib/action-schema/configs/state-actions';
+} from "@/lib/action-schema/configs/find-actions";
+import type { ScreenshotActionConfig } from "@/lib/action-schema/configs/state-actions";
 
 // =============================================================================
 // Mouse Action Nodes
@@ -145,7 +145,7 @@ export function ScrollNode(props: NodeProps<BaseNodeData>) {
  */
 export function TypeNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as TypeActionConfig;
-  const text = config.text || '';
+  const text = config.text || "";
   const preview = text.length > 20 ? `${text.substring(0, 20)}...` : text;
 
   return (

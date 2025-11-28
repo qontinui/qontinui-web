@@ -1,35 +1,35 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
+} from "@/components/ui/card";
+import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   UserPlus,
   UserMinus,
   User as UserIcon,
   Calendar,
   Mail,
-} from 'lucide-react';
-import { Deficiency } from '@/types/deficiency';
-import { User } from '@/types/auth-types';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { Deficiency } from "@/types/deficiency";
+import { User } from "@/types/auth-types";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface DeficiencyAssignmentProps {
   deficiency: Deficiency;
@@ -62,7 +62,9 @@ export function DeficiencyAssignment({
   // Find assigned user from available users
   useEffect(() => {
     if (deficiency.assigned_to_user_id && availableUsers.length > 0) {
-      const user = availableUsers.find((u) => u.id === deficiency.assigned_to_user_id);
+      const user = availableUsers.find(
+        (u) => u.id === deficiency.assigned_to_user_id
+      );
       setAssignedUser(user || null);
     } else {
       setAssignedUser(null);
@@ -76,11 +78,13 @@ export function DeficiencyAssignment({
     try {
       await onAssignmentChange(selectedUserId);
       const user = availableUsers.find((u) => u.id === selectedUserId);
-      toast.success(`Assigned to ${user?.full_name || user?.username || 'user'}`);
+      toast.success(
+        `Assigned to ${user?.full_name || user?.username || "user"}`
+      );
       setSelectedUserId(null);
     } catch (error) {
-      toast.error('Failed to assign deficiency');
-      console.error('Assignment error:', error);
+      toast.error("Failed to assign deficiency");
+      console.error("Assignment error:", error);
     } finally {
       setIsAssigning(false);
     }
@@ -92,17 +96,17 @@ export function DeficiencyAssignment({
     setIsAssigning(true);
     try {
       await onAssignmentChange(null);
-      toast.success('Deficiency unassigned');
+      toast.success("Deficiency unassigned");
     } catch (error) {
-      toast.error('Failed to unassign deficiency');
-      console.error('Unassignment error:', error);
+      toast.error("Failed to unassign deficiency");
+      console.error("Unassignment error:", error);
     } finally {
       setIsAssigning(false);
     }
   };
 
   return (
-    <Card className={cn('w-full', className)}>
+    <Card className={cn("w-full", className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <UserIcon className="h-5 w-5" />
@@ -134,7 +138,8 @@ export function DeficiencyAssignment({
                 {deficiency.assigned_at && (
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                     <Calendar className="h-3 w-3" />
-                    Assigned {new Date(deficiency.assigned_at).toLocaleDateString()}
+                    Assigned{" "}
+                    {new Date(deficiency.assigned_at).toLocaleDateString()}
                   </div>
                 )}
                 {assignedUser.is_superuser && (
@@ -153,7 +158,7 @@ export function DeficiencyAssignment({
                 className="w-full"
               >
                 <UserMinus className="h-4 w-4 mr-2" />
-                {isAssigning ? 'Unassigning...' : 'Unassign'}
+                {isAssigning ? "Unassigning..." : "Unassign"}
               </Button>
             )}
           </div>
@@ -169,11 +174,11 @@ export function DeficiencyAssignment({
             <Separator />
             <div className="space-y-3">
               <label className="text-sm font-medium">
-                {assignedUser ? 'Reassign To' : 'Assign To'}
+                {assignedUser ? "Reassign To" : "Assign To"}
               </label>
               <div className="flex gap-2">
                 <Select
-                  value={selectedUserId || ''}
+                  value={selectedUserId || ""}
                   onValueChange={setSelectedUserId}
                   disabled={isAssigning}
                 >
@@ -182,14 +187,19 @@ export function DeficiencyAssignment({
                   </SelectTrigger>
                   <SelectContent>
                     {availableUsers
-                      .filter((user) => user.id !== deficiency.assigned_to_user_id)
+                      .filter(
+                        (user) => user.id !== deficiency.assigned_to_user_id
+                      )
                       .map((user) => (
                         <SelectItem key={user.id} value={user.id}>
                           <div className="flex items-center gap-2">
                             <UserIcon className="h-4 w-4" />
                             <span>{user.full_name || user.username}</span>
                             {user.is_superuser && (
-                              <Badge variant="secondary" className="text-xs ml-1">
+                              <Badge
+                                variant="secondary"
+                                className="text-xs ml-1"
+                              >
                                 Admin
                               </Badge>
                             )}
@@ -204,7 +214,7 @@ export function DeficiencyAssignment({
                   size="default"
                 >
                   {isAssigning ? (
-                    'Assigning...'
+                    "Assigning..."
                   ) : (
                     <>
                       <UserPlus className="h-4 w-4 mr-2" />

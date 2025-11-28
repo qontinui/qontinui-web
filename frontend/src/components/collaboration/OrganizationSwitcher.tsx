@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import * as React from 'react';
+import * as React from "react";
 import {
   Building2,
   Check,
@@ -9,9 +9,9 @@ import {
   Users,
   Loader2,
   Settings,
-} from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,16 +19,16 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Avatar } from '@/components/ui/avatar';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dropdown-menu";
+import { Avatar } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 
 export interface Organization {
   id: string;
   name: string;
   avatar_url?: string;
   member_count: number;
-  role: 'owner' | 'admin' | 'member' | 'viewer';
+  role: "owner" | "admin" | "member" | "viewer";
 }
 
 interface OrganizationSwitcherProps {
@@ -53,9 +53,9 @@ export function OrganizationSwitcher({
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
@@ -68,7 +68,7 @@ export function OrganizationSwitcher({
           role="combobox"
           aria-expanded={open}
           aria-label="Select organization"
-          className={cn('w-full justify-between', className)}
+          className={cn("w-full justify-between", className)}
           disabled={loading}
         >
           {loading ? (
@@ -80,9 +80,7 @@ export function OrganizationSwitcher({
             <div className="flex items-center gap-2 min-w-0">
               <Avatar
                 src={currentOrganization.avatar_url}
-                fallback={
-                  <Building2 className="h-4 w-4" />
-                }
+                fallback={<Building2 className="h-4 w-4" />}
                 className="h-6 w-6"
               />
               <span className="truncate">{currentOrganization.name}</span>
@@ -122,8 +120,8 @@ export function OrganizationSwitcher({
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Users className="h-3 w-3" />
                       <span>
-                        {org.member_count}{' '}
-                        {org.member_count === 1 ? 'member' : 'members'}
+                        {org.member_count}{" "}
+                        {org.member_count === 1 ? "member" : "members"}
                       </span>
                     </div>
                   </div>
@@ -138,7 +136,7 @@ export function OrganizationSwitcher({
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {
-            router.push('/organizations');
+            router.push("/organizations");
             setOpen(false);
           }}
           className="cursor-pointer"

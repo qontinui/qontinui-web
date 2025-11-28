@@ -3,6 +3,7 @@
 This document provides practical examples of using the refactored collaboration contexts.
 
 ## Table of Contents
+
 1. [Basic Setup](#basic-setup)
 2. [Using Individual Hooks](#using-individual-hooks)
 3. [Common Patterns](#common-patterns)
@@ -16,11 +17,11 @@ This document provides practical examples of using the refactored collaboration 
 ### Option 1: Combined Provider (Recommended)
 
 ```tsx
-import { CollaborationProvider } from '@/contexts/collaboration';
+import { CollaborationProvider } from "@/contexts/collaboration";
 
 function App() {
-  const projectId = 'project-123';
-  const workflowId = 'workflow-456'; // optional
+  const projectId = "project-123";
+  const workflowId = "workflow-456"; // optional
 
   return (
     <CollaborationProvider projectId={projectId} workflowId={workflowId}>
@@ -39,12 +40,12 @@ import {
   OrganizationProvider,
   PermissionsProvider,
   CommentsProvider,
-  ActivityProvider
-} from '@/contexts/collaboration';
+  ActivityProvider,
+} from "@/contexts/collaboration";
 
 function App() {
-  const projectId = 'project-123';
-  const workflowId = 'workflow-456';
+  const projectId = "project-123";
+  const workflowId = "workflow-456";
 
   return (
     <OrganizationProvider>
@@ -67,7 +68,7 @@ function App() {
 ### Organization Management
 
 ```tsx
-import { useOrganization } from '@/contexts/collaboration';
+import { useOrganization } from "@/contexts/collaboration";
 
 function OrganizationSelector() {
   const { currentOrg, organizations, switchOrganization } = useOrganization();
@@ -90,7 +91,7 @@ function OrganizationSelector() {
 ### Permission Checking
 
 ```tsx
-import { usePermissions } from '@/contexts/collaboration';
+import { usePermissions } from "@/contexts/collaboration";
 
 function ProtectedButton() {
   const { canEdit, canAdmin, hasPermission } = usePermissions();
@@ -103,7 +104,7 @@ function ProtectedButton() {
     <div>
       <button>Edit</button>
       {canAdmin && <button>Admin Settings</button>}
-      {hasPermission('delete') && <button>Delete</button>}
+      {hasPermission("delete") && <button>Delete</button>}
     </div>
   );
 }
@@ -112,7 +113,7 @@ function ProtectedButton() {
 ### User Presence
 
 ```tsx
-import { usePresence } from '@/contexts/collaboration';
+import { usePresence } from "@/contexts/collaboration";
 
 function ActiveUsersList() {
   const { activeUsers } = usePresence();
@@ -137,17 +138,18 @@ function ActiveUsersList() {
 ### Edit Locks
 
 ```tsx
-import { useEditLock } from '@/contexts/collaboration';
+import { useEditLock } from "@/contexts/collaboration";
 
 function WorkflowEditor({ workflowId }) {
-  const { currentLock, acquireEditLock, releaseEditLock, hasLock } = useEditLock();
+  const { currentLock, acquireEditLock, releaseEditLock, hasLock } =
+    useEditLock();
 
   const handleStartEdit = async () => {
     try {
-      await acquireEditLock('workflow', workflowId);
+      await acquireEditLock("workflow", workflowId);
       // Lock acquired, enable editing
     } catch (error) {
-      alert('Cannot acquire lock. Someone else is editing.');
+      alert("Cannot acquire lock. Someone else is editing.");
     }
   };
 
@@ -155,7 +157,7 @@ function WorkflowEditor({ workflowId }) {
     await releaseEditLock();
   };
 
-  const isEditing = hasLock('workflow', workflowId);
+  const isEditing = hasLock("workflow", workflowId);
 
   return (
     <div>
@@ -168,9 +170,7 @@ function WorkflowEditor({ workflowId }) {
         </>
       )}
       {currentLock && !isEditing && (
-        <div className="locked-notice">
-          Locked by {currentLock.user_name}
-        </div>
+        <div className="locked-notice">Locked by {currentLock.user_name}</div>
       )}
     </div>
   );
@@ -180,18 +180,19 @@ function WorkflowEditor({ workflowId }) {
 ### Comments
 
 ```tsx
-import { useComments } from '@/contexts/collaboration';
+import { useComments } from "@/contexts/collaboration";
 
 function CommentSection() {
-  const { comments, addComment, deleteComment, refreshComments } = useComments();
-  const [newComment, setNewComment] = useState('');
+  const { comments, addComment, deleteComment, refreshComments } =
+    useComments();
+  const [newComment, setNewComment] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!newComment.trim()) return;
 
     await addComment(newComment);
-    setNewComment('');
+    setNewComment("");
   };
 
   return (
@@ -226,7 +227,7 @@ function CommentSection() {
 ### Activity Feed
 
 ```tsx
-import { useActivity } from '@/contexts/collaboration';
+import { useActivity } from "@/contexts/collaboration";
 
 function ActivityFeed() {
   const { activityFeed, refreshActivity } = useActivity();
@@ -256,24 +257,22 @@ function ActivityFeed() {
 ### WebSocket Status
 
 ```tsx
-import { useWebSocket } from '@/contexts/collaboration';
+import { useWebSocket } from "@/contexts/collaboration";
 
 function ConnectionStatus() {
   const { isConnected, connect, disconnect } = useWebSocket();
 
   return (
     <div className="connection-status">
-      <div className={`indicator ${isConnected ? 'connected' : 'disconnected'}`}>
-        {isConnected ? '● Connected' : '○ Disconnected'}
+      <div
+        className={`indicator ${isConnected ? "connected" : "disconnected"}`}
+      >
+        {isConnected ? "● Connected" : "○ Disconnected"}
       </div>
 
-      {!isConnected && (
-        <button onClick={connect}>Reconnect</button>
-      )}
+      {!isConnected && <button onClick={connect}>Reconnect</button>}
 
-      {isConnected && (
-        <button onClick={disconnect}>Disconnect</button>
-      )}
+      {isConnected && <button onClick={disconnect}>Disconnect</button>}
     </div>
   );
 }
@@ -286,7 +285,7 @@ function ConnectionStatus() {
 ### Pattern 1: Permission-Based Rendering
 
 ```tsx
-import { usePermissions } from '@/contexts/collaboration';
+import { usePermissions } from "@/contexts/collaboration";
 
 function ConditionalFeatures() {
   const { canView, canComment, canEdit, canAdmin } = usePermissions();
@@ -305,7 +304,11 @@ function ConditionalFeatures() {
 ### Pattern 2: Combining Multiple Contexts
 
 ```tsx
-import { usePermissions, useEditLock, useComments } from '@/contexts/collaboration';
+import {
+  usePermissions,
+  useEditLock,
+  useComments,
+} from "@/contexts/collaboration";
 
 function SmartEditor({ workflowId }) {
   const { canEdit } = usePermissions();
@@ -314,22 +317,20 @@ function SmartEditor({ workflowId }) {
 
   const handleEdit = async () => {
     if (!canEdit) {
-      await addComment('I need edit access to this workflow');
+      await addComment("I need edit access to this workflow");
       return;
     }
 
     if (currentLock) {
-      alert('Already being edited by someone else');
+      alert("Already being edited by someone else");
       return;
     }
 
-    await acquireEditLock('workflow', workflowId);
+    await acquireEditLock("workflow", workflowId);
   };
 
   return (
-    <button onClick={handleEdit}>
-      {canEdit ? 'Edit' : 'Request Access'}
-    </button>
+    <button onClick={handleEdit}>{canEdit ? "Edit" : "Request Access"}</button>
   );
 }
 ```
@@ -337,16 +338,21 @@ function SmartEditor({ workflowId }) {
 ### Pattern 3: Real-time Collaboration Indicator
 
 ```tsx
-import { usePresence, useEditLock, useWebSocket } from '@/contexts/collaboration';
+import {
+  usePresence,
+  useEditLock,
+  useWebSocket,
+} from "@/contexts/collaboration";
 
 function CollaborationIndicator({ workflowId }) {
   const { activeUsers } = usePresence();
   const { currentLock } = useEditLock();
   const { isConnected } = useWebSocket();
 
-  const viewers = activeUsers.filter(u =>
-    u.current_resource_type === 'workflow' &&
-    u.current_resource_id === workflowId
+  const viewers = activeUsers.filter(
+    (u) =>
+      u.current_resource_type === "workflow" &&
+      u.current_resource_id === workflowId
   );
 
   return (
@@ -354,7 +360,7 @@ function CollaborationIndicator({ workflowId }) {
       {!isConnected && <OfflineIcon />}
 
       <div className="viewers">
-        {viewers.map(user => (
+        {viewers.map((user) => (
           <Avatar key={user.id} user={user} />
         ))}
       </div>
@@ -381,8 +387,8 @@ import {
   useOrganization,
   usePermissions,
   useActivity,
-  useWebSocket
-} from '@/contexts/collaboration';
+  useWebSocket,
+} from "@/contexts/collaboration";
 
 function WorkflowDashboard() {
   const { currentOrg } = useOrganization();
@@ -433,19 +439,20 @@ import {
   usePermissions,
   usePresence,
   useEditLock,
-  useComments
-} from '@/contexts/collaboration';
+  useComments,
+} from "@/contexts/collaboration";
 
 function CanvasEditor({ workflowId }) {
   const { canEdit } = usePermissions();
   const { activeUsers } = usePresence();
-  const { currentLock, acquireEditLock, releaseEditLock, hasLock } = useEditLock();
+  const { currentLock, acquireEditLock, releaseEditLock, hasLock } =
+    useEditLock();
   const { comments, addComment } = useComments();
 
   const [selectedPosition, setSelectedPosition] = useState(null);
 
   const handleCanvasClick = (position) => {
-    if (!hasLock('workflow', workflowId)) {
+    if (!hasLock("workflow", workflowId)) {
       setSelectedPosition(position);
     }
   };
@@ -455,7 +462,7 @@ function CanvasEditor({ workflowId }) {
     setSelectedPosition(null);
   };
 
-  const isEditing = hasLock('workflow', workflowId);
+  const isEditing = hasLock("workflow", workflowId);
   const isLocked = currentLock && !isEditing;
 
   return (
@@ -463,27 +470,20 @@ function CanvasEditor({ workflowId }) {
       {/* Toolbar */}
       <Toolbar>
         {canEdit && !isEditing && (
-          <button onClick={() => acquireEditLock('workflow', workflowId)}>
+          <button onClick={() => acquireEditLock("workflow", workflowId)}>
             Start Editing
           </button>
         )}
-        {isEditing && (
-          <button onClick={releaseEditLock}>
-            Stop Editing
-          </button>
-        )}
+        {isEditing && <button onClick={releaseEditLock}>Stop Editing</button>}
       </Toolbar>
 
       {/* Canvas */}
-      <Canvas
-        onClick={handleCanvasClick}
-        readOnly={!isEditing}
-      >
+      <Canvas onClick={handleCanvasClick} readOnly={!isEditing}>
         {/* Render workflow nodes */}
         <WorkflowNodes disabled={!isEditing} />
 
         {/* Render comments as annotations */}
-        {comments.map(comment => (
+        {comments.map((comment) => (
           <CommentMarker
             key={comment.id}
             comment={comment}
@@ -492,7 +492,7 @@ function CanvasEditor({ workflowId }) {
         ))}
 
         {/* Show cursors of active users */}
-        {activeUsers.map(user => (
+        {activeUsers.map((user) => (
           <Cursor
             key={user.id}
             position={user.cursor_position}
@@ -529,7 +529,7 @@ function CanvasEditor({ workflowId }) {
 ### Example 3: Comments Sidebar with Threads
 
 ```tsx
-import { useComments, usePermissions } from '@/contexts/collaboration';
+import { useComments, usePermissions } from "@/contexts/collaboration";
 
 function CommentsSidebar() {
   const { comments, addComment, updateComment, deleteComment } = useComments();
@@ -547,12 +547,10 @@ function CommentsSidebar() {
     <aside className="comments-sidebar">
       <h2>Comments</h2>
 
-      {canComment && (
-        <NewCommentForm onSubmit={addComment} />
-      )}
+      {canComment && <NewCommentForm onSubmit={addComment} />}
 
       <div className="threads">
-        {threads.map(thread => (
+        {threads.map((thread) => (
           <CommentThread
             key={thread.id}
             thread={thread}
@@ -582,20 +580,20 @@ function CommentsSidebar() {
 ### Custom Hook: Combined Permission Check
 
 ```tsx
-import { usePermissions } from '@/contexts/collaboration';
+import { usePermissions } from "@/contexts/collaboration";
 
-function useCanPerformAction(action: 'view' | 'comment' | 'edit' | 'delete') {
+function useCanPerformAction(action: "view" | "comment" | "edit" | "delete") {
   const { canView, canComment, canEdit, hasPermission } = usePermissions();
 
   switch (action) {
-    case 'view':
+    case "view":
       return canView;
-    case 'comment':
+    case "comment":
       return canComment;
-    case 'edit':
+    case "edit":
       return canEdit;
-    case 'delete':
-      return hasPermission('admin');
+    case "delete":
+      return hasPermission("admin");
     default:
       return false;
   }
@@ -605,21 +603,21 @@ function useCanPerformAction(action: 'view' | 'comment' | 'edit' | 'delete') {
 function ActionButton({ action }) {
   const canPerform = useCanPerformAction(action);
 
-  return (
-    <button disabled={!canPerform}>
-      {action}
-    </button>
-  );
+  return <button disabled={!canPerform}>{action}</button>;
 }
 ```
 
 ### Custom Hook: Lock Management
 
 ```tsx
-import { useEditLock } from '@/contexts/collaboration';
-import { useEffect } from 'react';
+import { useEditLock } from "@/contexts/collaboration";
+import { useEffect } from "react";
 
-function useAutoAcquireLock(resourceType: ResourceType, resourceId: string, shouldAcquire: boolean) {
+function useAutoAcquireLock(
+  resourceType: ResourceType,
+  resourceId: string,
+  shouldAcquire: boolean
+) {
   const { acquireEditLock, releaseEditLock, hasLock } = useEditLock();
 
   useEffect(() => {
@@ -639,19 +637,17 @@ function useAutoAcquireLock(resourceType: ResourceType, resourceId: string, shou
 
 // Usage
 function AutoLockEditor({ workflowId, autoEdit }) {
-  const isLocked = useAutoAcquireLock('workflow', workflowId, autoEdit);
+  const isLocked = useAutoAcquireLock("workflow", workflowId, autoEdit);
 
-  return (
-    <Editor readOnly={!isLocked} />
-  );
+  return <Editor readOnly={!isLocked} />;
 }
 ```
 
 ### Custom Hook: Real-time Comment Notifications
 
 ```tsx
-import { useComments } from '@/contexts/collaboration';
-import { useEffect, useRef } from 'react';
+import { useComments } from "@/contexts/collaboration";
+import { useEffect, useRef } from "react";
 
 function useCommentNotifications() {
   const { comments } = useComments();
@@ -679,7 +675,7 @@ function NotifiedCommentSection() {
 
 ```tsx
 // Only import and use what you need
-import { PermissionsProvider, usePermissions } from '@/contexts/collaboration';
+import { PermissionsProvider, usePermissions } from "@/contexts/collaboration";
 
 // This component doesn't need other contexts
 function MinimalComponent() {
@@ -711,16 +707,16 @@ function ProtectedContent() {
 ### Testing with Individual Contexts
 
 ```tsx
-import { render, screen } from '@testing-library/react';
-import { CommentsProvider } from '@/contexts/collaboration';
+import { render, screen } from "@testing-library/react";
+import { CommentsProvider } from "@/contexts/collaboration";
 
-describe('CommentSection', () => {
-  it('displays comments', async () => {
+describe("CommentSection", () => {
+  it("displays comments", async () => {
     const mockComments = [
-      { id: '1', content: 'Test comment', user_name: 'John' }
+      { id: "1", content: "Test comment", user_name: "John" },
     ];
 
-    jest.spyOn(commentService, 'getComments').mockResolvedValue(mockComments);
+    jest.spyOn(commentService, "getComments").mockResolvedValue(mockComments);
 
     render(
       <CommentsProvider projectId="test" workflowId="test">
@@ -728,7 +724,7 @@ describe('CommentSection', () => {
       </CommentsProvider>
     );
 
-    expect(await screen.findByText('Test comment')).toBeInTheDocument();
+    expect(await screen.findByText("Test comment")).toBeInTheDocument();
   });
 });
 ```
@@ -736,15 +732,13 @@ describe('CommentSection', () => {
 ### Testing Permission Logic
 
 ```tsx
-import { renderHook } from '@testing-library/react';
-import { PermissionsProvider, usePermissions } from '@/contexts/collaboration';
+import { renderHook } from "@testing-library/react";
+import { PermissionsProvider, usePermissions } from "@/contexts/collaboration";
 
-describe('usePermissions', () => {
-  it('calculates permissions correctly', () => {
+describe("usePermissions", () => {
+  it("calculates permissions correctly", () => {
     const wrapper = ({ children }) => (
-      <PermissionsProvider initialAccess="edit">
-        {children}
-      </PermissionsProvider>
+      <PermissionsProvider initialAccess="edit">{children}</PermissionsProvider>
     );
 
     const { result } = renderHook(() => usePermissions(), { wrapper });
@@ -773,17 +767,20 @@ const { canEdit } = usePermissions();
 ### 2. Memoize Expensive Calculations
 
 ```tsx
-import { useComments } from '@/contexts/collaboration';
-import { useMemo } from 'react';
+import { useComments } from "@/contexts/collaboration";
+import { useMemo } from "react";
 
 function CommentStats() {
   const { comments } = useComments();
 
-  const stats = useMemo(() => ({
-    total: comments.length,
-    resolved: comments.filter(c => c.resolved).length,
-    byUser: groupByUser(comments)
-  }), [comments]);
+  const stats = useMemo(
+    () => ({
+      total: comments.length,
+      resolved: comments.filter((c) => c.resolved).length,
+      byUser: groupByUser(comments),
+    }),
+    [comments]
+  );
 
   return <div>{/* render stats */}</div>;
 }
@@ -796,9 +793,9 @@ function CommentStats() {
 function Dashboard() {
   return (
     <div>
-      <OrgSelector />        {/* uses useOrganization */}
-      <PermissionBadge />    {/* uses usePermissions */}
-      <ActiveUsers />        {/* uses usePresence */}
+      <OrgSelector /> {/* uses useOrganization */}
+      <PermissionBadge /> {/* uses usePermissions */}
+      <ActiveUsers /> {/* uses usePresence */}
     </div>
   );
 }

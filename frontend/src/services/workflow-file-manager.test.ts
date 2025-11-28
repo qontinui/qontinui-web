@@ -10,11 +10,11 @@
  * - Error handling
  */
 
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
-import { WorkflowFileManager } from './workflow-file-manager';
-import { Workflow } from '../lib/action-schema/action-types';
+import { describe, test, expect, beforeEach, afterEach } from "@jest/globals";
+import { WorkflowFileManager } from "./workflow-file-manager";
+import { Workflow } from "../lib/action-schema/action-types";
 
-describe('WorkflowFileManager', () => {
+describe("WorkflowFileManager", () => {
   let manager: WorkflowFileManager;
   let testWorkflow: Workflow;
 
@@ -23,15 +23,15 @@ describe('WorkflowFileManager', () => {
     localStorage.clear();
 
     testWorkflow = {
-      id: 'test-workflow-1',
-      name: 'Test Workflow',
-      version: '1.0.0',
-      format: 'graph',
+      id: "test-workflow-1",
+      name: "Test Workflow",
+      version: "1.0.0",
+      format: "graph",
       actions: [
         {
-          id: 'action-1',
-          type: 'CLICK',
-          config: { target: { image: 'button.png' } },
+          id: "action-1",
+          type: "CLICK",
+          config: { target: { image: "button.png" } },
           position: [100, 100],
         },
       ],
@@ -50,8 +50,8 @@ describe('WorkflowFileManager', () => {
   // Save/Load Tests
   // ==========================================================================
 
-  describe('Save and Load', () => {
-    test('should save workflow to localStorage', async () => {
+  describe("Save and Load", () => {
+    test("should save workflow to localStorage", async () => {
       const result = await manager.saveWorkflow(testWorkflow);
 
       expect(result.success).toBe(true);
@@ -65,7 +65,7 @@ describe('WorkflowFileManager', () => {
       expect(parsed.name).toBe(testWorkflow.name);
     });
 
-    test('should load workflow from localStorage', async () => {
+    test("should load workflow from localStorage", async () => {
       await manager.saveWorkflow(testWorkflow);
       const key = `workflow:${testWorkflow.id}`;
 
@@ -77,7 +77,7 @@ describe('WorkflowFileManager', () => {
       expect(result.workflow?.name).toBe(testWorkflow.name);
     });
 
-    test('should update metadata on save', async () => {
+    test("should update metadata on save", async () => {
       const result = await manager.saveWorkflow(testWorkflow);
       expect(result.success).toBe(true);
 
@@ -88,10 +88,10 @@ describe('WorkflowFileManager', () => {
       expect(parsed.metadata.updated).toBeDefined();
     });
 
-    test('should fail to save invalid workflow', async () => {
+    test("should fail to save invalid workflow", async () => {
       const invalidWorkflow = {
         ...testWorkflow,
-        id: '',
+        id: "",
       };
 
       const result = await manager.saveWorkflow(invalidWorkflow as Workflow);
@@ -100,8 +100,8 @@ describe('WorkflowFileManager', () => {
       expect(result.error).toBeDefined();
     });
 
-    test('should return error for non-existent workflow', async () => {
-      const result = await manager.loadWorkflowFromStorage('non-existent-key');
+    test("should return error for non-existent workflow", async () => {
+      const result = await manager.loadWorkflowFromStorage("non-existent-key");
 
       expect(result.success).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
@@ -112,23 +112,23 @@ describe('WorkflowFileManager', () => {
   // List Workflows Tests
   // ==========================================================================
 
-  describe('List Workflows', () => {
-    test('should list all saved workflows', async () => {
+  describe("List Workflows", () => {
+    test("should list all saved workflows", async () => {
       await manager.saveWorkflow(testWorkflow);
       await manager.saveWorkflow({
         ...testWorkflow,
-        id: 'test-workflow-2',
-        name: 'Test Workflow 2',
+        id: "test-workflow-2",
+        name: "Test Workflow 2",
       });
 
       const keys = manager.listWorkflows();
 
       expect(keys.length).toBe(2);
       expect(keys).toContain(`workflow:${testWorkflow.id}`);
-      expect(keys).toContain('workflow:test-workflow-2');
+      expect(keys).toContain("workflow:test-workflow-2");
     });
 
-    test('should return empty array when no workflows', () => {
+    test("should return empty array when no workflows", () => {
       const keys = manager.listWorkflows();
       expect(keys).toEqual([]);
     });
@@ -138,8 +138,8 @@ describe('WorkflowFileManager', () => {
   // Delete Workflow Tests
   // ==========================================================================
 
-  describe('Delete Workflow', () => {
-    test('should delete workflow', async () => {
+  describe("Delete Workflow", () => {
+    test("should delete workflow", async () => {
       await manager.saveWorkflow(testWorkflow);
       const key = `workflow:${testWorkflow.id}`;
 
@@ -149,8 +149,8 @@ describe('WorkflowFileManager', () => {
       expect(localStorage.getItem(key)).toBeNull();
     });
 
-    test('should succeed even if workflow does not exist', async () => {
-      const result = await manager.deleteWorkflow('non-existent-key');
+    test("should succeed even if workflow does not exist", async () => {
+      const result = await manager.deleteWorkflow("non-existent-key");
 
       expect(result.success).toBe(true);
     });
@@ -160,8 +160,8 @@ describe('WorkflowFileManager', () => {
   // Load from String Tests
   // ==========================================================================
 
-  describe('Load from String', () => {
-    test('should load workflow from JSON string', async () => {
+  describe("Load from String", () => {
+    test("should load workflow from JSON string", async () => {
       const json = JSON.stringify(testWorkflow);
 
       const result = await manager.loadWorkflowFromString(json);
@@ -171,8 +171,8 @@ describe('WorkflowFileManager', () => {
       expect(result.workflow?.id).toBe(testWorkflow.id);
     });
 
-    test('should fail on invalid JSON', async () => {
-      const invalidJson = '{ invalid json }';
+    test("should fail on invalid JSON", async () => {
+      const invalidJson = "{ invalid json }";
 
       const result = await manager.loadWorkflowFromString(invalidJson);
 
@@ -180,10 +180,10 @@ describe('WorkflowFileManager', () => {
       expect(result.errors.length).toBeGreaterThan(0);
     });
 
-    test('should validate workflow on load', async () => {
+    test("should validate workflow on load", async () => {
       const invalidWorkflow = {
         ...testWorkflow,
-        actions: 'not an array', // Invalid
+        actions: "not an array", // Invalid
       };
       const json = JSON.stringify(invalidWorkflow);
 
@@ -193,10 +193,10 @@ describe('WorkflowFileManager', () => {
       expect(result.errors.length).toBeGreaterThan(0);
     });
 
-    test('should auto-fix workflow if requested', async () => {
+    test("should auto-fix workflow if requested", async () => {
       const fixableWorkflow = {
         ...testWorkflow,
-        id: '', // Missing ID - can be fixed
+        id: "", // Missing ID - can be fixed
       };
       const json = JSON.stringify(fixableWorkflow);
 
@@ -216,28 +216,28 @@ describe('WorkflowFileManager', () => {
   // Export Tests
   // ==========================================================================
 
-  describe('Export', () => {
-    test('should export workflow to string', () => {
+  describe("Export", () => {
+    test("should export workflow to string", () => {
       const exported = manager.exportToString(testWorkflow);
 
       expect(exported).toBeDefined();
-      expect(typeof exported).toBe('string');
+      expect(typeof exported).toBe("string");
 
       const parsed = JSON.parse(exported);
       expect(parsed.id).toBe(testWorkflow.id);
     });
 
-    test('should export with pretty formatting', () => {
+    test("should export with pretty formatting", () => {
       const exported = manager.exportToString(testWorkflow, true);
 
-      expect(exported).toContain('\n');
-      expect(exported).toContain('  ');
+      expect(exported).toContain("\n");
+      expect(exported).toContain("  ");
     });
 
-    test('should export without pretty formatting', () => {
+    test("should export without pretty formatting", () => {
       const exported = manager.exportToString(testWorkflow, false);
 
-      expect(exported).not.toContain('\n  ');
+      expect(exported).not.toContain("\n  ");
     });
   });
 
@@ -245,18 +245,18 @@ describe('WorkflowFileManager', () => {
   // Validation Tests
   // ==========================================================================
 
-  describe('Validation', () => {
-    test('should validate correct workflow', () => {
+  describe("Validation", () => {
+    test("should validate correct workflow", () => {
       const result = manager.validateWorkflow(testWorkflow);
 
       expect(result.valid).toBe(true);
       expect(result.errors.length).toBe(0);
     });
 
-    test('should detect missing required fields', () => {
+    test("should detect missing required fields", () => {
       const invalidWorkflow = {
         ...testWorkflow,
-        name: '',
+        name: "",
       };
 
       const result = manager.validateWorkflow(invalidWorkflow);
@@ -265,10 +265,10 @@ describe('WorkflowFileManager', () => {
       expect(result.errors.length).toBeGreaterThan(0);
     });
 
-    test('should detect invalid actions array', () => {
+    test("should detect invalid actions array", () => {
       const invalidWorkflow = {
         ...testWorkflow,
-        actions: 'not an array',
+        actions: "not an array",
       };
 
       const result = manager.validateWorkflow(invalidWorkflow as any);
@@ -281,11 +281,11 @@ describe('WorkflowFileManager', () => {
   // Auto-Fix Tests
   // ==========================================================================
 
-  describe('Auto-Fix', () => {
-    test('should fix missing workflow ID', () => {
+  describe("Auto-Fix", () => {
+    test("should fix missing workflow ID", () => {
       const fixableWorkflow = {
         ...testWorkflow,
-        id: '',
+        id: "",
       };
 
       const result = manager.autoFixWorkflow(fixableWorkflow as Workflow);
@@ -295,22 +295,22 @@ describe('WorkflowFileManager', () => {
       expect(result.changes.length).toBeGreaterThan(0);
     });
 
-    test('should fix missing workflow name', () => {
+    test("should fix missing workflow name", () => {
       const fixableWorkflow = {
         ...testWorkflow,
-        name: '',
+        name: "",
       };
 
       const result = manager.autoFixWorkflow(fixableWorkflow as Workflow);
 
       expect(result.fixed).toBe(true);
-      expect(result.workflow.name).toBe('Untitled Workflow');
+      expect(result.workflow.name).toBe("Untitled Workflow");
     });
 
-    test('should fix missing version', () => {
+    test("should fix missing version", () => {
       const fixableWorkflow = {
         ...testWorkflow,
-        version: '',
+        version: "",
       };
 
       const result = manager.autoFixWorkflow(fixableWorkflow as Workflow);
@@ -319,7 +319,7 @@ describe('WorkflowFileManager', () => {
       expect(result.workflow.version).toBeTruthy();
     });
 
-    test('should fix missing format', () => {
+    test("should fix missing format", () => {
       const fixableWorkflow: any = {
         ...testWorkflow,
       };
@@ -328,13 +328,13 @@ describe('WorkflowFileManager', () => {
       const result = manager.autoFixWorkflow(fixableWorkflow);
 
       expect(result.fixed).toBe(true);
-      expect(result.workflow.format).toBe('graph');
+      expect(result.workflow.format).toBe("graph");
     });
 
-    test('should fix missing connections', () => {
+    test("should fix missing connections", () => {
       const fixableWorkflow: any = {
         ...testWorkflow,
-        format: 'graph',
+        format: "graph",
       };
       delete fixableWorkflow.connections;
 
@@ -344,15 +344,15 @@ describe('WorkflowFileManager', () => {
       expect(result.workflow.connections).toBeDefined();
     });
 
-    test('should fix missing positions', () => {
+    test("should fix missing positions", () => {
       const fixableWorkflow = {
         ...testWorkflow,
-        format: 'graph' as const,
+        format: "graph" as const,
         actions: [
           {
-            id: 'action-1',
-            type: 'CLICK' as const,
-            config: { target: { image: 'button.png' } },
+            id: "action-1",
+            type: "CLICK" as const,
+            config: { target: { image: "button.png" } },
             // Missing position
           },
         ],
@@ -365,12 +365,14 @@ describe('WorkflowFileManager', () => {
       expect(Array.isArray(result.workflow.actions[0].position)).toBe(true);
     });
 
-    test('should remove invalid connections', () => {
+    test("should remove invalid connections", () => {
       const fixableWorkflow = {
         ...testWorkflow,
         connections: {
-          'action-1': {
-            main: [[{ action: 'non-existent', type: 'main' as const, index: 0 }]],
+          "action-1": {
+            main: [
+              [{ action: "non-existent", type: "main" as const, index: 0 }],
+            ],
           },
         },
       };
@@ -381,7 +383,7 @@ describe('WorkflowFileManager', () => {
       expect(Object.keys(result.workflow.connections).length).toBe(0);
     });
 
-    test('should not fix valid workflow', () => {
+    test("should not fix valid workflow", () => {
       const result = manager.autoFixWorkflow(testWorkflow);
 
       expect(result.fixed).toBe(false);
@@ -393,8 +395,8 @@ describe('WorkflowFileManager', () => {
   // Export to Clipboard Tests
   // ==========================================================================
 
-  describe('Export to Clipboard', () => {
-    test('should export to clipboard', async () => {
+  describe("Export to Clipboard", () => {
+    test("should export to clipboard", async () => {
       // Mock clipboard API
       Object.assign(navigator, {
         clipboard: {
@@ -413,17 +415,17 @@ describe('WorkflowFileManager', () => {
   // Static Methods Tests
   // ==========================================================================
 
-  describe('Static Methods', () => {
-    test('should get file extension', () => {
+  describe("Static Methods", () => {
+    test("should get file extension", () => {
       const ext = WorkflowFileManager.getFileExtension();
 
-      expect(ext).toBe('.qontinui.json');
+      expect(ext).toBe(".qontinui.json");
     });
 
-    test('should get current version', () => {
+    test("should get current version", () => {
       const version = WorkflowFileManager.getCurrentVersion();
 
-      expect(version).toBe('1.0.0');
+      expect(version).toBe("1.0.0");
     });
   });
 });

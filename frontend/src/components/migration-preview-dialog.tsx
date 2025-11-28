@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Migration Preview Dialog
@@ -7,7 +7,7 @@
  * Builds user confidence and transparency in the migration process.
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -15,25 +15,25 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import {
   AlertCircle,
   ArrowRight,
   CheckCircle2,
   Info,
-  RefreshCw
-} from 'lucide-react'
-import { previewMigration } from '@/lib/config-migration'
+  RefreshCw,
+} from "lucide-react";
+import { previewMigration } from "@/lib/config-migration";
 
 interface MigrationPreviewDialogProps {
-  config: any
-  open: boolean
-  onApprove: () => void
-  onCancel: () => void
+  config: any;
+  open: boolean;
+  onApprove: () => void;
+  onCancel: () => void;
 }
 
 export function MigrationPreviewDialog({
@@ -43,38 +43,38 @@ export function MigrationPreviewDialog({
   onCancel,
 }: MigrationPreviewDialogProps) {
   const [preview, setPreview] = useState<{
-    needsMigration: boolean
-    currentVersion: string
-    targetVersion: string
+    needsMigration: boolean;
+    currentVersion: string;
+    targetVersion: string;
     migrationSteps: Array<{
-      from: string
-      to: string
-      description: string
-    }>
-    estimatedChanges: string[]
-  } | null>(null)
-  const [loading, setLoading] = useState(true)
+      from: string;
+      to: string;
+      description: string;
+    }>;
+    estimatedChanges: string[];
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (open && config) {
-      loadPreview()
+      loadPreview();
     }
-  }, [open, config])
+  }, [open, config]);
 
   const loadPreview = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const result = await previewMigration(config)
-      setPreview(result)
+      const result = await previewMigration(config);
+      setPreview(result);
     } catch (error) {
-      console.error('Failed to load migration preview:', error)
+      console.error("Failed to load migration preview:", error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   if (!preview && !loading) {
-    return null
+    return null;
   }
 
   return (
@@ -86,7 +86,8 @@ export function MigrationPreviewDialog({
             Configuration Migration Required
           </DialogTitle>
           <DialogDescription>
-            Your configuration needs to be migrated from v{preview?.currentVersion} to v{preview?.targetVersion}
+            Your configuration needs to be migrated from v
+            {preview?.currentVersion} to v{preview?.targetVersion}
           </DialogDescription>
         </DialogHeader>
 
@@ -94,7 +95,9 @@ export function MigrationPreviewDialog({
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
               <RefreshCw className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">Analyzing migrations...</p>
+              <p className="text-sm text-muted-foreground">
+                Analyzing migrations...
+              </p>
             </div>
           </div>
         ) : preview && preview.needsMigration ? (
@@ -170,8 +173,9 @@ export function MigrationPreviewDialog({
             <Alert className="bg-muted">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="text-xs">
-                <strong>Safety Guarantee:</strong> If migration fails, your original configuration will be preserved unchanged.
-                Migration history will be tracked in the config metadata.
+                <strong>Safety Guarantee:</strong> If migration fails, your
+                original configuration will be preserved unchanged. Migration
+                history will be tracked in the config metadata.
               </AlertDescription>
             </Alert>
           </div>
@@ -192,10 +196,12 @@ export function MigrationPreviewDialog({
             onClick={onApprove}
             disabled={loading || (preview && !preview.needsMigration)}
           >
-            {preview && preview.needsMigration ? 'Approve & Migrate' : 'Continue'}
+            {preview && preview.needsMigration
+              ? "Approve & Migrate"
+              : "Continue"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

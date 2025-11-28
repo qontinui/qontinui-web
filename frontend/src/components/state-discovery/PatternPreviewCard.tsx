@@ -3,12 +3,12 @@
  * Shows a preview of an extracted pattern with edit/delete controls
  */
 
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Trash2, Edit2, Check, X } from 'lucide-react';
-import type { ExtractedPattern } from '@/types/direct-pattern-creation';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Trash2, Edit2, Check, X } from "lucide-react";
+import type { ExtractedPattern } from "@/types/direct-pattern-creation";
 
 interface PatternPreviewCardProps {
   pattern: ExtractedPattern;
@@ -26,7 +26,7 @@ export function PatternPreviewCard({
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(pattern.name);
   const [isEditingStates, setIsEditingStates] = useState(false);
-  const [stateInput, setStateInput] = useState(pattern.states.join(', '));
+  const [stateInput, setStateInput] = useState(pattern.states.join(", "));
 
   const handleSaveName = () => {
     if (editedName.trim()) {
@@ -42,20 +42,20 @@ export function PatternPreviewCard({
 
   const handleSaveStates = () => {
     const states = stateInput
-      .split(',')
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
     onUpdate({ states });
     setIsEditingStates(false);
   };
 
   const handleCancelStates = () => {
-    setStateInput(pattern.states.join(', '));
+    setStateInput(pattern.states.join(", "));
     setIsEditingStates(false);
   };
 
   const handleRemoveState = (stateToRemove: string) => {
-    const newStates = pattern.states.filter(s => s !== stateToRemove);
+    const newStates = pattern.states.filter((s) => s !== stateToRemove);
     onUpdate({ states: newStates });
   };
 
@@ -63,7 +63,9 @@ export function PatternPreviewCard({
     <div className="border rounded-lg p-3 mb-2 bg-white shadow-sm hover:shadow-md transition-shadow">
       {/* Header with index */}
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-semibold text-gray-500">Pattern #{index + 1}</div>
+        <div className="text-xs font-semibold text-gray-500">
+          Pattern #{index + 1}
+        </div>
         <Button
           variant="ghost"
           size="sm"
@@ -93,8 +95,8 @@ export function PatternPreviewCard({
               className="text-xs h-7"
               placeholder="Pattern name"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveName();
-                if (e.key === 'Escape') handleCancelName();
+                if (e.key === "Enter") handleSaveName();
+                if (e.key === "Escape") handleCancelName();
               }}
               autoFocus
             />
@@ -117,7 +119,9 @@ export function PatternPreviewCard({
           </div>
         ) : (
           <div className="flex items-center justify-between group">
-            <div className="text-sm font-medium truncate flex-1">{pattern.name}</div>
+            <div className="text-sm font-medium truncate flex-1">
+              {pattern.name}
+            </div>
             <Button
               variant="ghost"
               size="sm"
@@ -132,8 +136,14 @@ export function PatternPreviewCard({
 
       {/* Region Info */}
       <div className="text-xs text-gray-600 mb-2">
-        <div>Position: ({Math.round(pattern.region.x)}, {Math.round(pattern.region.y)})</div>
-        <div>Size: {Math.round(pattern.region.width)} × {Math.round(pattern.region.height)}px</div>
+        <div>
+          Position: ({Math.round(pattern.region.x)},{" "}
+          {Math.round(pattern.region.y)})
+        </div>
+        <div>
+          Size: {Math.round(pattern.region.width)} ×{" "}
+          {Math.round(pattern.region.height)}px
+        </div>
       </div>
 
       {/* States */}
@@ -161,8 +171,8 @@ export function PatternPreviewCard({
               className="text-xs h-7"
               placeholder="state1, state2, state3"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveStates();
-                if (e.key === 'Escape') handleCancelStates();
+                if (e.key === "Enter") handleSaveStates();
+                if (e.key === "Escape") handleCancelStates();
               }}
             />
             <div className="flex gap-1">
@@ -189,7 +199,9 @@ export function PatternPreviewCard({
         ) : (
           <div className="flex flex-wrap gap-1">
             {pattern.states.length === 0 ? (
-              <span className="text-xs text-gray-400 italic">No states assigned</span>
+              <span className="text-xs text-gray-400 italic">
+                No states assigned
+              </span>
             ) : (
               pattern.states.map((state) => (
                 <Badge

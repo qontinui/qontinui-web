@@ -1,13 +1,19 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useAutomation } from '@/contexts/automation-context';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAutomation } from "@/contexts/automation-context";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 import {
   Video,
   Eye,
@@ -19,10 +25,10 @@ import {
   Monitor,
   MousePointer,
   Keyboard,
-} from 'lucide-react';
-import { captureService } from '@/services/service-factory';
-import type { CaptureSession } from '@/types/capture';
-import { formatDuration, formatDistanceToNow } from 'date-fns';
+} from "lucide-react";
+import { captureService } from "@/services/service-factory";
+import type { CaptureSession } from "@/types/capture";
+import { formatDuration, formatDistanceToNow } from "date-fns";
 
 export function CaptureListPage() {
   const router = useRouter();
@@ -30,12 +36,12 @@ export function CaptureListPage() {
   const { projectId: contextProjectId } = useAutomation();
 
   // Get project ID from context or URL
-  const urlProjectId = searchParams?.get('project') ?? null;
+  const urlProjectId = searchParams?.get("project") ?? null;
   const projectId = contextProjectId || urlProjectId;
 
   const [captures, setCaptures] = useState<CaptureSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Load captures
   const loadCaptures = async () => {
@@ -46,8 +52,8 @@ export function CaptureListPage() {
       const response = await captureService.getSessionsForProject(projectId);
       setCaptures(response.sessions);
     } catch (error: any) {
-      console.error('Failed to load captures:', error);
-      toast.error('Failed to load captures');
+      console.error("Failed to load captures:", error);
+      toast.error("Failed to load captures");
     } finally {
       setLoading(false);
     }
@@ -58,25 +64,28 @@ export function CaptureListPage() {
   }, [projectId]);
 
   // Filter captures by search query
-  const filteredCaptures = captures.filter((capture) =>
-    capture.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    capture.sessionId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    capture.notes?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    capture.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredCaptures = captures.filter(
+    (capture) =>
+      capture.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      capture.sessionId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      capture.notes?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      capture.tags.some((tag) =>
+        tag.toLowerCase().includes(searchQuery.toLowerCase())
+      )
   );
 
   const handleDelete = async (sessionId: string) => {
-    if (!confirm('Are you sure you want to delete this capture session?')) {
+    if (!confirm("Are you sure you want to delete this capture session?")) {
       return;
     }
 
     try {
       await captureService.deleteSession(sessionId);
-      toast.success('Capture session deleted');
+      toast.success("Capture session deleted");
       loadCaptures();
     } catch (error: any) {
-      console.error('Failed to delete capture:', error);
-      toast.error('Failed to delete capture session');
+      console.error("Failed to delete capture:", error);
+      toast.error("Failed to delete capture session");
     }
   };
 
@@ -89,7 +98,7 @@ export function CaptureListPage() {
   };
 
   const formatDurationDisplay = (seconds: number) => {
-    if (!isFinite(seconds) || seconds <= 0) return '0s';
+    if (!isFinite(seconds) || seconds <= 0) return "0s";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     if (mins > 0) {
@@ -105,7 +114,8 @@ export function CaptureListPage() {
         <div>
           <h1 className="text-3xl font-bold">Capture Sessions</h1>
           <p className="text-muted-foreground mt-2">
-            View and manage captured interaction sessions from the desktop runner
+            View and manage captured interaction sessions from the desktop
+            runner
           </p>
         </div>
       </div>
@@ -138,18 +148,23 @@ export function CaptureListPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <Video className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No capture sessions found</h3>
+            <h3 className="text-lg font-medium mb-2">
+              No capture sessions found
+            </h3>
             <p className="text-muted-foreground mb-4">
               {searchQuery
-                ? 'Try adjusting your search'
-                : 'Capture sessions will appear here when you record interactions using the desktop runner'}
+                ? "Try adjusting your search"
+                : "Capture sessions will appear here when you record interactions using the desktop runner"}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
           {filteredCaptures.map((capture) => (
-            <Card key={capture.sessionId} className="hover:shadow-lg transition-shadow">
+            <Card
+              key={capture.sessionId}
+              className="hover:shadow-lg transition-shadow"
+            >
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -163,11 +178,11 @@ export function CaptureListPage() {
                       <Badge
                         className={
                           capture.isComplete
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-                            : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100'
+                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                            : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
                         }
                       >
-                        {capture.isComplete ? 'Complete' : 'In Progress'}
+                        {capture.isComplete ? "Complete" : "In Progress"}
                       </Badge>
                     </div>
                     {capture.notes && (
@@ -178,7 +193,9 @@ export function CaptureListPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => router.push(`/captures/${capture.sessionId}`)}
+                      onClick={() =>
+                        router.push(`/captures/${capture.sessionId}`)
+                      }
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
@@ -204,7 +221,9 @@ export function CaptureListPage() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Resolution</p>
+                      <p className="text-xs text-muted-foreground">
+                        Resolution
+                      </p>
                       <p className="text-lg font-semibold flex items-center gap-1">
                         <Monitor className="h-4 w-4" />
                         {capture.videoWidth}x{capture.videoHeight}
@@ -212,7 +231,9 @@ export function CaptureListPage() {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Events</p>
-                      <p className="text-lg font-semibold">{capture.stats.totalEvents}</p>
+                      <p className="text-lg font-semibold">
+                        {capture.stats.totalEvents}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Clicks</p>
@@ -222,7 +243,9 @@ export function CaptureListPage() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Key Presses</p>
+                      <p className="text-xs text-muted-foreground">
+                        Key Presses
+                      </p>
                       <p className="text-lg font-semibold flex items-center gap-1">
                         <Keyboard className="h-4 w-4" />
                         {capture.stats.keyPresses}

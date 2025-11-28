@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Pattern Optimization Page
@@ -14,13 +14,13 @@
  * - Generate optimized pattern configurations
  */
 
-import { PatternOptimizationSimplified } from '@/components/pattern-optimization/PatternOptimizationSimplified'
-import { RequireProject } from '@/components/require-project'
+import { PatternOptimizationSimplified } from "@/components/pattern-optimization/PatternOptimizationSimplified";
+import { RequireProject } from "@/components/require-project";
 
 export default function PatternOptimizationPage() {
   return (
     <RequireProject pageName="Optimize Patterns">
       <PatternOptimizationSimplified />
     </RequireProject>
-  )
+  );
 }

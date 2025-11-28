@@ -1,26 +1,26 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuth } from '@/contexts/auth-context'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
-import { RunnerMonitor, SessionHistory } from '@/components/runner'
-import { Activity, History, LayoutDashboard, Shield } from 'lucide-react'
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { RunnerMonitor, SessionHistory } from "@/components/runner";
+import { Activity, History, LayoutDashboard, Shield } from "lucide-react";
 
 export default function RunnerPage() {
-  const { user, loading: authLoading } = useAuth()
-  const router = useRouter()
-  const [activeTab, setActiveTab] = useState('monitor')
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState("monitor");
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
+      router.push("/");
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   if (!user) {
-    return null
+    return null;
   }
 
   return (
@@ -29,7 +29,7 @@ export default function RunnerPage() {
       <div className="mb-6 flex items-center gap-4">
         <Button
           variant="ghost"
-          onClick={() => router.push('/dashboard')}
+          onClick={() => router.push("/dashboard")}
           className="hover:bg-primary/10"
         >
           <LayoutDashboard className="mr-2 h-4 w-4" />
@@ -38,7 +38,7 @@ export default function RunnerPage() {
         {user.is_superuser && (
           <Button
             variant="ghost"
-            onClick={() => router.push('/admin')}
+            onClick={() => router.push("/admin")}
             className="hover:bg-secondary/10"
           >
             <Shield className="mr-2 h-4 w-4" />
@@ -60,7 +60,11 @@ export default function RunnerPage() {
 
       {/* Main Content */}
       <div className="flex-1 min-h-0">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="h-full flex flex-col"
+        >
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="monitor" className="flex items-center gap-2">
               <Activity className="h-4 w-4" />
@@ -84,5 +88,5 @@ export default function RunnerPage() {
         </Tabs>
       </div>
     </div>
-  )
+  );
 }

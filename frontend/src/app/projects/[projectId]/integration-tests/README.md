@@ -44,6 +44,7 @@ frontend/src/
 **Purpose**: Select which workflows to test
 
 **Props**:
+
 ```typescript
 interface WorkflowSelectorProps {
   workflows: Workflow[];
@@ -54,6 +55,7 @@ interface WorkflowSelectorProps {
 ```
 
 **Features**:
+
 - Checkbox selection for each workflow
 - Select All / Clear buttons
 - Shows workflow metadata (actions count, category)
@@ -65,6 +67,7 @@ interface WorkflowSelectorProps {
 **Purpose**: Display statistics about available historical data
 
 **Props**:
+
 ```typescript
 interface HistoricalDataStatusProps {
   stats: HistoricalDataStats | null;
@@ -74,6 +77,7 @@ interface HistoricalDataStatusProps {
 ```
 
 **Displays**:
+
 - Number of automation runs imported
 - Total recorded actions
 - State coverage percentage (with visual progress bar)
@@ -86,6 +90,7 @@ interface HistoricalDataStatusProps {
 **Purpose**: Show real-time test execution progress
 
 **Props**:
+
 ```typescript
 interface TestExecutionPanelProps {
   execution: WorkflowTestExecution | null;
@@ -95,6 +100,7 @@ interface TestExecutionPanelProps {
 ```
 
 **Features**:
+
 - Current workflow being tested
 - Current step and action
 - Which historical match was randomly selected
@@ -107,6 +113,7 @@ interface TestExecutionPanelProps {
 **Purpose**: Display test results for completed workflows
 
 **Props**:
+
 ```typescript
 interface TestResultsPanelProps {
   results: WorkflowTestResult[];
@@ -116,6 +123,7 @@ interface TestResultsPanelProps {
 ```
 
 **Features**:
+
 - Summary statistics (passed/failed counts)
 - Overall success rate with visual progress
 - Per-workflow results with pass/fail status
@@ -130,6 +138,7 @@ interface TestResultsPanelProps {
 **Purpose**: Select visualization mode for test execution
 
 **Props**:
+
 ```typescript
 type VisualizationMode = "none" | "screenshots" | "state-visualization";
 interface VisualizationModeSelectorProps {
@@ -140,6 +149,7 @@ interface VisualizationModeSelectorProps {
 ```
 
 **Modes**:
+
 - **None (Immediate)** - Fastest execution, no visual feedback (recommended)
 - **Screenshots** - Capture screenshots at each step for debugging
 - **State Visualization** - Show state transitions with fixed positions
@@ -186,28 +196,41 @@ The `IntegrationTestsService` provides methods for:
 ```typescript
 class IntegrationTestsService {
   // Get historical data statistics
-  getHistoricalDataStats(request: GetHistoricalDataStatsRequest): Promise<GetHistoricalDataStatsResponse>
+  getHistoricalDataStats(
+    request: GetHistoricalDataStatsRequest
+  ): Promise<GetHistoricalDataStatsResponse>;
 
   // Start integration test run
-  runIntegrationTests(request: RunIntegrationTestsRequest): Promise<RunIntegrationTestsResponse>
+  runIntegrationTests(
+    request: RunIntegrationTestsRequest
+  ): Promise<RunIntegrationTestsResponse>;
 
   // Poll test status (while running)
-  getTestRunStatus(request: GetTestRunStatusRequest): Promise<GetTestRunStatusResponse>
+  getTestRunStatus(
+    request: GetTestRunStatusRequest
+  ): Promise<GetTestRunStatusResponse>;
 
   // Get final test results
-  getTestRunSummary(testRunId: string): Promise<IntegrationTestRunSummary>
+  getTestRunSummary(testRunId: string): Promise<IntegrationTestRunSummary>;
 
   // Get detailed workflow test results
-  getWorkflowTestDetails(testRunId: string, workflowId: string): Promise<WorkflowTestResult>
+  getWorkflowTestDetails(
+    testRunId: string,
+    workflowId: string
+  ): Promise<WorkflowTestResult>;
 
   // Cancel running test
-  cancelTestRun(testRunId: string): Promise<void>
+  cancelTestRun(testRunId: string): Promise<void>;
 
   // Delete test results
-  deleteTestRun(testRunId: string): Promise<void>
+  deleteTestRun(testRunId: string): Promise<void>;
 
   // List all test runs
-  listTestRuns(projectId: string, page?: number, pageSize?: number): Promise<PaginatedResults>
+  listTestRuns(
+    projectId: string,
+    page?: number,
+    pageSize?: number
+  ): Promise<PaginatedResults>;
 }
 ```
 
@@ -229,6 +252,7 @@ GET    /api/integration-tests/runs/:projectId
 ## Usage Flow
 
 ### 1. Initial Load
+
 ```typescript
 // On page mount:
 1. Load workflows from AutomationContext
@@ -237,6 +261,7 @@ GET    /api/integration-tests/runs/:projectId
 ```
 
 ### 2. Test Execution
+
 ```typescript
 // When user clicks "Run All":
 1. POST to /api/integration-tests/run with selected workflows
@@ -248,6 +273,7 @@ GET    /api/integration-tests/runs/:projectId
 ```
 
 ### 3. Real-time Updates
+
 ```typescript
 // During execution (polled every 1 second):
 - Update current workflow being tested
@@ -258,6 +284,7 @@ GET    /api/integration-tests/runs/:projectId
 ```
 
 ### 4. Results Display
+
 ```typescript
 // After completion:
 - Show pass/fail summary
@@ -273,10 +300,13 @@ The page uses React state for:
 
 ```typescript
 const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<string[]>([]);
-const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>('none');
-const [historicalStats, setHistoricalStats] = useState<HistoricalDataStats | null>(null);
+const [visualizationMode, setVisualizationMode] =
+  useState<VisualizationMode>("none");
+const [historicalStats, setHistoricalStats] =
+  useState<HistoricalDataStats | null>(null);
 const [isRunning, setIsRunning] = useState(false);
-const [currentExecution, setCurrentExecution] = useState<WorkflowTestExecution | null>(null);
+const [currentExecution, setCurrentExecution] =
+  useState<WorkflowTestExecution | null>(null);
 const [testResults, setTestResults] = useState<WorkflowTestResult[]>([]);
 const [completedWorkflows, setCompletedWorkflows] = useState(0);
 const [currentTestRunId, setCurrentTestRunId] = useState<string | null>(null);
@@ -285,23 +315,27 @@ const [currentTestRunId, setCurrentTestRunId] = useState<string | null>(null);
 ## Key Features
 
 ### Random Match Selection
+
 - Each action that uses pattern matching randomly selects from available historical matches
 - Makes tests realistic and varied (like live automation)
 - Displayed in real-time during execution
 - Listed in results for reproducibility investigation
 
 ### Historical Data Simulation
+
 - Uses actual automation run data for realistic testing
 - No need to connect to external applications
 - Tests run in isolation
 - Repeatable with different random variations
 
 ### Immediate Execution
+
 - Tests run immediately by default (visualization mode: none)
 - Fast feedback loop
 - Optional visualization for debugging
 
 ### Progress Tracking
+
 - Real-time updates every second
 - Per-workflow and overall progress
 - Step-by-step execution visibility
@@ -310,6 +344,7 @@ const [currentTestRunId, setCurrentTestRunId] = useState<string | null>(null);
 ## Styling
 
 The page uses Tailwind CSS with the existing component library:
+
 - Card components for panels
 - Button components for actions
 - Progress bars for execution state
@@ -348,14 +383,16 @@ Potential improvements:
 ## Dependencies
 
 ### External Libraries
+
 - React (hooks: useState, useEffect, useCallback, useRef)
 - Next.js (useParams, navigation)
 - Lucide React (icons)
 - Tailwind CSS (styling)
 
 ### Internal Dependencies
+
 - @/contexts/automation-context (workflows)
-- @/components/ui/* (Button, Card, Progress, etc.)
+- @/components/ui/\* (Button, Card, Progress, etc.)
 - @/services/integration-tests-service
 - @/types/integration-tests
 
@@ -385,6 +422,7 @@ pollIntervalRef.current = setInterval(pollTestStatus, 2000);
 ### Error Handling
 
 The page handles errors at multiple levels:
+
 1. Historical data loading errors (displayed in panel)
 2. Test execution errors (displayed in execution panel)
 3. API errors (displayed via alerts)
@@ -405,6 +443,7 @@ To test the integration tests page:
 ## Support
 
 For issues or questions:
+
 - Check backend API implementation
 - Verify historical data exists
 - Review browser console for errors

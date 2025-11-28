@@ -1,11 +1,17 @@
-'use client'
+"use client";
 
-import { useEffect, useState, useRef } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
+import { useEffect, useState, useRef } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Activity,
   CheckCircle2,
@@ -14,122 +20,143 @@ import {
   Monitor,
   Play,
   Square,
-  RefreshCw
-} from 'lucide-react'
-import { RunnerWebSocket, SessionStartEvent, ScreenshotEvent, LogEvent, SessionEndEvent } from '@/lib/runner-websocket'
-import { apiClient } from '@/lib/api-client'
-import { toast } from 'sonner'
-import Image from 'next/image'
+  RefreshCw,
+} from "lucide-react";
+import {
+  RunnerWebSocket,
+  SessionStartEvent,
+  ScreenshotEvent,
+  LogEvent,
+  SessionEndEvent,
+} from "@/lib/runner-websocket";
+import { apiClient } from "@/lib/api-client";
+import { toast } from "sonner";
+import Image from "next/image";
 
 interface RunnerMonitorProps {
-  projectId?: string
+  projectId?: string;
 }
 
 interface SessionInfo extends SessionStartEvent {
-  status: 'running' | 'completed' | 'failed' | 'disconnected'
-  error_message?: string
+  status: "running" | "completed" | "failed" | "disconnected";
+  error_message?: string;
 }
 
 export function RunnerMonitor({ projectId }: RunnerMonitorProps) {
-  const [isConnected, setIsConnected] = useState(false)
-  const [currentSession, setCurrentSession] = useState<SessionInfo | null>(null)
-  const [screenshots, setScreenshots] = useState<ScreenshotEvent[]>([])
-  const [logs, setLogs] = useState<LogEvent[]>([])
-  const [selectedScreenshot, setSelectedScreenshot] = useState<ScreenshotEvent | null>(null)
-  const wsRef = useRef<RunnerWebSocket | null>(null)
+  const [isConnected, setIsConnected] = useState(false);
+  const [currentSession, setCurrentSession] = useState<SessionInfo | null>(
+    null
+  );
+  const [screenshots, setScreenshots] = useState<ScreenshotEvent[]>([]);
+  const [logs, setLogs] = useState<LogEvent[]>([]);
+  const [selectedScreenshot, setSelectedScreenshot] =
+    useState<ScreenshotEvent | null>(null);
+  const wsRef = useRef<RunnerWebSocket | null>(null);
 
   useEffect(() => {
-    initializeWebSocket()
+    initializeWebSocket();
 
     return () => {
       if (wsRef.current) {
-        wsRef.current.disconnect()
+        wsRef.current.disconnect();
       }
-    }
-  }, [])
+    };
+  }, []);
 
   const initializeWebSocket = async () => {
     try {
-      const wsUrl = await apiClient.getRunnerWebSocketUrl()
+      const wsUrl = await apiClient.getRunnerWebSocketUrl();
 
       wsRef.current = new RunnerWebSocket({
         url: wsUrl,
         onConnect: () => {
-          setIsConnected(true)
-          toast.success('Connected to runner')
+          setIsConnected(true);
+          toast.success("Connected to runner");
         },
         onDisconnect: () => {
-          setIsConnected(false)
-          toast.info('Disconnected from runner')
+          setIsConnected(false);
+          toast.info("Disconnected from runner");
         },
         onError: (error) => {
-          console.debug('WebSocket connection error (runner may not be active):', error)
+          console.debug(
+            "WebSocket connection error (runner may not be active):",
+            error
+          );
           // Don't show toast for connection errors - runner may not be running
         },
         onSessionStart: (data) => {
           setCurrentSession({
             ...data,
-            status: 'running'
-          })
-          setScreenshots([])
-          setLogs([])
-          setSelectedScreenshot(null)
-          toast.success(`Session started: ${data.session_id.slice(0, 8)}...`)
+            status: "running",
+          });
+          setScreenshots([]);
+          setLogs([]);
+          setSelectedScreenshot(null);
+          toast.success(`Session started: ${data.session_id.slice(0, 8)}...`);
         },
         onScreenshot: (data) => {
-          setScreenshots(prev => [...prev, data])
-          setSelectedScreenshot(data) // Auto-select latest screenshot
+          setScreenshots((prev) => [...prev, data]);
+          setSelectedScreenshot(data); // Auto-select latest screenshot
         },
         onLog: (data) => {
-          setLogs(prev => [...prev, data])
+          setLogs((prev) => [...prev, data]);
         },
         onSessionEnd: (data) => {
-          setCurrentSession(prev => prev ? {
-            ...prev,
-            status: data.status,
-            error_message: data.error_message
-          } : null)
-          toast.info(`Session ended: ${data.status}`)
-        }
-      })
+          setCurrentSession((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: data.status,
+                  error_message: data.error_message,
+                }
+              : null
+          );
+          toast.info(`Session ended: ${data.status}`);
+        },
+      });
 
-      wsRef.current.connect()
+      wsRef.current.connect();
     } catch (error) {
-      console.error('Failed to initialize WebSocket:', error)
-      toast.error('Failed to connect to runner')
+      console.error("Failed to initialize WebSocket:", error);
+      toast.error("Failed to connect to runner");
     }
-  }
+  };
 
   const handleReconnect = () => {
     if (wsRef.current) {
-      wsRef.current.disconnect()
+      wsRef.current.disconnect();
     }
-    initializeWebSocket()
-  }
+    initializeWebSocket();
+  };
 
   const getStatusColor = (status?: string) => {
     switch (status) {
-      case 'running': return 'default'
-      case 'completed': return 'success'
-      case 'failed': return 'destructive'
-      case 'disconnected': return 'secondary'
-      default: return 'outline'
+      case "running":
+        return "default";
+      case "completed":
+        return "success";
+      case "failed":
+        return "destructive";
+      case "disconnected":
+        return "secondary";
+      default:
+        return "outline";
     }
-  }
+  };
 
   const getLogIcon = (level: string) => {
     switch (level) {
-      case 'error':
-      case 'critical':
-        return <XCircle className="h-4 w-4 text-red-500" />
-      case 'warning':
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />
-      case 'info':
-        return <CheckCircle2 className="h-4 w-4 text-blue-500" />
+      case "error":
+      case "critical":
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case "warning":
+        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+      case "info":
+        return <CheckCircle2 className="h-4 w-4 text-blue-500" />;
       default:
-        return <Activity className="h-4 w-4 text-gray-500" />
+        return <Activity className="h-4 w-4 text-gray-500" />;
     }
-  }
+  };
 
   return (
     <div className="space-y-4">
@@ -142,14 +169,10 @@ export function RunnerMonitor({ projectId }: RunnerMonitorProps) {
               <CardTitle>Runner Connection</CardTitle>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={isConnected ? 'success' : 'secondary'}>
-                {isConnected ? 'Connected' : 'Disconnected'}
+              <Badge variant={isConnected ? "success" : "secondary"}>
+                {isConnected ? "Connected" : "Disconnected"}
               </Badge>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleReconnect}
-              >
+              <Button size="sm" variant="outline" onClick={handleReconnect}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
@@ -181,20 +204,28 @@ export function RunnerMonitor({ projectId }: RunnerMonitorProps) {
               </div>
               <div>
                 <span className="text-muted-foreground">Runner Version:</span>
-                <p className="font-medium">{currentSession.runner_version || 'N/A'}</p>
+                <p className="font-medium">
+                  {currentSession.runner_version || "N/A"}
+                </p>
               </div>
               <div>
                 <span className="text-muted-foreground">OS:</span>
-                <p className="font-medium">{currentSession.runner_os || 'N/A'}</p>
+                <p className="font-medium">
+                  {currentSession.runner_os || "N/A"}
+                </p>
               </div>
               <div>
                 <span className="text-muted-foreground">Hostname:</span>
-                <p className="font-medium">{currentSession.runner_hostname || 'N/A'}</p>
+                <p className="font-medium">
+                  {currentSession.runner_hostname || "N/A"}
+                </p>
               </div>
             </div>
             {currentSession.error_message && (
               <div className="mt-4 p-3 bg-destructive/10 border border-destructive rounded-md">
-                <p className="text-sm text-destructive">{currentSession.error_message}</p>
+                <p className="text-sm text-destructive">
+                  {currentSession.error_message}
+                </p>
               </div>
             )}
           </CardContent>
@@ -229,57 +260,80 @@ export function RunnerMonitor({ projectId }: RunnerMonitorProps) {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Size:</span>
-                    <p className="font-medium">{selectedScreenshot.width} × {selectedScreenshot.height}</p>
+                    <p className="font-medium">
+                      {selectedScreenshot.width} × {selectedScreenshot.height}
+                    </p>
                   </div>
                   {selectedScreenshot.automation_metadata?.state_name && (
                     <div>
                       <span className="text-muted-foreground">State:</span>
-                      <p className="font-medium">{selectedScreenshot.automation_metadata.state_name}</p>
+                      <p className="font-medium">
+                        {selectedScreenshot.automation_metadata.state_name}
+                      </p>
                     </div>
                   )}
                   {selectedScreenshot.automation_metadata?.action_type && (
                     <div>
                       <span className="text-muted-foreground">Action:</span>
-                      <p className="font-medium">{selectedScreenshot.automation_metadata.action_type}</p>
+                      <p className="font-medium">
+                        {selectedScreenshot.automation_metadata.action_type}
+                      </p>
                     </div>
                   )}
-                  {selectedScreenshot.automation_metadata?.execution_time_ms && (
+                  {selectedScreenshot.automation_metadata
+                    ?.execution_time_ms && (
                     <div>
-                      <span className="text-muted-foreground">Execution Time:</span>
-                      <p className="font-medium">{selectedScreenshot.automation_metadata.execution_time_ms}ms</p>
+                      <span className="text-muted-foreground">
+                        Execution Time:
+                      </span>
+                      <p className="font-medium">
+                        {
+                          selectedScreenshot.automation_metadata
+                            .execution_time_ms
+                        }
+                        ms
+                      </p>
                     </div>
                   )}
                 </div>
                 <Separator />
                 <div>
-                  <p className="text-sm text-muted-foreground mb-2">Recent Screenshots</p>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Recent Screenshots
+                  </p>
                   <ScrollArea className="h-32">
                     <div className="flex gap-2">
-                      {screenshots.slice().reverse().map((screenshot, idx) => (
-                        <button
-                          key={screenshot.screenshot_id}
-                          onClick={() => setSelectedScreenshot(screenshot)}
-                          className={`relative w-24 h-16 rounded border-2 overflow-hidden flex-shrink-0 ${
-                            selectedScreenshot?.screenshot_id === screenshot.screenshot_id
-                              ? 'border-primary'
-                              : 'border-border'
-                          }`}
-                        >
-                          <Image
-                            src={screenshot.presigned_url}
-                            alt={`Screenshot ${screenshots.length - idx}`}
-                            fill
-                            className="object-cover"
-                          />
-                        </button>
-                      ))}
+                      {screenshots
+                        .slice()
+                        .reverse()
+                        .map((screenshot, idx) => (
+                          <button
+                            key={screenshot.screenshot_id}
+                            onClick={() => setSelectedScreenshot(screenshot)}
+                            className={`relative w-24 h-16 rounded border-2 overflow-hidden flex-shrink-0 ${
+                              selectedScreenshot?.screenshot_id ===
+                              screenshot.screenshot_id
+                                ? "border-primary"
+                                : "border-border"
+                            }`}
+                          >
+                            <Image
+                              src={screenshot.presigned_url}
+                              alt={`Screenshot ${screenshots.length - idx}`}
+                              fill
+                              className="object-cover"
+                            />
+                          </button>
+                        ))}
                     </div>
                   </ScrollArea>
                 </div>
               </div>
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
-                {screenshots.length === 0 ? 'No screenshots yet' : 'Select a screenshot'}
+                {screenshots.length === 0
+                  ? "No screenshots yet"
+                  : "Select a screenshot"}
               </div>
             )}
           </CardContent>
@@ -319,11 +373,12 @@ export function RunnerMonitor({ projectId }: RunnerMonitorProps) {
                           </span>
                         </div>
                         <p className="text-sm break-words">{log.message}</p>
-                        {log.log_data && Object.keys(log.log_data).length > 0 && (
-                          <pre className="text-xs text-muted-foreground mt-1 overflow-x-auto">
-                            {JSON.stringify(log.log_data, null, 2)}
-                          </pre>
-                        )}
+                        {log.log_data &&
+                          Object.keys(log.log_data).length > 0 && (
+                            <pre className="text-xs text-muted-foreground mt-1 overflow-x-auto">
+                              {JSON.stringify(log.log_data, null, 2)}
+                            </pre>
+                          )}
                       </div>
                     </div>
                   ))}
@@ -334,5 +389,5 @@ export function RunnerMonitor({ projectId }: RunnerMonitorProps) {
         </Card>
       </div>
     </div>
-  )
+  );
 }

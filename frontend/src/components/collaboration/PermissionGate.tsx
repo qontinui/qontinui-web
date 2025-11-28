@@ -1,36 +1,39 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { Lock, AlertCircle } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { cn } from '@/lib/utils';
+import * as React from "react";
+import { Lock, AlertCircle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
 import {
   type PermissionLevel,
   type ProjectWithPermissions,
   hasPermission as checkPermission,
   getPermissionLevel,
-} from '@/lib/permissions';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/lib/permissions";
+import { useAuth } from "@/contexts/auth-context";
 
 /**
  * Legacy permission type for backward compatibility
  * Maps to new PermissionLevel system
  */
 export type Permission =
-  | 'view'
-  | 'comment'
-  | 'edit'
-  | 'delete'
-  | 'share'
-  | 'admin'
-  | 'manage_members';
+  | "view"
+  | "comment"
+  | "edit"
+  | "delete"
+  | "share"
+  | "admin"
+  | "manage_members";
 
 interface PermissionGateProps {
   children: React.ReactNode;
 
   // New API - using project and required permission level
   project?: ProjectWithPermissions;
-  requiredPermission?: PermissionLevel | Permission | Array<PermissionLevel | Permission>;
+  requiredPermission?:
+    | PermissionLevel
+    | Permission
+    | Array<PermissionLevel | Permission>;
 
   // Legacy API - for backward compatibility
   userPermissions?: Permission[];
@@ -44,34 +47,43 @@ interface PermissionGateProps {
 
 // Permission mapping for legacy support
 const permissionToLevel: Record<Permission, PermissionLevel> = {
-  view: 'view',
-  comment: 'comment',
-  edit: 'edit',
-  delete: 'admin',
-  share: 'admin',
-  admin: 'admin',
-  manage_members: 'owner',
+  view: "view",
+  comment: "comment",
+  edit: "edit",
+  delete: "admin",
+  share: "admin",
+  admin: "admin",
+  manage_members: "owner",
 };
 
 // Legacy role permissions for backward compatibility
 const rolePermissions: Record<string, Permission[]> = {
-  viewer: ['view'],
-  commenter: ['view', 'comment'],
-  editor: ['view', 'comment', 'edit'],
-  admin: ['view', 'comment', 'edit', 'delete', 'share', 'admin'],
-  owner: ['view', 'comment', 'edit', 'delete', 'share', 'admin', 'manage_members'],
+  viewer: ["view"],
+  commenter: ["view", "comment"],
+  editor: ["view", "comment", "edit"],
+  admin: ["view", "comment", "edit", "delete", "share", "admin"],
+  owner: [
+    "view",
+    "comment",
+    "edit",
+    "delete",
+    "share",
+    "admin",
+    "manage_members",
+  ],
 };
 
 const permissionMessages: Record<string, string> = {
-  none: 'You need access to this project.',
-  view: 'You need view permission to access this content.',
-  comment: 'You need comment permission to add comments.',
-  edit: 'You need edit permission to modify this content.',
-  delete: 'You need delete permission to remove this content.',
-  share: 'You need share permission to share this content.',
-  admin: 'You need admin permission to perform this action.',
-  owner: 'You must be the project owner to perform this action.',
-  manage_members: 'You need member management permission to perform this action.',
+  none: "You need access to this project.",
+  view: "You need view permission to access this content.",
+  comment: "You need comment permission to add comments.",
+  edit: "You need edit permission to modify this content.",
+  delete: "You need delete permission to remove this content.",
+  share: "You need share permission to share this content.",
+  admin: "You need admin permission to perform this action.",
+  owner: "You must be the project owner to perform this action.",
+  manage_members:
+    "You need member management permission to perform this action.",
 };
 
 /**
@@ -128,9 +140,10 @@ export function PermissionGate({
 
       // Convert permissions to levels and check
       return required.every((perm) => {
-        const requiredLevel = typeof perm === 'string' && perm in permissionToLevel
-          ? permissionToLevel[perm as Permission]
-          : (perm as PermissionLevel);
+        const requiredLevel =
+          typeof perm === "string" && perm in permissionToLevel
+            ? permissionToLevel[perm as Permission]
+            : (perm as PermissionLevel);
         return checkPermission(requiredLevel, userLevel);
       });
     }
@@ -139,8 +152,8 @@ export function PermissionGate({
     const actualPermissions: Permission[] = userPermissions
       ? userPermissions
       : userRole && rolePermissions[userRole]
-      ? rolePermissions[userRole]
-      : [];
+        ? rolePermissions[userRole]
+        : [];
 
     if (!requiredPermission) {
       return false;
@@ -168,10 +181,13 @@ export function PermissionGate({
       : requiredPermission;
     const message =
       permissionMessages[firstRequired] ||
-      'You do not have permission to access this content.';
+      "You do not have permission to access this content.";
 
     return (
-      <Alert variant="default" className={cn('border-muted-foreground/20', className)}>
+      <Alert
+        variant="default"
+        className={cn("border-muted-foreground/20", className)}
+      >
         <Lock className="h-4 w-4" />
         <AlertTitle>Insufficient Permissions</AlertTitle>
         <AlertDescription>{message}</AlertDescription>
@@ -217,7 +233,7 @@ export function usePermission(
     if (project) {
       return getPermissionLevel(project, currentUser);
     }
-    return 'none' as PermissionLevel;
+    return "none" as PermissionLevel;
   }, [project, currentUser]);
 
   // Legacy API - using userPermissions or userRole
@@ -237,9 +253,10 @@ export function usePermission(
       if (project) {
         const required = Array.isArray(permission) ? permission : [permission];
         return required.every((perm) => {
-          const requiredLevel = typeof perm === 'string' && perm in permissionToLevel
-            ? permissionToLevel[perm as Permission]
-            : (perm as PermissionLevel);
+          const requiredLevel =
+            typeof perm === "string" && perm in permissionToLevel
+              ? permissionToLevel[perm as Permission]
+              : (perm as PermissionLevel);
           return checkPermission(requiredLevel, projectPermissionLevel);
         });
       }
@@ -300,7 +317,7 @@ export class PermissionBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('Permission error:', error, errorInfo);
+    console.error("Permission error:", error, errorInfo);
   }
 
   render() {

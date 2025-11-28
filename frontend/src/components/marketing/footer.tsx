@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import Link from "next/link";
 
 export function Footer() {
   return (
@@ -21,12 +21,18 @@ export function Footer() {
             <h4 className="font-semibold mb-4">Product</h4>
             <ul className="space-y-2">
               <li>
-                <Link href="/docs" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <Link
+                  href="/docs"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
                   Documentation
                 </Link>
               </li>
               <li>
-                <Link href="/runner/download" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <Link
+                  href="/runner/download"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
                   Download Runner
                 </Link>
               </li>
@@ -85,22 +91,34 @@ export function Footer() {
             <h4 className="font-semibold mb-4">Legal</h4>
             <ul className="space-y-2">
               <li>
-                <Link href="/privacy" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <Link
+                  href="/privacy"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
                   Privacy Policy
                 </Link>
               </li>
               <li>
-                <Link href="/terms" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <Link
+                  href="/terms"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
                   Terms of Service
                 </Link>
               </li>
               <li>
-                <Link href="/acceptable-use" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <Link
+                  href="/acceptable-use"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
                   Acceptable Use Policy
                 </Link>
               </li>
               <li>
-                <Link href="/responsible-use" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <Link
+                  href="/responsible-use"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
                   Responsible Use FAQ
                 </Link>
               </li>

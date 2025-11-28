@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,19 +8,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Save, X, Plus, Loader2 } from 'lucide-react';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Save, X, Plus, Loader2 } from "lucide-react";
 
 interface SaveScreenshotDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   imageData: string | null;
-  onSave: (name: string, description?: string, tags?: string[]) => Promise<void>;
+  onSave: (
+    name: string,
+    description?: string,
+    tags?: string[]
+  ) => Promise<void>;
   defaultName?: string;
 }
 
@@ -29,21 +33,21 @@ export function SaveScreenshotDialog({
   onOpenChange,
   imageData,
   onSave,
-  defaultName = 'Screenshot',
+  defaultName = "Screenshot",
 }: SaveScreenshotDialogProps) {
   const [name, setName] = useState(defaultName);
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
+  const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {
       setName(defaultName);
-      setDescription('');
+      setDescription("");
       setTags([]);
-      setTagInput('');
+      setTagInput("");
     }
   }, [open, defaultName]);
 
@@ -51,7 +55,7 @@ export function SaveScreenshotDialog({
     const trimmedTag = tagInput.trim();
     if (trimmedTag && !tags.includes(trimmedTag)) {
       setTags([...tags, trimmedTag]);
-      setTagInput('');
+      setTagInput("");
     }
   };
 
@@ -60,7 +64,7 @@ export function SaveScreenshotDialog({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       e.preventDefault();
       handleAddTag();
     }
@@ -71,7 +75,11 @@ export function SaveScreenshotDialog({
 
     try {
       setSaving(true);
-      await onSave(name.trim(), description.trim() || undefined, tags.length > 0 ? tags : undefined);
+      await onSave(
+        name.trim(),
+        description.trim() || undefined,
+        tags.length > 0 ? tags : undefined
+      );
     } finally {
       setSaving(false);
     }
@@ -83,7 +91,8 @@ export function SaveScreenshotDialog({
         <DialogHeader>
           <DialogTitle>Save Screenshot to Project</DialogTitle>
           <DialogDescription>
-            Save this frame as a screenshot in your project. It can be used for creating state elements.
+            Save this frame as a screenshot in your project. It can be used for
+            creating state elements.
           </DialogDescription>
         </DialogHeader>
 
@@ -148,7 +157,11 @@ export function SaveScreenshotDialog({
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2">
                 {tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="flex items-center gap-1">
+                  <Badge
+                    key={tag}
+                    variant="secondary"
+                    className="flex items-center gap-1"
+                  >
                     {tag}
                     <button
                       onClick={() => handleRemoveTag(tag)}
@@ -164,7 +177,11 @@ export function SaveScreenshotDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+          >
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={!name.trim() || saving}>

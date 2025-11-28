@@ -23,7 +23,7 @@ export interface GoToStateActionConfig {
   verify?: boolean;
 
   /** Strategy for pathfinding to multiple states */
-  strategy?: 'all' | 'any' | 'optimal';
+  strategy?: "all" | "any" | "optimal";
 }
 
 /**

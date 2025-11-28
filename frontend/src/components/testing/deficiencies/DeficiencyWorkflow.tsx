@@ -1,23 +1,23 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import {
   AlertCircle,
   Eye,
@@ -28,16 +28,16 @@ import {
   ArrowRight,
   Clock,
   User,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   Deficiency,
   DeficiencyStatus,
   WORKFLOW_TRANSITIONS,
   STATUS_CONFIG,
   DeficiencyActivity,
-} from '@/types/deficiency';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+} from "@/types/deficiency";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface DeficiencyWorkflowProps {
   deficiency: Deficiency;
@@ -72,7 +72,9 @@ export function DeficiencyWorkflow({
   className,
 }: DeficiencyWorkflowProps) {
   const [isChangingStatus, setIsChangingStatus] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState<DeficiencyStatus | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<DeficiencyStatus | null>(
+    null
+  );
 
   const currentStatus = deficiency.status;
   const allowedTransitions = WORKFLOW_TRANSITIONS[currentStatus] || [];
@@ -88,19 +90,22 @@ export function DeficiencyWorkflow({
       toast.success(`Status changed to ${STATUS_CONFIG[selectedStatus].label}`);
       setSelectedStatus(null);
     } catch (error) {
-      toast.error('Failed to change status');
-      console.error('Status change error:', error);
+      toast.error("Failed to change status");
+      console.error("Status change error:", error);
     } finally {
       setIsChangingStatus(false);
     }
   };
 
   const statusActivities = activities
-    .filter((a) => a.action === 'status_changed')
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    .filter((a) => a.action === "status_changed")
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
 
   return (
-    <Card className={cn('w-full', className)}>
+    <Card className={cn("w-full", className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <IconComponent className="h-5 w-5" />
@@ -116,10 +121,10 @@ export function DeficiencyWorkflow({
           <label className="text-sm font-medium">Current Status</label>
           <Badge
             className={cn(
-              'text-base px-4 py-2',
+              "text-base px-4 py-2",
               config.bgColor,
               config.color,
-              'border'
+              "border"
             )}
           >
             <IconComponent className="h-4 w-4 mr-2" />
@@ -135,8 +140,10 @@ export function DeficiencyWorkflow({
               <label className="text-sm font-medium">Change Status</label>
               <div className="flex gap-2">
                 <Select
-                  value={selectedStatus || ''}
-                  onValueChange={(value) => setSelectedStatus(value as DeficiencyStatus)}
+                  value={selectedStatus || ""}
+                  onValueChange={(value) =>
+                    setSelectedStatus(value as DeficiencyStatus)
+                  }
                 >
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select new status..." />
@@ -144,7 +151,10 @@ export function DeficiencyWorkflow({
                   <SelectContent>
                     {allowedTransitions.map((status) => {
                       const statusConfig = STATUS_CONFIG[status];
-                      const StatusIcon = STATUS_ICONS[statusConfig.icon as keyof typeof STATUS_ICONS];
+                      const StatusIcon =
+                        STATUS_ICONS[
+                          statusConfig.icon as keyof typeof STATUS_ICONS
+                        ];
                       return (
                         <SelectItem key={status} value={status}>
                           <div className="flex items-center gap-2">
@@ -162,7 +172,7 @@ export function DeficiencyWorkflow({
                   size="default"
                 >
                   {isChangingStatus ? (
-                    'Updating...'
+                    "Updating..."
                   ) : (
                     <>
                       <ArrowRight className="h-4 w-4 mr-2" />
@@ -173,8 +183,8 @@ export function DeficiencyWorkflow({
               </div>
               {selectedStatus && (
                 <p className="text-xs text-muted-foreground">
-                  This will move the deficiency from{' '}
-                  <span className="font-medium">{config.label}</span> to{' '}
+                  This will move the deficiency from{" "}
+                  <span className="font-medium">{config.label}</span> to{" "}
                   <span className="font-medium">
                     {STATUS_CONFIG[selectedStatus].label}
                   </span>
@@ -192,17 +202,23 @@ export function DeficiencyWorkflow({
               <label className="text-sm font-medium">Status History</label>
               <div className="space-y-2">
                 {statusActivities.map((activity) => {
-                  const oldStatus = activity.details.old_value as DeficiencyStatus | undefined;
-                  const newStatus = activity.details.new_value as DeficiencyStatus;
+                  const oldStatus = activity.details.old_value as
+                    | DeficiencyStatus
+                    | undefined;
+                  const newStatus = activity.details
+                    .new_value as DeficiencyStatus;
                   const newConfig = STATUS_CONFIG[newStatus];
-                  const NewIcon = STATUS_ICONS[newConfig.icon as keyof typeof STATUS_ICONS];
+                  const NewIcon =
+                    STATUS_ICONS[newConfig.icon as keyof typeof STATUS_ICONS];
 
                   return (
                     <div
                       key={activity.id}
                       className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 text-sm"
                     >
-                      <NewIcon className={cn('h-4 w-4 mt-0.5', newConfig.color)} />
+                      <NewIcon
+                        className={cn("h-4 w-4 mt-0.5", newConfig.color)}
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           {oldStatus && (
@@ -213,7 +229,7 @@ export function DeficiencyWorkflow({
                               <ArrowRight className="h-3 w-3 text-muted-foreground" />
                             </>
                           )}
-                          <span className={cn('font-medium', newConfig.color)}>
+                          <span className={cn("font-medium", newConfig.color)}>
                             {newConfig.label}
                           </span>
                         </div>
@@ -245,19 +261,23 @@ export function DeficiencyWorkflow({
               <strong>New:</strong> Initial state when deficiency is reported
             </p>
             <p>
-              <strong>Acknowledged:</strong> Team has reviewed and confirmed the issue
+              <strong>Acknowledged:</strong> Team has reviewed and confirmed the
+              issue
             </p>
             <p>
-              <strong>Investigating:</strong> Actively working on root cause analysis
+              <strong>Investigating:</strong> Actively working on root cause
+              analysis
             </p>
             <p>
-              <strong>Fixed:</strong> Issue has been resolved and ready for verification
+              <strong>Fixed:</strong> Issue has been resolved and ready for
+              verification
             </p>
             <p>
               <strong>Closed:</strong> Fix has been verified and deployed
             </p>
             <p>
-              <strong>Won't Fix:</strong> Issue will not be addressed (by design, out of scope, etc.)
+              <strong>Won't Fix:</strong> Issue will not be addressed (by
+              design, out of scope, etc.)
             </p>
           </div>
         </div>

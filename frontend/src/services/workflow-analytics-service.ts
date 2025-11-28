@@ -9,7 +9,7 @@
  * - 'workflow-executions': Detailed execution records
  */
 
-import { Workflow } from '@/lib/action-schema/action-types';
+import { Workflow } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -187,8 +187,8 @@ export interface TimeRange {
 // Storage Keys
 // ============================================================================
 
-const METRICS_STORAGE_KEY = 'workflow-metrics';
-const EXECUTIONS_STORAGE_KEY = 'workflow-executions';
+const METRICS_STORAGE_KEY = "workflow-metrics";
+const EXECUTIONS_STORAGE_KEY = "workflow-executions";
 
 // ============================================================================
 // Storage Helpers
@@ -202,7 +202,7 @@ function getExecutions(): ExecutionRecord[] {
     const data = localStorage.getItem(EXECUTIONS_STORAGE_KEY);
     return data ? JSON.parse(data) : [];
   } catch (error) {
-    console.error('Failed to load execution records:', error);
+    console.error("Failed to load execution records:", error);
     return [];
   }
 }
@@ -214,7 +214,7 @@ function saveExecutions(executions: ExecutionRecord[]): void {
   try {
     localStorage.setItem(EXECUTIONS_STORAGE_KEY, JSON.stringify(executions));
   } catch (error) {
-    console.error('Failed to save execution records:', error);
+    console.error("Failed to save execution records:", error);
   }
 }
 
@@ -226,7 +226,7 @@ function getMetricsMap(): Record<string, WorkflowMetrics> {
     const data = localStorage.getItem(METRICS_STORAGE_KEY);
     return data ? JSON.parse(data) : {};
   } catch (error) {
-    console.error('Failed to load workflow metrics:', error);
+    console.error("Failed to load workflow metrics:", error);
     return {};
   }
 }
@@ -238,7 +238,7 @@ function saveMetricsMap(metrics: Record<string, WorkflowMetrics>): void {
   try {
     localStorage.setItem(METRICS_STORAGE_KEY, JSON.stringify(metrics));
   } catch (error) {
-    console.error('Failed to save workflow metrics:', error);
+    console.error("Failed to save workflow metrics:", error);
   }
 }
 
@@ -255,7 +255,9 @@ function calculateMetrics(
   executions: ExecutionRecord[],
   folderId?: string
 ): WorkflowMetrics {
-  const workflowExecutions = executions.filter((e) => e.workflowId === workflowId);
+  const workflowExecutions = executions.filter(
+    (e) => e.workflowId === workflowId
+  );
 
   if (workflowExecutions.length === 0) {
     return {
@@ -272,7 +274,9 @@ function calculateMetrics(
     };
   }
 
-  const successfulExecutions = workflowExecutions.filter((e) => e.success).length;
+  const successfulExecutions = workflowExecutions.filter(
+    (e) => e.success
+  ).length;
   const failedExecutions = workflowExecutions.length - successfulExecutions;
   const durations = workflowExecutions.map((e) => e.duration);
 
@@ -295,7 +299,10 @@ function calculateMetrics(
 /**
  * Filter executions by time range
  */
-function filterByTimeRange(executions: ExecutionRecord[], timeRange?: TimeRange): ExecutionRecord[] {
+function filterByTimeRange(
+  executions: ExecutionRecord[],
+  timeRange?: TimeRange
+): ExecutionRecord[] {
   if (!timeRange) return executions;
 
   const startTime = new Date(timeRange.start).getTime();
@@ -344,7 +351,12 @@ export function trackExecution(
 
   // Update metrics
   const metricsMap = getMetricsMap();
-  metricsMap[workflowId] = calculateMetrics(workflowId, workflowName, executions, folderId);
+  metricsMap[workflowId] = calculateMetrics(
+    workflowId,
+    workflowName,
+    executions,
+    folderId
+  );
   saveMetricsMap(metricsMap);
 }
 
@@ -367,9 +379,15 @@ export function getAllMetrics(): WorkflowMetrics[] {
 /**
  * Get metrics for workflows in a specific date range
  */
-export function getMetricsInDateRange(startDate: Date | string, endDate: Date | string): WorkflowMetrics[] {
+export function getMetricsInDateRange(
+  startDate: Date | string,
+  endDate: Date | string
+): WorkflowMetrics[] {
   const executions = getExecutions();
-  const filteredExecutions = filterByTimeRange(executions, { start: startDate, end: endDate });
+  const filteredExecutions = filterByTimeRange(executions, {
+    start: startDate,
+    end: endDate,
+  });
 
   // Group by workflow and calculate metrics
   const workflowGroups: Record<string, ExecutionRecord[]> = {};
@@ -381,7 +399,12 @@ export function getMetricsInDateRange(startDate: Date | string, endDate: Date | 
   });
 
   return Object.entries(workflowGroups).map(([workflowId, execs]) =>
-    calculateMetrics(workflowId, execs[0].workflowName, execs, execs[0].folderId)
+    calculateMetrics(
+      workflowId,
+      execs[0].workflowName,
+      execs,
+      execs[0].folderId
+    )
   );
 }
 
@@ -417,11 +440,13 @@ export function getSlowestWorkflows(limit: number = 10): WorkflowMetrics[] {
 /**
  * Get workflows with highest error rates
  */
-export function getHighestErrorRateWorkflows(limit: number = 10): WorkflowMetrics[] {
+export function getHighestErrorRateWorkflows(
+  limit: number = 10
+): WorkflowMetrics[] {
   const allMetrics = getAllMetrics();
   return allMetrics
     .filter((m) => m.totalExecutions > 0 && m.failedExecutions > 0)
-    .sort((a, b) => (1 - b.successRate) - (1 - a.successRate))
+    .sort((a, b) => 1 - b.successRate - (1 - a.successRate))
     .slice(0, limit);
 }
 
@@ -436,9 +461,14 @@ export function getRecentExecutions(limit: number = 50): ExecutionRecord[] {
 /**
  * Calculate success rate for a workflow
  */
-export function calculateSuccessRate(workflowId: string, timeRange?: TimeRange): number {
+export function calculateSuccessRate(
+  workflowId: string,
+  timeRange?: TimeRange
+): number {
   const executions = getExecutions();
-  let workflowExecutions = executions.filter((e) => e.workflowId === workflowId);
+  let workflowExecutions = executions.filter(
+    (e) => e.workflowId === workflowId
+  );
 
   if (timeRange) {
     workflowExecutions = filterByTimeRange(workflowExecutions, timeRange);
@@ -453,9 +483,14 @@ export function calculateSuccessRate(workflowId: string, timeRange?: TimeRange):
 /**
  * Calculate average execution duration for a workflow
  */
-export function calculateAvgDuration(workflowId: string, timeRange?: TimeRange): number {
+export function calculateAvgDuration(
+  workflowId: string,
+  timeRange?: TimeRange
+): number {
   const executions = getExecutions();
-  let workflowExecutions = executions.filter((e) => e.workflowId === workflowId);
+  let workflowExecutions = executions.filter(
+    (e) => e.workflowId === workflowId
+  );
 
   if (timeRange) {
     workflowExecutions = filterByTimeRange(workflowExecutions, timeRange);
@@ -463,7 +498,10 @@ export function calculateAvgDuration(workflowId: string, timeRange?: TimeRange):
 
   if (workflowExecutions.length === 0) return 0;
 
-  const totalDuration = workflowExecutions.reduce((sum, e) => sum + e.duration, 0);
+  const totalDuration = workflowExecutions.reduce(
+    (sum, e) => sum + e.duration,
+    0
+  );
   return totalDuration / workflowExecutions.length;
 }
 
@@ -472,7 +510,9 @@ export function calculateAvgDuration(workflowId: string, timeRange?: TimeRange):
  */
 export function getExecutionTimeline(workflowId: string): TimelineDataPoint[] {
   const executions = getExecutions();
-  const workflowExecutions = executions.filter((e) => e.workflowId === workflowId);
+  const workflowExecutions = executions.filter(
+    (e) => e.workflowId === workflowId
+  );
 
   return workflowExecutions.map((e) => ({
     timestamp: e.endTime,
@@ -500,9 +540,18 @@ export function getAggregatedStats(): AggregatedStats {
     };
   }
 
-  const totalExecutions = allMetrics.reduce((sum, m) => sum + m.totalExecutions, 0);
-  const totalSuccessful = allMetrics.reduce((sum, m) => sum + m.successfulExecutions, 0);
-  const totalFailed = allMetrics.reduce((sum, m) => sum + m.failedExecutions, 0);
+  const totalExecutions = allMetrics.reduce(
+    (sum, m) => sum + m.totalExecutions,
+    0
+  );
+  const totalSuccessful = allMetrics.reduce(
+    (sum, m) => sum + m.successfulExecutions,
+    0
+  );
+  const totalFailed = allMetrics.reduce(
+    (sum, m) => sum + m.failedExecutions,
+    0
+  );
 
   const totalDuration = executions.reduce((sum, e) => sum + e.duration, 0);
 
@@ -519,14 +568,17 @@ export function getAggregatedStats(): AggregatedStats {
   // Most error-prone workflow
   const mostErrorProne = allMetrics
     .filter((m) => m.totalExecutions > 0 && m.failedExecutions > 0)
-    .reduce((max, m) => ((1 - m.successRate) > (1 - (max?.successRate || 1)) ? m : max));
+    .reduce((max, m) =>
+      1 - m.successRate > 1 - (max?.successRate || 1) ? m : max
+    );
 
   return {
     totalWorkflows: allMetrics.length,
     totalExecutions,
     totalSuccessful,
     totalFailed,
-    overallSuccessRate: totalExecutions > 0 ? totalSuccessful / totalExecutions : 0,
+    overallSuccessRate:
+      totalExecutions > 0 ? totalSuccessful / totalExecutions : 0,
     avgDuration: executions.length > 0 ? totalDuration / executions.length : 0,
     mostActiveWorkflow: mostActive
       ? {
@@ -557,9 +609,12 @@ export function getAggregatedStats(): AggregatedStats {
  */
 export function exportAnalyticsReport(timeRange?: TimeRange): AnalyticsReport {
   const executions = getExecutions();
-  const filteredExecutions = timeRange ? filterByTimeRange(executions, timeRange) : executions;
+  const filteredExecutions = timeRange
+    ? filterByTimeRange(executions, timeRange)
+    : executions;
 
-  const start = timeRange?.start || (executions[0]?.startTime || new Date().toISOString());
+  const start =
+    timeRange?.start || executions[0]?.startTime || new Date().toISOString();
   const end = timeRange?.end || new Date().toISOString();
 
   // Calculate metrics for filtered executions
@@ -571,15 +626,33 @@ export function exportAnalyticsReport(timeRange?: TimeRange): AnalyticsReport {
     workflowGroups[exec.workflowId].push(exec);
   });
 
-  const workflowMetrics = Object.entries(workflowGroups).map(([workflowId, execs]) =>
-    calculateMetrics(workflowId, execs[0].workflowName, execs, execs[0].folderId)
+  const workflowMetrics = Object.entries(workflowGroups).map(
+    ([workflowId, execs]) =>
+      calculateMetrics(
+        workflowId,
+        execs[0].workflowName,
+        execs,
+        execs[0].folderId
+      )
   );
 
   // Calculate aggregated stats
-  const totalExecutions = workflowMetrics.reduce((sum, m) => sum + m.totalExecutions, 0);
-  const totalSuccessful = workflowMetrics.reduce((sum, m) => sum + m.successfulExecutions, 0);
-  const totalFailed = workflowMetrics.reduce((sum, m) => sum + m.failedExecutions, 0);
-  const totalDuration = filteredExecutions.reduce((sum, e) => sum + e.duration, 0);
+  const totalExecutions = workflowMetrics.reduce(
+    (sum, m) => sum + m.totalExecutions,
+    0
+  );
+  const totalSuccessful = workflowMetrics.reduce(
+    (sum, m) => sum + m.successfulExecutions,
+    0
+  );
+  const totalFailed = workflowMetrics.reduce(
+    (sum, m) => sum + m.failedExecutions,
+    0
+  );
+  const totalDuration = filteredExecutions.reduce(
+    (sum, e) => sum + e.duration,
+    0
+  );
 
   const mostActive = workflowMetrics.reduce((max, m) =>
     m.totalExecutions > (max?.totalExecutions || 0) ? m : max
@@ -591,15 +664,21 @@ export function exportAnalyticsReport(timeRange?: TimeRange): AnalyticsReport {
 
   const mostErrorProne = workflowMetrics
     .filter((m) => m.totalExecutions > 0 && m.failedExecutions > 0)
-    .reduce((max, m) => ((1 - m.successRate) > (1 - (max?.successRate || 1)) ? m : max));
+    .reduce((max, m) =>
+      1 - m.successRate > 1 - (max?.successRate || 1) ? m : max
+    );
 
   const stats: AggregatedStats = {
     totalWorkflows: workflowMetrics.length,
     totalExecutions,
     totalSuccessful,
     totalFailed,
-    overallSuccessRate: totalExecutions > 0 ? totalSuccessful / totalExecutions : 0,
-    avgDuration: filteredExecutions.length > 0 ? totalDuration / filteredExecutions.length : 0,
+    overallSuccessRate:
+      totalExecutions > 0 ? totalSuccessful / totalExecutions : 0,
+    avgDuration:
+      filteredExecutions.length > 0
+        ? totalDuration / filteredExecutions.length
+        : 0,
     mostActiveWorkflow: mostActive
       ? {
           workflowId: mostActive.workflowId,
@@ -626,8 +705,8 @@ export function exportAnalyticsReport(timeRange?: TimeRange): AnalyticsReport {
   return {
     generatedAt: new Date().toISOString(),
     timeRange: {
-      start: typeof start === 'string' ? start : start.toISOString(),
-      end: typeof end === 'string' ? end : end.toISOString(),
+      start: typeof start === "string" ? start : start.toISOString(),
+      end: typeof end === "string" ? end : end.toISOString(),
     },
     stats,
     workflowMetrics,
@@ -642,7 +721,9 @@ export function clearMetrics(workflowId?: string): void {
   if (workflowId) {
     // Clear specific workflow
     const executions = getExecutions();
-    const filteredExecutions = executions.filter((e) => e.workflowId !== workflowId);
+    const filteredExecutions = executions.filter(
+      (e) => e.workflowId !== workflowId
+    );
     saveExecutions(filteredExecutions);
 
     const metricsMap = getMetricsMap();

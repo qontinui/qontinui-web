@@ -23,7 +23,8 @@ export default function WebDocsPage() {
             Qontinui Web
           </h1>
           <p className="text-xl text-slate-600">
-            Visual configuration builder for creating intelligent GUI automation workflows
+            Visual configuration builder for creating intelligent GUI automation
+            workflows
           </p>
         </div>
 
@@ -33,30 +34,45 @@ export default function WebDocsPage() {
             What is Qontinui Web?
           </h2>
           <p className="text-slate-700 mb-4">
-            Qontinui Web is a browser-based visual builder that lets you create sophisticated GUI automation workflows without writing code. It uses a <strong>model-based approach</strong> where you define:
+            Qontinui Web is a browser-based visual builder that lets you create
+            sophisticated GUI automation workflows without writing code. It uses
+            a <strong>model-based approach</strong> where you define:
           </p>
           <ul className="space-y-2 text-slate-700 ml-6">
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold">•</span>
-              <span><strong>States</strong> - Different screens or conditions in your application</span>
+              <span>
+                <strong>States</strong> - Different screens or conditions in
+                your application
+              </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold">•</span>
-              <span><strong>Actions</strong> - Operations to perform (click, type, wait, etc.)</span>
+              <span>
+                <strong>Actions</strong> - Operations to perform (click, type,
+                wait, etc.)
+              </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold">•</span>
-              <span><strong>Transitions</strong> - How to navigate between states</span>
+              <span>
+                <strong>Transitions</strong> - How to navigate between states
+              </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold">•</span>
-              <span><strong>Images</strong> - Visual elements for state identification and targeting</span>
+              <span>
+                <strong>Images</strong> - Visual elements for state
+                identification and targeting
+              </span>
             </li>
           </ul>
 
           <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-6">
             <p className="text-sm text-green-900">
-              <strong>Mock Execution:</strong> Test your automation logic directly in the browser without requiring a real GUI environment. Perfect for rapid iteration and development.
+              <strong>Mock Execution:</strong> Test your automation logic
+              directly in the browser without requiring a real GUI environment.
+              Perfect for rapid iteration and development.
             </p>
           </div>
         </section>
@@ -206,7 +222,8 @@ export default function WebDocsPage() {
             Ready to Build Your First Automation?
           </h2>
           <p className="text-slate-700 mb-6">
-            Sign up for free and start building intelligent GUI automation workflows today.
+            Sign up for free and start building intelligent GUI automation
+            workflows today.
           </p>
           <div className="flex flex-wrap gap-4">
             <Link

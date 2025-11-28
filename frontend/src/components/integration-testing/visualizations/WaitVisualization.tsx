@@ -60,7 +60,7 @@ export function WaitVisualization({
         strokeWidth="2.5"
         opacity="0.7"
         className="animate-ping"
-        style={{ animationDelay: '0.2s' }}
+        style={{ animationDelay: "0.2s" }}
       />
       <circle
         cx={centerX}
@@ -71,7 +71,7 @@ export function WaitVisualization({
         strokeWidth="2"
         opacity="0.8"
         className="animate-ping"
-        style={{ animationDelay: '0.4s' }}
+        style={{ animationDelay: "0.4s" }}
       />
 
       {/* Central clock icon background */}
@@ -83,13 +83,7 @@ export function WaitVisualization({
         opacity="0.2"
         className="animate-pulse"
       />
-      <circle
-        cx={centerX}
-        cy={centerY}
-        r="25"
-        fill="#64748b"
-        opacity="0.9"
-      />
+      <circle cx={centerX} cy={centerY} r="25" fill="#64748b" opacity="0.9" />
 
       {/* Clock face */}
       <circle
@@ -106,15 +100,7 @@ export function WaitVisualization({
         const rad = (angle * Math.PI) / 180;
         const x = centerX + Math.cos(rad) * 15;
         const y = centerY + Math.sin(rad) * 15;
-        return (
-          <circle
-            key={i}
-            cx={x}
-            cy={y}
-            r="1.5"
-            fill="#fff"
-          />
-        );
+        return <circle key={i} cx={x} cy={y} r="1.5" fill="#fff" />;
       })}
 
       {/* Clock hands */}
@@ -140,12 +126,7 @@ export function WaitVisualization({
         className="animate-pulse"
       />
       {/* Center dot */}
-      <circle
-        cx={centerX}
-        cy={centerY}
-        r="2.5"
-        fill="#fff"
-      />
+      <circle cx={centerX} cy={centerY} r="2.5" fill="#fff" />
 
       {/* WAIT label */}
       <g transform={`translate(${centerX}, ${centerY - 60})`}>

@@ -5,24 +5,28 @@
  * Supports fuzzy matching, search operators, filtering, and recent search history.
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { State, Transition, ImageAsset } from '@/contexts/automation-context/types';
-import type { WorkflowFolder } from '@/types/workflow-organization/types';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type {
+  State,
+  Transition,
+  ImageAsset,
+} from "@/contexts/automation-context/types";
+import type { WorkflowFolder } from "@/types/workflow-organization/types";
 
 // ============================================================================
 // Search Types
 // ============================================================================
 
 export type ResourceType =
-  | 'workflow'
-  | 'state'
-  | 'image'
-  | 'transition'
-  | 'folder'
-  | 'action'
-  | 'component'
-  | 'test'
-  | 'documentation';
+  | "workflow"
+  | "state"
+  | "image"
+  | "transition"
+  | "folder"
+  | "action"
+  | "component"
+  | "test"
+  | "documentation";
 
 export interface SearchFilter {
   types?: ResourceType[];
@@ -86,27 +90,27 @@ class SearchIndex {
 
   updateWorkflows(workflows: Workflow[]): void {
     this.workflows.clear();
-    workflows.forEach(wf => this.workflows.set(wf.id, wf));
+    workflows.forEach((wf) => this.workflows.set(wf.id, wf));
   }
 
   updateStates(states: State[]): void {
     this.states.clear();
-    states.forEach(s => this.states.set(s.id, s));
+    states.forEach((s) => this.states.set(s.id, s));
   }
 
   updateImages(images: ImageAsset[]): void {
     this.images.clear();
-    images.forEach(img => this.images.set(img.id, img));
+    images.forEach((img) => this.images.set(img.id, img));
   }
 
   updateTransitions(transitions: Transition[]): void {
     this.transitions.clear();
-    transitions.forEach(t => this.transitions.set(t.id, t));
+    transitions.forEach((t) => this.transitions.set(t.id, t));
   }
 
   updateFolders(folders: WorkflowFolder[]): void {
     this.folders.clear();
-    folders.forEach(f => this.folders.set(f.id, f));
+    folders.forEach((f) => this.folders.set(f.id, f));
   }
 
   getAllWorkflows(): Workflow[] {
@@ -145,7 +149,7 @@ class SearchIndex {
 class GlobalSearchService {
   private index = new SearchIndex();
   private recentSearches: RecentSearch[] = [];
-  private readonly RECENT_SEARCHES_KEY = 'qontinui-recent-searches';
+  private readonly RECENT_SEARCHES_KEY = "qontinui-recent-searches";
   private readonly MAX_RECENT_SEARCHES = 10;
   private readonly MAX_RESULTS_PER_TYPE = 20;
 
@@ -202,31 +206,38 @@ class GlobalSearchService {
     };
 
     // Determine which types to search
-    const typesToSearch = mergedFilters.types && mergedFilters.types.length > 0
-      ? mergedFilters.types
-      : ['workflow', 'state', 'image', 'transition', 'folder'] as ResourceType[];
+    const typesToSearch =
+      mergedFilters.types && mergedFilters.types.length > 0
+        ? mergedFilters.types
+        : ([
+            "workflow",
+            "state",
+            "image",
+            "transition",
+            "folder",
+          ] as ResourceType[]);
 
     // Search each enabled type
     for (const type of typesToSearch) {
       let results: SearchResultItem[] = [];
 
       switch (type) {
-        case 'workflow':
+        case "workflow":
           results = await this.searchWorkflows(cleanQuery, mergedFilters);
           break;
-        case 'state':
+        case "state":
           results = await this.searchStates(cleanQuery, mergedFilters);
           break;
-        case 'image':
+        case "image":
           results = await this.searchImages(cleanQuery, mergedFilters);
           break;
-        case 'transition':
+        case "transition":
           results = await this.searchTransitions(cleanQuery, mergedFilters);
           break;
-        case 'folder':
+        case "folder":
           results = await this.searchFolders(cleanQuery, mergedFilters);
           break;
-        case 'action':
+        case "action":
           results = await this.searchActions(cleanQuery, mergedFilters);
           break;
       }
@@ -262,7 +273,7 @@ class GlobalSearchService {
       const nameMatch = this.fuzzyMatch(query, workflow.name);
       if (nameMatch.score > 0) {
         matches.push({
-          field: 'name',
+          field: "name",
           value: workflow.name,
           matchedText: nameMatch.matchedText,
           score: nameMatch.score * 2, // Name matches weighted higher
@@ -275,7 +286,7 @@ class GlobalSearchService {
         const descMatch = this.fuzzyMatch(query, workflow.description);
         if (descMatch.score > 0) {
           matches.push({
-            field: 'description',
+            field: "description",
             value: workflow.description,
             matchedText: descMatch.matchedText,
             score: descMatch.score,
@@ -289,7 +300,7 @@ class GlobalSearchService {
         const catMatch = this.fuzzyMatch(query, workflow.category);
         if (catMatch.score > 0) {
           matches.push({
-            field: 'category',
+            field: "category",
             value: workflow.category,
             matchedText: catMatch.matchedText,
             score: catMatch.score,
@@ -304,7 +315,7 @@ class GlobalSearchService {
           const actionMatch = this.fuzzyMatch(query, action.name);
           if (actionMatch.score > 0) {
             matches.push({
-              field: 'action',
+              field: "action",
               value: action.name,
               matchedText: actionMatch.matchedText,
               score: actionMatch.score * 0.5,
@@ -317,7 +328,7 @@ class GlobalSearchService {
       // Search by ID (exact match)
       if (workflow.id.toLowerCase().includes(query.toLowerCase())) {
         matches.push({
-          field: 'id',
+          field: "id",
           value: workflow.id,
           matchedText: workflow.id,
           score: 10,
@@ -328,7 +339,7 @@ class GlobalSearchService {
       if (matches.length > 0) {
         results.push({
           id: workflow.id,
-          type: 'workflow',
+          type: "workflow",
           name: workflow.name,
           description: workflow.description,
           breadcrumb: workflow.category ? [workflow.category] : undefined,
@@ -365,7 +376,7 @@ class GlobalSearchService {
       const nameMatch = this.fuzzyMatch(query, state.name);
       if (nameMatch.score > 0) {
         matches.push({
-          field: 'name',
+          field: "name",
           value: state.name,
           matchedText: nameMatch.matchedText,
           score: nameMatch.score * 2,
@@ -378,7 +389,7 @@ class GlobalSearchService {
         const descMatch = this.fuzzyMatch(query, state.description);
         if (descMatch.score > 0) {
           matches.push({
-            field: 'description',
+            field: "description",
             value: state.description,
             matchedText: descMatch.matchedText,
             score: descMatch.score,
@@ -390,7 +401,7 @@ class GlobalSearchService {
       // Search in ID
       if (state.id.toLowerCase().includes(query.toLowerCase())) {
         matches.push({
-          field: 'id',
+          field: "id",
           value: state.id,
           matchedText: state.id,
           score: 10,
@@ -401,7 +412,7 @@ class GlobalSearchService {
       if (matches.length > 0) {
         results.push({
           id: state.id,
-          type: 'state',
+          type: "state",
           name: state.name,
           description: state.description,
           matches,
@@ -436,7 +447,7 @@ class GlobalSearchService {
       const nameMatch = this.fuzzyMatch(query, image.name);
       if (nameMatch.score > 0) {
         matches.push({
-          field: 'name',
+          field: "name",
           value: image.name,
           matchedText: nameMatch.matchedText,
           score: nameMatch.score * 2,
@@ -447,7 +458,7 @@ class GlobalSearchService {
       // Search in ID
       if (image.id.toLowerCase().includes(query.toLowerCase())) {
         matches.push({
-          field: 'id',
+          field: "id",
           value: image.id,
           matchedText: image.id,
           score: 10,
@@ -460,7 +471,7 @@ class GlobalSearchService {
         const sourceMatch = this.fuzzyMatch(query, image.source);
         if (sourceMatch.score > 0) {
           matches.push({
-            field: 'source',
+            field: "source",
             value: image.source,
             matchedText: sourceMatch.matchedText,
             score: sourceMatch.score * 0.5,
@@ -472,7 +483,7 @@ class GlobalSearchService {
       if (matches.length > 0) {
         results.push({
           id: image.id,
-          type: 'image',
+          type: "image",
           name: image.name,
           matches,
           score,
@@ -506,7 +517,7 @@ class GlobalSearchService {
       // Search in ID
       if (transition.id.toLowerCase().includes(query.toLowerCase())) {
         matches.push({
-          field: 'id',
+          field: "id",
           value: transition.id,
           matchedText: transition.id,
           score: 10,
@@ -515,11 +526,11 @@ class GlobalSearchService {
       }
 
       // Search in state names
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         const fromMatch = this.fuzzyMatch(query, transition.fromState);
         if (fromMatch.score > 0) {
           matches.push({
-            field: 'fromState',
+            field: "fromState",
             value: transition.fromState,
             matchedText: fromMatch.matchedText,
             score: fromMatch.score,
@@ -531,7 +542,7 @@ class GlobalSearchService {
           const toMatch = this.fuzzyMatch(query, transition.toState);
           if (toMatch.score > 0) {
             matches.push({
-              field: 'toState',
+              field: "toState",
               value: transition.toState,
               matchedText: toMatch.matchedText,
               score: toMatch.score,
@@ -539,11 +550,11 @@ class GlobalSearchService {
             score += toMatch.score;
           }
         }
-      } else if (transition.type === 'IncomingTransition') {
+      } else if (transition.type === "IncomingTransition") {
         const toMatch = this.fuzzyMatch(query, transition.toState);
         if (toMatch.score > 0) {
           matches.push({
-            field: 'toState',
+            field: "toState",
             value: transition.toState,
             matchedText: toMatch.matchedText,
             score: toMatch.score,
@@ -553,13 +564,14 @@ class GlobalSearchService {
       }
 
       if (matches.length > 0) {
-        const name = transition.type === 'OutgoingTransition'
-          ? `${transition.fromState} → ${transition.toState || 'Unknown'}`
-          : `→ ${transition.toState}`;
+        const name =
+          transition.type === "OutgoingTransition"
+            ? `${transition.fromState} → ${transition.toState || "Unknown"}`
+            : `→ ${transition.toState}`;
 
         results.push({
           id: transition.id,
-          type: 'transition',
+          type: "transition",
           name,
           matches,
           score,
@@ -592,7 +604,7 @@ class GlobalSearchService {
       const nameMatch = this.fuzzyMatch(query, folder.name);
       if (nameMatch.score > 0) {
         matches.push({
-          field: 'name',
+          field: "name",
           value: folder.name,
           matchedText: nameMatch.matchedText,
           score: nameMatch.score * 2,
@@ -605,7 +617,7 @@ class GlobalSearchService {
         const descMatch = this.fuzzyMatch(query, folder.description);
         if (descMatch.score > 0) {
           matches.push({
-            field: 'description',
+            field: "description",
             value: folder.description,
             matchedText: descMatch.matchedText,
             score: descMatch.score,
@@ -617,7 +629,7 @@ class GlobalSearchService {
       if (matches.length > 0) {
         results.push({
           id: folder.id,
-          type: 'folder',
+          type: "folder",
           name: folder.name,
           description: folder.description,
           icon: folder.icon,
@@ -654,7 +666,7 @@ class GlobalSearchService {
           const nameMatch = this.fuzzyMatch(query, action.name);
           if (nameMatch.score > 0) {
             matches.push({
-              field: 'name',
+              field: "name",
               value: action.name,
               matchedText: nameMatch.matchedText,
               score: nameMatch.score * 2,
@@ -667,7 +679,7 @@ class GlobalSearchService {
         const typeMatch = this.fuzzyMatch(query, action.type);
         if (typeMatch.score > 0) {
           matches.push({
-            field: 'type',
+            field: "type",
             value: action.type,
             matchedText: typeMatch.matchedText,
             score: typeMatch.score,
@@ -678,7 +690,7 @@ class GlobalSearchService {
         if (matches.length > 0) {
           results.push({
             id: action.id,
-            type: 'action',
+            type: "action",
             name: action.name || action.type,
             breadcrumb: [workflow.name],
             matches,
@@ -733,7 +745,9 @@ class GlobalSearchService {
   saveRecentSearch(query: string, filters: SearchFilter = {}): void {
     // Remove existing entry if it exists
     this.recentSearches = this.recentSearches.filter(
-      s => s.query !== query || JSON.stringify(s.filters) !== JSON.stringify(filters)
+      (s) =>
+        s.query !== query ||
+        JSON.stringify(s.filters) !== JSON.stringify(filters)
     );
 
     // Add new entry at the beginning
@@ -744,7 +758,10 @@ class GlobalSearchService {
     });
 
     // Limit to max recent searches
-    this.recentSearches = this.recentSearches.slice(0, this.MAX_RECENT_SEARCHES);
+    this.recentSearches = this.recentSearches.slice(
+      0,
+      this.MAX_RECENT_SEARCHES
+    );
 
     // Save to localStorage
     this.persistRecentSearches();
@@ -760,7 +777,7 @@ class GlobalSearchService {
   }
 
   private loadRecentSearches(): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
     try {
       const stored = localStorage.getItem(this.RECENT_SEARCHES_KEY);
@@ -772,12 +789,12 @@ class GlobalSearchService {
         }));
       }
     } catch (error) {
-      console.error('Failed to load recent searches:', error);
+      console.error("Failed to load recent searches:", error);
     }
   }
 
   private persistRecentSearches(): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
     try {
       localStorage.setItem(
@@ -785,7 +802,7 @@ class GlobalSearchService {
         JSON.stringify(this.recentSearches)
       );
     } catch (error) {
-      console.error('Failed to persist recent searches:', error);
+      console.error("Failed to persist recent searches:", error);
     }
   }
 
@@ -811,7 +828,7 @@ class GlobalSearchService {
       operators.push({ key, value });
 
       // Remove operator from clean query
-      cleanQuery = cleanQuery.replace(match[0], '').trim();
+      cleanQuery = cleanQuery.replace(match[0], "").trim();
     }
 
     return { operators, cleanQuery };
@@ -825,21 +842,21 @@ class GlobalSearchService {
 
     for (const op of operators) {
       switch (op.key) {
-        case 'type':
+        case "type":
           filters.types = filters.types || [];
           if (!filters.types.includes(op.value as ResourceType)) {
             filters.types.push(op.value as ResourceType);
           }
           break;
 
-        case 'folder':
+        case "folder":
           filters.folders = filters.folders || [];
           if (!filters.folders.includes(op.value)) {
             filters.folders.push(op.value);
           }
           break;
 
-        case 'tag':
+        case "tag":
           filters.tags = filters.tags || [];
           if (!filters.tags.includes(op.value)) {
             filters.tags.push(op.value);
@@ -860,7 +877,7 @@ class GlobalSearchService {
     text: string
   ): { score: number; matchedText: string } {
     if (!query || !text) {
-      return { score: 0, matchedText: '' };
+      return { score: 0, matchedText: "" };
     }
 
     const lowerQuery = query.toLowerCase();
@@ -888,7 +905,7 @@ class GlobalSearchService {
     // Fuzzy match (character by character)
     let score = 0;
     let textIndex = 0;
-    let matchedText = '';
+    let matchedText = "";
     let matchStart = -1;
 
     for (let queryIndex = 0; queryIndex < lowerQuery.length; queryIndex++) {
@@ -913,7 +930,7 @@ class GlobalSearchService {
       }
 
       if (!found) {
-        return { score: 0, matchedText: '' };
+        return { score: 0, matchedText: "" };
       }
     }
 
@@ -940,15 +957,15 @@ class GlobalSearchService {
 
   private expandAlias(query: string): string {
     const aliases: Record<string, string> = {
-      wf: 'workflow',
-      st: 'state',
-      img: 'image',
-      tr: 'transition',
-      fl: 'folder',
+      wf: "workflow",
+      st: "state",
+      img: "image",
+      tr: "transition",
+      fl: "folder",
     };
 
-    const words = query.split(' ');
-    return words.map(word => aliases[word.toLowerCase()] || word).join(' ');
+    const words = query.split(" ");
+    return words.map((word) => aliases[word.toLowerCase()] || word).join(" ");
   }
 }
 

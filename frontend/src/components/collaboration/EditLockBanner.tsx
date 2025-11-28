@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { Lock, Eye, AlertCircle, Clock, Mail } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import * as React from "react";
+import { Lock, Eye, AlertCircle, Clock, Mail } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export interface EditLock {
   locked_by_user_id: string;
@@ -41,7 +41,7 @@ export function EditLockBanner({
 
     const updateTimeRemaining = () => {
       const expiresAt =
-        typeof lock.lock_expires_at === 'string'
+        typeof lock.lock_expires_at === "string"
           ? new Date(lock.lock_expires_at)
           : lock.lock_expires_at;
       const now = new Date();
@@ -62,9 +62,9 @@ export function EditLockBanner({
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
@@ -86,7 +86,7 @@ export function EditLockBanner({
 
   if (isCurrentUserLocked) {
     return (
-      <Alert className={cn('border-green-500/50 bg-green-500/10', className)}>
+      <Alert className={cn("border-green-500/50 bg-green-500/10", className)}>
         <Lock className="h-4 w-4 text-green-500" />
         <AlertTitle className="text-green-500">You are editing</AlertTitle>
         <AlertDescription className="text-green-500/90">
@@ -102,7 +102,7 @@ export function EditLockBanner({
   }
 
   return (
-    <Alert className={cn('border-orange-500/50 bg-orange-500/10', className)}>
+    <Alert className={cn("border-orange-500/50 bg-orange-500/10", className)}>
       <AlertCircle className="h-4 w-4 text-orange-500" />
       <AlertTitle className="flex items-center gap-2 text-orange-500">
         <Eye className="h-4 w-4" />
@@ -138,7 +138,10 @@ export function EditLockBanner({
           )}
 
           {timeRemaining !== null && timeRemaining === 0 && (
-            <Badge variant="outline" className="ml-auto bg-red-500/10 text-red-500 border-red-500/20">
+            <Badge
+              variant="outline"
+              className="ml-auto bg-red-500/10 text-red-500 border-red-500/20"
+            >
               <AlertCircle className="mr-1 h-3 w-3" />
               Lock expired
             </Badge>

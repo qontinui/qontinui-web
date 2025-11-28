@@ -4,13 +4,13 @@
  * Demonstrates how to integrate and use the GlobalSearch component in your application.
  */
 
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { GlobalSearch, useGlobalSearch } from './GlobalSearch';
-import { globalSearchService } from '@/services/global-search-service';
-import { Button } from '@/components/ui/button';
-import { Search, Command } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { GlobalSearch, useGlobalSearch } from "./GlobalSearch";
+import { globalSearchService } from "@/services/global-search-service";
+import { Button } from "@/components/ui/button";
+import { Search, Command } from "lucide-react";
 
 // ============================================================================
 // Example 1: Basic Usage with Controlled State
@@ -94,13 +94,14 @@ export function FullIntegrationExample() {
     async function loadSearchIndex() {
       try {
         // Fetch all resources from your API or database
-        const [workflows, states, images, transitions, folders] = await Promise.all([
-          fetchWorkflows(), // Your API call
-          fetchStates(),
-          fetchImages(),
-          fetchTransitions(),
-          fetchFolders(),
-        ]);
+        const [workflows, states, images, transitions, folders] =
+          await Promise.all([
+            fetchWorkflows(), // Your API call
+            fetchStates(),
+            fetchImages(),
+            fetchTransitions(),
+            fetchFolders(),
+          ]);
 
         // Update search index
         globalSearchService.updateIndex({
@@ -113,7 +114,7 @@ export function FullIntegrationExample() {
 
         setIndexLoaded(true);
       } catch (error) {
-        console.error('Failed to load search index:', error);
+        console.error("Failed to load search index:", error);
       }
     }
 
@@ -138,7 +139,9 @@ export function FullIntegrationExample() {
 
           <div className="flex items-center gap-4">
             {!indexLoaded && (
-              <span className="text-xs text-muted-foreground">Loading search index...</span>
+              <span className="text-xs text-muted-foreground">
+                Loading search index...
+              </span>
             )}
 
             <button
@@ -158,7 +161,9 @@ export function FullIntegrationExample() {
 
       <main className="container mx-auto px-4 py-8">
         <p className="text-center text-muted-foreground">
-          Press <kbd className="px-2 py-1 bg-secondary rounded">Cmd/Ctrl + K</kbd> to search
+          Press{" "}
+          <kbd className="px-2 py-1 bg-secondary rounded">Cmd/Ctrl + K</kbd> to
+          search
         </p>
       </main>
 

@@ -5,16 +5,16 @@
  * This is used by React Flow to render the correct component for each node type.
  */
 
-import { ComponentType } from 'react';
-import { NodeProps } from '@xyflow/react';
-import { ActionType } from '@/lib/action-schema/action-types';
-import { BaseNodeData } from './BaseNode';
+import { ComponentType } from "react";
+import { NodeProps } from "@xyflow/react";
+import { ActionType } from "@/lib/action-schema/action-types";
+import { BaseNodeData } from "./BaseNode";
 
 // Import all node components
-import { ControlFlowNodes } from './ControlFlowNodes';
-import { GuiActionNodes } from './GuiActionNodes';
-import { DataOperationNodes } from './DataOperationNodes';
-import { SpecialNodes } from './SpecialNodes';
+import { ControlFlowNodes } from "./ControlFlowNodes";
+import { GuiActionNodes } from "./GuiActionNodes";
+import { DataOperationNodes } from "./DataOperationNodes";
+import { SpecialNodes } from "./SpecialNodes";
 
 /**
  * Node component type
@@ -83,7 +83,9 @@ export function getNodeComponent(actionType: ActionType): NodeComponent {
   if (!component) {
     console.warn(`No node component found for action type: ${actionType}`);
     // Return a default component or throw error
-    throw new Error(`No node component registered for action type: ${actionType}`);
+    throw new Error(
+      `No node component registered for action type: ${actionType}`
+    );
   }
   return component;
 }
@@ -120,30 +122,49 @@ export function getRegisteredNodeTypes(): ActionType[] {
  * Node type groups for UI organization
  */
 export const NODE_TYPE_GROUPS = {
-  find: ['FIND', 'FIND_STATE_IMAGE', 'VANISH', 'EXISTS', 'WAIT'] as ActionType[],
+  find: [
+    "FIND",
+    "FIND_STATE_IMAGE",
+    "VANISH",
+    "EXISTS",
+    "WAIT",
+  ] as ActionType[],
   mouse: [
-    'CLICK',
-    'DOUBLE_CLICK',
-    'RIGHT_CLICK',
-    'MOUSE_MOVE',
-    'MOUSE_DOWN',
-    'MOUSE_UP',
-    'DRAG',
-    'SCROLL',
+    "CLICK",
+    "DOUBLE_CLICK",
+    "RIGHT_CLICK",
+    "MOUSE_MOVE",
+    "MOUSE_DOWN",
+    "MOUSE_UP",
+    "DRAG",
+    "SCROLL",
   ] as ActionType[],
-  keyboard: ['TYPE', 'KEY_PRESS', 'KEY_DOWN', 'KEY_UP', 'HOTKEY'] as ActionType[],
-  controlFlow: ['IF', 'LOOP', 'BREAK', 'CONTINUE', 'SWITCH', 'TRY_CATCH'] as ActionType[],
+  keyboard: [
+    "TYPE",
+    "KEY_PRESS",
+    "KEY_DOWN",
+    "KEY_UP",
+    "HOTKEY",
+  ] as ActionType[],
+  controlFlow: [
+    "IF",
+    "LOOP",
+    "BREAK",
+    "CONTINUE",
+    "SWITCH",
+    "TRY_CATCH",
+  ] as ActionType[],
   data: [
-    'SET_VARIABLE',
-    'GET_VARIABLE',
-    'SORT',
-    'FILTER',
-    'MAP',
-    'REDUCE',
-    'STRING_OPERATION',
-    'MATH_OPERATION',
+    "SET_VARIABLE",
+    "GET_VARIABLE",
+    "SORT",
+    "FILTER",
+    "MAP",
+    "REDUCE",
+    "STRING_OPERATION",
+    "MATH_OPERATION",
   ] as ActionType[],
-  state: ['GO_TO_STATE', 'RUN_WORKFLOW', 'SCREENSHOT'] as ActionType[],
+  state: ["GO_TO_STATE", "RUN_WORKFLOW", "SCREENSHOT"] as ActionType[],
 };
 
 /**
@@ -172,46 +193,46 @@ export interface NodeMetadata {
 export const NODE_METADATA: Partial<Record<ActionType, NodeMetadata>> = {
   // Find Actions
   FIND: {
-    displayName: 'Find',
-    description: 'Find element on screen using image matching',
-    category: 'find',
-    color: 'amber',
-    icon: 'search',
+    displayName: "Find",
+    description: "Find element on screen using image matching",
+    category: "find",
+    color: "amber",
+    icon: "search",
   },
   CLICK: {
-    displayName: 'Click',
-    description: 'Click on an element',
-    category: 'mouse',
-    color: 'green',
-    icon: 'mouse-pointer-click',
+    displayName: "Click",
+    description: "Click on an element",
+    category: "mouse",
+    color: "green",
+    icon: "mouse-pointer-click",
   },
   TYPE: {
-    displayName: 'Type',
-    description: 'Type text into an element',
-    category: 'keyboard',
-    color: 'cyan',
-    icon: 'type',
+    displayName: "Type",
+    description: "Type text into an element",
+    category: "keyboard",
+    color: "cyan",
+    icon: "type",
   },
   IF: {
-    displayName: 'If',
-    description: 'Conditional branching based on condition',
-    category: 'controlFlow',
-    color: 'blue',
-    icon: 'git-branch',
+    displayName: "If",
+    description: "Conditional branching based on condition",
+    category: "controlFlow",
+    color: "blue",
+    icon: "git-branch",
   },
   LOOP: {
-    displayName: 'Loop',
-    description: 'Repeat actions multiple times',
-    category: 'controlFlow',
-    color: 'purple',
-    icon: 'repeat',
+    displayName: "Loop",
+    description: "Repeat actions multiple times",
+    category: "controlFlow",
+    color: "purple",
+    icon: "repeat",
   },
   SET_VARIABLE: {
-    displayName: 'Set Variable',
-    description: 'Store a value in a variable',
-    category: 'data',
-    color: 'orange',
-    icon: 'variable',
+    displayName: "Set Variable",
+    description: "Store a value in a variable",
+    category: "data",
+    color: "orange",
+    icon: "variable",
   },
   // Add more metadata as needed
 };

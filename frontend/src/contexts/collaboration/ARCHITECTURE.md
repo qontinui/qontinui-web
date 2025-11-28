@@ -416,12 +416,14 @@ Example:
 ## Performance Characteristics
 
 ### Memory Usage
+
 ```
 Monolithic Context:    High (all state loaded always)
 Modular Contexts:      Low (only needed state loaded)
 ```
 
 ### Bundle Size Impact
+
 ```
 Component using only permissions:
 
@@ -432,6 +434,7 @@ Savings: 84%
 ```
 
 ### Re-render Frequency
+
 ```
 For 10 components, on comment added:
 

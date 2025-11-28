@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
+import React, { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,24 +8,30 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Upload, Camera, Image as ImageIcon, Trash2, Check } from "lucide-react"
-import { useAutomation } from "@/contexts/automation-context"
-import { cn } from "@/lib/utils"
-import { toast } from "sonner"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Upload,
+  Camera,
+  Image as ImageIcon,
+  Trash2,
+  Check,
+} from "lucide-react";
+import { useAutomation } from "@/contexts/automation-context";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface ScreenshotSelectorProps {
-  selectedScreenshot: string
-  onSelectScreenshot: (screenshotId: string) => void
-  trigger?: React.ReactNode
-  allowUpload?: boolean
-  multiSelect?: boolean
-  selectedScreenshots?: string[]
-  onSelectScreenshots?: (screenshotIds: string[]) => void
+  selectedScreenshot: string;
+  onSelectScreenshot: (screenshotId: string) => void;
+  trigger?: React.ReactNode;
+  allowUpload?: boolean;
+  multiSelect?: boolean;
+  selectedScreenshots?: string[];
+  onSelectScreenshots?: (screenshotIds: string[]) => void;
 }
 
 export function ScreenshotSelector({
@@ -37,38 +43,39 @@ export function ScreenshotSelector({
   selectedScreenshots = [],
   onSelectScreenshots,
 }: ScreenshotSelectorProps) {
-  const { screenshots, addScreenshot, deleteScreenshot } = useAutomation()
-  const [open, setOpen] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [tempSelectedScreenshots, setTempSelectedScreenshots] = useState<string[]>(selectedScreenshots)
+  const { screenshots, addScreenshot, deleteScreenshot } = useAutomation();
+  const [open, setOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [tempSelectedScreenshots, setTempSelectedScreenshots] =
+    useState<string[]>(selectedScreenshots);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const file = e.target.files?.[0];
+    if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      toast.error("Please upload an image file")
-      return
+      toast.error("Please upload an image file");
+      return;
     }
 
-    setUploading(true)
+    setUploading(true);
 
     try {
       // Convert to base64 and validate dimensions
-      const reader = new FileReader()
+      const reader = new FileReader();
       reader.onloadend = () => {
-        const base64 = reader.result as string
+        const base64 = reader.result as string;
 
         // Create image element to get dimensions
-        const img = new Image()
+        const img = new Image();
         img.onload = () => {
           // Validate image dimensions
           if (img.width < 10 || img.height < 10) {
             toast.error("Image too small", {
               description: `${file.name} is ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`,
-            })
-            setUploading(false)
-            return
+            });
+            setUploading(false);
+            return;
           }
 
           const newScreenshot = {
@@ -77,78 +84,84 @@ export function ScreenshotSelector({
             url: base64,
             size: file.size,
             uploadedAt: new Date(),
-          }
+          };
 
-          addScreenshot(newScreenshot)
-          toast.success("Screenshot uploaded successfully")
+          addScreenshot(newScreenshot);
+          toast.success("Screenshot uploaded successfully");
 
           // Auto-select the uploaded screenshot
-          onSelectScreenshot(newScreenshot.id)
-          setOpen(false)
-          setUploading(false)
-        }
+          onSelectScreenshot(newScreenshot.id);
+          setOpen(false);
+          setUploading(false);
+        };
         img.onerror = () => {
           toast.error("Failed to process image", {
             description: `${file.name} could not be loaded.`,
-          })
-          setUploading(false)
-        }
-        img.src = base64
-      }
+          });
+          setUploading(false);
+        };
+        img.src = base64;
+      };
 
-      reader.readAsDataURL(file)
+      reader.readAsDataURL(file);
     } catch (error) {
-      toast.error("Failed to upload screenshot")
-      console.error(error)
-      setUploading(false)
+      toast.error("Failed to upload screenshot");
+      console.error(error);
+      setUploading(false);
     }
-  }
+  };
 
-  const handleDeleteScreenshot = (e: React.MouseEvent, screenshotId: string) => {
-    e.stopPropagation()
+  const handleDeleteScreenshot = (
+    e: React.MouseEvent,
+    screenshotId: string
+  ) => {
+    e.stopPropagation();
 
     if (selectedScreenshot === screenshotId) {
-      onSelectScreenshot("")
+      onSelectScreenshot("");
     }
 
-    deleteScreenshot(screenshotId)
-    toast.success("Screenshot deleted")
-  }
+    deleteScreenshot(screenshotId);
+    toast.success("Screenshot deleted");
+  };
 
   const handleSelectScreenshot = (screenshotId: string) => {
     if (multiSelect) {
-      setTempSelectedScreenshots(prev => {
+      setTempSelectedScreenshots((prev) => {
         if (prev.includes(screenshotId)) {
-          return prev.filter(id => id !== screenshotId)
+          return prev.filter((id) => id !== screenshotId);
         } else {
-          return [...prev, screenshotId]
+          return [...prev, screenshotId];
         }
-      })
+      });
     } else {
-      onSelectScreenshot(screenshotId)
-      setOpen(false)
+      onSelectScreenshot(screenshotId);
+      setOpen(false);
     }
-  }
+  };
 
   const handleConfirmSelection = () => {
     if (multiSelect && onSelectScreenshots) {
-      onSelectScreenshots(tempSelectedScreenshots)
-      setOpen(false)
+      onSelectScreenshots(tempSelectedScreenshots);
+      setOpen(false);
     }
-  }
+  };
 
   const handleCancel = () => {
-    setTempSelectedScreenshots(selectedScreenshots)
-    setOpen(false)
-  }
+    setTempSelectedScreenshots(selectedScreenshots);
+    setOpen(false);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={(newOpen) => {
-      if (newOpen) {
-        setTempSelectedScreenshots(selectedScreenshots)
-      }
-      setOpen(newOpen)
-    }}>
+    <Dialog
+      open={open}
+      onOpenChange={(newOpen) => {
+        if (newOpen) {
+          setTempSelectedScreenshots(selectedScreenshots);
+        }
+        setOpen(newOpen);
+      }}
+    >
       <DialogTrigger asChild>
         {trigger || (
           <Button
@@ -157,18 +170,21 @@ export function ScreenshotSelector({
           >
             <Camera className="w-4 h-4 mr-2" />
             {selectedScreenshot
-              ? screenshots.find(s => s.id === selectedScreenshot)?.name || "Select screenshot"
+              ? screenshots.find((s) => s.id === selectedScreenshot)?.name ||
+                "Select screenshot"
               : "Select screenshot"}
           </Button>
         )}
       </DialogTrigger>
       <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>{multiSelect ? 'Select Screenshots' : 'Select Screenshot'}</DialogTitle>
+          <DialogTitle>
+            {multiSelect ? "Select Screenshots" : "Select Screenshot"}
+          </DialogTitle>
           <DialogDescription>
             {multiSelect
-              ? 'Choose one or more screenshots to add'
-              : 'Choose a screenshot to use as the initial GUI state for integration testing'}
+              ? "Choose one or more screenshots to add"
+              : "Choose a screenshot to use as the initial GUI state for integration testing"}
           </DialogDescription>
         </DialogHeader>
 
@@ -213,8 +229,8 @@ export function ScreenshotSelector({
                           ? "border-[#00D9FF] ring-2 ring-[#00D9FF]/50"
                           : "border-gray-700 hover:border-gray-600"
                         : selectedScreenshot === screenshot.id
-                        ? "border-[#00D9FF] ring-2 ring-[#00D9FF]/50"
-                        : "border-gray-700 hover:border-gray-600"
+                          ? "border-[#00D9FF] ring-2 ring-[#00D9FF]/50"
+                          : "border-gray-700 hover:border-gray-600"
                     )}
                   >
                     <div className="aspect-video bg-gray-900">
@@ -243,7 +259,9 @@ export function ScreenshotSelector({
                     </Button>
 
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-                      <p className="text-xs text-white truncate">{screenshot.name}</p>
+                      <p className="text-xs text-white truncate">
+                        {screenshot.name}
+                      </p>
                       <p className="text-xs text-gray-400">
                         {new Date(screenshot.uploadedAt).toLocaleDateString()}
                       </p>
@@ -263,12 +281,13 @@ export function ScreenshotSelector({
                 onClick={handleConfirmSelection}
                 className="bg-[#00D9FF] text-black hover:bg-[#00D9FF]/80"
               >
-                Add {tempSelectedScreenshots.length} Screenshot{tempSelectedScreenshots.length !== 1 ? 's' : ''}
+                Add {tempSelectedScreenshots.length} Screenshot
+                {tempSelectedScreenshots.length !== 1 ? "s" : ""}
               </Button>
             </div>
           )}
         </div>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

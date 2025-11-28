@@ -1,6 +1,6 @@
 // components/integration-testing/ActiveStatesBadges.tsx
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from "@/components/ui/badge";
 
 interface ActiveStatesBadgesProps {
   states: string[];
@@ -9,7 +9,7 @@ interface ActiveStatesBadgesProps {
 export function ActiveStatesBadges({ states }: ActiveStatesBadgesProps) {
   return (
     <div className="flex flex-wrap gap-2">
-      {states.map(state => (
+      {states.map((state) => (
         <Badge
           key={state}
           variant="secondary"

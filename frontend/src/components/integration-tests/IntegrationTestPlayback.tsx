@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Play,
   Pause,
@@ -13,11 +13,11 @@ import {
   Minimize2,
   CheckCircle,
   XCircle,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ApiConfig } from '@/services/api-config';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApiConfig } from "@/services/api-config";
 
 /**
  * Frame data from the API for playback
@@ -61,11 +61,9 @@ const PLAYBACK_SPEEDS = [0.25, 0.5, 1, 2, 4];
  * - Match location overlay
  * - Fullscreen mode
  */
-export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = ({
-  historicalResultIds,
-  workflowName,
-  onClose,
-}) => {
+export const IntegrationTestPlayback: React.FC<
+  IntegrationTestPlaybackProps
+> = ({ historicalResultIds, workflowName, onClose }) => {
   // State
   const [frames, setFrames] = useState<PlaybackFrame[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -86,7 +84,7 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
   useEffect(() => {
     const loadFrames = async () => {
       if (historicalResultIds.length === 0) {
-        setError('No historical results to display');
+        setError("No historical results to display");
         setIsLoading(false);
         return;
       }
@@ -95,11 +93,16 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
       setError(null);
 
       try {
-        const response = await fetch(`${ApiConfig.QONTINUI_API_URL}/api/capture/frames/playback`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ historical_result_ids: historicalResultIds }),
-        });
+        const response = await fetch(
+          `${ApiConfig.QONTINUI_API_URL}/api/capture/frames/playback`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              historical_result_ids: historicalResultIds,
+            }),
+          }
+        );
 
         if (!response.ok) {
           throw new Error(`Failed to load frames: ${response.statusText}`);
@@ -108,7 +111,7 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
         const data: PlaybackFrame[] = await response.json();
         setFrames(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load frames');
+        setError(err instanceof Error ? err.message : "Failed to load frames");
       } finally {
         setIsLoading(false);
       }
@@ -144,27 +147,27 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key) {
-        case ' ':
+        case " ":
           e.preventDefault();
           setIsPlaying((prev) => !prev);
           break;
-        case 'ArrowLeft':
+        case "ArrowLeft":
           e.preventDefault();
           goToPrevious();
           break;
-        case 'ArrowRight':
+        case "ArrowRight":
           e.preventDefault();
           goToNext();
           break;
-        case 'Home':
+        case "Home":
           e.preventDefault();
           goToStart();
           break;
-        case 'End':
+        case "End":
           e.preventDefault();
           goToEnd();
           break;
-        case 'Escape':
+        case "Escape":
           e.preventDefault();
           if (isFullscreen) {
             setIsFullscreen(false);
@@ -175,8 +178,8 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isFullscreen, onClose]);
 
   // Navigation functions
@@ -260,18 +263,22 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
     <div
       ref={containerRef}
       className={`
-        ${isFullscreen ? 'fixed inset-0 z-50 bg-black' : 'w-full h-full'}
+        ${isFullscreen ? "fixed inset-0 z-50 bg-black" : "w-full h-full"}
         flex flex-col
       `}
     >
       {/* Header */}
-      <div className={`
+      <div
+        className={`
         flex items-center justify-between px-4 py-2
-        ${isFullscreen ? 'bg-gray-900 text-white' : 'bg-white border-b'}
-      `}>
+        ${isFullscreen ? "bg-gray-900 text-white" : "bg-white border-b"}
+      `}
+      >
         <div className="flex items-center gap-4">
           <h3 className="font-semibold">{workflowName}</h3>
-          <span className={`text-sm ${isFullscreen ? 'text-gray-400' : 'text-gray-600'}`}>
+          <span
+            className={`text-sm ${isFullscreen ? "text-gray-400" : "text-gray-600"}`}
+          >
             Step {currentIndex + 1} of {frames.length}
           </span>
         </div>
@@ -280,7 +287,7 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
             variant="ghost"
             size="sm"
             onClick={toggleFullscreen}
-            className={isFullscreen ? 'text-white hover:bg-gray-800' : ''}
+            className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
           >
             {isFullscreen ? (
               <Minimize2 className="w-4 h-4" />
@@ -292,7 +299,7 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
             variant="ghost"
             size="sm"
             onClick={onClose}
-            className={isFullscreen ? 'text-white hover:bg-gray-800' : ''}
+            className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
           >
             Close
           </Button>
@@ -333,9 +340,13 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
                   ) : (
                     <XCircle className="w-5 h-5 text-red-500" />
                   )}
-                  <span className="font-medium">{currentFrame.action_type}</span>
+                  <span className="font-medium">
+                    {currentFrame.action_type}
+                  </span>
                   {currentFrame.pattern_name && (
-                    <span className="text-gray-400">- {currentFrame.pattern_name}</span>
+                    <span className="text-gray-400">
+                      - {currentFrame.pattern_name}
+                    </span>
                   )}
                 </div>
                 {currentFrame.timestamp_ms !== null && (
@@ -351,7 +362,8 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
             <div className="text-center">
               <p>No frame available for this step</p>
               <p className="text-sm mt-2">
-                {currentFrame?.action_type} - {currentFrame?.pattern_name || 'N/A'}
+                {currentFrame?.action_type} -{" "}
+                {currentFrame?.pattern_name || "N/A"}
               </p>
             </div>
           </div>
@@ -359,7 +371,9 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
       </div>
 
       {/* Progress bar */}
-      <div className={`px-4 py-2 ${isFullscreen ? 'bg-gray-900' : 'bg-gray-100'}`}>
+      <div
+        className={`px-4 py-2 ${isFullscreen ? "bg-gray-900" : "bg-gray-100"}`}
+      >
         <Slider
           value={[currentIndex]}
           min={0}
@@ -374,17 +388,19 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
       </div>
 
       {/* Controls */}
-      <div className={`
+      <div
+        className={`
         flex items-center justify-center gap-4 px-4 py-3
-        ${isFullscreen ? 'bg-gray-900' : 'bg-white border-t'}
-      `}>
+        ${isFullscreen ? "bg-gray-900" : "bg-white border-t"}
+      `}
+      >
         {/* Skip to start */}
         <Button
           variant="ghost"
           size="sm"
           onClick={goToStart}
           disabled={currentIndex === 0}
-          className={isFullscreen ? 'text-white hover:bg-gray-800' : ''}
+          className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
         >
           <SkipBack className="w-4 h-4" />
         </Button>
@@ -395,7 +411,7 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
           size="sm"
           onClick={goToPrevious}
           disabled={currentIndex === 0}
-          className={isFullscreen ? 'text-white hover:bg-gray-800' : ''}
+          className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
         >
           <ChevronLeft className="w-5 h-5" />
         </Button>
@@ -420,7 +436,7 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
           size="sm"
           onClick={goToNext}
           disabled={currentIndex === frames.length - 1}
-          className={isFullscreen ? 'text-white hover:bg-gray-800' : ''}
+          className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
         >
           <ChevronRight className="w-5 h-5" />
         </Button>
@@ -431,7 +447,7 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
           size="sm"
           onClick={goToEnd}
           disabled={currentIndex === frames.length - 1}
-          className={isFullscreen ? 'text-white hover:bg-gray-800' : ''}
+          className={isFullscreen ? "text-white hover:bg-gray-800" : ""}
         >
           <SkipForward className="w-4 h-4" />
         </Button>
@@ -441,7 +457,7 @@ export const IntegrationTestPlayback: React.FC<IntegrationTestPlaybackProps> = (
           variant="ghost"
           size="sm"
           onClick={cycleSpeed}
-          className={`ml-4 gap-1 ${isFullscreen ? 'text-white hover:bg-gray-800' : ''}`}
+          className={`ml-4 gap-1 ${isFullscreen ? "text-white hover:bg-gray-800" : ""}`}
         >
           <FastForward className="w-4 h-4" />
           <span className="text-xs">{playbackSpeed}x</span>

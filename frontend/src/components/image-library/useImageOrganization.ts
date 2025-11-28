@@ -4,7 +4,7 @@
  * Manages image folders, collections, tags, and organization state
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from "react";
 import {
   ImageFolder,
   ImageFolderTreeNode,
@@ -13,17 +13,22 @@ import {
   SavedImageFilter,
   ImageTag,
   ImageWithMetadata,
-} from './types';
+} from "./types";
 
 export interface UseImageOrganizationProps {
   images: ImageWithMetadata[];
   onUpdateImage?: (image: ImageWithMetadata) => void;
 }
 
-export function useImageOrganization({ images, onUpdateImage }: UseImageOrganizationProps) {
+export function useImageOrganization({
+  images,
+  onUpdateImage,
+}: UseImageOrganizationProps) {
   // Folder state
   const [folders, setFolders] = useState<ImageFolder[]>([]);
-  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(
+    new Set()
+  );
 
   // Collection state
   const [collections, setCollections] = useState<ImageCollection[]>([]);
@@ -36,7 +41,9 @@ export function useImageOrganization({ images, onUpdateImage }: UseImageOrganiza
   const [availableTags, setAvailableTags] = useState<ImageTag[]>([]);
 
   // Selection state
-  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(
+    new Set()
+  );
 
   // ============================================================================
   // Folder Operations
@@ -48,7 +55,7 @@ export function useImageOrganization({ images, onUpdateImage }: UseImageOrganiza
         id: `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name,
         parentId,
-        color: color || '#3b82f6',
+        color: color || "#3b82f6",
         createdAt: new Date(),
         updatedAt: new Date(),
         order: folders.filter((f) => f.parentId === parentId).length,
@@ -60,40 +67,55 @@ export function useImageOrganization({ images, onUpdateImage }: UseImageOrganiza
     [folders]
   );
 
-  const updateFolder = useCallback((id: string, updates: Partial<ImageFolder>) => {
-    setFolders((prev) =>
-      prev.map((folder) =>
-        folder.id === id ? { ...folder, ...updates, updatedAt: new Date() } : folder
-      )
-    );
-  }, []);
+  const updateFolder = useCallback(
+    (id: string, updates: Partial<ImageFolder>) => {
+      setFolders((prev) =>
+        prev.map((folder) =>
+          folder.id === id
+            ? { ...folder, ...updates, updatedAt: new Date() }
+            : folder
+        )
+      );
+    },
+    []
+  );
 
-  const deleteFolder = useCallback((id: string) => {
-    // Move images in folder to parent or root
-    const folder = folders.find((f) => f.id === id);
-    if (!folder) return;
+  const deleteFolder = useCallback(
+    (id: string) => {
+      // Move images in folder to parent or root
+      const folder = folders.find((f) => f.id === id);
+      if (!folder) return;
 
-    // Update images in this folder
-    images.forEach((image) => {
-      if (image.folderId === id) {
-        onUpdateImage?.({ ...image, folderId: folder.parentId });
-      }
-    });
+      // Update images in this folder
+      images.forEach((image) => {
+        if (image.folderId === id) {
+          onUpdateImage?.({ ...image, folderId: folder.parentId });
+        }
+      });
 
-    // Delete folder and move subfolders to parent
-    setFolders((prev) => {
-      const updated = prev.filter((f) => f.id !== id);
-      return updated.map((f) => (f.parentId === id ? { ...f, parentId: folder.parentId } : f));
-    });
-  }, [folders, images, onUpdateImage]);
+      // Delete folder and move subfolders to parent
+      setFolders((prev) => {
+        const updated = prev.filter((f) => f.id !== id);
+        return updated.map((f) =>
+          f.parentId === id ? { ...f, parentId: folder.parentId } : f
+        );
+      });
+    },
+    [folders, images, onUpdateImage]
+  );
 
-  const moveFolder = useCallback((folderId: string, newParentId: string | null) => {
-    setFolders((prev) =>
-      prev.map((folder) =>
-        folder.id === folderId ? { ...folder, parentId: newParentId, updatedAt: new Date() } : folder
-      )
-    );
-  }, []);
+  const moveFolder = useCallback(
+    (folderId: string, newParentId: string | null) => {
+      setFolders((prev) =>
+        prev.map((folder) =>
+          folder.id === folderId
+            ? { ...folder, parentId: newParentId, updatedAt: new Date() }
+            : folder
+        )
+      );
+    },
+    []
+  );
 
   const toggleFolderExpanded = useCallback((folderId: string) => {
     setExpandedFolderIds((prev) => {
@@ -133,52 +155,66 @@ export function useImageOrganization({ images, onUpdateImage }: UseImageOrganiza
     []
   );
 
-  const updateCollection = useCallback((id: string, updates: Partial<ImageCollection>) => {
-    setCollections((prev) =>
-      prev.map((collection) =>
-        collection.id === id
-          ? {
-              ...collection,
-              ...updates,
-              thumbnailIds: (updates.imageIds || collection.imageIds).slice(0, 4),
-              updatedAt: new Date(),
-            }
-          : collection
-      )
-    );
-  }, []);
+  const updateCollection = useCallback(
+    (id: string, updates: Partial<ImageCollection>) => {
+      setCollections((prev) =>
+        prev.map((collection) =>
+          collection.id === id
+            ? {
+                ...collection,
+                ...updates,
+                thumbnailIds: (updates.imageIds || collection.imageIds).slice(
+                  0,
+                  4
+                ),
+                updatedAt: new Date(),
+              }
+            : collection
+        )
+      );
+    },
+    []
+  );
 
   const deleteCollection = useCallback((id: string) => {
     setCollections((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
-  const addImagesToCollection = useCallback((collectionId: string, imageIds: string[]) => {
-    setCollections((prev) =>
-      prev.map((collection) =>
-        collection.id === collectionId
-          ? {
-              ...collection,
-              imageIds: [...new Set([...collection.imageIds, ...imageIds])],
-              updatedAt: new Date(),
-            }
-          : collection
-      )
-    );
-  }, []);
+  const addImagesToCollection = useCallback(
+    (collectionId: string, imageIds: string[]) => {
+      setCollections((prev) =>
+        prev.map((collection) =>
+          collection.id === collectionId
+            ? {
+                ...collection,
+                imageIds: [...new Set([...collection.imageIds, ...imageIds])],
+                updatedAt: new Date(),
+              }
+            : collection
+        )
+      );
+    },
+    []
+  );
 
-  const removeImagesFromCollection = useCallback((collectionId: string, imageIds: string[]) => {
-    setCollections((prev) =>
-      prev.map((collection) =>
-        collection.id === collectionId
-          ? {
-              ...collection,
-              imageIds: collection.imageIds.filter((id) => !imageIds.includes(id)),
-              updatedAt: new Date(),
-            }
-          : collection
-      )
-    );
-  }, []);
+  const removeImagesFromCollection = useCallback(
+    (collectionId: string, imageIds: string[]) => {
+      setCollections((prev) =>
+        prev.map((collection) =>
+          collection.id === collectionId
+            ? {
+                ...collection,
+                imageIds: collection.imageIds.filter(
+                  (id) => !imageIds.includes(id)
+                ),
+                updatedAt: new Date(),
+              }
+            : collection
+        )
+      );
+    },
+    []
+  );
 
   // ============================================================================
   // Tag Operations
@@ -223,14 +259,19 @@ export function useImageOrganization({ images, onUpdateImage }: UseImageOrganiza
         const image = images.find((img) => img.id === imageId);
         if (image) {
           const tags = image.tags || [];
-          onUpdateImage?.({ ...image, tags: tags.filter((t) => t !== tagName) });
+          onUpdateImage?.({
+            ...image,
+            tags: tags.filter((t) => t !== tagName),
+          });
         }
       });
 
       // Update available tags
       setAvailableTags((prev) =>
         prev
-          .map((t) => (t.name === tagName ? { ...t, count: t.count - imageIds.length } : t))
+          .map((t) =>
+            t.name === tagName ? { ...t, count: t.count - imageIds.length } : t
+          )
           .filter((t) => t.count > 0)
       );
     },
@@ -252,12 +293,15 @@ export function useImageOrganization({ images, onUpdateImage }: UseImageOrganiza
     return newFilter;
   }, []);
 
-  const loadFilter = useCallback((filterId: string) => {
-    const filter = savedFilters.find((f) => f.id === filterId);
-    if (filter) {
-      setCurrentFilter(filter.filter);
-    }
-  }, [savedFilters]);
+  const loadFilter = useCallback(
+    (filterId: string) => {
+      const filter = savedFilters.find((f) => f.id === filterId);
+      if (filter) {
+        setCurrentFilter(filter.filter);
+      }
+    },
+    [savedFilters]
+  );
 
   const deleteFilter = useCallback((filterId: string) => {
     setSavedFilters((prev) => prev.filter((f) => f.id !== filterId));

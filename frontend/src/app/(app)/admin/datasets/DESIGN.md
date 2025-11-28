@@ -31,6 +31,7 @@ qontinui-runner                    qontinui-web
 ### Route: `/admin/datasets`
 
 Main dataset management page with:
+
 1. Dataset list (imported datasets)
 2. Import functionality
 3. Quick statistics
@@ -38,6 +39,7 @@ Main dataset management page with:
 ### Route: `/admin/datasets/[id]`
 
 Dataset detail/viewer page with:
+
 1. Statistics overview
 2. Filters panel
 3. Annotation browser with ImageCanvas
@@ -50,6 +52,7 @@ Dataset detail/viewer page with:
 ### 1. DatasetList (`/admin/datasets/page.tsx`)
 
 Shows all imported datasets with:
+
 - Name, creation date, source
 - Image count, annotation count
 - Review progress (reviewed/total)
@@ -60,6 +63,7 @@ Shows all imported datasets with:
 Main viewer with these sections:
 
 #### 2.1 Statistics Panel
+
 - Total images, unique images
 - Total annotations by source (user_click, template_matching, smart_click_analysis)
 - Annotations by element type
@@ -67,6 +71,7 @@ Main viewer with these sections:
 - Review progress
 
 #### 2.2 Filters Panel
+
 - Source filter (checkboxes)
 - Element type filter
 - Confidence range slider
@@ -74,12 +79,14 @@ Main viewer with these sections:
 - Search by category name
 
 #### 2.3 Image Browser
+
 - Thumbnail grid of images
 - Click to select and view in detail
 - Badge showing annotation count per image
 - Visual indicator for review status
 
 #### 2.4 Annotation Canvas
+
 - Uses existing ImageCanvas component (readonly mode for viewing)
 - Shows bounding boxes with color coding:
   - Green: user_click (verified)
@@ -88,12 +95,14 @@ Main viewer with these sections:
 - Click annotation to select and edit
 
 #### 2.5 Annotation Editor
+
 - View/edit selected annotation
 - Fields: bbox, category, confidence, element_type, source
 - Actions: Approve, Reject, Edit, Delete
 - Notes field for reviewer comments
 
 #### 2.6 Review Workflow
+
 - Bulk approve/reject
 - Mark as reviewed
 - Flag for review
@@ -102,6 +111,7 @@ Main viewer with these sections:
 ### 3. DatasetImportDialog
 
 Modal for importing datasets:
+
 - Upload ZIP of Training Data Exporter output
 - Or connect to runner storage directly
 - Preview before import
@@ -110,6 +120,7 @@ Modal for importing datasets:
 ### 4. DatasetExportDialog
 
 Modal for exporting datasets:
+
 - Format selection (COCO, YOLO, Pascal VOC, Custom)
 - Filter options (only verified, confidence threshold)
 - Split options (train/val/test percentages)
@@ -118,12 +129,13 @@ Modal for exporting datasets:
 ## Data Models
 
 ### Dataset (stored in database)
+
 ```typescript
 interface Dataset {
   id: string;
   name: string;
   description?: string;
-  source: 'runner_export' | 'manual_upload' | 'merged';
+  source: "runner_export" | "manual_upload" | "merged";
   created_at: string;
   updated_at: string;
   created_by: string;
@@ -140,6 +152,7 @@ interface Dataset {
 ```
 
 ### DatasetImage (stored in database)
+
 ```typescript
 interface DatasetImage {
   id: string;
@@ -163,6 +176,7 @@ interface DatasetImage {
 ```
 
 ### DatasetAnnotation (stored in database)
+
 ```typescript
 interface DatasetAnnotation {
   id: string;
@@ -181,7 +195,11 @@ interface DatasetAnnotation {
 
   // Metadata
   confidence: number;
-  source: 'user_click' | 'template_matching' | 'smart_click_analysis' | 'manual';
+  source:
+    | "user_click"
+    | "template_matching"
+    | "smart_click_analysis"
+    | "manual";
   element_type?: string;
   verified: boolean;
 
@@ -194,7 +212,7 @@ interface DatasetAnnotation {
   };
 
   // Review
-  review_status: 'pending' | 'approved' | 'rejected' | 'flagged';
+  review_status: "pending" | "approved" | "rejected" | "flagged";
   reviewer_notes?: string;
   reviewed_by?: string;
   reviewed_at?: string;
@@ -204,6 +222,7 @@ interface DatasetAnnotation {
 ## API Endpoints
 
 ### Dataset Management
+
 ```
 GET    /api/v1/datasets/                    # List all datasets
 POST   /api/v1/datasets/                    # Create new dataset
@@ -216,6 +235,7 @@ POST   /api/v1/datasets/{id}/merge          # Merge another dataset
 ```
 
 ### Dataset Images
+
 ```
 GET    /api/v1/datasets/{id}/images         # List images (paginated, filterable)
 GET    /api/v1/datasets/{id}/images/{img_id}  # Get image details
@@ -223,6 +243,7 @@ PUT    /api/v1/datasets/{id}/images/{img_id}  # Update image (review status)
 ```
 
 ### Dataset Annotations
+
 ```
 GET    /api/v1/datasets/{id}/annotations    # List annotations (paginated, filterable)
 GET    /api/v1/datasets/{id}/annotations/{ann_id}  # Get annotation
@@ -233,6 +254,7 @@ POST   /api/v1/datasets/{id}/annotations/bulk  # Bulk update (approve/reject)
 ```
 
 ### Dataset Statistics
+
 ```
 GET    /api/v1/datasets/{id}/stats          # Get statistics
 GET    /api/v1/datasets/{id}/stats/confidence-histogram  # Confidence distribution
@@ -241,6 +263,7 @@ GET    /api/v1/datasets/{id}/stats/by-category  # Breakdown by category
 ```
 
 ### Dataset Export
+
 ```
 POST   /api/v1/datasets/{id}/export         # Export dataset
 GET    /api/v1/datasets/{id}/export/{job_id}  # Get export status/download
@@ -304,6 +327,7 @@ GET    /api/v1/datasets/{id}/export/{job_id}  # Get export status/download
 ## Implementation Priority
 
 ### Phase 1: Core Viewing (MVP)
+
 1. Dataset list page
 2. Dataset import from ZIP
 3. Basic statistics
@@ -311,12 +335,14 @@ GET    /api/v1/datasets/{id}/export/{job_id}  # Get export status/download
 5. Annotation viewing with ImageCanvas
 
 ### Phase 2: Curation Workflow
+
 1. Annotation editing
 2. Review status (approve/reject)
 3. Filters (source, confidence, status)
 4. Bulk operations
 
 ### Phase 3: Advanced Features
+
 1. Dataset export (COCO, YOLO)
 2. Dataset merging
 3. Confidence histogram

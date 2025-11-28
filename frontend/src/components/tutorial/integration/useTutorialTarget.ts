@@ -5,8 +5,8 @@
  * and handles focus and scroll-into-view behavior.
  */
 
-import { useEffect, useRef, useCallback } from 'react';
-import { useTutorial } from './TutorialProvider';
+import { useEffect, useRef, useCallback } from "react";
+import { useTutorial } from "./TutorialProvider";
 
 // ============================================================================
 // Types
@@ -14,10 +14,10 @@ import { useTutorial } from './TutorialProvider';
 
 interface TutorialTargetProps {
   ref: React.RefObject<HTMLElement>;
-  'data-tutorial-id': string;
+  "data-tutorial-id": string;
   className?: string;
   tabIndex?: number;
-  'aria-label'?: string;
+  "aria-label"?: string;
 }
 
 interface UseTutorialTargetOptions {
@@ -61,16 +61,11 @@ export function useTutorialTarget(
   options: UseTutorialTargetOptions = {}
 ): TutorialTargetProps {
   const ref = useRef<HTMLElement>(null);
-  const {
-    registerTarget,
-    unregisterTarget,
-    currentStep,
-    isActive,
-    mode,
-  } = useTutorial();
+  const { registerTarget, unregisterTarget, currentStep, isActive, mode } =
+    useTutorial();
 
   const {
-    className = '',
+    className = "",
     ariaLabel,
     focusable = false,
     onFocus,
@@ -96,7 +91,7 @@ export function useTutorialTarget(
   // ============================================================================
 
   useEffect(() => {
-    if (!ref.current || !isActive || mode !== 'contextual') {
+    if (!ref.current || !isActive || mode !== "contextual") {
       return;
     }
 
@@ -110,14 +105,14 @@ export function useTutorialTarget(
       // Scroll into view if needed
       if (currentStep.targetElement?.scrollIntoView) {
         element.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-          inline: 'center',
+          behavior: "smooth",
+          block: "center",
+          inline: "center",
         });
       }
 
       // Apply focus highlight
-      element.classList.add('tutorial-target-active');
+      element.classList.add("tutorial-target-active");
 
       // Call onFocus callback
       onFocus?.();
@@ -129,26 +124,18 @@ export function useTutorialTarget(
 
       // Cleanup
       return () => {
-        element.classList.remove('tutorial-target-active');
+        element.classList.remove("tutorial-target-active");
         onBlur?.();
       };
     }
-  }, [
-    targetId,
-    currentStep,
-    isActive,
-    mode,
-    focusable,
-    onFocus,
-    onBlur,
-  ]);
+  }, [targetId, currentStep, isActive, mode, focusable, onFocus, onBlur]);
 
   // ============================================================================
   // Pulse Animation for Attention
   // ============================================================================
 
   useEffect(() => {
-    if (!ref.current || !isActive || mode !== 'contextual') {
+    if (!ref.current || !isActive || mode !== "contextual") {
       return;
     }
 
@@ -157,12 +144,12 @@ export function useTutorialTarget(
       currentStep?.targetElement?.selector === targetSelector;
     const highlightType = currentStep?.targetElement?.highlightType;
 
-    if (isCurrentTarget && highlightType === 'pulse') {
+    if (isCurrentTarget && highlightType === "pulse") {
       const element = ref.current;
-      element.classList.add('tutorial-target-pulse');
+      element.classList.add("tutorial-target-pulse");
 
       return () => {
-        element.classList.remove('tutorial-target-pulse');
+        element.classList.remove("tutorial-target-pulse");
       };
     }
   }, [targetId, currentStep, isActive, mode]);
@@ -172,20 +159,20 @@ export function useTutorialTarget(
   // ============================================================================
 
   const buildClassName = useCallback(() => {
-    const classes = ['tutorial-target'];
+    const classes = ["tutorial-target"];
 
     if (className) {
       classes.push(className);
     }
 
     // Add state classes
-    if (isActive && mode === 'contextual') {
+    if (isActive && mode === "contextual") {
       const targetSelector = `[data-tutorial-id="${targetId}"]`;
       const isCurrentTarget =
         currentStep?.targetElement?.selector === targetSelector;
 
       if (isCurrentTarget) {
-        classes.push('tutorial-target-current');
+        classes.push("tutorial-target-current");
 
         // Add highlight type class
         const highlightType = currentStep.targetElement?.highlightType;
@@ -195,7 +182,7 @@ export function useTutorialTarget(
       }
     }
 
-    return classes.join(' ');
+    return classes.join(" ");
   }, [className, isActive, mode, targetId, currentStep]);
 
   // ============================================================================
@@ -204,10 +191,10 @@ export function useTutorialTarget(
 
   return {
     ref: ref as React.RefObject<HTMLElement>,
-    'data-tutorial-id': targetId,
+    "data-tutorial-id": targetId,
     className: buildClassName(),
     ...(focusable ? { tabIndex: 0 } : {}),
-    ...(ariaLabel ? { 'aria-label': ariaLabel } : {}),
+    ...(ariaLabel ? { "aria-label": ariaLabel } : {}),
   };
 }
 
@@ -230,7 +217,7 @@ export function useTutorialTarget(
 export function useIsTargetActive(targetId: string): boolean {
   const { currentStep, isActive, mode } = useTutorial();
 
-  if (!isActive || mode !== 'contextual') {
+  if (!isActive || mode !== "contextual") {
     return false;
   }
 
@@ -257,9 +244,9 @@ export function useScrollToTarget(targetId: string): () => void {
     const element = getTarget(targetId);
     if (element) {
       element.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-        inline: 'center',
+        behavior: "smooth",
+        block: "center",
+        inline: "center",
       });
     }
   }, [targetId, getTarget]);

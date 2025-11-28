@@ -1,1 +1,1 @@
-export { UnifiedSidebar } from './unified-sidebar'
+export { UnifiedSidebar } from "./unified-sidebar";

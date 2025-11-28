@@ -3,6 +3,7 @@ from app.models.analytics_event import AnalyticsEvent  # noqa
 from app.models.annotation import Annotation, AnnotationSet  # noqa
 from app.models.audit_log import AuditLog  # noqa
 from app.models.device_session import DeviceSession  # noqa
+from app.models.extraction import ExtractionAnnotation, ExtractionSession  # noqa
 from app.models.project import Project  # noqa
 from app.models.session_activity import SessionActivity  # noqa
 from app.models.snapshot import Pattern, Screenshot, SnapshotRun  # noqa

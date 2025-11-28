@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from "react";
 import {
   Terminal,
   Download,
@@ -10,43 +10,43 @@ import {
   XCircle,
   Bug,
   Circle,
-} from 'lucide-react';
-import { useExecutionDebugger } from '../../stores/execution-debugger-store';
-import { ExecutionLogEntry } from '../../types/debugger/execution-types';
+} from "lucide-react";
+import { useExecutionDebugger } from "../../stores/execution-debugger-store";
+import { ExecutionLogEntry } from "../../types/debugger/execution-types";
 
 const LOG_LEVEL_CONFIG = {
   info: {
     icon: Info,
-    color: 'text-blue-600',
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
+    color: "text-blue-600",
+    bg: "bg-blue-50",
+    border: "border-blue-200",
   },
   warning: {
     icon: AlertTriangle,
-    color: 'text-yellow-600',
-    bg: 'bg-yellow-50',
-    border: 'border-yellow-200',
+    color: "text-yellow-600",
+    bg: "bg-yellow-50",
+    border: "border-yellow-200",
   },
   error: {
     icon: XCircle,
-    color: 'text-red-600',
-    bg: 'bg-red-50',
-    border: 'border-red-200',
+    color: "text-red-600",
+    bg: "bg-red-50",
+    border: "border-red-200",
   },
   debug: {
     icon: Bug,
-    color: 'text-gray-600',
-    bg: 'bg-gray-50',
-    border: 'border-gray-200',
+    color: "text-gray-600",
+    bg: "bg-gray-50",
+    border: "border-gray-200",
   },
 };
 
 const CATEGORY_COLORS = {
-  action: 'text-blue-600',
-  condition: 'text-purple-600',
-  loop: 'text-green-600',
-  variable: 'text-orange-600',
-  system: 'text-gray-600',
+  action: "text-blue-600",
+  condition: "text-purple-600",
+  loop: "text-green-600",
+  variable: "text-orange-600",
+  system: "text-gray-600",
 };
 
 interface LogEntryProps {
@@ -62,17 +62,19 @@ const LogEntry: React.FC<LogEntryProps> = ({ entry, isExpanded, onToggle }) => {
 
   const formatTimestamp = (timestamp: number) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', {
+    return date.toLocaleTimeString("en-US", {
       hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
       fractionalSecondDigits: 3,
     });
   };
 
   return (
-    <div className={`border-l-2 ${config.border} ${config.bg} p-2 mb-1 rounded-r`}>
+    <div
+      className={`border-l-2 ${config.border} ${config.bg} p-2 mb-1 rounded-r`}
+    >
       <div className="flex items-start gap-2">
         <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${config.color}`} />
         <div className="flex-1 min-w-0">
@@ -95,7 +97,9 @@ const LogEntry: React.FC<LogEntryProps> = ({ entry, isExpanded, onToggle }) => {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-gray-900 break-words">{entry.message}</p>
+              <p className="text-sm text-gray-900 break-words">
+                {entry.message}
+              </p>
             </div>
             {hasDetails && (
               <button
@@ -104,7 +108,7 @@ const LogEntry: React.FC<LogEntryProps> = ({ entry, isExpanded, onToggle }) => {
               >
                 <ChevronDown
                   className={`w-4 h-4 text-gray-500 transition-transform ${
-                    isExpanded ? '' : '-rotate-90'
+                    isExpanded ? "" : "-rotate-90"
                   }`}
                 />
               </button>
@@ -125,13 +129,15 @@ const LogEntry: React.FC<LogEntryProps> = ({ entry, isExpanded, onToggle }) => {
 
 export const ExecutionLog: React.FC = () => {
   const { logs, clearLogs, exportLogs } = useExecutionDebugger();
-  const [expandedEntries, setExpandedEntries] = useState<Set<string>>(new Set());
-  const [levelFilter, setLevelFilter] = useState<Set<ExecutionLogEntry['level']>>(
-    new Set(['info', 'warning', 'error', 'debug'])
+  const [expandedEntries, setExpandedEntries] = useState<Set<string>>(
+    new Set()
   );
-  const [categoryFilter, setCategoryFilter] = useState<Set<ExecutionLogEntry['category']>>(
-    new Set(['action', 'condition', 'loop', 'variable', 'system'])
-  );
+  const [levelFilter, setLevelFilter] = useState<
+    Set<ExecutionLogEntry["level"]>
+  >(new Set(["info", "warning", "error", "debug"]));
+  const [categoryFilter, setCategoryFilter] = useState<
+    Set<ExecutionLogEntry["category"]>
+  >(new Set(["action", "condition", "loop", "variable", "system"]));
   const [autoScroll, setAutoScroll] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -140,7 +146,7 @@ export const ExecutionLog: React.FC = () => {
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
     if (autoScroll && logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      logEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [logs, autoScroll]);
 
@@ -151,12 +157,13 @@ export const ExecutionLog: React.FC = () => {
 
     const handleScroll = () => {
       const isAtBottom =
-        container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+        container.scrollHeight - container.scrollTop <=
+        container.clientHeight + 50;
       setAutoScroll(isAtBottom);
     };
 
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
   }, []);
 
   const toggleExpanded = (entryId: string) => {
@@ -171,7 +178,7 @@ export const ExecutionLog: React.FC = () => {
     });
   };
 
-  const toggleLevelFilter = (level: ExecutionLogEntry['level']) => {
+  const toggleLevelFilter = (level: ExecutionLogEntry["level"]) => {
     setLevelFilter((prev) => {
       const next = new Set(prev);
       if (next.has(level)) {
@@ -183,7 +190,7 @@ export const ExecutionLog: React.FC = () => {
     });
   };
 
-  const toggleCategoryFilter = (category: ExecutionLogEntry['category']) => {
+  const toggleCategoryFilter = (category: ExecutionLogEntry["category"]) => {
     setCategoryFilter((prev) => {
       const next = new Set(prev);
       if (next.has(category)) {
@@ -197,9 +204,9 @@ export const ExecutionLog: React.FC = () => {
 
   const handleExport = () => {
     const logData = exportLogs();
-    const blob = new Blob([logData], { type: 'application/json' });
+    const blob = new Blob([logData], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `execution-log-${Date.now()}.json`;
     document.body.appendChild(a);
@@ -230,8 +237,8 @@ export const ExecutionLog: React.FC = () => {
               onClick={() => setShowFilters(!showFilters)}
               className={`p-1.5 rounded transition-colors ${
                 showFilters
-                  ? 'bg-blue-600 text-white'
-                  : 'hover:bg-gray-700 text-gray-400'
+                  ? "bg-blue-600 text-white"
+                  : "hover:bg-gray-700 text-gray-400"
               }`}
               title="Toggle filters"
             >
@@ -261,43 +268,49 @@ export const ExecutionLog: React.FC = () => {
           <div className="mt-3 pt-3 border-t border-gray-700 space-y-2">
             {/* Level Filter */}
             <div>
-              <div className="text-xs font-semibold text-gray-400 mb-1">Level</div>
+              <div className="text-xs font-semibold text-gray-400 mb-1">
+                Level
+              </div>
               <div className="flex gap-2 flex-wrap">
-                {(['info', 'warning', 'error', 'debug'] as const).map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => toggleLevelFilter(level)}
-                    className={`px-2 py-1 text-xs rounded transition-colors ${
-                      levelFilter.has(level)
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                    }`}
-                  >
-                    {level}
-                  </button>
-                ))}
+                {(["info", "warning", "error", "debug"] as const).map(
+                  (level) => (
+                    <button
+                      key={level}
+                      onClick={() => toggleLevelFilter(level)}
+                      className={`px-2 py-1 text-xs rounded transition-colors ${
+                        levelFilter.has(level)
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+                      }`}
+                    >
+                      {level}
+                    </button>
+                  )
+                )}
               </div>
             </div>
 
             {/* Category Filter */}
             <div>
-              <div className="text-xs font-semibold text-gray-400 mb-1">Category</div>
+              <div className="text-xs font-semibold text-gray-400 mb-1">
+                Category
+              </div>
               <div className="flex gap-2 flex-wrap">
-                {(['action', 'condition', 'loop', 'variable', 'system'] as const).map(
-                  (category) => (
-                    <button
-                      key={category}
-                      onClick={() => toggleCategoryFilter(category)}
-                      className={`px-2 py-1 text-xs rounded transition-colors ${
-                        categoryFilter.has(category)
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                      }`}
-                    >
-                      {category}
-                    </button>
-                  )
-                )}
+                {(
+                  ["action", "condition", "loop", "variable", "system"] as const
+                ).map((category) => (
+                  <button
+                    key={category}
+                    onClick={() => toggleCategoryFilter(category)}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      categoryFilter.has(category)
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+                    }`}
+                  >
+                    {category}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -305,10 +318,15 @@ export const ExecutionLog: React.FC = () => {
       </div>
 
       {/* Log Entries */}
-      <div ref={logContainerRef} className="flex-1 overflow-y-auto p-3 space-y-1">
+      <div
+        ref={logContainerRef}
+        className="flex-1 overflow-y-auto p-3 space-y-1"
+      >
         {filteredLogs.length === 0 ? (
           <div className="text-center text-gray-500 text-sm py-8">
-            {logs.length === 0 ? 'No logs yet' : 'No logs match the current filters'}
+            {logs.length === 0
+              ? "No logs yet"
+              : "No logs match the current filters"}
           </div>
         ) : (
           filteredLogs.map((entry) => (
@@ -328,7 +346,7 @@ export const ExecutionLog: React.FC = () => {
         <button
           onClick={() => {
             setAutoScroll(true);
-            logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            logEndRef.current?.scrollIntoView({ behavior: "smooth" });
           }}
           className="absolute bottom-4 right-4 px-3 py-2 bg-blue-600 text-white rounded-lg shadow-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm"
         >

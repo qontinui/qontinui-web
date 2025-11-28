@@ -13,6 +13,7 @@ The Capture Viewer provides a comprehensive interface for reviewing manual captu
 A full-featured video player with timeline controls and synchronization capabilities.
 
 **Features:**
+
 - Play/pause controls
 - Timeline scrubber with precise seeking
 - Volume control and mute toggle
@@ -22,6 +23,7 @@ A full-featured video player with timeline controls and synchronization capabili
 - Current timestamp display (MM:SS.ms format)
 
 **Props:**
+
 ```typescript
 interface VideoPlayerProps {
   videoUrl: string;
@@ -32,6 +34,7 @@ interface VideoPlayerProps {
 ```
 
 **Keyboard Shortcuts:**
+
 - `Space`: Play/Pause
 - `←`: Skip backward 10s
 - `→`: Skip forward 10s
@@ -43,6 +46,7 @@ interface VideoPlayerProps {
 Displays input events in a scrollable side panel with filtering and search capabilities.
 
 **Features:**
+
 - Auto-scrolling to current event during playback
 - Visual highlighting of active events
 - Detailed event information (position, keys, modifiers, element names)
@@ -52,6 +56,7 @@ Displays input events in a scrollable side panel with filtering and search capab
 - Color-coded event types
 
 **Props:**
+
 ```typescript
 interface InputEventsSidePanelProps {
   events: InputEvent[];
@@ -61,7 +66,12 @@ interface InputEventsSidePanelProps {
 
 interface InputEvent {
   timestamp: number;
-  eventType: "mouse_click" | "mouse_drag" | "key_press" | "key_release" | "scroll";
+  eventType:
+    | "mouse_click"
+    | "mouse_drag"
+    | "key_press"
+    | "key_release"
+    | "scroll";
   x?: number;
   y?: number;
   button?: string;
@@ -72,6 +82,7 @@ interface InputEvent {
 ```
 
 **Event Types:**
+
 - **Mouse Click** (blue): Click events with button and position
 - **Mouse Drag** (purple): Drag operations
 - **Key Press** (green): Keyboard input
@@ -83,6 +94,7 @@ interface InputEvent {
 Clickable timeline showing event markers with density visualization.
 
 **Features:**
+
 - Visual event markers on timeline
 - Click timeline or markers to seek
 - Hover tooltips with event details
@@ -92,6 +104,7 @@ Clickable timeline showing event markers with density visualization.
 - Event statistics summary
 
 **Props:**
+
 ```typescript
 interface EventTimelineProps {
   events: InputEvent[];
@@ -106,6 +119,7 @@ interface EventTimelineProps {
 Collapsible panel for requesting full-size screenshots based on event filters.
 
 **Features:**
+
 - Filter by event types (clicks, drags, keypresses, scrolls)
 - Filter by mouse buttons (left, right, middle)
 - Set maximum screenshot count (1-1000)
@@ -115,6 +129,7 @@ Collapsible panel for requesting full-size screenshots based on event filters.
 - Async submission with loading state
 
 **Props:**
+
 ```typescript
 interface ScreenshotRequestPanelProps {
   sessionId: string;
@@ -136,6 +151,7 @@ interface ScreenshotFilter {
 Location: `/mnt/c/qontinui/qontinui-web/frontend/src/app/projects/[projectId]/captures/[sessionId]/page.tsx`
 
 **Features:**
+
 - Loads capture session data
 - Orchestrates component synchronization
 - Manages global timestamp state
@@ -144,6 +160,7 @@ Location: `/mnt/c/qontinui/qontinui-web/frontend/src/app/projects/[projectId]/ca
 - Session statistics display
 
 **Layout:**
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Header: Session name, stats, export button                     │
@@ -168,7 +185,7 @@ Location: `/mnt/c/qontinui/qontinui-web/frontend/src/app/projects/[projectId]/ca
 ## Usage Example
 
 ```typescript
-import { CaptureViewerPage } from '@/app/projects/[projectId]/captures/[sessionId]/page';
+import { CaptureViewerPage } from "@/app/projects/[projectId]/captures/[sessionId]/page";
 
 // The page is automatically routed via Next.js
 // Access via: /projects/{projectId}/captures/{sessionId}
@@ -209,6 +226,7 @@ function MyCustomViewer() {
 The page currently uses mock data. To integrate with your backend API:
 
 1. **Update `loadCaptureSession()` in page.tsx:**
+
 ```typescript
 const loadCaptureSession = async () => {
   try {
@@ -216,7 +234,7 @@ const loadCaptureSession = async () => {
     const data = await captureService.getSession(projectId, sessionId);
     setSession(data);
   } catch (error) {
-    toast.error('Failed to load capture session');
+    toast.error("Failed to load capture session");
   } finally {
     setLoading(false);
   }
@@ -224,31 +242,39 @@ const loadCaptureSession = async () => {
 ```
 
 2. **Create a capture service:**
+
 ```typescript
 // services/capture-service.ts
 export const captureService = {
-  async getSession(projectId: string, sessionId: string): Promise<CaptureSession> {
-    const response = await fetch(`/api/projects/${projectId}/captures/${sessionId}`);
-    if (!response.ok) throw new Error('Failed to fetch session');
+  async getSession(
+    projectId: string,
+    sessionId: string
+  ): Promise<CaptureSession> {
+    const response = await fetch(
+      `/api/projects/${projectId}/captures/${sessionId}`
+    );
+    if (!response.ok) throw new Error("Failed to fetch session");
     return response.json();
   },
 
   async requestScreenshots(sessionId: string, filter: ScreenshotFilter) {
     const response = await fetch(`/api/captures/${sessionId}/screenshots`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(filter),
     });
-    if (!response.ok) throw new Error('Failed to request screenshots');
+    if (!response.ok) throw new Error("Failed to request screenshots");
     return response.json();
-  }
+  },
 };
 ```
 
 ## Expected Backend API Endpoints
 
 ### GET `/api/projects/:projectId/captures/:sessionId`
+
 Returns capture session data:
+
 ```json
 {
   "id": "session-123",
@@ -269,7 +295,9 @@ Returns capture session data:
 ```
 
 ### POST `/api/captures/:sessionId/screenshots`
+
 Request body:
+
 ```json
 {
   "eventTypes": ["mouse_click", "key_press"],
@@ -280,6 +308,7 @@ Request body:
 ```
 
 Response:
+
 ```json
 {
   "requestId": "req-789",
@@ -291,6 +320,7 @@ Response:
 ## Dependencies
 
 All required UI components are from the existing shadcn/ui library:
+
 - Button
 - Card
 - Badge
@@ -344,6 +374,7 @@ The components maintain synchronization through:
 ## Testing
 
 Test with various scenarios:
+
 - Short videos (< 1 min)
 - Long videos (> 1 hour)
 - High event density (100+ events/min)

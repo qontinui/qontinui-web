@@ -8,12 +8,17 @@
  * - History size limits
  */
 
-import type { StateCreator } from 'zustand';
-import type { CanvasStore, HistorySlice, HistoryState, Workflow } from './types';
+import type { StateCreator } from "zustand";
+import type {
+  CanvasStore,
+  HistorySlice,
+  HistoryState,
+  Workflow,
+} from "./types";
 
 export const createHistorySlice: StateCreator<
   CanvasStore,
-  [['zustand/immer', never]],
+  [["zustand/immer", never]],
   [],
   HistorySlice
 > = (set, get) => ({

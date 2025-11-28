@@ -5,11 +5,15 @@
  * backward compatibility with the original ProjectOptimizationService API.
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { State, ImageAsset, Transition } from '@/contexts/automation-context/types';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type {
+  State,
+  ImageAsset,
+  Transition,
+} from "@/contexts/automation-context/types";
 
 // Import all types
-export type * from './types';
+export type * from "./types";
 
 // Import all sub-modules
 import {
@@ -18,71 +22,71 @@ import {
   createMetricsSnapshot,
   calculateMetricsTrend,
   checkAlerts,
-} from './health-analyzer';
+} from "./health-analyzer";
 
 import {
   analyzeWorkflows,
   analyzeStates,
   analyzeImages,
   analyzeTransitions,
-} from './resource-analyzer';
+} from "./resource-analyzer";
 
 import {
   findUnusedImages,
   findUnusedStates,
   findUnusedWorkflows,
   findOrphanedStates,
-} from './unused-resource-detector';
+} from "./unused-resource-detector";
 
 import {
   findDuplicateImages,
   findDuplicateStates,
   findDuplicateWorkflows,
-} from './duplicate-detector';
+} from "./duplicate-detector";
 
 import {
   validateAllReferences,
   findBrokenWorkflowReferences,
   findBrokenStateReferences,
   findBrokenTransitionReferences,
-} from './reference-validator';
+} from "./reference-validator";
 
 import {
   getStorageUsage,
   estimateStorageSavings,
   getImageStorageBreakdown,
-} from './storage-analyzer';
+} from "./storage-analyzer";
 
 import {
   getComplexityDistribution,
   findHighComplexityResources,
   suggestComplexityReductions,
-} from './complexity-analyzer';
+} from "./complexity-analyzer";
 
 import {
   calculateTestCoverage,
   calculateDocumentationCoverage,
   getUndocumentedResources,
   getUntestedResources,
-} from './coverage-analyzer';
+} from "./coverage-analyzer";
 
 import {
   analyzeProjectDependencies,
   findCriticalResources,
   findCircularDependencies,
   getImpactAnalysis,
-} from './dependency-analyzer';
+} from "./dependency-analyzer";
 
-import { generateSuggestions } from './suggestion-generator';
-import { autoOptimize, exportBackup } from './auto-optimizer';
-import { exportOptimizationReport } from './report-exporter';
+import { generateSuggestions } from "./suggestion-generator";
+import { autoOptimize, exportBackup } from "./auto-optimizer";
+import { exportOptimizationReport } from "./report-exporter";
 
 import type {
   ProjectMetrics,
   MetricsTrend,
   HealthAlert,
   HealthAlertTrigger,
-} from './types';
+} from "./types";
 
 // ============================================================================
 // Main Service Class (Singleton)
@@ -94,8 +98,8 @@ export class ProjectOptimizationService {
   private metricsHistory: ProjectMetrics[] = [];
   private alerts: HealthAlert[] = [];
 
-  private readonly STORAGE_KEY = 'project-optimization-metrics';
-  private readonly ALERTS_STORAGE_KEY = 'project-optimization-alerts';
+  private readonly STORAGE_KEY = "project-optimization-metrics";
+  private readonly ALERTS_STORAGE_KEY = "project-optimization-alerts";
 
   private constructor() {
     this.loadFromStorage();
@@ -134,11 +138,19 @@ export class ProjectOptimizationService {
   // 2. Resource Analysis
   // ==========================================================================
 
-  analyzeWorkflows(workflows: Workflow[], states: State[], images: ImageAsset[]) {
+  analyzeWorkflows(
+    workflows: Workflow[],
+    states: State[],
+    images: ImageAsset[]
+  ) {
     return analyzeWorkflows(workflows, states, images);
   }
 
-  analyzeStates(states: State[], transitions: Transition[], images: ImageAsset[]) {
+  analyzeStates(
+    states: State[],
+    transitions: Transition[],
+    images: ImageAsset[]
+  ) {
     return analyzeStates(states, transitions, images);
   }
 
@@ -146,7 +158,11 @@ export class ProjectOptimizationService {
     return analyzeImages(images, workflows, states);
   }
 
-  analyzeTransitions(transitions: Transition[], workflows: Workflow[], states: State[]) {
+  analyzeTransitions(
+    transitions: Transition[],
+    workflows: Workflow[],
+    states: State[]
+  ) {
     return analyzeTransitions(transitions, workflows, states);
   }
 
@@ -167,7 +183,11 @@ export class ProjectOptimizationService {
   // 4. Unused Resource Detection
   // ==========================================================================
 
-  findUnusedImages(images: ImageAsset[], workflows: Workflow[], states: State[]) {
+  findUnusedImages(
+    images: ImageAsset[],
+    workflows: Workflow[],
+    states: State[]
+  ) {
     return findUnusedImages(images, workflows, states);
   }
 
@@ -187,15 +207,27 @@ export class ProjectOptimizationService {
   // 5. Duplicate Detection
   // ==========================================================================
 
-  findDuplicateImages(image: ImageAsset, allImages: ImageAsset[], threshold: number = 0.9) {
+  findDuplicateImages(
+    image: ImageAsset,
+    allImages: ImageAsset[],
+    threshold: number = 0.9
+  ) {
     return findDuplicateImages(image, allImages, threshold);
   }
 
-  findDuplicateStates(state: State, allStates: State[], threshold: number = 0.9) {
+  findDuplicateStates(
+    state: State,
+    allStates: State[],
+    threshold: number = 0.9
+  ) {
     return findDuplicateStates(state, allStates, threshold);
   }
 
-  findDuplicateWorkflows(workflow: Workflow, allWorkflows: Workflow[], threshold: number = 0.9) {
+  findDuplicateWorkflows(
+    workflow: Workflow,
+    allWorkflows: Workflow[],
+    threshold: number = 0.9
+  ) {
     return findDuplicateWorkflows(workflow, allWorkflows, threshold);
   }
 
@@ -225,7 +257,11 @@ export class ProjectOptimizationService {
     return findBrokenStateReferences(state, images);
   }
 
-  findBrokenTransitionReferences(transition: Transition, workflows: Workflow[], states: State[]) {
+  findBrokenTransitionReferences(
+    transition: Transition,
+    workflows: Workflow[],
+    states: State[]
+  ) {
     return findBrokenTransitionReferences(transition, workflows, states);
   }
 
@@ -242,7 +278,11 @@ export class ProjectOptimizationService {
     return getStorageUsage(workflows, states, images, transitions);
   }
 
-  estimateStorageSavings(images: ImageAsset[], workflows: Workflow[], states: State[]) {
+  estimateStorageSavings(
+    images: ImageAsset[],
+    workflows: Workflow[],
+    states: State[]
+  ) {
     return estimateStorageSavings(images, workflows, states);
   }
 
@@ -304,7 +344,7 @@ export class ProjectOptimizationService {
 
   getImpactAnalysis(
     resourceId: string,
-    type: 'workflow' | 'state' | 'image',
+    type: "workflow" | "state" | "image",
     workflows: Workflow[],
     states: State[],
     images: ImageAsset[]
@@ -358,7 +398,12 @@ export class ProjectOptimizationService {
     images: ImageAsset[],
     transitions: Transition[]
   ): void {
-    const metrics = createMetricsSnapshot(workflows, states, images, transitions);
+    const metrics = createMetricsSnapshot(
+      workflows,
+      states,
+      images,
+      transitions
+    );
     this.metricsHistory.push(metrics);
 
     // Keep only last 100 snapshots
@@ -370,11 +415,12 @@ export class ProjectOptimizationService {
 
     // Check alerts
     if (this.metricsHistory.length >= 2) {
-      const previousMetrics = this.metricsHistory[this.metricsHistory.length - 2];
+      const previousMetrics =
+        this.metricsHistory[this.metricsHistory.length - 2];
       const triggers = checkAlerts(metrics, previousMetrics, this.alerts);
 
       // Execute alert callbacks
-      triggers.forEach(trigger => {
+      triggers.forEach((trigger) => {
         if (trigger.alert.callback) {
           trigger.alert.callback(trigger);
         }
@@ -395,8 +441,8 @@ export class ProjectOptimizationService {
 
     if (thresholds.healthDrop !== undefined) {
       this.alerts.push({
-        id: 'health-drop',
-        type: 'health-drop',
+        id: "health-drop",
+        type: "health-drop",
         threshold: thresholds.healthDrop,
         enabled: true,
       });
@@ -404,8 +450,8 @@ export class ProjectOptimizationService {
 
     if (thresholds.criticalIssues !== undefined) {
       this.alerts.push({
-        id: 'critical-issues',
-        type: 'critical-issue',
+        id: "critical-issues",
+        type: "critical-issue",
         threshold: thresholds.criticalIssues,
         enabled: true,
       });
@@ -413,8 +459,8 @@ export class ProjectOptimizationService {
 
     if (thresholds.storageLimit !== undefined) {
       this.alerts.push({
-        id: 'storage-limit',
-        type: 'storage-limit',
+        id: "storage-limit",
+        type: "storage-limit",
         threshold: thresholds.storageLimit,
         enabled: true,
       });
@@ -429,10 +475,16 @@ export class ProjectOptimizationService {
 
   private saveToStorage(): void {
     try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.metricsHistory));
-      localStorage.setItem(this.ALERTS_STORAGE_KEY, JSON.stringify(this.alerts));
+      localStorage.setItem(
+        this.STORAGE_KEY,
+        JSON.stringify(this.metricsHistory)
+      );
+      localStorage.setItem(
+        this.ALERTS_STORAGE_KEY,
+        JSON.stringify(this.alerts)
+      );
     } catch (error) {
-      console.error('Failed to save optimization metrics:', error);
+      console.error("Failed to save optimization metrics:", error);
     }
   }
 
@@ -448,7 +500,7 @@ export class ProjectOptimizationService {
         this.alerts = JSON.parse(alertsJson);
       }
     } catch (error) {
-      console.error('Failed to load optimization metrics:', error);
+      console.error("Failed to load optimization metrics:", error);
     }
   }
 }
@@ -457,7 +509,8 @@ export class ProjectOptimizationService {
 // Singleton Export
 // ============================================================================
 
-export const projectOptimizationService = ProjectOptimizationService.getInstance();
+export const projectOptimizationService =
+  ProjectOptimizationService.getInstance();
 
 export default projectOptimizationService;
 

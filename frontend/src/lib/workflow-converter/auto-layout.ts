@@ -5,8 +5,8 @@
  * Handles branches, merges, and complex control flow structures.
  */
 
-import { Action } from '../action-schema/action-types';
-import { Connections } from '../action-schema/action-types';
+import { Action } from "../action-schema/action-types";
+import { Connections } from "../action-schema/action-types";
 
 /**
  * Layout options
@@ -129,7 +129,7 @@ export class AutoLayout {
       const sourceNode = this.nodes.get(sourceId);
       if (!sourceNode) return;
 
-      ['main', 'error', 'success', 'parallel'].forEach((type) => {
+      ["main", "error", "success", "parallel"].forEach((type) => {
         const conns = outputs[type as keyof typeof outputs];
         if (!conns) return;
 
@@ -278,7 +278,9 @@ export class AutoLayout {
 
       // Get child nodes
       const children = outputs.main.flatMap((outputConns) =>
-        outputConns.map((conn) => this.nodes.get(conn.action)).filter((n): n is LayoutNode => n !== undefined)
+        outputConns
+          .map((conn) => this.nodes.get(conn.action))
+          .filter((n): n is LayoutNode => n !== undefined)
       );
 
       if (children.length <= 1) return;
@@ -290,7 +292,8 @@ export class AutoLayout {
 
       children.forEach((child, index) => {
         const x = child.action.position[0];
-        const y = startY + index * this.options.verticalSpacing + index * branchOffset;
+        const y =
+          startY + index * this.options.verticalSpacing + index * branchOffset;
         child.action.position = [x, y];
       });
     });

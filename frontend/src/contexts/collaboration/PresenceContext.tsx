@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import type { UserPresence } from './types';
+import React, { createContext, useContext, useState, ReactNode } from "react";
+import type { UserPresence } from "./types";
 
 // ============================================================================
 // Context Types
@@ -85,7 +85,7 @@ export function PresenceProvider({ children }: PresenceProviderProps) {
 export function usePresence() {
   const context = useContext(PresenceContext);
   if (context === undefined) {
-    throw new Error('usePresence must be used within a PresenceProvider');
+    throw new Error("usePresence must be used within a PresenceProvider");
   }
   return context;
 }

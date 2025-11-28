@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import React, { useState, useCallback } from "react"
-import { useAutomation } from "@/contexts/automation-context"
-import { Transition } from "@/contexts/automation-context/types"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import React, { useState, useCallback } from "react";
+import { useAutomation } from "@/contexts/automation-context";
+import { Transition } from "@/contexts/automation-context/types";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,7 +15,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 import {
   Download,
   Trash2,
@@ -23,66 +23,86 @@ import {
   Grid3x3,
   Network,
   BarChart3,
-} from "lucide-react"
-import { toast } from "sonner"
+} from "lucide-react";
+import { toast } from "sonner";
 
 // Custom hooks
-import { useTransitionValidation } from "./hooks/useTransitionValidation"
-import { useTransitionFilters } from "./hooks/useTransitionFilters"
-import { useTransitionOperations } from "./hooks/useTransitionOperations"
+import { useTransitionValidation } from "./hooks/useTransitionValidation";
+import { useTransitionFilters } from "./hooks/useTransitionFilters";
+import { useTransitionOperations } from "./hooks/useTransitionOperations";
 
 // Components
-import { TransitionFilters } from "./TransitionFilters"
-import { TransitionMatrixView } from "./TransitionMatrixView"
-import { TransitionListView } from "./TransitionListView"
-import { TransitionGraphView } from "./TransitionGraphView"
-import { TransitionStatisticsView } from "./TransitionStatisticsView"
-import { TransitionDetailsPanel } from "./TransitionDetailsPanel"
-import { ValidationPanel } from "./ValidationPanel"
-import { BulkCreationWizard } from "./BulkCreationWizard"
+import { TransitionFilters } from "./TransitionFilters";
+import { TransitionMatrixView } from "./TransitionMatrixView";
+import { TransitionListView } from "./TransitionListView";
+import { TransitionGraphView } from "./TransitionGraphView";
+import { TransitionStatisticsView } from "./TransitionStatisticsView";
+import { TransitionDetailsPanel } from "./TransitionDetailsPanel";
+import { ValidationPanel } from "./ValidationPanel";
+import { BulkCreationWizard } from "./BulkCreationWizard";
 
 // Types
-import { ViewMode, DEFAULT_FILTERS, TransitionFilters as FiltersType } from "./types"
+import {
+  ViewMode,
+  DEFAULT_FILTERS,
+  TransitionFilters as FiltersType,
+} from "./types";
 
 export function TransitionManager() {
-  const { states, workflows, transitions, addTransition, updateTransition, deleteTransition } =
-    useAutomation()
+  const {
+    states,
+    workflows,
+    transitions,
+    addTransition,
+    updateTransition,
+    deleteTransition,
+  } = useAutomation();
 
   // View state
-  const [viewMode, setViewMode] = useState<ViewMode>("list")
-  const [filters, setFilters] = useState<FiltersType>(DEFAULT_FILTERS)
-  const [selectedTransitions, setSelectedTransitions] = useState<Set<string>>(new Set())
-  const [selectedTransition, setSelectedTransition] = useState<Transition | null>(null)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [transitionToDelete, setTransitionToDelete] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [filters, setFilters] = useState<FiltersType>(DEFAULT_FILTERS);
+  const [selectedTransitions, setSelectedTransitions] = useState<Set<string>>(
+    new Set()
+  );
+  const [selectedTransition, setSelectedTransition] =
+    useState<Transition | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [transitionToDelete, setTransitionToDelete] = useState<string | null>(
+    null
+  );
 
   // Custom hooks for business logic
-  const validation = useTransitionValidation(transitions, states)
-  const filteredTransitions = useTransitionFilters(transitions, filters, states, validation)
+  const validation = useTransitionValidation(transitions, states);
+  const filteredTransitions = useTransitionFilters(
+    transitions,
+    filters,
+    states,
+    validation
+  );
   const operations = useTransitionOperations({
     addTransition,
     updateTransition,
     deleteTransition,
-  })
+  });
 
   // Handlers
   const handleTransitionSelect = useCallback(
     (id: string, selected: boolean) => {
-      const newSelection = new Set(selectedTransitions)
+      const newSelection = new Set(selectedTransitions);
       if (selected) {
-        newSelection.add(id)
+        newSelection.add(id);
       } else {
-        newSelection.delete(id)
+        newSelection.delete(id);
       }
-      setSelectedTransitions(newSelection)
+      setSelectedTransitions(newSelection);
     },
     [selectedTransitions]
-  )
+  );
 
   const handleBulkDelete = useCallback(() => {
-    operations.handleBulkDelete(selectedTransitions)
-    setSelectedTransitions(new Set())
-  }, [selectedTransitions, operations])
+    operations.handleBulkDelete(selectedTransitions);
+    setSelectedTransitions(new Set());
+  }, [selectedTransitions, operations]);
 
   const handleMatrixCellClick = useCallback(
     (fromState: string, toState: string) => {
@@ -90,37 +110,37 @@ export function TransitionManager() {
         transitions,
         fromState,
         toState
-      )
+      );
 
       if (matchingTransitions.length === 1) {
-        setSelectedTransition(matchingTransitions[0])
+        setSelectedTransition(matchingTransitions[0]);
       } else if (matchingTransitions.length > 1) {
-        setSelectedTransition(matchingTransitions[0])
+        setSelectedTransition(matchingTransitions[0]);
       } else {
-        toast.info("No transition exists for this cell")
+        toast.info("No transition exists for this cell");
       }
     },
     [transitions, operations]
-  )
+  );
 
   const handleDeleteConfirm = useCallback(() => {
     if (transitionToDelete) {
-      operations.handleDelete(transitionToDelete)
-      setTransitionToDelete(null)
-      setDeleteDialogOpen(false)
-      setSelectedTransition(null)
+      operations.handleDelete(transitionToDelete);
+      setTransitionToDelete(null);
+      setDeleteDialogOpen(false);
+      setSelectedTransition(null);
     }
-  }, [transitionToDelete, operations])
+  }, [transitionToDelete, operations]);
 
   const handleIssueClick = useCallback(
     (issueType: string, itemId: string) => {
-      const transition = transitions.find((t) => t.id === itemId)
+      const transition = transitions.find((t) => t.id === itemId);
       if (transition) {
-        setSelectedTransition(transition)
+        setSelectedTransition(transition);
       }
     },
     [transitions]
-  )
+  );
 
   return (
     <div className="h-screen flex flex-col bg-[#1A1A1B] text-white">
@@ -165,21 +185,37 @@ export function TransitionManager() {
         />
 
         {/* View Mode Tabs */}
-        <Tabs value={viewMode} onValueChange={(v: any) => setViewMode(v)} className="mt-4">
+        <Tabs
+          value={viewMode}
+          onValueChange={(v: any) => setViewMode(v)}
+          className="mt-4"
+        >
           <TabsList className="bg-[#1A1A1B]">
-            <TabsTrigger value="list" className="data-[state=active]:bg-[#27272A]">
+            <TabsTrigger
+              value="list"
+              className="data-[state=active]:bg-[#27272A]"
+            >
               <List className="w-4 h-4 mr-2" />
               List
             </TabsTrigger>
-            <TabsTrigger value="matrix" className="data-[state=active]:bg-[#27272A]">
+            <TabsTrigger
+              value="matrix"
+              className="data-[state=active]:bg-[#27272A]"
+            >
               <Grid3x3 className="w-4 h-4 mr-2" />
               Matrix
             </TabsTrigger>
-            <TabsTrigger value="graph" className="data-[state=active]:bg-[#27272A]">
+            <TabsTrigger
+              value="graph"
+              className="data-[state=active]:bg-[#27272A]"
+            >
               <Network className="w-4 h-4 mr-2" />
               Graph
             </TabsTrigger>
-            <TabsTrigger value="statistics" className="data-[state=active]:bg-[#27272A]">
+            <TabsTrigger
+              value="statistics"
+              className="data-[state=active]:bg-[#27272A]"
+            >
               <BarChart3 className="w-4 h-4 mr-2" />
               Statistics
             </TabsTrigger>
@@ -212,8 +248,8 @@ export function TransitionManager() {
                   onTransitionSelect={handleTransitionSelect}
                   onTransitionClick={setSelectedTransition}
                   onTransitionDelete={(id) => {
-                    setTransitionToDelete(id)
-                    setDeleteDialogOpen(true)
+                    setTransitionToDelete(id);
+                    setDeleteDialogOpen(true);
                   }}
                 />
               )}
@@ -254,8 +290,8 @@ export function TransitionManager() {
             workflows={workflows}
             onUpdate={operations.handleUpdate}
             onDelete={(id) => {
-              setTransitionToDelete(id)
-              setDeleteDialogOpen(true)
+              setTransitionToDelete(id);
+              setDeleteDialogOpen(true);
             }}
             onClose={() => setSelectedTransition(null)}
           />
@@ -288,5 +324,5 @@ export function TransitionManager() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  )
+  );
 }

@@ -1,13 +1,13 @@
-"use client"
+"use client";
 
-import React, { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { useTutorialStore, Tutorial } from "@/stores/tutorial-store"
+import React, { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { useTutorialStore, Tutorial } from "@/stores/tutorial-store";
 
 interface StepRendererProps {
-  currentTutorial: Tutorial
-  onTryIt?: (config: any) => void
+  currentTutorial: Tutorial;
+  onTryIt?: (config: any) => void;
 }
 
 /**
@@ -21,27 +21,24 @@ interface StepRendererProps {
  * - Action instructions
  * - Smooth transitions between steps
  */
-export function StepRenderer({
-  currentTutorial,
-  onTryIt,
-}: StepRendererProps) {
-  const currentStepIndex = useTutorialStore((state) => state.currentStepIndex)
-  const step = currentTutorial.steps[currentStepIndex]
-  const [isVisible, setIsVisible] = useState(true)
+export function StepRenderer({ currentTutorial, onTryIt }: StepRendererProps) {
+  const currentStepIndex = useTutorialStore((state) => state.currentStepIndex);
+  const step = currentTutorial.steps[currentStepIndex];
+  const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
     // Trigger fade-in animation on step change
-    setIsVisible(false)
-    const timer = setTimeout(() => setIsVisible(true), 50)
-    return () => clearTimeout(timer)
-  }, [currentStepIndex])
+    setIsVisible(false);
+    const timer = setTimeout(() => setIsVisible(true), 50);
+    return () => clearTimeout(timer);
+  }, [currentStepIndex]);
 
   if (!step) {
     return (
       <div className="flex items-center justify-center h-full">
         <p className="text-gray-500">No step content available</p>
       </div>
-    )
+    );
   }
 
   return (
@@ -71,8 +68,12 @@ export function StepRenderer({
                 →
               </div>
               <div>
-                <p className="font-semibold text-cyan-900 dark:text-cyan-100">Try this:</p>
-                <p className="text-cyan-800 dark:text-cyan-200 mt-1">{step.action}</p>
+                <p className="font-semibold text-cyan-900 dark:text-cyan-100">
+                  Try this:
+                </p>
+                <p className="text-cyan-800 dark:text-cyan-200 mt-1">
+                  {step.action}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -82,7 +83,9 @@ export function StepRenderer({
       {/* Additional Details */}
       {step.details && (
         <div className="space-y-3">
-          <h3 className="font-semibold text-gray-900 dark:text-white">More Details</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">
+            More Details
+          </h3>
           <Card className="border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
             <CardContent className="p-4">
               <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
@@ -96,7 +99,9 @@ export function StepRenderer({
       {/* Keyboard Shortcuts */}
       {step.shortcuts && step.shortcuts.length > 0 && (
         <div className="space-y-3">
-          <h3 className="font-semibold text-gray-900 dark:text-white">Keyboard Shortcuts</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">
+            Keyboard Shortcuts
+          </h3>
           <div className="grid grid-cols-1 gap-2">
             {step.shortcuts.map((shortcut, idx) => (
               <div
@@ -124,7 +129,7 @@ export function StepRenderer({
         </div>
       )}
     </div>
-  )
+  );
 }
 
 /**
@@ -133,24 +138,29 @@ export function StepRenderer({
  * Displays an image with interactive annotations
  */
 interface AnnotatedImageProps {
-  src: string
-  alt: string
+  src: string;
+  alt: string;
   annotations: Array<{
-    id: string
-    x: number
-    y: number
-    text: string
-  }>
+    id: string;
+    x: number;
+    y: number;
+    text: string;
+  }>;
 }
 
 function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
-  const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(null)
-  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null)
+  const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(
+    null
+  );
+  const [imageSize, setImageSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget
-    setImageSize({ width: img.naturalWidth, height: img.naturalHeight })
-  }
+    const img = e.currentTarget;
+    setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+  };
 
   return (
     <Card className="border-gray-700 bg-slate-900 overflow-hidden">
@@ -168,9 +178,9 @@ function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
           {imageSize &&
             annotations.length > 0 &&
             annotations.map((annotation) => {
-              const x = (annotation.x / 100) * imageSize.width
-              const y = (annotation.y / 100) * imageSize.height
-              const isHovered = hoveredAnnotation === annotation.id
+              const x = (annotation.x / 100) * imageSize.width;
+              const y = (annotation.y / 100) * imageSize.height;
+              const isHovered = hoveredAnnotation === annotation.id;
 
               return (
                 <div key={annotation.id}>
@@ -211,7 +221,8 @@ function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
                     >
                       {annotation.text}
                       {/* Arrow pointing to pin */}
-                      <div className="absolute w-2 h-2 bg-slate-950 border-r border-t border-[#00D9FF] transform rotate-45"
+                      <div
+                        className="absolute w-2 h-2 bg-slate-950 border-r border-t border-[#00D9FF] transform rotate-45"
                         style={{
                           left: "-4px",
                           bottom: "4px",
@@ -220,12 +231,12 @@ function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
                     </div>
                   )}
                 </div>
-              )
+              );
             })}
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 /**
@@ -234,7 +245,7 @@ function AnnotatedImage({ src, alt, annotations }: AnnotatedImageProps) {
  * Displays JSON configuration with syntax highlighting
  */
 interface ConfigPreviewProps {
-  config: Record<string, unknown>
+  config: Record<string, unknown>;
 }
 
 function ConfigPreview({ config }: ConfigPreviewProps) {
@@ -251,7 +262,7 @@ function ConfigPreview({ config }: ConfigPreviewProps) {
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 /**
@@ -260,25 +271,25 @@ function ConfigPreview({ config }: ConfigPreviewProps) {
  * Interactive button that triggers a tutorial step action
  */
 interface TryItButtonProps {
-  config: TutorialStep["tryIt"]
-  onTryIt?: (config: TutorialStep["tryIt"]) => void
+  config: TutorialStep["tryIt"];
+  onTryIt?: (config: TutorialStep["tryIt"]) => void;
 }
 
 function TryItButton({ config, onTryIt }: TryItButtonProps) {
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleClick = async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
       if (onTryIt) {
-        onTryIt(config)
+        onTryIt(config);
       }
       // Simulate action completion
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      await new Promise((resolve) => setTimeout(resolve, 500));
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <Button
@@ -295,7 +306,7 @@ function TryItButton({ config, onTryIt }: TryItButtonProps) {
         "Try It"
       )}
     </Button>
-  )
+  );
 }
 
-export { AnnotatedImage, ConfigPreview, TryItButton }
+export { AnnotatedImage, ConfigPreview, TryItButton };

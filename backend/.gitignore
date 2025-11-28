@@ -4,4 +4,7 @@
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
 datasets/
-backend/user_projects/
+user_projects/
+
+# Development logs (for Claude Code access)
+logs/

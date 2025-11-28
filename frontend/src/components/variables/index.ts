@@ -4,5 +4,5 @@
  * Export all variable-related components for easy importing
  */
 
-export { VariableTable } from './VariableTable';
-export { VariableEditorDialog } from './VariableEditorDialog';
+export { VariableTable } from "./VariableTable";
+export { VariableEditorDialog } from "./VariableEditorDialog";

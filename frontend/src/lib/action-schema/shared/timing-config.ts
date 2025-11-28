@@ -2,7 +2,7 @@
  * Timing and logging configuration shared across all actions
  */
 
-import { LogLevel } from './common-types';
+import { LogLevel } from "./common-types";
 
 /**
  * Base settings that apply to ALL actions
@@ -15,7 +15,7 @@ export interface BaseActionSettings {
   pauseAfterEnd?: number;
 
   /** Override global illustration setting */
-  illustrate?: 'YES' | 'NO' | 'USE_GLOBAL';
+  illustrate?: "YES" | "NO" | "USE_GLOBAL";
 
   /** Logging options for this action */
   loggingOptions?: LoggingOptions;

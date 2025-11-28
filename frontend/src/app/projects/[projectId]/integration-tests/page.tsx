@@ -1,21 +1,21 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
-import { Play, StopCircle, RefreshCw, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useAutomation } from '@/contexts/automation-context';
-import { WorkflowSelector } from '@/components/integration-tests/WorkflowSelector';
-import { TestExecutionPanel } from '@/components/integration-tests/TestExecutionPanel';
-import { TestResultsPanel } from '@/components/integration-tests/TestResultsPanel';
-import { TestResultsDetailPanel } from '@/components/integration-tests/TestResultsDetailPanel';
-import { IntegrationTestPlayback } from '@/components/integration-tests/IntegrationTestPlayback';
-import { ApiConfig } from '@/services/api-config';
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useParams } from "next/navigation";
+import { Play, StopCircle, RefreshCw, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAutomation } from "@/contexts/automation-context";
+import { WorkflowSelector } from "@/components/integration-tests/WorkflowSelector";
+import { TestExecutionPanel } from "@/components/integration-tests/TestExecutionPanel";
+import { TestResultsPanel } from "@/components/integration-tests/TestResultsPanel";
+import { TestResultsDetailPanel } from "@/components/integration-tests/TestResultsDetailPanel";
+import { IntegrationTestPlayback } from "@/components/integration-tests/IntegrationTestPlayback";
+import { ApiConfig } from "@/services/api-config";
 import type {
   WorkflowTestExecution,
   WorkflowTestResult,
   StepResult,
-} from '@/types/integration-tests';
+} from "@/types/integration-tests";
 
 /**
  * Integration Tests Page
@@ -38,16 +38,23 @@ export default function IntegrationTestsPage() {
   // State
   const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<string[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [currentExecution, setCurrentExecution] = useState<WorkflowTestExecution | null>(null);
+  const [currentExecution, setCurrentExecution] =
+    useState<WorkflowTestExecution | null>(null);
   const [testResults, setTestResults] = useState<WorkflowTestResult[]>([]);
   const [completedWorkflows, setCompletedWorkflows] = useState(0);
-  const [activeSessionIds, setActiveSessionIds] = useState<Map<string, string>>(new Map());
+  const [activeSessionIds, setActiveSessionIds] = useState<Map<string, string>>(
+    new Map()
+  );
   // Playback state
   const [playbackOpen, setPlaybackOpen] = useState(false);
-  const [playbackHistoricalIds, setPlaybackHistoricalIds] = useState<number[]>([]);
-  const [playbackWorkflowName, setPlaybackWorkflowName] = useState('');
+  const [playbackHistoricalIds, setPlaybackHistoricalIds] = useState<number[]>(
+    []
+  );
+  const [playbackWorkflowName, setPlaybackWorkflowName] = useState("");
   // Track historical result IDs per workflow
-  const [workflowHistoricalIds, setWorkflowHistoricalIds] = useState<Map<string, number[]>>(new Map());
+  const [workflowHistoricalIds, setWorkflowHistoricalIds] = useState<
+    Map<string, number[]>
+  >(new Map());
   // Detail view state
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
 
@@ -87,7 +94,12 @@ export default function IntegrationTestsPage() {
         const result: WorkflowTestResult = {
           workflowId,
           workflowName: workflow?.name || workflowId,
-          status: status.success_rate === 100 ? 'passed' : status.success_rate > 0 ? 'running' : 'failed',
+          status:
+            status.success_rate === 100
+              ? "passed"
+              : status.success_rate > 0
+                ? "running"
+                : "failed",
           successRate: status.success_rate,
           totalActions: status.total_actions,
           executedActions: status.successful_actions,
@@ -95,18 +107,21 @@ export default function IntegrationTestsPage() {
 
         updatedResults.push(result);
 
-        if (result.status === 'passed' || result.status === 'failed') {
+        if (result.status === "passed" || result.status === "failed") {
           completed++;
           // Complete the workflow to clean up
           await fetch(
             `${ApiConfig.QONTINUI_API_URL}/workflow/complete/${sessionId}`,
-            { method: 'POST' }
+            { method: "POST" }
           );
         } else {
           hasRunning = true;
         }
       } catch (error) {
-        console.error(`Failed to poll status for workflow ${workflowId}:`, error);
+        console.error(
+          `Failed to poll status for workflow ${workflowId}:`,
+          error
+        );
       }
     }
 
@@ -167,7 +182,7 @@ export default function IntegrationTestsPage() {
       setCurrentExecution({
         workflowId,
         workflowName: workflow.name,
-        status: 'running',
+        status: "running",
         currentAction: 0,
         totalActions: workflow.actions?.length || 0,
       });
@@ -179,18 +194,21 @@ export default function IntegrationTestsPage() {
       try {
         // Execute workflow with mode: "full_mock" to use qontinui library's mock system
         // This sets ExecutionMode to MockMode.MOCK which routes all actions through mock implementations
-        const response = await fetch(`${ApiConfig.QONTINUI_API_URL}/workflow/execute`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            workflow: workflow,
-            screenshots: [], // Screenshots from historical data, or empty for pure mock
-            states: states,
-            categories: categories,
-            mode: 'full_mock', // This is the key - enables MockMode.MOCK in qontinui library
-            similarity: 0.8,
-          }),
-        });
+        const response = await fetch(
+          `${ApiConfig.QONTINUI_API_URL}/workflow/execute`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              workflow: workflow,
+              screenshots: [], // Screenshots from historical data, or empty for pure mock
+              states: states,
+              categories: categories,
+              mode: "full_mock", // This is the key - enables MockMode.MOCK in qontinui library
+              similarity: 0.8,
+            }),
+          }
+        );
 
         if (!response.ok) {
           const error = await response.text();
@@ -211,7 +229,7 @@ export default function IntegrationTestsPage() {
           setCurrentExecution({
             workflowId,
             workflowName: workflow.name,
-            status: 'running',
+            status: "running",
             currentAction: i + 1,
             totalActions: totalSteps,
           });
@@ -219,8 +237,8 @@ export default function IntegrationTestsPage() {
           const stepResponse = await fetch(
             `${ApiConfig.QONTINUI_API_URL}/workflow/execute_step/${result.session_id}`,
             {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(action),
             }
           );
@@ -245,7 +263,9 @@ export default function IntegrationTestsPage() {
               actionName: action.name || `Step ${i + 1}`,
               patternName: action.config?.image_id || action.config?.object_id,
               success: stepResult.success,
-              message: stepResult.message || (stepResult.success ? 'Success' : 'Failed'),
+              message:
+                stepResult.message ||
+                (stepResult.success ? "Success" : "Failed"),
               duration: stepResult.duration || stepDuration,
               historicalResultId: stepResult.historical_result_id,
               timestamp: new Date().toISOString(),
@@ -260,7 +280,7 @@ export default function IntegrationTestsPage() {
               actionName: action.name || `Step ${i + 1}`,
               patternName: action.config?.image_id || action.config?.object_id,
               success: false,
-              message: 'Request failed',
+              message: "Request failed",
               duration: stepDuration,
               timestamp: new Date().toISOString(),
             });
@@ -275,12 +295,13 @@ export default function IntegrationTestsPage() {
 
         // Add completed result
         setTestResults((prev) => [
-          ...prev.filter(r => r.workflowId !== workflowId),
+          ...prev.filter((r) => r.workflowId !== workflowId),
           {
             workflowId,
             workflowName: workflow.name,
-            status: passed ? 'passed' : 'failed',
-            successRate: totalSteps > 0 ? (successfulSteps / totalSteps) * 100 : 0,
+            status: passed ? "passed" : "failed",
+            successRate:
+              totalSteps > 0 ? (successfulSteps / totalSteps) * 100 : 0,
             totalActions: totalSteps,
             executedActions: successfulSteps,
             passed,
@@ -296,9 +317,8 @@ export default function IntegrationTestsPage() {
         // Complete the workflow session
         await fetch(
           `${ApiConfig.QONTINUI_API_URL}/workflow/complete/${result.session_id}`,
-          { method: 'POST' }
+          { method: "POST" }
         );
-
       } catch (error) {
         console.error(`Failed to run workflow ${workflowId}:`, error);
 
@@ -308,7 +328,7 @@ export default function IntegrationTestsPage() {
           {
             workflowId,
             workflowName: workflow.name,
-            status: 'failed',
+            status: "failed",
             successRate: 0,
             totalActions: workflow.actions?.length || 0,
             executedActions: 0,
@@ -317,7 +337,7 @@ export default function IntegrationTestsPage() {
             successfulSteps: 0,
             failedSteps: workflow.actions?.length || 0,
             duration: Date.now() - startTime,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : "Unknown error",
           },
         ]);
       }
@@ -334,9 +354,12 @@ export default function IntegrationTestsPage() {
     // Complete all active sessions
     for (const sessionId of activeSessionIds.values()) {
       try {
-        await fetch(`${ApiConfig.QONTINUI_API_URL}/workflow/complete/${sessionId}`, {
-          method: 'POST',
-        });
+        await fetch(
+          `${ApiConfig.QONTINUI_API_URL}/workflow/complete/${sessionId}`,
+          {
+            method: "POST",
+          }
+        );
       } catch (error) {
         console.error(`Failed to complete session ${sessionId}:`, error);
       }
@@ -367,7 +390,10 @@ export default function IntegrationTestsPage() {
     : null;
 
   // Handle playback request
-  const handlePlayback = (workflowId: string, historicalResultIds: number[]) => {
+  const handlePlayback = (
+    workflowId: string,
+    historicalResultIds: number[]
+  ) => {
     const workflow = workflows.find((w) => w.id === workflowId);
     setPlaybackWorkflowName(workflow?.name || workflowId);
     setPlaybackHistoricalIds(historicalResultIds);
@@ -378,7 +404,7 @@ export default function IntegrationTestsPage() {
   const handleClosePlayback = () => {
     setPlaybackOpen(false);
     setPlaybackHistoricalIds([]);
-    setPlaybackWorkflowName('');
+    setPlaybackWorkflowName("");
   };
 
   const canRunTests = selectedWorkflowIds.length > 0 && !isRunning;
@@ -389,7 +415,9 @@ export default function IntegrationTestsPage() {
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Integration Tests</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Integration Tests
+            </h1>
             <p className="text-sm text-gray-600 mt-1">
               Test automation workflows using mock mode with historical data
             </p>
@@ -434,7 +462,9 @@ export default function IntegrationTestsPage() {
 
             {/* Mock Mode Info */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-blue-800">Mock Mode Integration Testing</h3>
+              <h3 className="text-sm font-medium text-blue-800">
+                Mock Mode Integration Testing
+              </h3>
               <p className="text-sm text-blue-600 mt-1">
                 Tests run using the qontinui library with MockMode.MOCK enabled.
                 Actions return historical data from ActionHistories, with random

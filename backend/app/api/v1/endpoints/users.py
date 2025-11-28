@@ -81,15 +81,21 @@ async def get_runner_connection_info(
     """
     from app.core.config import settings
 
-    # Extract JWT token from Authorization header
-    authorization = request.headers.get("Authorization")
-    if not authorization or not authorization.startswith("Bearer "):
+    # Extract JWT token from cookie (preferred) or Authorization header (fallback)
+    # With HttpOnly cookies, the token is stored in the access_token cookie
+    token = request.cookies.get("access_token")
+
+    if not token:
+        # Fallback to Authorization header for backward compatibility
+        authorization = request.headers.get("Authorization")
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
+            detail="Missing authentication token",
         )
-
-    token = authorization.replace("Bearer ", "")
 
     # Create connection info response
     connection_info = RunnerConnectionInfo(

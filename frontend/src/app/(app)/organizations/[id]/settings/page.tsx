@@ -1,15 +1,21 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { useRouter, useParams } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { useOrganization } from "@/hooks/useOrganization"
-import { organizationService } from "@/services/service-factory"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+import { useEffect, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { useOrganization } from "@/hooks/useOrganization";
+import { organizationService } from "@/services/service-factory";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,113 +25,115 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { ArrowLeft, Save, Trash2, Loader2, AlertTriangle } from "lucide-react"
-import { toast } from "sonner"
-import type { Organization } from "@/types/collaboration"
+} from "@/components/ui/alert-dialog";
+import { ArrowLeft, Save, Trash2, Loader2, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
+import type { Organization } from "@/types/collaboration";
 
 export default function OrganizationSettingsPage() {
-  const router = useRouter()
-  const params = useParams()
-  const orgId = params?.id as string
+  const router = useRouter();
+  const params = useParams();
+  const orgId = params?.id as string;
 
-  const { user, loading: authLoading } = useAuth()
-  const { updateOrg, deleteOrg, leaveOrg } = useOrganization()
+  const { user, loading: authLoading } = useAuth();
+  const { updateOrg, deleteOrg, leaveOrg } = useOrganization();
 
-  const [organization, setOrganization] = useState<Organization | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
 
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [deleteConfirmation, setDeleteConfirmation] = useState("")
-  const [deleting, setDeleting] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
-  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
-  const [leaving, setLeaving] = useState(false)
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
+      router.push("/");
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (!orgId || !user) return
+    if (!orgId || !user) return;
 
     const loadData = async () => {
-      setLoading(true)
+      setLoading(true);
 
       try {
-        const org = await organizationService.getOrganization(orgId)
-        setOrganization(org)
-        setName(org.name)
-        setDescription(org.description || "")
+        const org = await organizationService.getOrganization(orgId);
+        setOrganization(org);
+        setName(org.name);
+        setDescription(org.description || "");
       } catch (err) {
-        console.error('Failed to load organization:', err)
-        toast.error('Failed to load organization')
-        router.push('/organizations')
+        console.error("Failed to load organization:", err);
+        toast.error("Failed to load organization");
+        router.push("/organizations");
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    loadData()
-  }, [orgId, user, router])
+    loadData();
+  }, [orgId, user, router]);
 
   const handleSave = async () => {
-    if (!orgId || !name.trim()) return
+    if (!orgId || !name.trim()) return;
 
-    setSaving(true)
+    setSaving(true);
     try {
-      await updateOrg(orgId, name, description)
-      toast.success('Organization updated successfully')
+      await updateOrg(orgId, name, description);
+      toast.success("Organization updated successfully");
 
       // Reload organization data
-      const org = await organizationService.getOrganization(orgId)
-      setOrganization(org)
+      const org = await organizationService.getOrganization(orgId);
+      setOrganization(org);
     } catch (err: any) {
-      console.error('Failed to update organization:', err)
-      toast.error(err.message || 'Failed to update organization')
+      console.error("Failed to update organization:", err);
+      toast.error(err.message || "Failed to update organization");
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
-  }
+  };
 
   const handleDelete = async () => {
-    if (!orgId || deleteConfirmation !== organization?.name) return
+    if (!orgId || deleteConfirmation !== organization?.name) return;
 
-    setDeleting(true)
+    setDeleting(true);
     try {
-      await deleteOrg(orgId)
-      toast.success('Organization deleted successfully')
-      router.push('/organizations')
+      await deleteOrg(orgId);
+      toast.success("Organization deleted successfully");
+      router.push("/organizations");
     } catch (err: any) {
-      console.error('Failed to delete organization:', err)
-      toast.error(err.message || 'Failed to delete organization')
-      setDeleting(false)
+      console.error("Failed to delete organization:", err);
+      toast.error(err.message || "Failed to delete organization");
+      setDeleting(false);
     }
-  }
+  };
 
   const handleLeave = async () => {
-    if (!orgId) return
+    if (!orgId) return;
 
-    setLeaving(true)
+    setLeaving(true);
     try {
-      await leaveOrg(orgId)
-      toast.success('You have left the organization')
-      router.push('/organizations')
+      await leaveOrg(orgId);
+      toast.success("You have left the organization");
+      router.push("/organizations");
     } catch (err: any) {
-      console.error('Failed to leave organization:', err)
-      toast.error(err.message || 'Failed to leave organization')
-      setLeaving(false)
+      console.error("Failed to leave organization:", err);
+      toast.error(err.message || "Failed to leave organization");
+      setLeaving(false);
     }
-  }
+  };
 
-  const isOwner = organization?.owner_id === user?.id
-  const hasChanges = name !== organization?.name || description !== (organization?.description || "")
+  const isOwner = organization?.owner_id === user?.id;
+  const hasChanges =
+    name !== organization?.name ||
+    description !== (organization?.description || "");
 
   if (authLoading || !user) {
     return (
@@ -135,7 +143,7 @@ export default function OrganizationSettingsPage() {
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
-    )
+    );
   }
 
   if (loading) {
@@ -148,7 +156,7 @@ export default function OrganizationSettingsPage() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   if (!organization) {
@@ -159,7 +167,7 @@ export default function OrganizationSettingsPage() {
             <CardContent className="p-8 text-center">
               <p className="text-red-400 mb-4">Organization not found</p>
               <Button
-                onClick={() => router.push('/organizations')}
+                onClick={() => router.push("/organizations")}
                 variant="outline"
                 className="border-gray-700 hover:border-[#00D9FF]"
               >
@@ -169,7 +177,7 @@ export default function OrganizationSettingsPage() {
           </Card>
         </div>
       </div>
-    )
+    );
   }
 
   if (!isOwner) {
@@ -188,7 +196,9 @@ export default function OrganizationSettingsPage() {
           <Card className="bg-[#1A1A1B]/50 border-yellow-500/50 backdrop-blur-sm">
             <CardContent className="p-8 text-center">
               <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-yellow-500" />
-              <p className="text-yellow-400 mb-4">Only organization owners can access settings</p>
+              <p className="text-yellow-400 mb-4">
+                Only organization owners can access settings
+              </p>
               <Button
                 onClick={() => router.push(`/organizations/${orgId}`)}
                 variant="outline"
@@ -200,7 +210,7 @@ export default function OrganizationSettingsPage() {
           </Card>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -257,8 +267,8 @@ export default function OrganizationSettingsPage() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setName(organization.name)
-                  setDescription(organization.description || "")
+                  setName(organization.name);
+                  setDescription(organization.description || "");
                 }}
                 disabled={!hasChanges || saving}
                 className="border-gray-700"
@@ -299,20 +309,20 @@ export default function OrganizationSettingsPage() {
             <div className="flex justify-between py-2 border-b border-gray-800">
               <span className="text-gray-400">Created</span>
               <span>
-                {new Date(organization.created_at).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
+                {new Date(organization.created_at).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
                 })}
               </span>
             </div>
             <div className="flex justify-between py-2 border-b border-gray-800">
               <span className="text-gray-400">Last Updated</span>
               <span>
-                {new Date(organization.updated_at).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
+                {new Date(organization.updated_at).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
                 })}
               </span>
             </div>
@@ -335,9 +345,12 @@ export default function OrganizationSettingsPage() {
             <div className="p-4 border border-red-500/30 rounded-lg bg-red-500/5">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1">
-                  <h4 className="font-semibold text-red-400 mb-1">Delete Organization</h4>
+                  <h4 className="font-semibold text-red-400 mb-1">
+                    Delete Organization
+                  </h4>
                   <p className="text-sm text-gray-400">
-                    Permanently delete this organization and all associated data. This action cannot be undone.
+                    Permanently delete this organization and all associated
+                    data. This action cannot be undone.
                   </p>
                 </div>
               </div>
@@ -357,17 +370,28 @@ export default function OrganizationSettingsPage() {
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent className="bg-[#1A1A1B] border-red-500/50 text-white">
             <AlertDialogHeader>
-              <AlertDialogTitle className="text-red-400">Delete Organization</AlertDialogTitle>
+              <AlertDialogTitle className="text-red-400">
+                Delete Organization
+              </AlertDialogTitle>
               <AlertDialogDescription className="text-gray-400">
-                This action cannot be undone. This will permanently delete the organization
-                <span className="font-semibold text-white"> {organization.name}</span>, remove all members,
-                and delete all associated projects and data.
+                This action cannot be undone. This will permanently delete the
+                organization
+                <span className="font-semibold text-white">
+                  {" "}
+                  {organization.name}
+                </span>
+                , remove all members, and delete all associated projects and
+                data.
               </AlertDialogDescription>
             </AlertDialogHeader>
 
             <div className="my-4">
               <Label htmlFor="delete-confirm" className="text-gray-400">
-                Type <span className="font-semibold text-white">{organization.name}</span> to confirm
+                Type{" "}
+                <span className="font-semibold text-white">
+                  {organization.name}
+                </span>{" "}
+                to confirm
               </Label>
               <Input
                 id="delete-confirm"
@@ -413,7 +437,8 @@ export default function OrganizationSettingsPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>Leave Organization</AlertDialogTitle>
               <AlertDialogDescription className="text-gray-400">
-                Are you sure you want to leave this organization? You will lose access to all organization resources.
+                Are you sure you want to leave this organization? You will lose
+                access to all organization resources.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -431,7 +456,7 @@ export default function OrganizationSettingsPage() {
                     Leaving...
                   </>
                 ) : (
-                  'Leave Organization'
+                  "Leave Organization"
                 )}
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -439,5 +464,5 @@ export default function OrganizationSettingsPage() {
         </AlertDialog>
       </div>
     </div>
-  )
+  );
 }

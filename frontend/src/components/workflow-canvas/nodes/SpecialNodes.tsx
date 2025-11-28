@@ -11,13 +11,13 @@
  * - RUN_WORKFLOW - Sub-workflow execution
  */
 
-import React from 'react';
-import { NodeProps } from '@xyflow/react';
-import { BaseNode, BaseNodeData, TerminalNode } from './BaseNode';
+import React from "react";
+import { NodeProps } from "@xyflow/react";
+import { BaseNode, BaseNodeData, TerminalNode } from "./BaseNode";
 import type {
   GoToStateActionConfig,
   RunWorkflowActionConfig,
-} from '@/lib/action-schema/configs/state-actions';
+} from "@/lib/action-schema/configs/state-actions";
 
 // =============================================================================
 // Workflow Control Nodes (Special)
@@ -54,7 +54,7 @@ export function EndNode(props: NodeProps<BaseNodeData>) {
  */
 export function CommentNode(props: NodeProps<BaseNodeData>) {
   const { action } = props.data;
-  const text = action.name || action.base?.description || 'Comment';
+  const text = action.name || action.base?.description || "Comment";
 
   return (
     <div
@@ -65,21 +65,15 @@ export function CommentNode(props: NodeProps<BaseNodeData>) {
         min-w-[200px] max-w-[300px]
         shadow-sm
       "
-      style={{ pointerEvents: 'all' }}
+      style={{ pointerEvents: "all" }}
     >
       <div className="flex items-start gap-2">
         <div className="text-yellow-600 flex-shrink-0 mt-0.5">
-          <svg
-            className="w-4 h-4"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
             <path d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" />
           </svg>
         </div>
-        <div className="flex-1 text-sm text-gray-700 italic">
-          {text}
-        </div>
+        <div className="flex-1 text-sm text-gray-700 italic">{text}</div>
       </div>
     </div>
   );
@@ -90,7 +84,7 @@ export function CommentNode(props: NodeProps<BaseNodeData>) {
  */
 export function GroupNode(props: NodeProps<BaseNodeData>) {
   const { action } = props.data;
-  const groupName = action.name || 'Group';
+  const groupName = action.name || "Group";
 
   return (
     <div
@@ -101,7 +95,7 @@ export function GroupNode(props: NodeProps<BaseNodeData>) {
         min-w-[250px]
         backdrop-blur-sm
       "
-      style={{ pointerEvents: 'all' }}
+      style={{ pointerEvents: "all" }}
     >
       <div className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
         <svg
@@ -119,9 +113,7 @@ export function GroupNode(props: NodeProps<BaseNodeData>) {
         </svg>
         {groupName}
       </div>
-      <div className="text-xs text-gray-500">
-        Drag nodes here to group them
-      </div>
+      <div className="text-xs text-gray-500">Drag nodes here to group them</div>
     </div>
   );
 }
@@ -174,7 +166,7 @@ export function MergeNode(props: NodeProps<BaseNodeData>) {
  */
 export function GoToStateNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as GoToStateActionConfig;
-  const stateName = config.stateName || 'Unknown State';
+  const stateName = config.stateName || "Unknown State";
 
   return (
     <div className="relative">
@@ -198,7 +190,7 @@ export function GoToStateNode(props: NodeProps<BaseNodeData>) {
  */
 export function RunWorkflowNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as RunWorkflowActionConfig;
-  const workflowId = config.workflowId || 'Sub-workflow';
+  const workflowId = config.workflowId || "Sub-workflow";
 
   return (
     <div className="relative">

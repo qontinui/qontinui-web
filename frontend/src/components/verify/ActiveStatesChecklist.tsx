@@ -5,36 +5,42 @@
  * Provides a quick overview of the state activation status at the current workflow step.
  */
 
-import React from 'react'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { CheckCircle2, Circle, Info } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import type { State } from '@/contexts/automation-context'
+import React from "react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { CheckCircle2, Circle, Info } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { State } from "@/contexts/automation-context";
 
 export interface ActiveStatesChecklistProps {
-  allStates: State[]
-  activeStateIds: string[]
+  allStates: State[];
+  activeStateIds: string[];
 }
 
 /**
  * Get state metadata for display
  */
 function getStateMetadata(state: State): string {
-  const parts: string[] = []
+  const parts: string[] = [];
 
   if (state.stateImages && state.stateImages.length > 0) {
-    parts.push(`${state.stateImages.length} image${state.stateImages.length > 1 ? 's' : ''}`)
+    parts.push(
+      `${state.stateImages.length} image${state.stateImages.length > 1 ? "s" : ""}`
+    );
   }
 
   if (state.regions && state.regions.length > 0) {
-    parts.push(`${state.regions.length} region${state.regions.length > 1 ? 's' : ''}`)
+    parts.push(
+      `${state.regions.length} region${state.regions.length > 1 ? "s" : ""}`
+    );
   }
 
   if (state.locations && state.locations.length > 0) {
-    parts.push(`${state.locations.length} location${state.locations.length > 1 ? 's' : ''}`)
+    parts.push(
+      `${state.locations.length} location${state.locations.length > 1 ? "s" : ""}`
+    );
   }
 
-  return parts.join(', ') || 'No elements'
+  return parts.join(", ") || "No elements";
 }
 
 export function ActiveStatesChecklist({
@@ -50,22 +56,22 @@ export function ActiveStatesChecklist({
           Create states in the automation builder
         </div>
       </div>
-    )
+    );
   }
 
   // Sort states: active first, then by name
   const sortedStates = [...allStates].sort((a, b) => {
-    const aActive = activeStateIds.includes(a.id)
-    const bActive = activeStateIds.includes(b.id)
+    const aActive = activeStateIds.includes(a.id);
+    const bActive = activeStateIds.includes(b.id);
 
-    if (aActive && !bActive) return -1
-    if (!aActive && bActive) return 1
+    if (aActive && !bActive) return -1;
+    if (!aActive && bActive) return 1;
 
-    return a.name.localeCompare(b.name)
-  })
+    return a.name.localeCompare(b.name);
+  });
 
-  const activeCount = activeStateIds.length
-  const totalCount = allStates.length
+  const activeCount = activeStateIds.length;
+  const totalCount = allStates.length;
 
   return (
     <div className="space-y-3">
@@ -86,17 +92,17 @@ export function ActiveStatesChecklist({
       <ScrollArea className="h-[550px] pr-4">
         <div className="space-y-2">
           {sortedStates.map((state) => {
-            const isActive = activeStateIds.includes(state.id)
-            const metadata = getStateMetadata(state)
+            const isActive = activeStateIds.includes(state.id);
+            const metadata = getStateMetadata(state);
 
             return (
               <div
                 key={state.id}
                 className={cn(
-                  'p-3 rounded-lg border transition-all',
+                  "p-3 rounded-lg border transition-all",
                   isActive
-                    ? 'bg-[#00D9FF]/10 border-[#00D9FF]/50'
-                    : 'bg-[#1A1A1B]/30 border-gray-800'
+                    ? "bg-[#00D9FF]/10 border-[#00D9FF]/50"
+                    : "bg-[#1A1A1B]/30 border-gray-800"
                 )}
               >
                 <div className="flex items-start gap-3">
@@ -111,8 +117,8 @@ export function ActiveStatesChecklist({
                   <div className="flex-1 min-w-0">
                     <div
                       className={cn(
-                        'font-medium text-sm mb-1',
-                        isActive ? 'text-[#00D9FF]' : 'text-gray-400'
+                        "font-medium text-sm mb-1",
+                        isActive ? "text-[#00D9FF]" : "text-gray-400"
                       )}
                     >
                       {state.name}
@@ -124,9 +130,7 @@ export function ActiveStatesChecklist({
                       </div>
                     )}
 
-                    <div className="text-xs text-gray-600">
-                      {metadata}
-                    </div>
+                    <div className="text-xs text-gray-600">{metadata}</div>
 
                     {/* State flags */}
                     <div className="flex items-center gap-2 mt-2">
@@ -144,7 +148,7 @@ export function ActiveStatesChecklist({
                   </div>
                 </div>
               </div>
-            )
+            );
           })}
         </div>
       </ScrollArea>
@@ -153,10 +157,10 @@ export function ActiveStatesChecklist({
       {activeCount === 0 && (
         <div className="text-xs text-gray-600 text-center p-4 bg-[#1A1A1B]/30 rounded border border-gray-800">
           <Info className="w-4 h-4 mx-auto mb-1 opacity-50" />
-          No states are currently active. States become active as the workflow progresses through
-          GO_TO_STATE and FIND_STATE_IMAGE actions.
+          No states are currently active. States become active as the workflow
+          progresses through GO_TO_STATE and FIND_STATE_IMAGE actions.
         </div>
       )}
     </div>
-  )
+  );
 }

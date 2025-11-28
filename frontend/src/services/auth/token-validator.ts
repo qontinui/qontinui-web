@@ -18,15 +18,15 @@ export class TokenValidator {
    */
   decodeToken(token: string): TokenPayload | null {
     try {
-      const parts = token.split('.');
+      const parts = token.split(".");
       if (parts.length !== 3) {
-        console.error('[TokenValidator] Invalid token format');
+        console.error("[TokenValidator] Invalid token format");
         return null;
       }
       const payload = JSON.parse(atob(parts[1]));
       return payload;
     } catch (error) {
-      console.error('[TokenValidator] Failed to decode token:', error);
+      console.error("[TokenValidator] Failed to decode token:", error);
       return null;
     }
   }
@@ -45,14 +45,17 @@ export class TokenValidator {
    */
   isTokenExpired(expiryTime: number): boolean {
     const now = Date.now();
-    const isExpired = now >= (expiryTime + this.CLOCK_SKEW_TOLERANCE_MS);
+    const isExpired = now >= expiryTime + this.CLOCK_SKEW_TOLERANCE_MS;
 
     if (now >= expiryTime && !isExpired) {
-      console.warn('[TokenValidator] Token appears expired but within clock skew tolerance:', {
-        now: new Date(now).toISOString(),
-        expiry: new Date(expiryTime).toISOString(),
-        skewToleranceMinutes: this.CLOCK_SKEW_TOLERANCE_MS / 60000,
-      });
+      console.warn(
+        "[TokenValidator] Token appears expired but within clock skew tolerance:",
+        {
+          now: new Date(now).toISOString(),
+          expiry: new Date(expiryTime).toISOString(),
+          skewToleranceMinutes: this.CLOCK_SKEW_TOLERANCE_MS / 60000,
+        }
+      );
     }
 
     return isExpired;
@@ -61,7 +64,10 @@ export class TokenValidator {
   /**
    * Check if token will expire soon (within specified milliseconds)
    */
-  isTokenExpiringSoon(expiryTime: number, thresholdMs: number = 60000): boolean {
+  isTokenExpiringSoon(
+    expiryTime: number,
+    thresholdMs: number = 60000
+  ): boolean {
     const timeUntilExpiry = expiryTime - Date.now();
     return timeUntilExpiry < thresholdMs && timeUntilExpiry > 0;
   }
@@ -78,38 +84,55 @@ export class TokenValidator {
    */
   isValidTokenStructure(token: string | null): boolean {
     if (!token) return false;
-    const parts = token.split('.');
+    const parts = token.split(".");
     return parts.length === 3;
   }
 
   /**
    * Check if we have a valid session (either valid access token or refresh token)
    */
-  hasValidSession(hasAccessToken: boolean, hasRefreshToken: boolean, accessTokenExpiry: number | null): boolean {
+  hasValidSession(
+    hasAccessToken: boolean,
+    hasRefreshToken: boolean,
+    accessTokenExpiry: number | null
+  ): boolean {
     // Valid session if we have:
     // 1. A valid (non-expired) access token, OR
     // 2. A refresh token (even if access token is expired, we can refresh it)
-    const isAccessTokenValid = hasAccessToken && accessTokenExpiry && !this.isTokenExpired(accessTokenExpiry);
+    const isAccessTokenValid =
+      hasAccessToken &&
+      accessTokenExpiry &&
+      !this.isTokenExpired(accessTokenExpiry);
     return isAccessTokenValid || hasRefreshToken;
   }
 
   /**
    * Log validation results for debugging
    */
-  logValidation(hasAccessToken: boolean, hasRefreshToken: boolean, expiry: number | null): void {
+  logValidation(
+    hasAccessToken: boolean,
+    hasRefreshToken: boolean,
+    expiry: number | null
+  ): void {
     const isAccessTokenExpired = expiry ? this.isTokenExpired(expiry) : false;
-    const isValid = this.hasValidSession(hasAccessToken, hasRefreshToken, expiry);
+    const isValid = this.hasValidSession(
+      hasAccessToken,
+      hasRefreshToken,
+      expiry
+    );
 
-    console.log('[TokenValidator] Validation check:', {
+    console.log("[TokenValidator] Validation check:", {
       hasAccessToken,
       hasRefreshToken,
       isAccessTokenExpired,
       isValid,
-      expiry: expiry ? new Date(expiry).toISOString() : 'none',
+      expiry: expiry ? new Date(expiry).toISOString() : "none",
       now: new Date().toISOString(),
       reasoning: isValid
-        ? (hasAccessToken && !isAccessTokenExpired ? 'Valid access token' : 'Has refresh token')
-        : 'No tokens available',
+        ? hasAccessToken && !isAccessTokenExpired
+          ? "Valid access token"
+          : "Has refresh token"
+        : "No tokens available",
     });
   }
 }

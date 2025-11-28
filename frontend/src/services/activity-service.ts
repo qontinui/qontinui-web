@@ -13,10 +13,10 @@ import type {
   ActivityFeedOptions,
   ActivityActionType,
   ResourceType,
-} from '@/types/collaboration';
-import { httpClient } from './http-client';
+} from "@/types/collaboration";
+import { httpClient } from "./http-client";
 
-const API_BASE = '/api/activities';
+const API_BASE = "/api/activities";
 
 // ============================================================================
 // Activity Service
@@ -32,16 +32,20 @@ class ActivityService {
   ): Promise<{ activities: Activity[]; total: number; has_more: boolean }> {
     const params = new URLSearchParams({ project_id: projectId });
 
-    if (options.limit) params.append('limit', options.limit.toString());
-    if (options.offset) params.append('offset', options.offset.toString());
-    if (options.user_id) params.append('user_id', options.user_id);
+    if (options.limit) params.append("limit", options.limit.toString());
+    if (options.offset) params.append("offset", options.offset.toString());
+    if (options.user_id) params.append("user_id", options.user_id);
 
     if (options.action_types && options.action_types.length > 0) {
-      options.action_types.forEach((type) => params.append('action_types', type));
+      options.action_types.forEach((type) =>
+        params.append("action_types", type)
+      );
     }
 
     if (options.resource_types && options.resource_types.length > 0) {
-      options.resource_types.forEach((type) => params.append('resource_types', type));
+      options.resource_types.forEach((type) =>
+        params.append("resource_types", type)
+      );
     }
 
     const response = await httpClient.get<{
@@ -57,14 +61,19 @@ class ActivityService {
    * Get a single activity
    */
   async getActivity(activityId: string): Promise<Activity> {
-    const activity = await httpClient.get<Activity>(`${API_BASE}/${activityId}`);
+    const activity = await httpClient.get<Activity>(
+      `${API_BASE}/${activityId}`
+    );
     return activity;
   }
 
   /**
    * Create a new activity record
    */
-  async createActivity(projectId: string, data: ActivityCreate): Promise<Activity> {
+  async createActivity(
+    projectId: string,
+    data: ActivityCreate
+  ): Promise<Activity> {
     const activity = await httpClient.post<Activity>(API_BASE, {
       project_id: projectId,
       ...data,
@@ -82,7 +91,11 @@ class ActivityService {
     total_activities: number;
     active_users: number;
     top_actions: Array<{ action_type: ActivityActionType; count: number }>;
-    recent_contributors: Array<{ user_id: string; user_name: string; count: number }>;
+    recent_contributors: Array<{
+      user_id: string;
+      user_name: string;
+      count: number;
+    }>;
   }> {
     const params = new URLSearchParams({
       project_id: projectId,
@@ -125,7 +138,9 @@ class ActivityService {
       limit: limit.toString(),
     });
 
-    const activities = await httpClient.get<Activity[]>(`${API_BASE}/user?${params}`);
+    const activities = await httpClient.get<Activity[]>(
+      `${API_BASE}/user?${params}`
+    );
     return activities;
   }
 

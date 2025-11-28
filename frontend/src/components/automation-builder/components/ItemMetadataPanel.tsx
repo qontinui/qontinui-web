@@ -5,45 +5,45 @@
  * All items are now Workflows - sequential workflows are just linear graphs.
  */
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import React, { useState, useEffect, useCallback } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
-import { Check, X, Users } from 'lucide-react'
-import type { LibraryItem } from '../types'
-import { isLinearWorkflow, getSuggestedMode } from '../types'
-import type { BuilderMode } from '../types'
-import { PermissionBadge } from './PermissionBadge'
-import type { PermissionLevel } from '@/types/collaboration'
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Check, X, Users } from "lucide-react";
+import type { LibraryItem } from "../types";
+import { isLinearWorkflow, getSuggestedMode } from "../types";
+import type { BuilderMode } from "../types";
+import { PermissionBadge } from "./PermissionBadge";
+import type { PermissionLevel } from "@/types/collaboration";
 
 export interface ItemMetadataPanelProps {
-  item: LibraryItem
-  onUpdate: (item: LibraryItem) => void
-  currentPermission?: PermissionLevel
-  collaboratorCount?: number
-  onOpenShare?: () => void
-  className?: string
+  item: LibraryItem;
+  onUpdate: (item: LibraryItem) => void;
+  currentPermission?: PermissionLevel;
+  collaboratorCount?: number;
+  onOpenShare?: () => void;
+  className?: string;
 }
 
 // Workflow categories (unified for all workflows)
 const WORKFLOW_CATEGORIES = [
-  'Main',
-  'UI Automation',
-  'Data Processing',
-  'System Integration',
-  'Testing',
-  'Maintenance',
-  'Utilities',
-  'Custom',
-] as const
+  "Main",
+  "UI Automation",
+  "Data Processing",
+  "System Integration",
+  "Testing",
+  "Maintenance",
+  "Utilities",
+  "Custom",
+] as const;
 
 export function ItemMetadataPanel({
   item,
@@ -51,24 +51,26 @@ export function ItemMetadataPanel({
   currentPermission,
   collaboratorCount,
   onOpenShare,
-  className
+  className,
 }: ItemMetadataPanelProps) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [tempName, setTempName] = useState(item.name)
-  const [tempDescription, setTempDescription] = useState(item.description || '')
-  const [tempCategory, setTempCategory] = useState(item.category || 'Main')
+  const [isEditing, setIsEditing] = useState(false);
+  const [tempName, setTempName] = useState(item.name);
+  const [tempDescription, setTempDescription] = useState(
+    item.description || ""
+  );
+  const [tempCategory, setTempCategory] = useState(item.category || "Main");
   const [tempViewMode, setTempViewMode] = useState<BuilderMode>(
     item.metadata?.viewMode || getSuggestedMode(item)
-  )
+  );
 
   // Reset temp values when item changes
   useEffect(() => {
-    setTempName(item.name)
-    setTempDescription(item.description || '')
-    setTempCategory(item.category || 'Main')
-    setTempViewMode(item.metadata?.viewMode || getSuggestedMode(item))
-    setIsEditing(false)
-  }, [item.id])
+    setTempName(item.name);
+    setTempDescription(item.description || "");
+    setTempCategory(item.category || "Main");
+    setTempViewMode(item.metadata?.viewMode || getSuggestedMode(item));
+    setIsEditing(false);
+  }, [item.id]);
 
   /**
    * Save changes
@@ -76,7 +78,7 @@ export function ItemMetadataPanel({
   const handleSave = useCallback(() => {
     if (!tempName.trim()) {
       // Don't allow empty names
-      return
+      return;
     }
 
     // Update workflow with all fields
@@ -90,40 +92,40 @@ export function ItemMetadataPanel({
         viewMode: tempViewMode,
         updated: new Date().toISOString(),
       },
-    })
+    });
 
-    setIsEditing(false)
-  }, [item, tempName, tempDescription, tempCategory, tempViewMode, onUpdate])
+    setIsEditing(false);
+  }, [item, tempName, tempDescription, tempCategory, tempViewMode, onUpdate]);
 
   /**
    * Cancel editing
    */
   const handleCancel = useCallback(() => {
-    setTempName(item.name)
-    setTempDescription(item.description || '')
-    setTempCategory(item.category || 'Main')
-    setTempViewMode(item.metadata?.viewMode || getSuggestedMode(item))
-    setIsEditing(false)
-  }, [item])
+    setTempName(item.name);
+    setTempDescription(item.description || "");
+    setTempCategory(item.category || "Main");
+    setTempViewMode(item.metadata?.viewMode || getSuggestedMode(item));
+    setIsEditing(false);
+  }, [item]);
 
   /**
    * Handle Enter key to save
    */
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault()
-        handleSave()
-      } else if (e.key === 'Escape') {
-        e.preventDefault()
-        handleCancel()
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSave();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        handleCancel();
       }
     },
     [handleSave, handleCancel]
-  )
+  );
 
-  const isLinear = isLinearWorkflow(item)
-  const currentViewMode = item.metadata?.viewMode || getSuggestedMode(item)
+  const isLinear = isLinearWorkflow(item);
+  const currentViewMode = item.metadata?.viewMode || getSuggestedMode(item);
 
   return (
     <div className={className}>
@@ -131,12 +133,12 @@ export function ItemMetadataPanel({
       <div className="mb-4 flex items-center justify-between gap-2">
         <span
           className={
-            currentViewMode === 'sequential'
-              ? 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/30'
-              : 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/30'
+            currentViewMode === "sequential"
+              ? "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/30"
+              : "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/30"
           }
         >
-          {isLinear ? 'Sequential Workflow' : 'Graph Workflow'}
+          {isLinear ? "Sequential Workflow" : "Graph Workflow"}
         </span>
         {currentPermission && (
           <PermissionBadge permission={currentPermission} size="sm" />
@@ -151,8 +153,8 @@ export function ItemMetadataPanel({
               <Users className="h-4 w-4" />
               <span>
                 {collaboratorCount !== undefined && collaboratorCount > 0
-                  ? `${collaboratorCount} collaborator${collaboratorCount !== 1 ? 's' : ''}`
-                  : 'Not shared'}
+                  ? `${collaboratorCount} collaborator${collaboratorCount !== 1 ? "s" : ""}`
+                  : "Not shared"}
               </span>
             </div>
             {onOpenShare && (
@@ -171,7 +173,10 @@ export function ItemMetadataPanel({
 
       {/* Name Field */}
       <div className="mb-4">
-        <Label htmlFor="item-name" className="text-sm font-medium text-gray-300 mb-1.5">
+        <Label
+          htmlFor="item-name"
+          className="text-sm font-medium text-gray-300 mb-1.5"
+        >
           Name
         </Label>
         {isEditing ? (
@@ -197,7 +202,10 @@ export function ItemMetadataPanel({
 
       {/* Description Field */}
       <div className="mb-4">
-        <Label htmlFor="item-description" className="text-sm font-medium text-gray-300 mb-1.5">
+        <Label
+          htmlFor="item-description"
+          className="text-sm font-medium text-gray-300 mb-1.5"
+        >
           Description
         </Label>
         {isEditing ? (
@@ -215,7 +223,7 @@ export function ItemMetadataPanel({
             className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors min-h-[80px]"
           >
             <span className="text-gray-400 text-sm">
-              {item.description || 'No description'}
+              {item.description || "No description"}
             </span>
           </div>
         )}
@@ -223,7 +231,10 @@ export function ItemMetadataPanel({
 
       {/* Category Field */}
       <div className="mb-4">
-        <Label htmlFor="item-category" className="text-sm font-medium text-gray-300 mb-1.5">
+        <Label
+          htmlFor="item-category"
+          className="text-sm font-medium text-gray-300 mb-1.5"
+        >
           Category
         </Label>
         {isEditing ? (
@@ -244,18 +255,24 @@ export function ItemMetadataPanel({
             onClick={() => setIsEditing(true)}
             className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors"
           >
-            <span className="text-white">{item.category || 'Main'}</span>
+            <span className="text-white">{item.category || "Main"}</span>
           </div>
         )}
       </div>
 
       {/* View Mode Field */}
       <div className="mb-4">
-        <Label htmlFor="item-viewMode" className="text-sm font-medium text-gray-300 mb-1.5">
+        <Label
+          htmlFor="item-viewMode"
+          className="text-sm font-medium text-gray-300 mb-1.5"
+        >
           Preferred Editor
         </Label>
         {isEditing ? (
-          <Select value={tempViewMode} onValueChange={(v) => setTempViewMode(v as BuilderMode)}>
+          <Select
+            value={tempViewMode}
+            onValueChange={(v) => setTempViewMode(v as BuilderMode)}
+          >
             <SelectTrigger className="bg-gray-900 border-gray-700 text-white">
               <SelectValue />
             </SelectTrigger>
@@ -270,7 +287,9 @@ export function ItemMetadataPanel({
             className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-md cursor-pointer hover:border-gray-700 transition-colors"
           >
             <span className="text-white">
-              {currentViewMode === 'sequential' ? 'Sequential (Timeline)' : 'Graph (Visual)'}
+              {currentViewMode === "sequential"
+                ? "Sequential (Timeline)"
+                : "Graph (Visual)"}
             </span>
           </div>
         )}
@@ -312,13 +331,13 @@ export function ItemMetadataPanel({
           </div>
           {item.metadata?.created && (
             <div>
-              <span className="font-medium">Created:</span>{' '}
+              <span className="font-medium">Created:</span>{" "}
               {new Date(item.metadata.created).toLocaleDateString()}
             </div>
           )}
           {item.metadata?.updated && (
             <div>
-              <span className="font-medium">Updated:</span>{' '}
+              <span className="font-medium">Updated:</span>{" "}
               {new Date(item.metadata.updated).toLocaleDateString()}
             </div>
           )}
@@ -326,11 +345,11 @@ export function ItemMetadataPanel({
             <span className="font-medium">Actions:</span> {item.actions.length}
           </div>
           <div>
-            <span className="font-medium">Type:</span>{' '}
-            {isLinear ? 'Linear (no branching)' : 'Graph (branching)'}
+            <span className="font-medium">Type:</span>{" "}
+            {isLinear ? "Linear (no branching)" : "Graph (branching)"}
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

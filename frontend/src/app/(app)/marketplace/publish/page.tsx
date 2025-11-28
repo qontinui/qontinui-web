@@ -1,130 +1,146 @@
-'use client'
+"use client";
 
-import React, { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { ArrowLeft, Upload, Eye, AlertTriangle, CheckCircle2, Sparkles } from 'lucide-react'
-import dynamic from 'next/dynamic'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  Upload,
+  Eye,
+  AlertTriangle,
+  CheckCircle2,
+  Sparkles,
+} from "lucide-react";
+import dynamic from "next/dynamic";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from "@/components/ui/select";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { PackageCodePreview } from '@/components/marketplace/PackageCodePreview'
-import { useCreatePackage } from '@/hooks/useCodePackages'
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PackageCodePreview } from "@/components/marketplace/PackageCodePreview";
+import { useCreatePackage } from "@/hooks/useCodePackages";
 import type {
   PackageCategory,
   PackageLicense,
   PackageVisibility,
   CreatePackageRequest,
-} from '@/types/code-packages'
-import { getCategoryLabel } from '@/types/code-packages'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+} from "@/types/code-packages";
+import { getCategoryLabel } from "@/types/code-packages";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // Dynamically import Monaco editor
-const Editor = dynamic(() => import('@monaco-editor/react'), {
+const Editor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-64 bg-gray-950 border border-gray-800 rounded-lg">
       <div className="text-gray-400">Loading editor...</div>
     </div>
   ),
-})
+});
 
 const CATEGORIES: PackageCategory[] = [
-  'automation',
-  'utilities',
-  'integrations',
-  'patterns',
-  'workflows',
-  'testing',
-  'data-processing',
-  'ai-ml',
-  'web-scraping',
-  'other',
-]
+  "automation",
+  "utilities",
+  "integrations",
+  "patterns",
+  "workflows",
+  "testing",
+  "data-processing",
+  "ai-ml",
+  "web-scraping",
+  "other",
+];
 
 const LICENSES: PackageLicense[] = [
-  'MIT',
-  'Apache-2.0',
-  'GPL-3.0',
-  'BSD-3-Clause',
-  'ISC',
-  'Creative Commons',
-  'Proprietary',
-  'Other',
-]
+  "MIT",
+  "Apache-2.0",
+  "GPL-3.0",
+  "BSD-3-Clause",
+  "ISC",
+  "Creative Commons",
+  "Proprietary",
+  "Other",
+];
 
-const VISIBILITY_OPTIONS: PackageVisibility[] = ['public', 'private', 'unlisted']
+const VISIBILITY_OPTIONS: PackageVisibility[] = [
+  "public",
+  "private",
+  "unlisted",
+];
 
 export default function PublishPackagePage() {
-  const router = useRouter()
-  const createPackage = useCreatePackage()
+  const router = useRouter();
+  const createPackage = useCreatePackage();
 
   // Form state
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [category, setCategory] = useState<PackageCategory>('automation')
-  const [tags, setTags] = useState<string[]>([])
-  const [tagInput, setTagInput] = useState('')
-  const [license, setLicense] = useState<PackageLicense>('MIT')
-  const [code, setCode] = useState('')
-  const [readme, setReadme] = useState('')
-  const [functionName, setFunctionName] = useState('')
-  const [repositoryUrl, setRepositoryUrl] = useState('')
-  const [homepageUrl, setHomepageUrl] = useState('')
-  const [documentationUrl, setDocumentationUrl] = useState('')
-  const [visibility, setVisibility] = useState<PackageVisibility>('public')
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<PackageCategory>("automation");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
+  const [license, setLicense] = useState<PackageLicense>("MIT");
+  const [code, setCode] = useState("");
+  const [readme, setReadme] = useState("");
+  const [functionName, setFunctionName] = useState("");
+  const [repositoryUrl, setRepositoryUrl] = useState("");
+  const [homepageUrl, setHomepageUrl] = useState("");
+  const [documentationUrl, setDocumentationUrl] = useState("");
+  const [visibility, setVisibility] = useState<PackageVisibility>("public");
 
   // UI state
-  const [activeTab, setActiveTab] = useState<'details' | 'code' | 'readme' | 'preview'>('details')
-  const [showSecurityScan, setShowSecurityScan] = useState(false)
-  const [securityScanPassed, setSecurityScanPassed] = useState<boolean | null>(null)
+  const [activeTab, setActiveTab] = useState<
+    "details" | "code" | "readme" | "preview"
+  >("details");
+  const [showSecurityScan, setShowSecurityScan] = useState(false);
+  const [securityScanPassed, setSecurityScanPassed] = useState<boolean | null>(
+    null
+  );
 
   const handleBack = () => {
-    router.push('/marketplace')
-  }
+    router.push("/marketplace");
+  };
 
   const handleAddTag = () => {
-    const tag = tagInput.trim()
+    const tag = tagInput.trim();
     if (tag && !tags.includes(tag) && tags.length < 10) {
-      setTags([...tags, tag])
-      setTagInput('')
+      setTags([...tags, tag]);
+      setTagInput("");
     }
-  }
+  };
 
   const handleRemoveTag = (tagToRemove: string) => {
-    setTags(tags.filter((tag) => tag !== tagToRemove))
-  }
+    setTags(tags.filter((tag) => tag !== tagToRemove));
+  };
 
   const handleSecurityScan = () => {
-    setShowSecurityScan(true)
+    setShowSecurityScan(true);
     // Simulate security scan
     setTimeout(() => {
       // Mock scan - in real app this would call backend
-      const hasDangerousPatterns = code.includes('eval(') || code.includes('exec(')
-      setSecurityScanPassed(!hasDangerousPatterns)
-    }, 1500)
-  }
+      const hasDangerousPatterns =
+        code.includes("eval(") || code.includes("exec(");
+      setSecurityScanPassed(!hasDangerousPatterns);
+    }, 1500);
+  };
 
   const handlePublish = async () => {
-    if (!isFormValid()) return
+    if (!isFormValid()) return;
 
     const packageData: CreatePackageRequest = {
       name,
@@ -139,15 +155,15 @@ export default function PublishPackagePage() {
       homepage_url: homepageUrl || undefined,
       documentation_url: documentationUrl || undefined,
       visibility,
-    }
+    };
 
     try {
-      const newPackage = await createPackage.mutateAsync(packageData)
-      router.push(`/marketplace/${newPackage.slug}`)
+      const newPackage = await createPackage.mutateAsync(packageData);
+      router.push(`/marketplace/${newPackage.slug}`);
     } catch (error) {
-      console.error('[PublishPackagePage] Failed to publish package:', error)
+      console.error("[PublishPackagePage] Failed to publish package:", error);
     }
-  }
+  };
 
   const isFormValid = () => {
     return (
@@ -158,8 +174,8 @@ export default function PublishPackagePage() {
       category &&
       license &&
       visibility
-    )
-  }
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -192,7 +208,10 @@ export default function PublishPackagePage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Form */}
           <div className="lg:col-span-2">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+            <Tabs
+              value={activeTab}
+              onValueChange={(v) => setActiveTab(v as typeof activeTab)}
+            >
               <TabsList className="bg-gray-900/50 w-full">
                 <TabsTrigger value="details" className="flex-1">
                   Package Details
@@ -254,15 +273,22 @@ export default function PublishPackagePage() {
                         className="bg-gray-900/50 border-gray-700"
                       />
                       <p className="text-xs text-gray-500">
-                        The main function that will be executed when this package is used
+                        The main function that will be executed when this
+                        package is used
                       </p>
                     </div>
 
                     {/* Category */}
                     <div className="space-y-2">
                       <Label htmlFor="category">Category *</Label>
-                      <Select value={category} onValueChange={(v) => setCategory(v as PackageCategory)}>
-                        <SelectTrigger id="category" className="bg-gray-900/50 border-gray-700">
+                      <Select
+                        value={category}
+                        onValueChange={(v) => setCategory(v as PackageCategory)}
+                      >
+                        <SelectTrigger
+                          id="category"
+                          className="bg-gray-900/50 border-gray-700"
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -285,14 +311,18 @@ export default function PublishPackagePage() {
                           value={tagInput}
                           onChange={(e) => setTagInput(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              handleAddTag()
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleAddTag();
                             }
                           }}
                           className="bg-gray-900/50 border-gray-700"
                         />
-                        <Button type="button" onClick={handleAddTag} variant="outline">
+                        <Button
+                          type="button"
+                          onClick={handleAddTag}
+                          variant="outline"
+                        >
                           Add
                         </Button>
                       </div>
@@ -315,8 +345,14 @@ export default function PublishPackagePage() {
                     {/* License */}
                     <div className="space-y-2">
                       <Label htmlFor="license">License *</Label>
-                      <Select value={license} onValueChange={(v) => setLicense(v as PackageLicense)}>
-                        <SelectTrigger id="license" className="bg-gray-900/50 border-gray-700">
+                      <Select
+                        value={license}
+                        onValueChange={(v) => setLicense(v as PackageLicense)}
+                      >
+                        <SelectTrigger
+                          id="license"
+                          className="bg-gray-900/50 border-gray-700"
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -332,14 +368,28 @@ export default function PublishPackagePage() {
                     {/* Visibility */}
                     <div className="space-y-2">
                       <Label htmlFor="visibility">Visibility *</Label>
-                      <Select value={visibility} onValueChange={(v) => setVisibility(v as PackageVisibility)}>
-                        <SelectTrigger id="visibility" className="bg-gray-900/50 border-gray-700">
+                      <Select
+                        value={visibility}
+                        onValueChange={(v) =>
+                          setVisibility(v as PackageVisibility)
+                        }
+                      >
+                        <SelectTrigger
+                          id="visibility"
+                          className="bg-gray-900/50 border-gray-700"
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="public">Public - Anyone can find and install</SelectItem>
-                          <SelectItem value="unlisted">Unlisted - Only via direct link</SelectItem>
-                          <SelectItem value="private">Private - Only you can access</SelectItem>
+                          <SelectItem value="public">
+                            Public - Anyone can find and install
+                          </SelectItem>
+                          <SelectItem value="unlisted">
+                            Unlisted - Only via direct link
+                          </SelectItem>
+                          <SelectItem value="private">
+                            Private - Only you can access
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -377,7 +427,9 @@ export default function PublishPackagePage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="documentationUrl">Documentation URL</Label>
+                      <Label htmlFor="documentationUrl">
+                        Documentation URL
+                      </Label>
                       <Input
                         id="documentationUrl"
                         placeholder="https://docs.mypackage.com"
@@ -402,13 +454,13 @@ export default function PublishPackagePage() {
                     <div className="h-[500px] border border-gray-800 rounded-lg overflow-hidden">
                       <Editor
                         value={code}
-                        onChange={(value) => setCode(value || '')}
+                        onChange={(value) => setCode(value || "")}
                         language="python"
                         theme="vs-dark"
                         options={{
                           minimap: { enabled: true },
                           fontSize: 14,
-                          wordWrap: 'on',
+                          wordWrap: "on",
                           automaticLayout: true,
                         }}
                       />
@@ -456,13 +508,19 @@ export default function PublishPackagePage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
-                      <h3 className="text-2xl font-bold text-gray-100 mb-2">{name || 'Package Name'}</h3>
-                      <p className="text-gray-400">{description || 'Package description'}</p>
+                      <h3 className="text-2xl font-bold text-gray-100 mb-2">
+                        {name || "Package Name"}
+                      </h3>
+                      <p className="text-gray-400">
+                        {description || "Package description"}
+                      </p>
                     </div>
 
                     {tags.length > 0 && (
                       <div className="flex flex-wrap gap-2">
-                        <Badge variant="outline">{getCategoryLabel(category)}</Badge>
+                        <Badge variant="outline">
+                          {getCategoryLabel(category)}
+                        </Badge>
                         {tags.map((tag) => (
                           <Badge key={tag} variant="secondary">
                             {tag}
@@ -473,11 +531,13 @@ export default function PublishPackagePage() {
 
                     {code && (
                       <div>
-                        <h4 className="font-semibold text-gray-300 mb-2">Code Preview</h4>
+                        <h4 className="font-semibold text-gray-300 mb-2">
+                          Code Preview
+                        </h4>
                         <PackageCodePreview
                           code={code}
                           language="python"
-                          fileName={`${name || 'package'}.py`}
+                          fileName={`${name || "package"}.py`}
                           maxHeight="400px"
                         />
                       </div>
@@ -506,20 +566,26 @@ export default function PublishPackagePage() {
                   disabled={!code || showSecurityScan}
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  {showSecurityScan ? 'Scanning...' : 'Run Security Scan'}
+                  {showSecurityScan ? "Scanning..." : "Run Security Scan"}
                 </Button>
 
                 {showSecurityScan && securityScanPassed !== null && (
                   <Alert
-                    variant={securityScanPassed ? 'default' : 'destructive'}
-                    className={securityScanPassed ? 'border-green-500/50 bg-green-950/20' : ''}
+                    variant={securityScanPassed ? "default" : "destructive"}
+                    className={
+                      securityScanPassed
+                        ? "border-green-500/50 bg-green-950/20"
+                        : ""
+                    }
                   >
                     <AlertDescription className="flex items-start gap-2">
                       {securityScanPassed ? (
                         <>
                           <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5 text-green-500" />
                           <div>
-                            <div className="font-medium text-green-500">Scan passed</div>
+                            <div className="font-medium text-green-500">
+                              Scan passed
+                            </div>
                             <div className="text-xs text-gray-400">
                               No security issues detected
                             </div>
@@ -529,9 +595,12 @@ export default function PublishPackagePage() {
                         <>
                           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                           <div>
-                            <div className="font-medium">Security issues found</div>
+                            <div className="font-medium">
+                              Security issues found
+                            </div>
                             <div className="text-xs">
-                              Potentially dangerous patterns detected (eval, exec)
+                              Potentially dangerous patterns detected (eval,
+                              exec)
                             </div>
                           </div>
                         </>
@@ -545,7 +614,9 @@ export default function PublishPackagePage() {
             {/* Guidelines */}
             <Card className="bg-gray-900/30 border-gray-800">
               <CardHeader>
-                <CardTitle className="text-base">Publishing Guidelines</CardTitle>
+                <CardTitle className="text-base">
+                  Publishing Guidelines
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-gray-400">
                 <ul className="space-y-2 list-disc list-inside">
@@ -564,7 +635,11 @@ export default function PublishPackagePage() {
               size="lg"
               className="w-full bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600"
               onClick={handlePublish}
-              disabled={!isFormValid() || createPackage.isPending || (showSecurityScan && !securityScanPassed)}
+              disabled={
+                !isFormValid() ||
+                createPackage.isPending ||
+                (showSecurityScan && !securityScanPassed)
+              }
             >
               {createPackage.isPending ? (
                 <>
@@ -588,5 +663,5 @@ export default function PublishPackagePage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

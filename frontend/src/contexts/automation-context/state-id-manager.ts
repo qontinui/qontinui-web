@@ -1,4 +1,4 @@
-import { State } from "./types"
+import { State } from "./types";
 
 /**
  * Manages state ID generation and validation.
@@ -11,44 +11,47 @@ export class StateIdManager {
   static sanitizeName(name: string): string {
     return name
       .trim()
-      .replace(/\s+/g, '_')
-      .replace(/[^a-zA-Z0-9_]/g, '')
+      .replace(/\s+/g, "_")
+      .replace(/[^a-zA-Z0-9_]/g, "");
   }
 
   /**
    * Generate a default state name with a unique number suffix
    */
   static generateDefaultName(existingStates: State[]): string {
-    let counter = 1
-    let name = `New_State_${counter}`
+    let counter = 1;
+    let name = `New_State_${counter}`;
 
-    while (existingStates.some(s => s.id === name)) {
-      counter++
-      name = `New_State_${counter}`
+    while (existingStates.some((s) => s.id === name)) {
+      counter++;
+      name = `New_State_${counter}`;
     }
 
-    return name
+    return name;
   }
 
   /**
    * Generate a unique state name based on a desired name
    */
-  static generateUniqueName(desiredName: string, existingStates: State[]): string {
-    const sanitized = this.sanitizeName(desiredName)
+  static generateUniqueName(
+    desiredName: string,
+    existingStates: State[]
+  ): string {
+    const sanitized = this.sanitizeName(desiredName);
 
-    if (!existingStates.some(s => s.id === sanitized)) {
-      return sanitized
+    if (!existingStates.some((s) => s.id === sanitized)) {
+      return sanitized;
     }
 
-    let counter = 1
-    let uniqueName = `${sanitized}_${counter}`
+    let counter = 1;
+    let uniqueName = `${sanitized}_${counter}`;
 
-    while (existingStates.some(s => s.id === uniqueName)) {
-      counter++
-      uniqueName = `${sanitized}_${counter}`
+    while (existingStates.some((s) => s.id === uniqueName)) {
+      counter++;
+      uniqueName = `${sanitized}_${counter}`;
     }
 
-    return uniqueName
+    return uniqueName;
   }
 
   /**
@@ -60,28 +63,28 @@ export class StateIdManager {
     newName: string,
     existingStates: State[]
   ): string | null {
-    const proposedId = this.sanitizeName(newName)
+    const proposedId = this.sanitizeName(newName);
 
     // If the name hasn't really changed (just formatting), keep the ID
     if (proposedId === currentState.id) {
-      return null
+      return null;
     }
 
     // Check if the proposed ID conflicts with another state
-    const conflictingState = existingStates.find(s => s.id === proposedId)
+    const conflictingState = existingStates.find((s) => s.id === proposedId);
     if (conflictingState && conflictingState.id !== currentState.id) {
       // There's a conflict, generate a unique ID
-      return this.generateUniqueName(newName, existingStates)
+      return this.generateUniqueName(newName, existingStates);
     }
 
-    return proposedId
+    return proposedId;
   }
 
   /**
    * Check if an ID change is needed when updating a state name
    */
   static needsIdChange(currentState: State, newName: string): boolean {
-    const proposedId = this.sanitizeName(newName)
-    return proposedId !== currentState.id
+    const proposedId = this.sanitizeName(newName);
+    return proposedId !== currentState.id;
   }
 }

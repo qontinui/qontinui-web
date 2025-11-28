@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { Building2, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import * as React from "react";
+import { Building2, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,11 +10,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useOrganization } from '@/contexts/organization-context';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useOrganization } from "@/contexts/organization-context";
 
 interface CreateOrganizationDialogProps {
   open: boolean;
@@ -26,8 +26,8 @@ export function CreateOrganizationDialog({
   onOpenChange,
 }: CreateOrganizationDialogProps) {
   const { createOrganization } = useOrganization();
-  const [name, setName] = React.useState('');
-  const [description, setDescription] = React.useState('');
+  const [name, setName] = React.useState("");
+  const [description, setDescription] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -35,7 +35,7 @@ export function CreateOrganizationDialog({
     e.preventDefault();
 
     if (!name.trim()) {
-      setError('Organization name is required');
+      setError("Organization name is required");
       return;
     }
 
@@ -45,19 +45,21 @@ export function CreateOrganizationDialog({
       await createOrganization(name.trim(), description.trim() || undefined);
 
       // Reset form and close dialog
-      setName('');
-      setDescription('');
+      setName("");
+      setDescription("");
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create organization');
+      setError(
+        err instanceof Error ? err.message : "Failed to create organization"
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const handleCancel = () => {
-    setName('');
-    setDescription('');
+    setName("");
+    setDescription("");
     setError(null);
     onOpenChange(false);
   };
@@ -71,7 +73,8 @@ export function CreateOrganizationDialog({
             Create New Organization
           </DialogTitle>
           <DialogDescription>
-            Create a new organization to collaborate with your team on automation projects.
+            Create a new organization to collaborate with your team on
+            automation projects.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
@@ -122,7 +125,7 @@ export function CreateOrganizationDialog({
                   Creating...
                 </>
               ) : (
-                'Create Organization'
+                "Create Organization"
               )}
             </Button>
           </DialogFooter>

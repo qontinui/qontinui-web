@@ -8,7 +8,7 @@
 /**
  * Variable scope types
  */
-export type VariableScope = 'execution' | 'workflow' | 'global';
+export type VariableScope = "execution" | "workflow" | "global";
 
 /**
  * Variable value types - supports primitives, objects, and arrays
@@ -90,7 +90,7 @@ export interface VariableChange {
   action_name?: string;
 
   /** Change type */
-  change_type: 'created' | 'updated' | 'deleted';
+  change_type: "created" | "updated" | "deleted";
 }
 
 /**
@@ -143,10 +143,10 @@ export interface VariableFilter {
   search?: string;
 
   /** Filter by scope */
-  scope?: VariableScope | 'all';
+  scope?: VariableScope | "all";
 
   /** Filter by value type */
-  type?: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'null' | 'all';
+  type?: "string" | "number" | "boolean" | "object" | "array" | "null" | "all";
 }
 
 /**

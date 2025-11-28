@@ -12,7 +12,7 @@
  * - Connection state management
  */
 
-import { ApiConfig } from '../api-config';
+import { ApiConfig } from "../api-config";
 import type {
   PresenceStatus,
   WebSocketMessage,
@@ -26,18 +26,18 @@ import type {
   Comment,
   Activity,
   UserPresence,
-} from '@/types/collaboration';
+} from "@/types/collaboration";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export type ConnectionState =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'failed';
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "failed";
 
 export interface WebSocketCollaborationConfig {
   projectId: string;
@@ -85,7 +85,7 @@ export class WebSocketCollaborationService {
   private config: Required<WebSocketCollaborationConfig>;
   private callbacks: CollaborationCallbacks;
 
-  private state: ConnectionState = 'disconnected';
+  private state: ConnectionState = "disconnected";
   private reconnectAttempts = 0;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
@@ -116,14 +116,16 @@ export class WebSocketCollaborationService {
    */
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (this.ws && this.state !== 'disconnected' && this.state !== 'failed') {
-        console.warn('[WebSocketCollaboration] Already connected or connecting');
+      if (this.ws && this.state !== "disconnected" && this.state !== "failed") {
+        console.warn(
+          "[WebSocketCollaboration] Already connected or connecting"
+        );
         resolve();
         return;
       }
 
       this.isManualClose = false;
-      this.setState('connecting');
+      this.setState("connecting");
 
       const wsUrl = this.buildWebSocketUrl();
 
@@ -131,7 +133,10 @@ export class WebSocketCollaborationService {
         this.ws = new WebSocket(wsUrl);
         this.setupWebSocketHandlers(resolve, reject);
       } catch (error) {
-        console.error('[WebSocketCollaboration] Failed to create WebSocket:', error);
+        console.error(
+          "[WebSocketCollaboration] Failed to create WebSocket:",
+          error
+        );
         this.handleError(error as Error);
         reject(error);
       }
@@ -144,14 +149,14 @@ export class WebSocketCollaborationService {
   disconnect(): void {
     this.isManualClose = true;
     this.cleanup();
-    this.setState('disconnected');
+    this.setState("disconnected");
   }
 
   /**
    * Check if connected
    */
   isConnected(): boolean {
-    return this.state === 'connected' && this.ws?.readyState === WebSocket.OPEN;
+    return this.state === "connected" && this.ws?.readyState === WebSocket.OPEN;
   }
 
   /**
@@ -170,7 +175,7 @@ export class WebSocketCollaborationService {
    */
   sendPresenceUpdate(status: PresenceStatus, currentView?: string): void {
     const message: WebSocketMessage = {
-      type: 'presence_update',
+      type: "presence_update",
       timestamp: new Date().toISOString(),
       data: {
         status,
@@ -186,7 +191,7 @@ export class WebSocketCollaborationService {
    */
   sendCursorPosition(x: number, y: number, viewportId?: string): void {
     const message: WebSocketMessage = {
-      type: 'cursor_move',
+      type: "cursor_move",
       timestamp: new Date().toISOString(),
       data: {
         x,
@@ -207,7 +212,7 @@ export class WebSocketCollaborationService {
     changes: Record<string, any>
   ): void {
     const message: WebSocketMessage = {
-      type: 'resource_update',
+      type: "resource_update",
       timestamp: new Date().toISOString(),
       data: {
         resource_type: resourceType,
@@ -287,9 +292,14 @@ export class WebSocketCollaborationService {
    * Build the WebSocket URL
    */
   private buildWebSocketUrl(): string {
-    const baseUrl = ApiConfig.API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://');
-    const url = new URL(`${baseUrl}/api/v1/projects/${this.projectId}/collaboration/ws`);
-    url.searchParams.set('token', this.config.token);
+    const baseUrl = ApiConfig.API_BASE_URL.replace("http://", "ws://").replace(
+      "https://",
+      "wss://"
+    );
+    const url = new URL(
+      `${baseUrl}/api/v1/projects/${this.projectId}/collaboration/ws`
+    );
+    url.searchParams.set("token", this.config.token);
     return url.toString();
   }
 
@@ -305,8 +315,8 @@ export class WebSocketCollaborationService {
     let hasResolved = false;
 
     this.ws.onopen = () => {
-      console.log('[WebSocketCollaboration] Connected');
-      this.setState('connected');
+      console.log("[WebSocketCollaboration] Connected");
+      this.setState("connected");
       this.reconnectAttempts = 0;
 
       // Start heartbeat
@@ -331,8 +341,8 @@ export class WebSocketCollaborationService {
     };
 
     this.ws.onerror = (event) => {
-      console.error('[WebSocketCollaboration] Error:', event);
-      const error = new Error('WebSocket error');
+      console.error("[WebSocketCollaboration] Error:", event);
+      const error = new Error("WebSocket error");
       this.handleError(error);
 
       if (!hasResolved) {
@@ -342,17 +352,17 @@ export class WebSocketCollaborationService {
     };
 
     this.ws.onclose = (event) => {
-      console.log('[WebSocketCollaboration] Closed:', event.code, event.reason);
+      console.log("[WebSocketCollaboration] Closed:", event.code, event.reason);
 
       this.stopHeartbeat();
 
       const reason = event.reason || `Code ${event.code}`;
 
       if (!this.isManualClose) {
-        this.setState('reconnecting');
+        this.setState("reconnecting");
         this.scheduleReconnect();
       } else {
-        this.setState('disconnected');
+        this.setState("disconnected");
       }
 
       if (this.callbacks.onDisconnect) {
@@ -369,67 +379,70 @@ export class WebSocketCollaborationService {
       const message: WebSocketMessage = JSON.parse(data);
 
       // Handle heartbeat pong
-      if (message.type === 'pong') {
+      if (message.type === "pong") {
         this.resetHeartbeatTimeout();
         return;
       }
 
       // Route message to appropriate handler
       switch (message.type) {
-        case 'presence_update':
+        case "presence_update":
           if (this.callbacks.onPresenceUpdate) {
             this.callbacks.onPresenceUpdate(message.data);
           }
           break;
 
-        case 'cursor_move':
+        case "cursor_move":
           if (this.callbacks.onCursorMove) {
             this.callbacks.onCursorMove(message.data);
           }
           break;
 
-        case 'lock_acquired':
-        case 'lock_released':
+        case "lock_acquired":
+        case "lock_released":
           if (this.callbacks.onLockUpdate) {
             this.callbacks.onLockUpdate(message.data);
           }
           break;
 
-        case 'resource_update':
+        case "resource_update":
           if (this.callbacks.onResourceUpdate) {
             this.callbacks.onResourceUpdate(message.data);
           }
           break;
 
-        case 'comment_added':
+        case "comment_added":
           if (this.callbacks.onCommentAdded) {
             this.callbacks.onCommentAdded(message.data);
           }
           break;
 
-        case 'comment_updated':
+        case "comment_updated":
           if (this.callbacks.onCommentUpdated) {
             this.callbacks.onCommentUpdated(message.data);
           }
           break;
 
-        case 'comment_deleted':
+        case "comment_deleted":
           if (this.callbacks.onCommentDeleted) {
             this.callbacks.onCommentDeleted(message.data.comment_id);
           }
           break;
 
-        case 'activity_update':
+        case "activity_update":
           if (this.callbacks.onActivityUpdate) {
             this.callbacks.onActivityUpdate(message.data);
           }
           break;
 
         default:
-          console.warn('[WebSocketCollaboration] Unknown message type:', message.type);
+          console.warn(
+            "[WebSocketCollaboration] Unknown message type:",
+            message.type
+          );
       }
     } catch (error) {
-      console.error('[WebSocketCollaboration] Failed to parse message:', error);
+      console.error("[WebSocketCollaboration] Failed to parse message:", error);
       this.handleError(error as Error);
     }
   }
@@ -476,7 +489,7 @@ export class WebSocketCollaborationService {
    */
   private scheduleReconnect(): void {
     if (!this.config.autoReconnect) {
-      this.setState('failed');
+      this.setState("failed");
       return;
     }
 
@@ -484,8 +497,10 @@ export class WebSocketCollaborationService {
       this.config.maxReconnectAttempts > 0 &&
       this.reconnectAttempts >= this.config.maxReconnectAttempts
     ) {
-      console.error('[WebSocketCollaboration] Max reconnection attempts reached');
-      this.setState('failed');
+      console.error(
+        "[WebSocketCollaboration] Max reconnection attempts reached"
+      );
+      this.setState("failed");
       return;
     }
 
@@ -498,13 +513,13 @@ export class WebSocketCollaborationService {
     );
 
     console.log(
-      `[WebSocketCollaboration] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts || '∞'})`
+      `[WebSocketCollaboration] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.config.maxReconnectAttempts || "∞"})`
     );
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
       this.connect().catch((error) => {
-        console.error('[WebSocketCollaboration] Reconnection failed:', error);
+        console.error("[WebSocketCollaboration] Reconnection failed:", error);
       });
     }, delay);
   }
@@ -522,7 +537,7 @@ export class WebSocketCollaborationService {
     this.heartbeatInterval = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         const message: WebSocketMessage = {
-          type: 'ping',
+          type: "ping",
           timestamp: new Date().toISOString(),
           data: {},
         };
@@ -556,7 +571,9 @@ export class WebSocketCollaborationService {
     }
 
     this.heartbeatTimeout = setTimeout(() => {
-      console.warn('[WebSocketCollaboration] Heartbeat timeout - connection appears dead');
+      console.warn(
+        "[WebSocketCollaboration] Heartbeat timeout - connection appears dead"
+      );
       if (this.ws) {
         this.ws.close();
       }
@@ -608,7 +625,10 @@ export class WebSocketCollaborationService {
       this.ws.onerror = null;
       this.ws.onclose = null;
 
-      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+      if (
+        this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING
+      ) {
         this.ws.close();
       }
 

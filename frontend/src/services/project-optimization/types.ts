@@ -2,7 +2,7 @@
  * Shared types for project optimization modules
  */
 
-import type { ComplexityAnalysis } from '../workflow-complexity-analyzer';
+import type { ComplexityAnalysis } from "../workflow-complexity-analyzer";
 
 // ============================================================================
 // Health Types
@@ -16,7 +16,7 @@ export interface ProjectHealth {
   score: number;
 
   /** Rating based on score */
-  rating: 'critical' | 'poor' | 'fair' | 'good' | 'excellent';
+  rating: "critical" | "poor" | "fair" | "good" | "excellent";
 
   /** Individual factor scores */
   factors: {
@@ -54,7 +54,7 @@ export interface HealthFactor {
   contribution: number;
 
   /** Status based on score */
-  status: 'critical' | 'warning' | 'good' | 'excellent';
+  status: "critical" | "warning" | "good" | "excellent";
 
   /** Detailed breakdown */
   details: string;
@@ -132,7 +132,7 @@ export interface WorkflowAnalysis {
   brokenReferences: BrokenReference[];
 
   /** Overall status */
-  status: 'healthy' | 'warning' | 'critical';
+  status: "healthy" | "warning" | "critical";
 
   /** Issues */
   issues: string[];
@@ -169,7 +169,7 @@ export interface StateAnalysis {
   brokenReferences: BrokenReference[];
 
   /** Status */
-  status: 'healthy' | 'warning' | 'critical';
+  status: "healthy" | "warning" | "critical";
 
   /** Issues */
   issues: string[];
@@ -193,7 +193,7 @@ export interface ImageAnalysis {
 
   /** Where it's used */
   usedIn: Array<{
-    type: 'state' | 'workflow';
+    type: "state" | "workflow";
     id: string;
     name: string;
   }>;
@@ -206,7 +206,7 @@ export interface ImageAnalysis {
   potentialSavings: number;
 
   /** Status */
-  status: 'healthy' | 'warning' | 'critical';
+  status: "healthy" | "warning" | "critical";
 
   /** Issues */
   issues: string[];
@@ -231,7 +231,7 @@ export interface TransitionAnalysis {
   isCircular: boolean;
 
   /** Status */
-  status: 'healthy' | 'warning' | 'critical';
+  status: "healthy" | "warning" | "critical";
 
   /** Issues */
   issues: string[];
@@ -250,20 +250,20 @@ export interface OptimizationSuggestion {
 
   /** Suggestion type */
   type:
-    | 'delete-unused-images'
-    | 'delete-unused-states'
-    | 'delete-unused-workflows'
-    | 'add-tests'
-    | 'add-documentation'
-    | 'organize-folders'
-    | 'fix-broken-references'
-    | 'reduce-complexity'
-    | 'remove-orphaned-states'
-    | 'consolidate-duplicates'
-    | 'optimize-storage';
+    | "delete-unused-images"
+    | "delete-unused-states"
+    | "delete-unused-workflows"
+    | "add-tests"
+    | "add-documentation"
+    | "organize-folders"
+    | "fix-broken-references"
+    | "reduce-complexity"
+    | "remove-orphaned-states"
+    | "consolidate-duplicates"
+    | "optimize-storage";
 
   /** Priority level */
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  priority: "low" | "medium" | "high" | "critical";
 
   /** Human-readable title */
   title: string;
@@ -273,7 +273,7 @@ export interface OptimizationSuggestion {
 
   /** Affected resource IDs */
   affectedResources: Array<{
-    type: 'workflow' | 'state' | 'image' | 'transition';
+    type: "workflow" | "state" | "image" | "transition";
     id: string;
     name: string;
   }>;
@@ -284,10 +284,10 @@ export interface OptimizationSuggestion {
     storageSavings?: number;
 
     /** Performance improvement estimate */
-    performanceGain?: 'low' | 'medium' | 'high';
+    performanceGain?: "low" | "medium" | "high";
 
     /** Maintainability improvement */
-    maintainabilityGain?: 'low' | 'medium' | 'high';
+    maintainabilityGain?: "low" | "medium" | "high";
   };
 
   /** Can be auto-fixed? */
@@ -305,17 +305,23 @@ export interface ProjectIssue {
   id: string;
 
   /** Severity */
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
 
   /** Issue type */
-  type: 'broken-reference' | 'unused-resource' | 'missing-test' | 'missing-doc' | 'high-complexity' | 'duplicate';
+  type:
+    | "broken-reference"
+    | "unused-resource"
+    | "missing-test"
+    | "missing-doc"
+    | "high-complexity"
+    | "duplicate";
 
   /** Message */
   message: string;
 
   /** Resource affected */
   resource: {
-    type: 'workflow' | 'state' | 'image' | 'transition';
+    type: "workflow" | "state" | "image" | "transition";
     id: string;
     name: string;
   };
@@ -342,7 +348,7 @@ export interface DuplicateMatch {
   similarity: number;
 
   /** Match type */
-  matchType: 'exact' | 'similar' | 'potential';
+  matchType: "exact" | "similar" | "potential";
 
   /** Details about the match */
   details?: string;
@@ -357,11 +363,11 @@ export interface DuplicateMatch {
  */
 export interface BrokenReference {
   /** Reference type */
-  type: 'workflow' | 'state' | 'image' | 'action';
+  type: "workflow" | "state" | "image" | "action";
 
   /** Source resource */
   source: {
-    type: 'workflow' | 'state' | 'transition';
+    type: "workflow" | "state" | "transition";
     id: string;
     name: string;
   };
@@ -460,7 +466,7 @@ export interface ComplexityReport {
   highComplexity: Array<{
     id: string;
     name: string;
-    type: 'workflow' | 'state';
+    type: "workflow" | "state";
     score: number;
   }>;
 }
@@ -505,9 +511,9 @@ export interface MetricsTrend {
 
   /** Trend direction */
   trend: {
-    health: 'improving' | 'declining' | 'stable';
-    coverage: 'improving' | 'declining' | 'stable';
-    issues: 'improving' | 'declining' | 'stable';
+    health: "improving" | "declining" | "stable";
+    coverage: "improving" | "declining" | "stable";
+    issues: "improving" | "declining" | "stable";
   };
 
   /** Period */
@@ -622,7 +628,7 @@ export interface HealthAlert {
   id: string;
 
   /** Alert type */
-  type: 'health-drop' | 'critical-issue' | 'storage-limit' | 'complexity-spike';
+  type: "health-drop" | "critical-issue" | "storage-limit" | "complexity-spike";
 
   /** Threshold value */
   threshold: number;

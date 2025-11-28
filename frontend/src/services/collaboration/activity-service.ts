@@ -8,8 +8,8 @@
  * - Real-time activity subscriptions
  */
 
-import { HttpClient } from '../http-client';
-import { ApiConfig } from '../api-config';
+import { HttpClient } from "../http-client";
+import { ApiConfig } from "../api-config";
 import type {
   Activity,
   ActivityCreate,
@@ -17,12 +17,13 @@ import type {
   ActivityActionType,
   ResourceType,
   Subscription,
-} from '@/types/collaboration';
+} from "@/types/collaboration";
 
 export class ActivityService {
   private httpClient: HttpClient;
   private apiUrl: string;
-  private subscriptions: Map<string, Set<(activity: Activity) => void>> = new Map();
+  private subscriptions: Map<string, Set<(activity: Activity) => void>> =
+    new Map();
 
   constructor(httpClient: HttpClient) {
     this.httpClient = httpClient;
@@ -59,14 +60,14 @@ export class ActivityService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/projects/${projectId}/activity`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(data),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      console.error('[ActivityService] Failed to track activity:', error);
+      console.error("[ActivityService] Failed to track activity:", error);
       // Don't throw - activity tracking should be best-effort
     }
   }
@@ -85,25 +86,25 @@ export class ActivityService {
     const url = new URL(`${this.apiUrl}/api/v1/projects/${projectId}/activity`);
 
     if (options?.limit) {
-      url.searchParams.set('limit', options.limit.toString());
+      url.searchParams.set("limit", options.limit.toString());
     }
     if (options?.offset) {
-      url.searchParams.set('offset', options.offset.toString());
+      url.searchParams.set("offset", options.offset.toString());
     }
     if (options?.action_types?.length) {
-      url.searchParams.set('action_types', options.action_types.join(','));
+      url.searchParams.set("action_types", options.action_types.join(","));
     }
     if (options?.resource_types?.length) {
-      url.searchParams.set('resource_types', options.resource_types.join(','));
+      url.searchParams.set("resource_types", options.resource_types.join(","));
     }
     if (options?.user_id) {
-      url.searchParams.set('user_id', options.user_id);
+      url.searchParams.set("user_id", options.user_id);
     }
 
     const response = await this.httpClient.fetch(url.toString());
 
     if (!response.ok) {
-      throw new Error('Failed to fetch activity feed');
+      throw new Error("Failed to fetch activity feed");
     }
 
     return response.json();
@@ -123,13 +124,13 @@ export class ActivityService {
     );
 
     if (limit) {
-      url.searchParams.set('limit', limit.toString());
+      url.searchParams.set("limit", limit.toString());
     }
 
     const response = await this.httpClient.fetch(url.toString());
 
     if (!response.ok) {
-      throw new Error('Failed to fetch resource activity');
+      throw new Error("Failed to fetch resource activity");
     }
 
     return response.json();
@@ -142,13 +143,13 @@ export class ActivityService {
     const url = new URL(`${this.apiUrl}/api/v1/users/${userId}/activity`);
 
     if (limit) {
-      url.searchParams.set('limit', limit.toString());
+      url.searchParams.set("limit", limit.toString());
     }
 
     const response = await this.httpClient.fetch(url.toString());
 
     if (!response.ok) {
-      throw new Error('Failed to fetch user activity');
+      throw new Error("Failed to fetch user activity");
     }
 
     return response.json();
@@ -159,7 +160,7 @@ export class ActivityService {
    */
   async getActivityStats(
     projectId: string,
-    timeRange?: 'day' | 'week' | 'month'
+    timeRange?: "day" | "week" | "month"
   ): Promise<{
     total_activities: number;
     by_action_type: Record<ActivityActionType, number>;
@@ -171,16 +172,18 @@ export class ActivityService {
       activity_count: number;
     }>;
   }> {
-    const url = new URL(`${this.apiUrl}/api/v1/projects/${projectId}/activity/stats`);
+    const url = new URL(
+      `${this.apiUrl}/api/v1/projects/${projectId}/activity/stats`
+    );
 
     if (timeRange) {
-      url.searchParams.set('range', timeRange);
+      url.searchParams.set("range", timeRange);
     }
 
     const response = await this.httpClient.fetch(url.toString());
 
     if (!response.ok) {
-      throw new Error('Failed to fetch activity statistics');
+      throw new Error("Failed to fetch activity statistics");
     }
 
     return response.json();
@@ -232,7 +235,7 @@ export class ActivityService {
         try {
           callback(activity);
         } catch (error) {
-          console.error('[ActivityService] Subscriber callback error:', error);
+          console.error("[ActivityService] Subscriber callback error:", error);
         }
       });
     }
@@ -254,7 +257,7 @@ export class ActivityService {
   ): Promise<void> {
     return this.trackActivity(
       projectId,
-      'create',
+      "create",
       resourceType,
       resourceId,
       undefined,
@@ -276,7 +279,7 @@ export class ActivityService {
   ): Promise<void> {
     return this.trackActivity(
       projectId,
-      'update',
+      "update",
       resourceType,
       resourceId,
       changes,
@@ -296,7 +299,7 @@ export class ActivityService {
   ): Promise<void> {
     return this.trackActivity(
       projectId,
-      'delete',
+      "delete",
       resourceType,
       resourceId,
       undefined,
@@ -317,7 +320,7 @@ export class ActivityService {
   ): Promise<void> {
     return this.trackActivity(
       projectId,
-      'share',
+      "share",
       resourceType,
       resourceId,
       undefined,
@@ -334,12 +337,12 @@ export class ActivityService {
     projectId: string,
     workflowId: string,
     workflowName?: string,
-    executionResult?: 'success' | 'failure'
+    executionResult?: "success" | "failure"
   ): Promise<void> {
     return this.trackActivity(
       projectId,
-      'execute',
-      'workflow',
+      "execute",
+      "workflow",
       workflowId,
       undefined,
       workflowName,

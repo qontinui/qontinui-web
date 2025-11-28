@@ -98,12 +98,14 @@ The Enhanced State Builder is a comprehensive UI component for managing states i
 ## Key Features Implemented
 
 ### ✅ Layout (3-Panel Design)
+
 - [x] Left sidebar: State navigator
 - [x] Center panel: State canvas
 - [x] Right panel: Properties editor
 - [x] Bottom panel: Transition editor (in tabs)
 
 ### ✅ State Navigator Sidebar
+
 - [x] Hierarchical group structure (basic)
 - [x] Search and filter states
 - [x] State list with metadata
@@ -113,6 +115,7 @@ The Enhanced State Builder is a comprehensive UI component for managing states i
 - [x] Multi-select for bulk operations
 
 ### ✅ State Canvas (Center)
+
 - [x] Visual representation of current state
 - [x] StateImages displayed as grid (up to 6)
 - [x] Regions preview
@@ -124,6 +127,7 @@ The Enhanced State Builder is a comprehensive UI component for managing states i
 - [ ] Locations marked on image (planned)
 
 ### ✅ State Properties Panel (Right)
+
 - [x] Tabs: Overview, Images, Regions, Locations
 - [x] Overview tab with name, description, stats
 - [x] Images tab with StateImage list
@@ -133,6 +137,7 @@ The Enhanced State Builder is a comprehensive UI component for managing states i
 - [ ] Visual region editor (planned)
 
 ### ✅ State Templates
+
 - [x] Template gallery dialog
 - [x] Create state from template
 - [x] Pre-configured templates (2)
@@ -140,6 +145,7 @@ The Enhanced State Builder is a comprehensive UI component for managing states i
 - [ ] Template management (planned)
 
 ### ✅ Bulk Operations
+
 - [x] Multi-select with checkboxes
 - [x] Bulk duplicate
 - [x] Bulk export
@@ -148,6 +154,7 @@ The Enhanced State Builder is a comprehensive UI component for managing states i
 - [ ] Add tags (planned)
 
 ### ✅ Search and Filter
+
 - [x] Full-text search
 - [x] Filter by has images
 - [x] Filter by has transitions
@@ -157,6 +164,7 @@ The Enhanced State Builder is a comprehensive UI component for managing states i
 - [ ] Saved searches (planned)
 
 ### ⏳ Advanced Features (Planned)
+
 - [ ] State relationship graph visualization
 - [ ] State comparison diff view
 - [ ] Find similar states
@@ -165,6 +173,7 @@ The Enhanced State Builder is a comprehensive UI component for managing states i
 - [ ] Advanced canvas editing
 
 ### ✅ Performance
+
 - [x] Memoized filtered lists
 - [x] Callback memoization
 - [x] Efficient re-renders
@@ -178,24 +187,25 @@ The Enhanced State Builder is a comprehensive UI component for managing states i
 
 ```typescript
 const {
-  states,              // Read all states
-  transitions,         // Read transitions
-  workflows,          // Read workflows
-  images,             // Read images
-  addState,           // Create new state
-  updateState,        // Update existing state
-  deleteState,        // Delete state
-  addTransition,      // Create transition
-  updateTransition,   // Update transition
-  deleteTransition,   // Delete transition
-  getImageById,       // Resolve image by ID
-  resolvePatternImage,// Get image URL from pattern
+  states, // Read all states
+  transitions, // Read transitions
+  workflows, // Read workflows
+  images, // Read images
+  addState, // Create new state
+  updateState, // Update existing state
+  deleteState, // Delete state
+  addTransition, // Create transition
+  updateTransition, // Update transition
+  deleteTransition, // Delete transition
+  getImageById, // Resolve image by ID
+  resolvePatternImage, // Get image URL from pattern
 } = useAutomation();
 ```
 
 ### UI Components Used
 
 From `@/components/ui`:
+
 - Button, Input, Label, Textarea
 - Card, CardContent, CardHeader, CardTitle
 - Tabs, TabsContent, TabsList, TabsTrigger
@@ -207,6 +217,7 @@ From `@/components/ui`:
 ### Icons Used
 
 From `lucide-react`:
+
 - Search, Plus, Trash2, Copy, Download, Upload
 - Filter, Settings, GitBranch, Star, Circle
 - Image, MapPin, Type, ArrowRightLeft
@@ -239,7 +250,7 @@ Select States → Choose Operation → Confirm → Execute on Each → Clear Sel
 ### Import Component
 
 ```tsx
-import { EnhancedStateBuilder } from '@/components/state-builder';
+import { EnhancedStateBuilder } from "@/components/state-builder";
 ```
 
 ### Use in Page
@@ -259,7 +270,7 @@ import {
   compareStates,
   findSimilarStates,
   generateStateAnalytics,
-} from '@/components/state-builder/state-utils';
+} from "@/components/state-builder/state-utils";
 ```
 
 ### Import Types
@@ -270,7 +281,7 @@ import type {
   StateWithMetadata,
   StateTemplate,
   StateValidationIssue,
-} from '@/components/state-builder';
+} from "@/components/state-builder";
 ```
 
 ## Customization Points

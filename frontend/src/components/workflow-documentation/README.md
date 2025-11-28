@@ -9,6 +9,7 @@ Professional documentation UI components for workflows with rich markdown editin
 A full-featured markdown editor for workflow documentation with split-pane editing and live preview.
 
 **Features:**
+
 - Split-pane editor with live preview
 - Rich markdown toolbar (bold, italic, code, headers, lists, links, images, tables, code blocks)
 - Template selector (Standard, API Integration, UI Test, Data Processing, Error Handling)
@@ -22,20 +23,21 @@ A full-featured markdown editor for workflow documentation with split-pane editi
 - Keyboard shortcuts support
 
 **Usage:**
+
 ```tsx
-import { DocumentationEditor } from '@/components/workflow-documentation';
+import { DocumentationEditor } from "@/components/workflow-documentation";
 
 <DocumentationEditor
   workflow={workflow}
   documentation={existingDoc}
-  onSave={(content) => console.log('Save', content)}
-  onCancel={() => console.log('Cancel')}
+  onSave={(content) => console.log("Save", content)}
+  onCancel={() => console.log("Cancel")}
   onGenerateAuto={() => {
     const docService = WorkflowDocumentationService.getInstance();
     const content = docService.generateDocumentation(workflow);
     // Set content
   }}
-/>
+/>;
 ```
 
 ### 2. DocumentationViewer
@@ -43,6 +45,7 @@ import { DocumentationEditor } from '@/components/workflow-documentation';
 A professional viewer for displaying workflow documentation with table of contents and navigation.
 
 **Features:**
+
 - Rendered markdown display
 - Sticky table of contents sidebar with hierarchical navigation
 - Smooth scrolling to sections
@@ -56,14 +59,15 @@ A professional viewer for displaying workflow documentation with table of conten
 - Responsive design
 
 **Usage:**
+
 ```tsx
-import { DocumentationViewer } from '@/components/workflow-documentation';
+import { DocumentationViewer } from "@/components/workflow-documentation";
 
 <DocumentationViewer
   workflow={workflow}
   documentation={doc}
-  onEdit={() => console.log('Edit')}
-/>
+  onEdit={() => console.log("Edit")}
+/>;
 ```
 
 ### 3. ActionCommentsPanel
@@ -71,6 +75,7 @@ import { DocumentationViewer } from '@/components/workflow-documentation';
 A panel for adding and managing comments on individual workflow actions.
 
 **Features:**
+
 - View comment for selected action
 - Add/edit/delete comments
 - Rich text editor for comments
@@ -82,8 +87,9 @@ A panel for adding and managing comments on individual workflow actions.
 - Comment metadata (author, timestamps)
 
 **Usage:**
+
 ```tsx
-import { ActionCommentsPanel } from '@/components/workflow-documentation';
+import { ActionCommentsPanel } from "@/components/workflow-documentation";
 
 <ActionCommentsPanel
   workflow={workflow}
@@ -101,7 +107,7 @@ import { ActionCommentsPanel } from '@/components/workflow-documentation';
     const docService = WorkflowDocumentationService.getInstance();
     docService.deleteActionComment(commentId);
   }}
-/>
+/>;
 ```
 
 ## Installation
@@ -133,11 +139,11 @@ To upgrade the components with full markdown rendering, replace the simplified p
 Replace the `generatePreview()` function with:
 
 ```tsx
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
-import rehypeRaw from 'rehype-raw';
-import 'prismjs/themes/prism-tomorrow.css'; // Or your preferred theme
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
+import "prismjs/themes/prism-tomorrow.css"; // Or your preferred theme
 
 const generatePreview = () => {
   return (
@@ -146,16 +152,16 @@ const generatePreview = () => {
       rehypePlugins={[rehypeHighlight, rehypeRaw]}
       components={{
         code({ node, inline, className, children, ...props }) {
-          const match = /language-(\w+)/.exec(className || '');
-          const language = match ? match[1] : '';
+          const match = /language-(\w+)/.exec(className || "");
+          const language = match ? match[1] : "";
 
           // Handle mermaid diagrams
-          if (language === 'mermaid') {
+          if (language === "mermaid") {
             return (
               <Mermaid
-                chart={String(children).replace(/\n$/, '')}
+                chart={String(children).replace(/\n$/, "")}
                 config={{
-                  theme: theme === 'dark' ? 'dark' : 'default',
+                  theme: theme === "dark" ? "dark" : "default",
                 }}
               />
             );
@@ -184,13 +190,13 @@ const generatePreview = () => {
 Replace the `renderContent()` function with:
 
 ```tsx
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
-import rehypeRaw from 'rehype-raw';
-import rehypeSanitize from 'rehype-sanitize';
-import { Mermaid } from '@mermaid-js/mermaid-react';
-import 'prismjs/themes/prism-tomorrow.css';
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import { Mermaid } from "@mermaid-js/mermaid-react";
+import "prismjs/themes/prism-tomorrow.css";
 
 const renderContent = (content: string) => {
   return (
@@ -199,23 +205,23 @@ const renderContent = (content: string) => {
       rehypePlugins={[rehypeHighlight, rehypeRaw, rehypeSanitize]}
       components={{
         code({ node, inline, className, children, ...props }) {
-          const match = /language-(\w+)/.exec(className || '');
-          const language = match ? match[1] : '';
+          const match = /language-(\w+)/.exec(className || "");
+          const language = match ? match[1] : "";
 
-          if (language === 'mermaid') {
+          if (language === "mermaid") {
             return (
               <div className="my-8">
                 <Mermaid
-                  chart={String(children).replace(/\n$/, '')}
+                  chart={String(children).replace(/\n$/, "")}
                   config={{
-                    theme: theme === 'dark' ? 'dark' : 'default',
+                    theme: theme === "dark" ? "dark" : "default",
                     themeVariables: {
-                      primaryColor: '#3b82f6',
-                      primaryTextColor: '#fff',
-                      primaryBorderColor: '#1e40af',
-                      lineColor: '#6b7280',
-                      secondaryColor: '#10b981',
-                      tertiaryColor: '#f59e0b',
+                      primaryColor: "#3b82f6",
+                      primaryTextColor: "#fff",
+                      primaryBorderColor: "#1e40af",
+                      lineColor: "#6b7280",
+                      secondaryColor: "#10b981",
+                      tertiaryColor: "#f59e0b",
                     },
                   }}
                 />
@@ -258,26 +264,26 @@ useEffect(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
     const isMod = e.ctrlKey || e.metaKey;
 
-    if (isMod && e.key === 'b') {
+    if (isMod && e.key === "b") {
       e.preventDefault();
       toolbarActions.bold();
-    } else if (isMod && e.key === 'i') {
+    } else if (isMod && e.key === "i") {
       e.preventDefault();
       toolbarActions.italic();
-    } else if (isMod && e.key === 'k') {
+    } else if (isMod && e.key === "k") {
       e.preventDefault();
       toolbarActions.link();
-    } else if (isMod && e.shiftKey && e.key === 'c') {
+    } else if (isMod && e.shiftKey && e.key === "c") {
       e.preventDefault();
       toolbarActions.codeBlock();
-    } else if (isMod && e.key === 's') {
+    } else if (isMod && e.key === "s") {
       e.preventDefault();
       handleSave();
     }
   };
 
-  window.addEventListener('keydown', handleKeyDown);
-  return () => window.removeEventListener('keydown', handleKeyDown);
+  window.addEventListener("keydown", handleKeyDown);
+  return () => window.removeEventListener("keydown", handleKeyDown);
 }, [content]);
 ```
 
@@ -289,11 +295,13 @@ To show comment indicators on the workflow canvas, add this to your WorkflowCanv
 // Add a comment badge to actions that have comments
 const hasComment = docService.getActionComment(action.id);
 
-{hasComment && (
-  <div className="absolute -top-2 -right-2 size-5 bg-primary rounded-full flex items-center justify-center">
-    <MessageSquare className="size-3 text-primary-foreground" />
-  </div>
-)}
+{
+  hasComment && (
+    <div className="absolute -top-2 -right-2 size-5 bg-primary rounded-full flex items-center justify-center">
+      <MessageSquare className="size-3 text-primary-foreground" />
+    </div>
+  );
+}
 ```
 
 ## Styling
@@ -301,6 +309,7 @@ const hasComment = docService.getActionComment(action.id);
 All components use Tailwind CSS and shadcn/ui components. They support both light and dark modes out of the box.
 
 For syntax highlighting themes, you can choose from:
+
 - `prism-tomorrow.css` (dark theme)
 - `prism-okaidia.css` (dark theme)
 - `prism-solarizedlight.css` (light theme)
@@ -313,20 +322,24 @@ Import your preferred theme in your global styles or component.
 Here's a complete example of integrating all three components:
 
 ```tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Workflow } from '@/lib/action-schema/action-types';
+import { useState } from "react";
+import { Workflow } from "@/lib/action-schema/action-types";
 import {
   DocumentationEditor,
   DocumentationViewer,
   ActionCommentsPanel,
-} from '@/components/workflow-documentation';
-import { WorkflowDocumentationService } from '@/services/workflow-documentation-service';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from "@/components/workflow-documentation";
+import { WorkflowDocumentationService } from "@/services/workflow-documentation-service";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export function WorkflowDocumentationPage({ workflow }: { workflow: Workflow }) {
-  const [mode, setMode] = useState<'view' | 'edit'>('view');
+export function WorkflowDocumentationPage({
+  workflow,
+}: {
+  workflow: Workflow;
+}) {
+  const [mode, setMode] = useState<"view" | "edit">("view");
   const [selectedActionId, setSelectedActionId] = useState<string>();
 
   const docService = WorkflowDocumentationService.getInstance();
@@ -337,11 +350,11 @@ export function WorkflowDocumentationPage({ workflow }: { workflow: Workflow }) 
     <div className="h-screen flex">
       {/* Main content */}
       <div className="flex-1">
-        {mode === 'view' && documentation ? (
+        {mode === "view" && documentation ? (
           <DocumentationViewer
             workflow={workflow}
             documentation={documentation}
-            onEdit={() => setMode('edit')}
+            onEdit={() => setMode("edit")}
           />
         ) : (
           <DocumentationEditor
@@ -353,9 +366,9 @@ export function WorkflowDocumentationPage({ workflow }: { workflow: Workflow }) 
               } else {
                 docService.createDocumentation(workflow.id, content);
               }
-              setMode('view');
+              setMode("view");
             }}
-            onCancel={() => setMode('view')}
+            onCancel={() => setMode("view")}
             onGenerateAuto={() => {
               const content = docService.generateDocumentation(workflow);
               docService.createDocumentation(workflow.id, content);

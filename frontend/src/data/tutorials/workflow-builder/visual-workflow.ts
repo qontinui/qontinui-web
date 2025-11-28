@@ -1,4 +1,4 @@
-import { Tutorial } from '@/types/tutorial';
+import { Tutorial } from "@/types/tutorial";
 
 /**
  * Visual Workflow Editor Tutorial
@@ -12,27 +12,33 @@ import { Tutorial } from '@/types/tutorial';
  * sequences with visual programming.
  */
 export const visualWorkflowTutorial: Tutorial = {
-  id: 'visual-workflow-editor',
-  title: 'Visual Workflow Editor',
+  id: "visual-workflow-editor",
+  title: "Visual Workflow Editor",
   description:
-    'Master the graph-based workflow editor to create complex automation sequences visually. Learn to use nodes, connections, and auto-layout features for building sophisticated workflows.',
-  duration: '25 minutes',
-  difficulty: 'intermediate',
-  mode: 'hybrid',
-  category: 'Workflow Builder',
-  tags: ['workflow', 'graph-editor', 'visual-programming', 'automation', 'intermediate'],
-  targetPage: '/automation-builder',
+    "Master the graph-based workflow editor to create complex automation sequences visually. Learn to use nodes, connections, and auto-layout features for building sophisticated workflows.",
+  duration: "25 minutes",
+  difficulty: "intermediate",
+  mode: "hybrid",
+  category: "Workflow Builder",
+  tags: [
+    "workflow",
+    "graph-editor",
+    "visual-programming",
+    "automation",
+    "intermediate",
+  ],
+  targetPage: "/automation-builder",
 
-  prerequisites: ['first-automation'],
+  prerequisites: ["first-automation"],
 
   learningObjectives: [
-    'Understand the difference between sequential and graph-based workflows',
-    'Navigate and use the visual workflow canvas effectively',
-    'Create and connect workflow nodes to build automation logic',
-    'Configure node properties and validate workflow correctness',
-    'Use auto-layout features for organizing complex workflows',
-    'Test and debug visual workflows in real-time',
-    'Import and export workflows for sharing and versioning',
+    "Understand the difference between sequential and graph-based workflows",
+    "Navigate and use the visual workflow canvas effectively",
+    "Create and connect workflow nodes to build automation logic",
+    "Configure node properties and validate workflow correctness",
+    "Use auto-layout features for organizing complex workflows",
+    "Test and debug visual workflows in real-time",
+    "Import and export workflows for sharing and versioning",
   ],
 
   workflowIntegration: {
@@ -41,30 +47,30 @@ export const visualWorkflowTutorial: Tutorial = {
     validateUserActions: true,
     sampleData: {
       sampleWorkflow: {
-        name: 'Sample Visual Workflow',
+        name: "Sample Visual Workflow",
         nodes: [
           {
-            id: 'node-1',
-            type: 'trigger',
+            id: "node-1",
+            type: "trigger",
             position: { x: 100, y: 100 },
-            data: { label: 'Start' },
+            data: { label: "Start" },
           },
           {
-            id: 'node-2',
-            type: 'action',
+            id: "node-2",
+            type: "action",
             position: { x: 300, y: 100 },
-            data: { label: 'Click Button' },
+            data: { label: "Click Button" },
           },
           {
-            id: 'node-3',
-            type: 'condition',
+            id: "node-3",
+            type: "condition",
             position: { x: 500, y: 100 },
-            data: { label: 'Check State' },
+            data: { label: "Check State" },
           },
         ],
         edges: [
-          { id: 'edge-1', source: 'node-1', target: 'node-2' },
-          { id: 'edge-2', source: 'node-2', target: 'node-3' },
+          { id: "edge-1", source: "node-1", target: "node-2" },
+          { id: "edge-2", source: "node-2", target: "node-3" },
         ],
       },
     },
@@ -72,21 +78,21 @@ export const visualWorkflowTutorial: Tutorial = {
   },
 
   author: {
-    name: 'Qontinui Team',
+    name: "Qontinui Team",
   },
 
   metadata: {
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    version: '1.0.0',
+    version: "1.0.0",
   },
 
   isPublished: true,
 
   steps: [
     {
-      id: 'step-1-introduction',
-      title: 'Introduction to Visual Workflows',
+      id: "step-1-introduction",
+      title: "Introduction to Visual Workflows",
       content: `
 # Welcome to Visual Workflow Programming
 
@@ -144,34 +150,34 @@ By the end of this tutorial, you'll create a visual workflow that:
 **Ready to think visually? Let's dive in!**
 `,
       estimatedDuration: 3,
-      difficulty: 'intermediate',
+      difficulty: "intermediate",
       learningObjectives: [
-        'Understand the fundamental differences between sequential and graph-based workflows',
-        'Recognize scenarios where visual workflows provide advantages',
-        'Learn the basic terminology of node-based programming',
+        "Understand the fundamental differences between sequential and graph-based workflows",
+        "Recognize scenarios where visual workflows provide advantages",
+        "Learn the basic terminology of node-based programming",
       ],
       tips: [
-        'Visual workflows may seem complex at first, but they make complex logic much easier to understand',
-        'Think of nodes as LEGO blocks - each does one thing, and you connect them creatively',
-        'You can always start with a sequential workflow and convert it to a graph later',
+        "Visual workflows may seem complex at first, but they make complex logic much easier to understand",
+        "Think of nodes as LEGO blocks - each does one thing, and you connect them creatively",
+        "You can always start with a sequential workflow and convert it to a graph later",
       ],
       resources: [
         {
-          title: 'Visual Programming Concepts',
-          url: 'https://docs.qontinui.io/concepts/visual-programming',
-          type: 'documentation',
+          title: "Visual Programming Concepts",
+          url: "https://docs.qontinui.io/concepts/visual-programming",
+          type: "documentation",
         },
         {
-          title: 'When to Use Graph Workflows',
-          url: 'https://docs.qontinui.io/guides/choosing-workflow-type',
-          type: 'article',
+          title: "When to Use Graph Workflows",
+          url: "https://docs.qontinui.io/guides/choosing-workflow-type",
+          type: "article",
         },
       ],
     },
 
     {
-      id: 'step-2-switch-to-graph-mode',
-      title: 'Switch to Graph Mode',
+      id: "step-2-switch-to-graph-mode",
+      title: "Switch to Graph Mode",
       content: `
 # Activating the Visual Workflow Editor
 
@@ -206,38 +212,41 @@ When you switch to Graph Mode:
 Watch how the interface transforms - this is your visual workflow workspace!
 `,
       estimatedDuration: 1,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       targetElement: {
         selector: '[data-tutorial-id="mode-selector"]',
-        highlightType: 'spotlight',
-        position: 'bottom',
+        highlightType: "spotlight",
+        position: "bottom",
         allowInteraction: true,
         scrollIntoView: true,
       },
       validation: {
-        type: 'state',
-        condition: 'document.querySelector("[data-workflow-mode=\\"graph\\"]") !== null',
+        type: "state",
+        condition:
+          'document.querySelector("[data-workflow-mode=\\"graph\\"]") !== null',
         feedback: {
-          success: 'Great! Graph Mode is now active. The visual canvas is ready.',
-          failure: 'Mode not switched yet. Click the Graph Mode toggle in the toolbar.',
+          success:
+            "Great! Graph Mode is now active. The visual canvas is ready.",
+          failure:
+            "Mode not switched yet. Click the Graph Mode toggle in the toolbar.",
           hint: 'Look for a toggle or dropdown labeled "Mode" or "View" near the top of the page',
         },
         timeout: 30000,
       },
       learningObjectives: [
-        'Locate and use the mode selector',
-        'Understand the visual differences between modes',
-        'Activate the graph-based editor interface',
+        "Locate and use the mode selector",
+        "Understand the visual differences between modes",
+        "Activate the graph-based editor interface",
       ],
       tips: [
-        'You can switch between modes anytime - your work is preserved',
-        'Some automations are easier in Sequential, others in Graph - choose what fits',
+        "You can switch between modes anytime - your work is preserved",
+        "Some automations are easier in Sequential, others in Graph - choose what fits",
       ],
     },
 
     {
-      id: 'step-3-understanding-canvas',
-      title: 'Understanding the Canvas',
+      id: "step-3-understanding-canvas",
+      title: "Understanding the Canvas",
       content: `
 # Exploring the Visual Workflow Canvas
 
@@ -287,36 +296,36 @@ A large workflow might have **dozens of nodes**. Being able to navigate efficien
 **Take a moment to practice navigating the canvas before continuing.**
 `,
       estimatedDuration: 2,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       targetElement: {
         selector: '[data-tutorial-id="graph-canvas"]',
-        highlightType: 'border',
-        position: 'top',
+        highlightType: "border",
+        position: "top",
         allowInteraction: true,
         scrollIntoView: true,
       },
       learningObjectives: [
-        'Navigate the visual workflow canvas effectively',
-        'Use zoom and pan controls for workflow exploration',
-        'Understand the canvas coordinate system',
+        "Navigate the visual workflow canvas effectively",
+        "Use zoom and pan controls for workflow exploration",
+        "Understand the canvas coordinate system",
       ],
       tips: [
-        'Keyboard shortcuts are your friend - check the help menu for canvas shortcuts',
-        'Zoom out for big-picture view, zoom in for precise editing',
-        'Most graph editors support space-bar + drag for panning',
+        "Keyboard shortcuts are your friend - check the help menu for canvas shortcuts",
+        "Zoom out for big-picture view, zoom in for precise editing",
+        "Most graph editors support space-bar + drag for panning",
       ],
       resources: [
         {
-          title: 'Canvas Navigation Guide',
-          url: 'https://docs.qontinui.io/editor/canvas-navigation',
-          type: 'documentation',
+          title: "Canvas Navigation Guide",
+          url: "https://docs.qontinui.io/editor/canvas-navigation",
+          type: "documentation",
         },
       ],
     },
 
     {
-      id: 'step-4-node-palette',
-      title: 'Using the Node Palette',
+      id: "step-4-node-palette",
+      title: "Using the Node Palette",
       content: `
 # The Node Palette: Your Building Blocks
 
@@ -368,41 +377,41 @@ The palette typically organizes nodes by:
 **Don't add any nodes yet** - just familiarize yourself with what's available.
 `,
       estimatedDuration: 3,
-      difficulty: 'intermediate',
+      difficulty: "intermediate",
       targetElement: {
         selector: '[data-tutorial-id="node-palette-panel"]',
-        highlightType: 'spotlight',
-        position: 'right',
+        highlightType: "spotlight",
+        position: "right",
         allowInteraction: true,
         scrollIntoView: true,
       },
       learningObjectives: [
-        'Identify different node types and their purposes',
-        'Navigate the node palette efficiently',
-        'Understand node categorization and organization',
+        "Identify different node types and their purposes",
+        "Navigate the node palette efficiently",
+        "Understand node categorization and organization",
       ],
       tips: [
-        'Color-coding helps: Triggers are often green, Actions blue, Logic yellow/orange',
-        'Read node descriptions - they explain inputs, outputs, and use cases',
-        'Some nodes are context-specific (only appear when certain features are enabled)',
+        "Color-coding helps: Triggers are often green, Actions blue, Logic yellow/orange",
+        "Read node descriptions - they explain inputs, outputs, and use cases",
+        "Some nodes are context-specific (only appear when certain features are enabled)",
       ],
       resources: [
         {
-          title: 'Complete Node Reference',
-          url: 'https://docs.qontinui.io/nodes/reference',
-          type: 'documentation',
+          title: "Complete Node Reference",
+          url: "https://docs.qontinui.io/nodes/reference",
+          type: "documentation",
         },
         {
-          title: 'Node Type Guide',
-          url: 'https://docs.qontinui.io/nodes/types',
-          type: 'article',
+          title: "Node Type Guide",
+          url: "https://docs.qontinui.io/nodes/types",
+          type: "article",
         },
       ],
     },
 
     {
-      id: 'step-5-adding-nodes',
-      title: 'Adding Nodes to Canvas',
+      id: "step-5-adding-nodes",
+      title: "Adding Nodes to Canvas",
       content: `
 # Building Your First Visual Workflow
 
@@ -457,91 +466,91 @@ Don't worry about connecting them yet - we'll do that in the next step.
 Add these 5 nodes to your canvas. We'll connect them in the next step!
 `,
       estimatedDuration: 4,
-      difficulty: 'intermediate',
-      screenshot: '/tutorials/workflow-builder/step5-adding-nodes.png',
+      difficulty: "intermediate",
+      screenshot: "/tutorials/workflow-builder/step5-adding-nodes.png",
       annotations: [
         {
-          type: 'highlight',
+          type: "highlight",
           x: 50,
           y: 150,
           width: 120,
           height: 80,
-          label: '1. Manual Trigger\nDrag from palette',
+          label: "1. Manual Trigger\nDrag from palette",
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 200,
           y: 180,
-          label: 'Flow direction →',
+          label: "Flow direction →",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 250,
           y: 150,
           width: 120,
           height: 80,
-          label: '2. Click Action',
+          label: "2. Click Action",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 450,
           y: 150,
           width: 120,
           height: 80,
-          label: '3. Condition Node',
+          label: "3. Condition Node",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 650,
           y: 100,
           width: 120,
           height: 60,
-          label: '4. Success Path',
-          color: '#22c55e',
+          label: "4. Success Path",
+          color: "#22c55e",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 650,
           y: 200,
           width: 120,
           height: 60,
-          label: '5. Failure Path',
-          color: '#ef4444',
+          label: "5. Failure Path",
+          color: "#ef4444",
         },
       ],
       targetElement: {
         selector: '[data-tutorial-id="drag-node"]',
-        highlightType: 'pulse',
-        position: 'left',
+        highlightType: "pulse",
+        position: "left",
         allowInteraction: true,
       },
       validation: {
-        type: 'state',
+        type: "state",
         condition: 'document.querySelectorAll("[data-node-type]").length >= 5',
         feedback: {
-          success: 'Excellent! You have added 5 nodes to the canvas.',
-          failure: 'Keep going! Add more nodes to reach a total of 5.',
-          hint: 'Drag nodes from the palette onto the canvas. You need at least 5 nodes.',
+          success: "Excellent! You have added 5 nodes to the canvas.",
+          failure: "Keep going! Add more nodes to reach a total of 5.",
+          hint: "Drag nodes from the palette onto the canvas. You need at least 5 nodes.",
         },
         timeout: 60000,
         optional: false,
       },
       learningObjectives: [
-        'Add nodes to the canvas using drag-and-drop',
-        'Position nodes logically for workflow clarity',
-        'Understand basic workflow layout conventions',
+        "Add nodes to the canvas using drag-and-drop",
+        "Position nodes logically for workflow clarity",
+        "Understand basic workflow layout conventions",
       ],
       tips: [
-        'Hold Shift while dragging to align nodes perfectly',
-        'Double-click a node to edit its label immediately',
-        'Use Ctrl+Z (Cmd+Z on Mac) to undo if you misplace a node',
-        'Nodes can be moved after placement - don\'t worry about perfect positioning yet',
+        "Hold Shift while dragging to align nodes perfectly",
+        "Double-click a node to edit its label immediately",
+        "Use Ctrl+Z (Cmd+Z on Mac) to undo if you misplace a node",
+        "Nodes can be moved after placement - don't worry about perfect positioning yet",
       ],
     },
 
     {
-      id: 'step-6-connecting-nodes',
-      title: 'Connecting Nodes',
+      id: "step-6-connecting-nodes",
+      title: "Connecting Nodes",
       content: `
 # Wiring Your Workflow: Node Connections
 
@@ -613,39 +622,39 @@ Watch as your workflow comes to life with visual connections!
 - Or drag the connection endpoint to a different port
 `,
       estimatedDuration: 3,
-      difficulty: 'intermediate',
-      screenshot: '/tutorials/workflow-builder/step6-connections.png',
+      difficulty: "intermediate",
+      screenshot: "/tutorials/workflow-builder/step6-connections.png",
       annotations: [
         {
-          type: 'arrow',
+          type: "arrow",
           x: 170,
           y: 180,
-          label: 'Connection 1:\nTrigger → Click',
-          color: '#3b82f6',
+          label: "Connection 1:\nTrigger → Click",
+          color: "#3b82f6",
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 370,
           y: 180,
-          label: 'Connection 2:\nClick → Condition',
-          color: '#3b82f6',
+          label: "Connection 2:\nClick → Condition",
+          color: "#3b82f6",
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 580,
           y: 150,
-          label: 'True path',
-          color: '#22c55e',
+          label: "True path",
+          color: "#22c55e",
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 580,
           y: 210,
-          label: 'False path',
-          color: '#ef4444',
+          label: "False path",
+          color: "#ef4444",
         },
         {
-          type: 'pulse',
+          type: "pulse",
           x: 170,
           y: 180,
           width: 30,
@@ -654,29 +663,29 @@ Watch as your workflow comes to life with visual connections!
         },
       ],
       learningObjectives: [
-        'Create connections between workflow nodes',
-        'Understand input and output ports',
-        'Build conditional branching logic visually',
-        'Manage and edit node connections',
+        "Create connections between workflow nodes",
+        "Understand input and output ports",
+        "Build conditional branching logic visually",
+        "Manage and edit node connections",
       ],
       tips: [
-        'Connections auto-route around nodes - the editor makes them look clean',
-        'You can reshape connections by dragging them (if editor supports it)',
-        'Hover over a connection to see what data/control it carries',
-        'Disconnected nodes (no input connection) won\'t execute',
+        "Connections auto-route around nodes - the editor makes them look clean",
+        "You can reshape connections by dragging them (if editor supports it)",
+        "Hover over a connection to see what data/control it carries",
+        "Disconnected nodes (no input connection) won't execute",
       ],
       resources: [
         {
-          title: 'Working with Connections',
-          url: 'https://docs.qontinui.io/editor/connections',
-          type: 'documentation',
+          title: "Working with Connections",
+          url: "https://docs.qontinui.io/editor/connections",
+          type: "documentation",
         },
       ],
     },
 
     {
-      id: 'step-7-node-properties',
-      title: 'Configuring Node Properties',
+      id: "step-7-node-properties",
+      title: "Configuring Node Properties",
       content: `
 # Fine-Tuning Nodes: The Properties Panel
 
@@ -752,43 +761,43 @@ Well-configured nodes:
 - Include error handling where needed
 `,
       estimatedDuration: 5,
-      difficulty: 'intermediate',
+      difficulty: "intermediate",
       targetElement: {
         selector: '[data-tutorial-id="graph-properties"]',
-        highlightType: 'spotlight',
-        position: 'left',
+        highlightType: "spotlight",
+        position: "left",
         allowInteraction: true,
         scrollIntoView: true,
       },
       learningObjectives: [
-        'Access and use the node properties panel',
-        'Configure node-specific settings and parameters',
-        'Set up action targets and conditions properly',
-        'Understand validation and error handling options',
+        "Access and use the node properties panel",
+        "Configure node-specific settings and parameters",
+        "Set up action targets and conditions properly",
+        "Understand validation and error handling options",
       ],
       tips: [
-        'Use meaningful names - future you will thank present you',
-        'Test selectors in browser DevTools before using them in nodes',
-        'Set reasonable timeouts - too short = false failures, too long = slow workflows',
-        'Always configure error handling for critical nodes',
+        "Use meaningful names - future you will thank present you",
+        "Test selectors in browser DevTools before using them in nodes",
+        "Set reasonable timeouts - too short = false failures, too long = slow workflows",
+        "Always configure error handling for critical nodes",
       ],
       resources: [
         {
-          title: 'Node Properties Reference',
-          url: 'https://docs.qontinui.io/nodes/properties',
-          type: 'documentation',
+          title: "Node Properties Reference",
+          url: "https://docs.qontinui.io/nodes/properties",
+          type: "documentation",
         },
         {
-          title: 'CSS Selectors Guide',
-          url: 'https://docs.qontinui.io/guides/selectors',
-          type: 'article',
+          title: "CSS Selectors Guide",
+          url: "https://docs.qontinui.io/guides/selectors",
+          type: "article",
         },
       ],
     },
 
     {
-      id: 'step-8-auto-layout',
-      title: 'Auto Layout for Clean Workflows',
+      id: "step-8-auto-layout",
+      title: "Auto Layout for Clean Workflows",
       content: `
 # Organizing Complex Workflows with Auto-Layout
 
@@ -866,39 +875,40 @@ Notice how the 5 nodes reorganize into a clean, logical structure. This is espec
 - **Use consistent layouts** across related workflows (easier to compare)
 `,
       estimatedDuration: 2,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       targetElement: {
         selector: '[data-tutorial-id="auto-layout"]',
-        highlightType: 'pulse',
-        position: 'bottom',
+        highlightType: "pulse",
+        position: "bottom",
         allowInteraction: true,
       },
       validation: {
-        type: 'action',
-        condition: 'document.querySelector("[data-layout-applied=\\"true\\"]") !== null',
+        type: "action",
+        condition:
+          'document.querySelector("[data-layout-applied=\\"true\\"]") !== null',
         feedback: {
-          success: 'Perfect! Your workflow is now beautifully organized.',
-          failure: 'Click the Auto-Layout button to organize your nodes.',
-          hint: 'Look for a button with an icon showing organized boxes or nodes',
+          success: "Perfect! Your workflow is now beautifully organized.",
+          failure: "Click the Auto-Layout button to organize your nodes.",
+          hint: "Look for a button with an icon showing organized boxes or nodes",
         },
         timeout: 30000,
       },
       learningObjectives: [
-        'Understand the importance of workflow organization',
-        'Use auto-layout tools effectively',
-        'Choose appropriate layout algorithms',
-        'Maintain readable workflows as they grow',
+        "Understand the importance of workflow organization",
+        "Use auto-layout tools effectively",
+        "Choose appropriate layout algorithms",
+        "Maintain readable workflows as they grow",
       ],
       tips: [
-        'Auto-layout is non-destructive - you can always undo it',
-        'Different algorithms work better for different workflow shapes',
-        'Consider adding comments/labels before auto-layout to preserve context',
+        "Auto-layout is non-destructive - you can always undo it",
+        "Different algorithms work better for different workflow shapes",
+        "Consider adding comments/labels before auto-layout to preserve context",
       ],
     },
 
     {
-      id: 'step-9-testing-workflow',
-      title: 'Testing the Visual Workflow',
+      id: "step-9-testing-workflow",
+      title: "Testing the Visual Workflow",
       content: `
 # Running and Testing Your Workflow
 
@@ -985,52 +995,54 @@ You've built a visual workflow - now it's time to **test it** and see your creat
 **Goal:** Understand how control flows through your visual workflow.
 `,
       estimatedDuration: 4,
-      difficulty: 'intermediate',
+      difficulty: "intermediate",
       targetElement: {
         selector: '[data-tutorial-id="run-workflow"]',
-        highlightType: 'spotlight',
-        position: 'bottom',
+        highlightType: "spotlight",
+        position: "bottom",
         allowInteraction: true,
       },
       validation: {
-        type: 'action',
-        condition: 'document.querySelector("[data-workflow-executed=\\"true\\"]") !== null',
+        type: "action",
+        condition:
+          'document.querySelector("[data-workflow-executed=\\"true\\"]") !== null',
         feedback: {
-          success: 'Excellent! You have successfully executed your visual workflow.',
-          failure: 'Click the Run or Debug button to test your workflow.',
+          success:
+            "Excellent! You have successfully executed your visual workflow.",
+          failure: "Click the Run or Debug button to test your workflow.",
           hint: 'Look for a play button ▶ or "Run" button in the toolbar',
         },
         timeout: 60000,
       },
       learningObjectives: [
-        'Execute visual workflows and observe their behavior',
-        'Use debug mode for step-by-step testing',
-        'Interpret execution results and error messages',
-        'Troubleshoot and fix workflow issues',
+        "Execute visual workflows and observe their behavior",
+        "Use debug mode for step-by-step testing",
+        "Interpret execution results and error messages",
+        "Troubleshoot and fix workflow issues",
       ],
       tips: [
-        'Always validate before first run - catches simple errors early',
-        'Debug mode is slower but invaluable for understanding execution',
-        'Keep the browser console open to see detailed logs',
-        'Test edge cases: What if element doesn\'t exist? What if timeout occurs?',
+        "Always validate before first run - catches simple errors early",
+        "Debug mode is slower but invaluable for understanding execution",
+        "Keep the browser console open to see detailed logs",
+        "Test edge cases: What if element doesn't exist? What if timeout occurs?",
       ],
       resources: [
         {
-          title: 'Workflow Testing Guide',
-          url: 'https://docs.qontinui.io/guides/testing-workflows',
-          type: 'documentation',
+          title: "Workflow Testing Guide",
+          url: "https://docs.qontinui.io/guides/testing-workflows",
+          type: "documentation",
         },
         {
-          title: 'Debugging Visual Workflows',
-          url: 'https://docs.qontinui.io/guides/debugging-graph-workflows',
-          type: 'article',
+          title: "Debugging Visual Workflows",
+          url: "https://docs.qontinui.io/guides/debugging-graph-workflows",
+          type: "article",
         },
       ],
     },
 
     {
-      id: 'step-10-import-export',
-      title: 'Import and Export Workflows',
+      id: "step-10-import-export",
+      title: "Import and Export Workflows",
       content: `
 # Sharing and Version Control: Import/Export
 
@@ -1180,66 +1192,67 @@ You now know how to:
 **Happy workflow building!**
 `,
       estimatedDuration: 3,
-      difficulty: 'intermediate',
+      difficulty: "intermediate",
       targetElement: {
-        selector: '[data-tutorial-id="import-workflow"], [data-tutorial-id="export-workflow"]',
-        highlightType: 'spotlight',
-        position: 'bottom',
+        selector:
+          '[data-tutorial-id="import-workflow"], [data-tutorial-id="export-workflow"]',
+        highlightType: "spotlight",
+        position: "bottom",
         allowInteraction: true,
       },
       learningObjectives: [
-        'Export workflows for backup and sharing',
-        'Import existing workflows into the editor',
-        'Understand workflow file formats and structure',
-        'Apply version control best practices to workflows',
+        "Export workflows for backup and sharing",
+        "Import existing workflows into the editor",
+        "Understand workflow file formats and structure",
+        "Apply version control best practices to workflows",
       ],
       tips: [
-        'Export before making major changes - easy undo if needed',
-        'Keep exported workflows in version control (Git) for team collaboration',
-        'Use meaningful names and include version numbers in filenames',
-        'Share workflows via GitHub, community forums, or internal wikis',
+        "Export before making major changes - easy undo if needed",
+        "Keep exported workflows in version control (Git) for team collaboration",
+        "Use meaningful names and include version numbers in filenames",
+        "Share workflows via GitHub, community forums, or internal wikis",
       ],
       resources: [
         {
-          title: 'Workflow File Format Specification',
-          url: 'https://docs.qontinui.io/reference/workflow-format',
-          type: 'api-reference',
+          title: "Workflow File Format Specification",
+          url: "https://docs.qontinui.io/reference/workflow-format",
+          type: "api-reference",
         },
         {
-          title: 'Version Control for Workflows',
-          url: 'https://docs.qontinui.io/guides/version-control',
-          type: 'article',
+          title: "Version Control for Workflows",
+          url: "https://docs.qontinui.io/guides/version-control",
+          type: "article",
         },
         {
-          title: 'Community Workflow Library',
-          url: 'https://github.com/qontinui/workflow-library',
-          type: 'article',
+          title: "Community Workflow Library",
+          url: "https://github.com/qontinui/workflow-library",
+          type: "article",
         },
         {
-          title: 'Advanced Graph Workflows',
-          url: 'https://docs.qontinui.io/advanced/graph-workflows',
-          type: 'documentation',
+          title: "Advanced Graph Workflows",
+          url: "https://docs.qontinui.io/advanced/graph-workflows",
+          type: "documentation",
         },
       ],
     },
   ],
 
   finalProject: {
-    name: 'Complete Visual Workflow with Branching Logic',
+    name: "Complete Visual Workflow with Branching Logic",
     description:
-      'A fully functional visual workflow demonstrating trigger, action, condition, and branching logic with proper error handling',
+      "A fully functional visual workflow demonstrating trigger, action, condition, and branching logic with proper error handling",
     components: [
-      'Manual Trigger node configured',
-      'Click Action node with target selector',
-      'Condition node with validation logic',
-      'Success and Failure action branches',
-      'Organized layout using auto-layout',
-      'Tested and validated execution',
-      'Exported workflow file for backup',
+      "Manual Trigger node configured",
+      "Click Action node with target selector",
+      "Condition node with validation logic",
+      "Success and Failure action branches",
+      "Organized layout using auto-layout",
+      "Tested and validated execution",
+      "Exported workflow file for backup",
     ],
     expectedOutcome:
-      'A reusable, shareable visual workflow that demonstrates mastery of the graph-based editor',
-    timeToComplete: '25 minutes',
+      "A reusable, shareable visual workflow that demonstrates mastery of the graph-based editor",
+    timeToComplete: "25 minutes",
   },
 };
 

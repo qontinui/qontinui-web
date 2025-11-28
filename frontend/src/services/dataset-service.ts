@@ -23,16 +23,18 @@ import type {
   BulkOperationResult,
   ConfidenceHistogram,
   ReviewStatus,
-} from '@/types/dataset';
-import { httpClient } from './service-factory';
+} from "@/types/dataset";
+import { httpClient } from "./service-factory";
 
 // Use empty string for relative URLs through Next.js proxy for proper cookie forwarding
-const API_BASE = '';
+const API_BASE = "";
 
 class DatasetService {
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Unknown error" }));
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
     return response.json();
@@ -48,13 +50,18 @@ class DatasetService {
   }
 
   async getDataset(id: string): Promise<Dataset> {
-    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/${id}`);
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/datasets/${id}`
+    );
     return this.handleResponse<Dataset>(response);
   }
 
-  async createDataset(data: { name: string; description?: string }): Promise<Dataset> {
+  async createDataset(data: {
+    name: string;
+    description?: string;
+  }): Promise<Dataset> {
     const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(data),
     });
     return this.handleResponse<Dataset>(response);
@@ -64,19 +71,27 @@ class DatasetService {
     id: string,
     data: { name?: string; description?: string }
   ): Promise<Dataset> {
-    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/datasets/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
     return this.handleResponse<Dataset>(response);
   }
 
   async deleteDataset(id: string): Promise<void> {
-    const response = await httpClient.fetch(`${API_BASE}/api/v1/datasets/${id}`, {
-      method: 'DELETE',
-    });
+    const response = await httpClient.fetch(
+      `${API_BASE}/api/v1/datasets/${id}`,
+      {
+        method: "DELETE",
+      }
+    );
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Unknown error" }));
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
   }
@@ -91,14 +106,14 @@ class DatasetService {
   ): Promise<PaginatedResponse<DatasetImage>> {
     const params = new URLSearchParams();
 
-    if (filters?.page) params.set('page', String(filters.page));
-    if (filters?.page_size) params.set('page_size', String(filters.page_size));
+    if (filters?.page) params.set("page", String(filters.page));
+    if (filters?.page_size) params.set("page_size", String(filters.page_size));
     if (filters?.review_statuses?.length) {
-      filters.review_statuses.forEach((s) => params.append('review_status', s));
+      filters.review_statuses.forEach((s) => params.append("review_status", s));
     }
-    if (filters?.search) params.set('search', filters.search);
-    if (filters?.sort_by) params.set('sort_by', filters.sort_by);
-    if (filters?.sort_order) params.set('sort_order', filters.sort_order);
+    if (filters?.search) params.set("search", filters.search);
+    if (filters?.sort_by) params.set("sort_by", filters.sort_by);
+    if (filters?.sort_order) params.set("sort_order", filters.sort_order);
 
     const url = `${API_BASE}/api/v1/datasets/${datasetId}/images?${params}`;
     const response = await httpClient.fetch(url);
@@ -120,7 +135,7 @@ class DatasetService {
     const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/images/${imageId}`,
       {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(data),
       }
     );
@@ -137,32 +152,32 @@ class DatasetService {
   ): Promise<PaginatedResponse<DatasetAnnotation>> {
     const params = new URLSearchParams();
 
-    if (filters?.page) params.set('page', String(filters.page));
-    if (filters?.page_size) params.set('page_size', String(filters.page_size));
+    if (filters?.page) params.set("page", String(filters.page));
+    if (filters?.page_size) params.set("page_size", String(filters.page_size));
     if (filters?.sources?.length) {
-      filters.sources.forEach((s) => params.append('source', s));
+      filters.sources.forEach((s) => params.append("source", s));
     }
     if (filters?.element_types?.length) {
-      filters.element_types.forEach((t) => params.append('element_type', t));
+      filters.element_types.forEach((t) => params.append("element_type", t));
     }
     if (filters?.confidence_min !== undefined) {
-      params.set('confidence_min', String(filters.confidence_min));
+      params.set("confidence_min", String(filters.confidence_min));
     }
     if (filters?.confidence_max !== undefined) {
-      params.set('confidence_max', String(filters.confidence_max));
+      params.set("confidence_max", String(filters.confidence_max));
     }
     if (filters?.review_statuses?.length) {
-      filters.review_statuses.forEach((s) => params.append('review_status', s));
+      filters.review_statuses.forEach((s) => params.append("review_status", s));
     }
     if (filters?.verified !== undefined) {
-      params.set('verified', String(filters.verified));
+      params.set("verified", String(filters.verified));
     }
     if (filters?.category_names?.length) {
-      filters.category_names.forEach((c) => params.append('category_name', c));
+      filters.category_names.forEach((c) => params.append("category_name", c));
     }
-    if (filters?.search) params.set('search', filters.search);
-    if (filters?.sort_by) params.set('sort_by', filters.sort_by);
-    if (filters?.sort_order) params.set('sort_order', filters.sort_order);
+    if (filters?.search) params.set("search", filters.search);
+    if (filters?.sort_by) params.set("sort_by", filters.sort_by);
+    if (filters?.sort_order) params.set("sort_order", filters.sort_order);
 
     const url = `${API_BASE}/api/v1/datasets/${datasetId}/annotations?${params}`;
     const response = await httpClient.fetch(url);
@@ -197,22 +212,27 @@ class DatasetService {
     const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/annotations/${annotationId}`,
       {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(data),
       }
     );
     return this.handleResponse<DatasetAnnotation>(response);
   }
 
-  async deleteAnnotation(datasetId: string, annotationId: string): Promise<void> {
+  async deleteAnnotation(
+    datasetId: string,
+    annotationId: string
+  ): Promise<void> {
     const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/annotations/${annotationId}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       }
     );
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Unknown error" }));
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
   }
@@ -224,7 +244,7 @@ class DatasetService {
     const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/annotations/bulk`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(update),
       }
     );
@@ -238,7 +258,7 @@ class DatasetService {
     notes?: string
   ): Promise<DatasetAnnotation> {
     return this.updateAnnotation(datasetId, annotationId, {
-      review_status: 'approved' as ReviewStatus,
+      review_status: "approved" as ReviewStatus,
       reviewer_notes: notes,
       verified: true,
     });
@@ -250,7 +270,7 @@ class DatasetService {
     notes?: string
   ): Promise<DatasetAnnotation> {
     return this.updateAnnotation(datasetId, annotationId, {
-      review_status: 'rejected' as ReviewStatus,
+      review_status: "rejected" as ReviewStatus,
       reviewer_notes: notes,
     });
   }
@@ -261,7 +281,7 @@ class DatasetService {
     notes?: string
   ): Promise<DatasetAnnotation> {
     return this.updateAnnotation(datasetId, annotationId, {
-      review_status: 'flagged' as ReviewStatus,
+      review_status: "flagged" as ReviewStatus,
       reviewer_notes: notes,
     });
   }
@@ -299,20 +319,20 @@ class DatasetService {
   ): Promise<DatasetImportResult> {
     return new Promise((resolve, reject) => {
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('name', name);
-      if (description) formData.append('description', description);
+      formData.append("file", file);
+      formData.append("name", name);
+      if (description) formData.append("description", description);
 
       const xhr = new XMLHttpRequest();
 
-      xhr.upload.addEventListener('progress', (event) => {
+      xhr.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable && onProgress) {
           const progress = Math.round((event.loaded / event.total) * 100);
           onProgress(progress);
         }
       });
 
-      xhr.addEventListener('load', () => {
+      xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText));
         } else {
@@ -321,11 +341,11 @@ class DatasetService {
         }
       });
 
-      xhr.addEventListener('error', () => {
-        reject(new Error('Network error during upload'));
+      xhr.addEventListener("error", () => {
+        reject(new Error("Network error during upload"));
       });
 
-      xhr.open('POST', `${API_BASE}/api/v1/datasets/import`);
+      xhr.open("POST", `${API_BASE}/api/v1/datasets/import`);
       xhr.withCredentials = true; // Include cookies for authentication
       xhr.send(formData);
     });
@@ -342,14 +362,17 @@ class DatasetService {
     const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/export`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(request),
       }
     );
     return this.handleResponse<DatasetExportJob>(response);
   }
 
-  async getExportJob(datasetId: string, jobId: string): Promise<DatasetExportJob> {
+  async getExportJob(
+    datasetId: string,
+    jobId: string
+  ): Promise<DatasetExportJob> {
     const response = await httpClient.fetch(
       `${API_BASE}/api/v1/datasets/${datasetId}/export/${jobId}`
     );
@@ -368,10 +391,10 @@ class DatasetService {
           const job = await this.getExportJob(datasetId, jobId);
           onProgress?.(job);
 
-          if (job.status === 'completed') {
+          if (job.status === "completed") {
             resolve(job);
-          } else if (job.status === 'failed') {
-            reject(new Error(job.error || 'Export failed'));
+          } else if (job.status === "failed") {
+            reject(new Error(job.error || "Export failed"));
           } else {
             setTimeout(poll, intervalMs);
           }

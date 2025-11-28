@@ -1,16 +1,23 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Check, AlertCircle, Download, RefreshCw, Lightbulb, Rocket } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect } from "react";
+import {
+  Check,
+  AlertCircle,
+  Download,
+  RefreshCw,
+  Lightbulb,
+  Rocket,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 /**
  * Early Access Welcome Modal
@@ -21,7 +28,7 @@ import { cn } from '@/lib/utils';
  * Based on: EARLY-ACCESS-WARNING-IMPLEMENTATION.md lines 98-123
  */
 
-const WELCOME_STORAGE_KEY = 'qontinui-early-access-welcome-shown';
+const WELCOME_STORAGE_KEY = "qontinui-early-access-welcome-shown";
 
 interface EarlyAccessWelcomeModalProps {
   open?: boolean;
@@ -32,7 +39,7 @@ interface EarlyAccessWelcomeModalProps {
 export function EarlyAccessWelcomeModal({
   open: controlledOpen,
   onClose,
-  onShowExport
+  onShowExport,
 }: EarlyAccessWelcomeModalProps) {
   const [internalOpen, setInternalOpen] = useState(false);
 
@@ -55,7 +62,7 @@ export function EarlyAccessWelcomeModal({
 
   const handleClose = () => {
     // Mark as shown
-    localStorage.setItem(WELCOME_STORAGE_KEY, 'true');
+    localStorage.setItem(WELCOME_STORAGE_KEY, "true");
 
     if (onClose) {
       onClose();
@@ -66,13 +73,13 @@ export function EarlyAccessWelcomeModal({
 
   const handleShowExport = () => {
     // Mark as shown
-    localStorage.setItem(WELCOME_STORAGE_KEY, 'true');
+    localStorage.setItem(WELCOME_STORAGE_KEY, "true");
 
     if (onShowExport) {
       onShowExport();
     } else {
       // Fallback: just close
-      console.log('Show export functionality - please wire up handler');
+      console.log("Show export functionality - please wire up handler");
     }
 
     if (onClose) {
@@ -95,7 +102,10 @@ export function EarlyAccessWelcomeModal({
         {/* Glow Effects */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px] animate-pulse" />
-          <div className="absolute bottom-0 left-0 w-96 h-96 bg-green-500/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '1s' }} />
+          <div
+            className="absolute bottom-0 left-0 w-96 h-96 bg-green-500/10 rounded-full blur-[120px] animate-pulse"
+            style={{ animationDelay: "1s" }}
+          />
         </div>
 
         {/* Content */}
@@ -119,19 +129,28 @@ export function EarlyAccessWelcomeModal({
           <div className="space-y-3 mb-6">
             <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/5 border border-green-500/20">
               <Check className="h-5 w-5 text-green-400 mt-0.5 flex-shrink-0" />
-              <span className="text-gray-200">Everything works - build your automations now</span>
+              <span className="text-gray-200">
+                Everything works - build your automations now
+              </span>
             </div>
             <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
               <Download className="h-5 w-5 text-blue-400 mt-0.5 flex-shrink-0" />
-              <span className="text-gray-200">Export JSON after each session (File → Export)</span>
+              <span className="text-gray-200">
+                Export JSON after each session (File → Export)
+              </span>
             </div>
             <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
               <AlertCircle className="h-5 w-5 text-yellow-400 mt-0.5 flex-shrink-0" />
-              <span className="text-gray-200">Breaking changes may happen before Feb 2026 launch</span>
+              <span className="text-gray-200">
+                Breaking changes may happen before Feb 2026 launch
+              </span>
             </div>
             <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/5 border border-green-500/20">
               <RefreshCw className="h-5 w-5 text-green-400 mt-0.5 flex-shrink-0" />
-              <span className="text-gray-200">Exports are versioned (v2.0) with migration tools for format changes</span>
+              <span className="text-gray-200">
+                Exports are versioned (v2.0) with migration tools for format
+                changes
+              </span>
             </div>
           </div>
 
@@ -150,7 +169,8 @@ export function EarlyAccessWelcomeModal({
               <li>• Import anytime: File → Import</li>
             </ul>
             <p className="text-gray-400 text-sm mt-3 ml-9 italic">
-              Think of Export like "Save" - do it often! Files are versioned (v2.0) and migration tools will be provided if format changes.
+              Think of Export like "Save" - do it often! Files are versioned
+              (v2.0) and migration tools will be provided if format changes.
             </p>
           </div>
 

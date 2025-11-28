@@ -9,9 +9,9 @@
  * - Progress indicators
  */
 
-import type { Node, Edge } from '@xyflow/react';
-import type { CanvasNode, CanvasEdge } from './canvas-types';
-import type { ActionExecutionStatus } from '@/services/backend-api';
+import type { Node, Edge } from "@xyflow/react";
+import type { CanvasNode, CanvasEdge } from "./canvas-types";
+import type { ActionExecutionStatus } from "@/services/backend-api";
 
 // ============================================================================
 // Colors and Styles
@@ -22,35 +22,35 @@ import type { ActionExecutionStatus } from '@/services/backend-api';
  */
 export const EXECUTION_COLORS = {
   idle: {
-    border: '#6b7280', // gray-500
-    background: '#374151', // gray-700
-    text: '#d1d5db', // gray-300
+    border: "#6b7280", // gray-500
+    background: "#374151", // gray-700
+    text: "#d1d5db", // gray-300
   },
   pending: {
-    border: '#6b7280', // gray-500
-    background: '#374151', // gray-700
-    text: '#d1d5db', // gray-300
+    border: "#6b7280", // gray-500
+    background: "#374151", // gray-700
+    text: "#d1d5db", // gray-300
   },
   running: {
-    border: '#3b82f6', // blue-500
-    background: '#1e40af', // blue-800
-    text: '#ffffff',
-    glow: '0 0 12px rgba(59, 130, 246, 0.6)',
+    border: "#3b82f6", // blue-500
+    background: "#1e40af", // blue-800
+    text: "#ffffff",
+    glow: "0 0 12px rgba(59, 130, 246, 0.6)",
   },
   completed: {
-    border: '#10b981', // green-500
-    background: '#065f46', // green-800
-    text: '#ffffff',
+    border: "#10b981", // green-500
+    background: "#065f46", // green-800
+    text: "#ffffff",
   },
   failed: {
-    border: '#ef4444', // red-500
-    background: '#991b1b', // red-800
-    text: '#ffffff',
+    border: "#ef4444", // red-500
+    background: "#991b1b", // red-800
+    text: "#ffffff",
   },
   skipped: {
-    border: '#6b7280', // gray-500
-    background: '#1f2937', // gray-800
-    text: '#9ca3af', // gray-400
+    border: "#6b7280", // gray-500
+    background: "#1f2937", // gray-800
+    text: "#9ca3af", // gray-400
   },
 };
 
@@ -58,10 +58,10 @@ export const EXECUTION_COLORS = {
  * Edge animation colors
  */
 export const EDGE_COLORS = {
-  default: '#6b7280', // gray-500
-  active: '#3b82f6', // blue-500
-  success: '#10b981', // green-500
-  error: '#ef4444', // red-500
+  default: "#6b7280", // gray-500
+  active: "#3b82f6", // blue-500
+  success: "#10b981", // green-500
+  error: "#ef4444", // red-500
 };
 
 // ============================================================================
@@ -91,8 +91,8 @@ export function updateNodeExecutionState(
     borderColor: colors.border,
     backgroundColor: colors.background,
     color: colors.text,
-    boxShadow: showGlow && status === 'running' ? colors.glow : undefined,
-    transition: animate ? 'all 0.3s ease-in-out' : undefined,
+    boxShadow: showGlow && status === "running" ? colors.glow : undefined,
+    transition: animate ? "all 0.3s ease-in-out" : undefined,
   };
 
   // Update node data
@@ -134,7 +134,7 @@ export function updateNodesExecutionState(
  * Reset node to default visual state
  */
 export function resetNodeExecutionState(node: Node): Node {
-  return updateNodeExecutionState(node, 'idle', {
+  return updateNodeExecutionState(node, "idle", {
     showGlow: false,
     showBadge: false,
     animate: false,
@@ -160,9 +160,9 @@ export function highlightNode(node: Node, highlight: boolean): Node {
       style: {
         ...canvasNode.style,
         borderWidth: 3,
-        boxShadow: '0 0 16px rgba(59, 130, 246, 0.8)',
-        transform: 'scale(1.05)',
-        transition: 'all 0.2s ease-in-out',
+        boxShadow: "0 0 16px rgba(59, 130, 246, 0.8)",
+        transform: "scale(1.05)",
+        transition: "all 0.2s ease-in-out",
       },
       data: {
         ...canvasNode.data,
@@ -176,7 +176,7 @@ export function highlightNode(node: Node, highlight: boolean): Node {
         ...canvasNode.style,
         borderWidth: 2,
         boxShadow: undefined,
-        transform: 'scale(1)',
+        transform: "scale(1)",
       },
       data: {
         ...canvasNode.data,
@@ -196,16 +196,16 @@ export function highlightNode(node: Node, highlight: boolean): Node {
 export function updateEdgeExecutionState(
   edge: Edge,
   active: boolean,
-  status?: 'success' | 'error'
+  status?: "success" | "error"
 ): Edge {
   const canvasEdge = edge as CanvasEdge;
 
   const strokeColor = active
-    ? status === 'error'
+    ? status === "error"
       ? EDGE_COLORS.error
-      : status === 'success'
-      ? EDGE_COLORS.success
-      : EDGE_COLORS.active
+      : status === "success"
+        ? EDGE_COLORS.success
+        : EDGE_COLORS.active
     : EDGE_COLORS.default;
 
   return {
@@ -244,7 +244,7 @@ export function updateEdgesExecutionFlow(
       completedActionIds.has(edge.source) &&
       completedActionIds.has(edge.target)
     ) {
-      return updateEdgeExecutionState(edge, false, 'success');
+      return updateEdgeExecutionState(edge, false, "success");
     }
 
     // Default state
@@ -290,7 +290,8 @@ export function calculateExecutionProgress(
   const skipped = skippedActions;
   const total = totalActions;
   const remaining = total - completed - failed - skipped;
-  const percentage = total > 0 ? ((completed + failed + skipped) / total) * 100 : 0;
+  const percentage =
+    total > 0 ? ((completed + failed + skipped) / total) * 100 : 0;
 
   return {
     percentage,
@@ -348,7 +349,10 @@ export function traceExecutionPath(
 /**
  * Highlight execution path
  */
-export function highlightExecutionPath(edges: Edge[], pathEdgeIds: Set<string>): Edge[] {
+export function highlightExecutionPath(
+  edges: Edge[],
+  pathEdgeIds: Set<string>
+): Edge[] {
   return edges.map((edge) => {
     if (pathEdgeIds.has(edge.id)) {
       return {
@@ -376,7 +380,10 @@ export function highlightExecutionPath(edges: Edge[], pathEdgeIds: Set<string>):
 /**
  * Animate node pulse effect
  */
-export function createPulseAnimation(node: Node, duration: number = 1000): Node {
+export function createPulseAnimation(
+  node: Node,
+  duration: number = 1000
+): Node {
   return {
     ...node,
     style: {
@@ -407,9 +414,9 @@ export function createRippleEffect(nodeId: string): void {
   // This would trigger a CSS animation or use a library like framer-motion
   const element = document.querySelector(`[data-id="${nodeId}"]`);
   if (element) {
-    element.classList.add('ripple-effect');
+    element.classList.add("ripple-effect");
     setTimeout(() => {
-      element.classList.remove('ripple-effect');
+      element.classList.remove("ripple-effect");
     }, 1000);
   }
 }
@@ -427,20 +434,20 @@ export function getStatusBadge(status: ActionExecutionStatus): {
   icon: string;
 } {
   switch (status) {
-    case 'idle':
-      return { label: 'Idle', color: '#6b7280', icon: '○' };
-    case 'pending':
-      return { label: 'Pending', color: '#6b7280', icon: '⋯' };
-    case 'running':
-      return { label: 'Running', color: '#3b82f6', icon: '▶' };
-    case 'completed':
-      return { label: 'Completed', color: '#10b981', icon: '✓' };
-    case 'failed':
-      return { label: 'Failed', color: '#ef4444', icon: '✗' };
-    case 'skipped':
-      return { label: 'Skipped', color: '#6b7280', icon: '→' };
+    case "idle":
+      return { label: "Idle", color: "#6b7280", icon: "○" };
+    case "pending":
+      return { label: "Pending", color: "#6b7280", icon: "⋯" };
+    case "running":
+      return { label: "Running", color: "#3b82f6", icon: "▶" };
+    case "completed":
+      return { label: "Completed", color: "#10b981", icon: "✓" };
+    case "failed":
+      return { label: "Failed", color: "#ef4444", icon: "✗" };
+    case "skipped":
+      return { label: "Skipped", color: "#6b7280", icon: "→" };
     default:
-      return { label: 'Unknown', color: '#6b7280', icon: '?' };
+      return { label: "Unknown", color: "#6b7280", icon: "?" };
   }
 }
 
@@ -525,12 +532,12 @@ export function calculateActionTimeStats(
 export function getSpeedIndicator(
   duration: number,
   averageDuration: number
-): 'fast' | 'normal' | 'slow' {
+): "fast" | "normal" | "slow" {
   const ratio = duration / averageDuration;
 
-  if (ratio < 0.5) return 'fast';
-  if (ratio > 2) return 'slow';
-  return 'normal';
+  if (ratio < 0.5) return "fast";
+  if (ratio > 2) return "slow";
+  return "normal";
 }
 
 // ============================================================================
@@ -541,12 +548,12 @@ export function getSpeedIndicator(
  * Inject execution visualization CSS
  */
 export function injectExecutionCSS(): void {
-  if (typeof document === 'undefined') return;
+  if (typeof document === "undefined") return;
 
-  const styleId = 'execution-visualization-styles';
+  const styleId = "execution-visualization-styles";
   if (document.getElementById(styleId)) return;
 
-  const style = document.createElement('style');
+  const style = document.createElement("style");
   style.id = styleId;
   style.textContent = `
     @keyframes pulse {

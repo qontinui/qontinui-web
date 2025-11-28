@@ -1,92 +1,91 @@
-"use client"
+"use client";
 
-import React, { useEffect, useState } from "react"
-import { patternOptimizationStorage } from "@/lib/pattern-optimization-storage"
-import { ImageIcon } from "lucide-react"
+import React, { useEffect, useState } from "react";
+import { patternOptimizationStorage } from "@/lib/pattern-optimization-storage";
+import { ImageIcon } from "lucide-react";
 
 interface ScreenshotImageProps {
-  screenshotId: string
-  fallbackUrl?: string
-  alt?: string
-  className?: string
+  screenshotId: string;
+  fallbackUrl?: string;
+  alt?: string;
+  className?: string;
 }
 
 export function ScreenshotImage({
   screenshotId,
   fallbackUrl,
   alt = "Screenshot",
-  className = ""
+  className = "",
 }: ScreenshotImageProps) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    let mounted = true
+    let mounted = true;
 
     const loadImage = async () => {
       try {
-        setLoading(true)
-        setError(false)
+        setLoading(true);
+        setError(false);
 
         // Try to get image from IndexedDB
-        const storedImage = await patternOptimizationStorage.getImage(screenshotId)
+        const storedImage =
+          await patternOptimizationStorage.getImage(screenshotId);
 
         if (mounted) {
           if (storedImage) {
-            setImageUrl(storedImage)
+            setImageUrl(storedImage);
           } else if (fallbackUrl) {
             // Use fallback URL if provided
-            setImageUrl(fallbackUrl)
+            setImageUrl(fallbackUrl);
           } else {
-            setError(true)
+            setError(true);
           }
         }
       } catch (err) {
-        console.error(`Failed to load image ${screenshotId}:`, err)
+        console.error(`Failed to load image ${screenshotId}:`, err);
         if (mounted) {
-          setError(true)
+          setError(true);
           if (fallbackUrl) {
-            setImageUrl(fallbackUrl)
+            setImageUrl(fallbackUrl);
           }
         }
       } finally {
         if (mounted) {
-          setLoading(false)
+          setLoading(false);
         }
       }
-    }
+    };
 
-    loadImage()
+    loadImage();
 
     return () => {
-      mounted = false
-    }
-  }, [screenshotId, fallbackUrl])
+      mounted = false;
+    };
+  }, [screenshotId, fallbackUrl]);
 
   if (loading) {
     return (
-      <div className={`flex items-center justify-center bg-gray-800 ${className}`}>
+      <div
+        className={`flex items-center justify-center bg-gray-800 ${className}`}
+      >
         <div className="animate-pulse">
           <ImageIcon className="w-8 h-8 text-gray-600" />
         </div>
       </div>
-    )
+    );
   }
 
   if (error && !imageUrl) {
     return (
-      <div className={`flex items-center justify-center bg-gray-800 ${className}`}>
+      <div
+        className={`flex items-center justify-center bg-gray-800 ${className}`}
+      >
         <ImageIcon className="w-8 h-8 text-gray-600" />
       </div>
-    )
+    );
   }
 
-  return (
-    <img
-      src={imageUrl || ''}
-      alt={alt}
-      className={className}
-    />
-  )
+  return <img src={imageUrl || ""} alt={alt} className={className} />;
 }

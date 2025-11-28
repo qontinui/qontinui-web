@@ -4,10 +4,17 @@
  * Responsible for automatically applying optimizations
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { State, ImageAsset, Transition } from '@/contexts/automation-context/types';
-import type { AutoOptimizationOptions, AutoOptimizationResult } from './types';
-import { findUnusedImages, findOrphanedStates } from './unused-resource-detector';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type {
+  State,
+  ImageAsset,
+  Transition,
+} from "@/contexts/automation-context/types";
+import type { AutoOptimizationOptions, AutoOptimizationResult } from "./types";
+import {
+  findUnusedImages,
+  findOrphanedStates,
+} from "./unused-resource-detector";
 
 /**
  * Auto-optimize project based on options
@@ -31,7 +38,7 @@ export async function autoOptimize(
     },
     errors: [],
     warnings: [],
-    summary: '',
+    summary: "",
   };
 
   try {
@@ -43,12 +50,14 @@ export async function autoOptimize(
         // In a real implementation, would delete from backend
         result.changes.imagesRemoved = unusedImageIds.length;
         const savings = unusedImageIds.reduce((sum, id) => {
-          const img = images.find(i => i.id === id);
+          const img = images.find((i) => i.id === id);
           return sum + (img?.size || 0);
         }, 0);
         result.changes.storageSaved += savings;
       } else {
-        result.warnings.push(`Would remove ${unusedImageIds.length} unused images`);
+        result.warnings.push(
+          `Would remove ${unusedImageIds.length} unused images`
+        );
       }
     }
 
@@ -60,20 +69,24 @@ export async function autoOptimize(
         // In a real implementation, would delete from backend
         result.changes.statesRemoved = orphanedStateIds.length;
       } else {
-        result.warnings.push(`Would remove ${orphanedStateIds.length} orphaned states`);
+        result.warnings.push(
+          `Would remove ${orphanedStateIds.length} orphaned states`
+        );
       }
     }
 
     // Organize folders
     if (options.organizeFolders) {
-      const unorganized = workflows.filter(w => !w.category || w.category === 'Uncategorized');
+      const unorganized = workflows.filter(
+        (w) => !w.category || w.category === "Uncategorized"
+      );
 
       if (!options.dryRun) {
         // Auto-categorize based on workflow characteristics
         const folders = new Set<string>();
-        unorganized.forEach(workflow => {
+        unorganized.forEach((workflow) => {
           const category = suggestCategory(workflow);
-          if (category !== 'Uncategorized') {
+          if (category !== "Uncategorized") {
             folders.add(category);
           }
         });
@@ -84,14 +97,18 @@ export async function autoOptimize(
     }
 
     // Generate summary
-    const totalChanges = Object.values(result.changes).reduce((sum, val) => sum + val, 0);
+    const totalChanges = Object.values(result.changes).reduce(
+      (sum, val) => sum + val,
+      0
+    );
     result.summary = options.dryRun
       ? `Dry run: Would make ${totalChanges} changes`
       : `Successfully made ${totalChanges} optimizations`;
-
   } catch (error) {
     result.success = false;
-    result.errors.push(error instanceof Error ? error.message : 'Unknown error');
+    result.errors.push(
+      error instanceof Error ? error.message : "Unknown error"
+    );
   }
 
   return result;
@@ -101,24 +118,30 @@ export async function autoOptimize(
  * Suggest category for workflow
  */
 function suggestCategory(workflow: Workflow): string {
-  const actionTypes = workflow.actions.map(a => a.type);
+  const actionTypes = workflow.actions.map((a) => a.type);
 
   // UI testing
-  if (actionTypes.some(t => ['CLICK', 'TYPE', 'FIND', 'EXISTS'].includes(t))) {
-    return 'UI Testing';
+  if (
+    actionTypes.some((t) => ["CLICK", "TYPE", "FIND", "EXISTS"].includes(t))
+  ) {
+    return "UI Testing";
   }
 
   // Data processing
-  if (actionTypes.some(t => ['FILTER', 'MAP', 'REDUCE', 'SORT'].includes(t))) {
-    return 'Data Processing';
+  if (
+    actionTypes.some((t) => ["FILTER", "MAP", "REDUCE", "SORT"].includes(t))
+  ) {
+    return "Data Processing";
   }
 
   // Control flow heavy
-  if (actionTypes.filter(t => ['IF', 'LOOP', 'SWITCH'].includes(t)).length >= 3) {
-    return 'Business Logic';
+  if (
+    actionTypes.filter((t) => ["IF", "LOOP", "SWITCH"].includes(t)).length >= 3
+  ) {
+    return "Business Logic";
   }
 
-  return 'Uncategorized';
+  return "Uncategorized";
 }
 
 /**
@@ -134,7 +157,7 @@ export function exportBackup(
     timestamp: new Date().toISOString(),
     workflows,
     states,
-    images: images.map(img => ({
+    images: images.map((img) => ({
       ...img,
       url: undefined, // Don't include URLs in backup
     })),

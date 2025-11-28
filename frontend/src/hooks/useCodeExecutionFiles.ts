@@ -7,11 +7,11 @@
  * - POST /api/v1/code-execution/files/validate - Validate file path
  */
 
-import { useState, useCallback, useEffect } from 'react';
-import { PythonFile } from '@/components/code-execution/PythonFileBrowser';
+import { useState, useCallback, useEffect } from "react";
+import { PythonFile } from "@/components/code-execution/PythonFileBrowser";
 
 // Use empty string for relative URLs through Next.js proxy for proper cookie forwarding
-const API_BASE_URL = '';
+const API_BASE_URL = "";
 
 interface ListFilesResponse {
   files: Array<{
@@ -40,20 +40,22 @@ export interface UseCodeExecutionFilesOptions {
   autoRefresh?: number;
 }
 
-export function useCodeExecutionFiles(options: UseCodeExecutionFilesOptions = {}) {
+export function useCodeExecutionFiles(
+  options: UseCodeExecutionFilesOptions = {}
+) {
   const { projectId, autoLoad = true, autoRefresh } = options;
 
   const [files, setFiles] = useState<PythonFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [projectRoot, setProjectRoot] = useState<string>('');
+  const [projectRoot, setProjectRoot] = useState<string>("");
 
   /**
    * Fetch list of Python files from backend
    */
   const fetchFiles = useCallback(async () => {
     if (!projectId) {
-      setError('No project ID provided');
+      setError("No project ID provided");
       return;
     }
 
@@ -64,18 +66,19 @@ export function useCodeExecutionFiles(options: UseCodeExecutionFilesOptions = {}
       const response = await fetch(
         `${API_BASE_URL}/api/v1/code-execution/files/list?project_id=${projectId}`,
         {
-          method: 'GET',
+          method: "GET",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
-          credentials: 'include', // Include cookies for authentication
+          credentials: "include", // Include cookies for authentication
         }
       );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(
-          errorData.detail || `Failed to fetch files: ${response.status} ${response.statusText}`
+          errorData.detail ||
+            `Failed to fetch files: ${response.status} ${response.statusText}`
         );
       }
 
@@ -94,8 +97,8 @@ export function useCodeExecutionFiles(options: UseCodeExecutionFilesOptions = {}
       setProjectRoot(data.project_root);
       setError(null);
     } catch (err: any) {
-      console.error('[useCodeExecutionFiles] Error fetching files:', err);
-      setError(err.message || 'Failed to load Python files');
+      console.error("[useCodeExecutionFiles] Error fetching files:", err);
+      setError(err.message || "Failed to load Python files");
       setFiles([]);
     } finally {
       setIsLoading(false);
@@ -113,22 +116,25 @@ export function useCodeExecutionFiles(options: UseCodeExecutionFilesOptions = {}
           path: filePath,
           exists: false,
           is_python_file: false,
-          errors: ['No project ID provided'],
+          errors: ["No project ID provided"],
         };
       }
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/code-execution/files/validate`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            project_id: projectId,
-            file_path: filePath,
-          }),
-        });
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/code-execution/files/validate`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify({
+              project_id: projectId,
+              file_path: filePath,
+            }),
+          }
+        );
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -137,20 +143,20 @@ export function useCodeExecutionFiles(options: UseCodeExecutionFilesOptions = {}
             path: filePath,
             exists: false,
             is_python_file: false,
-            errors: [errorData.detail || 'Validation failed'],
+            errors: [errorData.detail || "Validation failed"],
           };
         }
 
         const data: ValidateFileResponse = await response.json();
         return data;
       } catch (err: any) {
-        console.error('[useCodeExecutionFiles] Error validating file:', err);
+        console.error("[useCodeExecutionFiles] Error validating file:", err);
         return {
           valid: false,
           path: filePath,
           exists: false,
           is_python_file: false,
-          errors: [err.message || 'Validation error'],
+          errors: [err.message || "Validation error"],
         };
       }
     },

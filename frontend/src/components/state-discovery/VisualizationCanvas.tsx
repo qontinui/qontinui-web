@@ -3,9 +3,9 @@
  * Displays screenshots with StateImage overlays
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { StateImage } from '@/types/stateDiscovery';
-import { cn } from '@/lib/utils';
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { StateImage } from "@/types/stateDiscovery";
+import { cn } from "@/lib/utils";
 
 interface VisualizationCanvasProps {
   screenshot: File;
@@ -13,7 +13,7 @@ interface VisualizationCanvasProps {
   selectedStateImage: StateImage | null;
   selectedStateImages: Set<string>;
   highlightedStateImages?: string[];
-  viewMode: 'all' | 'selected' | 'state';
+  viewMode: "all" | "selected" | "state";
   onSelectStateImage: (stateImage: StateImage) => void;
   onMultiSelectStateImage: (stateImageId: string, ctrlKey: boolean) => void;
   screenshotIndex?: number;
@@ -42,14 +42,16 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
   onScaleChange,
   onImageSizeChange,
   showMasks = false,
-  maskOpacity = 0.3
+  maskOpacity = 0.3,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [imageUrl, setImageUrl] = useState<string>('');
+  const [imageUrl, setImageUrl] = useState<string>("");
   const scale = propScale;
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-  const [hoveredStateImage, setHoveredStateImage] = useState<string | null>(null);
+  const [hoveredStateImage, setHoveredStateImage] = useState<string | null>(
+    null
+  );
   const [imageData, setImageData] = useState<ImageData | null>(null);
 
   // Load screenshot
@@ -66,7 +68,7 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
     if (!canvasRef.current || !imageUrl) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
     const img = new Image();
@@ -98,10 +100,23 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
       drawStateImages(ctx);
     };
     img.src = imageUrl;
-  }, [imageUrl, stateImages, selectedStateImage, selectedStateImages, highlightedStateImages, viewMode, hoveredStateImage, screenshotIndex, maxDarkPixelPercentage, maxLightPixelPercentage]);
+  }, [
+    imageUrl,
+    stateImages,
+    selectedStateImage,
+    selectedStateImages,
+    highlightedStateImages,
+    viewMode,
+    hoveredStateImage,
+    screenshotIndex,
+    maxDarkPixelPercentage,
+    maxLightPixelPercentage,
+  ]);
 
   // Calculate dark and light pixel percentages for a region
-  const calculatePixelPercentages = (stateImage: StateImage): { darkPercentage: number; lightPercentage: number } => {
+  const calculatePixelPercentages = (
+    stateImage: StateImage
+  ): { darkPercentage: number; lightPercentage: number } => {
     if (!imageData) return { darkPercentage: 0, lightPercentage: 0 };
 
     const { x, y, x2, y2 } = stateImage;
@@ -113,7 +128,7 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
     let totalPixels = 0;
 
     // Define thresholds for dark and light pixels
-    const darkThreshold = 60;  // Pixels with brightness < 60 are considered dark
+    const darkThreshold = 60; // Pixels with brightness < 60 are considered dark
     const lightThreshold = 200; // Pixels with brightness > 200 are considered light
 
     for (let py = y; py < y2 && py < imageData.height; py++) {
@@ -135,8 +150,10 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
       }
     }
 
-    const darkPercentage = totalPixels > 0 ? (darkPixels / totalPixels) * 100 : 0;
-    const lightPercentage = totalPixels > 0 ? (lightPixels / totalPixels) * 100 : 0;
+    const darkPercentage =
+      totalPixels > 0 ? (darkPixels / totalPixels) * 100 : 0;
+    const lightPercentage =
+      totalPixels > 0 ? (lightPixels / totalPixels) * 100 : 0;
 
     return { darkPercentage, lightPercentage };
   };
@@ -151,11 +168,11 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
     // stored in the stateImage.screenshots array
     if (screenshotIndex !== undefined) {
       // Generate the screenshot ID that matches what's stored in stateImage.screenshots
-      const screenshotId = `screenshot_${screenshotIndex.toString().padStart(3, '0')}`;
+      const screenshotId = `screenshot_${screenshotIndex.toString().padStart(3, "0")}`;
       // Filter based on screenshot ID
 
       // Filter to only state images that appear in this screenshot
-      visibleStateImages = stateImages.filter(si => {
+      visibleStateImages = stateImages.filter((si) => {
         const appearsInScreenshot = si.screenshots?.includes(screenshotId);
         // Check if state image appears in this screenshot
         return appearsInScreenshot;
@@ -165,9 +182,11 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
     }
 
     // Then apply view mode filters
-    if (viewMode === 'selected' && selectedStateImages.size > 0) {
-      visibleStateImages = visibleStateImages.filter(si => selectedStateImages.has(si.id));
-    } else if (viewMode === 'state' && selectedStateImage) {
+    if (viewMode === "selected" && selectedStateImages.size > 0) {
+      visibleStateImages = visibleStateImages.filter((si) =>
+        selectedStateImages.has(si.id)
+      );
+    } else if (viewMode === "state" && selectedStateImage) {
       // Show only StateImages from the same state
       // This would require state membership info
       visibleStateImages = [selectedStateImage];
@@ -175,11 +194,16 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
 
     // Apply pixel percentage filters
     if (maxDarkPixelPercentage < 100 || maxLightPixelPercentage < 100) {
-      visibleStateImages = visibleStateImages.filter(stateImage => {
+      visibleStateImages = visibleStateImages.filter((stateImage) => {
         // Use backend data if available
-        if (stateImage.darkPixelPercentage !== undefined && stateImage.lightPixelPercentage !== undefined) {
-          const passedDarkFilter = stateImage.darkPixelPercentage <= maxDarkPixelPercentage;
-          const passedLightFilter = stateImage.lightPixelPercentage <= maxLightPixelPercentage;
+        if (
+          stateImage.darkPixelPercentage !== undefined &&
+          stateImage.lightPixelPercentage !== undefined
+        ) {
+          const passedDarkFilter =
+            stateImage.darkPixelPercentage <= maxDarkPixelPercentage;
+          const passedLightFilter =
+            stateImage.lightPixelPercentage <= maxLightPixelPercentage;
 
           if (!passedDarkFilter || !passedLightFilter) {
             // Filtered out due to pixel thresholds
@@ -190,7 +214,8 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
 
         // Fall back to client-side calculation if backend data not available
         if (imageData) {
-          const { darkPercentage, lightPercentage } = calculatePixelPercentages(stateImage);
+          const { darkPercentage, lightPercentage } =
+            calculatePixelPercentages(stateImage);
 
           // Filter out images that exceed the thresholds
           const passedDarkFilter = darkPercentage <= maxDarkPixelPercentage;
@@ -210,7 +235,7 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
     }
 
     // Draw each StateImage
-    visibleStateImages.forEach(stateImage => {
+    visibleStateImages.forEach((stateImage) => {
       const isSelected = selectedStateImage?.id === stateImage.id;
       const isInSelection = selectedStateImages.has(stateImage.id);
       const isHighlighted = highlightedStateImages.includes(stateImage.id);
@@ -218,24 +243,24 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
 
       // Set styles based on state
       if (isSelected) {
-        ctx.strokeStyle = '#3B82F6'; // Blue
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
+        ctx.strokeStyle = "#3B82F6"; // Blue
+        ctx.fillStyle = "rgba(59, 130, 246, 0.2)";
         ctx.lineWidth = 3;
       } else if (isHighlighted) {
-        ctx.strokeStyle = '#F59E0B'; // Amber/Orange for highlighted
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.25)';
+        ctx.strokeStyle = "#F59E0B"; // Amber/Orange for highlighted
+        ctx.fillStyle = "rgba(245, 158, 11, 0.25)";
         ctx.lineWidth = 3;
       } else if (isInSelection) {
-        ctx.strokeStyle = '#10B981'; // Green
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
+        ctx.strokeStyle = "#10B981"; // Green
+        ctx.fillStyle = "rgba(16, 185, 129, 0.2)";
         ctx.lineWidth = 2;
       } else if (isHovered) {
-        ctx.strokeStyle = '#00FF00';
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+        ctx.strokeStyle = "#00FF00";
+        ctx.fillStyle = "rgba(0, 255, 0, 0.15)";
         ctx.lineWidth = 2;
       } else {
-        ctx.strokeStyle = '#00FF00';
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+        ctx.strokeStyle = "#00FF00";
+        ctx.fillStyle = "rgba(0, 255, 0, 0.1)";
         ctx.lineWidth = 1;
       }
 
@@ -244,7 +269,11 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
       const height = stateImage.y2 - stateImage.y;
 
       // If masks are enabled and StateImage has a mask, show mask density visualization
-      if (showMasks && stateImage.hasMask && stateImage.maskDensity !== undefined) {
+      if (
+        showMasks &&
+        stateImage.hasMask &&
+        stateImage.maskDensity !== undefined
+      ) {
         // Draw mask visualization
         // For now, we'll visualize the mask density as a filled area within the rectangle
         const maskWidth = width * (stateImage.maskDensity || 1.0);
@@ -261,13 +290,13 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
 
         // Use a different color for mask
         if (isSelected) {
-          ctx.fillStyle = 'rgba(59, 130, 246, 0.5)'; // Blue
+          ctx.fillStyle = "rgba(59, 130, 246, 0.5)"; // Blue
         } else if (isHighlighted) {
-          ctx.fillStyle = 'rgba(245, 158, 11, 0.5)'; // Amber
+          ctx.fillStyle = "rgba(245, 158, 11, 0.5)"; // Amber
         } else if (isInSelection) {
-          ctx.fillStyle = 'rgba(16, 185, 129, 0.5)'; // Green
+          ctx.fillStyle = "rgba(16, 185, 129, 0.5)"; // Green
         } else {
-          ctx.fillStyle = 'rgba(147, 51, 234, 0.5)'; // Purple for mask
+          ctx.fillStyle = "rgba(147, 51, 234, 0.5)"; // Purple for mask
         }
 
         ctx.fillRect(maskX, maskY, maskWidth, maskHeight);
@@ -276,8 +305,8 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
         // Draw mask density indicator
         if (isSelected || isHovered) {
           ctx.save();
-          ctx.font = '10px sans-serif';
-          ctx.fillStyle = '#9333EA'; // Purple
+          ctx.font = "10px sans-serif";
+          ctx.fillStyle = "#9333EA"; // Purple
           ctx.fillText(
             `${Math.round((stateImage.maskDensity || 1.0) * 100)}%`,
             stateImage.x2 - 30,
@@ -293,8 +322,8 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
 
       // Draw label
       if (isSelected || isHovered) {
-        ctx.font = '12px sans-serif';
-        ctx.fillStyle = isSelected ? '#3B82F6' : '#00FF00';
+        ctx.font = "12px sans-serif";
+        ctx.fillStyle = isSelected ? "#3B82F6" : "#00FF00";
         ctx.fillText(
           stateImage.name || `SI_${stateImage.id.substring(0, 6)}`,
           stateImage.x,
@@ -305,45 +334,51 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
   };
 
   // Handle click
-  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current) return;
+  const handleCanvasClick = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!canvasRef.current) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / scale;
-    const y = (e.clientY - rect.top) / scale;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / scale;
+      const y = (e.clientY - rect.top) / scale;
 
-    // Find clicked StateImage
-    const clicked = stateImages.find(si =>
-      x >= si.x && x <= si.x2 && y >= si.y && y <= si.y2
-    );
+      // Find clicked StateImage
+      const clicked = stateImages.find(
+        (si) => x >= si.x && x <= si.x2 && y >= si.y && y <= si.y2
+      );
 
-    if (clicked) {
-      if (e.ctrlKey || e.metaKey) {
-        onMultiSelectStateImage(clicked.id, true);
-      } else {
-        onSelectStateImage(clicked);
+      if (clicked) {
+        if (e.ctrlKey || e.metaKey) {
+          onMultiSelectStateImage(clicked.id, true);
+        } else {
+          onSelectStateImage(clicked);
+        }
       }
-    }
-  }, [stateImages, scale, onSelectStateImage, onMultiSelectStateImage]);
+    },
+    [stateImages, scale, onSelectStateImage, onMultiSelectStateImage]
+  );
 
   // Handle mouse move
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current) return;
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!canvasRef.current) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / scale;
-    const y = (e.clientY - rect.top) / scale;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / scale;
+      const y = (e.clientY - rect.top) / scale;
 
-    // Find hovered StateImage
-    const hovered = stateImages.find(si =>
-      x >= si.x && x <= si.x2 && y >= si.y && y <= si.y2
-    );
+      // Find hovered StateImage
+      const hovered = stateImages.find(
+        (si) => x >= si.x && x <= si.x2 && y >= si.y && y <= si.y2
+      );
 
-    setHoveredStateImage(hovered?.id || null);
+      setHoveredStateImage(hovered?.id || null);
 
-    // Set cursor
-    canvasRef.current.style.cursor = hovered ? 'pointer' : 'default';
-  }, [stateImages, scale]);
+      // Set cursor
+      canvasRef.current.style.cursor = hovered ? "pointer" : "default";
+    },
+    [stateImages, scale]
+  );
 
   return (
     <div
@@ -355,13 +390,12 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
         className="max-w-full max-h-full"
         style={{
           width: imageSize.width * scale,
-          height: imageSize.height * scale
+          height: imageSize.height * scale,
         }}
         onClick={handleCanvasClick}
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setHoveredStateImage(null)}
       />
-
     </div>
   );
 };

@@ -10,14 +10,22 @@ Features:
 - Correlation IDs for request tracking
 - Integration with Sentry for error tracking
 - Automatic sanitization of sensitive data
+- File logging in development for Claude Code access
 """
 
 import logging
+import logging.handlers
+import os
 import sys
+from pathlib import Path
 
 import structlog
 
 from app.core.log_sanitizer import sanitize_log_data
+
+# Development log file location (for Claude Code access)
+DEV_LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+DEV_LOG_FILE = DEV_LOG_DIR / "app.log"
 
 
 def sanitize_event_dict(logger, method_name, event_dict) -> dict:
@@ -64,47 +72,90 @@ def configure_logging(environment: str = "development") -> None:
     """
     Configure structlog for the application.
 
+    In development:
+    - Console: Pretty colored output for human readability
+    - File: JSON output for Claude Code access (backend/logs/app.log)
+
+    In production:
+    - Console: JSON output for log aggregation
+
     Args:
         environment: "development" or "production"
     """
 
-    # Shared processors for all environments
-    shared_processors = [
+    # Pre-chain processors (before stdlib ProcessorFormatter)
+    # These run for ALL output, preparing the event dict
+    pre_chain = [
         structlog.contextvars.merge_contextvars,
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        # Add sanitization processor BEFORE rendering
         sanitize_event_dict,
     ]
 
-    if environment == "production":
-        # Production: JSON output for log aggregation
-        processors = shared_processors + [structlog.processors.JSONRenderer()]
-    else:
-        # Development: Pretty console output
-        processors = shared_processors + [structlog.dev.ConsoleRenderer(colors=True)]
-
-    # Configure structlog
+    # Configure structlog to use stdlib logger as the final step
     structlog.configure(
-        processors=processors,  # type: ignore[arg-type]
+        processors=pre_chain
+        + [
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
         wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
-    # Configure standard logging
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=logging.INFO,
+    # Clear existing handlers
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(logging.DEBUG)
+
+    # Create formatters for different outputs
+    console_formatter = structlog.stdlib.ProcessorFormatter(
+        foreign_pre_chain=pre_chain,
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            (
+                structlog.dev.ConsoleRenderer(colors=True)
+                if environment == "development"
+                else structlog.processors.JSONRenderer()
+            ),
+        ],
     )
+
+    json_formatter = structlog.stdlib.ProcessorFormatter(
+        foreign_pre_chain=pre_chain,
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.processors.JSONRenderer(),
+        ],
+    )
+
+    # Console handler (always)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+
+    # File handler for development (Claude Code access via JSON)
+    if environment == "development":
+        try:
+            DEV_LOG_DIR.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                DEV_LOG_FILE,
+                maxBytes=5 * 1024 * 1024,  # 5MB
+                backupCount=3,
+                encoding="utf-8",
+            )
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(json_formatter)
+            root_logger.addHandler(file_handler)
+        except Exception as e:
+            print(f"[logging] Failed to set up file logging: {e}", file=sys.stderr)
 
 
 def get_logger(name: str):

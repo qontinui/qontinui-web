@@ -1,40 +1,55 @@
-import React, { useState, useEffect } from 'react';
-import { MousePointer, Square, Eye, ImageIcon, X } from 'lucide-react';
-import { Screenshot, SelectionMode, ScreenshotRegion, ScreenshotLocation, AnchorType } from '../../types/Screenshot';
-import ScreenshotCanvas from '../ScreenshotTab/ScreenshotCanvas';
-import RegionPropertiesPanel from '../ScreenshotTab/RegionPropertiesPanel';
-import LocationPropertiesPanel from '../ScreenshotTab/LocationPropertiesPanel';
-import StateAssociationPanel from '../ScreenshotTab/StateAssociationPanel';
-import AnchorRegionCreator from '../ScreenshotTab/AnchorRegionCreator';
-import { useAutomation } from '../../contexts/automation-context';
-import { StateRegion as ContextStateRegion, StateLocation as ContextStateLocation, Position, PositionName } from '../../contexts/automation-context/types';
-import { ScrollArea } from '../ui/scroll-area';
-import { Badge } from '../ui/badge';
+import React, { useState, useEffect } from "react";
+import { MousePointer, Square, Eye, ImageIcon, X } from "lucide-react";
+import {
+  Screenshot,
+  SelectionMode,
+  ScreenshotRegion,
+  ScreenshotLocation,
+  AnchorType,
+} from "../../types/Screenshot";
+import ScreenshotCanvas from "../ScreenshotTab/ScreenshotCanvas";
+import RegionPropertiesPanel from "../ScreenshotTab/RegionPropertiesPanel";
+import LocationPropertiesPanel from "../ScreenshotTab/LocationPropertiesPanel";
+import StateAssociationPanel from "../ScreenshotTab/StateAssociationPanel";
+import AnchorRegionCreator from "../ScreenshotTab/AnchorRegionCreator";
+import { useAutomation } from "../../contexts/automation-context";
+import {
+  StateRegion as ContextStateRegion,
+  StateLocation as ContextStateLocation,
+  Position,
+  PositionName,
+} from "../../contexts/automation-context/types";
+import { ScrollArea } from "../ui/scroll-area";
+import { Badge } from "../ui/badge";
 
 interface ScreenshotAnnotationTabProps {
   states: any[];
 }
 
 // Helper function to convert AnchorType to PositionName
-const convertAnchorTypeToPositionName = (anchorType?: AnchorType): PositionName | undefined => {
+const convertAnchorTypeToPositionName = (
+  anchorType?: AnchorType
+): PositionName | undefined => {
   if (!anchorType) return undefined;
   const mapping: Record<AnchorType, PositionName> = {
-    'TOP_LEFT': 'TOPLEFT',
-    'TOP_CENTER': 'TOPMIDDLE',
-    'TOP_RIGHT': 'TOPRIGHT',
-    'MIDDLE_LEFT': 'MIDDLELEFT',
-    'CENTER': 'MIDDLEMIDDLE',
-    'MIDDLE_RIGHT': 'MIDDLERIGHT',
-    'BOTTOM_LEFT': 'BOTTOMLEFT',
-    'BOTTOM_CENTER': 'BOTTOMMIDDLE',
-    'BOTTOM_RIGHT': 'BOTTOMRIGHT',
-    'CUSTOM': 'MIDDLEMIDDLE' // Default to center for custom
+    TOP_LEFT: "TOPLEFT",
+    TOP_CENTER: "TOPMIDDLE",
+    TOP_RIGHT: "TOPRIGHT",
+    MIDDLE_LEFT: "MIDDLELEFT",
+    CENTER: "MIDDLEMIDDLE",
+    MIDDLE_RIGHT: "MIDDLERIGHT",
+    BOTTOM_LEFT: "BOTTOMLEFT",
+    BOTTOM_CENTER: "BOTTOMMIDDLE",
+    BOTTOM_RIGHT: "BOTTOMRIGHT",
+    CUSTOM: "MIDDLEMIDDLE", // Default to center for custom
   };
   return mapping[anchorType];
 };
 
 // Helper function to convert Screenshot Region to Context StateRegion
-const convertToContextRegion = (region: ScreenshotRegion): ContextStateRegion => {
+const convertToContextRegion = (
+  region: ScreenshotRegion
+): ContextStateRegion => {
   return {
     id: region.id,
     name: region.name,
@@ -42,13 +57,15 @@ const convertToContextRegion = (region: ScreenshotRegion): ContextStateRegion =>
     y: region.bounds.y,
     width: region.bounds.width,
     height: region.bounds.height,
-    isSearchRegion: region.type === 'SearchRegion',
-    referenceImageId: region.linkedStateObjectId
+    isSearchRegion: region.type === "SearchRegion",
+    referenceImageId: region.linkedStateObjectId,
   };
 };
 
 // Helper function to convert Screenshot Location to Context StateLocation
-const convertToContextLocation = (location: ScreenshotLocation): ContextStateLocation => {
+const convertToContextLocation = (
+  location: ScreenshotLocation
+): ContextStateLocation => {
   return {
     id: location.id,
     name: location.name,
@@ -58,59 +75,72 @@ const convertToContextLocation = (location: ScreenshotLocation): ContextStateLoc
     anchor: location.anchor || false,
     offsetX: location.offsetX,
     offsetY: location.offsetY,
-    referenceImageId: location.referenceImageId
+    referenceImageId: location.referenceImageId,
   };
 };
 
-const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ states }) => {
-  const { screenshots: projectScreenshots, updateState, updateScreenshot } = useAutomation();
+const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
+  states,
+}) => {
+  const {
+    screenshots: projectScreenshots,
+    updateState,
+    updateScreenshot,
+  } = useAutomation();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
-  const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>('view');
-  const [selectedRegion, setSelectedRegion] = useState<ScreenshotRegion | null>(null);
-  const [selectedLocation, setSelectedLocation] = useState<ScreenshotLocation | null>(null);
+  const [selectedScreenshot, setSelectedScreenshot] =
+    useState<Screenshot | null>(null);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("view");
+  const [selectedRegion, setSelectedRegion] = useState<ScreenshotRegion | null>(
+    null
+  );
+  const [selectedLocation, setSelectedLocation] =
+    useState<ScreenshotLocation | null>(null);
   const [showRegionPanel, setShowRegionPanel] = useState(false);
   const [showLocationPanel, setShowLocationPanel] = useState(false);
   const [openRegions, setOpenRegions] = useState<ScreenshotRegion[]>([]);
   const [openLocations, setOpenLocations] = useState<ScreenshotLocation[]>([]);
   const [activeRegionTab, setActiveRegionTab] = useState<string | null>(null);
-  const [activeLocationTab, setActiveLocationTab] = useState<string | null>(null);
+  const [activeLocationTab, setActiveLocationTab] = useState<string | null>(
+    null
+  );
 
   // Sync local screenshots with project screenshots
   useEffect(() => {
     const loadScreenshots = async () => {
       const convertedScreenshots: Screenshot[] = await Promise.all(
-        projectScreenshots.map(ps =>
-          new Promise<Screenshot>((resolve) => {
-            const img = new window.Image();
-            img.onload = () => {
-              resolve({
-                id: ps.id,
-                name: ps.name,
-                imageData: ps.url,
-                width: img.width,
-                height: img.height,
-                uploadedAt: ps.uploadedAt,
-                associatedStates: ps.associatedStates || [],
-                regions: ps.regions || [],
-                locations: ps.locations || []
-              });
-            };
-            img.onerror = () => {
-              resolve({
-                id: ps.id,
-                name: ps.name,
-                imageData: ps.url,
-                width: 0,
-                height: 0,
-                uploadedAt: ps.uploadedAt,
-                associatedStates: ps.associatedStates || [],
-                regions: ps.regions || [],
-                locations: ps.locations || []
-              });
-            };
-            img.src = ps.url;
-          })
+        projectScreenshots.map(
+          (ps) =>
+            new Promise<Screenshot>((resolve) => {
+              const img = new window.Image();
+              img.onload = () => {
+                resolve({
+                  id: ps.id,
+                  name: ps.name,
+                  imageData: ps.url,
+                  width: img.width,
+                  height: img.height,
+                  uploadedAt: ps.uploadedAt,
+                  associatedStates: ps.associatedStates || [],
+                  regions: ps.regions || [],
+                  locations: ps.locations || [],
+                });
+              };
+              img.onerror = () => {
+                resolve({
+                  id: ps.id,
+                  name: ps.name,
+                  imageData: ps.url,
+                  width: 0,
+                  height: 0,
+                  uploadedAt: ps.uploadedAt,
+                  associatedStates: ps.associatedStates || [],
+                  regions: ps.regions || [],
+                  locations: ps.locations || [],
+                });
+              };
+              img.src = ps.url;
+            })
         )
       );
       setScreenshots(convertedScreenshots);
@@ -128,7 +158,10 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
         }
 
         // Restore open locations if any exist (only if no regions)
-        if (firstScreenshot.regions.length === 0 && firstScreenshot.locations.length > 0) {
+        if (
+          firstScreenshot.regions.length === 0 &&
+          firstScreenshot.locations.length > 0
+        ) {
           setOpenLocations(firstScreenshot.locations);
           setActiveLocationTab(firstScreenshot.locations[0].id);
           setShowLocationPanel(true);
@@ -147,7 +180,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
     if (selectedScreenshot.regions.length > 0) {
       setOpenRegions(selectedScreenshot.regions);
       // Keep the currently active tab if it exists in this screenshot, otherwise select first
-      const currentTabExists = selectedScreenshot.regions.some(r => r.id === activeRegionTab);
+      const currentTabExists = selectedScreenshot.regions.some(
+        (r) => r.id === activeRegionTab
+      );
       if (!currentTabExists || !activeRegionTab) {
         setActiveRegionTab(selectedScreenshot.regions[0].id);
       }
@@ -161,7 +196,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
     if (selectedScreenshot.locations.length > 0) {
       setOpenLocations(selectedScreenshot.locations);
       // Keep the currently active tab if it exists in this screenshot, otherwise select first
-      const currentTabExists = selectedScreenshot.locations.some(l => l.id === activeLocationTab);
+      const currentTabExists = selectedScreenshot.locations.some(
+        (l) => l.id === activeLocationTab
+      );
       if (!currentTabExists || !activeLocationTab) {
         setActiveLocationTab(selectedScreenshot.locations[0].id);
       }
@@ -181,7 +218,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
   // Persist screenshot annotations to context
   const persistScreenshotToContext = async (screenshot: Screenshot) => {
     // Find the corresponding project screenshot
-    const projectScreenshot = projectScreenshots.find(ps => ps.id === screenshot.id);
+    const projectScreenshot = projectScreenshots.find(
+      (ps) => ps.id === screenshot.id
+    );
     if (!projectScreenshot) return;
 
     // Update with regions and locations
@@ -189,34 +228,48 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
       ...projectScreenshot,
       regions: screenshot.regions,
       locations: screenshot.locations,
-      associatedStates: screenshot.associatedStates
+      associatedStates: screenshot.associatedStates,
     });
   };
 
-  const syncRegionsToState = async (stateId: string, regions: ScreenshotRegion[]) => {
-    const state = states.find(s => s.id === stateId);
+  const syncRegionsToState = async (
+    stateId: string,
+    regions: ScreenshotRegion[]
+  ) => {
+    const state = states.find((s) => s.id === stateId);
     if (!state) return;
 
     // Separate StateRegions and SearchRegions
-    const stateRegions = regions.filter(r => r.stateId === stateId && r.type === 'StateRegion');
-    const searchRegions = regions.filter(r => r.type === 'SearchRegion' && r.saveToStateImageStateId === stateId);
+    const stateRegions = regions.filter(
+      (r) => r.stateId === stateId && r.type === "StateRegion"
+    );
+    const searchRegions = regions.filter(
+      (r) => r.type === "SearchRegion" && r.saveToStateImageStateId === stateId
+    );
 
     // Convert StateRegions
     const screenshotContextRegions = stateRegions.map(convertToContextRegion);
 
     // Get existing StateRegions that are NOT from screenshots (keep them)
-    const screenshotRegionIds = new Set(screenshotContextRegions.map(r => r.id));
+    const screenshotRegionIds = new Set(
+      screenshotContextRegions.map((r) => r.id)
+    );
     const existingNonScreenshotRegions = (state.regions || []).filter(
-      r => !screenshotRegionIds.has(r.id)
+      (r) => !screenshotRegionIds.has(r.id)
     );
 
     // Merge StateRegions: keep existing non-screenshot regions + add/update screenshot regions
-    const mergedRegions = [...existingNonScreenshotRegions, ...screenshotContextRegions];
+    const mergedRegions = [
+      ...existingNonScreenshotRegions,
+      ...screenshotContextRegions,
+    ];
 
     // Handle SearchRegions - they belong to Patterns, not State.regions
-    const updatedStateImages = state.stateImages.map(image => {
+    const updatedStateImages = state.stateImages.map((image) => {
       // Find SearchRegions for this StateImage using saveToStateImageId
-      const searchRegionsForImage = searchRegions.filter(r => r.saveToStateImageId === image.id);
+      const searchRegionsForImage = searchRegions.filter(
+        (r) => r.saveToStateImageId === image.id
+      );
 
       if (searchRegionsForImage.length === 0) return image;
 
@@ -224,20 +277,22 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
       const updatedPatterns = image.patterns.map((pattern, idx) => {
         if (idx === 0) {
           // Convert screenshot SearchRegions to Pattern SearchRegions
-          const patternSearchRegions = searchRegionsForImage.map(r => ({
+          const patternSearchRegions = searchRegionsForImage.map((r) => ({
             id: r.id,
             name: r.name,
             x: r.bounds.x,
             y: r.bounds.y,
             width: r.bounds.width,
             height: r.bounds.height,
-            referenceImageId: r.linkedStateObjectId // Link to the StateImage that defines position
+            referenceImageId: r.linkedStateObjectId, // Link to the StateImage that defines position
           }));
 
           // Merge with existing search regions
           const mergedSearchRegions = [
-            ...pattern.searchRegions.filter(sr => !patternSearchRegions.find(psr => psr.id === sr.id)),
-            ...patternSearchRegions
+            ...pattern.searchRegions.filter(
+              (sr) => !patternSearchRegions.find((psr) => psr.id === sr.id)
+            ),
+            ...patternSearchRegions,
           ];
 
           return { ...pattern, searchRegions: mergedSearchRegions };
@@ -251,31 +306,39 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
     await updateState({
       ...state,
       regions: mergedRegions,
-      stateImages: updatedStateImages
+      stateImages: updatedStateImages,
     });
   };
 
-  const syncLocationsToState = async (stateId: string, locations: ScreenshotLocation[]) => {
-    const state = states.find(s => s.id === stateId);
+  const syncLocationsToState = async (
+    stateId: string,
+    locations: ScreenshotLocation[]
+  ) => {
+    const state = states.find((s) => s.id === stateId);
     if (!state) return;
 
     // Convert screenshot locations for this state
     const screenshotContextLocations = locations
-      .filter(l => l.stateId === stateId)
+      .filter((l) => l.stateId === stateId)
       .map(convertToContextLocation);
 
     // Get existing locations that are NOT from screenshots (keep them)
-    const screenshotLocationIds = new Set(screenshotContextLocations.map(l => l.id));
+    const screenshotLocationIds = new Set(
+      screenshotContextLocations.map((l) => l.id)
+    );
     const existingNonScreenshotLocations = (state.locations || []).filter(
-      l => !screenshotLocationIds.has(l.id)
+      (l) => !screenshotLocationIds.has(l.id)
     );
 
     // Merge: keep existing non-screenshot locations + add/update screenshot locations
-    const mergedLocations = [...existingNonScreenshotLocations, ...screenshotContextLocations];
+    const mergedLocations = [
+      ...existingNonScreenshotLocations,
+      ...screenshotContextLocations,
+    ];
 
     await updateState({
       ...state,
-      locations: mergedLocations
+      locations: mergedLocations,
     });
   };
 
@@ -284,18 +347,18 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
     const updatedScreenshot = {
       ...selectedScreenshot,
-      regions: [...selectedScreenshot.regions, region]
+      regions: [...selectedScreenshot.regions, region],
     };
 
-    setScreenshots(prev => prev.map(s =>
-      s.id === selectedScreenshot.id ? updatedScreenshot : s
-    ));
+    setScreenshots((prev) =>
+      prev.map((s) => (s.id === selectedScreenshot.id ? updatedScreenshot : s))
+    );
     setSelectedScreenshot(updatedScreenshot);
     setSelectedRegion(region);
 
     // Add to open regions and show panel
-    if (!openRegions.find(r => r.id === region.id)) {
-      setOpenRegions(prev => [...prev, region]);
+    if (!openRegions.find((r) => r.id === region.id)) {
+      setOpenRegions((prev) => [...prev, region]);
     }
     setActiveRegionTab(region.id);
     setShowRegionPanel(true);
@@ -305,9 +368,10 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
     // Sync to state
     // For StateRegion, use stateId; for SearchRegion, use saveToStateImageStateId
-    const targetStateId = region.type === 'SearchRegion'
-      ? region.saveToStateImageStateId
-      : region.stateId;
+    const targetStateId =
+      region.type === "SearchRegion"
+        ? region.saveToStateImageStateId
+        : region.stateId;
 
     if (targetStateId) {
       await syncRegionsToState(targetStateId, updatedScreenshot.regions);
@@ -319,18 +383,18 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
     const updatedScreenshot = {
       ...selectedScreenshot,
-      locations: [...selectedScreenshot.locations, location]
+      locations: [...selectedScreenshot.locations, location],
     };
 
-    setScreenshots(prev => prev.map(s =>
-      s.id === selectedScreenshot.id ? updatedScreenshot : s
-    ));
+    setScreenshots((prev) =>
+      prev.map((s) => (s.id === selectedScreenshot.id ? updatedScreenshot : s))
+    );
     setSelectedScreenshot(updatedScreenshot);
     setSelectedLocation(location);
 
     // Add to open locations and show panel
-    if (!openLocations.find(l => l.id === location.id)) {
-      setOpenLocations(prev => [...prev, location]);
+    if (!openLocations.find((l) => l.id === location.id)) {
+      setOpenLocations((prev) => [...prev, location]);
     }
     setActiveLocationTab(location.id);
     setShowLocationPanel(true);
@@ -349,28 +413,31 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
     const updatedScreenshot = {
       ...selectedScreenshot,
-      regions: selectedScreenshot.regions.map(r =>
+      regions: selectedScreenshot.regions.map((r) =>
         r.id === updatedRegion.id ? updatedRegion : r
-      )
+      ),
     };
 
-    setScreenshots(prev => prev.map(s =>
-      s.id === selectedScreenshot.id ? updatedScreenshot : s
-    ));
+    setScreenshots((prev) =>
+      prev.map((s) => (s.id === selectedScreenshot.id ? updatedScreenshot : s))
+    );
     setSelectedScreenshot(updatedScreenshot);
     setSelectedRegion(updatedRegion);
 
     // Update in open regions
-    setOpenRegions(prev => prev.map(r => r.id === updatedRegion.id ? updatedRegion : r));
+    setOpenRegions((prev) =>
+      prev.map((r) => (r.id === updatedRegion.id ? updatedRegion : r))
+    );
 
     // Persist to context
     await persistScreenshotToContext(updatedScreenshot);
 
     // Sync to state
     // For StateRegion, use stateId; for SearchRegion, use saveToStateImageStateId
-    const targetStateId = updatedRegion.type === 'SearchRegion'
-      ? updatedRegion.saveToStateImageStateId
-      : updatedRegion.stateId;
+    const targetStateId =
+      updatedRegion.type === "SearchRegion"
+        ? updatedRegion.saveToStateImageStateId
+        : updatedRegion.stateId;
 
     if (targetStateId) {
       await syncRegionsToState(targetStateId, updatedScreenshot.regions);
@@ -380,22 +447,24 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
   const handleRegionDelete = async (regionId: string) => {
     if (!selectedScreenshot) return;
 
-    const deletedRegion = selectedScreenshot.regions.find(r => r.id === regionId);
+    const deletedRegion = selectedScreenshot.regions.find(
+      (r) => r.id === regionId
+    );
     const updatedScreenshot = {
       ...selectedScreenshot,
-      regions: selectedScreenshot.regions.filter(r => r.id !== regionId)
+      regions: selectedScreenshot.regions.filter((r) => r.id !== regionId),
     };
 
-    setScreenshots(prev => prev.map(s =>
-      s.id === selectedScreenshot.id ? updatedScreenshot : s
-    ));
+    setScreenshots((prev) =>
+      prev.map((s) => (s.id === selectedScreenshot.id ? updatedScreenshot : s))
+    );
     setSelectedScreenshot(updatedScreenshot);
     setSelectedRegion(null);
 
     // Remove from open regions
-    setOpenRegions(prev => prev.filter(r => r.id !== regionId));
+    setOpenRegions((prev) => prev.filter((r) => r.id !== regionId));
     if (activeRegionTab === regionId) {
-      const remaining = openRegions.filter(r => r.id !== regionId);
+      const remaining = openRegions.filter((r) => r.id !== regionId);
       setActiveRegionTab(remaining.length > 0 ? remaining[0].id : null);
       if (remaining.length === 0) {
         setShowRegionPanel(false);
@@ -406,28 +475,31 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
     await persistScreenshotToContext(updatedScreenshot);
 
     // Sync to state if region had a stateId or saveToStateImageStateId
-    const targetStateId = deletedRegion?.type === 'SearchRegion'
-      ? deletedRegion.saveToStateImageStateId
-      : deletedRegion?.stateId;
+    const targetStateId =
+      deletedRegion?.type === "SearchRegion"
+        ? deletedRegion.saveToStateImageStateId
+        : deletedRegion?.stateId;
 
     if (targetStateId) {
-      const state = states.find(s => s.id === targetStateId);
+      const state = states.find((s) => s.id === targetStateId);
       if (state) {
-        if (deletedRegion.type === 'StateRegion') {
+        if (deletedRegion.type === "StateRegion") {
           // Remove from State.regions array
-          const updatedRegions = state.regions.filter(r => r.id !== regionId);
+          const updatedRegions = state.regions.filter((r) => r.id !== regionId);
 
           await updateState({
             ...state,
-            regions: updatedRegions
+            regions: updatedRegions,
           });
-        } else if (deletedRegion.type === 'SearchRegion') {
+        } else if (deletedRegion.type === "SearchRegion") {
           // Remove from Pattern.searchRegions
-          const updatedStateImages = state.stateImages.map(image => {
+          const updatedStateImages = state.stateImages.map((image) => {
             if (deletedRegion.saveToStateImageId === image.id) {
-              const updatedPatterns = image.patterns.map(pattern => ({
+              const updatedPatterns = image.patterns.map((pattern) => ({
                 ...pattern,
-                searchRegions: pattern.searchRegions.filter(sr => sr.id !== regionId)
+                searchRegions: pattern.searchRegions.filter(
+                  (sr) => sr.id !== regionId
+                ),
               }));
               return { ...image, patterns: updatedPatterns };
             }
@@ -436,7 +508,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
           await updateState({
             ...state,
-            stateImages: updatedStateImages
+            stateImages: updatedStateImages,
           });
         }
       }
@@ -448,48 +520,57 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
     const updatedScreenshot = {
       ...selectedScreenshot,
-      locations: selectedScreenshot.locations.map(l =>
+      locations: selectedScreenshot.locations.map((l) =>
         l.id === updatedLocation.id ? updatedLocation : l
-      )
+      ),
     };
 
-    setScreenshots(prev => prev.map(s =>
-      s.id === selectedScreenshot.id ? updatedScreenshot : s
-    ));
+    setScreenshots((prev) =>
+      prev.map((s) => (s.id === selectedScreenshot.id ? updatedScreenshot : s))
+    );
     setSelectedScreenshot(updatedScreenshot);
     setSelectedLocation(updatedLocation);
 
     // Update in open locations
-    setOpenLocations(prev => prev.map(l => l.id === updatedLocation.id ? updatedLocation : l));
+    setOpenLocations((prev) =>
+      prev.map((l) => (l.id === updatedLocation.id ? updatedLocation : l))
+    );
 
     // Persist to context
     await persistScreenshotToContext(updatedScreenshot);
 
     // Sync to state if location has a stateId
     if (updatedLocation.stateId) {
-      await syncLocationsToState(updatedLocation.stateId, updatedScreenshot.locations);
+      await syncLocationsToState(
+        updatedLocation.stateId,
+        updatedScreenshot.locations
+      );
     }
   };
 
   const handleLocationDelete = async (locationId: string) => {
     if (!selectedScreenshot) return;
 
-    const deletedLocation = selectedScreenshot.locations.find(l => l.id === locationId);
+    const deletedLocation = selectedScreenshot.locations.find(
+      (l) => l.id === locationId
+    );
     const updatedScreenshot = {
       ...selectedScreenshot,
-      locations: selectedScreenshot.locations.filter(l => l.id !== locationId)
+      locations: selectedScreenshot.locations.filter(
+        (l) => l.id !== locationId
+      ),
     };
 
-    setScreenshots(prev => prev.map(s =>
-      s.id === selectedScreenshot.id ? updatedScreenshot : s
-    ));
+    setScreenshots((prev) =>
+      prev.map((s) => (s.id === selectedScreenshot.id ? updatedScreenshot : s))
+    );
     setSelectedScreenshot(updatedScreenshot);
     setSelectedLocation(null);
 
     // Remove from open locations
-    setOpenLocations(prev => prev.filter(l => l.id !== locationId));
+    setOpenLocations((prev) => prev.filter((l) => l.id !== locationId));
     if (activeLocationTab === locationId) {
-      const remaining = openLocations.filter(l => l.id !== locationId);
+      const remaining = openLocations.filter((l) => l.id !== locationId);
       setActiveLocationTab(remaining.length > 0 ? remaining[0].id : null);
       if (remaining.length === 0) {
         setShowLocationPanel(false);
@@ -501,7 +582,10 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
     // Sync to state if location had a stateId
     if (deletedLocation?.stateId) {
-      await syncLocationsToState(deletedLocation.stateId, updatedScreenshot.locations);
+      await syncLocationsToState(
+        deletedLocation.stateId,
+        updatedScreenshot.locations
+      );
     }
   };
 
@@ -510,12 +594,12 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
     const updatedScreenshot = {
       ...selectedScreenshot,
-      associatedStates: stateIds
+      associatedStates: stateIds,
     };
 
-    setScreenshots(prev => prev.map(s =>
-      s.id === selectedScreenshot.id ? updatedScreenshot : s
-    ));
+    setScreenshots((prev) =>
+      prev.map((s) => (s.id === selectedScreenshot.id ? updatedScreenshot : s))
+    );
     setSelectedScreenshot(updatedScreenshot);
 
     // Persist to context
@@ -528,19 +612,22 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
       <div className="bg-[#27272A] border-b border-gray-800 p-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-400">Annotate Screenshots</span>
-          <Badge variant="outline" className="text-xs border-gray-700 text-gray-400">
-            {screenshots.length} screenshot{screenshots.length !== 1 ? 's' : ''}
+          <Badge
+            variant="outline"
+            className="text-xs border-gray-700 text-gray-400"
+          >
+            {screenshots.length} screenshot{screenshots.length !== 1 ? "s" : ""}
           </Badge>
         </div>
 
         <div className="flex items-center gap-1 bg-[#0A0A0B] rounded p-1">
           <button
             className={`px-3 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
-              selectionMode === 'view'
-                ? 'bg-[#00D9FF] text-black'
-                : 'text-gray-400 hover:text-white hover:bg-[#27272A]'
+              selectionMode === "view"
+                ? "bg-[#00D9FF] text-black"
+                : "text-gray-400 hover:text-white hover:bg-[#27272A]"
             }`}
-            onClick={() => setSelectionMode('view')}
+            onClick={() => setSelectionMode("view")}
             title="View mode - Select existing annotations"
           >
             <Eye className="w-4 h-4" />
@@ -548,12 +635,12 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
           </button>
           <button
             className={`px-3 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
-              selectionMode === 'region' || showRegionPanel
-                ? 'bg-[#10b981] text-white'
-                : 'text-gray-400 hover:text-white hover:bg-[#27272A]'
+              selectionMode === "region" || showRegionPanel
+                ? "bg-[#10b981] text-white"
+                : "text-gray-400 hover:text-white hover:bg-[#27272A]"
             }`}
             onClick={() => {
-              setSelectionMode('region');
+              setSelectionMode("region");
               setShowRegionPanel(!showRegionPanel);
               setShowLocationPanel(false);
             }}
@@ -564,12 +651,12 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
           </button>
           <button
             className={`px-3 py-2 rounded flex items-center gap-2 text-sm font-medium transition-colors ${
-              selectionMode === 'location' || showLocationPanel
-                ? 'bg-[#BD00FF] text-white'
-                : 'text-gray-400 hover:text-white hover:bg-[#27272A]'
+              selectionMode === "location" || showLocationPanel
+                ? "bg-[#BD00FF] text-white"
+                : "text-gray-400 hover:text-white hover:bg-[#27272A]"
             }`}
             onClick={() => {
-              setSelectionMode('location');
+              setSelectionMode("location");
               setShowLocationPanel(!showLocationPanel);
               setShowRegionPanel(false);
             }}
@@ -588,14 +675,16 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
           <ScrollArea className="flex-1 h-full">
             <div className="p-4">
               {/* Anchor Region Creator */}
-              {selectedScreenshot && selectedScreenshot.locations.filter(l => l.anchor).length >= 2 && (
-                <div className="mb-4">
-                  <AnchorRegionCreator
-                    locations={selectedScreenshot.locations}
-                    onRegionCreate={handleRegionCreate}
-                  />
-                </div>
-              )}
+              {selectedScreenshot &&
+                selectedScreenshot.locations.filter((l) => l.anchor).length >=
+                  2 && (
+                  <div className="mb-4">
+                    <AnchorRegionCreator
+                      locations={selectedScreenshot.locations}
+                      onRegionCreate={handleRegionCreate}
+                    />
+                  </div>
+                )}
 
               {screenshots.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
@@ -604,13 +693,13 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {screenshots.map(screenshot => (
+                  {screenshots.map((screenshot) => (
                     <div
                       key={screenshot.id}
                       className={`group relative p-3 rounded-md cursor-pointer transition-all ${
                         selectedScreenshot?.id === screenshot.id
-                          ? 'bg-[#27272A] border-2 border-[#00D9FF] ring-2 ring-[#00D9FF]/50'
-                          : 'bg-[#27272A] border-2 border-gray-700 hover:border-gray-600'
+                          ? "bg-[#27272A] border-2 border-[#00D9FF] ring-2 ring-[#00D9FF]/50"
+                          : "bg-[#27272A] border-2 border-gray-700 hover:border-gray-600"
                       }`}
                       onClick={() => setSelectedScreenshot(screenshot)}
                     >
@@ -621,7 +710,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
                           className="w-full h-full object-cover"
                         />
                       </div>
-                      <p className="text-sm font-medium truncate text-gray-200 mb-2">{screenshot.name}</p>
+                      <p className="text-sm font-medium truncate text-gray-200 mb-2">
+                        {screenshot.name}
+                      </p>
 
                       <div className="flex items-center gap-2 text-xs">
                         {screenshot.regions.length > 0 && (
@@ -640,10 +731,14 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
 
                       {screenshot.associatedStates.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-2">
-                          {screenshot.associatedStates.map(stateId => {
-                            const state = states.find(s => s.id === stateId);
+                          {screenshot.associatedStates.map((stateId) => {
+                            const state = states.find((s) => s.id === stateId);
                             return state ? (
-                              <Badge key={stateId} variant="outline" className="text-xs border-[#00D9FF] text-[#00D9FF]">
+                              <Badge
+                                key={stateId}
+                                variant="outline"
+                                className="text-xs border-[#00D9FF] text-[#00D9FF]"
+                              >
                                 {state.name}
                               </Badge>
                             ) : null;
@@ -681,7 +776,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
             <div className="flex-1 flex items-center justify-center text-gray-400 bg-[#F3F4F6]">
               <div className="text-center">
                 <ImageIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium">Select a screenshot to annotate</p>
+                <p className="text-lg font-medium">
+                  Select a screenshot to annotate
+                </p>
               </div>
             </div>
           )}
@@ -698,15 +795,17 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
                     key={region.id}
                     className={`flex items-center gap-2 px-4 py-2 cursor-pointer border-b-2 transition-colors ${
                       activeRegionTab === region.id
-                        ? 'bg-[#27272A]/50 border-[#00D9FF] text-black'
-                        : 'bg-[#27272A] border-transparent text-gray-400 hover:bg-gray-200'
+                        ? "bg-[#27272A]/50 border-[#00D9FF] text-black"
+                        : "bg-[#27272A] border-transparent text-gray-400 hover:bg-gray-200"
                     }`}
                     onClick={() => {
                       setActiveRegionTab(region.id);
                       setSelectedRegion(region);
                     }}
                   >
-                    <span className="text-sm font-medium truncate max-w-[120px]">{region.name}</span>
+                    <span className="text-sm font-medium truncate max-w-[120px]">
+                      {region.name}
+                    </span>
                     <button
                       className="h-4 w-4 p-0 hover:bg-gray-300 rounded flex items-center justify-center"
                       onClick={(e) => {
@@ -746,15 +845,17 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({ state
                     key={location.id}
                     className={`flex items-center gap-2 px-4 py-2 cursor-pointer border-b-2 transition-colors ${
                       activeLocationTab === location.id
-                        ? 'bg-[#27272A]/50 border-[#00D9FF] text-black'
-                        : 'bg-[#27272A] border-transparent text-gray-400 hover:bg-gray-200'
+                        ? "bg-[#27272A]/50 border-[#00D9FF] text-black"
+                        : "bg-[#27272A] border-transparent text-gray-400 hover:bg-gray-200"
                     }`}
                     onClick={() => {
                       setActiveLocationTab(location.id);
                       setSelectedLocation(location);
                     }}
                   >
-                    <span className="text-sm font-medium truncate max-w-[120px]">{location.name}</span>
+                    <span className="text-sm font-medium truncate max-w-[120px]">
+                      {location.name}
+                    </span>
                     <button
                       className="h-4 w-4 p-0 hover:bg-gray-300 rounded flex items-center justify-center"
                       onClick={(e) => {

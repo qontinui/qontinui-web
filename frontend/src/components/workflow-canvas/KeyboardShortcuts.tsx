@@ -9,9 +9,9 @@
  * - Shortcut: ? or Ctrl+/
  */
 
-'use client';
+"use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from "react";
 
 // ============================================================================
 // Types
@@ -35,50 +35,195 @@ export interface KeyboardShortcutsProps {
 
 const SHORTCUTS: Shortcut[] = [
   // Selection
-  { id: 'select-all', category: 'Selection', description: 'Select all nodes', keys: ['Ctrl', 'A'] },
-  { id: 'deselect', category: 'Selection', description: 'Deselect all', keys: ['Esc'] },
-  { id: 'invert-selection', category: 'Selection', description: 'Invert selection', keys: ['Ctrl', 'Shift', 'I'] },
+  {
+    id: "select-all",
+    category: "Selection",
+    description: "Select all nodes",
+    keys: ["Ctrl", "A"],
+  },
+  {
+    id: "deselect",
+    category: "Selection",
+    description: "Deselect all",
+    keys: ["Esc"],
+  },
+  {
+    id: "invert-selection",
+    category: "Selection",
+    description: "Invert selection",
+    keys: ["Ctrl", "Shift", "I"],
+  },
 
   // Editing
-  { id: 'copy', category: 'Editing', description: 'Copy selected nodes', keys: ['Ctrl', 'C'] },
-  { id: 'paste', category: 'Editing', description: 'Paste nodes', keys: ['Ctrl', 'V'] },
-  { id: 'cut', category: 'Editing', description: 'Cut selected nodes', keys: ['Ctrl', 'X'] },
-  { id: 'duplicate', category: 'Editing', description: 'Duplicate selected nodes', keys: ['Ctrl', 'D'] },
-  { id: 'delete', category: 'Editing', description: 'Delete selected nodes', keys: ['Del'] },
-  { id: 'undo', category: 'Editing', description: 'Undo last action', keys: ['Ctrl', 'Z'] },
-  { id: 'redo', category: 'Editing', description: 'Redo last action', keys: ['Ctrl', 'Shift', 'Z'] },
+  {
+    id: "copy",
+    category: "Editing",
+    description: "Copy selected nodes",
+    keys: ["Ctrl", "C"],
+  },
+  {
+    id: "paste",
+    category: "Editing",
+    description: "Paste nodes",
+    keys: ["Ctrl", "V"],
+  },
+  {
+    id: "cut",
+    category: "Editing",
+    description: "Cut selected nodes",
+    keys: ["Ctrl", "X"],
+  },
+  {
+    id: "duplicate",
+    category: "Editing",
+    description: "Duplicate selected nodes",
+    keys: ["Ctrl", "D"],
+  },
+  {
+    id: "delete",
+    category: "Editing",
+    description: "Delete selected nodes",
+    keys: ["Del"],
+  },
+  {
+    id: "undo",
+    category: "Editing",
+    description: "Undo last action",
+    keys: ["Ctrl", "Z"],
+  },
+  {
+    id: "redo",
+    category: "Editing",
+    description: "Redo last action",
+    keys: ["Ctrl", "Shift", "Z"],
+  },
 
   // Navigation
-  { id: 'pan-up', category: 'Navigation', description: 'Pan up', keys: ['↑'] },
-  { id: 'pan-down', category: 'Navigation', description: 'Pan down', keys: ['↓'] },
-  { id: 'pan-left', category: 'Navigation', description: 'Pan left', keys: ['←'] },
-  { id: 'pan-right', category: 'Navigation', description: 'Pan right', keys: ['→'] },
-  { id: 'pan-mode', category: 'Navigation', description: 'Pan mode (hold)', keys: ['Space'] },
+  { id: "pan-up", category: "Navigation", description: "Pan up", keys: ["↑"] },
+  {
+    id: "pan-down",
+    category: "Navigation",
+    description: "Pan down",
+    keys: ["↓"],
+  },
+  {
+    id: "pan-left",
+    category: "Navigation",
+    description: "Pan left",
+    keys: ["←"],
+  },
+  {
+    id: "pan-right",
+    category: "Navigation",
+    description: "Pan right",
+    keys: ["→"],
+  },
+  {
+    id: "pan-mode",
+    category: "Navigation",
+    description: "Pan mode (hold)",
+    keys: ["Space"],
+  },
 
   // View
-  { id: 'zoom-in', category: 'View', description: 'Zoom in', keys: ['+'] },
-  { id: 'zoom-out', category: 'View', description: 'Zoom out', keys: ['-'] },
-  { id: 'reset-zoom', category: 'View', description: 'Reset zoom to 100%', keys: ['0'] },
-  { id: 'fit-view', category: 'View', description: 'Fit view to nodes', keys: ['Ctrl', 'F'] },
-  { id: 'toggle-minimap', category: 'View', description: 'Toggle minimap', keys: ['Ctrl', 'M'] },
-  { id: 'toggle-grid', category: 'View', description: 'Toggle grid', keys: ['Ctrl', 'G'] },
+  { id: "zoom-in", category: "View", description: "Zoom in", keys: ["+"] },
+  { id: "zoom-out", category: "View", description: "Zoom out", keys: ["-"] },
+  {
+    id: "reset-zoom",
+    category: "View",
+    description: "Reset zoom to 100%",
+    keys: ["0"],
+  },
+  {
+    id: "fit-view",
+    category: "View",
+    description: "Fit view to nodes",
+    keys: ["Ctrl", "F"],
+  },
+  {
+    id: "toggle-minimap",
+    category: "View",
+    description: "Toggle minimap",
+    keys: ["Ctrl", "M"],
+  },
+  {
+    id: "toggle-grid",
+    category: "View",
+    description: "Toggle grid",
+    keys: ["Ctrl", "G"],
+  },
 
   // Workflow
-  { id: 'auto-layout', category: 'Workflow', description: 'Auto layout nodes', keys: ['Ctrl', 'L'] },
-  { id: 'run-workflow', category: 'Workflow', description: 'Run workflow', keys: ['Ctrl', 'Enter'] },
-  { id: 'stop-workflow', category: 'Workflow', description: 'Stop workflow', keys: ['Ctrl', 'Shift', 'Enter'] },
-  { id: 'save-workflow', category: 'Workflow', description: 'Save workflow', keys: ['Ctrl', 'S'] },
+  {
+    id: "auto-layout",
+    category: "Workflow",
+    description: "Auto layout nodes",
+    keys: ["Ctrl", "L"],
+  },
+  {
+    id: "run-workflow",
+    category: "Workflow",
+    description: "Run workflow",
+    keys: ["Ctrl", "Enter"],
+  },
+  {
+    id: "stop-workflow",
+    category: "Workflow",
+    description: "Stop workflow",
+    keys: ["Ctrl", "Shift", "Enter"],
+  },
+  {
+    id: "save-workflow",
+    category: "Workflow",
+    description: "Save workflow",
+    keys: ["Ctrl", "S"],
+  },
 
   // Alignment
-  { id: 'align-left', category: 'Alignment', description: 'Align left', keys: ['Ctrl', 'Shift', 'L'] },
-  { id: 'align-right', category: 'Alignment', description: 'Align right', keys: ['Ctrl', 'Shift', 'R'] },
-  { id: 'align-top', category: 'Alignment', description: 'Align top', keys: ['Ctrl', 'Shift', 'T'] },
-  { id: 'align-bottom', category: 'Alignment', description: 'Align bottom', keys: ['Ctrl', 'Shift', 'B'] },
-  { id: 'distribute-h', category: 'Alignment', description: 'Distribute horizontally', keys: ['Ctrl', 'Shift', 'H'] },
-  { id: 'distribute-v', category: 'Alignment', description: 'Distribute vertically', keys: ['Ctrl', 'Shift', 'V'] },
+  {
+    id: "align-left",
+    category: "Alignment",
+    description: "Align left",
+    keys: ["Ctrl", "Shift", "L"],
+  },
+  {
+    id: "align-right",
+    category: "Alignment",
+    description: "Align right",
+    keys: ["Ctrl", "Shift", "R"],
+  },
+  {
+    id: "align-top",
+    category: "Alignment",
+    description: "Align top",
+    keys: ["Ctrl", "Shift", "T"],
+  },
+  {
+    id: "align-bottom",
+    category: "Alignment",
+    description: "Align bottom",
+    keys: ["Ctrl", "Shift", "B"],
+  },
+  {
+    id: "distribute-h",
+    category: "Alignment",
+    description: "Distribute horizontally",
+    keys: ["Ctrl", "Shift", "H"],
+  },
+  {
+    id: "distribute-v",
+    category: "Alignment",
+    description: "Distribute vertically",
+    keys: ["Ctrl", "Shift", "V"],
+  },
 
   // Help
-  { id: 'shortcuts', category: 'Help', description: 'Show keyboard shortcuts', keys: ['?'] },
+  {
+    id: "shortcuts",
+    category: "Help",
+    description: "Show keyboard shortcuts",
+    keys: ["?"],
+  },
 ];
 
 // ============================================================================
@@ -86,17 +231,21 @@ const SHORTCUTS: Shortcut[] = [
 // ============================================================================
 
 export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Filter and group shortcuts
   const { categories, filteredShortcuts } = useMemo(() => {
     const filtered = SHORTCUTS.filter(
-      shortcut =>
-        shortcut.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        shortcut.keys.some(key => key.toLowerCase().includes(searchQuery.toLowerCase()))
+      (shortcut) =>
+        shortcut.description
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase()) ||
+        shortcut.keys.some((key) =>
+          key.toLowerCase().includes(searchQuery.toLowerCase())
+        )
     );
 
-    const cats = Array.from(new Set(filtered.map(s => s.category))).sort();
+    const cats = Array.from(new Set(filtered.map((s) => s.category))).sort();
 
     return { categories: cats, filteredShortcuts: filtered };
   }, [searchQuery]);
@@ -107,14 +256,14 @@ export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
 
   const handleExport = () => {
     const text = SHORTCUTS.map(
-      s => `${s.description}: ${s.keys.join(' + ')}`
-    ).join('\n');
+      (s) => `${s.description}: ${s.keys.join(" + ")}`
+    ).join("\n");
 
-    const blob = new Blob([text], { type: 'text/plain' });
+    const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'keyboard-shortcuts.txt';
+    a.download = "keyboard-shortcuts.txt";
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -124,7 +273,9 @@ export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
       <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">Keyboard Shortcuts</h2>
+          <h2 className="text-xl font-semibold text-white">
+            Keyboard Shortcuts
+          </h2>
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
@@ -145,8 +296,18 @@ export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
                 onClick={onClose}
                 className="p-2 text-gray-400 hover:text-white transition-colors"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             )}
@@ -160,7 +321,7 @@ export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
               type="text"
               placeholder="Search shortcuts..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full px-4 py-2 pl-10 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
             />
             <svg
@@ -169,27 +330,34 @@ export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
             </svg>
           </div>
         </div>
 
         {/* Shortcuts List */}
         <div className="flex-1 overflow-y-auto p-4">
-          {categories.map(category => (
+          {categories.map((category) => (
             <div key={category} className="mb-6 last:mb-0">
               <h3 className="text-sm font-semibold text-gray-400 uppercase mb-3">
                 {category}
               </h3>
               <div className="space-y-2">
                 {filteredShortcuts
-                  .filter(s => s.category === category)
-                  .map(shortcut => (
+                  .filter((s) => s.category === category)
+                  .map((shortcut) => (
                     <div
                       key={shortcut.id}
                       className="flex items-center justify-between p-3 bg-gray-900 rounded-lg"
                     >
-                      <span className="text-gray-300">{shortcut.description}</span>
+                      <span className="text-gray-300">
+                        {shortcut.description}
+                      </span>
                       <div className="flex items-center gap-1">
                         {shortcut.keys.map((key, index) => (
                           <React.Fragment key={index}>
@@ -218,7 +386,11 @@ export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
         {/* Footer */}
         <div className="p-4 border-t border-gray-700 text-sm text-gray-400">
           <p>
-            <strong className="text-white">Tip:</strong> Press <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded">?</kbd> anytime to show this panel
+            <strong className="text-white">Tip:</strong> Press{" "}
+            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded">
+              ?
+            </kbd>{" "}
+            anytime to show this panel
           </p>
         </div>
       </div>
@@ -236,25 +408,25 @@ export function useKeyboardShortcuts() {
   // Listen for ? key
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '?' || (e.key === '/' && (e.ctrlKey || e.metaKey))) {
+      if (e.key === "?" || (e.key === "/" && (e.ctrlKey || e.metaKey))) {
         e.preventDefault();
         setIsOpen(true);
       }
 
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === "Escape" && isOpen) {
         setIsOpen(false);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen]);
 
   return {
     isOpen,
     open: () => setIsOpen(true),
     close: () => setIsOpen(false),
-    toggle: () => setIsOpen(prev => !prev),
+    toggle: () => setIsOpen((prev) => !prev),
   };
 }
 

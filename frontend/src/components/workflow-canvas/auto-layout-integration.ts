@@ -5,13 +5,13 @@
  * Provides layout application, style selection, and preview capabilities.
  */
 
-import type { Workflow } from '../../lib/action-schema/action-types';
+import type { Workflow } from "../../lib/action-schema/action-types";
 import {
   AutoLayout,
   LayoutStyle,
   type LayoutConfig,
   autoLayoutWorkflow,
-} from '../../lib/workflow-layout/auto-layout';
+} from "../../lib/workflow-layout/auto-layout";
 
 // ============================================================================
 // Types
@@ -108,7 +108,7 @@ export function applyAutoLayoutOnConversion(
       style,
       duration: Date.now() - startTime,
       actionsPositioned: 0,
-      error: error.message || 'Failed to apply layout',
+      error: error.message || "Failed to apply layout",
     };
   }
 }
@@ -149,7 +149,7 @@ export function previewLayout(
 export function getRecommendedLayoutStyle(workflow: Workflow): LayoutStyle {
   const actionCount = workflow.actions.length;
   const hasControlFlow = workflow.actions.some((a) =>
-    ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH'].includes(a.type)
+    ["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(a.type)
   );
 
   // Small workflows work well with any layout
@@ -181,62 +181,54 @@ export function getLayoutStyleInfo(workflow: Workflow): LayoutStyleInfo[] {
   return [
     {
       style: LayoutStyle.HIERARCHICAL,
-      name: 'Hierarchical',
-      description: 'Top-to-bottom flow with layered nodes',
+      name: "Hierarchical",
+      description: "Top-to-bottom flow with layered nodes",
       bestFor: [
-        'Control flow (IF, LOOP)',
-        'Sequential workflows',
-        'Clear execution order',
+        "Control flow (IF, LOOP)",
+        "Sequential workflows",
+        "Clear execution order",
       ],
-      icon: 'layers',
+      icon: "layers",
       recommended: recommended === LayoutStyle.HIERARCHICAL,
     },
     {
       style: LayoutStyle.HORIZONTAL,
-      name: 'Horizontal',
-      description: 'Left-to-right flow, good for linear workflows',
+      name: "Horizontal",
+      description: "Left-to-right flow, good for linear workflows",
       bestFor: [
-        'Linear sequences',
-        'Pipeline-style workflows',
-        'Wide displays',
+        "Linear sequences",
+        "Pipeline-style workflows",
+        "Wide displays",
       ],
-      icon: 'arrow-right',
+      icon: "arrow-right",
       recommended: recommended === LayoutStyle.HORIZONTAL,
     },
     {
       style: LayoutStyle.TREE,
-      name: 'Tree',
-      description: 'Tree structure with parent-child relationships',
+      name: "Tree",
+      description: "Tree structure with parent-child relationships",
       bestFor: [
-        'Hierarchical data',
-        'Branching workflows',
-        'Clear parent-child',
+        "Hierarchical data",
+        "Branching workflows",
+        "Clear parent-child",
       ],
-      icon: 'tree',
+      icon: "tree",
       recommended: recommended === LayoutStyle.TREE,
     },
     {
       style: LayoutStyle.FORCE_DIRECTED,
-      name: 'Force-Directed',
-      description: 'Physics-based layout, organic appearance',
-      bestFor: [
-        'Complex networks',
-        'Many connections',
-        'Exploring structure',
-      ],
-      icon: 'compass',
+      name: "Force-Directed",
+      description: "Physics-based layout, organic appearance",
+      bestFor: ["Complex networks", "Many connections", "Exploring structure"],
+      icon: "compass",
       recommended: recommended === LayoutStyle.FORCE_DIRECTED,
     },
     {
       style: LayoutStyle.CIRCULAR,
-      name: 'Circular',
-      description: 'Nodes arranged in a circle',
-      bestFor: [
-        'Cyclic workflows',
-        'Equal relationships',
-        'Compact display',
-      ],
-      icon: 'circle',
+      name: "Circular",
+      description: "Nodes arranged in a circle",
+      bestFor: ["Cyclic workflows", "Equal relationships", "Compact display"],
+      icon: "circle",
       recommended: recommended === LayoutStyle.CIRCULAR,
     },
   ];
@@ -439,9 +431,11 @@ function calculateClarity(workflow: Workflow): number {
   });
 
   if (spacings.length > 0) {
-    const avgSpacing = spacings.reduce((sum, d) => sum + d, 0) / spacings.length;
+    const avgSpacing =
+      spacings.reduce((sum, d) => sum + d, 0) / spacings.length;
     const variance =
-      spacings.reduce((sum, d) => sum + (d - avgSpacing) ** 2, 0) / spacings.length;
+      spacings.reduce((sum, d) => sum + (d - avgSpacing) ** 2, 0) /
+      spacings.length;
     const stdDev = Math.sqrt(variance);
 
     // Penalize high variance in spacing
@@ -474,14 +468,14 @@ function hasOverlap(action1: any, action2: any): boolean {
  */
 export function getLayoutStyleName(style: LayoutStyle): string {
   const styleInfo = {
-    [LayoutStyle.HIERARCHICAL]: 'Hierarchical',
-    [LayoutStyle.HORIZONTAL]: 'Horizontal',
-    [LayoutStyle.TREE]: 'Tree',
-    [LayoutStyle.FORCE_DIRECTED]: 'Force-Directed',
-    [LayoutStyle.CIRCULAR]: 'Circular',
+    [LayoutStyle.HIERARCHICAL]: "Hierarchical",
+    [LayoutStyle.HORIZONTAL]: "Horizontal",
+    [LayoutStyle.TREE]: "Tree",
+    [LayoutStyle.FORCE_DIRECTED]: "Force-Directed",
+    [LayoutStyle.CIRCULAR]: "Circular",
   };
 
-  return styleInfo[style] || 'Unknown';
+  return styleInfo[style] || "Unknown";
 }
 
 /**
@@ -489,14 +483,14 @@ export function getLayoutStyleName(style: LayoutStyle): string {
  */
 export function getLayoutStyleIcon(style: LayoutStyle): string {
   const icons = {
-    [LayoutStyle.HIERARCHICAL]: 'layers',
-    [LayoutStyle.HORIZONTAL]: 'arrow-right',
-    [LayoutStyle.TREE]: 'tree',
-    [LayoutStyle.FORCE_DIRECTED]: 'compass',
-    [LayoutStyle.CIRCULAR]: 'circle',
+    [LayoutStyle.HIERARCHICAL]: "layers",
+    [LayoutStyle.HORIZONTAL]: "arrow-right",
+    [LayoutStyle.TREE]: "tree",
+    [LayoutStyle.FORCE_DIRECTED]: "compass",
+    [LayoutStyle.CIRCULAR]: "circle",
   };
 
-  return icons[style] || 'layout';
+  return icons[style] || "layout";
 }
 
 /**

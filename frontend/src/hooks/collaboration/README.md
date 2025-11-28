@@ -19,9 +19,11 @@ collaboration/
 ## Hooks Overview
 
 ### 1. `useConflictResolution`
+
 **Purpose:** Conflict detection and resolution
 
 **Responsibilities:**
+
 - Check for conflicts between local and remote changes
 - Resolve conflicts using different strategies (KeepLocal, KeepRemote, Merge, Manual)
 - Auto-resolve conflicts when possible
@@ -29,8 +31,9 @@ collaboration/
 - Poll for conflicts at intervals
 
 **Usage:**
+
 ```typescript
-import { useConflictResolution } from '@/hooks/collaboration'
+import { useConflictResolution } from "@/hooks/collaboration";
 
 const {
   conflicts,
@@ -38,74 +41,77 @@ const {
   isChecking,
   checkForConflicts,
   resolveConflict,
-  autoResolve
-} = useConflictResolution(projectId, 'workflow', workflowId, {
+  autoResolve,
+} = useConflictResolution(projectId, "workflow", workflowId, {
   autoCheck: true,
   autoResolve: true,
-  pollingInterval: 5000
-})
+  pollingInterval: 5000,
+});
 ```
 
 ### 2. `useSyncState`
+
 **Purpose:** Synchronization state management
 
 **Responsibilities:**
+
 - Track sync operations in progress
 - Record last successful sync timestamp
 - Capture and display sync errors
 - Perform sync operations
 
 **Usage:**
+
 ```typescript
-import { useSyncState } from '@/hooks/collaboration'
+import { useSyncState } from "@/hooks/collaboration";
 
-const {
-  isSyncing,
-  lastSynced,
-  syncError,
-  sync
-} = useSyncState('workflow', workflowId)
+const { isSyncing, lastSynced, syncError, sync } = useSyncState(
+  "workflow",
+  workflowId
+);
 
-await sync(localVersion)
+await sync(localVersion);
 ```
 
 ### 3. `useOptimisticUpdate`
+
 **Purpose:** Optimistic UI updates
 
 **Responsibilities:**
+
 - Apply changes immediately to UI before server confirmation
 - Track optimistic state
 - Rollback changes if server update fails
 - Listen for rollback events
 
 **Usage:**
-```typescript
-import { useOptimisticUpdate } from '@/hooks/collaboration'
 
-const {
-  optimisticState,
-  hasOptimistic,
-  applyOptimistic,
-  rollback
-} = useOptimisticUpdate('workflow', workflowId)
+```typescript
+import { useOptimisticUpdate } from "@/hooks/collaboration";
+
+const { optimisticState, hasOptimistic, applyOptimistic, rollback } =
+  useOptimisticUpdate("workflow", workflowId);
 
 // Apply change immediately
-applyOptimistic(change)
+applyOptimistic(change);
 
 // Rollback if needed
-rollback(changeId)
+rollback(changeId);
 ```
 
 ### 4. `useOfflineQueue`
+
 **Purpose:** Offline queue processing
 
 **Responsibilities:**
+
 - Track queued offline operations
 - Process queued operations when back online
 - Clear queue
 - Monitor queue state
 
 **Usage:**
+
 ```typescript
 import { useOfflineQueue } from '@/hooks/collaboration'
 
@@ -125,28 +131,28 @@ const {
 ```
 
 ### 5. `useRealtimeCollaboration`
+
 **Purpose:** WebSocket-based real-time collaboration
 
 **Responsibilities:**
+
 - Manage WebSocket connection lifecycle
 - Track connection status
 - Receive and buffer remote changes
 - Clean up on unmount
 
 **Usage:**
-```typescript
-import { useRealtimeCollaboration } from '@/hooks/collaboration'
 
-const {
-  isConnected,
-  remoteChanges,
-  clearRemoteChanges
-} = useRealtimeCollaboration(projectId, 'workflow', workflowId)
+```typescript
+import { useRealtimeCollaboration } from "@/hooks/collaboration";
+
+const { isConnected, remoteChanges, clearRemoteChanges } =
+  useRealtimeCollaboration(projectId, "workflow", workflowId);
 
 useEffect(() => {
-  remoteChanges.forEach(applyChangeToUI)
-  clearRemoteChanges()
-}, [remoteChanges])
+  remoteChanges.forEach(applyChangeToUI);
+  clearRemoteChanges();
+}, [remoteChanges]);
 ```
 
 ## Shared Types (`types.ts`)
@@ -164,24 +170,26 @@ The `types.ts` file contains all shared TypeScript interfaces and types:
 ## Migration Guide
 
 ### Before (Monolithic)
+
 ```typescript
-import { useConflictResolution } from '@/hooks/useConflictResolution'
-import { useSyncState } from '@/hooks/useConflictResolution'
-import { useOptimisticUpdate } from '@/hooks/useConflictResolution'
+import { useConflictResolution } from "@/hooks/useConflictResolution";
+import { useSyncState } from "@/hooks/useConflictResolution";
+import { useOptimisticUpdate } from "@/hooks/useConflictResolution";
 ```
 
 ### After (Modular)
+
 ```typescript
 // Option 1: Import from index (recommended)
 import {
   useConflictResolution,
   useSyncState,
-  useOptimisticUpdate
-} from '@/hooks/collaboration'
+  useOptimisticUpdate,
+} from "@/hooks/collaboration";
 
 // Option 2: Import individual hooks
-import { useConflictResolution } from '@/hooks/collaboration/useConflictResolution'
-import { useSyncState } from '@/hooks/collaboration/useSyncState'
+import { useConflictResolution } from "@/hooks/collaboration/useConflictResolution";
+import { useSyncState } from "@/hooks/collaboration/useSyncState";
 ```
 
 ## Benefits of This Structure
@@ -214,7 +222,9 @@ import { useSyncState } from '@/hooks/collaboration/useSyncState'
 ## Design Principles
 
 ### Single Responsibility
+
 Each hook manages exactly one aspect of collaboration:
+
 - Conflict resolution → `useConflictResolution`
 - Sync state → `useSyncState`
 - Optimistic updates → `useOptimisticUpdate`
@@ -222,12 +232,15 @@ Each hook manages exactly one aspect of collaboration:
 - Real-time → `useRealtimeCollaboration`
 
 ### Separation of Concerns
+
 - UI state management is separate from business logic
 - Each hook interacts with services but doesn't implement them
 - Types are centralized for consistency
 
 ### Composability
+
 Hooks can be used together or independently:
+
 ```typescript
 // Use all features
 const conflict = useConflictResolution(...)
@@ -241,6 +254,7 @@ const { sync } = useSyncState(...)
 ## Testing
 
 Each hook should have its own test file:
+
 - `useConflictResolution.test.ts`
 - `useSyncState.test.ts`
 - `useOptimisticUpdate.test.ts`
@@ -256,6 +270,7 @@ Each hook should have its own test file:
 ## Contributing
 
 When adding new collaboration features:
+
 1. Create a new focused hook if it serves a distinct purpose
 2. Update `types.ts` with any new shared types
 3. Re-export from `index.ts` for convenience

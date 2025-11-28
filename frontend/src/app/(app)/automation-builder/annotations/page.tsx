@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Screenshot Annotation Page (Admin Only - Local Use)
@@ -17,33 +17,33 @@
  * - Save annotation data for pattern matching
  */
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuth } from '@/contexts/auth-context'
-import { useAutomation } from '@/contexts/automation-context'
-import ScreenshotAnnotationTab from '@/components/screenshot-annotation/ScreenshotAnnotationTab'
-import { RequireProject } from '@/components/require-project'
-import { toast } from 'sonner'
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { useAutomation } from "@/contexts/automation-context";
+import ScreenshotAnnotationTab from "@/components/screenshot-annotation/ScreenshotAnnotationTab";
+import { RequireProject } from "@/components/require-project";
+import { toast } from "sonner";
 
 export default function AnnotationsPage() {
-  const { user, loading } = useAuth()
-  const { states } = useAutomation()
-  const router = useRouter()
+  const { user, loading } = useAuth();
+  const { states } = useAutomation();
+  const router = useRouter();
 
   useEffect(() => {
     if (!loading && !user?.is_superuser) {
-      toast.error('Admin access required')
-      router.push('/dashboard')
+      toast.error("Admin access required");
+      router.push("/dashboard");
     }
-  }, [user, loading, router])
+  }, [user, loading, router]);
 
   if (!user?.is_superuser) {
-    return null
+    return null;
   }
 
   return (
     <RequireProject pageName="Annotations">
       <ScreenshotAnnotationTab states={states} />
     </RequireProject>
-  )
+  );
 }

@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { Eye, Image, Layers, Target, Sliders, CheckCircle2, AlertTriangle } from "lucide-react";
+import {
+  Eye,
+  Image,
+  Layers,
+  Target,
+  Sliders,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
 
 export const metadata = {
   title: "Image Recognition - Qontinui Web Documentation",
@@ -33,10 +41,11 @@ export default function ImageRecognitionDocPage() {
             How Image Recognition Works
           </h2>
           <p className="text-slate-700 mb-4">
-            Qontinui uses <strong>template matching</strong> to find UI elements on screen.
-            Instead of relying on element IDs, CSS selectors, or hardcoded coordinates,
-            Qontinui visually compares screenshot images against the current screen to locate
-            buttons, dialogs, and other elements.
+            Qontinui uses <strong>template matching</strong> to find UI elements
+            on screen. Instead of relying on element IDs, CSS selectors, or
+            hardcoded coordinates, Qontinui visually compares screenshot images
+            against the current screen to locate buttons, dialogs, and other
+            elements.
           </p>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
@@ -46,19 +55,31 @@ export default function ImageRecognitionDocPage() {
             <ul className="space-y-2 text-sm text-blue-900">
               <li className="flex items-start gap-2">
                 <span className="font-bold">•</span>
-                <span><strong>Resolution independent:</strong> Works across different screen sizes and DPI settings</span>
+                <span>
+                  <strong>Resolution independent:</strong> Works across
+                  different screen sizes and DPI settings
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold">•</span>
-                <span><strong>UI framework agnostic:</strong> Works with any application (web, desktop, games)</span>
+                <span>
+                  <strong>UI framework agnostic:</strong> Works with any
+                  application (web, desktop, games)
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold">•</span>
-                <span><strong>Resilient to minor changes:</strong> Similarity thresholds tolerate small visual variations</span>
+                <span>
+                  <strong>Resilient to minor changes:</strong> Similarity
+                  thresholds tolerate small visual variations
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold">•</span>
-                <span><strong>Simple to configure:</strong> Just capture screenshots, no need to inspect DOM or learn APIs</span>
+                <span>
+                  <strong>Simple to configure:</strong> Just capture
+                  screenshots, no need to inspect DOM or learn APIs
+                </span>
               </li>
             </ul>
           </div>
@@ -74,19 +95,30 @@ export default function ImageRecognitionDocPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-blue-600">2.</span>
-                <span>Your pattern image is compared pixel-by-pixel using OpenCV</span>
+                <span>
+                  Your pattern image is compared pixel-by-pixel using OpenCV
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-blue-600">3.</span>
-                <span>A similarity score (0.0-1.0) is calculated based on how closely pixels match</span>
+                <span>
+                  A similarity score (0.0-1.0) is calculated based on how
+                  closely pixels match
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-blue-600">4.</span>
-                <span>If the score exceeds your threshold, the element is considered "found"</span>
+                <span>
+                  If the score exceeds your threshold, the element is considered
+                  "found"
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold text-blue-600">5.</span>
-                <span>The location (x, y coordinates) is returned for clicking or verification</span>
+                <span>
+                  The location (x, y coordinates) is returned for clicking or
+                  verification
+                </span>
               </li>
             </ol>
           </div>
@@ -132,8 +164,9 @@ export default function ImageRecognitionDocPage() {
               description="Individual image templates within a StateImage"
             >
               <p className="text-sm text-slate-700 mt-3 mb-3">
-                Each StateImage can contain multiple patterns representing different variations
-                of the same element. This enables matching across:
+                Each StateImage can contain multiple patterns representing
+                different variations of the same element. This enables matching
+                across:
               </p>
               <ul className="text-sm text-slate-700 space-y-1">
                 <li className="flex items-start gap-2">
@@ -161,8 +194,9 @@ export default function ImageRecognitionDocPage() {
               description="Optional masks that define which pixels to compare"
             >
               <p className="text-sm text-slate-700 mt-3 mb-3">
-                Masks allow you to ignore certain parts of an image during matching. White pixels (255)
-                are compared, black pixels (0) are ignored. Use masks to:
+                Masks allow you to ignore certain parts of an image during
+                matching. White pixels (255) are compared, black pixels (0) are
+                ignored. Use masks to:
               </p>
               <ul className="text-sm text-slate-700 space-y-1">
                 <li className="flex items-start gap-2">
@@ -171,7 +205,10 @@ export default function ImageRecognitionDocPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-600">•</span>
-                  <span>Match partial elements (e.g., icon only, not surrounding area)</span>
+                  <span>
+                    Match partial elements (e.g., icon only, not surrounding
+                    area)
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-600">•</span>
@@ -186,8 +223,8 @@ export default function ImageRecognitionDocPage() {
               description="Rectangular areas that limit where to search for images"
             >
               <p className="text-sm text-slate-700 mt-3 mb-3">
-                Search regions improve performance and accuracy by restricting template matching
-                to specific screen areas. Benefits include:
+                Search regions improve performance and accuracy by restricting
+                template matching to specific screen areas. Benefits include:
               </p>
               <ul className="text-sm text-slate-700 space-y-1">
                 <li className="flex items-start gap-2">
@@ -196,7 +233,9 @@ export default function ImageRecognitionDocPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-orange-600">•</span>
-                  <span>Avoid false matches from similar elements elsewhere</span>
+                  <span>
+                    Avoid false matches from similar elements elsewhere
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-orange-600">•</span>
@@ -204,7 +243,10 @@ export default function ImageRecognitionDocPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-orange-600">•</span>
-                  <span>Focus on relevant UI sections (sidebars, toolbars, content areas)</span>
+                  <span>
+                    Focus on relevant UI sections (sidebars, toolbars, content
+                    areas)
+                  </span>
                 </li>
               </ul>
             </ConceptCard>
@@ -370,8 +412,9 @@ export default function ImageRecognitionDocPage() {
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-yellow-900">
-                <strong>Note:</strong> Most users should keep default settings. Only adjust these
-                if you're experiencing specific recognition issues or need to optimize performance.
+                <strong>Note:</strong> Most users should keep default settings.
+                Only adjust these if you're experiencing specific recognition
+                issues or need to optimize performance.
               </p>
             </div>
           </div>
@@ -379,9 +422,7 @@ export default function ImageRecognitionDocPage() {
 
         {/* Next Steps */}
         <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
-            Next Steps
-          </h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="Working with States"
@@ -429,7 +470,12 @@ interface ThresholdRangeProps {
   color: "green" | "yellow" | "red";
 }
 
-function ThresholdRange({ range, label, description, color }: ThresholdRangeProps) {
+function ThresholdRange({
+  range,
+  label,
+  description,
+  color,
+}: ThresholdRangeProps) {
   const colorClasses = {
     green: "bg-green-50 border-green-200 text-green-900",
     yellow: "bg-yellow-50 border-yellow-200 text-yellow-900",
@@ -456,7 +502,8 @@ interface BestPracticeProps {
 
 function BestPractice({ icon, title, description, type }: BestPracticeProps) {
   const bgColor = type === "success" ? "bg-green-50" : "bg-yellow-50";
-  const borderColor = type === "success" ? "border-green-200" : "border-yellow-200";
+  const borderColor =
+    type === "success" ? "border-green-200" : "border-yellow-200";
   const textColor = type === "success" ? "text-green-900" : "text-yellow-900";
 
   return (
@@ -481,10 +528,15 @@ function TroubleshootingCard({ problem, solutions }: TroubleshootingCardProps) {
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
       <h3 className="font-semibold text-slate-900 mb-3">Problem: {problem}</h3>
-      <p className="text-xs font-semibold text-slate-600 mb-2">Possible Solutions:</p>
+      <p className="text-xs font-semibold text-slate-600 mb-2">
+        Possible Solutions:
+      </p>
       <ul className="space-y-2">
         {solutions.map((solution, idx) => (
-          <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+          <li
+            key={idx}
+            className="flex items-start gap-2 text-sm text-slate-700"
+          >
             <span className="text-blue-600 font-bold">•</span>
             <span>{solution}</span>
           </li>
@@ -501,7 +553,12 @@ interface SettingCardProps {
   description: string;
 }
 
-function SettingCard({ name, type, defaultValue, description }: SettingCardProps) {
+function SettingCard({
+  name,
+  type,
+  defaultValue,
+  description,
+}: SettingCardProps) {
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-4">
       <div className="flex items-start justify-between mb-2">
@@ -514,7 +571,10 @@ function SettingCard({ name, type, defaultValue, description }: SettingCardProps
       </div>
       <p className="text-sm text-slate-700 mb-2">{description}</p>
       <p className="text-xs text-slate-500">
-        Default: <span className="font-mono bg-slate-100 px-1 rounded">{defaultValue}</span>
+        Default:{" "}
+        <span className="font-mono bg-slate-100 px-1 rounded">
+          {defaultValue}
+        </span>
       </p>
     </div>
   );

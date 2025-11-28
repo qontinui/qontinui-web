@@ -5,18 +5,24 @@
  * in a complete workflow analytics page.
  */
 
-'use client';
+"use client";
 
-import React, { useState, useMemo } from 'react';
-import { Workflow } from '@/lib/action-schema/action-types';
-import { workflowAnalyticsService } from '@/services/workflow-analytics-service';
-import { workflowComplexityAnalyzer } from '@/services/workflow-complexity-analyzer';
-import { AnalyticsDashboard } from './AnalyticsDashboard';
-import { WorkflowMetricsPanel } from './WorkflowMetricsPanel';
-import { PerformanceAnalyzer } from './PerformanceAnalyzer';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card } from '@/components/ui/card';
+import React, { useState, useMemo } from "react";
+import { Workflow } from "@/lib/action-schema/action-types";
+import { workflowAnalyticsService } from "@/services/workflow-analytics-service";
+import { workflowComplexityAnalyzer } from "@/services/workflow-complexity-analyzer";
+import { AnalyticsDashboard } from "./AnalyticsDashboard";
+import { WorkflowMetricsPanel } from "./WorkflowMetricsPanel";
+import { PerformanceAnalyzer } from "./PerformanceAnalyzer";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
 
 // ============================================================================
 // Example Component
@@ -24,7 +30,9 @@ import { Card } from '@/components/ui/card';
 
 export function WorkflowAnalyticsExample() {
   // State
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
+    null
+  );
   const [timeRange, setTimeRange] = useState({
     start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
     end: new Date(),
@@ -34,74 +42,74 @@ export function WorkflowAnalyticsExample() {
   const workflows: Workflow[] = useMemo(() => {
     return [
       {
-        id: 'wf-1',
-        name: 'User Login Flow',
-        version: '1.0.0',
-        format: 'graph',
-        category: 'Main',
-        description: 'Complete user authentication workflow',
+        id: "wf-1",
+        name: "User Login Flow",
+        version: "1.0.0",
+        format: "graph",
+        category: "Main",
+        description: "Complete user authentication workflow",
         actions: [
           {
-            id: 'a1',
-            type: 'FIND',
-            config: { pattern: 'login-button', similarity: 0.9 },
+            id: "a1",
+            type: "FIND",
+            config: { pattern: "login-button", similarity: 0.9 },
             position: [100, 100],
           },
           {
-            id: 'a2',
-            type: 'CLICK',
-            config: { clickType: 'single', button: 'left' },
+            id: "a2",
+            type: "CLICK",
+            config: { clickType: "single", button: "left" },
             position: [100, 250],
           },
           {
-            id: 'a3',
-            type: 'TYPE',
-            config: { text: 'username' },
+            id: "a3",
+            type: "TYPE",
+            config: { text: "username" },
             position: [100, 400],
           },
           {
-            id: 'a4',
-            type: 'WAIT',
+            id: "a4",
+            type: "WAIT",
             config: { duration: 1000 },
             position: [100, 550],
           },
         ],
         connections: {
-          a1: { main: [[{ action: 'a2', type: 'main', index: 0 }]] },
-          a2: { main: [[{ action: 'a3', type: 'main', index: 0 }]] },
-          a3: { main: [[{ action: 'a4', type: 'main', index: 0 }]] },
+          a1: { main: [[{ action: "a2", type: "main", index: 0 }]] },
+          a2: { main: [[{ action: "a3", type: "main", index: 0 }]] },
+          a3: { main: [[{ action: "a4", type: "main", index: 0 }]] },
         },
       },
       {
-        id: 'wf-2',
-        name: 'Data Extraction',
-        version: '1.0.0',
-        format: 'graph',
-        category: 'Utilities',
-        description: 'Extract data from web application',
+        id: "wf-2",
+        name: "Data Extraction",
+        version: "1.0.0",
+        format: "graph",
+        category: "Utilities",
+        description: "Extract data from web application",
         actions: [
           {
-            id: 'a1',
-            type: 'FIND',
-            config: { pattern: 'data-table', similarity: 0.85 },
+            id: "a1",
+            type: "FIND",
+            config: { pattern: "data-table", similarity: 0.85 },
             position: [100, 100],
           },
           {
-            id: 'a2',
-            type: 'CLICK',
-            config: { clickType: 'single', button: 'left' },
+            id: "a2",
+            type: "CLICK",
+            config: { clickType: "single", button: "left" },
             position: [100, 250],
           },
           {
-            id: 'a3',
-            type: 'LOOP',
+            id: "a3",
+            type: "LOOP",
             config: { maxIterations: 10 },
             position: [100, 400],
           },
         ],
         connections: {
-          a1: { main: [[{ action: 'a2', type: 'main', index: 0 }]] },
-          a2: { main: [[{ action: 'a3', type: 'main', index: 0 }]] },
+          a1: { main: [[{ action: "a2", type: "main", index: 0 }]] },
+          a2: { main: [[{ action: "a3", type: "main", index: 0 }]] },
         },
       },
     ];
@@ -111,8 +119,10 @@ export function WorkflowAnalyticsExample() {
   const allMetrics = useMemo(() => {
     const metricsMap: Record<string, any> = {};
 
-    workflows.forEach(workflow => {
-      metricsMap[workflow.id] = workflowAnalyticsService.getWorkflowMetrics(workflow.id) || {
+    workflows.forEach((workflow) => {
+      metricsMap[workflow.id] = workflowAnalyticsService.getWorkflowMetrics(
+        workflow.id
+      ) || {
         workflowId: workflow.id,
         workflowName: workflow.name,
         totalExecutions: Math.floor(Math.random() * 100),
@@ -122,8 +132,12 @@ export function WorkflowAnalyticsExample() {
         avgDuration: 1000 + Math.random() * 5000,
         minDuration: 500 + Math.random() * 500,
         maxDuration: 5000 + Math.random() * 5000,
-        lastExecuted: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-        firstExecuted: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        lastExecuted: new Date(
+          Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000
+        ).toISOString(),
+        firstExecuted: new Date(
+          Date.now() - 30 * 24 * 60 * 60 * 1000
+        ).toISOString(),
       };
     });
 
@@ -132,7 +146,7 @@ export function WorkflowAnalyticsExample() {
 
   // Selected workflow
   const selectedWorkflow = useMemo(() => {
-    return workflows.find(w => w.id === selectedWorkflowId) || null;
+    return workflows.find((w) => w.id === selectedWorkflowId) || null;
   }, [workflows, selectedWorkflowId]);
 
   // Get complexity metrics for selected workflow
@@ -150,10 +164,14 @@ export function WorkflowAnalyticsExample() {
       testCaseId: `test-${i}`,
       testCaseName: `Test ${i + 1}`,
       workflowId: selectedWorkflowId,
-      workflowName: selectedWorkflow?.name || '',
+      workflowName: selectedWorkflow?.name || "",
       passed: Math.random() > 0.2,
-      startTime: new Date(Date.now() - (30 - i) * 24 * 60 * 60 * 1000).toISOString(),
-      endTime: new Date(Date.now() - (30 - i) * 24 * 60 * 60 * 1000 + Math.random() * 10000).toISOString(),
+      startTime: new Date(
+        Date.now() - (30 - i) * 24 * 60 * 60 * 1000
+      ).toISOString(),
+      endTime: new Date(
+        Date.now() - (30 - i) * 24 * 60 * 60 * 1000 + Math.random() * 10000
+      ).toISOString(),
       duration: 1000 + Math.random() * 5000,
       assertions: [],
     }));
@@ -161,13 +179,13 @@ export function WorkflowAnalyticsExample() {
 
   // Handle analyze
   const handleAnalyze = () => {
-    console.log('Running performance analysis...');
+    console.log("Running performance analysis...");
     // Implement actual analysis logic
   };
 
   // Handle apply suggestion
   const handleApplySuggestion = (suggestion: any) => {
-    console.log('Applying suggestion:', suggestion);
+    console.log("Applying suggestion:", suggestion);
     // Implement suggestion application logic
   };
 
@@ -207,12 +225,15 @@ export function WorkflowAnalyticsExample() {
         <TabsContent value="workflow" className="space-y-4">
           {/* Workflow Selector */}
           <Card className="p-4">
-            <Select value={selectedWorkflowId || ''} onValueChange={setSelectedWorkflowId}>
+            <Select
+              value={selectedWorkflowId || ""}
+              onValueChange={setSelectedWorkflowId}
+            >
               <SelectTrigger className="w-[300px]">
                 <SelectValue placeholder="Select a workflow" />
               </SelectTrigger>
               <SelectContent>
-                {workflows.map(workflow => (
+                {workflows.map((workflow) => (
                   <SelectItem key={workflow.id} value={workflow.id}>
                     {workflow.name}
                   </SelectItem>
@@ -235,12 +256,15 @@ export function WorkflowAnalyticsExample() {
         <TabsContent value="performance" className="space-y-4">
           {/* Workflow Selector */}
           <Card className="p-4">
-            <Select value={selectedWorkflowId || ''} onValueChange={setSelectedWorkflowId}>
+            <Select
+              value={selectedWorkflowId || ""}
+              onValueChange={setSelectedWorkflowId}
+            >
               <SelectTrigger className="w-[300px]">
                 <SelectValue placeholder="Select a workflow" />
               </SelectTrigger>
               <SelectContent>
-                {workflows.map(workflow => (
+                {workflows.map((workflow) => (
                   <SelectItem key={workflow.id} value={workflow.id}>
                     {workflow.name}
                   </SelectItem>

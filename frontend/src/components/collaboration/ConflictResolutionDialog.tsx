@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import * as React from 'react';
+import * as React from "react";
 import {
   AlertTriangle,
   Check,
@@ -11,8 +11,8 @@ import {
   Loader2,
   ChevronRight,
   ChevronLeft,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -20,12 +20,12 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export interface ConflictChange {
   field: string;
@@ -57,10 +57,10 @@ interface ConflictResolutionDialogProps {
   currentConflictIndex?: number;
   onResolve: (
     conflictId: string,
-    resolution: 'local' | 'remote' | 'merge',
+    resolution: "local" | "remote" | "merge",
     mergedData?: Record<string, any>
   ) => Promise<void>;
-  onResolveAll: (resolution: 'local' | 'remote') => Promise<void>;
+  onResolveAll: (resolution: "local" | "remote") => Promise<void>;
 }
 
 export function ConflictResolutionDialog({
@@ -71,10 +71,13 @@ export function ConflictResolutionDialog({
   onResolve,
   onResolveAll,
 }: ConflictResolutionDialogProps) {
-  const [selectedIndex, setSelectedIndex] = React.useState(currentConflictIndex);
+  const [selectedIndex, setSelectedIndex] =
+    React.useState(currentConflictIndex);
   const [loading, setLoading] = React.useState(false);
-  const [mergeChoices, setMergeChoices] = React.useState<Record<string, 'local' | 'remote'>>({});
-  const [viewMode, setViewMode] = React.useState<'split' | 'unified'>('split');
+  const [mergeChoices, setMergeChoices] = React.useState<
+    Record<string, "local" | "remote">
+  >({});
+  const [viewMode, setViewMode] = React.useState<"split" | "unified">("split");
 
   const currentConflict = conflicts[selectedIndex];
 
@@ -85,30 +88,30 @@ export function ConflictResolutionDialog({
   React.useEffect(() => {
     if (currentConflict) {
       // Initialize merge choices
-      const initialChoices: Record<string, 'local' | 'remote'> = {};
+      const initialChoices: Record<string, "local" | "remote"> = {};
       currentConflict.changes.forEach((change) => {
         if (change.conflicted) {
-          initialChoices[change.field] = 'local';
+          initialChoices[change.field] = "local";
         }
       });
       setMergeChoices(initialChoices);
     }
   }, [currentConflict]);
 
-  const handleResolve = async (resolution: 'local' | 'remote' | 'merge') => {
+  const handleResolve = async (resolution: "local" | "remote" | "merge") => {
     if (!currentConflict) return;
 
     setLoading(true);
     try {
       let mergedData: Record<string, any> | undefined;
 
-      if (resolution === 'merge') {
+      if (resolution === "merge") {
         mergedData = {};
         currentConflict.changes.forEach((change) => {
           if (change.conflicted) {
             const choice = mergeChoices[change.field];
             mergedData![change.field] =
-              choice === 'local' ? change.local_value : change.remote_value;
+              choice === "local" ? change.local_value : change.remote_value;
           } else {
             mergedData![change.field] = change.local_value;
           }
@@ -116,7 +119,7 @@ export function ConflictResolutionDialog({
       }
 
       await onResolve(currentConflict.id, resolution, mergedData);
-      toast.success('Conflict resolved');
+      toast.success("Conflict resolved");
 
       // Move to next conflict or close
       if (selectedIndex < conflicts.length - 1) {
@@ -125,14 +128,18 @@ export function ConflictResolutionDialog({
         onOpenChange(false);
       }
     } catch (error: any) {
-      toast.error(error.message || 'Failed to resolve conflict');
+      toast.error(error.message || "Failed to resolve conflict");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResolveAll = async (resolution: 'local' | 'remote') => {
-    if (!confirm(`Resolve all ${conflicts.length} conflicts by keeping ${resolution} changes?`)) {
+  const handleResolveAll = async (resolution: "local" | "remote") => {
+    if (
+      !confirm(
+        `Resolve all ${conflicts.length} conflicts by keeping ${resolution} changes?`
+      )
+    ) {
       return;
     }
 
@@ -142,7 +149,7 @@ export function ConflictResolutionDialog({
       toast.success(`All conflicts resolved with ${resolution} changes`);
       onOpenChange(false);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to resolve all conflicts');
+      toast.error(error.message || "Failed to resolve all conflicts");
     } finally {
       setLoading(false);
     }
@@ -152,7 +159,7 @@ export function ConflictResolutionDialog({
     if (value === null || value === undefined) {
       return <span className="text-muted-foreground italic">empty</span>;
     }
-    if (typeof value === 'object') {
+    if (typeof value === "object") {
       return (
         <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
           {JSON.stringify(value, null, 2)}
@@ -169,7 +176,10 @@ export function ConflictResolutionDialog({
           <div className="flex items-center gap-2 mb-2">
             <Check className="h-4 w-4 text-green-500" />
             <span className="text-sm font-medium">{change.field}</span>
-            <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
+            <Badge
+              variant="outline"
+              className="bg-green-500/10 text-green-500 border-green-500/20"
+            >
               No Conflict
             </Badge>
           </div>
@@ -178,7 +188,7 @@ export function ConflictResolutionDialog({
       );
     }
 
-    if (viewMode === 'split') {
+    if (viewMode === "split") {
       return (
         <div key={change.field} className="border rounded-lg overflow-hidden">
           <div className="flex items-center justify-between bg-muted px-3 py-2 border-b">
@@ -186,7 +196,10 @@ export function ConflictResolutionDialog({
               <AlertTriangle className="h-4 w-4 text-orange-500" />
               <span className="text-sm font-medium">{change.field}</span>
             </div>
-            <Badge variant="outline" className="bg-orange-500/10 text-orange-500 border-orange-500/20">
+            <Badge
+              variant="outline"
+              className="bg-orange-500/10 text-orange-500 border-orange-500/20"
+            >
               Conflict
             </Badge>
           </div>
@@ -194,13 +207,16 @@ export function ConflictResolutionDialog({
             {/* Local Version */}
             <div
               className={cn(
-                'p-3 cursor-pointer transition-colors',
-                mergeChoices[change.field] === 'local'
-                  ? 'bg-green-500/10'
-                  : 'hover:bg-muted/50'
+                "p-3 cursor-pointer transition-colors",
+                mergeChoices[change.field] === "local"
+                  ? "bg-green-500/10"
+                  : "hover:bg-muted/50"
               )}
               onClick={() =>
-                setMergeChoices((prev) => ({ ...prev, [change.field]: 'local' }))
+                setMergeChoices((prev) => ({
+                  ...prev,
+                  [change.field]: "local",
+                }))
               }
             >
               <div className="flex items-center justify-between mb-2">
@@ -210,7 +226,7 @@ export function ConflictResolutionDialog({
                     Your Changes
                   </span>
                 </div>
-                {mergeChoices[change.field] === 'local' && (
+                {mergeChoices[change.field] === "local" && (
                   <Check className="h-4 w-4 text-green-500" />
                 )}
               </div>
@@ -220,13 +236,16 @@ export function ConflictResolutionDialog({
             {/* Remote Version */}
             <div
               className={cn(
-                'p-3 cursor-pointer transition-colors',
-                mergeChoices[change.field] === 'remote'
-                  ? 'bg-blue-500/10'
-                  : 'hover:bg-muted/50'
+                "p-3 cursor-pointer transition-colors",
+                mergeChoices[change.field] === "remote"
+                  ? "bg-blue-500/10"
+                  : "hover:bg-muted/50"
               )}
               onClick={() =>
-                setMergeChoices((prev) => ({ ...prev, [change.field]: 'remote' }))
+                setMergeChoices((prev) => ({
+                  ...prev,
+                  [change.field]: "remote",
+                }))
               }
             >
               <div className="flex items-center justify-between mb-2">
@@ -236,7 +255,7 @@ export function ConflictResolutionDialog({
                     {currentConflict.remote_user_name}'s Changes
                   </span>
                 </div>
-                {mergeChoices[change.field] === 'remote' && (
+                {mergeChoices[change.field] === "remote" && (
                   <Check className="h-4 w-4 text-blue-500" />
                 )}
               </div>
@@ -258,19 +277,22 @@ export function ConflictResolutionDialog({
           <div className="space-y-2 p-3">
             <div
               className={cn(
-                'p-2 rounded border-l-2 cursor-pointer',
-                mergeChoices[change.field] === 'local'
-                  ? 'border-green-500 bg-green-500/10'
-                  : 'border-red-500 bg-red-500/5'
+                "p-2 rounded border-l-2 cursor-pointer",
+                mergeChoices[change.field] === "local"
+                  ? "border-green-500 bg-green-500/10"
+                  : "border-red-500 bg-red-500/5"
               )}
               onClick={() =>
-                setMergeChoices((prev) => ({ ...prev, [change.field]: 'local' }))
+                setMergeChoices((prev) => ({
+                  ...prev,
+                  [change.field]: "local",
+                }))
               }
             >
               <div className="flex items-center gap-2 mb-1">
                 <X className="h-3 w-3 text-red-500" />
                 <span className="text-xs font-medium">Your Changes</span>
-                {mergeChoices[change.field] === 'local' && (
+                {mergeChoices[change.field] === "local" && (
                   <Check className="h-3 w-3 text-green-500 ml-auto" />
                 )}
               </div>
@@ -278,13 +300,16 @@ export function ConflictResolutionDialog({
             </div>
             <div
               className={cn(
-                'p-2 rounded border-l-2 cursor-pointer',
-                mergeChoices[change.field] === 'remote'
-                  ? 'border-blue-500 bg-blue-500/10'
-                  : 'border-gray-500 bg-gray-500/5'
+                "p-2 rounded border-l-2 cursor-pointer",
+                mergeChoices[change.field] === "remote"
+                  ? "border-blue-500 bg-blue-500/10"
+                  : "border-gray-500 bg-gray-500/5"
               )}
               onClick={() =>
-                setMergeChoices((prev) => ({ ...prev, [change.field]: 'remote' }))
+                setMergeChoices((prev) => ({
+                  ...prev,
+                  [change.field]: "remote",
+                }))
               }
             >
               <div className="flex items-center gap-2 mb-1">
@@ -292,7 +317,7 @@ export function ConflictResolutionDialog({
                 <span className="text-xs font-medium">
                   {currentConflict.remote_user_name}'s Changes
                 </span>
-                {mergeChoices[change.field] === 'remote' && (
+                {mergeChoices[change.field] === "remote" && (
                   <Check className="h-3 w-3 text-blue-500 ml-auto" />
                 )}
               </div>
@@ -309,7 +334,9 @@ export function ConflictResolutionDialog({
   }
 
   const conflictedChanges = currentConflict.changes.filter((c) => c.conflicted);
-  const nonConflictedChanges = currentConflict.changes.filter((c) => !c.conflicted);
+  const nonConflictedChanges = currentConflict.changes.filter(
+    (c) => !c.conflicted
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -344,7 +371,9 @@ export function ConflictResolutionDialog({
               variant="ghost"
               size="sm"
               onClick={() =>
-                setSelectedIndex(Math.min(conflicts.length - 1, selectedIndex + 1))
+                setSelectedIndex(
+                  Math.min(conflicts.length - 1, selectedIndex + 1)
+                )
               }
               disabled={selectedIndex === conflicts.length - 1}
             >
@@ -395,7 +424,7 @@ export function ConflictResolutionDialog({
               <>
                 <Button
                   variant="outline"
-                  onClick={() => handleResolveAll('local')}
+                  onClick={() => handleResolveAll("local")}
                   disabled={loading}
                   className="flex-1"
                 >
@@ -403,7 +432,7 @@ export function ConflictResolutionDialog({
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => handleResolveAll('remote')}
+                  onClick={() => handleResolveAll("remote")}
                   disabled={loading}
                   className="flex-1"
                 >
@@ -415,7 +444,7 @@ export function ConflictResolutionDialog({
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => handleResolve('local')}
+              onClick={() => handleResolve("local")}
               disabled={loading}
             >
               <User className="mr-2 h-4 w-4" />
@@ -423,13 +452,13 @@ export function ConflictResolutionDialog({
             </Button>
             <Button
               variant="outline"
-              onClick={() => handleResolve('remote')}
+              onClick={() => handleResolve("remote")}
               disabled={loading}
             >
               <Users className="mr-2 h-4 w-4" />
               Keep Theirs
             </Button>
-            <Button onClick={() => handleResolve('merge')} disabled={loading}>
+            <Button onClick={() => handleResolve("merge")} disabled={loading}>
               {loading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (

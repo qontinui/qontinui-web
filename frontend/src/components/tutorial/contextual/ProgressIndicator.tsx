@@ -5,8 +5,8 @@
  * Shows current step, total steps, and completion percentage.
  */
 
-import React from 'react';
-import { motion } from 'framer-motion';
+import React from "react";
+import { motion } from "framer-motion";
 
 export interface ProgressIndicatorProps {
   /** Current step number (1-indexed) */
@@ -14,9 +14,9 @@ export interface ProgressIndicatorProps {
   /** Total number of steps */
   totalSteps: number;
   /** Display variant: linear bar or circular */
-  variant?: 'linear' | 'circular';
+  variant?: "linear" | "circular";
   /** Size for the progress indicator */
-  size?: 'sm' | 'md' | 'lg';
+  size?: "sm" | "md" | "lg";
   /** Show percentage label */
   showPercentage?: boolean;
   /** Custom class name */
@@ -26,24 +26,24 @@ export interface ProgressIndicatorProps {
 export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
   currentStep,
   totalSteps,
-  variant = 'linear',
-  size = 'md',
+  variant = "linear",
+  size = "md",
   showPercentage = true,
-  className = '',
+  className = "",
 }) => {
   const percentage = Math.round((currentStep / totalSteps) * 100);
 
   // Size configurations
   const sizeClasses = {
-    sm: 'h-1',
-    md: 'h-2',
-    lg: 'h-3',
+    sm: "h-1",
+    md: "h-2",
+    lg: "h-3",
   };
 
   const textSizeClasses = {
-    sm: 'text-xs',
-    md: 'text-sm',
-    lg: 'text-base',
+    sm: "text-xs",
+    md: "text-sm",
+    lg: "text-base",
   };
 
   const circularSizes = {
@@ -52,7 +52,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
     lg: { size: 80, strokeWidth: 5 },
   };
 
-  if (variant === 'circular') {
+  if (variant === "circular") {
     const { size: circleSize, strokeWidth } = circularSizes[size];
     const radius = (circleSize - strokeWidth) / 2;
     const circumference = 2 * Math.PI * radius;
@@ -60,7 +60,10 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
 
     return (
       <div className={`inline-flex items-center justify-center ${className}`}>
-        <div className="relative" style={{ width: circleSize, height: circleSize }}>
+        <div
+          className="relative"
+          style={{ width: circleSize, height: circleSize }}
+        >
           <svg
             width={circleSize}
             height={circleSize}
@@ -90,12 +93,14 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
               className="text-blue-600 dark:text-blue-400"
               initial={{ strokeDashoffset: circumference }}
               animate={{ strokeDashoffset: offset }}
-              transition={{ duration: 0.5, ease: 'easeInOut' }}
+              transition={{ duration: 0.5, ease: "easeInOut" }}
             />
           </svg>
           {/* Center text */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className={`font-semibold text-gray-900 dark:text-gray-100 ${textSizeClasses[size]}`}>
+            <span
+              className={`font-semibold text-gray-900 dark:text-gray-100 ${textSizeClasses[size]}`}
+            >
               {currentStep}/{totalSteps}
             </span>
             {showPercentage && (
@@ -113,11 +118,15 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
   return (
     <div className={`w-full ${className}`}>
       <div className="flex items-center justify-between mb-1">
-        <span className={`font-medium text-gray-700 dark:text-gray-300 ${textSizeClasses[size]}`}>
+        <span
+          className={`font-medium text-gray-700 dark:text-gray-300 ${textSizeClasses[size]}`}
+        >
           Step {currentStep} of {totalSteps}
         </span>
         {showPercentage && (
-          <span className={`font-semibold text-blue-600 dark:text-blue-400 ${textSizeClasses[size]}`}>
+          <span
+            className={`font-semibold text-blue-600 dark:text-blue-400 ${textSizeClasses[size]}`}
+          >
             {percentage}%
           </span>
         )}
@@ -134,7 +143,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
           className="h-full bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-400 dark:to-blue-500"
           initial={{ width: 0 }}
           animate={{ width: `${percentage}%` }}
-          transition={{ duration: 0.5, ease: 'easeInOut' }}
+          transition={{ duration: 0.5, ease: "easeInOut" }}
         />
       </div>
     </div>

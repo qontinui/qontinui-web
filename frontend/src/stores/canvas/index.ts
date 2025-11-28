@@ -23,19 +23,19 @@
  * - Selective re-renders through selectors
  */
 
-import { create } from 'zustand';
-import { devtools, persist } from 'zustand/middleware';
-import { immer } from 'zustand/middleware/immer';
+import { create } from "zustand";
+import { devtools, persist } from "zustand/middleware";
+import { immer } from "zustand/middleware/immer";
 
-import type { CanvasStore } from './types';
-import { createWorkflowSlice } from './workflow-slice';
-import { createActionSlice } from './action-slice';
-import { createConnectionSlice } from './connection-slice';
-import { createSelectionSlice } from './selection-slice';
-import { createClipboardSlice } from './clipboard-slice';
-import { createHistorySlice } from './history-slice';
-import { createViewportSlice } from './viewport-slice';
-import { createPreferencesSlice } from './preferences-slice';
+import type { CanvasStore } from "./types";
+import { createWorkflowSlice } from "./workflow-slice";
+import { createActionSlice } from "./action-slice";
+import { createConnectionSlice } from "./connection-slice";
+import { createSelectionSlice } from "./selection-slice";
+import { createClipboardSlice } from "./clipboard-slice";
+import { createHistorySlice } from "./history-slice";
+import { createViewportSlice } from "./viewport-slice";
+import { createPreferencesSlice } from "./preferences-slice";
 
 // ============================================================================
 // Combined Store
@@ -56,7 +56,7 @@ export const useCanvasStore = create<CanvasStore>()(
           ...createPreferencesSlice(...a),
         }),
         {
-          name: 'canvas-storage',
+          name: "canvas-storage",
           partialize: (state) => ({
             viewport: state.viewport,
             showMinimap: state.showMinimap,
@@ -67,7 +67,7 @@ export const useCanvasStore = create<CanvasStore>()(
         }
       )
     ),
-    { name: 'CanvasStore' }
+    { name: "CanvasStore" }
   )
 );
 
@@ -80,27 +80,34 @@ export const useCanvasStore = create<CanvasStore>()(
  */
 export const useWorkflow = () => useCanvasStore((state) => state.workflow);
 export const useIsDirty = () => useCanvasStore((state) => state.isDirty);
-export const useValidationResult = () => useCanvasStore((state) => state.validationResult);
+export const useValidationResult = () =>
+  useCanvasStore((state) => state.validationResult);
 
 /**
  * Action selectors
  */
-export const useActions = () => useCanvasStore((state) => state.workflow?.actions ?? []);
+export const useActions = () =>
+  useCanvasStore((state) => state.workflow?.actions ?? []);
 export const useActionById = (id: string) =>
   useCanvasStore((state) => state.workflow?.actions.find((a) => a.id === id));
 
 /**
  * Connection selectors
  */
-export const useConnections = () => useCanvasStore((state) => state.workflow?.connections ?? {});
-export const useIsConnecting = () => useCanvasStore((state) => state.isConnecting);
-export const useConnectingFrom = () => useCanvasStore((state) => state.connectingFrom);
+export const useConnections = () =>
+  useCanvasStore((state) => state.workflow?.connections ?? {});
+export const useIsConnecting = () =>
+  useCanvasStore((state) => state.isConnecting);
+export const useConnectingFrom = () =>
+  useCanvasStore((state) => state.connectingFrom);
 
 /**
  * Selection selectors
  */
-export const useSelectedNodes = () => useCanvasStore((state) => state.selectedNodes);
-export const useSelectedEdges = () => useCanvasStore((state) => state.selectedEdges);
+export const useSelectedNodes = () =>
+  useCanvasStore((state) => state.selectedNodes);
+export const useSelectedEdges = () =>
+  useCanvasStore((state) => state.selectedEdges);
 export const useHasSelection = () =>
   useCanvasStore(
     (state) => state.selectedNodes.length > 0 || state.selectedEdges.length > 0
@@ -109,15 +116,18 @@ export const useHasSelection = () =>
 /**
  * Clipboard selectors
  */
-export const useCanPaste = () => useCanvasStore((state) => state.clipboardNodes.length > 0);
+export const useCanPaste = () =>
+  useCanvasStore((state) => state.clipboardNodes.length > 0);
 
 /**
  * History selectors
  */
 export const useCanUndo = () => useCanvasStore((state) => state.canUndo());
 export const useCanRedo = () => useCanvasStore((state) => state.canRedo());
-export const useHistoryIndex = () => useCanvasStore((state) => state.historyIndex);
-export const useHistoryLength = () => useCanvasStore((state) => state.history.length);
+export const useHistoryIndex = () =>
+  useCanvasStore((state) => state.historyIndex);
+export const useHistoryLength = () =>
+  useCanvasStore((state) => state.history.length);
 
 /**
  * Viewport selectors
@@ -130,7 +140,8 @@ export const useIsPanning = () => useCanvasStore((state) => state.isPanning);
 /**
  * Preferences selectors
  */
-export const useShowMinimap = () => useCanvasStore((state) => state.showMinimap);
+export const useShowMinimap = () =>
+  useCanvasStore((state) => state.showMinimap);
 export const useShowGrid = () => useCanvasStore((state) => state.showGrid);
 export const useSnapToGrid = () => useCanvasStore((state) => state.snapToGrid);
 export const useGridSize = () => useCanvasStore((state) => state.gridSize);
@@ -139,4 +150,4 @@ export const useGridSize = () => useCanvasStore((state) => state.gridSize);
 // Re-exports
 // ============================================================================
 
-export type * from './types';
+export type * from "./types";

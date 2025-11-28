@@ -1,24 +1,24 @@
-'use client';
+"use client";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-import { useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/components/ui/button';
-import { TestRunsList } from '@/components/testing/TestRunsList';
-import { RequireProject } from '@/components/require-project';
-import { ArrowLeft } from 'lucide-react';
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/components/ui/button";
+import { TestRunsList } from "@/components/testing/TestRunsList";
+import { RequireProject } from "@/components/require-project";
+import { ArrowLeft } from "lucide-react";
 
 export default function TestRunsPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const projectId = searchParams.get('project');
+  const projectId = searchParams.get("project");
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/');
+      router.push("/");
     }
   }, [user, authLoading, router]);
 
@@ -45,7 +45,7 @@ export default function TestRunsPage() {
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
-                onClick={() => router.push('/testing')}
+                onClick={() => router.push("/testing")}
                 className="text-gray-400 hover:text-white"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />

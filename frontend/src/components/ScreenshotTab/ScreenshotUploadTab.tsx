@@ -1,12 +1,28 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image, Download, Trash2, Edit2, Check, X, FileJson, FileCode } from 'lucide-react';
-import { Screenshot } from '../../types/Screenshot';
-import { generateId } from '../../lib/utils';
-import { downloadStateExport, downloadPythonStateCode } from '../../lib/state-exporter';
-import { useAutomation } from '../../contexts/automation-context';
-import { apiClient } from '@/lib/api-client';
-import { ImageUploadProgress, type UploadingImage } from '@/components/ImageUploadProgress';
-import { toast } from 'sonner';
+import React, { useState, useRef, useEffect } from "react";
+import {
+  Upload,
+  Image,
+  Download,
+  Trash2,
+  Edit2,
+  Check,
+  X,
+  FileJson,
+  FileCode,
+} from "lucide-react";
+import { Screenshot } from "../../types/Screenshot";
+import { generateId } from "../../lib/utils";
+import {
+  downloadStateExport,
+  downloadPythonStateCode,
+} from "../../lib/state-exporter";
+import { useAutomation } from "../../contexts/automation-context";
+import { apiClient } from "@/lib/api-client";
+import {
+  ImageUploadProgress,
+  type UploadingImage,
+} from "@/components/ImageUploadProgress";
+import { toast } from "sonner";
 import {
   QontinuiPage,
   QontinuiHeader,
@@ -18,7 +34,7 @@ import {
   GhostButton,
   QontinuiCard,
   QontinuiInput,
-} from '../qontinui';
+} from "../qontinui";
 
 interface ScreenshotUploadTabProps {
   states: any[];
@@ -27,16 +43,28 @@ interface ScreenshotUploadTabProps {
 
 const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
   states,
-  onExport
+  onExport,
 }) => {
-  const { screenshots: projectScreenshots, addScreenshot, updateScreenshot, deleteScreenshot: removeScreenshot, projectName, projectId } = useAutomation();
+  const {
+    screenshots: projectScreenshots,
+    addScreenshot,
+    updateScreenshot,
+    deleteScreenshot: removeScreenshot,
+    projectName,
+    projectId,
+  } = useAutomation();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
-  const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null);
+  const [selectedScreenshot, setSelectedScreenshot] =
+    useState<Screenshot | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const [editingScreenshotId, setEditingScreenshotId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState<string>('');
-  const [zoomMode, setZoomMode] = useState<'fit' | 'original'>('fit');
-  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [editingScreenshotId, setEditingScreenshotId] = useState<string | null>(
+    null
+  );
+  const [editingName, setEditingName] = useState<string>("");
+  const [zoomMode, setZoomMode] = useState<"fit" | "original">("fit");
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
+    {}
+  );
   const [uploadingFiles, setUploadingFiles] = useState<UploadingImage[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -44,37 +72,38 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
   useEffect(() => {
     const loadScreenshots = async () => {
       const convertedScreenshots: Screenshot[] = await Promise.all(
-        projectScreenshots.map(ps =>
-          new Promise<Screenshot>((resolve) => {
-            const img = new window.Image();
-            img.onload = () => {
-              resolve({
-                id: ps.id,
-                name: ps.name,
-                imageData: ps.url,
-                width: img.width,
-                height: img.height,
-                uploadedAt: ps.uploadedAt,
-                associatedStates: [],
-                regions: [],
-                locations: []
-              });
-            };
-            img.onerror = () => {
-              resolve({
-                id: ps.id,
-                name: ps.name,
-                imageData: ps.url,
-                width: 0,
-                height: 0,
-                uploadedAt: ps.uploadedAt,
-                associatedStates: [],
-                regions: [],
-                locations: []
-              });
-            };
-            img.src = ps.url;
-          })
+        projectScreenshots.map(
+          (ps) =>
+            new Promise<Screenshot>((resolve) => {
+              const img = new window.Image();
+              img.onload = () => {
+                resolve({
+                  id: ps.id,
+                  name: ps.name,
+                  imageData: ps.url,
+                  width: img.width,
+                  height: img.height,
+                  uploadedAt: ps.uploadedAt,
+                  associatedStates: [],
+                  regions: [],
+                  locations: [],
+                });
+              };
+              img.onerror = () => {
+                resolve({
+                  id: ps.id,
+                  name: ps.name,
+                  imageData: ps.url,
+                  width: 0,
+                  height: 0,
+                  uploadedAt: ps.uploadedAt,
+                  associatedStates: [],
+                  regions: [],
+                  locations: [],
+                });
+              };
+              img.src = ps.url;
+            })
         )
       );
       setScreenshots(convertedScreenshots);
@@ -83,14 +112,16 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     loadScreenshots();
   }, [projectScreenshots]);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
     // Validate projectId is available
     if (!projectId) {
-      toast.error('No project selected', {
-        description: 'Please open a project before uploading screenshots.',
+      toast.error("No project selected", {
+        description: "Please open a project before uploading screenshots.",
       });
       return;
     }
@@ -98,9 +129,11 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     const fileArray = Array.from(files);
 
     // Validate file types before upload
-    const invalidFiles = fileArray.filter(file => !file.type.startsWith('image/'));
+    const invalidFiles = fileArray.filter(
+      (file) => !file.type.startsWith("image/")
+    );
     if (invalidFiles.length > 0) {
-      toast.error('Invalid file type', {
+      toast.error("Invalid file type", {
         description: `${invalidFiles[0].name} is not an image file.`,
       });
       return;
@@ -109,7 +142,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     // Initialize upload progress for all files
     const initialProgress: Record<string, number> = {};
     const initialUploading: UploadingImage[] = [];
-    fileArray.forEach(file => {
+    fileArray.forEach((file) => {
       initialProgress[file.name] = 0;
       initialUploading.push({ name: file.name, progress: 0 });
     });
@@ -127,15 +160,19 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           reader.onload = (e) => {
             img.onload = () => {
               if (img.width < 10 || img.height < 10) {
-                reject(new Error(`Image too small: ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`));
+                reject(
+                  new Error(
+                    `Image too small: ${img.width}x${img.height}px. Images must be at least 10x10 pixels.`
+                  )
+                );
               } else {
                 resolve();
               }
             };
-            img.onerror = () => reject(new Error('Failed to load image'));
+            img.onerror = () => reject(new Error("Failed to load image"));
             img.src = e.target?.result as string;
           };
-          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.onerror = () => reject(new Error("Failed to read file"));
           reader.readAsDataURL(file);
         });
 
@@ -144,15 +181,15 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           projectId,
           file,
           (progress) => {
-            setUploadProgress(prev => ({ ...prev, [file.name]: progress }));
-            setUploadingFiles(prev =>
-              prev.map(f => f.name === file.name ? { ...f, progress } : f)
+            setUploadProgress((prev) => ({ ...prev, [file.name]: progress }));
+            setUploadingFiles((prev) =>
+              prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
             );
           }
         );
 
         // Create screenshot object with S3 data
-        const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, '');
+        const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
         const screenshot = {
           id: result.image_id,
           name: nameWithoutExtension,
@@ -180,30 +217,33 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
               uploadedAt: screenshot.uploadedAt,
               associatedStates: [],
               regions: [],
-              locations: []
+              locations: [],
             });
           };
           img.src = screenshot.url;
         }
 
         // Remove from uploading list
-        setUploadingFiles(prev => prev.filter(f => f.name !== file.name));
+        setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
       } catch (error: any) {
         console.error(`Upload failed for ${file.name}:`, error);
 
         // Show user-friendly error message
-        const errorMsg = error.message || 'Unknown error occurred';
-        if (errorMsg.includes('quota') || errorMsg.includes('Quota')) {
-          toast.error('Storage quota exceeded', {
-            description: 'Please upgrade your plan or delete unused images.',
+        const errorMsg = error.message || "Unknown error occurred";
+        if (errorMsg.includes("quota") || errorMsg.includes("Quota")) {
+          toast.error("Storage quota exceeded", {
+            description: "Please upgrade your plan or delete unused images.",
           });
-        } else if (errorMsg.includes('too small')) {
-          toast.error('Image too small', {
+        } else if (errorMsg.includes("too small")) {
+          toast.error("Image too small", {
             description: errorMsg,
           });
-        } else if (errorMsg.includes('Network error') || errorMsg.includes('timeout')) {
-          toast.error('Network error', {
-            description: 'Please check your internet connection and try again.',
+        } else if (
+          errorMsg.includes("Network error") ||
+          errorMsg.includes("timeout")
+        ) {
+          toast.error("Network error", {
+            description: "Please check your internet connection and try again.",
           });
         } else {
           toast.error(`Failed to upload ${file.name}`, {
@@ -212,20 +252,22 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
         }
 
         // Remove from uploading list
-        setUploadingFiles(prev => prev.filter(f => f.name !== file.name));
+        setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
       }
     }
 
     // Reset file input
     if (event.target) {
-      event.target.value = '';
+      event.target.value = "";
     }
   };
 
   const handleDeleteScreenshot = (screenshotId: string) => {
     removeScreenshot(screenshotId);
     if (selectedScreenshot?.id === screenshotId) {
-      setSelectedScreenshot(screenshots.find(s => s.id !== screenshotId) || null);
+      setSelectedScreenshot(
+        screenshots.find((s) => s.id !== screenshotId) || null
+      );
     }
   };
 
@@ -236,7 +278,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
   const handleCancelEdit = () => {
     setEditingScreenshotId(null);
-    setEditingName('');
+    setEditingName("");
   };
 
   const handleSaveEdit = () => {
@@ -245,18 +287,20 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
       return;
     }
 
-    const projectScreenshot = projectScreenshots.find(s => s.id === editingScreenshotId);
+    const projectScreenshot = projectScreenshots.find(
+      (s) => s.id === editingScreenshotId
+    );
     if (projectScreenshot) {
       updateScreenshot({
         ...projectScreenshot,
-        name: editingName.trim()
+        name: editingName.trim(),
       });
     }
 
     if (selectedScreenshot?.id === editingScreenshotId) {
       setSelectedScreenshot({
         ...selectedScreenshot,
-        name: editingName.trim()
+        name: editingName.trim(),
       });
     }
 
@@ -303,10 +347,12 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           <div className="flex-1 flex items-center justify-center gap-2">
             {selectedScreenshot && (
               <GhostButton
-                onClick={() => setZoomMode(zoomMode === 'fit' ? 'original' : 'fit')}
+                onClick={() =>
+                  setZoomMode(zoomMode === "fit" ? "original" : "fit")
+                }
                 size="sm"
               >
-                {zoomMode === 'fit' ? 'Original Size (1:1)' : 'Fit to Screen'}
+                {zoomMode === "fit" ? "Original Size (1:1)" : "Fit to Screen"}
               </GhostButton>
             )}
           </div>
@@ -331,7 +377,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                     >
                       <FileJson className="w-4 h-4" />
                       Export as JSON
-                      <span className="text-xs text-gray-500 ml-auto">qontinui</span>
+                      <span className="text-xs text-gray-500 ml-auto">
+                        qontinui
+                      </span>
                     </button>
                     <button
                       onClick={handleExportPython}
@@ -347,7 +395,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                     >
                       <Download className="w-4 h-4" />
                       Export Raw Data
-                      <span className="text-xs text-gray-500 ml-auto">debug</span>
+                      <span className="text-xs text-gray-500 ml-auto">
+                        debug
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -366,7 +416,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           </h3>
 
           <div className="space-y-2">
-            {screenshots.map(screenshot => (
+            {screenshots.map((screenshot) => (
               <QontinuiCard
                 key={screenshot.id}
                 selected={selectedScreenshot?.id === screenshot.id}
@@ -385,14 +435,17 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
                 {/* Name editing */}
                 {editingScreenshotId === screenshot.id ? (
-                  <div className="mt-2 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="mt-2 flex items-center gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <QontinuiInput
                       value={editingName}
                       onChange={(e) => setEditingName(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === "Enter") {
                           handleSaveEdit();
-                        } else if (e.key === 'Escape') {
+                        } else if (e.key === "Escape") {
                           handleCancelEdit();
                         }
                       }}
@@ -457,12 +510,14 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
                   alt={selectedScreenshot.name}
                   className="border border-gray-700 shadow-lg bg-[#27272A]"
                   style={{
-                    maxWidth: zoomMode === 'fit' ? '100%' : 'none',
-                    height: 'auto'
+                    maxWidth: zoomMode === "fit" ? "100%" : "none",
+                    height: "auto",
                   }}
                 />
                 <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
-                  <span>{selectedScreenshot.width} x {selectedScreenshot.height}px</span>
+                  <span>
+                    {selectedScreenshot.width} x {selectedScreenshot.height}px
+                  </span>
                 </div>
               </div>
             </div>

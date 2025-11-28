@@ -4,7 +4,7 @@
  * Dropdown/Dialog for selecting a folder from the tree
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from "react";
 import {
   Folder,
   FolderOpen,
@@ -12,13 +12,13 @@ import {
   ChevronDown,
   Home,
   Search,
-} from 'lucide-react';
-import { WorkflowFolder, FolderTreeNode } from './types';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { ScrollArea } from '../ui/scroll-area';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
-import { cn } from '../../lib/utils';
+} from "lucide-react";
+import { WorkflowFolder, FolderTreeNode } from "./types";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { ScrollArea } from "../ui/scroll-area";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
+import { cn } from "../../lib/utils";
 
 export interface FolderSelectorProps {
   folders: WorkflowFolder[];
@@ -101,11 +101,11 @@ export function FolderSelector({
   excludeFolderIds = [],
   allowRoot = true,
   allowUncategorized = false,
-  placeholder = 'Select a folder',
+  placeholder = "Select a folder",
   className,
 }: FolderSelectorProps) {
   const [open, setOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // Build tree
@@ -135,22 +135,17 @@ export function FolderSelector({
       return null;
     }
 
-    return tree
-      .map(filterNode)
-      .filter((n): n is FolderTreeNode => n !== null);
+    return tree.map(filterNode).filter((n): n is FolderTreeNode => n !== null);
   }, [tree, searchQuery]);
 
-  const flatTree = useMemo(
-    () => flattenTree(filteredTree),
-    [filteredTree]
-  );
+  const flatTree = useMemo(() => flattenTree(filteredTree), [filteredTree]);
 
   // Get selected folder name
   const selectedName = useMemo(() => {
-    if (selectedFolderId === null) return 'All Workflows';
-    if (selectedFolderId === 'uncategorized') return 'Uncategorized';
+    if (selectedFolderId === null) return "All Workflows";
+    if (selectedFolderId === "uncategorized") return "Uncategorized";
     const folder = folders.find((f) => f.id === selectedFolderId);
-    return folder?.name || 'Unknown';
+    return folder?.name || "Unknown";
   }, [selectedFolderId, folders]);
 
   const handleToggle = (id: string) => {
@@ -168,7 +163,7 @@ export function FolderSelector({
   const handleSelect = (id: string | null) => {
     onSelect(id);
     setOpen(false);
-    setSearchQuery('');
+    setSearchQuery("");
   };
 
   return (
@@ -176,7 +171,7 @@ export function FolderSelector({
       <Button
         variant="outline"
         onClick={() => setOpen(true)}
-        className={cn('justify-start', className)}
+        className={cn("justify-start", className)}
       >
         <Folder className="h-4 w-4 mr-2" />
         <span className="truncate">{selectedName}</span>
@@ -208,10 +203,10 @@ export function FolderSelector({
                   <button
                     onClick={() => handleSelect(null)}
                     className={cn(
-                      'w-full flex items-center gap-2 px-3 py-2 rounded-md transition-colors',
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-md transition-colors",
                       selectedFolderId === null
-                        ? 'bg-accent font-medium'
-                        : 'hover:bg-accent'
+                        ? "bg-accent font-medium"
+                        : "hover:bg-accent"
                     )}
                   >
                     <Home className="h-4 w-4" />
@@ -222,12 +217,12 @@ export function FolderSelector({
                 {/* Uncategorized option */}
                 {allowUncategorized && (
                   <button
-                    onClick={() => handleSelect('uncategorized')}
+                    onClick={() => handleSelect("uncategorized")}
                     className={cn(
-                      'w-full flex items-center gap-2 px-3 py-2 rounded-md transition-colors',
-                      selectedFolderId === 'uncategorized'
-                        ? 'bg-accent font-medium'
-                        : 'hover:bg-accent'
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-md transition-colors",
+                      selectedFolderId === "uncategorized"
+                        ? "bg-accent font-medium"
+                        : "hover:bg-accent"
                     )}
                   >
                     <Folder className="h-4 w-4 text-muted-foreground" />
@@ -244,10 +239,10 @@ export function FolderSelector({
                     <div
                       key={node.id}
                       className={cn(
-                        'flex items-center gap-1 px-3 py-2 rounded-md transition-colors',
+                        "flex items-center gap-1 px-3 py-2 rounded-md transition-colors",
                         selectedFolderId === node.id
-                          ? 'bg-accent font-medium'
-                          : 'hover:bg-accent'
+                          ? "bg-accent font-medium"
+                          : "hover:bg-accent"
                       )}
                       style={{ paddingLeft: `${node.depth * 20 + 12}px` }}
                     >
@@ -285,7 +280,7 @@ export function FolderSelector({
                 {/* Empty state */}
                 {flatTree.length === 0 && !allowRoot && !allowUncategorized && (
                   <div className="text-center py-8 text-muted-foreground text-sm">
-                    {searchQuery ? 'No folders found' : 'No folders available'}
+                    {searchQuery ? "No folders found" : "No folders available"}
                   </div>
                 )}
               </div>

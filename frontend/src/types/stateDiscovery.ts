@@ -12,22 +12,22 @@ export interface StateImage {
   width: number;
   height: number;
   pixelHash: string;
-  stabilityScore: number;  // 1.0 = perfect pixel match when present
-  screenshots: string[];  // List of screenshots where this appears
+  stabilityScore: number; // 1.0 = perfect pixel match when present
+  screenshots: string[]; // List of screenshots where this appears
   createdAt: string;
   tags?: string[];
-  darkPixelPercentage?: number;  // Now calculated only for active mask pixels
-  lightPixelPercentage?: number;  // Now calculated only for active mask pixels
+  darkPixelPercentage?: number; // Now calculated only for active mask pixels
+  lightPixelPercentage?: number; // Now calculated only for active mask pixels
   avgBrightness?: number;
-  maskDensity?: number;  // Percentage of active pixels in mask (1.0 = full rectangle)
-  hasMask?: boolean;  // Whether this StateImage has a custom mask
+  maskDensity?: number; // Percentage of active pixels in mask (1.0 = full rectangle)
+  hasMask?: boolean; // Whether this StateImage has a custom mask
 }
 
 export interface DiscoveredState {
   id: string;
   name: string;
-  stateImageIds: string[];  // Changed from stateImages to match backend
-  screenshotIds: string[];  // Changed from screenshots to match backend
+  stateImageIds: string[]; // Changed from stateImages to match backend
+  screenshotIds: string[]; // Changed from screenshots to match backend
   confidence: number;
   metadata?: Record<string, any>;
 }
@@ -46,7 +46,7 @@ export interface AnalysisConfig {
   stabilityThreshold: number;
   varianceThreshold: number;
   minScreenshotsPresent: number;
-  processingMode: 'full' | 'quick' | 'custom';
+  processingMode: "full" | "quick" | "custom";
   enableRectangleDecomposition: boolean;
   enableCooccurrenceAnalysis: boolean;
   similarityThreshold?: number;
@@ -83,7 +83,7 @@ export interface DeleteOptions {
   cascade?: boolean;
   force?: boolean;
   skipConfirmation?: boolean;
-  handleOrphans?: 'delete' | 'keep' | 'merge';
+  handleOrphans?: "delete" | "keep" | "merge";
 }
 
 export interface DeleteResult {
@@ -109,7 +109,7 @@ export interface UploadResponse {
 }
 
 export interface AnalysisProgress {
-  stage: 'pixel_analysis' | 'region_extraction' | 'state_assembly' | 'complete';
+  stage: "pixel_analysis" | "region_extraction" | "state_assembly" | "complete";
   percentage: number;
   currentScreenshot?: number;
   totalScreenshots?: number;

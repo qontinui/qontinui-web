@@ -7,18 +7,18 @@
  * - Dirty state tracking
  */
 
-import type { StateCreator } from 'zustand';
+import type { StateCreator } from "zustand";
 import type {
   CanvasStore,
   WorkflowSlice,
   Workflow,
   ValidationResult,
   ValidationError,
-} from './types';
+} from "./types";
 
 export const createWorkflowSlice: StateCreator<
   CanvasStore,
-  [['zustand/immer', never]],
+  [["zustand/immer", never]],
   [],
   WorkflowSlice
 > = (set, get) => ({
@@ -39,7 +39,7 @@ export const createWorkflowSlice: StateCreator<
       state.history = [];
       state.historyIndex = -1;
     });
-    get().recordHistory('Load workflow');
+    get().recordHistory("Load workflow");
   },
 
   clearWorkflow: () => {
@@ -59,7 +59,7 @@ export const createWorkflowSlice: StateCreator<
     if (!workflow) return;
 
     // TODO: Implement actual save to backend
-    console.log('Saving workflow:', workflow);
+    console.log("Saving workflow:", workflow);
 
     set((state) => {
       state.isDirty = false;

@@ -7,12 +7,12 @@
  * - Querying connections
  */
 
-import type { StateCreator } from 'zustand';
-import type { CanvasStore, ConnectionSlice, Connection } from './types';
+import type { StateCreator } from "zustand";
+import type { CanvasStore, ConnectionSlice, Connection } from "./types";
 
 export const createConnectionSlice: StateCreator<
   CanvasStore,
-  [['zustand/immer', never]],
+  [["zustand/immer", never]],
   [],
   ConnectionSlice
 > = (set, get) => ({
@@ -23,7 +23,7 @@ export const createConnectionSlice: StateCreator<
   // Actions
   addConnection: (
     sourceId: string,
-    outputType: 'main' | 'error' | 'success' | 'parallel',
+    outputType: "main" | "error" | "success" | "parallel",
     outputIndex: number,
     targetId: string,
     targetIndex: number
@@ -41,7 +41,9 @@ export const createConnectionSlice: StateCreator<
       }
 
       // Ensure output index array exists
-      while (state.workflow.connections[sourceId][outputType]!.length <= outputIndex) {
+      while (
+        state.workflow.connections[sourceId][outputType]!.length <= outputIndex
+      ) {
         state.workflow.connections[sourceId][outputType]!.push([]);
       }
 
@@ -52,10 +54,12 @@ export const createConnectionSlice: StateCreator<
         index: targetIndex,
       };
 
-      state.workflow.connections[sourceId][outputType]![outputIndex].push(connection);
+      state.workflow.connections[sourceId][outputType]![outputIndex].push(
+        connection
+      );
       state.isDirty = true;
     });
-    get().recordHistory('Add connection');
+    get().recordHistory("Add connection");
   },
 
   deleteConnection: (
@@ -65,7 +69,8 @@ export const createConnectionSlice: StateCreator<
     targetId: string
   ) => {
     set((state) => {
-      if (!state.workflow?.connections[sourceId]?.[outputType]?.[outputIndex]) return;
+      if (!state.workflow?.connections[sourceId]?.[outputType]?.[outputIndex])
+        return;
 
       state.workflow.connections[sourceId][outputType]![outputIndex] =
         state.workflow.connections[sourceId][outputType]![outputIndex].filter(
@@ -74,7 +79,7 @@ export const createConnectionSlice: StateCreator<
 
       state.isDirty = true;
     });
-    get().recordHistory('Delete connection');
+    get().recordHistory("Delete connection");
   },
 
   deleteConnectionsForAction: (actionId: string) => {
@@ -86,7 +91,11 @@ export const createConnectionSlice: StateCreator<
     });
   },
 
-  startConnecting: (actionId: string, outputType: string, outputIndex: number) => {
+  startConnecting: (
+    actionId: string,
+    outputType: string,
+    outputIndex: number
+  ) => {
     set((state) => {
       state.isConnecting = true;
       state.connectingFrom = { actionId, outputType, outputIndex };
@@ -99,7 +108,7 @@ export const createConnectionSlice: StateCreator<
 
     get().addConnection(
       connectingFrom.actionId,
-      connectingFrom.outputType as 'main' | 'error' | 'success' | 'parallel',
+      connectingFrom.outputType as "main" | "error" | "success" | "parallel",
       connectingFrom.outputIndex,
       targetId,
       targetIndex

@@ -8,11 +8,11 @@
  * - One-click add to canvas
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, Plus, X, Loader2, Sparkles } from 'lucide-react';
-import { getMCPClient } from '../../services/mcp-client';
-import type { ActionResult } from '../../services/mcp-client';
-import type { Action } from '../../lib/action-schema/action-types';
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { Search, Plus, X, Loader2, Sparkles } from "lucide-react";
+import { getMCPClient } from "../../services/mcp-client";
+import type { ActionResult } from "../../services/mcp-client";
+import type { Action } from "../../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -32,10 +32,10 @@ interface AIActionSearchProps {
 export function AIActionSearch({
   onAddAction,
   onClose,
-  placeholder = 'Search actions using natural language...',
+  placeholder = "Search actions using natural language...",
   position,
 }: AIActionSearchProps) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<ActionResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -64,73 +64,84 @@ export function AIActionSearch({
     return () => clearTimeout(timer);
   }, [query]);
 
-  const performSearch = useCallback(async (searchQuery: string) => {
-    setLoading(true);
-    setError(null);
+  const performSearch = useCallback(
+    async (searchQuery: string) => {
+      setLoading(true);
+      setError(null);
 
-    try {
-      const searchResults = await mcpClient.searchActions(searchQuery, { limit: 5 });
-      setResults(searchResults);
-      setSelectedIndex(0);
-    } catch (err) {
-      console.error('Search failed:', err);
-      setError(err instanceof Error ? err.message : 'Search failed');
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [mcpClient]);
+      try {
+        const searchResults = await mcpClient.searchActions(searchQuery, {
+          limit: 5,
+        });
+        setResults(searchResults);
+        setSelectedIndex(0);
+      } catch (err) {
+        console.error("Search failed:", err);
+        setError(err instanceof Error ? err.message : "Search failed");
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [mcpClient]
+  );
 
-  const handleAdd = useCallback((result: ActionResult) => {
-    // Create action from result
-    const action: Action = {
-      id: `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: result.type,
-      name: result.name,
-      config: result.parameters || {} as any,
-      position: position || [100, 100],
-    };
+  const handleAdd = useCallback(
+    (result: ActionResult) => {
+      // Create action from result
+      const action: Action = {
+        id: `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type: result.type,
+        name: result.name,
+        config: result.parameters || ({} as any),
+        position: position || [100, 100],
+      };
 
-    onAddAction(action);
+      onAddAction(action);
 
-    if (onClose) {
-      onClose();
-    } else {
-      setQuery('');
-      setResults([]);
-      inputRef.current?.focus();
-    }
-  }, [onAddAction, onClose, position]);
+      if (onClose) {
+        onClose();
+      } else {
+        setQuery("");
+        setResults([]);
+        inputRef.current?.focus();
+      }
+    },
+    [onAddAction, onClose, position]
+  );
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (results.length === 0) return;
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (results.length === 0) return;
 
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setSelectedIndex(i => Math.min(i + 1, results.length - 1));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setSelectedIndex(i => Math.max(i - 1, 0));
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (results[selectedIndex]) {
-          handleAdd(results[selectedIndex]);
-        }
-        break;
-      case 'Escape':
-        e.preventDefault();
-        if (onClose) {
-          onClose();
-        } else {
-          setQuery('');
-          setResults([]);
-        }
-        break;
-    }
-  }, [results, selectedIndex, handleAdd, onClose]);
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          setSelectedIndex((i) => Math.min(i + 1, results.length - 1));
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setSelectedIndex((i) => Math.max(i - 1, 0));
+          break;
+        case "Enter":
+          e.preventDefault();
+          if (results[selectedIndex]) {
+            handleAdd(results[selectedIndex]);
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          if (onClose) {
+            onClose();
+          } else {
+            setQuery("");
+            setResults([]);
+          }
+          break;
+      }
+    },
+    [results, selectedIndex, handleAdd, onClose]
+  );
 
   return (
     <div className="w-full max-w-2xl bg-white dark:bg-gray-900 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700">
@@ -147,7 +158,7 @@ export function AIActionSearch({
           ref={inputRef}
           type="text"
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className="w-full pl-12 pr-12 py-4 text-lg bg-transparent border-b border-gray-200 dark:border-gray-700 focus:outline-none focus:border-purple-500 text-gray-900 dark:text-white"
@@ -158,7 +169,7 @@ export function AIActionSearch({
               if (onClose) {
                 onClose();
               } else {
-                setQuery('');
+                setQuery("");
                 setResults([]);
                 inputRef.current?.focus();
               }
@@ -189,8 +200,8 @@ export function AIActionSearch({
                   onMouseEnter={() => setSelectedIndex(index)}
                   className={`w-full px-4 py-3 text-left flex items-center gap-4 transition-colors ${
                     isSelected
-                      ? 'bg-purple-50 dark:bg-purple-900/20'
-                      : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                      ? "bg-purple-50 dark:bg-purple-900/20"
+                      : "hover:bg-gray-50 dark:hover:bg-gray-800"
                   }`}
                 >
                   {/* Confidence Bar */}
@@ -198,10 +209,10 @@ export function AIActionSearch({
                     <div
                       className={`w-full transition-all ${
                         confidence >= 0.9
-                          ? 'bg-green-500'
+                          ? "bg-green-500"
                           : confidence >= 0.7
-                          ? 'bg-yellow-500'
-                          : 'bg-red-500'
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
                       }`}
                       style={{ height: `${confidence * 100}%` }}
                     />
@@ -228,11 +239,13 @@ export function AIActionSearch({
                   </div>
 
                   {/* Add Button */}
-                  <div className={`p-2 rounded-lg transition-colors ${
-                    isSelected
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                  }`}>
+                  <div
+                    className={`p-2 rounded-lg transition-colors ${
+                      isSelected
+                        ? "bg-purple-600 text-white"
+                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+                    }`}
+                  >
                     <Plus className="w-5 h-5" />
                   </div>
                 </button>

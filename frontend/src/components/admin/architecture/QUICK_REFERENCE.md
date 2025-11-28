@@ -5,14 +5,16 @@ Quick guide for common updates to the architecture visualization.
 ## Add New Component (5 minutes)
 
 ### 1. Update Type Definition (page.tsx)
+
 ```typescript
 export type ComponentType =
-  | 'existing'
-  | 'new-component'  // ← Add here
-  | null
+  | "existing"
+  | "new-component" // ← Add here
+  | null;
 ```
 
 ### 2. Add to Diagram (ArchitectureDiagram.tsx)
+
 ```typescript
 // In components array:
 {
@@ -39,6 +41,7 @@ export type ComponentType =
 ```
 
 ### 3. Add Details (ComponentDetailPanel.tsx)
+
 ```typescript
 'new-component': {
   id: 'new-component',
@@ -162,16 +165,16 @@ export type ComponentType =
 
 ```typescript
 // Libraries (Blue)
-color: '#3B82F6'
-hoverColor: '#2563EB'
+color: "#3B82F6";
+hoverColor: "#2563EB";
 
 // Applications (Green)
-color: '#10B981'
-hoverColor: '#059669'
+color: "#10B981";
+hoverColor: "#059669";
 
 // Services (Purple)
-color: '#8B5CF6'
-hoverColor: '#7C3AED'
+color: "#8B5CF6";
+hoverColor: "#7C3AED";
 ```
 
 ---
@@ -201,18 +204,21 @@ Size:
 ## Analysis Guidelines
 
 ### Pros (6-7 items)
+
 ✅ Specific benefits
 ✅ Measurable advantages
 ✅ Technical differentiators
 ❌ Vague praise
 
 ### Cons (5-7 items)
+
 ✅ Honest limitations
 ✅ Known challenges
 ✅ Tradeoff acknowledgment
 ❌ Unconstructive criticism
 
 ### Suggestions (7-11 items)
+
 ✅ Actionable improvements
 ✅ Specific technologies
 ✅ Clear value proposition
@@ -237,6 +243,7 @@ After any change:
 ## Common Mistakes
 
 ❌ **Typo in component ID**
+
 ```typescript
 // Diagram
 id: 'componet'  // Wrong
@@ -249,6 +256,7 @@ id: 'componet'  // Wrong
 ---
 
 ❌ **Connection outside viewBox**
+
 ```typescript
 fromPos: { x: 700, y: 100 }  // Outside 600 width!
 ```
@@ -258,6 +266,7 @@ fromPos: { x: 700, y: 100 }  // Outside 600 width!
 ---
 
 ❌ **Missing required fields**
+
 ```typescript
 analysis: {
   pros: ['Good'],
@@ -288,6 +297,7 @@ frontend/src/
 ## Need Help?
 
 See `README.md` for:
+
 - Detailed explanations
 - Best practices
 - Troubleshooting

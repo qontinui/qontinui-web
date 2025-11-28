@@ -10,9 +10,15 @@
  * - Template system
  */
 
-"use client"
+"use client";
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+} from "react";
 import {
   Search,
   Plus,
@@ -47,33 +53,42 @@ import {
   Layout,
   BoxSelect,
   Move,
-} from 'lucide-react';
-import { useAutomation } from '@/contexts/automation-context';
-import type { State, StateImage, StateRegion, StateLocation, StateString, Transition, Pattern, SearchRegion } from '@/contexts/automation-context';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Textarea } from '@/components/ui/textarea';
-import { Slider } from '@/components/ui/slider';
+} from "lucide-react";
+import { useAutomation } from "@/contexts/automation-context";
+import type {
+  State,
+  StateImage,
+  StateRegion,
+  StateLocation,
+  StateString,
+  Transition,
+  Pattern,
+  SearchRegion,
+} from "@/contexts/automation-context";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -81,7 +96,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -91,9 +106,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+} from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 // ============================================================================
 // Types
@@ -126,7 +141,7 @@ interface StateTemplate {
 
 interface BulkOperationPayload {
   stateIds: string[];
-  operation: 'move' | 'tag' | 'delete' | 'export' | 'duplicate';
+  operation: "move" | "tag" | "delete" | "export" | "duplicate";
   data?: any;
 }
 
@@ -155,36 +170,44 @@ export function EnhancedStateBuilder() {
   // ============================================================================
 
   const [groups, setGroups] = useState<StateGroup[]>([
-    { id: 'root', name: 'All States', order: 0, expanded: true },
+    { id: "root", name: "All States", order: 0, expanded: true },
   ]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>('root');
-  const [selectedStateIds, setSelectedStateIds] = useState<Set<string>>(new Set());
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>("root");
+  const [selectedStateIds, setSelectedStateIds] = useState<Set<string>>(
+    new Set()
+  );
   const [currentStateId, setCurrentStateId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const [filterHasImages, setFilterHasImages] = useState<boolean | null>(null);
-  const [filterHasTransitions, setFilterHasTransitions] = useState<boolean | null>(null);
+  const [filterHasTransitions, setFilterHasTransitions] = useState<
+    boolean | null
+  >(null);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [showBulkDialog, setShowBulkDialog] = useState(false);
   const [showGraphDialog, setShowGraphDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState("overview");
 
   // Canvas state
   const [canvasZoom, setCanvasZoom] = useState(1);
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
-  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(
+    null
+  );
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
+    null
+  );
 
   // Templates (mock data for now)
   const [templates] = useState<StateTemplate[]>([
     {
-      id: 'template-1',
-      name: 'Basic Menu State',
-      description: 'State with typical menu structure',
+      id: "template-1",
+      name: "Basic Menu State",
+      description: "State with typical menu structure",
       template: {
-        name: 'New Menu State',
-        description: 'Menu state template',
+        name: "New Menu State",
+        description: "Menu state template",
         stateImages: [],
         regions: [],
         locations: [],
@@ -192,18 +215,18 @@ export function EnhancedStateBuilder() {
       },
     },
     {
-      id: 'template-2',
-      name: 'Login Form State',
-      description: 'State with login form elements',
+      id: "template-2",
+      name: "Login Form State",
+      description: "State with login form elements",
       template: {
-        name: 'Login Form',
-        description: 'Login form state template',
+        name: "Login Form",
+        description: "Login form state template",
         stateImages: [],
         regions: [],
         locations: [],
         strings: [
-          { id: 'str-1', name: 'username', value: '', inputText: true },
-          { id: 'str-2', name: 'password', value: '', inputText: true },
+          { id: "str-1", name: "username", value: "", inputText: true },
+          { id: "str-2", name: "password", value: "", inputText: true },
         ],
       },
     },
@@ -231,7 +254,7 @@ export function EnhancedStateBuilder() {
     }
 
     // Filter by group
-    if (selectedGroupId && selectedGroupId !== 'root') {
+    if (selectedGroupId && selectedGroupId !== "root") {
       filtered = filtered.filter(
         (s) => (s as StateWithMetadata).groupId === selectedGroupId
       );
@@ -259,15 +282,23 @@ export function EnhancedStateBuilder() {
       filtered = filtered.filter((s) => {
         const hasTransitions = transitions.some(
           (t) =>
-            (t.type === 'OutgoingTransition' && t.fromState === s.id) ||
-            (t.type === 'IncomingTransition' && t.toState === s.id)
+            (t.type === "OutgoingTransition" && t.fromState === s.id) ||
+            (t.type === "IncomingTransition" && t.toState === s.id)
         );
         return filterHasTransitions ? hasTransitions : !hasTransitions;
       });
     }
 
     return filtered;
-  }, [states, searchQuery, selectedGroupId, filterTags, filterHasImages, filterHasTransitions, transitions]);
+  }, [
+    states,
+    searchQuery,
+    selectedGroupId,
+    filterTags,
+    filterHasImages,
+    filterHasTransitions,
+    transitions,
+  ]);
 
   const stateComplexity = useCallback((state: State) => {
     let score = 0;
@@ -293,8 +324,8 @@ export function EnhancedStateBuilder() {
     (state: State) =>
       transitions.some(
         (t) =>
-          (t.type === 'OutgoingTransition' && t.fromState === state.id) ||
-          (t.type === 'IncomingTransition' && t.toState === state.id)
+          (t.type === "OutgoingTransition" && t.fromState === state.id) ||
+          (t.type === "IncomingTransition" && t.toState === state.id)
       ),
     [transitions]
   );
@@ -315,8 +346,8 @@ export function EnhancedStateBuilder() {
   const handleCreateState = useCallback(() => {
     const newState: State = {
       id: `state-${Date.now()}`,
-      name: 'New State',
-      description: '',
+      name: "New State",
+      description: "",
       stateImages: [],
       regions: [],
       locations: [],
@@ -326,15 +357,15 @@ export function EnhancedStateBuilder() {
 
     addState(newState);
     setCurrentStateId(newState.id);
-    toast.success('State created');
+    toast.success("State created");
   }, [addState]);
 
   const handleCreateStateFromTemplate = useCallback(
     (template: StateTemplate) => {
       const newState: State = {
         id: `state-${Date.now()}`,
-        name: template.template.name || 'New State',
-        description: template.template.description || '',
+        name: template.template.name || "New State",
+        description: template.template.description || "",
         stateImages: template.template.stateImages || [],
         regions: template.template.regions || [],
         locations: template.template.locations || [],
@@ -352,7 +383,7 @@ export function EnhancedStateBuilder() {
 
   const handleDeleteState = useCallback(
     (stateId: string) => {
-      if (confirm('Delete this state? This action cannot be undone.')) {
+      if (confirm("Delete this state? This action cannot be undone.")) {
         deleteState(stateId);
         if (currentStateId === stateId) {
           setCurrentStateId(null);
@@ -362,7 +393,7 @@ export function EnhancedStateBuilder() {
           next.delete(stateId);
           return next;
         });
-        toast.success('State deleted');
+        toast.success("State deleted");
       }
     },
     [deleteState, currentStateId]
@@ -385,7 +416,7 @@ export function EnhancedStateBuilder() {
       const { stateIds, operation: op, data } = operation;
 
       switch (op) {
-        case 'delete':
+        case "delete":
           if (
             confirm(
               `Delete ${stateIds.length} state(s)? This action cannot be undone.`
@@ -397,24 +428,24 @@ export function EnhancedStateBuilder() {
           }
           break;
 
-        case 'move':
+        case "move":
           // Move to group (would need to update state metadata)
-          toast.info('Move operation not yet implemented');
+          toast.info("Move operation not yet implemented");
           break;
 
-        case 'tag':
+        case "tag":
           // Add tags to states (would need to update state metadata)
-          toast.info('Tag operation not yet implemented');
+          toast.info("Tag operation not yet implemented");
           break;
 
-        case 'export':
+        case "export":
           // Export selected states
           const exportData = states.filter((s) => stateIds.includes(s.id));
           const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-            type: 'application/json',
+            type: "application/json",
           });
           const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
+          const a = document.createElement("a");
           a.href = url;
           a.download = `states-export-${Date.now()}.json`;
           a.click();
@@ -422,7 +453,7 @@ export function EnhancedStateBuilder() {
           toast.success(`Exported ${stateIds.length} state(s)`);
           break;
 
-        case 'duplicate':
+        case "duplicate":
           stateIds.forEach((id) => {
             const original = states.find((s) => s.id === id);
             if (original) {
@@ -458,7 +489,7 @@ export function EnhancedStateBuilder() {
 
     const newStateImage: StateImage = {
       id: `si-${Date.now()}`,
-      name: 'New Image',
+      name: "New Image",
       patterns: [],
       shared: false,
     };
@@ -466,8 +497,8 @@ export function EnhancedStateBuilder() {
     handleUpdateCurrentState({
       stateImages: [...(currentState.stateImages || []), newStateImage],
     });
-    setSelectedImageIndex((currentState.stateImages?.length || 0));
-    toast.success('StateImage added');
+    setSelectedImageIndex(currentState.stateImages?.length || 0);
+    toast.success("StateImage added");
   }, [currentState, handleUpdateCurrentState]);
 
   const handleRemoveStateImage = useCallback(
@@ -481,7 +512,7 @@ export function EnhancedStateBuilder() {
       if (selectedImageIndex === index) {
         setSelectedImageIndex(null);
       }
-      toast.success('StateImage removed');
+      toast.success("StateImage removed");
     },
     [currentState, handleUpdateCurrentState, selectedImageIndex]
   );
@@ -491,7 +522,7 @@ export function EnhancedStateBuilder() {
 
     const newRegion: StateRegion = {
       id: `region-${Date.now()}`,
-      name: 'New Region',
+      name: "New Region",
       x: 100,
       y: 100,
       width: 200,
@@ -501,7 +532,7 @@ export function EnhancedStateBuilder() {
     handleUpdateCurrentState({
       regions: [...(currentState.regions || []), newRegion],
     });
-    toast.success('Region added');
+    toast.success("Region added");
   }, [currentState, handleUpdateCurrentState]);
 
   const handleAddLocation = useCallback(() => {
@@ -509,7 +540,7 @@ export function EnhancedStateBuilder() {
 
     const newLocation: StateLocation = {
       id: `loc-${Date.now()}`,
-      name: 'New Location',
+      name: "New Location",
       x: 100,
       y: 100,
       fixed: false,
@@ -519,7 +550,7 @@ export function EnhancedStateBuilder() {
     handleUpdateCurrentState({
       locations: [...(currentState.locations || []), newLocation],
     });
-    toast.success('Location added');
+    toast.success("Location added");
   }, [currentState, handleUpdateCurrentState]);
 
   const handleAddString = useCallback(() => {
@@ -527,15 +558,15 @@ export function EnhancedStateBuilder() {
 
     const newString: StateString = {
       id: `str-${Date.now()}`,
-      name: 'New String',
-      value: '',
+      name: "New String",
+      value: "",
       inputText: true,
     };
 
     handleUpdateCurrentState({
       strings: [...(currentState.strings || []), newString],
     });
-    toast.success('String added');
+    toast.success("String added");
   }, [currentState, handleUpdateCurrentState]);
 
   // ============================================================================
@@ -548,7 +579,11 @@ export function EnhancedStateBuilder() {
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm">State Navigator</CardTitle>
           <div className="flex gap-1">
-            <Button size="sm" variant="ghost" onClick={() => setShowTemplateDialog(true)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowTemplateDialog(true)}
+            >
               <Plus className="h-4 w-4" />
             </Button>
             <Button size="sm" variant="ghost" onClick={handleCreateState}>
@@ -586,8 +621,8 @@ export function EnhancedStateBuilder() {
               >
                 <Check
                   className={cn(
-                    'mr-2 h-4 w-4',
-                    filterHasImages === true ? 'opacity-100' : 'opacity-0'
+                    "mr-2 h-4 w-4",
+                    filterHasImages === true ? "opacity-100" : "opacity-0"
                   )}
                 />
                 Has Images
@@ -601,8 +636,8 @@ export function EnhancedStateBuilder() {
               >
                 <Check
                   className={cn(
-                    'mr-2 h-4 w-4',
-                    filterHasTransitions === true ? 'opacity-100' : 'opacity-0'
+                    "mr-2 h-4 w-4",
+                    filterHasTransitions === true ? "opacity-100" : "opacity-0"
                   )}
                 />
                 Has Transitions
@@ -643,10 +678,10 @@ export function EnhancedStateBuilder() {
                 <div
                   key={state.id}
                   className={cn(
-                    'group relative flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors',
+                    "group relative flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors",
                     isSelected
-                      ? 'bg-primary/10 border-primary'
-                      : 'border-transparent hover:bg-accent'
+                      ? "bg-primary/10 border-primary"
+                      : "border-transparent hover:bg-accent"
                   )}
                   onClick={() => setCurrentStateId(state.id)}
                 >
@@ -680,10 +715,12 @@ export function EnhancedStateBuilder() {
                       <Badge
                         variant="outline"
                         className={cn(
-                          'text-xs',
-                          complexity < 5 && 'border-green-500 text-green-500',
-                          complexity >= 5 && complexity < 15 && 'border-yellow-500 text-yellow-500',
-                          complexity >= 15 && 'border-red-500 text-red-500'
+                          "text-xs",
+                          complexity < 5 && "border-green-500 text-green-500",
+                          complexity >= 5 &&
+                            complexity < 15 &&
+                            "border-yellow-500 text-yellow-500",
+                          complexity >= 15 && "border-red-500 text-red-500"
                         )}
                       >
                         {complexity}
@@ -692,7 +729,10 @@ export function EnhancedStateBuilder() {
                   </div>
 
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenuTrigger
+                      asChild
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Button
                         size="sm"
                         variant="ghost"
@@ -702,7 +742,9 @@ export function EnhancedStateBuilder() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setCurrentStateId(state.id)}>
+                      <DropdownMenuItem
+                        onClick={() => setCurrentStateId(state.id)}
+                      >
                         <Eye className="mr-2 h-4 w-4" />
                         View
                       </DropdownMenuItem>
@@ -787,61 +829,74 @@ export function EnhancedStateBuilder() {
           <div
             style={{
               transform: `scale(${canvasZoom}) translate(${canvasPan.x}px, ${canvasPan.y}px)`,
-              transformOrigin: 'top left',
+              transformOrigin: "top left",
             }}
           >
             {/* StateImages Grid */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
                 <Label className="text-xs font-semibold">StateImages</Label>
-                <Button size="sm" variant="outline" onClick={handleAddStateImage}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAddStateImage}
+                >
                   <Plus className="h-3 w-3 mr-1" />
                   Add Image
                 </Button>
               </div>
               <div className="grid grid-cols-3 gap-4">
-                {currentState.stateImages?.slice(0, 6).map((stateImage, idx) => {
-                  const firstPattern = stateImage.patterns?.[0];
-                  const imageData = firstPattern
-                    ? resolvePatternImage(firstPattern)
-                    : null;
+                {currentState.stateImages
+                  ?.slice(0, 6)
+                  .map((stateImage, idx) => {
+                    const firstPattern = stateImage.patterns?.[0];
+                    const imageData = firstPattern
+                      ? resolvePatternImage(firstPattern)
+                      : null;
 
-                  return (
-                    <div
-                      key={stateImage.id}
-                      className={cn(
-                        'relative border rounded p-2 cursor-pointer transition-colors',
-                        selectedImageIndex === idx
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:border-primary/50'
-                      )}
-                      onClick={() => setSelectedImageIndex(idx)}
-                    >
-                      {imageData ? (
-                        <img
-                          src={imageData.url}
-                          alt={stateImage.name}
-                          className="w-full h-24 object-cover rounded"
-                        />
-                      ) : (
-                        <div className="w-full h-24 flex items-center justify-center bg-muted rounded">
-                          <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                        </div>
-                      )}
-                      <p className="text-xs mt-1 truncate">{stateImage.name}</p>
-                      <Badge variant="secondary" className="absolute top-1 right-1 text-xs">
-                        {stateImage.patterns?.length || 0}
-                      </Badge>
-                    </div>
-                  );
-                })}
+                    return (
+                      <div
+                        key={stateImage.id}
+                        className={cn(
+                          "relative border rounded p-2 cursor-pointer transition-colors",
+                          selectedImageIndex === idx
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:border-primary/50"
+                        )}
+                        onClick={() => setSelectedImageIndex(idx)}
+                      >
+                        {imageData ? (
+                          <img
+                            src={imageData.url}
+                            alt={stateImage.name}
+                            className="w-full h-24 object-cover rounded"
+                          />
+                        ) : (
+                          <div className="w-full h-24 flex items-center justify-center bg-muted rounded">
+                            <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <p className="text-xs mt-1 truncate">
+                          {stateImage.name}
+                        </p>
+                        <Badge
+                          variant="secondary"
+                          className="absolute top-1 right-1 text-xs"
+                        >
+                          {stateImage.patterns?.length || 0}
+                        </Badge>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
 
             {/* Regions Preview */}
             {currentState.regions && currentState.regions.length > 0 && (
               <div className="mb-6">
-                <Label className="text-xs font-semibold mb-3 block">Regions</Label>
+                <Label className="text-xs font-semibold mb-3 block">
+                  Regions
+                </Label>
                 <div className="grid grid-cols-2 gap-2">
                   {currentState.regions.map((region) => (
                     <div
@@ -861,7 +916,9 @@ export function EnhancedStateBuilder() {
             {/* Locations Preview */}
             {currentState.locations && currentState.locations.length > 0 && (
               <div>
-                <Label className="text-xs font-semibold mb-3 block">Locations</Label>
+                <Label className="text-xs font-semibold mb-3 block">
+                  Locations
+                </Label>
                 <div className="grid grid-cols-2 gap-2">
                   {currentState.locations.map((location) => (
                     <div
@@ -871,8 +928,8 @@ export function EnhancedStateBuilder() {
                       <div className="font-medium">{location.name}</div>
                       <div className="text-muted-foreground">
                         ({location.x}, {location.y})
-                        {location.anchor && ' • Anchor'}
-                        {location.fixed && ' • Fixed'}
+                        {location.anchor && " • Anchor"}
+                        {location.fixed && " • Fixed"}
                       </div>
                     </div>
                   ))}
@@ -903,12 +960,24 @@ export function EnhancedStateBuilder() {
           <CardTitle className="text-sm">Properties</CardTitle>
         </CardHeader>
         <CardContent className="flex-1 overflow-hidden">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="h-full flex flex-col"
+          >
             <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
-              <TabsTrigger value="images" className="text-xs">Images</TabsTrigger>
-              <TabsTrigger value="regions" className="text-xs">Regions</TabsTrigger>
-              <TabsTrigger value="locations" className="text-xs">Locations</TabsTrigger>
+              <TabsTrigger value="overview" className="text-xs">
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="images" className="text-xs">
+                Images
+              </TabsTrigger>
+              <TabsTrigger value="regions" className="text-xs">
+                Regions
+              </TabsTrigger>
+              <TabsTrigger value="locations" className="text-xs">
+                Locations
+              </TabsTrigger>
             </TabsList>
 
             <ScrollArea className="flex-1 mt-4">
@@ -926,7 +995,7 @@ export function EnhancedStateBuilder() {
                 <div className="space-y-2">
                   <Label className="text-xs">Description</Label>
                   <Textarea
-                    value={currentState.description || ''}
+                    value={currentState.description || ""}
                     onChange={(e) =>
                       handleUpdateCurrentState({ description: e.target.value })
                     }
@@ -952,12 +1021,14 @@ export function EnhancedStateBuilder() {
                   <Badge
                     variant="outline"
                     className={cn(
-                      'w-full justify-center',
-                      stateComplexity(currentState) < 5 && 'border-green-500 text-green-500',
+                      "w-full justify-center",
+                      stateComplexity(currentState) < 5 &&
+                        "border-green-500 text-green-500",
                       stateComplexity(currentState) >= 5 &&
                         stateComplexity(currentState) < 15 &&
-                        'border-yellow-500 text-yellow-500',
-                      stateComplexity(currentState) >= 15 && 'border-red-500 text-red-500'
+                        "border-yellow-500 text-yellow-500",
+                      stateComplexity(currentState) >= 15 &&
+                        "border-red-500 text-red-500"
                     )}
                   >
                     {stateComplexity(currentState)}
@@ -966,25 +1037,33 @@ export function EnhancedStateBuilder() {
 
                 <div className="grid grid-cols-2 gap-4 pt-2">
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">StateImages</Label>
+                    <Label className="text-xs text-muted-foreground">
+                      StateImages
+                    </Label>
                     <div className="text-lg font-semibold">
                       {currentState.stateImages?.length || 0}
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Regions</Label>
+                    <Label className="text-xs text-muted-foreground">
+                      Regions
+                    </Label>
                     <div className="text-lg font-semibold">
                       {currentState.regions?.length || 0}
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Locations</Label>
+                    <Label className="text-xs text-muted-foreground">
+                      Locations
+                    </Label>
                     <div className="text-lg font-semibold">
                       {currentState.locations?.length || 0}
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Strings</Label>
+                    <Label className="text-xs text-muted-foreground">
+                      Strings
+                    </Label>
                     <div className="text-lg font-semibold">
                       {currentState.strings?.length || 0}
                     </div>
@@ -995,7 +1074,11 @@ export function EnhancedStateBuilder() {
               <TabsContent value="images" className="space-y-4 m-0">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">StateImages</Label>
-                  <Button size="sm" variant="outline" onClick={handleAddStateImage}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAddStateImage}
+                  >
                     <Plus className="h-3 w-3 mr-1" />
                     Add
                   </Button>
@@ -1025,7 +1108,9 @@ export function EnhancedStateBuilder() {
                         {stateImage.patterns?.[0] && (
                           <div className="aspect-video rounded overflow-hidden bg-muted">
                             {(() => {
-                              const imageData = resolvePatternImage(stateImage.patterns[0]);
+                              const imageData = resolvePatternImage(
+                                stateImage.patterns[0]
+                              );
                               return imageData ? (
                                 <img
                                   src={imageData.url}
@@ -1075,7 +1160,11 @@ export function EnhancedStateBuilder() {
               <TabsContent value="locations" className="space-y-4 m-0">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">Locations</Label>
-                  <Button size="sm" variant="outline" onClick={handleAddLocation}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAddLocation}
+                  >
                     <Plus className="h-3 w-3 mr-1" />
                     Add
                   </Button>
@@ -1085,7 +1174,9 @@ export function EnhancedStateBuilder() {
                   {currentState.locations?.map((location) => (
                     <Card key={location.id}>
                       <CardContent className="p-3 space-y-2">
-                        <div className="font-medium text-sm">{location.name}</div>
+                        <div className="font-medium text-sm">
+                          {location.name}
+                        </div>
                         <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                           <div>X: {location.x}</div>
                           <div>Y: {location.y}</div>
@@ -1204,7 +1295,7 @@ export function EnhancedStateBuilder() {
               onClick={() =>
                 handleBulkOperation({
                   stateIds: Array.from(selectedStateIds),
-                  operation: 'duplicate',
+                  operation: "duplicate",
                 })
               }
             >
@@ -1217,7 +1308,7 @@ export function EnhancedStateBuilder() {
               onClick={() =>
                 handleBulkOperation({
                   stateIds: Array.from(selectedStateIds),
-                  operation: 'export',
+                  operation: "export",
                 })
               }
             >
@@ -1230,7 +1321,7 @@ export function EnhancedStateBuilder() {
               onClick={() =>
                 handleBulkOperation({
                   stateIds: Array.from(selectedStateIds),
-                  operation: 'delete',
+                  operation: "delete",
                 })
               }
             >

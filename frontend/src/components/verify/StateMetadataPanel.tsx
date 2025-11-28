@@ -12,13 +12,19 @@
  * - Element details with coordinates
  */
 
-import React, { useState } from 'react'
-import type { State } from '@/contexts/automation-context/types'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
+import React, { useState } from "react";
+import type { State } from "@/contexts/automation-context/types";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Eye,
   MapPin,
@@ -27,17 +33,21 @@ import {
   ArrowRight,
   ArrowLeft,
   Info,
-} from 'lucide-react'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ChevronDown } from 'lucide-react'
+} from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ChevronDown } from "lucide-react";
 
 export interface StateMetadataPanelProps {
-  state: State | null
-  transitionCounts: { incoming: number; outgoing: number }
-  showPositions: boolean
-  onTogglePositions: () => void
-  highlightElementId?: string
-  onHighlightElement: (elementId: string | undefined) => void
+  state: State | null;
+  transitionCounts: { incoming: number; outgoing: number };
+  showPositions: boolean;
+  onTogglePositions: () => void;
+  highlightElementId?: string;
+  onHighlightElement: (elementId: string | undefined) => void;
 }
 
 export function StateMetadataPanel({
@@ -52,7 +62,7 @@ export function StateMetadataPanel({
     images: true,
     regions: true,
     locations: true,
-  })
+  });
 
   if (!state) {
     return (
@@ -68,38 +78,39 @@ export function StateMetadataPanel({
           </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
-  const imageCount = state.stateImages?.filter(img =>
-    img.patterns?.some(p => p.fixed && p.offsetX !== undefined && p.offsetY !== undefined)
-  ).length || 0
-  const regionCount = state.regions?.length || 0
-  const locationCount = state.locations?.length || 0
-  const totalElements = imageCount + regionCount + locationCount
+  const imageCount =
+    state.stateImages?.filter((img) =>
+      img.patterns?.some(
+        (p) => p.fixed && p.offsetX !== undefined && p.offsetY !== undefined
+      )
+    ).length || 0;
+  const regionCount = state.regions?.length || 0;
+  const locationCount = state.locations?.length || 0;
+  const totalElements = imageCount + regionCount + locationCount;
 
   const toggleSection = (section: keyof typeof expandedSections) => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }))
-  }
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
 
   return (
     <Card className="flex flex-col h-full">
       <CardHeader className="pb-3">
         <CardTitle className="text-lg">State Details</CardTitle>
-        <CardDescription className="break-words">
-          {state.name}
-        </CardDescription>
+        <CardDescription className="break-words">{state.name}</CardDescription>
 
         {/* Toggle position display */}
         <div className="pt-2">
           <Button
             size="sm"
-            variant={showPositions ? 'default' : 'outline'}
+            variant={showPositions ? "default" : "outline"}
             onClick={onTogglePositions}
             className="w-full"
           >
             <MapPin className="h-4 w-4 mr-2" />
-            {showPositions ? 'Hide' : 'Show'} Positions
+            {showPositions ? "Hide" : "Show"} Positions
           </Button>
         </div>
       </CardHeader>
@@ -112,7 +123,9 @@ export function StateMetadataPanel({
             <div className="text-2xl font-bold">{totalElements}</div>
           </div>
           <div className="border rounded-lg p-3">
-            <div className="text-xs text-muted-foreground mb-1">Transitions</div>
+            <div className="text-xs text-muted-foreground mb-1">
+              Transitions
+            </div>
             <div className="flex items-center gap-2 text-sm">
               <span className="flex items-center gap-1">
                 <ArrowLeft className="h-3 w-3 text-green-500" />
@@ -135,7 +148,7 @@ export function StateMetadataPanel({
             {imageCount > 0 && (
               <Collapsible
                 open={expandedSections.images}
-                onOpenChange={() => toggleSection('images')}
+                onOpenChange={() => toggleSection("images")}
               >
                 <CollapsibleTrigger asChild>
                   <Button
@@ -149,32 +162,41 @@ export function StateMetadataPanel({
                     </span>
                     <ChevronDown
                       className={`h-4 w-4 transition-transform ${
-                        expandedSections.images ? 'transform rotate-180' : ''
+                        expandedSections.images ? "transform rotate-180" : ""
                       }`}
                     />
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-2 mt-2">
                   {state.stateImages
-                    ?.filter(img =>
-                      img.patterns?.some(p => p.fixed && p.offsetX !== undefined && p.offsetY !== undefined)
+                    ?.filter((img) =>
+                      img.patterns?.some(
+                        (p) =>
+                          p.fixed &&
+                          p.offsetX !== undefined &&
+                          p.offsetY !== undefined
+                      )
                     )
                     .map((img) => {
                       const pattern = img.patterns?.find(
-                        p => p.fixed && p.offsetX !== undefined && p.offsetY !== undefined
-                      )
-                      if (!pattern) return null
+                        (p) =>
+                          p.fixed &&
+                          p.offsetX !== undefined &&
+                          p.offsetY !== undefined
+                      );
+                      if (!pattern) return null;
 
-                      const isHighlighted = highlightElementId === img.id
+                      const isHighlighted = highlightElementId === img.id;
 
                       return (
                         <div
                           key={img.id}
                           className={`
                             border rounded-lg p-2 cursor-pointer transition-colors text-sm
-                            ${isHighlighted
-                              ? 'bg-primary/10 border-primary'
-                              : 'hover:bg-muted/50'
+                            ${
+                              isHighlighted
+                                ? "bg-primary/10 border-primary"
+                                : "hover:bg-muted/50"
                             }
                           `}
                           onMouseEnter={() => onHighlightElement(img.id)}
@@ -190,7 +212,7 @@ export function StateMetadataPanel({
                             </Badge>
                           )}
                         </div>
-                      )
+                      );
                     })}
                 </CollapsibleContent>
               </Collapsible>
@@ -200,7 +222,7 @@ export function StateMetadataPanel({
             {regionCount > 0 && (
               <Collapsible
                 open={expandedSections.regions}
-                onOpenChange={() => toggleSection('regions')}
+                onOpenChange={() => toggleSection("regions")}
               >
                 <CollapsibleTrigger asChild>
                   <Button
@@ -214,29 +236,32 @@ export function StateMetadataPanel({
                     </span>
                     <ChevronDown
                       className={`h-4 w-4 transition-transform ${
-                        expandedSections.regions ? 'transform rotate-180' : ''
+                        expandedSections.regions ? "transform rotate-180" : ""
                       }`}
                     />
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-2 mt-2">
                   {state.regions?.map((region) => {
-                    const isHighlighted = highlightElementId === region.id
+                    const isHighlighted = highlightElementId === region.id;
 
                     return (
                       <div
                         key={region.id}
                         className={`
                           border rounded-lg p-2 cursor-pointer transition-colors text-sm
-                          ${isHighlighted
-                            ? 'bg-primary/10 border-primary'
-                            : 'hover:bg-muted/50'
+                          ${
+                            isHighlighted
+                              ? "bg-primary/10 border-primary"
+                              : "hover:bg-muted/50"
                           }
                         `}
                         onMouseEnter={() => onHighlightElement(region.id)}
                         onMouseLeave={() => onHighlightElement(undefined)}
                       >
-                        <div className="font-medium truncate">{region.name}</div>
+                        <div className="font-medium truncate">
+                          {region.name}
+                        </div>
                         <div className="text-xs text-muted-foreground mt-1">
                           Position: ({region.x}, {region.y})
                         </div>
@@ -249,7 +274,7 @@ export function StateMetadataPanel({
                           </Badge>
                         )}
                       </div>
-                    )
+                    );
                   })}
                 </CollapsibleContent>
               </Collapsible>
@@ -259,7 +284,7 @@ export function StateMetadataPanel({
             {locationCount > 0 && (
               <Collapsible
                 open={expandedSections.locations}
-                onOpenChange={() => toggleSection('locations')}
+                onOpenChange={() => toggleSection("locations")}
               >
                 <CollapsibleTrigger asChild>
                   <Button
@@ -273,29 +298,32 @@ export function StateMetadataPanel({
                     </span>
                     <ChevronDown
                       className={`h-4 w-4 transition-transform ${
-                        expandedSections.locations ? 'transform rotate-180' : ''
+                        expandedSections.locations ? "transform rotate-180" : ""
                       }`}
                     />
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-2 mt-2">
                   {state.locations?.map((location) => {
-                    const isHighlighted = highlightElementId === location.id
+                    const isHighlighted = highlightElementId === location.id;
 
                     return (
                       <div
                         key={location.id}
                         className={`
                           border rounded-lg p-2 cursor-pointer transition-colors text-sm
-                          ${isHighlighted
-                            ? 'bg-primary/10 border-primary'
-                            : 'hover:bg-muted/50'
+                          ${
+                            isHighlighted
+                              ? "bg-primary/10 border-primary"
+                              : "hover:bg-muted/50"
                           }
                         `}
                         onMouseEnter={() => onHighlightElement(location.id)}
                         onMouseLeave={() => onHighlightElement(undefined)}
                       >
-                        <div className="font-medium truncate">{location.name}</div>
+                        <div className="font-medium truncate">
+                          {location.name}
+                        </div>
                         <div className="text-xs text-muted-foreground mt-1">
                           Position: ({location.x}, {location.y})
                         </div>
@@ -312,7 +340,7 @@ export function StateMetadataPanel({
                           )}
                         </div>
                       </div>
-                    )
+                    );
                   })}
                 </CollapsibleContent>
               </Collapsible>
@@ -347,10 +375,10 @@ export function StateMetadataPanel({
         )}
 
         <div className="text-xs text-muted-foreground">
-          <span className="font-semibold">ID:</span>{' '}
+          <span className="font-semibold">ID:</span>{" "}
           <span className="font-mono">{state.id}</span>
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }

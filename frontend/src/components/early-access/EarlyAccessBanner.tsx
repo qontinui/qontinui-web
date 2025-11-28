@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { X, Calendar, Download } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import React, { useState, useEffect } from "react";
+import { X, Calendar, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /**
  * Early Access Dashboard Banner
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
  * Based on: EARLY-ACCESS-WARNING-IMPLEMENTATION.md lines 136-143
  */
 
-const BANNER_STORAGE_KEY = 'qontinui-early-access-banner-dismissed';
+const BANNER_STORAGE_KEY = "qontinui-early-access-banner-dismissed";
 
 interface EarlyAccessBannerProps {
   onExport?: () => void;
@@ -26,13 +26,13 @@ export function EarlyAccessBanner({ onExport }: EarlyAccessBannerProps) {
   // Check if banner was dismissed this session
   useEffect(() => {
     const dismissed = sessionStorage.getItem(BANNER_STORAGE_KEY);
-    if (dismissed === 'true') {
+    if (dismissed === "true") {
       setIsDismissed(true);
     }
   }, []);
 
   const handleDismiss = () => {
-    sessionStorage.setItem(BANNER_STORAGE_KEY, 'true');
+    sessionStorage.setItem(BANNER_STORAGE_KEY, "true");
     setIsDismissed(true);
   };
 
@@ -41,7 +41,7 @@ export function EarlyAccessBanner({ onExport }: EarlyAccessBannerProps) {
       onExport();
     } else {
       // Fallback: show info toast if export handler not provided
-      console.log('Export functionality - please wire up export handler');
+      console.log("Export functionality - please wire up export handler");
     }
   };
 
@@ -50,12 +50,14 @@ export function EarlyAccessBanner({ onExport }: EarlyAccessBannerProps) {
   }
 
   return (
-    <div className={cn(
-      "w-full bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-blue-500/10",
-      "border-b border-blue-500/30",
-      "shadow-[0_2px_10px_rgba(59,130,246,0.1)]",
-      "animate-in slide-in-from-top duration-300"
-    )}>
+    <div
+      className={cn(
+        "w-full bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-blue-500/10",
+        "border-b border-blue-500/30",
+        "shadow-[0_2px_10px_rgba(59,130,246,0.1)]",
+        "animate-in slide-in-from-top duration-300"
+      )}
+    >
       <div className="container mx-auto px-4 py-3">
         <div className="flex items-center justify-between gap-4">
           {/* Left: Message */}
@@ -66,7 +68,9 @@ export function EarlyAccessBanner({ onExport }: EarlyAccessBannerProps) {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap text-sm">
-              <span className="text-blue-300 font-semibold">🚀 Early Access</span>
+              <span className="text-blue-300 font-semibold">
+                🚀 Early Access
+              </span>
               <span className="text-gray-400">|</span>
               <span className="text-gray-300">Launches Feb 2026</span>
               <span className="text-gray-400">|</span>

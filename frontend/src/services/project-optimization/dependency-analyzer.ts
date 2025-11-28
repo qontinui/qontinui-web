@@ -8,9 +8,9 @@
  * - Impact analysis
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { State, ImageAsset } from '@/contexts/automation-context/types';
-import { WorkflowDependencyAnalyzer } from '../workflow-dependency-analyzer';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type { State, ImageAsset } from "@/contexts/automation-context/types";
+import { WorkflowDependencyAnalyzer } from "../workflow-dependency-analyzer";
 
 /**
  * Analyze project dependencies
@@ -23,10 +23,13 @@ export function analyzeProjectDependencies(workflows: Workflow[]) {
 /**
  * Find critical resources (most depended-on)
  */
-export function findCriticalResources(workflows: Workflow[], limit: number = 10): Array<{
+export function findCriticalResources(
+  workflows: Workflow[],
+  limit: number = 10
+): Array<{
   id: string;
   name: string;
-  type: 'workflow';
+  type: "workflow";
   dependentCount: number;
 }> {
   const dependencyAnalyzer = WorkflowDependencyAnalyzer.getInstance();
@@ -35,10 +38,10 @@ export function findCriticalResources(workflows: Workflow[], limit: number = 10)
   return Array.from(graph.nodes.values())
     .sort((a, b) => b.inDegree - a.inDegree)
     .slice(0, limit)
-    .map(node => ({
+    .map((node) => ({
       id: node.id,
       name: node.name,
-      type: 'workflow' as const,
+      type: "workflow" as const,
       dependentCount: node.inDegree,
     }));
 }
@@ -56,14 +59,14 @@ export function findCircularDependencies(workflows: Workflow[]): string[][] {
  */
 export function getImpactAnalysis(
   resourceId: string,
-  type: 'workflow' | 'state' | 'image',
+  type: "workflow" | "state" | "image",
   workflows: Workflow[],
   states: State[],
   images: ImageAsset[]
 ) {
   const dependencyAnalyzer = WorkflowDependencyAnalyzer.getInstance();
 
-  if (type === 'workflow') {
+  if (type === "workflow") {
     return dependencyAnalyzer.getImpactAnalysis(resourceId, workflows);
   }
 
@@ -71,11 +74,11 @@ export function getImpactAnalysis(
   const affectedWorkflows: string[] = [];
   const affectedStates: string[] = [];
 
-  if (type === 'image') {
+  if (type === "image") {
     // Find states using this image
-    states.forEach(state => {
-      const usesImage = state.stateImages.some(si =>
-        si.patterns.some(p => p.imageId === resourceId)
+    states.forEach((state) => {
+      const usesImage = state.stateImages.some((si) =>
+        si.patterns.some((p) => p.imageId === resourceId)
       );
       if (usesImage) {
         affectedStates.push(state.id);
@@ -83,20 +86,22 @@ export function getImpactAnalysis(
     });
 
     // Find workflows using this image
-    workflows.forEach(workflow => {
-      const usesImage = workflow.actions.some(action => {
+    workflows.forEach((workflow) => {
+      const usesImage = workflow.actions.some((action) => {
         const config = action.config as any;
-        return config.target?.image === resourceId || config.imageId === resourceId;
+        return (
+          config.target?.image === resourceId || config.imageId === resourceId
+        );
       });
       if (usesImage) {
         affectedWorkflows.push(workflow.id);
       }
     });
-  } else if (type === 'state') {
+  } else if (type === "state") {
     // Find workflows using this state
-    workflows.forEach(workflow => {
-      const usesState = workflow.actions.some(action => {
-        if (action.type === 'GO_TO_STATE') {
+    workflows.forEach((workflow) => {
+      const usesState = workflow.actions.some((action) => {
+        if (action.type === "GO_TO_STATE") {
           const config = action.config as any;
           return config.stateId === resourceId;
         }
@@ -115,7 +120,14 @@ export function getImpactAnalysis(
     directDependents: [...affectedWorkflows, ...affectedStates],
     allDependents: [...affectedWorkflows, ...affectedStates],
     criticalPaths: [],
-    impactLevel: totalAffected === 0 ? 'low' : totalAffected <= 2 ? 'medium' : totalAffected <= 5 ? 'high' : 'critical' as const,
+    impactLevel:
+      totalAffected === 0
+        ? "low"
+        : totalAffected <= 2
+          ? "medium"
+          : totalAffected <= 5
+            ? "high"
+            : ("critical" as const),
     affectedCount: totalAffected,
   };
 }

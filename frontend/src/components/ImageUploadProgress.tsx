@@ -1,18 +1,18 @@
-"use client"
+"use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
-import { ImageIcon, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { ImageIcon, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export interface UploadingImage {
-  name: string
-  progress: number
+  name: string;
+  progress: number;
 }
 
 interface ImageUploadProgressProps {
-  uploads: UploadingImage[]
-  onCancel?: (imageName: string) => void
+  uploads: UploadingImage[];
+  onCancel?: (imageName: string) => void;
 }
 
 /**
@@ -25,10 +25,13 @@ interface ImageUploadProgressProps {
  * - Auto-hides when no uploads
  * - Responsive design
  */
-export function ImageUploadProgress({ uploads, onCancel }: ImageUploadProgressProps) {
+export function ImageUploadProgress({
+  uploads,
+  onCancel,
+}: ImageUploadProgressProps) {
   // Auto-hide when no uploads
   if (uploads.length === 0) {
-    return null
+    return null;
   }
 
   return (
@@ -44,7 +47,7 @@ export function ImageUploadProgress({ uploads, onCancel }: ImageUploadProgressPr
             <ImageIcon className="w-4 h-4" />
             Uploading Images
             <span className="text-xs text-gray-400 font-normal ml-auto">
-              {uploads.length} {uploads.length === 1 ? 'file' : 'files'}
+              {uploads.length} {uploads.length === 1 ? "file" : "files"}
             </span>
           </CardTitle>
         </CardHeader>
@@ -99,5 +102,5 @@ export function ImageUploadProgress({ uploads, onCancel }: ImageUploadProgressPr
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

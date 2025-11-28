@@ -46,6 +46,7 @@ from app.models.coverage_snapshot import CoverageSnapshot
 from app.models.custom_function import CustomFunction
 from app.models.device_session import DeviceSession
 from app.models.edit_command import EditCommand
+from app.models.extraction import ExtractionAnnotation, ExtractionSession
 from app.models.notification import (
     Notification,
     NotificationPreferences,
@@ -132,6 +133,9 @@ __all__ = [
     # Annotations
     "Annotation",
     "AnnotationSet",
+    # Web Extraction
+    "ExtractionSession",
+    "ExtractionAnnotation",
     # Subscriptions
     "Subscription",
     "SubscriptionStatus",

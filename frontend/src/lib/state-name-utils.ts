@@ -3,7 +3,7 @@
  * Aligns with qontinui library's approach of using state names
  */
 
-import { State } from '@/contexts/automation-context/types';
+import { State } from "@/contexts/automation-context/types";
 
 /**
  * Sanitize a state name to be used as an ID
@@ -13,19 +13,19 @@ import { State } from '@/contexts/automation-context/types';
  */
 export function sanitizeStateName(name: string): string {
   // Replace spaces with underscores
-  let sanitized = name.replace(/\s+/g, '_');
+  let sanitized = name.replace(/\s+/g, "_");
 
   // Remove special characters except letters, numbers, underscores, and hyphens
-  sanitized = sanitized.replace(/[^a-zA-Z0-9_-]/g, '');
+  sanitized = sanitized.replace(/[^a-zA-Z0-9_-]/g, "");
 
   // Ensure it starts with a letter (prefix with 'state_' if it doesn't)
   if (!/^[a-zA-Z]/.test(sanitized)) {
-    sanitized = 'state_' + sanitized;
+    sanitized = "state_" + sanitized;
   }
 
   // Default to 'state' if empty
   if (!sanitized) {
-    sanitized = 'state';
+    sanitized = "state";
   }
 
   return sanitized;
@@ -42,7 +42,7 @@ export function generateUniqueStateName(
   const baseName = sanitizeStateName(desiredName);
 
   // Check if the base name is already unique
-  if (!existingStates.find(s => s.id === baseName)) {
+  if (!existingStates.find((s) => s.id === baseName)) {
     return baseName;
   }
 
@@ -50,7 +50,7 @@ export function generateUniqueStateName(
   let counter = 1;
   let uniqueName = `${baseName}_${counter}`;
 
-  while (existingStates.find(s => s.id === uniqueName)) {
+  while (existingStates.find((s) => s.id === uniqueName)) {
     counter++;
     uniqueName = `${baseName}_${counter}`;
   }
@@ -62,7 +62,7 @@ export function generateUniqueStateName(
  * Generate a default state name based on existing states
  */
 export function generateDefaultStateName(existingStates: State[]): string {
-  return generateUniqueStateName('New_State', existingStates);
+  return generateUniqueStateName("New_State", existingStates);
 }
 
 /**
@@ -78,20 +78,20 @@ export function updateStateIdFromName(
 
   // Check if another state already has this ID (excluding current state)
   const duplicate = existingStates.find(
-    s => s.id === sanitizedName && s.id !== currentState.id
+    (s) => s.id === sanitizedName && s.id !== currentState.id
   );
 
   if (duplicate) {
     // Try to generate a unique variant
-    const uniqueName = generateUniqueStateName(newName,
-      existingStates.filter(s => s.id !== currentState.id)
+    const uniqueName = generateUniqueStateName(
+      newName,
+      existingStates.filter((s) => s.id !== currentState.id)
     );
     return uniqueName;
   }
 
   return sanitizedName;
 }
-
 
 /**
  * Validate that a state name can be used as an ID

@@ -5,11 +5,11 @@
  * Shows success/failure messages with hints and animated transitions.
  */
 
-import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, XCircle, AlertCircle, Lightbulb } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { CheckCircle, XCircle, AlertCircle, Lightbulb } from "lucide-react";
 
-export type ValidationStatus = 'idle' | 'validating' | 'success' | 'failure';
+export type ValidationStatus = "idle" | "validating" | "success" | "failure";
 
 export interface ValidationFeedbackProps {
   /** Current validation status */
@@ -32,19 +32,19 @@ export interface ValidationFeedbackProps {
 
 export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
   status,
-  successMessage = 'Great job! You completed this step correctly.',
-  failureMessage = 'Not quite right. Please try again.',
+  successMessage = "Great job! You completed this step correctly.",
+  failureMessage = "Not quite right. Please try again.",
   hint,
   asToast = false,
   autoHideDuration = 3000,
   onDismiss,
-  className = '',
+  className = "",
 }) => {
   const [showHint, setShowHint] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
-    if (status === 'success' && autoHideDuration > 0) {
+    if (status === "success" && autoHideDuration > 0) {
       const timer = setTimeout(() => {
         setIsVisible(false);
         onDismiss?.();
@@ -58,21 +58,21 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
     setIsVisible(true);
   }, [status]);
 
-  if (status === 'idle' || !isVisible) {
+  if (status === "idle" || !isVisible) {
     return null;
   }
 
   const getIcon = () => {
     switch (status) {
-      case 'success':
+      case "success":
         return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'failure':
+      case "failure":
         return <XCircle className="w-5 h-5 text-red-500" />;
-      case 'validating':
+      case "validating":
         return (
           <motion.div
             animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
           >
             <AlertCircle className="w-5 h-5 text-blue-500" />
           </motion.div>
@@ -84,40 +84,40 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
 
   const getMessage = () => {
     switch (status) {
-      case 'success':
+      case "success":
         return successMessage;
-      case 'failure':
+      case "failure":
         return failureMessage;
-      case 'validating':
-        return 'Validating your action...';
+      case "validating":
+        return "Validating your action...";
       default:
-        return '';
+        return "";
     }
   };
 
   const getBackgroundClass = () => {
     switch (status) {
-      case 'success':
-        return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-      case 'failure':
-        return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
-      case 'validating':
-        return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
+      case "success":
+        return "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800";
+      case "failure":
+        return "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800";
+      case "validating":
+        return "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800";
       default:
-        return '';
+        return "";
     }
   };
 
   const getTextClass = () => {
     switch (status) {
-      case 'success':
-        return 'text-green-800 dark:text-green-200';
-      case 'failure':
-        return 'text-red-800 dark:text-red-200';
-      case 'validating':
-        return 'text-blue-800 dark:text-blue-200';
+      case "success":
+        return "text-green-800 dark:text-green-200";
+      case "failure":
+        return "text-red-800 dark:text-red-200";
+      case "validating":
+        return "text-blue-800 dark:text-blue-200";
       default:
-        return '';
+        return "";
     }
   };
 
@@ -126,11 +126,11 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
       initial={{ opacity: 0, y: asToast ? -20 : 0, scale: asToast ? 0.95 : 1 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: asToast ? -20 : 0, scale: asToast ? 0.95 : 1 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
       className={`
         border rounded-lg p-4 shadow-sm
         ${getBackgroundClass()}
-        ${asToast ? 'min-w-[300px] max-w-md' : 'w-full'}
+        ${asToast ? "min-w-[300px] max-w-md" : "w-full"}
         ${className}
       `}
       role="alert"
@@ -144,7 +144,7 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
           </p>
 
           {/* Show hint for failures */}
-          {status === 'failure' && hint && (
+          {status === "failure" && hint && (
             <div className="mt-2">
               {!showHint ? (
                 <button
@@ -157,7 +157,7 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
               ) : (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
+                  animate={{ opacity: 1, height: "auto" }}
                   transition={{ duration: 0.2 }}
                   className="flex items-start gap-2 p-2 mt-1 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded"
                 >
@@ -198,9 +198,7 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
     return (
       <AnimatePresence>
         {isVisible && (
-          <div className="fixed top-4 right-4 z-[9999]">
-            {content}
-          </div>
+          <div className="fixed top-4 right-4 z-[9999]">{content}</div>
         )}
       </AnimatePresence>
     );

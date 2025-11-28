@@ -1,6 +1,6 @@
 // types/snapshot-recommendations.ts
 
-import type { SnapshotRun } from './snapshots';
+import type { SnapshotRun } from "./snapshots";
 
 /**
  * Coverage metrics for state and action analysis
@@ -79,8 +79,8 @@ export interface SnapshotDetail extends SnapshotRun {
     states: string[];
   }[];
   metadata: {
-    recency: 'new' | 'recent' | 'old';
-    priority: 'high' | 'medium' | 'low';
+    recency: "new" | "recent" | "old";
+    priority: "high" | "medium" | "low";
     has_duplicates: boolean;
   };
 }
@@ -89,10 +89,16 @@ export interface SnapshotDetail extends SnapshotRun {
  * Coverage indicator data for UI display
  */
 export interface CoverageIndicator {
-  type: 'state' | 'action' | 'screenshot' | 'recency' | 'priority' | 'duplicate';
+  type:
+    | "state"
+    | "action"
+    | "screenshot"
+    | "recency"
+    | "priority"
+    | "duplicate";
   label: string;
   value: number | string;
   max?: number;
-  variant?: 'success' | 'warning' | 'error' | 'info';
+  variant?: "success" | "warning" | "error" | "info";
   tooltip?: string;
 }

@@ -1,70 +1,76 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { useOrganization } from "@/hooks/useOrganization"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Building2, Loader2, Sparkles } from "lucide-react"
-import { toast } from "sonner"
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { useOrganization } from "@/hooks/useOrganization";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeft, Building2, Loader2, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 
 export default function NewOrganizationPage() {
-  const router = useRouter()
-  const { user, loading: authLoading } = useAuth()
-  const { createOrg } = useOrganization()
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const { createOrg } = useOrganization();
 
-  const [name, setName] = useState("")
-  const [slug, setSlug] = useState("")
-  const [description, setDescription] = useState("")
-  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [description, setDescription] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
+      router.push("/");
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   // Auto-generate slug from name
   useEffect(() => {
     if (name) {
       const generatedSlug = name
         .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .trim()
-      setSlug(generatedSlug)
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .trim();
+      setSlug(generatedSlug);
     } else {
-      setSlug("")
+      setSlug("");
     }
-  }, [name])
+  }, [name]);
 
   const handleCreate = async () => {
     if (!name.trim()) {
-      toast.error('Please enter an organization name')
-      return
+      toast.error("Please enter an organization name");
+      return;
     }
 
-    setCreating(true)
+    setCreating(true);
     try {
-      const newOrg = await createOrg(name, description || undefined)
-      toast.success('Organization created successfully')
-      router.push(`/organizations/${newOrg.id}`)
+      const newOrg = await createOrg(name, description || undefined);
+      toast.success("Organization created successfully");
+      router.push(`/organizations/${newOrg.id}`);
     } catch (err: any) {
-      console.error('Failed to create organization:', err)
-      toast.error(err.message || 'Failed to create organization')
+      console.error("Failed to create organization:", err);
+      toast.error(err.message || "Failed to create organization");
     } finally {
-      setCreating(false)
+      setCreating(false);
     }
-  }
+  };
 
   const handleCancel = () => {
-    router.push('/organizations')
-  }
+    router.push("/organizations");
+  };
 
   if (authLoading || !user) {
     return (
@@ -74,7 +80,7 @@ export default function NewOrganizationPage() {
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -97,7 +103,9 @@ export default function NewOrganizationPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold">Create New Organization</h1>
-              <p className="text-gray-400">Set up a new organization for your team</p>
+              <p className="text-gray-400">
+                Set up a new organization for your team
+              </p>
             </div>
           </div>
         </div>
@@ -175,7 +183,9 @@ export default function NewOrganizationPage() {
                 <Sparkles className="w-5 h-5 text-[#00D9FF]" />
               </div>
               <div>
-                <h4 className="font-semibold mb-1 text-[#00D9FF]">What happens next?</h4>
+                <h4 className="font-semibold mb-1 text-[#00D9FF]">
+                  What happens next?
+                </h4>
                 <ul className="text-sm text-gray-400 space-y-1">
                   <li>• You'll be set as the organization owner</li>
                   <li>• You can invite team members to collaborate</li>
@@ -250,5 +260,5 @@ export default function NewOrganizationPage() {
         )}
       </div>
     </div>
-  )
+  );
 }

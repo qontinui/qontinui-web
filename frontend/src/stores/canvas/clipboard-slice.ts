@@ -8,8 +8,8 @@
  * - Duplicate operation (copy + paste)
  */
 
-import type { StateCreator } from 'zustand';
-import type { CanvasStore, ClipboardSlice, Action, Connections } from './types';
+import type { StateCreator } from "zustand";
+import type { CanvasStore, ClipboardSlice, Action, Connections } from "./types";
 
 /**
  * Generate a unique ID for actions
@@ -21,7 +21,10 @@ function generateActionId(): string {
 /**
  * Deep clone an action with a new ID
  */
-function cloneAction(action: Action, offset: { x: number; y: number } = { x: 0, y: 0 }): Action {
+function cloneAction(
+  action: Action,
+  offset: { x: number; y: number } = { x: 0, y: 0 }
+): Action {
   return {
     ...action,
     id: generateActionId(),
@@ -58,7 +61,7 @@ function updateConnectionsForClonedActions(
 
 export const createClipboardSlice: StateCreator<
   CanvasStore,
-  [['zustand/immer', never]],
+  [["zustand/immer", never]],
   [],
   ClipboardSlice
 > = (set, get) => ({
@@ -118,7 +121,10 @@ export const createClipboardSlice: StateCreator<
     });
 
     // Update connections
-    const newConnections = updateConnectionsForClonedActions(clipboardConnections, oldToNewIdMap);
+    const newConnections = updateConnectionsForClonedActions(
+      clipboardConnections,
+      oldToNewIdMap
+    );
 
     set((state) => {
       if (!state.workflow) return;

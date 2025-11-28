@@ -1,4 +1,4 @@
-import { ImageAsset } from '@/contexts/automation-context/types';
+import { ImageAsset } from "@/contexts/automation-context/types";
 
 /**
  * Utility functions for managing the Image Library
@@ -14,11 +14,11 @@ import { ImageAsset } from '@/contexts/automation-context/types';
 export function createImageAsset(
   imageData: string,
   name: string,
-  source: 'pattern_optimization' | 'image_extraction' | 'state_discovery'
+  source: "pattern_optimization" | "image_extraction" | "state_discovery"
 ): ImageAsset {
   // Calculate approximate size from base64 data
   // Base64 encoding increases size by ~33%, and we need to account for the data URL prefix
-  const base64Data = imageData.split(',')[1] || '';
+  const base64Data = imageData.split(",")[1] || "";
   const sizeInBytes = Math.ceil((base64Data.length * 3) / 4);
 
   return {

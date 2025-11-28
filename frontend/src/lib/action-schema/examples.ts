@@ -2,59 +2,63 @@
  * Examples demonstrating the new action schema system
  */
 
-import { createAction, Action } from './action-types';
+import { createAction, Action } from "./action-types";
 
 /**
  * Example 1: Simple CLICK action
  * Type-safe configuration with only relevant properties
  */
-export const clickExample: Action<'CLICK'> = createAction('CLICK', {
-  target: {
-    type: 'image',
-    imageId: 'button-123',
-    searchOptions: {
-      similarity: 0.8,
-      timeout: 5000,
-    },
-  },
-  numberOfClicks: 1,
-  mouseButton: 'LEFT',
-  verify: {
-    mode: 'IMAGE_APPEARS',
+export const clickExample: Action<"CLICK"> = createAction(
+  "CLICK",
+  {
     target: {
-      type: 'image',
-      imageId: 'confirmation-456',
+      type: "image",
+      imageId: "button-123",
+      searchOptions: {
+        similarity: 0.8,
+        timeout: 5000,
+      },
     },
-    timeout: 3000,
+    numberOfClicks: 1,
+    mouseButton: "LEFT",
+    verify: {
+      mode: "IMAGE_APPEARS",
+      target: {
+        type: "image",
+        imageId: "confirmation-456",
+      },
+      timeout: 3000,
+    },
   },
-}, {
-  name: 'Click submit button',
-  base: {
-    pauseBeforeBegin: 100,
-    pauseAfterEnd: 500,
-  },
-  execution: {
-    timeout: 10000,
-    retryCount: 2,
-    continueOnError: false,
-  },
-});
+  {
+    name: "Click submit button",
+    base: {
+      pauseBeforeBegin: 100,
+      pauseAfterEnd: 500,
+    },
+    execution: {
+      timeout: 10000,
+      retryCount: 2,
+      continueOnError: false,
+    },
+  }
+);
 
 /**
  * Example 2: TYPE action with state string source
  * Shows how to reference state strings
  */
-export const typeExample: Action<'TYPE'> = createAction('TYPE', {
+export const typeExample: Action<"TYPE"> = createAction("TYPE", {
   textSource: {
-    stateId: 'login-form',
-    stringIds: ['username-string-789'],
+    stateId: "login-form",
+    stringIds: ["username-string-789"],
     useAll: false,
   },
   typeDelay: 50,
   clearBefore: true,
   clickTarget: {
-    type: 'image',
-    imageId: 'username-field-101',
+    type: "image",
+    imageId: "username-field-101",
   },
 });
 
@@ -62,186 +66,205 @@ export const typeExample: Action<'TYPE'> = createAction('TYPE', {
  * Example 3: LOOP action - NEW control flow
  * Demonstrates iterating and performing actions
  */
-export const loopExample: Action<'LOOP'> = createAction('LOOP', {
-  loopType: 'FOR',
-  iterations: 10,
-  iteratorVariable: 'i',
-  actions: [
-    'action-collect-item',
-    'action-store-item',
-  ],
-  maxIterations: 100, // Safety limit
-}, {
-  name: 'Collect 10 items',
-});
+export const loopExample: Action<"LOOP"> = createAction(
+  "LOOP",
+  {
+    loopType: "FOR",
+    iterations: 10,
+    iteratorVariable: "i",
+    actions: ["action-collect-item", "action-store-item"],
+    maxIterations: 100, // Safety limit
+  },
+  {
+    name: "Collect 10 items",
+  }
+);
 
 /**
  * Example 4: LOOP with condition - WHILE loop
  */
-export const whileLoopExample: Action<'LOOP'> = createAction('LOOP', {
-  loopType: 'WHILE',
-  condition: {
-    type: 'image_exists',
-    imageId: 'more-items-button',
+export const whileLoopExample: Action<"LOOP"> = createAction(
+  "LOOP",
+  {
+    loopType: "WHILE",
+    condition: {
+      type: "image_exists",
+      imageId: "more-items-button",
+    },
+    actions: ["action-click-more", "action-wait-loading"],
+    maxIterations: 50,
   },
-  actions: [
-    'action-click-more',
-    'action-wait-loading',
-  ],
-  maxIterations: 50,
-}, {
-  name: 'Load all items',
-});
+  {
+    name: "Load all items",
+  }
+);
 
 /**
  * Example 5: FOREACH loop iterating over matches
  */
-export const foreachExample: Action<'LOOP'> = createAction('LOOP', {
-  loopType: 'FOREACH',
-  collection: {
-    type: 'matches',
-    target: {
-      type: 'image',
-      imageId: 'list-item-pattern',
-      searchOptions: {
-        strategy: 'ALL',
+export const foreachExample: Action<"LOOP"> = createAction(
+  "LOOP",
+  {
+    loopType: "FOREACH",
+    collection: {
+      type: "matches",
+      target: {
+        type: "image",
+        imageId: "list-item-pattern",
+        searchOptions: {
+          strategy: "ALL",
+        },
       },
     },
+    iteratorVariable: "item",
+    actions: ["action-click-item", "action-process-item"],
   },
-  iteratorVariable: 'item',
-  actions: [
-    'action-click-item',
-    'action-process-item',
-  ],
-}, {
-  name: 'Process all list items',
-});
+  {
+    name: "Process all list items",
+  }
+);
 
 /**
  * Example 6: SORT action - NEW data operation
  * Sort a collection of items
  */
-export const sortExample: Action<'SORT'> = createAction('SORT', {
-  target: 'variable',
-  variableName: 'inventory_items',
-  sortBy: 'price',
-  order: 'ASC',
-  comparator: 'NUMERIC',
-  outputVariable: 'sorted_items',
-}, {
-  name: 'Sort items by price',
-});
+export const sortExample: Action<"SORT"> = createAction(
+  "SORT",
+  {
+    target: "variable",
+    variableName: "inventory_items",
+    sortBy: "price",
+    order: "ASC",
+    comparator: "NUMERIC",
+    outputVariable: "sorted_items",
+  },
+  {
+    name: "Sort items by price",
+  }
+);
 
 /**
  * Example 7: IF conditional - NEW control flow
  */
-export const ifExample: Action<'IF'> = createAction('IF', {
-  condition: {
-    type: 'image_exists',
-    imageId: 'premium-badge',
+export const ifExample: Action<"IF"> = createAction(
+  "IF",
+  {
+    condition: {
+      type: "image_exists",
+      imageId: "premium-badge",
+    },
+    thenActions: ["action-use-premium-features"],
+    elseActions: ["action-show-upgrade-prompt"],
   },
-  thenActions: [
-    'action-use-premium-features',
-  ],
-  elseActions: [
-    'action-show-upgrade-prompt',
-  ],
-}, {
-  name: 'Check if premium user',
-});
+  {
+    name: "Check if premium user",
+  }
+);
 
 /**
  * Example 8: SET_VARIABLE from OCR
  */
-export const setVariableExample: Action<'SET_VARIABLE'> = createAction('SET_VARIABLE', {
-  variableName: 'player_gold',
-  valueSource: {
-    type: 'ocr',
-    target: {
-      type: 'region',
-      region: { x: 100, y: 50, width: 80, height: 30 },
+export const setVariableExample: Action<"SET_VARIABLE"> = createAction(
+  "SET_VARIABLE",
+  {
+    variableName: "player_gold",
+    valueSource: {
+      type: "ocr",
+      target: {
+        type: "region",
+        region: { x: 100, y: 50, width: 80, height: 30 },
+      },
     },
+    type: "number",
+    scope: "global",
   },
-  type: 'number',
-  scope: 'global',
-}, {
-  name: 'Read gold amount',
-});
+  {
+    name: "Read gold amount",
+  }
+);
 
 /**
  * Example 9: FILTER action
  */
-export const filterExample: Action<'FILTER'> = createAction('FILTER', {
-  variableName: 'all_items',
-  condition: {
-    type: 'property',
-    property: 'rarity',
-    operator: '==',
-    value: 'legendary',
+export const filterExample: Action<"FILTER"> = createAction(
+  "FILTER",
+  {
+    variableName: "all_items",
+    condition: {
+      type: "property",
+      property: "rarity",
+      operator: "==",
+      value: "legendary",
+    },
+    outputVariable: "legendary_items",
   },
-  outputVariable: 'legendary_items',
-}, {
-  name: 'Filter legendary items',
-});
+  {
+    name: "Filter legendary items",
+  }
+);
 
 /**
  * Example 10: Complex DRAG action
  */
-export const dragExample: Action<'DRAG'> = createAction('DRAG', {
-  source: {
-    type: 'image',
-    imageId: 'inventory-item',
-  },
-  destination: {
-    type: 'region',
-    region: { x: 500, y: 300, width: 100, height: 100 },
-  },
-  dragDuration: 500,
-  verify: {
-    mode: 'IMAGE_DISAPPEARS',
-    target: {
-      type: 'image',
-      imageId: 'inventory-item',
+export const dragExample: Action<"DRAG"> = createAction(
+  "DRAG",
+  {
+    source: {
+      type: "image",
+      imageId: "inventory-item",
     },
-    timeout: 2000,
+    destination: {
+      type: "region",
+      region: { x: 500, y: 300, width: 100, height: 100 },
+    },
+    dragDuration: 500,
+    verify: {
+      mode: "IMAGE_DISAPPEARS",
+      target: {
+        type: "image",
+        imageId: "inventory-item",
+      },
+      timeout: 2000,
+    },
   },
-}, {
-  name: 'Move item to stash',
-});
+  {
+    name: "Move item to stash",
+  }
+);
 
 /**
  * Example 11: TRY_CATCH for error handling
  */
-export const tryCatchExample: Action<'TRY_CATCH'> = createAction('TRY_CATCH', {
-  tryActions: [
-    'action-risky-operation',
-    'action-verify-success',
-  ],
-  catchActions: [
-    'action-log-error',
-    'action-recover',
-  ],
-  finallyActions: [
-    'action-cleanup',
-  ],
-  errorVariable: 'last_error',
-}, {
-  name: 'Try risky operation',
-});
+export const tryCatchExample: Action<"TRY_CATCH"> = createAction(
+  "TRY_CATCH",
+  {
+    tryActions: ["action-risky-operation", "action-verify-success"],
+    catchActions: ["action-log-error", "action-recover"],
+    finallyActions: ["action-cleanup"],
+    errorVariable: "last_error",
+  },
+  {
+    name: "Try risky operation",
+  }
+);
 
 /**
  * Example 12: MATH_OPERATION
  */
-export const mathExample: Action<'MATH_OPERATION'> = createAction('MATH_OPERATION', {
-  operation: 'ADD',
-  operands: [
-    { variableName: 'current_gold' },
-    500, // Adding 500 gold
-  ],
-  outputVariable: 'new_gold_total',
-}, {
-  name: 'Calculate new gold total',
-});
+export const mathExample: Action<"MATH_OPERATION"> = createAction(
+  "MATH_OPERATION",
+  {
+    operation: "ADD",
+    operands: [
+      { variableName: "current_gold" },
+      500, // Adding 500 gold
+    ],
+    outputVariable: "new_gold_total",
+  },
+  {
+    name: "Calculate new gold total",
+  }
+);
 
 /**
  * Example demonstrating type safety
@@ -249,8 +272,8 @@ export const mathExample: Action<'MATH_OPERATION'> = createAction('MATH_OPERATIO
  */
 export function demonstrateTypeSafety() {
   // ✅ Valid - config matches CLICK type
-  const validClick = createAction('CLICK', {
-    target: { type: 'image', imageId: 'btn' },
+  const validClick = createAction("CLICK", {
+    target: { type: "image", imageId: "btn" },
     numberOfClicks: 1,
   });
 
@@ -260,8 +283,8 @@ export function demonstrateTypeSafety() {
   // });
 
   // ✅ Valid - config matches TYPE type
-  const validType = createAction('TYPE', {
-    text: 'Hello world',
+  const validType = createAction("TYPE", {
+    text: "Hello world",
     typeDelay: 50,
   });
 
@@ -276,19 +299,19 @@ export function demonstrateTypeSafety() {
  */
 export const jsonComparisonOld = {
   // OLD FORMAT - 100+ properties, most irrelevant
-  id: 'action-123',
-  type: 'CLICK',
+  id: "action-123",
+  type: "CLICK",
   config: {
-    target: { type: 'image', imageId: 'img-1' },
+    target: { type: "image", imageId: "img-1" },
     similarity: 0.8,
     numberOfClicks: 1,
-    mouseButton: 'LEFT',
+    mouseButton: "LEFT",
     pressDuration: 100,
     pauseBeforeBegin: 0,
     pauseAfterEnd: 0,
-    typeDelay: 50,           // ❌ Not relevant to CLICK
-    dragDuration: 500,        // ❌ Not relevant to CLICK
-    maxWaitTime: 5000,        // ❌ Not relevant to CLICK
+    typeDelay: 50, // ❌ Not relevant to CLICK
+    dragDuration: 500, // ❌ Not relevant to CLICK
+    maxWaitTime: 5000, // ❌ Not relevant to CLICK
     // ... 90+ more irrelevant properties
   },
   timeout: 10000,
@@ -298,18 +321,18 @@ export const jsonComparisonOld = {
 
 export const jsonComparisonNew = {
   // NEW FORMAT - Only relevant properties
-  id: 'action-123',
-  type: 'CLICK',
+  id: "action-123",
+  type: "CLICK",
   config: {
     target: {
-      type: 'image',
-      imageId: 'img-1',
+      type: "image",
+      imageId: "img-1",
       searchOptions: {
         similarity: 0.8,
       },
     },
     numberOfClicks: 1,
-    mouseButton: 'LEFT',
+    mouseButton: "LEFT",
     pressDuration: 100,
   },
   base: {
@@ -323,6 +346,15 @@ export const jsonComparisonNew = {
   },
 };
 
-console.log('Old format size:', JSON.stringify(jsonComparisonOld).length);
-console.log('New format size:', JSON.stringify(jsonComparisonNew).length);
-console.log('Size reduction:', Math.round((1 - JSON.stringify(jsonComparisonNew).length / JSON.stringify(jsonComparisonOld).length) * 100), '%');
+console.log("Old format size:", JSON.stringify(jsonComparisonOld).length);
+console.log("New format size:", JSON.stringify(jsonComparisonNew).length);
+console.log(
+  "Size reduction:",
+  Math.round(
+    (1 -
+      JSON.stringify(jsonComparisonNew).length /
+        JSON.stringify(jsonComparisonOld).length) *
+      100
+  ),
+  "%"
+);

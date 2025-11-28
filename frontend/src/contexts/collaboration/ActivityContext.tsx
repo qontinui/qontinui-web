@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, {
   createContext,
@@ -6,9 +6,9 @@ import React, {
   useState,
   useEffect,
   ReactNode,
-} from 'react';
-import type { Activity } from './types';
-import { activityService } from '@/services/service-factory';
+} from "react";
+import type { Activity } from "./types";
+import { activityService } from "@/services/service-factory";
 
 // ============================================================================
 // Context Types
@@ -69,7 +69,7 @@ export function ActivityProvider({
       });
       setActivityFeed(activities);
     } catch (error) {
-      console.error('[Activity] Failed to load activity feed:', error);
+      console.error("[Activity] Failed to load activity feed:", error);
     }
   };
 
@@ -105,7 +105,7 @@ export function ActivityProvider({
 export function useActivity() {
   const context = useContext(ActivityContext);
   if (context === undefined) {
-    throw new Error('useActivity must be used within an ActivityProvider');
+    throw new Error("useActivity must be used within an ActivityProvider");
   }
   return context;
 }

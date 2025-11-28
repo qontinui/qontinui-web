@@ -1,17 +1,18 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { Eye, Image, Network } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
-import type { VisualizationModeSelectorProps, VisualizationMode } from '@/types/integration-tests';
+import React from "react";
+import { Eye, Image, Network } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import type {
+  VisualizationModeSelectorProps,
+  VisualizationMode,
+} from "@/types/integration-tests";
 
-export const VisualizationModeSelector: React.FC<VisualizationModeSelectorProps> = ({
-  mode,
-  onModeChange,
-  disabled = false,
-}) => {
+export const VisualizationModeSelector: React.FC<
+  VisualizationModeSelectorProps
+> = ({ mode, onModeChange, disabled = false }) => {
   const visualizationModes: Array<{
     value: VisualizationMode;
     label: string;
@@ -20,22 +21,25 @@ export const VisualizationModeSelector: React.FC<VisualizationModeSelectorProps>
     recommended?: boolean;
   }> = [
     {
-      value: 'none',
-      label: 'None (Immediate)',
-      description: 'Run tests immediately without visual feedback. Fastest execution.',
+      value: "none",
+      label: "None (Immediate)",
+      description:
+        "Run tests immediately without visual feedback. Fastest execution.",
       icon: <Eye className="w-4 h-4" />,
       recommended: true,
     },
     {
-      value: 'screenshots',
-      label: 'Screenshots',
-      description: 'Capture screenshots at each step. Good for debugging failures.',
+      value: "screenshots",
+      label: "Screenshots",
+      description:
+        "Capture screenshots at each step. Good for debugging failures.",
       icon: <Image className="w-4 h-4" />,
     },
     {
-      value: 'state-visualization',
-      label: 'State Visualization',
-      description: 'Show state transitions with fixed positions. Best for understanding flow.',
+      value: "state-visualization",
+      label: "State Visualization",
+      description:
+        "Show state transitions with fixed positions. Best for understanding flow.",
       icon: <Network className="w-4 h-4" />,
     },
   ];
@@ -61,9 +65,9 @@ export const VisualizationModeSelector: React.FC<VisualizationModeSelectorProps>
               key={vizMode.value}
               className={`relative flex items-start gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
                 mode === vizMode.value
-                  ? 'bg-blue-50 border-blue-300 shadow-sm'
-                  : 'bg-white border-gray-200 hover:bg-gray-50'
-              } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  ? "bg-blue-50 border-blue-300 shadow-sm"
+                  : "bg-white border-gray-200 hover:bg-gray-50"
+              } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
               onClick={() => !disabled && onModeChange(vizMode.value)}
             >
               <RadioGroupItem
@@ -76,22 +80,20 @@ export const VisualizationModeSelector: React.FC<VisualizationModeSelectorProps>
                 <Label
                   htmlFor={vizMode.value}
                   className={`flex items-center gap-2 cursor-pointer ${
-                    disabled ? 'cursor-not-allowed' : ''
+                    disabled ? "cursor-not-allowed" : ""
                   }`}
                 >
                   <div
                     className={`p-1.5 rounded ${
                       mode === vizMode.value
-                        ? 'bg-blue-100 text-blue-600'
-                        : 'bg-gray-100 text-gray-600'
+                        ? "bg-blue-100 text-blue-600"
+                        : "bg-gray-100 text-gray-600"
                     }`}
                   >
                     {vizMode.icon}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      {vizMode.label}
-                    </span>
+                    <span className="text-sm font-medium">{vizMode.label}</span>
                     {vizMode.recommended && (
                       <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
                         Recommended
@@ -110,8 +112,9 @@ export const VisualizationModeSelector: React.FC<VisualizationModeSelectorProps>
         {/* Info Note */}
         <div className="mt-4 pt-3 border-t">
           <p className="text-xs text-gray-500 leading-relaxed">
-            Visualization mode affects execution speed. &quot;None&quot; is fastest for quick
-            feedback, while visual modes help with debugging and understanding test behavior.
+            Visualization mode affects execution speed. &quot;None&quot; is
+            fastest for quick feedback, while visual modes help with debugging
+            and understanding test behavior.
           </p>
         </div>
       </CardContent>

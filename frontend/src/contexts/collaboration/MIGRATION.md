@@ -5,6 +5,7 @@ This guide helps you migrate from the old monolithic `collaboration-context.tsx`
 ## Overview
 
 The collaboration context has been split into 7 focused contexts:
+
 1. `OrganizationContext` - Organization management
 2. `PermissionsContext` - Permission checking
 3. `PresenceContext` - User presence
@@ -18,11 +19,16 @@ The collaboration context has been split into 7 focused contexts:
 ### Step 1: Update Imports
 
 **Old Import:**
+
 ```tsx
-import { useCollaboration, CollaborationProvider } from '@/contexts/collaboration-context';
+import {
+  useCollaboration,
+  CollaborationProvider,
+} from "@/contexts/collaboration-context";
 ```
 
 **New Import (Option A - Individual hooks):**
+
 ```tsx
 import {
   useOrganization,
@@ -32,13 +38,14 @@ import {
   useComments,
   useActivity,
   useWebSocket,
-  CollaborationProvider
-} from '@/contexts/collaboration';
+  CollaborationProvider,
+} from "@/contexts/collaboration";
 ```
 
 **New Import (Option B - Keep using combined provider):**
+
 ```tsx
-import { CollaborationProvider } from '@/contexts/collaboration';
+import { CollaborationProvider } from "@/contexts/collaboration";
 // Then import only the hooks you need in each component
 ```
 
@@ -49,21 +56,18 @@ The `useCollaboration()` hook has been split into individual hooks. Update your 
 #### Example 1: Component Using Organization and Permissions
 
 **Before:**
+
 ```tsx
 function MyComponent() {
-  const {
-    currentOrg,
-    organizations,
-    switchOrganization,
-    canEdit,
-    canAdmin
-  } = useCollaboration();
+  const { currentOrg, organizations, switchOrganization, canEdit, canAdmin } =
+    useCollaboration();
 
   // ... component logic
 }
 ```
 
 **After:**
+
 ```tsx
 function MyComponent() {
   const { currentOrg, organizations, switchOrganization } = useOrganization();
@@ -76,19 +80,17 @@ function MyComponent() {
 #### Example 2: Component Using Comments and Activity
 
 **Before:**
+
 ```tsx
 function ActivityPanel() {
-  const {
-    comments,
-    addComment,
-    activityFeed
-  } = useCollaboration();
+  const { comments, addComment, activityFeed } = useCollaboration();
 
   // ... component logic
 }
 ```
 
 **After:**
+
 ```tsx
 function ActivityPanel() {
   const { comments, addComment } = useComments();
@@ -101,19 +103,17 @@ function ActivityPanel() {
 #### Example 3: Component Using Edit Locks
 
 **Before:**
+
 ```tsx
 function Editor() {
-  const {
-    currentLock,
-    acquireEditLock,
-    releaseEditLock
-  } = useCollaboration();
+  const { currentLock, acquireEditLock, releaseEditLock } = useCollaboration();
 
   // ... component logic
 }
 ```
 
 **After:**
+
 ```tsx
 function Editor() {
   const { currentLock, acquireEditLock, releaseEditLock } = useEditLock();
@@ -125,13 +125,14 @@ function Editor() {
 #### Example 4: Component Using WebSocket Status
 
 **Before:**
+
 ```tsx
 function StatusIndicator() {
   const { isConnected, activeUsers } = useCollaboration();
 
   return (
     <div>
-      Status: {isConnected ? 'Connected' : 'Disconnected'}
+      Status: {isConnected ? "Connected" : "Disconnected"}
       Users: {activeUsers.length}
     </div>
   );
@@ -139,6 +140,7 @@ function StatusIndicator() {
 ```
 
 **After:**
+
 ```tsx
 function StatusIndicator() {
   const { isConnected } = useWebSocket();
@@ -146,7 +148,7 @@ function StatusIndicator() {
 
   return (
     <div>
-      Status: {isConnected ? 'Connected' : 'Disconnected'}
+      Status: {isConnected ? "Connected" : "Disconnected"}
       Users: {activeUsers.length}
     </div>
   );
@@ -167,33 +169,34 @@ function StatusIndicator() {
 
 ### Property/Method → New Hook Mapping
 
-| Old Property/Method | New Hook | New Location |
-|-------------------|----------|--------------|
-| `currentOrg` | `useOrganization()` | `.currentOrg` |
-| `organizations` | `useOrganization()` | `.organizations` |
+| Old Property/Method    | New Hook            | New Location            |
+| ---------------------- | ------------------- | ----------------------- |
+| `currentOrg`           | `useOrganization()` | `.currentOrg`           |
+| `organizations`        | `useOrganization()` | `.organizations`        |
 | `switchOrganization()` | `useOrganization()` | `.switchOrganization()` |
-| `projectAccess` | `usePermissions()` | `.projectAccess` |
-| `canView` | `usePermissions()` | `.canView` |
-| `canComment` | `usePermissions()` | `.canComment` |
-| `canEdit` | `usePermissions()` | `.canEdit` |
-| `canAdmin` | `usePermissions()` | `.canAdmin` |
-| `hasPermission()` | `usePermissions()` | `.hasPermission()` |
-| `activeUsers` | `usePresence()` | `.activeUsers` |
-| `currentLock` | `useEditLock()` | `.currentLock` |
-| `acquireEditLock()` | `useEditLock()` | `.acquireEditLock()` |
-| `releaseEditLock()` | `useEditLock()` | `.releaseEditLock()` |
-| `comments` | `useComments()` | `.comments` |
-| `addComment()` | `useComments()` | `.addComment()` |
-| `activityFeed` | `useActivity()` | `.activityFeed` |
-| `isConnected` | `useWebSocket()` | `.isConnected` |
-| `connect()` | `useWebSocket()` | `.connect()` |
-| `disconnect()` | `useWebSocket()` | `.disconnect()` |
+| `projectAccess`        | `usePermissions()`  | `.projectAccess`        |
+| `canView`              | `usePermissions()`  | `.canView`              |
+| `canComment`           | `usePermissions()`  | `.canComment`           |
+| `canEdit`              | `usePermissions()`  | `.canEdit`              |
+| `canAdmin`             | `usePermissions()`  | `.canAdmin`             |
+| `hasPermission()`      | `usePermissions()`  | `.hasPermission()`      |
+| `activeUsers`          | `usePresence()`     | `.activeUsers`          |
+| `currentLock`          | `useEditLock()`     | `.currentLock`          |
+| `acquireEditLock()`    | `useEditLock()`     | `.acquireEditLock()`    |
+| `releaseEditLock()`    | `useEditLock()`     | `.releaseEditLock()`    |
+| `comments`             | `useComments()`     | `.comments`             |
+| `addComment()`         | `useComments()`     | `.addComment()`         |
+| `activityFeed`         | `useActivity()`     | `.activityFeed`         |
+| `isConnected`          | `useWebSocket()`    | `.isConnected`          |
+| `connect()`            | `useWebSocket()`    | `.connect()`            |
+| `disconnect()`         | `useWebSocket()`    | `.disconnect()`         |
 
 ## Advanced Migration Scenarios
 
 ### Scenario 1: Complex Component with All Features
 
 **Before:**
+
 ```tsx
 function ComplexDashboard() {
   const {
@@ -205,12 +208,12 @@ function ComplexDashboard() {
     comments,
     addComment,
     activityFeed,
-    isConnected
+    isConnected,
   } = useCollaboration();
 
   const handleEdit = async () => {
     if (canEdit && !currentLock) {
-      await acquireEditLock('workflow', workflowId);
+      await acquireEditLock("workflow", workflowId);
     }
   };
 
@@ -228,6 +231,7 @@ function ComplexDashboard() {
 ```
 
 **After:**
+
 ```tsx
 function ComplexDashboard() {
   const { currentOrg } = useOrganization();
@@ -240,7 +244,7 @@ function ComplexDashboard() {
 
   const handleEdit = async () => {
     if (canEdit && !currentLock) {
-      await acquireEditLock('workflow', workflowId);
+      await acquireEditLock("workflow", workflowId);
     }
   };
 
@@ -260,6 +264,7 @@ function ComplexDashboard() {
 ### Scenario 2: Component with Permission Checks
 
 **Before:**
+
 ```tsx
 function ProtectedAction() {
   const { hasPermission, canEdit } = useCollaboration();
@@ -268,17 +273,14 @@ function ProtectedAction() {
     return <AccessDenied />;
   }
 
-  const canPerformAction = hasPermission('admin');
+  const canPerformAction = hasPermission("admin");
 
-  return (
-    <button disabled={!canPerformAction}>
-      Admin Action
-    </button>
-  );
+  return <button disabled={!canPerformAction}>Admin Action</button>;
 }
 ```
 
 **After:**
+
 ```tsx
 function ProtectedAction() {
   const { hasPermission, canEdit } = usePermissions();
@@ -287,13 +289,9 @@ function ProtectedAction() {
     return <AccessDenied />;
   }
 
-  const canPerformAction = hasPermission('admin');
+  const canPerformAction = hasPermission("admin");
 
-  return (
-    <button disabled={!canPerformAction}>
-      Admin Action
-    </button>
-  );
+  return <button disabled={!canPerformAction}>Admin Action</button>;
 }
 ```
 
@@ -302,6 +300,7 @@ function ProtectedAction() {
 If you want more control and only need specific features:
 
 **Before:**
+
 ```tsx
 <CollaborationProvider projectId={projectId}>
   <App />
@@ -309,12 +308,13 @@ If you want more control and only need specific features:
 ```
 
 **After (using only what you need):**
+
 ```tsx
 import {
   OrganizationProvider,
   PermissionsProvider,
-  CommentsProvider
-} from '@/contexts/collaboration';
+  CommentsProvider,
+} from "@/contexts/collaboration";
 
 <OrganizationProvider>
   <PermissionsProvider>
@@ -322,7 +322,7 @@ import {
       <App />
     </CommentsProvider>
   </PermissionsProvider>
-</OrganizationProvider>
+</OrganizationProvider>;
 ```
 
 ## Testing Updates
@@ -330,16 +330,15 @@ import {
 ### Old Tests
 
 **Before:**
+
 ```tsx
-import { CollaborationProvider } from '@/contexts/collaboration-context';
+import { CollaborationProvider } from "@/contexts/collaboration-context";
 
 const wrapper = ({ children }) => (
-  <CollaborationProvider projectId="test-id">
-    {children}
-  </CollaborationProvider>
+  <CollaborationProvider projectId="test-id">{children}</CollaborationProvider>
 );
 
-test('should display current organization', () => {
+test("should display current organization", () => {
   const { result } = renderHook(() => useCollaboration(), { wrapper });
   expect(result.current.currentOrg).toBeDefined();
 });
@@ -348,16 +347,15 @@ test('should display current organization', () => {
 ### New Tests
 
 **After:**
+
 ```tsx
-import { OrganizationProvider } from '@/contexts/collaboration';
+import { OrganizationProvider } from "@/contexts/collaboration";
 
 const wrapper = ({ children }) => (
-  <OrganizationProvider>
-    {children}
-  </OrganizationProvider>
+  <OrganizationProvider>{children}</OrganizationProvider>
 );
 
-test('should display current organization', () => {
+test("should display current organization", () => {
   const { result } = renderHook(() => useOrganization(), { wrapper });
   expect(result.current.currentOrg).toBeDefined();
 });
@@ -368,9 +366,10 @@ test('should display current organization', () => {
 ### 1. Forgetting to Import All Needed Hooks
 
 **Problem:**
+
 ```tsx
 // Only imported useOrganization
-import { useOrganization } from '@/contexts/collaboration';
+import { useOrganization } from "@/contexts/collaboration";
 
 function Component() {
   const { currentOrg } = useOrganization();
@@ -379,8 +378,9 @@ function Component() {
 ```
 
 **Solution:**
+
 ```tsx
-import { useOrganization, usePermissions } from '@/contexts/collaboration';
+import { useOrganization, usePermissions } from "@/contexts/collaboration";
 
 function Component() {
   const { currentOrg } = useOrganization();
@@ -391,11 +391,12 @@ function Component() {
 ### 2. Using Wrong Context Provider
 
 **Problem:**
+
 ```tsx
 // Using individual provider but trying to access other contexts
 <CommentsProvider projectId={projectId}>
   <Component />
-</CommentsProvider>
+</CommentsProvider>;
 
 function Component() {
   const { comments } = useComments(); // ✅ Works
@@ -404,6 +405,7 @@ function Component() {
 ```
 
 **Solution:**
+
 ```tsx
 // Use the combined provider
 <CollaborationProvider projectId={projectId}>
@@ -429,12 +431,15 @@ The refactored contexts are independent. State updates in one context don't trig
 You can use this regex find-replace to help automate some of the migration:
 
 ### 1. Update imports
+
 Find:
+
 ```
 import { useCollaboration } from '@/contexts/collaboration-context';
 ```
 
 Replace with:
+
 ```
 import { useOrganization, usePermissions, usePresence, useEditLock, useComments, useActivity, useWebSocket } from '@/contexts/collaboration';
 ```
@@ -462,7 +467,7 @@ If you need to rollback temporarily:
 1. The old `collaboration-context.tsx` file is still available (just deprecated)
 2. You can import from the old location:
    ```tsx
-   import { useCollaboration } from '@/contexts/collaboration-context';
+   import { useCollaboration } from "@/contexts/collaboration-context";
    ```
 3. The new contexts are in a separate directory and don't conflict
 

@@ -185,8 +185,8 @@ class FrameAnalysisService:
                 gray2 = arr2
 
             # 1. Structural Similarity Index (SSIM)
-            from skimage.metrics import (  # type: ignore[import-not-found]
-                structural_similarity as ssim,
+            from skimage.metrics import (
+                structural_similarity as ssim,  # type: ignore[import-not-found]
             )
 
             ssim_score = ssim(gray1, gray2)

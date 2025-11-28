@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Screenshot } from '../../types/Screenshot';
-import { Eye, Search, Target } from 'lucide-react';
+import React, { useRef, useEffect, useState } from "react";
+import { Screenshot } from "../../types/Screenshot";
+import { Eye, Search, Target } from "lucide-react";
 
 interface MatchRegion {
   x: number;
@@ -25,7 +25,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
   matches,
   showScores = true,
   showLabels = true,
-  highlightBest = true
+  highlightBest = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,9 +40,9 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
     const handleResize = () => {
       calculateScale();
     };
-    window.addEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
     calculateScale();
-    return () => window.removeEventListener('resize', handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, [screenshot]);
 
   const calculateScale = () => {
@@ -61,7 +61,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     // Set canvas size
@@ -89,9 +89,9 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
         const height = match.height * scale;
 
         // Determine color
-        let color = match.color || '#00ff00'; // Default green
-        if (isBest) color = '#ffff00'; // Yellow for best
-        if (isHovered) color = '#ff00ff'; // Magenta for hovered
+        let color = match.color || "#00ff00"; // Default green
+        if (isBest) color = "#ffff00"; // Yellow for best
+        if (isHovered) color = "#ff00ff"; // Magenta for hovered
 
         // Draw rectangle
         ctx.strokeStyle = color;
@@ -99,20 +99,40 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
         ctx.strokeRect(x, y, width, height);
 
         // Draw semi-transparent fill
-        ctx.fillStyle = color + '20'; // Add alpha
+        ctx.fillStyle = color + "20"; // Add alpha
         ctx.fillRect(x, y, width, height);
 
         // Draw corner markers
         const markerSize = 8;
         ctx.fillStyle = color;
         // Top-left
-        ctx.fillRect(x - markerSize/2, y - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(
+          x - markerSize / 2,
+          y - markerSize / 2,
+          markerSize,
+          markerSize
+        );
         // Top-right
-        ctx.fillRect(x + width - markerSize/2, y - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(
+          x + width - markerSize / 2,
+          y - markerSize / 2,
+          markerSize,
+          markerSize
+        );
         // Bottom-left
-        ctx.fillRect(x - markerSize/2, y + height - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(
+          x - markerSize / 2,
+          y + height - markerSize / 2,
+          markerSize,
+          markerSize
+        );
         // Bottom-right
-        ctx.fillRect(x + width - markerSize/2, y + height - markerSize/2, markerSize, markerSize);
+        ctx.fillRect(
+          x + width - markerSize / 2,
+          y + height - markerSize / 2,
+          markerSize,
+          markerSize
+        );
 
         // Draw label and score
         if (showLabels || showScores) {
@@ -125,14 +145,14 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
           }
 
           if (labelParts.length > 0) {
-            const label = labelParts.join(' - ');
+            const label = labelParts.join(" - ");
             ctx.font = `${12 * scale}px sans-serif`;
             const textMetrics = ctx.measureText(label);
             const textHeight = 16 * scale;
             const padding = 4 * scale;
 
             // Draw label background
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
             ctx.fillRect(
               x,
               y - textHeight - padding * 2,
@@ -141,7 +161,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
             );
 
             // Draw label text
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = "#ffffff";
             ctx.fillText(label, x + padding, y - padding - 2);
           }
         }
@@ -152,7 +172,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
           const centerY = y + height / 2;
           const crosshairSize = 20;
 
-          ctx.strokeStyle = '#ffffff';
+          ctx.strokeStyle = "#ffffff";
           ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.moveTo(centerX - crosshairSize, centerY);
@@ -167,17 +187,18 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
       if (matches.length > 0) {
         const stats = {
           total: matches.length,
-          avgScore: matches.reduce((sum, m) => sum + m.score, 0) / matches.length,
-          bestScore: Math.max(...matches.map(m => m.score))
+          avgScore:
+            matches.reduce((sum, m) => sum + m.score, 0) / matches.length,
+          bestScore: Math.max(...matches.map((m) => m.score)),
         };
 
         // Draw stats background
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
         ctx.fillRect(10, 10, 200, 80);
 
         // Draw stats text
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '14px sans-serif';
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "14px sans-serif";
         ctx.fillText(`Matches: ${stats.total}`, 20, 30);
         ctx.fillText(`Best: ${(stats.bestScore * 100).toFixed(1)}%`, 20, 50);
         ctx.fillText(`Average: ${(stats.avgScore * 100).toFixed(1)}%`, 20, 70);
@@ -195,11 +216,12 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
     const y = (e.clientY - rect.top) / scale;
 
     // Check if hovering over any match
-    const hovered = matches.find(match =>
-      x >= match.x &&
-      x <= match.x + match.width &&
-      y >= match.y &&
-      y <= match.y + match.height
+    const hovered = matches.find(
+      (match) =>
+        x >= match.x &&
+        x <= match.x + match.width &&
+        y >= match.y &&
+        y <= match.y + match.height
     );
 
     setHoveredMatch(hovered || null);
@@ -222,7 +244,9 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
             <input
               type="checkbox"
               checked={showScores}
-              onChange={(e) => {/* Toggle showScores */}}
+              onChange={(e) => {
+                /* Toggle showScores */
+              }}
               className="w-4 h-4"
             />
             Scores
@@ -231,7 +255,9 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
             <input
               type="checkbox"
               checked={showLabels}
-              onChange={(e) => {/* Toggle showLabels */}}
+              onChange={(e) => {
+                /* Toggle showLabels */
+              }}
               className="w-4 h-4"
             />
             Labels
@@ -240,7 +266,9 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
             <input
               type="checkbox"
               checked={highlightBest}
-              onChange={(e) => {/* Toggle highlightBest */}}
+              onChange={(e) => {
+                /* Toggle highlightBest */
+              }}
               className="w-4 h-4"
             />
             Highlight Best
@@ -270,8 +298,12 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
           {hoveredMatch && (
             <div className="absolute top-2 right-2 bg-black bg-opacity-75 text-white p-2 rounded text-sm">
               <div>Score: {(hoveredMatch.score * 100).toFixed(1)}%</div>
-              <div>Position: ({hoveredMatch.x}, {hoveredMatch.y})</div>
-              <div>Size: {hoveredMatch.width} × {hoveredMatch.height}</div>
+              <div>
+                Position: ({hoveredMatch.x}, {hoveredMatch.y})
+              </div>
+              <div>
+                Size: {hoveredMatch.width} × {hoveredMatch.height}
+              </div>
               {hoveredMatch.label && <div>Label: {hoveredMatch.label}</div>}
             </div>
           )}
@@ -289,7 +321,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
                 <div
                   key={index}
                   className={`flex items-center justify-between p-2 text-xs rounded cursor-pointer transition-colors ${
-                    hoveredMatch === match ? 'bg-blue-100' : 'hover:bg-gray-50'
+                    hoveredMatch === match ? "bg-blue-100" : "hover:bg-gray-50"
                   }`}
                   onMouseEnter={() => setHoveredMatch(match)}
                   onMouseLeave={() => setHoveredMatch(null)}
@@ -305,11 +337,15 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
                     <span className="font-mono">
                       ({match.x}, {match.y})
                     </span>
-                    <span className={`font-medium ${
-                      match.score >= 0.9 ? 'text-green-600' :
-                      match.score >= 0.8 ? 'text-yellow-600' :
-                      'text-red-600'
-                    }`}>
+                    <span
+                      className={`font-medium ${
+                        match.score >= 0.9
+                          ? "text-green-600"
+                          : match.score >= 0.8
+                            ? "text-yellow-600"
+                            : "text-red-600"
+                      }`}
+                    >
                       {(match.score * 100).toFixed(1)}%
                     </span>
                   </div>

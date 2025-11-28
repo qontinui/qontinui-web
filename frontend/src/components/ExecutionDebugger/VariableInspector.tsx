@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Variable,
   ChevronRight,
@@ -6,8 +6,8 @@ import {
   Sparkles,
   History,
   Search,
-} from 'lucide-react';
-import { useExecutionDebugger } from '../../stores/execution-debugger-store';
+} from "lucide-react";
+import { useExecutionDebugger } from "../../stores/execution-debugger-store";
 
 interface VariableNodeProps {
   name: string;
@@ -28,25 +28,27 @@ const VariableNode: React.FC<VariableNodeProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(depth === 0);
 
-  const isExpandable = type === 'object' && value !== null && typeof value === 'object';
+  const isExpandable =
+    type === "object" && value !== null && typeof value === "object";
   const isArray = Array.isArray(value);
 
   const renderValue = () => {
     if (value === null) return <span className="text-gray-500">null</span>;
-    if (value === undefined) return <span className="text-gray-500">undefined</span>;
+    if (value === undefined)
+      return <span className="text-gray-500">undefined</span>;
 
     switch (type) {
-      case 'string':
+      case "string":
         return <span className="text-green-600">"{value}"</span>;
-      case 'number':
+      case "number":
         return <span className="text-blue-600">{value}</span>;
-      case 'boolean':
+      case "boolean":
         return <span className="text-purple-600">{String(value)}</span>;
-      case 'object':
+      case "object":
         if (isArray) {
           return <span className="text-gray-600">[{value.length} items]</span>;
         }
-        return <span className="text-gray-600">{'{...}'}</span>;
+        return <span className="text-gray-600">{"{...}"}</span>;
       default:
         return <span className="text-gray-700">{String(value)}</span>;
     }
@@ -69,10 +71,10 @@ const VariableNode: React.FC<VariableNodeProps> = ({
   };
 
   return (
-    <div className={`${depth > 0 ? 'ml-4' : ''}`}>
+    <div className={`${depth > 0 ? "ml-4" : ""}`}>
       <div
         className={`flex items-center gap-2 py-1 px-2 rounded group hover:bg-gray-50 ${
-          isNew ? 'bg-green-50' : isChanged ? 'bg-yellow-50' : ''
+          isNew ? "bg-green-50" : isChanged ? "bg-yellow-50" : ""
         }`}
       >
         {isExpandable && (
@@ -89,7 +91,9 @@ const VariableNode: React.FC<VariableNodeProps> = ({
         )}
         {!isExpandable && <div className="w-4" />}
 
-        <span className="text-sm font-mono text-gray-700 font-medium">{name}</span>
+        <span className="text-sm font-mono text-gray-700 font-medium">
+          {name}
+        </span>
         <span className="text-xs text-gray-400">{type}</span>
         {isNew && (
           <Sparkles className="w-3 h-3 text-green-500" title="New variable" />
@@ -97,7 +101,9 @@ const VariableNode: React.FC<VariableNodeProps> = ({
         {isChanged && !isNew && (
           <History className="w-3 h-3 text-yellow-500" title="Value changed" />
         )}
-        <span className="text-sm font-mono flex-1 text-right">{renderValue()}</span>
+        <span className="text-sm font-mono flex-1 text-right">
+          {renderValue()}
+        </span>
       </div>
 
       {isExpanded && isExpandable && (
@@ -118,17 +124,21 @@ const VariableNode: React.FC<VariableNodeProps> = ({
 };
 
 export const VariableInspector: React.FC = () => {
-  const { context, variableHistory, currentActionIndex } = useExecutionDebugger();
-  const [searchQuery, setSearchQuery] = useState('');
+  const { context, variableHistory, currentActionIndex } =
+    useExecutionDebugger();
+  const [searchQuery, setSearchQuery] = useState("");
   const [showHistory, setShowHistory] = useState(false);
 
   // Determine which variables are new or changed in the last action
   const recentChanges = variableHistory
     .filter((h) => h.actionIndex === currentActionIndex)
-    .reduce((acc, h) => {
-      acc[h.variableName] = true;
-      return acc;
-    }, {} as Record<string, boolean>);
+    .reduce(
+      (acc, h) => {
+        acc[h.variableName] = true;
+        return acc;
+      },
+      {} as Record<string, boolean>
+    );
 
   // Check if a variable is new (first time set)
   const isNewVariable = (name: string) => {
@@ -142,13 +152,16 @@ export const VariableInspector: React.FC = () => {
   );
 
   // Group variable history by variable name for history view
-  const variableHistoryMap = variableHistory.reduce((acc, entry) => {
-    if (!acc[entry.variableName]) {
-      acc[entry.variableName] = [];
-    }
-    acc[entry.variableName].push(entry);
-    return acc;
-  }, {} as Record<string, typeof variableHistory>);
+  const variableHistoryMap = variableHistory.reduce(
+    (acc, entry) => {
+      if (!acc[entry.variableName]) {
+        acc[entry.variableName] = [];
+      }
+      acc[entry.variableName].push(entry);
+      return acc;
+    },
+    {} as Record<string, typeof variableHistory>
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -166,8 +179,8 @@ export const VariableInspector: React.FC = () => {
             onClick={() => setShowHistory(!showHistory)}
             className={`px-2 py-1 text-xs rounded flex items-center gap-1 transition-colors ${
               showHistory
-                ? 'bg-blue-600 text-white'
-                : 'bg-white border text-gray-600 hover:bg-gray-50'
+                ? "bg-blue-600 text-white"
+                : "bg-white border text-gray-600 hover:bg-gray-50"
             }`}
           >
             <History className="w-3 h-3" />
@@ -195,7 +208,9 @@ export const VariableInspector: React.FC = () => {
           <div className="space-y-1">
             {filteredVariables.length === 0 ? (
               <div className="text-center text-gray-500 text-sm py-8">
-                {searchQuery ? 'No variables match your search' : 'No variables yet'}
+                {searchQuery
+                  ? "No variables match your search"
+                  : "No variables yet"}
               </div>
             ) : (
               filteredVariables.map(([name, varValue]) => (
@@ -221,9 +236,11 @@ export const VariableInspector: React.FC = () => {
               Object.entries(variableHistoryMap).map(([varName, history]) => (
                 <div key={varName} className="border rounded-lg p-3 bg-white">
                   <div className="flex items-center gap-2 mb-2 pb-2 border-b">
-                    <span className="font-mono font-medium text-sm">{varName}</span>
+                    <span className="font-mono font-medium text-sm">
+                      {varName}
+                    </span>
                     <span className="text-xs text-gray-500">
-                      ({history.length} change{history.length !== 1 ? 's' : ''})
+                      ({history.length} change{history.length !== 1 ? "s" : ""})
                     </span>
                   </div>
                   <div className="space-y-2">
@@ -236,7 +253,7 @@ export const VariableInspector: React.FC = () => {
                           Action {entry.actionIndex}:
                         </span>
                         <span className="font-mono text-gray-700">
-                          {typeof entry.value === 'object'
+                          {typeof entry.value === "object"
                             ? JSON.stringify(entry.value)
                             : String(entry.value)}
                         </span>
@@ -254,7 +271,9 @@ export const VariableInspector: React.FC = () => {
       {Object.keys(context.loopIterations).length > 0 && (
         <div className="border-t p-3 bg-gray-50">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold text-gray-600">Loop Iterations</span>
+            <span className="text-xs font-semibold text-gray-600">
+              Loop Iterations
+            </span>
           </div>
           <div className="space-y-1">
             {Object.entries(context.loopIterations).map(([loopId, count]) => (

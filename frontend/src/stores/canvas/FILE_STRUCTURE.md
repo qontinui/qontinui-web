@@ -100,42 +100,42 @@ stores/
 
 ### Implementation Files (1,166 lines)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `types.ts` | 142 | Shared TypeScript types and interfaces |
-| `utils.ts` | 68 | Shared utility functions (ID generation, cloning) |
-| `workflow-slice.ts` | 93 | Workflow state, validation, load/save |
-| `action-slice.ts` | 164 | Action CRUD operations |
-| `connection-slice.ts` | 123 | Connection management between actions |
-| `selection-slice.ts` | 77 | Node and edge selection state |
-| `clipboard-slice.ts` | 154 | Copy/paste/cut/duplicate operations |
-| `history-slice.ts` | 95 | Undo/redo history management |
-| `viewport-slice.ts` | 64 | Pan, zoom, viewport state |
-| `preferences-slice.ts` | 48 | UI preferences (grid, minimap, etc.) |
-| `index.ts` | 138 | Combines slices, exports hooks |
+| File                   | Lines | Purpose                                           |
+| ---------------------- | ----- | ------------------------------------------------- |
+| `types.ts`             | 142   | Shared TypeScript types and interfaces            |
+| `utils.ts`             | 68    | Shared utility functions (ID generation, cloning) |
+| `workflow-slice.ts`    | 93    | Workflow state, validation, load/save             |
+| `action-slice.ts`      | 164   | Action CRUD operations                            |
+| `connection-slice.ts`  | 123   | Connection management between actions             |
+| `selection-slice.ts`   | 77    | Node and edge selection state                     |
+| `clipboard-slice.ts`   | 154   | Copy/paste/cut/duplicate operations               |
+| `history-slice.ts`     | 95    | Undo/redo history management                      |
+| `viewport-slice.ts`    | 64    | Pan, zoom, viewport state                         |
+| `preferences-slice.ts` | 48    | UI preferences (grid, minimap, etc.)              |
+| `index.ts`             | 138   | Combines slices, exports hooks                    |
 
 ### Test Files (373 lines)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `canvas-store.test.ts` | 373 | Comprehensive tests for all slices |
+| File                   | Lines | Purpose                            |
+| ---------------------- | ----- | ---------------------------------- |
+| `canvas-store.test.ts` | 373   | Comprehensive tests for all slices |
 
 ### Documentation Files (49.1 KB)
 
-| File | Size | Purpose |
-|------|------|---------|
-| `README.md` | 8.2 KB | Main documentation, architecture, usage |
-| `MIGRATION.md` | 9.1 KB | Migration guide from old store |
-| `ARCHITECTURE.md` | 13 KB | Detailed architecture documentation |
-| `REFACTORING_SUMMARY.md` | 11 KB | Refactoring results and metrics |
-| `QUICK_REFERENCE.md` | 7.8 KB | API cheat sheet |
-| `FILE_STRUCTURE.md` | - | This file |
+| File                     | Size   | Purpose                                 |
+| ------------------------ | ------ | --------------------------------------- |
+| `README.md`              | 8.2 KB | Main documentation, architecture, usage |
+| `MIGRATION.md`           | 9.1 KB | Migration guide from old store          |
+| `ARCHITECTURE.md`        | 13 KB  | Detailed architecture documentation     |
+| `REFACTORING_SUMMARY.md` | 11 KB  | Refactoring results and metrics         |
+| `QUICK_REFERENCE.md`     | 7.8 KB | API cheat sheet                         |
+| `FILE_STRUCTURE.md`      | -      | This file                               |
 
 ### Backward Compatibility
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `canvas-store.ts` | 36 | Re-exports for backward compatibility |
+| File              | Lines | Purpose                               |
+| ----------------- | ----- | ------------------------------------- |
+| `canvas-store.ts` | 36    | Re-exports for backward compatibility |
 
 ## Slice Comparison
 
@@ -157,20 +157,21 @@ test file               ██████████████████�
 
 ### Responsibility Matrix
 
-| Slice | State Lines | Action Lines | Complexity |
-|-------|-------------|--------------|------------|
-| Workflow | 5 | 88 | Low |
-| Action | 0 | 164 | Medium |
-| Connection | 2 | 121 | Medium |
-| Selection | 2 | 75 | Low |
-| Clipboard | 2 | 152 | Medium |
-| History | 3 | 92 | Low |
-| Viewport | 3 | 61 | Low |
-| Preferences | 4 | 44 | Very Low |
+| Slice       | State Lines | Action Lines | Complexity |
+| ----------- | ----------- | ------------ | ---------- |
+| Workflow    | 5           | 88           | Low        |
+| Action      | 0           | 164          | Medium     |
+| Connection  | 2           | 121          | Medium     |
+| Selection   | 2           | 75           | Low        |
+| Clipboard   | 2           | 152          | Medium     |
+| History     | 3           | 92           | Low        |
+| Viewport    | 3           | 61           | Low        |
+| Preferences | 4           | 44           | Very Low   |
 
 ## Code Organization Metrics
 
 ### Before Refactoring
+
 ```
 canvas-store.ts
 ├── Lines: 945
@@ -181,6 +182,7 @@ canvas-store.ts
 ```
 
 ### After Refactoring
+
 ```
 canvas/
 ├── Lines: 1,166 (implementation) + 373 (tests)
@@ -193,16 +195,13 @@ canvas/
 ## Import Paths
 
 ### Recommended Imports
+
 ```typescript
 // Main store
-import { useCanvasStore } from '@/stores/canvas';
+import { useCanvasStore } from "@/stores/canvas";
 
 // Selector hooks
-import {
-  useWorkflow,
-  useSelectedNodes,
-  useCanUndo,
-} from '@/stores/canvas';
+import { useWorkflow, useSelectedNodes, useCanUndo } from "@/stores/canvas";
 
 // Types
 import type {
@@ -210,32 +209,36 @@ import type {
   Workflow,
   Action,
   Connection,
-} from '@/stores/canvas';
+} from "@/stores/canvas";
 ```
 
 ### Backward Compatible Imports
+
 ```typescript
 // Still works (re-exported)
-import { useCanvasStore } from '@/stores/canvas-store';
-import type { CanvasStore } from '@/stores/canvas-store';
+import { useCanvasStore } from "@/stores/canvas-store";
+import type { CanvasStore } from "@/stores/canvas-store";
 ```
 
 ### Internal Imports (for testing)
+
 ```typescript
 // Import individual slices
-import { createWorkflowSlice } from '@/stores/canvas/workflow-slice';
-import { createActionSlice } from '@/stores/canvas/action-slice';
+import { createWorkflowSlice } from "@/stores/canvas/workflow-slice";
+import { createActionSlice } from "@/stores/canvas/action-slice";
 ```
 
 ## Dependencies
 
 ### External Dependencies
+
 - `zustand` - State management
 - `zustand/middleware/immer` - Immutable updates
 - `zustand/middleware/devtools` - Redux DevTools integration
 - `zustand/middleware/persist` - LocalStorage persistence
 
 ### Internal Dependencies
+
 ```
 types.ts (imported by all)
   ↓
@@ -251,12 +254,14 @@ canvas-store.ts (re-exports)
 ## Build Impact
 
 ### Bundle Size (estimated)
+
 - **Before**: ~35 KB (minified)
 - **After**: ~37 KB (minified) - includes types and utilities
 - **Overhead**: +2 KB (+5.7%)
 - **Benefits**: Better tree-shaking, code splitting potential
 
 ### Load Performance
+
 - **Initial load**: Same (all slices loaded together)
 - **Dynamic imports**: Possible (slices can be lazy-loaded)
 - **Re-render performance**: 60-80% improvement (via selectors)
@@ -264,10 +269,12 @@ canvas-store.ts (re-exports)
 ## Related Files
 
 ### Depends On
+
 - `/lib/action-schema/action-types.ts` - Action and Workflow types
 - `/stores/history-manager.ts` - Optional advanced history manager
 
 ### Used By
+
 - `/components/workflow-canvas/*.tsx` - Canvas UI components
 - `/hooks/useCanvasKeyboard.ts` - Keyboard shortcuts
 - `/hooks/useCanvas.ts` - Canvas utilities
@@ -296,6 +303,7 @@ canvas-store.ts (re-exports)
 ### Performance Monitoring
 
 Track these metrics:
+
 - Re-render count (use React DevTools Profiler)
 - Bundle size (via webpack-bundle-analyzer)
 - Test coverage (via vitest coverage)

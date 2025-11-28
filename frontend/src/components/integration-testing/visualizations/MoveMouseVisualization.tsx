@@ -4,7 +4,9 @@ interface MoveMouseVisualizationProps {
   location?: [number, number];
 }
 
-export function MoveMouseVisualization({ location }: MoveMouseVisualizationProps) {
+export function MoveMouseVisualization({
+  location,
+}: MoveMouseVisualizationProps) {
   if (!location) return null;
 
   const [x, y] = location;
@@ -34,7 +36,7 @@ export function MoveMouseVisualization({ location }: MoveMouseVisualizationProps
         strokeWidth="2"
         opacity="0.5"
         className="animate-ping"
-        style={{ animationDelay: '0.2s' }}
+        style={{ animationDelay: "0.2s" }}
       />
 
       {/* Cursor shape - arrow pointer */}

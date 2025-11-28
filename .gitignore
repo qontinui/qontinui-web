@@ -95,3 +95,4 @@ CLAUDE.md
 # Coverage reports
 coverage.xml
 .vercel
+.claude/

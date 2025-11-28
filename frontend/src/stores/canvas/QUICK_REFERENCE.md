@@ -6,10 +6,10 @@ A one-page cheat sheet for the Canvas store.
 
 ```typescript
 // Recommended: Use new path
-import { useCanvasStore, useWorkflow, useSelectedNodes } from '@/stores/canvas';
+import { useCanvasStore, useWorkflow, useSelectedNodes } from "@/stores/canvas";
 
 // Backward compatible: Old path still works
-import { useCanvasStore } from '@/stores/canvas-store';
+import { useCanvasStore } from "@/stores/canvas-store";
 ```
 
 ## Selector Hooks (Optimized)
@@ -59,16 +59,19 @@ const gridSize = useGridSize();
 ## Actions Reference
 
 ### Workflow Actions
-```typescript
-const { setWorkflow, clearWorkflow, saveWorkflow, validateWorkflow } = useCanvasStore();
 
-setWorkflow(workflow);           // Load workflow
-clearWorkflow();                 // Clear current
-await saveWorkflow();            // Save to backend
+```typescript
+const { setWorkflow, clearWorkflow, saveWorkflow, validateWorkflow } =
+  useCanvasStore();
+
+setWorkflow(workflow); // Load workflow
+clearWorkflow(); // Clear current
+await saveWorkflow(); // Save to backend
 const result = validateWorkflow(); // Validate
 ```
 
 ### Action CRUD
+
 ```typescript
 const {
   addAction,
@@ -90,10 +93,11 @@ duplicateAction(id, { x: 50, y: 50 });
 moveAction(id, [x, y]);
 moveActions([{ actionId: id, position: [x, y] }]);
 const action = getActionById(id);
-const actions = findActionsByType('http-request');
+const actions = findActionsByType("http-request");
 ```
 
 ### Connections
+
 ```typescript
 const {
   addConnection,
@@ -105,16 +109,17 @@ const {
   getConnectionsForAction,
 } = useCanvasStore();
 
-addConnection(sourceId, 'main', 0, targetId, 0);
-deleteConnection(sourceId, 'main', 0, targetId);
+addConnection(sourceId, "main", 0, targetId, 0);
+deleteConnection(sourceId, "main", 0, targetId);
 deleteConnectionsForAction(actionId);
-startConnecting(actionId, 'main', 0);
+startConnecting(actionId, "main", 0);
 finishConnecting(targetId, 0);
 cancelConnecting();
 const conns = getConnectionsForAction(actionId);
 ```
 
 ### Selection
+
 ```typescript
 const {
   selectNode,
@@ -125,8 +130,8 @@ const {
   invertSelection,
 } = useCanvasStore();
 
-selectNode(id);                  // Single select
-selectNode(id, true);            // Multi-select
+selectNode(id); // Single select
+selectNode(id, true); // Multi-select
 selectNodes([id1, id2]);
 selectEdge(edgeId);
 clearSelection();
@@ -135,17 +140,19 @@ invertSelection();
 ```
 
 ### Clipboard
+
 ```typescript
 const { copy, paste, cut, duplicate } = useCanvasStore();
 
-copy();                          // Copy selection
-paste();                         // Paste with offset
-paste({ x: 100, y: 100 });      // Paste at position
-cut();                           // Cut (copy + delete)
-duplicate();                     // Duplicate in place
+copy(); // Copy selection
+paste(); // Paste with offset
+paste({ x: 100, y: 100 }); // Paste at position
+cut(); // Cut (copy + delete)
+duplicate(); // Duplicate in place
 ```
 
 ### History
+
 ```typescript
 const { undo, redo, canUndo, canRedo, recordHistory } = useCanvasStore();
 
@@ -153,10 +160,11 @@ undo();
 redo();
 const canUndoNow = canUndo();
 const canRedoNow = canRedo();
-recordHistory('Custom action');
+recordHistory("Custom action");
 ```
 
 ### Viewport
+
 ```typescript
 const {
   setViewport,
@@ -178,13 +186,10 @@ setPanning(true);
 ```
 
 ### Preferences
+
 ```typescript
-const {
-  toggleMinimap,
-  toggleGrid,
-  toggleSnapToGrid,
-  setGridSize,
-} = useCanvasStore();
+const { toggleMinimap, toggleGrid, toggleSnapToGrid, setGridSize } =
+  useCanvasStore();
 
 toggleMinimap();
 toggleGrid();
@@ -195,6 +200,7 @@ setGridSize(20);
 ## Common Patterns
 
 ### Load a workflow
+
 ```typescript
 const { setWorkflow } = useCanvasStore();
 
@@ -205,6 +211,7 @@ const loadWorkflow = async (id: string) => {
 ```
 
 ### Add and select an action
+
 ```typescript
 const { addAction, selectNode } = useCanvasStore();
 
@@ -223,6 +230,7 @@ const handleAddAction = (type: string, position: [number, number]) => {
 ```
 
 ### Delete selected nodes
+
 ```typescript
 const selectedNodes = useSelectedNodes();
 const { deleteActions } = useCanvasStore();
@@ -235,6 +243,7 @@ const handleDelete = () => {
 ```
 
 ### Create a connection
+
 ```typescript
 const { isConnecting, connectingFrom, finishConnecting } = useCanvasStore();
 
@@ -246,16 +255,17 @@ const handleNodeClick = (nodeId: string) => {
 ```
 
 ### Undo/Redo with keyboard
+
 ```typescript
 const { undo, redo, canUndo, canRedo } = useCanvasStore();
 
 useEffect(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey) {
-      if (e.key === 'z' && !e.shiftKey && canUndo()) {
+      if (e.key === "z" && !e.shiftKey && canUndo()) {
         e.preventDefault();
         undo();
-      } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+      } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
         if (canRedo()) {
           e.preventDefault();
           redo();
@@ -264,12 +274,13 @@ useEffect(() => {
     }
   };
 
-  window.addEventListener('keydown', handleKeyDown);
-  return () => window.removeEventListener('keydown', handleKeyDown);
+  window.addEventListener("keydown", handleKeyDown);
+  return () => window.removeEventListener("keydown", handleKeyDown);
 }, [undo, redo, canUndo, canRedo]);
 ```
 
 ### Copy/Paste with keyboard
+
 ```typescript
 const { copy, paste, cut, duplicate } = useCanvasStore();
 const hasSelection = useHasSelection();
@@ -277,36 +288,38 @@ const hasSelection = useHasSelection();
 useEffect(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey) {
-      if (e.key === 'c' && hasSelection) {
+      if (e.key === "c" && hasSelection) {
         e.preventDefault();
         copy();
-      } else if (e.key === 'v') {
+      } else if (e.key === "v") {
         e.preventDefault();
         paste();
-      } else if (e.key === 'x' && hasSelection) {
+      } else if (e.key === "x" && hasSelection) {
         e.preventDefault();
         cut();
-      } else if (e.key === 'd' && hasSelection) {
+      } else if (e.key === "d" && hasSelection) {
         e.preventDefault();
         duplicate();
       }
     }
   };
 
-  window.addEventListener('keydown', handleKeyDown);
-  return () => window.removeEventListener('keydown', handleKeyDown);
+  window.addEventListener("keydown", handleKeyDown);
+  return () => window.removeEventListener("keydown", handleKeyDown);
 }, [copy, paste, cut, duplicate, hasSelection]);
 ```
 
 ## Performance Tips
 
 ### ✅ DO: Use selector hooks
+
 ```typescript
 // Good: Only re-renders when selectedNodes changes
 const selectedNodes = useSelectedNodes();
 ```
 
 ### ❌ DON'T: Subscribe to entire state
+
 ```typescript
 // Bad: Re-renders on ANY state change
 const state = useCanvasStore();
@@ -314,6 +327,7 @@ const selectedNodes = state.selectedNodes;
 ```
 
 ### ✅ DO: Use multiple specific selectors
+
 ```typescript
 // Good: Separate subscriptions
 const workflow = useWorkflow();
@@ -322,18 +336,20 @@ const zoom = useZoom();
 ```
 
 ### ❌ DON'T: Use one broad selector
+
 ```typescript
 // Bad: Re-renders if any of these change
 const { workflow, selectedNodes, zoom } = useCanvasStore();
 ```
 
 ### ✅ DO: Memoize derived state
+
 ```typescript
 const actions = useActions();
 const selectedNodes = useSelectedNodes();
 
 const selectedActions = useMemo(
-  () => actions.filter(a => selectedNodes.includes(a.id)),
+  () => actions.filter((a) => selectedNodes.includes(a.id)),
   [actions, selectedNodes]
 );
 ```
@@ -350,7 +366,7 @@ import type {
   Viewport,
   ValidationError,
   ValidationResult,
-} from '@/stores/canvas';
+} from "@/stores/canvas";
 ```
 
 ## Files
@@ -373,14 +389,16 @@ stores/canvas/
 ## Testing
 
 ```typescript
-import { createActionSlice } from '@/stores/canvas/action-slice';
-import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
+import { createActionSlice } from "@/stores/canvas/action-slice";
+import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
 
-describe('ActionSlice', () => {
-  it('should add action', () => {
+describe("ActionSlice", () => {
+  it("should add action", () => {
     const store = create(immer(createActionSlice));
-    const action = { /* ... */ };
+    const action = {
+      /* ... */
+    };
 
     store.getState().addAction(action);
 

@@ -1,12 +1,24 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useEffect, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   CheckCircle2,
   XCircle,
@@ -16,97 +28,108 @@ import {
   ChevronRight,
   Search,
   RefreshCw,
-  Calendar
-} from 'lucide-react'
-import { apiClient } from '@/lib/api-client'
-import { AutomationSession, Screenshot, AutomationLog } from '@/types/automation'
-import { toast } from 'sonner'
-import Image from 'next/image'
-import { formatDistanceToNow } from 'date-fns'
+  Calendar,
+} from "lucide-react";
+import { apiClient } from "@/lib/api-client";
+import {
+  AutomationSession,
+  Screenshot,
+  AutomationLog,
+} from "@/types/automation";
+import { toast } from "sonner";
+import Image from "next/image";
+import { formatDistanceToNow } from "date-fns";
 
 export function SessionHistory() {
-  const [sessions, setSessions] = useState<AutomationSession[]>([])
-  const [selectedSession, setSelectedSession] = useState<AutomationSession | null>(null)
-  const [sessionScreenshots, setSessionScreenshots] = useState<Screenshot[]>([])
-  const [sessionLogs, setSessionLogs] = useState<AutomationLog[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [sessions, setSessions] = useState<AutomationSession[]>([]);
+  const [selectedSession, setSelectedSession] =
+    useState<AutomationSession | null>(null);
+  const [sessionScreenshots, setSessionScreenshots] = useState<Screenshot[]>(
+    []
+  );
+  const [sessionLogs, setSessionLogs] = useState<AutomationLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    loadSessions()
-  }, [filterStatus])
+    loadSessions();
+  }, [filterStatus]);
 
   useEffect(() => {
     if (selectedSession) {
-      loadSessionDetails(selectedSession.id)
+      loadSessionDetails(selectedSession.id);
     }
-  }, [selectedSession])
+  }, [selectedSession]);
 
   const loadSessions = async () => {
     try {
-      setLoading(true)
-      const params: any = { limit: 50 }
-      if (filterStatus !== 'all') {
-        params.status = filterStatus
+      setLoading(true);
+      const params: any = { limit: 50 };
+      if (filterStatus !== "all") {
+        params.status = filterStatus;
       }
-      const data = await apiClient.listAutomationSessions(params)
-      setSessions(data.sessions)
+      const data = await apiClient.listAutomationSessions(params);
+      setSessions(data.sessions);
     } catch (error) {
-      console.error('Failed to load sessions:', error)
-      toast.error('Failed to load session history')
+      console.error("Failed to load sessions:", error);
+      toast.error("Failed to load session history");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const loadSessionDetails = async (sessionId: string) => {
     try {
       const [screenshots, logs] = await Promise.all([
         apiClient.listSessionScreenshots(sessionId, { limit: 100 }),
-        apiClient.listSessionLogs(sessionId, { limit: 100 })
-      ])
-      setSessionScreenshots(screenshots.screenshots)
-      setSessionLogs(logs.logs)
+        apiClient.listSessionLogs(sessionId, { limit: 100 }),
+      ]);
+      setSessionScreenshots(screenshots.screenshots);
+      setSessionLogs(logs.logs);
     } catch (error) {
-      console.error('Failed to load session details:', error)
-      toast.error('Failed to load session details')
+      console.error("Failed to load session details:", error);
+      toast.error("Failed to load session details");
     }
-  }
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'completed':
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />
-      case 'failed':
-        return <XCircle className="h-4 w-4 text-red-500" />
-      case 'running':
-        return <Clock className="h-4 w-4 text-blue-500 animate-pulse" />
+      case "completed":
+        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      case "failed":
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case "running":
+        return <Clock className="h-4 w-4 text-blue-500 animate-pulse" />;
       default:
-        return <Clock className="h-4 w-4 text-gray-500" />
+        return <Clock className="h-4 w-4 text-gray-500" />;
     }
-  }
+  };
 
   const getStatusVariant = (status: string) => {
     switch (status) {
-      case 'completed': return 'success'
-      case 'failed': return 'destructive'
-      case 'running': return 'default'
-      default: return 'secondary'
+      case "completed":
+        return "success";
+      case "failed":
+        return "destructive";
+      case "running":
+        return "default";
+      default:
+        return "secondary";
     }
-  }
+  };
 
-  const filteredSessions = sessions.filter(session => {
+  const filteredSessions = sessions.filter((session) => {
     if (searchQuery) {
-      const query = searchQuery.toLowerCase()
+      const query = searchQuery.toLowerCase();
       return (
         session.id.toLowerCase().includes(query) ||
         session.project_id?.toLowerCase().includes(query) ||
         session.runner_hostname?.toLowerCase().includes(query)
-      )
+      );
     }
-    return true
-  })
+    return true;
+  });
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
@@ -115,11 +138,7 @@ export function SessionHistory() {
         <CardHeader>
           <div className="flex items-center justify-between mb-4">
             <CardTitle>Session History</CardTitle>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={loadSessions}
-            >
+            <Button size="sm" variant="outline" onClick={loadSessions}>
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
@@ -166,8 +185,8 @@ export function SessionHistory() {
                     onClick={() => setSelectedSession(session)}
                     className={`w-full text-left p-3 rounded-md transition-colors ${
                       selectedSession?.id === session.id
-                        ? 'bg-primary/10 border border-primary'
-                        : 'hover:bg-muted/50 border border-transparent'
+                        ? "bg-primary/10 border border-primary"
+                        : "hover:bg-muted/50 border border-transparent"
                     }`}
                   >
                     <div className="flex items-start justify-between mb-2">
@@ -183,7 +202,9 @@ export function SessionHistory() {
                       {session.id.slice(0, 16)}...
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(session.created_at), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(session.created_at), {
+                        addSuffix: true,
+                      })}
                     </p>
                     {session.runner_hostname && (
                       <p className="text-xs text-muted-foreground mt-1">
@@ -221,7 +242,9 @@ export function SessionHistory() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-muted-foreground">Project ID:</span>
-                    <p className="font-medium">{selectedSession.project_id || 'N/A'}</p>
+                    <p className="font-medium">
+                      {selectedSession.project_id || "N/A"}
+                    </p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Created:</span>
@@ -230,16 +253,24 @@ export function SessionHistory() {
                     </p>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Runner Version:</span>
-                    <p className="font-medium">{selectedSession.runner_version || 'N/A'}</p>
+                    <span className="text-muted-foreground">
+                      Runner Version:
+                    </span>
+                    <p className="font-medium">
+                      {selectedSession.runner_version || "N/A"}
+                    </p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Runner OS:</span>
-                    <p className="font-medium">{selectedSession.runner_os || 'N/A'}</p>
+                    <p className="font-medium">
+                      {selectedSession.runner_os || "N/A"}
+                    </p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Hostname:</span>
-                    <p className="font-medium">{selectedSession.runner_hostname || 'N/A'}</p>
+                    <p className="font-medium">
+                      {selectedSession.runner_hostname || "N/A"}
+                    </p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Screenshots:</span>
@@ -248,8 +279,12 @@ export function SessionHistory() {
                 </div>
                 {selectedSession.error_message && (
                   <div className="mt-4 p-3 bg-destructive/10 border border-destructive rounded-md">
-                    <p className="text-sm text-destructive font-medium mb-1">Error</p>
-                    <p className="text-sm text-destructive">{selectedSession.error_message}</p>
+                    <p className="text-sm text-destructive font-medium mb-1">
+                      Error
+                    </p>
+                    <p className="text-sm text-destructive">
+                      {selectedSession.error_message}
+                    </p>
                   </div>
                 )}
               </CardContent>
@@ -267,16 +302,15 @@ export function SessionHistory() {
                 {sessionScreenshots.length === 0 ? (
                   <div className="flex flex-col items-center justify-center p-8 text-center">
                     <ImageIcon className="h-12 w-12 text-muted-foreground mb-2" />
-                    <p className="text-muted-foreground">No screenshots in this session</p>
+                    <p className="text-muted-foreground">
+                      No screenshots in this session
+                    </p>
                   </div>
                 ) : (
                   <ScrollArea className="h-[300px]">
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       {sessionScreenshots.map((screenshot) => (
-                        <div
-                          key={screenshot.id}
-                          className="space-y-2"
-                        >
+                        <div key={screenshot.id} className="space-y-2">
                           <div className="relative aspect-video bg-muted rounded-md overflow-hidden border">
                             <Image
                               src={screenshot.presigned_url}
@@ -286,9 +320,13 @@ export function SessionHistory() {
                             />
                           </div>
                           <div className="text-xs">
-                            <p className="font-medium truncate">{screenshot.name}</p>
+                            <p className="font-medium truncate">
+                              {screenshot.name}
+                            </p>
                             <p className="text-muted-foreground">
-                              {new Date(screenshot.created_at).toLocaleTimeString()}
+                              {new Date(
+                                screenshot.created_at
+                              ).toLocaleTimeString()}
                             </p>
                             {screenshot.automation_metadata?.state_name && (
                               <Badge variant="outline" className="mt-1 text-xs">
@@ -316,7 +354,9 @@ export function SessionHistory() {
                 {sessionLogs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center p-8 text-center">
                     <FileText className="h-12 w-12 text-muted-foreground mb-2" />
-                    <p className="text-muted-foreground">No logs in this session</p>
+                    <p className="text-muted-foreground">
+                      No logs in this session
+                    </p>
                   </div>
                 ) : (
                   <ScrollArea className="h-[300px]">
@@ -325,11 +365,11 @@ export function SessionHistory() {
                         <div
                           key={log.id}
                           className={`p-2 rounded border-l-4 ${
-                            log.level === 'error' || log.level === 'critical'
-                              ? 'border-l-red-500 bg-red-50 dark:bg-red-950/20'
-                              : log.level === 'warning'
-                              ? 'border-l-yellow-500 bg-yellow-50 dark:bg-yellow-950/20'
-                              : 'border-l-blue-500 bg-blue-50 dark:bg-blue-950/20'
+                            log.level === "error" || log.level === "critical"
+                              ? "border-l-red-500 bg-red-50 dark:bg-red-950/20"
+                              : log.level === "warning"
+                                ? "border-l-yellow-500 bg-yellow-50 dark:bg-yellow-950/20"
+                                : "border-l-blue-500 bg-blue-50 dark:bg-blue-950/20"
                           }`}
                         >
                           <div className="flex items-center gap-2 mb-1">
@@ -367,5 +407,5 @@ export function SessionHistory() {
         )}
       </div>
     </div>
-  )
+  );
 }

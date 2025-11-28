@@ -9,7 +9,7 @@ export interface AutomationSession {
   runner_version?: string;
   runner_os?: string;
   runner_hostname?: string;
-  status: 'active' | 'completed' | 'failed' | 'disconnected';
+  status: "active" | "completed" | "failed" | "disconnected";
   started_at: string;
   ended_at?: string;
   last_heartbeat_at: string;
@@ -40,7 +40,7 @@ export interface Screenshot {
   user_id: string;
   session_id?: string;
   captured_at: string;
-  source: 'manual' | 'runner' | 'api';
+  source: "manual" | "runner" | "api";
   automation_metadata?: AutomationMetadata;
   created_at: string;
   updated_at: string;
@@ -48,7 +48,7 @@ export interface Screenshot {
 
 export interface AutomationMetadata {
   state_name?: string;
-  action_type?: 'click' | 'type' | 'drag' | 'wait' | 'capture';
+  action_type?: "click" | "type" | "drag" | "wait" | "capture";
   mouse_position?: { x: number; y: number };
   click_location?: { x: number; y: number };
   drag_locations?: Array<{ x: number; y: number }>;
@@ -73,7 +73,7 @@ export interface AutomationLog {
   id: string;
   session_id: string;
   timestamp: string;
-  level: 'debug' | 'info' | 'warning' | 'error' | 'critical';
+  level: "debug" | "info" | "warning" | "error" | "critical";
   message: string;
   log_data?: Record<string, any>;
   screenshot_id?: string;

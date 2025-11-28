@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Region } from '@/types/pattern-optimization';
-import { patternOptimizationStorage } from '@/lib/pattern-optimization-storage';
-import { ZoomIn, ZoomOut, Maximize2, Move } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Region } from "@/types/pattern-optimization";
+import { patternOptimizationStorage } from "@/lib/pattern-optimization-storage";
+import { ZoomIn, ZoomOut, Maximize2, Move } from "lucide-react";
 
 interface AdvancedRegionSelectorProps {
   screenshotId: string;
@@ -10,7 +10,17 @@ interface AdvancedRegionSelectorProps {
   onRegionChange: (region: Region) => void;
 }
 
-type DragHandle = 'tl' | 'tr' | 'bl' | 'br' | 't' | 'r' | 'b' | 'l' | 'move' | null;
+type DragHandle =
+  | "tl"
+  | "tr"
+  | "bl"
+  | "br"
+  | "t"
+  | "r"
+  | "b"
+  | "l"
+  | "move"
+  | null;
 
 /**
  * Advanced Region Selector with zoom, pan, and adjustable borders
@@ -30,7 +40,10 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [imageData, setImageData] = useState<string | null>(null);
-  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   // View state
   const [zoom, setZoom] = useState(1);
@@ -41,53 +54,87 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragHandle, setDragHandle] = useState<DragHandle>(null);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [currentRegion, setCurrentRegion] = useState<Region | null>(region || null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [currentRegion, setCurrentRegion] = useState<Region | null>(
+    region || null
+  );
 
   // Load image from IndexedDB
   useEffect(() => {
     const loadImage = async () => {
       try {
-        console.log('[AdvancedRegionSelector] Attempting to load image:', screenshotUrl);
+        console.log(
+          "[AdvancedRegionSelector] Attempting to load image:",
+          screenshotUrl
+        );
         const data = await patternOptimizationStorage.getImage(screenshotUrl);
 
         if (data) {
-          console.log('[AdvancedRegionSelector] Loaded from IndexedDB');
+          console.log("[AdvancedRegionSelector] Loaded from IndexedDB");
           setImageData(data);
 
           const img = new Image();
           img.onload = () => {
-            console.log('[AdvancedRegionSelector] IndexedDB image dimensions:', img.width, 'x', img.height);
+            console.log(
+              "[AdvancedRegionSelector] IndexedDB image dimensions:",
+              img.width,
+              "x",
+              img.height
+            );
             setImageDimensions({ width: img.width, height: img.height });
           };
           img.src = data;
         } else {
           // Data not found in IndexedDB, use direct URL
-          console.log('[AdvancedRegionSelector] Not found in IndexedDB, using direct URL:', screenshotUrl);
+          console.log(
+            "[AdvancedRegionSelector] Not found in IndexedDB, using direct URL:",
+            screenshotUrl
+          );
           setImageData(screenshotUrl);
 
           const img = new Image();
           img.onload = () => {
-            console.log('[AdvancedRegionSelector] Direct URL image loaded, dimensions:', img.width, 'x', img.height);
+            console.log(
+              "[AdvancedRegionSelector] Direct URL image loaded, dimensions:",
+              img.width,
+              "x",
+              img.height
+            );
             setImageDimensions({ width: img.width, height: img.height });
           };
           img.onerror = (e) => {
-            console.error('[AdvancedRegionSelector] Failed to load image from direct URL:', e);
+            console.error(
+              "[AdvancedRegionSelector] Failed to load image from direct URL:",
+              e
+            );
           };
           img.src = screenshotUrl;
         }
       } catch (error) {
-        console.error('[AdvancedRegionSelector] IndexedDB error, using direct URL:', error);
+        console.error(
+          "[AdvancedRegionSelector] IndexedDB error, using direct URL:",
+          error
+        );
         setImageData(screenshotUrl);
 
         // Also try to get dimensions from direct URL
         const img = new Image();
         img.onload = () => {
-          console.log('[AdvancedRegionSelector] Fallback image loaded, dimensions:', img.width, 'x', img.height);
+          console.log(
+            "[AdvancedRegionSelector] Fallback image loaded, dimensions:",
+            img.width,
+            "x",
+            img.height
+          );
           setImageDimensions({ width: img.width, height: img.height });
         };
         img.onerror = (e) => {
-          console.error('[AdvancedRegionSelector] Failed to load fallback image:', e);
+          console.error(
+            "[AdvancedRegionSelector] Failed to load fallback image:",
+            e
+          );
         };
         img.src = screenshotUrl;
       }
@@ -106,23 +153,31 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   // Draw canvas
   const draw = useCallback(() => {
     if (!canvasRef.current || !imageData || !imageDimensions) {
-      console.log('[AdvancedRegionSelector] Draw skipped - missing requirements:', {
-        hasCanvas: !!canvasRef.current,
-        hasImageData: !!imageData,
-        hasImageDimensions: !!imageDimensions
-      });
+      console.log(
+        "[AdvancedRegionSelector] Draw skipped - missing requirements:",
+        {
+          hasCanvas: !!canvasRef.current,
+          hasImageData: !!imageData,
+          hasImageDimensions: !!imageDimensions,
+        }
+      );
       return;
     }
 
-    console.log('[AdvancedRegionSelector] Drawing canvas with imageData:', imageData.substring(0, 50) + '...');
+    console.log(
+      "[AdvancedRegionSelector] Drawing canvas with imageData:",
+      imageData.substring(0, 50) + "..."
+    );
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const img = new Image();
     img.onload = () => {
-      console.log('[AdvancedRegionSelector] Image loaded in draw(), drawing to canvas');
+      console.log(
+        "[AdvancedRegionSelector] Image loaded in draw(), drawing to canvas"
+      );
       // Set canvas size to container size
       const container = containerRef.current;
       if (!container) return;
@@ -131,7 +186,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
       canvas.height = container.clientHeight;
 
       // Clear canvas
-      ctx.fillStyle = '#f3f4f6';
+      ctx.fillStyle = "#f3f4f6";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Apply transformations
@@ -145,7 +200,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
       // Draw region if exists
       if (currentRegion) {
         // Draw semi-transparent selection box (50% opacity blue)
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.5)';
+        ctx.fillStyle = "rgba(59, 130, 246, 0.5)";
         ctx.fillRect(
           currentRegion.x,
           currentRegion.y,
@@ -154,7 +209,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
         );
 
         // Draw selection border
-        ctx.strokeStyle = '#3B82F6';
+        ctx.strokeStyle = "#3B82F6";
         ctx.lineWidth = 2 / zoom;
         ctx.strokeRect(
           currentRegion.x,
@@ -165,22 +220,62 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
 
         // Draw resize handles
         const handleSize = 8 / zoom;
-        ctx.fillStyle = '#3B82F6';
+        ctx.fillStyle = "#3B82F6";
 
         // Corner handles
-        ctx.fillRect(currentRegion.x - handleSize/2, currentRegion.y - handleSize/2, handleSize, handleSize);
-        ctx.fillRect(currentRegion.x + currentRegion.width - handleSize/2, currentRegion.y - handleSize/2, handleSize, handleSize);
-        ctx.fillRect(currentRegion.x - handleSize/2, currentRegion.y + currentRegion.height - handleSize/2, handleSize, handleSize);
-        ctx.fillRect(currentRegion.x + currentRegion.width - handleSize/2, currentRegion.y + currentRegion.height - handleSize/2, handleSize, handleSize);
+        ctx.fillRect(
+          currentRegion.x - handleSize / 2,
+          currentRegion.y - handleSize / 2,
+          handleSize,
+          handleSize
+        );
+        ctx.fillRect(
+          currentRegion.x + currentRegion.width - handleSize / 2,
+          currentRegion.y - handleSize / 2,
+          handleSize,
+          handleSize
+        );
+        ctx.fillRect(
+          currentRegion.x - handleSize / 2,
+          currentRegion.y + currentRegion.height - handleSize / 2,
+          handleSize,
+          handleSize
+        );
+        ctx.fillRect(
+          currentRegion.x + currentRegion.width - handleSize / 2,
+          currentRegion.y + currentRegion.height - handleSize / 2,
+          handleSize,
+          handleSize
+        );
 
         // Edge handles
-        ctx.fillRect(currentRegion.x + currentRegion.width/2 - handleSize/2, currentRegion.y - handleSize/2, handleSize, handleSize);
-        ctx.fillRect(currentRegion.x + currentRegion.width - handleSize/2, currentRegion.y + currentRegion.height/2 - handleSize/2, handleSize, handleSize);
-        ctx.fillRect(currentRegion.x + currentRegion.width/2 - handleSize/2, currentRegion.y + currentRegion.height - handleSize/2, handleSize, handleSize);
-        ctx.fillRect(currentRegion.x - handleSize/2, currentRegion.y + currentRegion.height/2 - handleSize/2, handleSize, handleSize);
+        ctx.fillRect(
+          currentRegion.x + currentRegion.width / 2 - handleSize / 2,
+          currentRegion.y - handleSize / 2,
+          handleSize,
+          handleSize
+        );
+        ctx.fillRect(
+          currentRegion.x + currentRegion.width - handleSize / 2,
+          currentRegion.y + currentRegion.height / 2 - handleSize / 2,
+          handleSize,
+          handleSize
+        );
+        ctx.fillRect(
+          currentRegion.x + currentRegion.width / 2 - handleSize / 2,
+          currentRegion.y + currentRegion.height - handleSize / 2,
+          handleSize,
+          handleSize
+        );
+        ctx.fillRect(
+          currentRegion.x - handleSize / 2,
+          currentRegion.y + currentRegion.height / 2 - handleSize / 2,
+          handleSize,
+          handleSize
+        );
 
         // Draw dimensions
-        ctx.fillStyle = '#3B82F6';
+        ctx.fillStyle = "#3B82F6";
         ctx.font = `${12 / zoom}px monospace`;
         const text = `${Math.round(currentRegion.width)} × ${Math.round(currentRegion.height)}`;
         const textWidth = ctx.measureText(text).width;
@@ -195,8 +290,14 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     };
 
     img.onerror = (e) => {
-      console.error('[AdvancedRegionSelector] Failed to load image in draw():', e);
-      console.error('[AdvancedRegionSelector] Image src was:', imageData.substring(0, 100));
+      console.error(
+        "[AdvancedRegionSelector] Failed to load image in draw():",
+        e
+      );
+      console.error(
+        "[AdvancedRegionSelector] Image src was:",
+        imageData.substring(0, 100)
+      );
     };
 
     img.src = imageData;
@@ -214,23 +315,23 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   // Redraw on window resize and when canvas mounts
   useEffect(() => {
     const handleResize = () => {
-      console.log('[AdvancedRegionSelector] Window resized, redrawing');
+      console.log("[AdvancedRegionSelector] Window resized, redrawing");
       draw();
     };
 
-    window.addEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
 
     // Initial draw when component mounts with imageData
     if (imageData && imageDimensions) {
-      console.log('[AdvancedRegionSelector] Initial draw trigger');
+      console.log("[AdvancedRegionSelector] Initial draw trigger");
       const timer = setTimeout(() => draw(), 100);
       return () => {
-        window.removeEventListener('resize', handleResize);
+        window.removeEventListener("resize", handleResize);
         clearTimeout(timer);
       };
     }
 
-    return () => window.removeEventListener('resize', handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, [imageData, imageDimensions, draw]);
 
   // Get mouse position in image coordinates
@@ -240,8 +341,8 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
 
-    const x = ((e.clientX - rect.left) - pan.x) / zoom;
-    const y = ((e.clientY - rect.top) - pan.y) / zoom;
+    const x = (e.clientX - rect.left - pan.x) / zoom;
+    const y = (e.clientY - rect.top - pan.y) / zoom;
 
     return { x, y };
   };
@@ -254,34 +355,70 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     const threshold = handleSize * 1.5;
 
     // Check corners first (they take priority)
-    if (Math.abs(x - currentRegion.x) < threshold && Math.abs(y - currentRegion.y) < threshold) return 'tl';
-    if (Math.abs(x - (currentRegion.x + currentRegion.width)) < threshold && Math.abs(y - currentRegion.y) < threshold) return 'tr';
-    if (Math.abs(x - currentRegion.x) < threshold && Math.abs(y - (currentRegion.y + currentRegion.height)) < threshold) return 'bl';
-    if (Math.abs(x - (currentRegion.x + currentRegion.width)) < threshold && Math.abs(y - (currentRegion.y + currentRegion.height)) < threshold) return 'br';
+    if (
+      Math.abs(x - currentRegion.x) < threshold &&
+      Math.abs(y - currentRegion.y) < threshold
+    )
+      return "tl";
+    if (
+      Math.abs(x - (currentRegion.x + currentRegion.width)) < threshold &&
+      Math.abs(y - currentRegion.y) < threshold
+    )
+      return "tr";
+    if (
+      Math.abs(x - currentRegion.x) < threshold &&
+      Math.abs(y - (currentRegion.y + currentRegion.height)) < threshold
+    )
+      return "bl";
+    if (
+      Math.abs(x - (currentRegion.x + currentRegion.width)) < threshold &&
+      Math.abs(y - (currentRegion.y + currentRegion.height)) < threshold
+    )
+      return "br";
 
     // Check edges
-    if (Math.abs(x - (currentRegion.x + currentRegion.width / 2)) < threshold && Math.abs(y - currentRegion.y) < threshold) return 't';
-    if (Math.abs(x - (currentRegion.x + currentRegion.width)) < threshold && Math.abs(y - (currentRegion.y + currentRegion.height / 2)) < threshold) return 'r';
-    if (Math.abs(x - (currentRegion.x + currentRegion.width / 2)) < threshold && Math.abs(y - (currentRegion.y + currentRegion.height)) < threshold) return 'b';
-    if (Math.abs(x - currentRegion.x) < threshold && Math.abs(y - (currentRegion.y + currentRegion.height / 2)) < threshold) return 'l';
+    if (
+      Math.abs(x - (currentRegion.x + currentRegion.width / 2)) < threshold &&
+      Math.abs(y - currentRegion.y) < threshold
+    )
+      return "t";
+    if (
+      Math.abs(x - (currentRegion.x + currentRegion.width)) < threshold &&
+      Math.abs(y - (currentRegion.y + currentRegion.height / 2)) < threshold
+    )
+      return "r";
+    if (
+      Math.abs(x - (currentRegion.x + currentRegion.width / 2)) < threshold &&
+      Math.abs(y - (currentRegion.y + currentRegion.height)) < threshold
+    )
+      return "b";
+    if (
+      Math.abs(x - currentRegion.x) < threshold &&
+      Math.abs(y - (currentRegion.y + currentRegion.height / 2)) < threshold
+    )
+      return "l";
 
     // Check if inside region (for moving)
-    if (x >= currentRegion.x && x <= currentRegion.x + currentRegion.width &&
-        y >= currentRegion.y && y <= currentRegion.y + currentRegion.height) {
-      return 'move';
+    if (
+      x >= currentRegion.x &&
+      x <= currentRegion.x + currentRegion.width &&
+      y >= currentRegion.y &&
+      y <= currentRegion.y + currentRegion.height
+    ) {
+      return "move";
     }
 
     return null;
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    console.log('[AdvancedRegionSelector] Mouse down');
+    console.log("[AdvancedRegionSelector] Mouse down");
     const coords = getImageCoords(e);
     if (!coords) {
-      console.log('[AdvancedRegionSelector] Could not get image coords');
+      console.log("[AdvancedRegionSelector] Could not get image coords");
       return;
     }
-    console.log('[AdvancedRegionSelector] Coords:', coords);
+    console.log("[AdvancedRegionSelector] Coords:", coords);
 
     // Right-click for panning
     if (e.button === 2) {
@@ -296,13 +433,13 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
       // Check if clicking on a handle
       const handle = getHandleAtPoint(coords.x, coords.y);
       if (handle) {
-        console.log('[AdvancedRegionSelector] Clicking on handle:', handle);
+        console.log("[AdvancedRegionSelector] Clicking on handle:", handle);
         setIsDragging(true);
         setDragHandle(handle);
         setDragStart(coords);
       } else {
         // Start drawing new region
-        console.log('[AdvancedRegionSelector] Starting new region');
+        console.log("[AdvancedRegionSelector] Starting new region");
         setIsDrawing(true);
         setDragStart(coords);
         setCurrentRegion(null);
@@ -316,25 +453,25 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
     // Update cursor based on hover
     if (!isDrawing && !isDragging && !isPanning && coords) {
       const handle = getHandleAtPoint(coords.x, coords.y);
-      if (handle === 'move') {
-        e.currentTarget.style.cursor = 'move';
-      } else if (handle === 'tl' || handle === 'br') {
-        e.currentTarget.style.cursor = 'nwse-resize';
-      } else if (handle === 'tr' || handle === 'bl') {
-        e.currentTarget.style.cursor = 'nesw-resize';
-      } else if (handle === 't' || handle === 'b') {
-        e.currentTarget.style.cursor = 'ns-resize';
-      } else if (handle === 'l' || handle === 'r') {
-        e.currentTarget.style.cursor = 'ew-resize';
+      if (handle === "move") {
+        e.currentTarget.style.cursor = "move";
+      } else if (handle === "tl" || handle === "br") {
+        e.currentTarget.style.cursor = "nwse-resize";
+      } else if (handle === "tr" || handle === "bl") {
+        e.currentTarget.style.cursor = "nesw-resize";
+      } else if (handle === "t" || handle === "b") {
+        e.currentTarget.style.cursor = "ns-resize";
+      } else if (handle === "l" || handle === "r") {
+        e.currentTarget.style.cursor = "ew-resize";
       } else {
-        e.currentTarget.style.cursor = 'crosshair';
+        e.currentTarget.style.cursor = "crosshair";
       }
     }
 
     if (isPanning && dragStart) {
       setPan({
         x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y
+        y: e.clientY - dragStart.y,
       });
     } else if (isDrawing && dragStart && coords) {
       // Drawing new region
@@ -345,49 +482,55 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
         height: Math.abs(coords.y - dragStart.y),
       };
       setCurrentRegion(newRegion);
-    } else if (isDragging && dragHandle && currentRegion && dragStart && coords) {
+    } else if (
+      isDragging &&
+      dragHandle &&
+      currentRegion &&
+      dragStart &&
+      coords
+    ) {
       // Resizing/moving existing region
       const newRegion = { ...currentRegion };
 
       switch (dragHandle) {
-        case 'move':
+        case "move":
           const dx = coords.x - dragStart.x;
           const dy = coords.y - dragStart.y;
           newRegion.x = currentRegion.x + dx;
           newRegion.y = currentRegion.y + dy;
           setDragStart(coords);
           break;
-        case 'tl':
+        case "tl":
           newRegion.x = coords.x;
           newRegion.y = coords.y;
           newRegion.width = currentRegion.x + currentRegion.width - coords.x;
           newRegion.height = currentRegion.y + currentRegion.height - coords.y;
           break;
-        case 'tr':
+        case "tr":
           newRegion.y = coords.y;
           newRegion.width = coords.x - currentRegion.x;
           newRegion.height = currentRegion.y + currentRegion.height - coords.y;
           break;
-        case 'bl':
+        case "bl":
           newRegion.x = coords.x;
           newRegion.width = currentRegion.x + currentRegion.width - coords.x;
           newRegion.height = coords.y - currentRegion.y;
           break;
-        case 'br':
+        case "br":
           newRegion.width = coords.x - currentRegion.x;
           newRegion.height = coords.y - currentRegion.y;
           break;
-        case 't':
+        case "t":
           newRegion.y = coords.y;
           newRegion.height = currentRegion.y + currentRegion.height - coords.y;
           break;
-        case 'r':
+        case "r":
           newRegion.width = coords.x - currentRegion.x;
           break;
-        case 'b':
+        case "b":
           newRegion.height = coords.y - currentRegion.y;
           break;
-        case 'l':
+        case "l":
           newRegion.x = coords.x;
           newRegion.width = currentRegion.x + currentRegion.width - coords.x;
           break;
@@ -406,7 +549,7 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
       // Save region if it's valid size
       if (currentRegion.width > 10 && currentRegion.height > 10) {
         onRegionChange(currentRegion);
-        console.log('[AdvancedRegionSelector] Region saved:', currentRegion);
+        console.log("[AdvancedRegionSelector] Region saved:", currentRegion);
       }
     }
 
@@ -435,7 +578,8 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
       <div className="bg-white border-b p-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="text-sm text-gray-600 px-2">
-            <span className="font-medium">Left Click:</span> Select/Draw Region • <span className="font-medium">Right Click:</span> Pan
+            <span className="font-medium">Left Click:</span> Select/Draw Region
+            • <span className="font-medium">Right Click:</span> Pan
           </div>
         </div>
 
@@ -468,8 +612,10 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
 
         {currentRegion && (
           <div className="text-xs text-gray-600">
-            Position: ({Math.round(currentRegion.x)}, {Math.round(currentRegion.y)}) |
-            Size: {Math.round(currentRegion.width)} × {Math.round(currentRegion.height)}
+            Position: ({Math.round(currentRegion.x)},{" "}
+            {Math.round(currentRegion.y)}) | Size:{" "}
+            {Math.round(currentRegion.width)} ×{" "}
+            {Math.round(currentRegion.height)}
           </div>
         )}
       </div>

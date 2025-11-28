@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { GoogleAnalytics } from '@next/third-parties/google';
+import { GoogleAnalytics } from "@next/third-parties/google";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/auth-context";
 import { QueryProvider } from "@/lib/providers/query-provider";
@@ -10,11 +10,12 @@ import { RefreshTokenExpiryWarning } from "@/components/refresh-token-expiry-war
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { ActivityTracker } from "@/components/activity-tracker";
+import { DevDebugInit } from "@/components/dev-debug-init";
 import "./globals.css";
 
-export const dynamic = 'force-dynamic'
-export const dynamicParams = true
-export const revalidate = 0
+export const dynamic = "force-dynamic";
+export const dynamicParams = true;
+export const revalidate = 0;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,6 +42,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <DevDebugInit />
         <ErrorBoundary>
           <QueryProvider>
             <AuthProvider>
@@ -59,9 +61,9 @@ export default function RootLayout({
           position="bottom-right"
           toastOptions={{
             style: {
-              background: '#18181B',
-              border: '1px solid #27272A',
-              color: '#E4E4E7',
+              background: "#18181B",
+              border: "1px solid #27272A",
+              color: "#E4E4E7",
             },
           }}
         />

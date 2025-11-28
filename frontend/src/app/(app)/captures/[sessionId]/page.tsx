@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useAutomation } from '@/contexts/automation-context';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useAutomation } from "@/contexts/automation-context";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   Download,
@@ -16,14 +16,14 @@ import {
   Monitor,
   MousePointer,
   Keyboard,
-} from 'lucide-react';
-import { VideoPlayer } from '@/components/capture-viewer/VideoPlayer';
-import { InputEventsSidePanel } from '@/components/capture-viewer/InputEventsSidePanel';
-import { EventTimeline } from '@/components/capture-viewer/EventTimeline';
-import { SaveScreenshotDialog } from '@/components/captures/SaveScreenshotDialog';
-import { captureService } from '@/services/service-factory';
-import type { CaptureSession, InputEvent } from '@/types/capture';
-import { formatDuration } from '@/types/capture';
+} from "lucide-react";
+import { VideoPlayer } from "@/components/capture-viewer/VideoPlayer";
+import { InputEventsSidePanel } from "@/components/capture-viewer/InputEventsSidePanel";
+import { EventTimeline } from "@/components/capture-viewer/EventTimeline";
+import { SaveScreenshotDialog } from "@/components/captures/SaveScreenshotDialog";
+import { captureService } from "@/services/service-factory";
+import type { CaptureSession, InputEvent } from "@/types/capture";
+import { formatDuration } from "@/types/capture";
 
 export default function CaptureViewerPage() {
   const params = useParams();
@@ -32,7 +32,7 @@ export default function CaptureViewerPage() {
   const sessionId = params.sessionId as string;
 
   const { projectId: contextProjectId } = useAutomation();
-  const urlProjectId = searchParams?.get('project') ?? null;
+  const urlProjectId = searchParams?.get("project") ?? null;
   const projectId = contextProjectId || urlProjectId;
 
   const [session, setSession] = useState<CaptureSession | null>(null);
@@ -62,8 +62,8 @@ export default function CaptureViewerPage() {
       const eventData = await captureService.getSessionEvents(sessionId);
       setEvents(eventData);
     } catch (error: any) {
-      console.error('Failed to load capture session:', error);
-      toast.error('Failed to load capture session');
+      console.error("Failed to load capture session:", error);
+      toast.error("Failed to load capture session");
     } finally {
       setLoading(false);
     }
@@ -87,12 +87,15 @@ export default function CaptureViewerPage() {
     try {
       setCapturingFrame(true);
       const timestampMs = Math.round(currentTimestamp * 1000);
-      const frameBase64 = await captureService.extractFrameBase64(sessionId, timestampMs);
+      const frameBase64 = await captureService.extractFrameBase64(
+        sessionId,
+        timestampMs
+      );
       setCapturedFrame(frameBase64);
       setShowSaveDialog(true);
     } catch (error: any) {
-      console.error('Failed to capture frame:', error);
-      toast.error('Failed to capture frame');
+      console.error("Failed to capture frame:", error);
+      toast.error("Failed to capture frame");
     } finally {
       setCapturingFrame(false);
     }
@@ -109,12 +112,12 @@ export default function CaptureViewerPage() {
           tags,
           imageData: capturedFrame,
         });
-        toast.success('Screenshot saved to project');
+        toast.success("Screenshot saved to project");
         setShowSaveDialog(false);
         setCapturedFrame(null);
       } catch (error: any) {
-        console.error('Failed to save screenshot:', error);
-        toast.error('Failed to save screenshot');
+        console.error("Failed to save screenshot:", error);
+        toast.error("Failed to save screenshot");
       }
     },
     [capturedFrame, projectId]
@@ -124,16 +127,17 @@ export default function CaptureViewerPage() {
     if (!events.length) return;
 
     const dataStr = JSON.stringify(events, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+    const dataUri =
+      "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
 
     const exportFileDefaultName = `capture-events-${sessionId}.json`;
 
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
+    const linkElement = document.createElement("a");
+    linkElement.setAttribute("href", dataUri);
+    linkElement.setAttribute("download", exportFileDefaultName);
     linkElement.click();
 
-    toast.success('Events exported');
+    toast.success("Events exported");
   }, [events, sessionId]);
 
   if (loading) {
@@ -154,7 +158,7 @@ export default function CaptureViewerPage() {
           <p className="text-muted-foreground mb-4">
             The capture session could not be loaded.
           </p>
-          <Button onClick={() => router.push('/captures')}>
+          <Button onClick={() => router.push("/captures")}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Captures
           </Button>
@@ -169,7 +173,7 @@ export default function CaptureViewerPage() {
       <div className="mb-6">
         <Button
           variant="ghost"
-          onClick={() => router.push('/captures')}
+          onClick={() => router.push("/captures")}
           className="mb-4"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -183,11 +187,11 @@ export default function CaptureViewerPage() {
               <Badge
                 className={
                   session.isComplete
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-                    : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100'
+                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                    : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
                 }
               >
-                {session.isComplete ? 'Complete' : 'In Progress'}
+                {session.isComplete ? "Complete" : "In Progress"}
               </Badge>
             </div>
             {session.notes && (
@@ -269,7 +273,9 @@ export default function CaptureViewerPage() {
               <p className="text-xs text-muted-foreground">Scrolls</p>
             </Card>
             <Card className="p-4 text-center">
-              <p className="text-2xl font-bold">{session.stats.dragOperations}</p>
+              <p className="text-2xl font-bold">
+                {session.stats.dragOperations}
+              </p>
               <p className="text-xs text-muted-foreground">Drags</p>
             </Card>
           </div>

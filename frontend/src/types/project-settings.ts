@@ -7,55 +7,55 @@
 
 export interface MouseSettings {
   // Click timing
-  click_hold_duration: number;       // How long to hold button during click (ms)
-  click_release_delay: number;       // Delay after releasing button (ms)
-  click_safety_release: boolean;     // Release all buttons before clicking
-  double_click_interval: number;     // Time between double clicks (ms)
+  click_hold_duration: number; // How long to hold button during click (ms)
+  click_release_delay: number; // Delay after releasing button (ms)
+  click_safety_release: boolean; // Release all buttons before clicking
+  double_click_interval: number; // Time between double clicks (ms)
 
   // Drag timing
-  drag_start_delay: number;          // Delay before starting drag (ms)
-  drag_end_delay: number;            // Delay after ending drag (ms)
-  drag_default_duration: number;     // Default drag animation duration (ms)
+  drag_start_delay: number; // Delay before starting drag (ms)
+  drag_end_delay: number; // Delay after ending drag (ms)
+  drag_default_duration: number; // Default drag animation duration (ms)
 
   // Move timing
-  move_default_duration: number;     // Default move animation duration (ms)
-  safety_release_delay: number;      // Delay after safety release (ms)
+  move_default_duration: number; // Default move animation duration (ms)
+  safety_release_delay: number; // Delay after safety release (ms)
 }
 
 export interface KeyboardSettings {
   // Key timing
-  key_hold_duration: number;         // How long to hold key during press (ms)
-  key_release_delay: number;         // Delay after releasing key (ms)
-  typing_interval: number;           // Delay between typed characters (ms)
-  hotkey_hold_duration: number;      // Duration for hotkey holds (ms)
-  hotkey_press_interval: number;     // Interval between hotkey presses (ms)
+  key_hold_duration: number; // How long to hold key during press (ms)
+  key_release_delay: number; // Delay after releasing key (ms)
+  typing_interval: number; // Delay between typed characters (ms)
+  hotkey_hold_duration: number; // Duration for hotkey holds (ms)
+  hotkey_press_interval: number; // Interval between hotkey presses (ms)
 }
 
 export interface FindSettings {
   // Image matching
-  default_timeout: number;               // Find operation timeout (ms)
-  default_retry_count: number;           // Number of find retries
-  search_interval: number;               // Delay between search attempts (ms)
+  default_timeout: number; // Find operation timeout (ms)
+  default_retry_count: number; // Number of find retries
+  search_interval: number; // Delay between search attempts (ms)
 }
 
 export interface WaitSettings {
-  pause_before_action: number;       // Global pause before actions (ms)
-  pause_after_action: number;        // Global pause after actions (ms)
+  pause_before_action: number; // Global pause before actions (ms)
+  pause_after_action: number; // Global pause after actions (ms)
 }
 
 export interface ExecutionSettings {
-  default_timeout: number;           // Default action timeout (ms)
-  default_retry_count: number;       // Default retry count for failed actions
-  action_delay: number;              // Delay between actions (ms)
-  failure_strategy: 'stop' | 'continue' | 'pause';
+  default_timeout: number; // Default action timeout (ms)
+  default_retry_count: number; // Default retry count for failed actions
+  action_delay: number; // Delay between actions (ms)
+  failure_strategy: "stop" | "continue" | "pause";
 }
 
 export interface RecognitionSettings {
-  default_threshold: number;         // Default similarity threshold (0.0-1.0)
-  multi_scale_search: boolean;       // Enable multi-scale search
-  color_space: 'rgb' | 'grayscale' | 'hsv';
-  edge_detection: boolean;           // Enable edge detection
-  ocr_enabled: boolean;              // Enable OCR
+  default_threshold: number; // Default similarity threshold (0.0-1.0)
+  multi_scale_search: boolean; // Enable multi-scale search
+  color_space: "rgb" | "grayscale" | "hsv";
+  edge_detection: boolean; // Enable edge detection
+  ocr_enabled: boolean; // Enable OCR
 }
 
 export interface ProjectSettings {
@@ -103,13 +103,13 @@ export const DEFAULT_EXECUTION_SETTINGS: ExecutionSettings = {
   default_timeout: 10000,
   default_retry_count: 0,
   action_delay: 100,
-  failure_strategy: 'continue',
+  failure_strategy: "continue",
 };
 
 export const DEFAULT_RECOGNITION_SETTINGS: RecognitionSettings = {
-  default_threshold: 0.70,
+  default_threshold: 0.7,
   multi_scale_search: false,
-  color_space: 'rgb',
+  color_space: "rgb",
   edge_detection: false,
   ocr_enabled: false,
 };

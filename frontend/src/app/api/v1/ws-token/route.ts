@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
+import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 /**
  * GET /api/v1/ws-token
@@ -13,25 +13,22 @@ import { cookies } from 'next/headers'
  */
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = await cookies()
-    const accessTokenCookie = cookieStore.get('access_token')
+    const cookieStore = await cookies();
+    const accessTokenCookie = cookieStore.get("access_token");
 
     if (!accessTokenCookie?.value) {
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
     // Return the token for WebSocket authentication
     return NextResponse.json({
-      token: accessTokenCookie.value
-    })
+      token: accessTokenCookie.value,
+    });
   } catch (error) {
-    console.error('[WS-Token API Route] ERROR:', error)
+    console.error("[WS-Token API Route] ERROR:", error);
     return NextResponse.json(
-      { error: 'Failed to get WebSocket token' },
+      { error: "Failed to get WebSocket token" },
       { status: 500 }
-    )
+    );
   }
 }

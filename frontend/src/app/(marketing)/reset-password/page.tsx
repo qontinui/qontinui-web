@@ -1,81 +1,85 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { ArrowLeft, Eye, EyeOff } from "lucide-react"
-import { toast } from "sonner"
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { toast } from "sonner";
 
 export default function ResetPassword() {
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [resetComplete, setResetComplete] = useState(false)
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const token = searchParams.get('token')
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resetComplete, setResetComplete] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token");
 
   useEffect(() => {
     if (!token) {
-      toast.error('Invalid reset link')
-      router.push('/forgot-password')
+      toast.error("Invalid reset link");
+      router.push("/forgot-password");
     }
-  }, [token, router])
+  }, [token, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
 
     if (password !== confirmPassword) {
-      toast.error('Passwords do not match')
-      return
+      toast.error("Passwords do not match");
+      return;
     }
 
     if (password.length < 8) {
-      toast.error('Password must be at least 8 characters')
-      return
+      toast.error("Password must be at least 8 characters");
+      return;
     }
 
-    setIsSubmitting(true)
+    setIsSubmitting(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/auth/password-reset-confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          new_password: password
-        })
-      })
+      const response = await fetch(
+        "http://localhost:8000/api/v1/auth/password-reset-confirm",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token,
+            new_password: password,
+          }),
+        }
+      );
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Reset failed')
+        throw new Error(data.detail || "Reset failed");
       }
 
-      setResetComplete(true)
-      toast.success('Password reset successfully!')
+      setResetComplete(true);
+      toast.success("Password reset successfully!");
 
       // Redirect to login after 3 seconds
       setTimeout(() => {
-        router.push('/login')
-      }, 3000)
+        router.push("/login");
+      }, 3000);
     } catch (error: any) {
-      toast.error('Failed to reset password', {
-        description: error.message || 'The reset link may be invalid or expired.'
-      })
+      toast.error("Failed to reset password", {
+        description:
+          error.message || "The reset link may be invalid or expired.",
+      });
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   if (!token) {
-    return null
+    return null;
   }
 
   return (
@@ -101,7 +105,7 @@ export default function ResetPassword() {
               </div>
               <Button
                 variant="outline"
-                onClick={() => router.push('/login')}
+                onClick={() => router.push("/login")}
                 className="w-full"
               >
                 Go to Login
@@ -151,11 +155,7 @@ export default function ResetPassword() {
                 />
               </div>
 
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isSubmitting}
-              >
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
                 {isSubmitting ? "Resetting..." : "Reset Password"}
               </Button>
 
@@ -173,5 +173,5 @@ export default function ResetPassword() {
         </Card>
       </div>
     </div>
-  )
+  );
 }

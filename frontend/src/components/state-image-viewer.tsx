@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { StateImageRenderer, RenderMode } from '@/lib/state-image-renderer';
+import React, { useEffect, useRef, useState } from "react";
+import { StateImageRenderer, RenderMode } from "@/lib/state-image-renderer";
 
 export interface StateImageViewerProps {
   image: string; // Base64 data URL
@@ -18,18 +18,20 @@ export interface StateImageViewerProps {
 export const StateImageViewer: React.FC<StateImageViewerProps> = ({
   image,
   mask,
-  mode = 'normal',
-  alt = 'State Image',
-  className = '',
+  mode = "normal",
+  alt = "State Image",
+  className = "",
   style = {},
   onLoad,
-  onError
+  onError,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<StateImageRenderer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null);
+  const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(
+    null
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -60,14 +62,18 @@ export const StateImageViewer: React.FC<StateImageViewerProps> = ({
         let renderMode = mode;
 
         // If mode is 'with-mask' but no mask available, fall back to 'normal'
-        if (mode === 'with-mask' && !renderer.hasMask()) {
-          console.log('[StateImageViewer] No mask available, rendering in normal mode');
-          renderMode = 'normal';
+        if (mode === "with-mask" && !renderer.hasMask()) {
+          console.log(
+            "[StateImageViewer] No mask available, rendering in normal mode"
+          );
+          renderMode = "normal";
         }
 
         // If mode is 'mask-only' but no mask available, show empty
-        if (mode === 'mask-only' && !renderer.hasMask()) {
-          console.log('[StateImageViewer] No mask available for mask-only mode');
+        if (mode === "mask-only" && !renderer.hasMask()) {
+          console.log(
+            "[StateImageViewer] No mask available for mask-only mode"
+          );
         }
 
         // Render
@@ -84,7 +90,8 @@ export const StateImageViewer: React.FC<StateImageViewerProps> = ({
       } catch (err) {
         if (!mounted) return;
 
-        const error = err instanceof Error ? err : new Error('Failed to load image');
+        const error =
+          err instanceof Error ? err : new Error("Failed to load image");
         setError(error);
         setIsLoading(false);
 
@@ -161,11 +168,11 @@ export const StateImageViewer: React.FC<StateImageViewerProps> = ({
       className={className}
       style={{
         ...style,
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
     >
       <canvas
@@ -174,7 +181,7 @@ export const StateImageViewer: React.FC<StateImageViewerProps> = ({
             // Copy canvas content to the DOM canvas
             node.width = canvasElement.width;
             node.height = canvasElement.height;
-            const ctx = node.getContext('2d');
+            const ctx = node.getContext("2d");
             if (ctx) {
               ctx.imageSmoothingEnabled = false;
               ctx.drawImage(canvasElement, 0, 0);
@@ -182,10 +189,10 @@ export const StateImageViewer: React.FC<StateImageViewerProps> = ({
           }
         }}
         style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'contain',
-          imageRendering: 'crisp-edges'
+          width: "100%",
+          height: "100%",
+          objectFit: "contain",
+          imageRendering: "crisp-edges",
         }}
         aria-label={alt}
       />

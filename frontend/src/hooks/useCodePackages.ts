@@ -29,7 +29,7 @@
  * }
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   CodePackage,
   SearchFilters,
@@ -42,20 +42,23 @@ import type {
   InstallPackageRequest,
   RatePackageRequest,
   ReportPackageRequest,
-} from '@/types/code-packages'
+} from "@/types/code-packages";
 
 // Query keys for organizing cache
 export const packageKeys = {
-  all: ['packages'] as const,
-  lists: () => [...packageKeys.all, 'list'] as const,
-  list: (filters?: SearchFilters) => [...packageKeys.lists(), { filters }] as const,
-  details: () => [...packageKeys.all, 'detail'] as const,
+  all: ["packages"] as const,
+  lists: () => [...packageKeys.all, "list"] as const,
+  list: (filters?: SearchFilters) =>
+    [...packageKeys.lists(), { filters }] as const,
+  details: () => [...packageKeys.all, "detail"] as const,
   detail: (id: string) => [...packageKeys.details(), id] as const,
-  popular: () => [...packageKeys.all, 'popular'] as const,
-  myPackages: () => [...packageKeys.all, 'my-packages'] as const,
-  installed: (projectId: string) => [...packageKeys.all, 'installed', projectId] as const,
-  ratings: (packageId: string) => [...packageKeys.all, 'ratings', packageId] as const,
-}
+  popular: () => [...packageKeys.all, "popular"] as const,
+  myPackages: () => [...packageKeys.all, "my-packages"] as const,
+  installed: (projectId: string) =>
+    [...packageKeys.all, "installed", projectId] as const,
+  ratings: (packageId: string) =>
+    [...packageKeys.all, "ratings", packageId] as const,
+};
 
 // Mock API service - Replace with actual API calls
 const packageApi = {
@@ -71,7 +74,7 @@ const packageApi = {
       page: filters?.page || 1,
       limit: filters?.limit || 20,
       total_pages: 0,
-    }
+    };
   },
 
   async getPackage(id: string): Promise<CodePackage> {
@@ -79,42 +82,52 @@ const packageApi = {
     // const response = await fetch(`/api/v1/marketplace/packages/${id}`)
     // return response.json()
 
-    throw new Error('Package not found')
+    throw new Error("Package not found");
   },
 
   async getPopularPackages(): Promise<CodePackage[]> {
     // TODO: Replace with actual API call
-    return []
+    return [];
   },
 
   async getMyPackages(): Promise<CodePackage[]> {
     // TODO: Replace with actual API call
-    return []
+    return [];
   },
 
-  async getInstalledPackages(projectId: string): Promise<PackageInstallation[]> {
+  async getInstalledPackages(
+    projectId: string
+  ): Promise<PackageInstallation[]> {
     // TODO: Replace with actual API call
-    return []
+    return [];
   },
 
   async createPackage(data: CreatePackageRequest): Promise<CodePackage> {
     // TODO: Replace with actual API call
-    throw new Error('Not implemented')
+    throw new Error("Not implemented");
   },
 
-  async updatePackage(id: string, data: UpdatePackageRequest): Promise<CodePackage> {
+  async updatePackage(
+    id: string,
+    data: UpdatePackageRequest
+  ): Promise<CodePackage> {
     // TODO: Replace with actual API call
-    throw new Error('Not implemented')
+    throw new Error("Not implemented");
   },
 
-  async publishVersion(packageId: string, data: PublishVersionRequest): Promise<CodePackage> {
+  async publishVersion(
+    packageId: string,
+    data: PublishVersionRequest
+  ): Promise<CodePackage> {
     // TODO: Replace with actual API call
-    throw new Error('Not implemented')
+    throw new Error("Not implemented");
   },
 
-  async installPackage(data: InstallPackageRequest): Promise<PackageInstallation> {
+  async installPackage(
+    data: InstallPackageRequest
+  ): Promise<PackageInstallation> {
     // TODO: Replace with actual API call
-    throw new Error('Not implemented')
+    throw new Error("Not implemented");
   },
 
   async uninstallPackage(installationId: string): Promise<void> {
@@ -123,12 +136,12 @@ const packageApi = {
 
   async getRatings(packageId: string): Promise<PackageRating[]> {
     // TODO: Replace with actual API call
-    return []
+    return [];
   },
 
   async ratePackage(data: RatePackageRequest): Promise<PackageRating> {
     // TODO: Replace with actual API call
-    throw new Error('Not implemented')
+    throw new Error("Not implemented");
   },
 
   async reportPackage(data: ReportPackageRequest): Promise<void> {
@@ -138,7 +151,7 @@ const packageApi = {
   async deletePackage(id: string): Promise<void> {
     // TODO: Replace with actual API call
   },
-}
+};
 
 /**
  * Hook to search and filter packages
@@ -156,7 +169,7 @@ export function usePackages(filters?: SearchFilters) {
     queryFn: () => packageApi.searchPackages(filters),
     placeholderData: (previousData) => previousData,
     staleTime: 30000, // Consider data fresh for 30 seconds
-  })
+  });
 }
 
 /**
@@ -172,7 +185,7 @@ export function usePackageDetails(id: string, enabled = true) {
     enabled: enabled && !!id,
     placeholderData: (previousData) => previousData,
     staleTime: 60000, // Details stay fresh for 1 minute
-  })
+  });
 }
 
 /**
@@ -188,7 +201,7 @@ export function usePopularPackages() {
     queryFn: () => packageApi.getPopularPackages(),
     placeholderData: (previousData) => previousData,
     staleTime: 300000, // Stay fresh for 5 minutes
-  })
+  });
 }
 
 /**
@@ -204,7 +217,7 @@ export function useMyPackages() {
     queryFn: () => packageApi.getMyPackages(),
     placeholderData: (previousData) => previousData,
     staleTime: 30000,
-  })
+  });
 }
 
 /**
@@ -220,7 +233,7 @@ export function useInstalledPackages(projectId: string, enabled = true) {
     enabled: enabled && !!projectId,
     placeholderData: (previousData) => previousData,
     staleTime: 30000,
-  })
+  });
 }
 
 /**
@@ -236,7 +249,7 @@ export function usePackageRatings(packageId: string, enabled = true) {
     enabled: enabled && !!packageId,
     placeholderData: (previousData) => previousData,
     staleTime: 60000,
-  })
+  });
 }
 
 /**
@@ -247,19 +260,19 @@ export function usePackageRatings(packageId: string, enabled = true) {
  * - Returns mutation state (isLoading, error, etc.)
  */
 export function useCreatePackage() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (data: CreatePackageRequest) => packageApi.createPackage(data),
     onSuccess: (newPackage) => {
       // Invalidate lists to show new package
-      queryClient.invalidateQueries({ queryKey: packageKeys.lists() })
-      queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() })
+      queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
 
       // Set the new package in cache
-      queryClient.setQueryData(packageKeys.detail(newPackage.id), newPackage)
+      queryClient.setQueryData(packageKeys.detail(newPackage.id), newPackage);
     },
-  })
+  });
 }
 
 /**
@@ -270,41 +283,46 @@ export function useCreatePackage() {
  * - Automatic rollback on error
  */
 export function useUpdatePackage() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdatePackageRequest }) =>
       packageApi.updatePackage(id, data),
     onMutate: async ({ id, data }) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: packageKeys.detail(id) })
+      await queryClient.cancelQueries({ queryKey: packageKeys.detail(id) });
 
       // Snapshot previous value
-      const previousPackage = queryClient.getQueryData<CodePackage>(packageKeys.detail(id))
+      const previousPackage = queryClient.getQueryData<CodePackage>(
+        packageKeys.detail(id)
+      );
 
       // Optimistically update
       if (previousPackage) {
         queryClient.setQueryData<CodePackage>(packageKeys.detail(id), {
           ...previousPackage,
           ...data,
-        })
+        });
       }
 
-      return { previousPackage, id }
+      return { previousPackage, id };
     },
     onError: (_err, _variables, context) => {
       // Rollback on error
       if (context?.previousPackage) {
-        queryClient.setQueryData(packageKeys.detail(context.id), context.previousPackage)
+        queryClient.setQueryData(
+          packageKeys.detail(context.id),
+          context.previousPackage
+        );
       }
     },
     onSuccess: (_data, { id }) => {
       // Refetch to ensure consistency
-      queryClient.invalidateQueries({ queryKey: packageKeys.detail(id) })
-      queryClient.invalidateQueries({ queryKey: packageKeys.lists() })
-      queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() })
+      queryClient.invalidateQueries({ queryKey: packageKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
     },
-  })
+  });
 }
 
 /**
@@ -315,18 +333,23 @@ export function useUpdatePackage() {
  * - Triggers security scan automatically
  */
 export function usePublishVersion() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ packageId, data }: { packageId: string; data: PublishVersionRequest }) =>
-      packageApi.publishVersion(packageId, data),
+    mutationFn: ({
+      packageId,
+      data,
+    }: {
+      packageId: string;
+      data: PublishVersionRequest;
+    }) => packageApi.publishVersion(packageId, data),
     onSuccess: (updatedPackage, { packageId }) => {
       // Update package details with new version
-      queryClient.setQueryData(packageKeys.detail(packageId), updatedPackage)
-      queryClient.invalidateQueries({ queryKey: packageKeys.lists() })
-      queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() })
+      queryClient.setQueryData(packageKeys.detail(packageId), updatedPackage);
+      queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
     },
-  })
+  });
 }
 
 /**
@@ -338,18 +361,23 @@ export function usePublishVersion() {
  * - Tracks installation status
  */
 export function useInstallPackage() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: InstallPackageRequest) => packageApi.installPackage(data),
+    mutationFn: (data: InstallPackageRequest) =>
+      packageApi.installPackage(data),
     onSuccess: (installation, variables) => {
       // Update installed packages list
-      queryClient.invalidateQueries({ queryKey: packageKeys.installed(variables.project_id) })
+      queryClient.invalidateQueries({
+        queryKey: packageKeys.installed(variables.project_id),
+      });
 
       // Update package stats (download count)
-      queryClient.invalidateQueries({ queryKey: packageKeys.detail(variables.package_id) })
+      queryClient.invalidateQueries({
+        queryKey: packageKeys.detail(variables.package_id),
+      });
     },
-  })
+  });
 }
 
 /**
@@ -360,15 +388,16 @@ export function useInstallPackage() {
  * - Optimistic removal from UI
  */
 export function useUninstallPackage() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (installationId: string) => packageApi.uninstallPackage(installationId),
+    mutationFn: (installationId: string) =>
+      packageApi.uninstallPackage(installationId),
     onSuccess: (_data, _variables, context: any) => {
       // Invalidate all installed package queries
-      queryClient.invalidateQueries({ queryKey: packageKeys.all })
+      queryClient.invalidateQueries({ queryKey: packageKeys.all });
     },
-  })
+  });
 }
 
 /**
@@ -379,18 +408,22 @@ export function useUninstallPackage() {
  * - Updates package rating statistics
  */
 export function useRatePackage() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (data: RatePackageRequest) => packageApi.ratePackage(data),
     onSuccess: (newRating, variables) => {
       // Invalidate ratings list
-      queryClient.invalidateQueries({ queryKey: packageKeys.ratings(variables.package_id) })
+      queryClient.invalidateQueries({
+        queryKey: packageKeys.ratings(variables.package_id),
+      });
 
       // Invalidate package details to update average rating
-      queryClient.invalidateQueries({ queryKey: packageKeys.detail(variables.package_id) })
+      queryClient.invalidateQueries({
+        queryKey: packageKeys.detail(variables.package_id),
+      });
     },
-  })
+  });
 }
 
 /**
@@ -403,7 +436,7 @@ export function useRatePackage() {
 export function useReportPackage() {
   return useMutation({
     mutationFn: (data: ReportPackageRequest) => packageApi.reportPackage(data),
-  })
+  });
 }
 
 /**
@@ -414,14 +447,14 @@ export function useReportPackage() {
  * - Removes package and all versions
  */
 export function useDeletePackage() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (id: string) => packageApi.deletePackage(id),
     onSuccess: () => {
       // Invalidate all package queries
-      queryClient.invalidateQueries({ queryKey: packageKeys.lists() })
-      queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() })
+      queryClient.invalidateQueries({ queryKey: packageKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: packageKeys.myPackages() });
     },
-  })
+  });
 }

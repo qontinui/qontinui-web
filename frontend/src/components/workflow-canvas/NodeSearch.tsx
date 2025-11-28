@@ -5,12 +5,12 @@
  * and search history. Supports Ctrl+K / Cmd+K shortcut.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ActionType } from '@/lib/action-schema/action-types';
-import { searchNodes, NODE_METADATA } from './palette-config';
-import { PaletteItem } from './PaletteItem';
-import { Search, X, Clock, TrendingUp } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { ActionType } from "@/lib/action-schema/action-types";
+import { searchNodes, NODE_METADATA } from "./palette-config";
+import { PaletteItem } from "./PaletteItem";
+import { Search, X, Clock, TrendingUp } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -42,7 +42,7 @@ const SEARCH_DEBOUNCE_MS = 100;
 // Local Storage Keys
 // ============================================================================
 
-const SEARCH_HISTORY_KEY = 'qontinui-node-search-history';
+const SEARCH_HISTORY_KEY = "qontinui-node-search-history";
 
 // ============================================================================
 // Component
@@ -54,10 +54,10 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
   autoFocus = true,
   showHistory = true,
   maxResults = 20,
-  placeholder = 'Search nodes...',
+  placeholder = "Search nodes...",
   className,
 }) => {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState(Object.values(NODE_METADATA));
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
@@ -78,34 +78,37 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
         setSearchHistory(history);
       }
     } catch (error) {
-      console.error('Failed to load search history:', error);
+      console.error("Failed to load search history:", error);
     }
   }, [showHistory]);
 
   // Save to history
-  const saveToHistory = useCallback((searchQuery: string) => {
-    if (!searchQuery.trim() || !showHistory) return;
+  const saveToHistory = useCallback(
+    (searchQuery: string) => {
+      if (!searchQuery.trim() || !showHistory) return;
 
-    setSearchHistory((prev) => {
-      // Remove existing entry if present
-      const filtered = prev.filter((entry) => entry.query !== searchQuery);
+      setSearchHistory((prev) => {
+        // Remove existing entry if present
+        const filtered = prev.filter((entry) => entry.query !== searchQuery);
 
-      // Add to front
-      const newHistory = [
-        { query: searchQuery, timestamp: Date.now() },
-        ...filtered,
-      ].slice(0, MAX_HISTORY_ITEMS);
+        // Add to front
+        const newHistory = [
+          { query: searchQuery, timestamp: Date.now() },
+          ...filtered,
+        ].slice(0, MAX_HISTORY_ITEMS);
 
-      // Persist to localStorage
-      try {
-        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
-      } catch (error) {
-        console.error('Failed to save search history:', error);
-      }
+        // Persist to localStorage
+        try {
+          localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
+        } catch (error) {
+          console.error("Failed to save search history:", error);
+        }
 
-      return newHistory;
-    });
-  }, [showHistory]);
+        return newHistory;
+      });
+    },
+    [showHistory]
+  );
 
   // Debounced search
   useEffect(() => {
@@ -137,33 +140,33 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key) {
-        case 'ArrowDown':
+        case "ArrowDown":
           e.preventDefault();
           setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
           break;
 
-        case 'ArrowUp':
+        case "ArrowUp":
           e.preventDefault();
           setSelectedIndex((prev) => Math.max(prev - 1, 0));
           break;
 
-        case 'Enter':
+        case "Enter":
           e.preventDefault();
           if (results[selectedIndex]) {
             handleSelect(results[selectedIndex].type);
           }
           break;
 
-        case 'Escape':
+        case "Escape":
           e.preventDefault();
           if (query) {
-            setQuery('');
+            setQuery("");
           } else if (onClose) {
             onClose();
           }
           break;
 
-        case 'Tab':
+        case "Tab":
           // Allow tab to cycle through results
           e.preventDefault();
           if (e.shiftKey) {
@@ -175,8 +178,8 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [results, selectedIndex, query, onClose]);
 
   // Scroll selected item into view
@@ -187,8 +190,8 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
       );
       if (selectedElement) {
         selectedElement.scrollIntoView({
-          block: 'nearest',
-          behavior: 'smooth',
+          block: "nearest",
+          behavior: "smooth",
         });
       }
     }
@@ -201,7 +204,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
     if (onSelect) {
       onSelect(nodeType);
     }
-    setQuery('');
+    setQuery("");
     setSelectedIndex(0);
   };
 
@@ -228,7 +231,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
   };
 
   return (
-    <div className={cn('node-search', className)}>
+    <div className={cn("node-search", className)}>
       {/* Search Input */}
       <div className="node-search__input-wrapper">
         <Search className="node-search__search-icon h-5 w-5 text-gray-400" />
@@ -245,7 +248,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
         {query && (
           <button
             className="node-search__clear-btn"
-            onClick={() => setQuery('')}
+            onClick={() => setQuery("")}
             title="Clear search"
           >
             <X className="h-4 w-4" />
@@ -291,12 +294,10 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
           <>
             <div className="node-search__results-header">
               <span className="text-sm text-gray-600">
-                {results.length} result{results.length !== 1 ? 's' : ''}
+                {results.length} result{results.length !== 1 ? "s" : ""}
               </span>
               {query && (
-                <span className="text-xs text-gray-500">
-                  for "{query}"
-                </span>
+                <span className="text-xs text-gray-500">for "{query}"</span>
               )}
             </div>
             <div className="node-search__results-list">
@@ -305,8 +306,9 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
                   key={metadata.type}
                   data-index={index}
                   className={cn(
-                    'node-search__result-item',
-                    selectedIndex === index && 'node-search__result-item--selected'
+                    "node-search__result-item",
+                    selectedIndex === index &&
+                      "node-search__result-item--selected"
                   )}
                   onClick={() => handleSelect(metadata.type)}
                   onMouseEnter={() => setSelectedIndex(index)}
@@ -342,7 +344,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
           <kbd>Enter</kbd> Select
         </div>
         <div className="node-search__hint">
-          <kbd>Esc</kbd> {query ? 'Clear' : 'Close'}
+          <kbd>Esc</kbd> {query ? "Clear" : "Close"}
         </div>
       </div>
     </div>
@@ -367,7 +369,7 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+K or Cmd+K to open
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
         if (!isOpen) {
           // Would trigger open in parent
@@ -375,8 +377,8 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -415,14 +417,14 @@ export function useNodeSearchShortcut(
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+K or Cmd+K
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
         onOpen();
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onOpen, enabled]);
 }
 

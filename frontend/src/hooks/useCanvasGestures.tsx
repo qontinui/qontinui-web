@@ -11,8 +11,8 @@
  * - Shift + Drag: Constrain to axis
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useReactFlow } from '@xyflow/react';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useReactFlow } from "@xyflow/react";
 
 // ============================================================================
 // Types
@@ -38,7 +38,10 @@ export interface CanvasGesturesConfig {
   enableShiftConstrain?: boolean;
   onDoubleClickNode?: (nodeId: string) => void;
   onDoubleClickCanvas?: (position: { x: number; y: number }) => void;
-  onNodeDuplicate?: (nodeId: string, position: { x: number; y: number }) => void;
+  onNodeDuplicate?: (
+    nodeId: string,
+    position: { x: number; y: number }
+  ) => void;
 }
 
 // ============================================================================
@@ -81,28 +84,32 @@ export function useCanvasGestures(config: CanvasGesturesConfig = {}) {
     if (!enablePanOnSpace) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !gestureState.isSpaceHeld) {
+      if (e.code === "Space" && !gestureState.isSpaceHeld) {
         e.preventDefault();
-        setGestureState(prev => ({ ...prev, isSpaceHeld: true }));
-        document.body.style.cursor = 'grab';
+        setGestureState((prev) => ({ ...prev, isSpaceHeld: true }));
+        document.body.style.cursor = "grab";
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        setGestureState(prev => ({ ...prev, isSpaceHeld: false, isPanning: false }));
-        document.body.style.cursor = 'default';
+      if (e.code === "Space") {
+        setGestureState((prev) => ({
+          ...prev,
+          isSpaceHeld: false,
+          isPanning: false,
+        }));
+        document.body.style.cursor = "default";
         panStartRef.current = null;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      document.body.style.cursor = 'default';
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      document.body.style.cursor = "default";
     };
   }, [enablePanOnSpace, gestureState.isSpaceHeld]);
 
@@ -116,16 +123,16 @@ export function useCanvasGestures(config: CanvasGesturesConfig = {}) {
       if (enableMiddleMousePan && e.button === 1) {
         e.preventDefault();
         panStartRef.current = { x: e.clientX, y: e.clientY };
-        setGestureState(prev => ({ ...prev, isPanning: true }));
-        document.body.style.cursor = 'grabbing';
+        setGestureState((prev) => ({ ...prev, isPanning: true }));
+        document.body.style.cursor = "grabbing";
       }
 
       // Space + Left click panning
       if (enablePanOnSpace && gestureState.isSpaceHeld && e.button === 0) {
         e.preventDefault();
         panStartRef.current = { x: e.clientX, y: e.clientY };
-        setGestureState(prev => ({ ...prev, isPanning: true }));
-        document.body.style.cursor = 'grabbing';
+        setGestureState((prev) => ({ ...prev, isPanning: true }));
+        document.body.style.cursor = "grabbing";
       }
     };
 
@@ -147,20 +154,22 @@ export function useCanvasGestures(config: CanvasGesturesConfig = {}) {
 
     const handleMouseUp = (e: MouseEvent) => {
       if (e.button === 1 || (gestureState.isSpaceHeld && e.button === 0)) {
-        setGestureState(prev => ({ ...prev, isPanning: false }));
+        setGestureState((prev) => ({ ...prev, isPanning: false }));
         panStartRef.current = null;
-        document.body.style.cursor = gestureState.isSpaceHeld ? 'grab' : 'default';
+        document.body.style.cursor = gestureState.isSpaceHeld
+          ? "grab"
+          : "default";
       }
     };
 
-    window.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
 
     return () => {
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [
     enableMiddleMousePan,
@@ -194,10 +203,10 @@ export function useCanvasGestures(config: CanvasGesturesConfig = {}) {
       }
     };
 
-    window.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener("wheel", handleWheel, { passive: false });
 
     return () => {
-      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener("wheel", handleWheel);
     };
   }, [enableZoomOnCtrlScroll, reactFlow]);
 
@@ -207,7 +216,7 @@ export function useCanvasGestures(config: CanvasGesturesConfig = {}) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      setGestureState(prev => ({
+      setGestureState((prev) => ({
         ...prev,
         isAltHeld: e.altKey,
         isShiftHeld: e.shiftKey,
@@ -216,7 +225,7 @@ export function useCanvasGestures(config: CanvasGesturesConfig = {}) {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      setGestureState(prev => ({
+      setGestureState((prev) => ({
         ...prev,
         isAltHeld: e.altKey,
         isShiftHeld: e.shiftKey,
@@ -224,12 +233,12 @@ export function useCanvasGestures(config: CanvasGesturesConfig = {}) {
       }));
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
     };
   }, []);
 
@@ -238,7 +247,10 @@ export function useCanvasGestures(config: CanvasGesturesConfig = {}) {
   // ========================================================================
 
   const constrainToAxis = useCallback(
-    (position: { x: number; y: number }, startPosition: { x: number; y: number }) => {
+    (
+      position: { x: number; y: number },
+      startPosition: { x: number; y: number }
+    ) => {
       if (!enableShiftConstrain || !gestureState.isShiftHeld) {
         return position;
       }
@@ -308,19 +320,27 @@ export function GestureHints() {
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2 text-xs text-gray-300">
           <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">Space</kbd>
+            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">
+              Space
+            </kbd>
             <span>+ Drag to pan</span>
           </div>
           <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">Ctrl</kbd>
+            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">
+              Ctrl
+            </kbd>
             <span>+ Scroll to zoom</span>
           </div>
           <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">Shift</kbd>
+            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">
+              Shift
+            </kbd>
             <span>+ Drag to constrain axis</span>
           </div>
           <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">Alt</kbd>
+            <kbd className="px-2 py-1 bg-gray-900 border border-gray-700 rounded font-mono">
+              Alt
+            </kbd>
             <span>+ Drag to duplicate</span>
           </div>
         </div>
@@ -328,8 +348,18 @@ export function GestureHints() {
           onClick={() => setShowHints(false)}
           className="text-gray-400 hover:text-white transition-colors"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>

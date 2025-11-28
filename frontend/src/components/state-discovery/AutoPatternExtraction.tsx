@@ -3,21 +3,43 @@
  * EXPERIMENTAL: Computer Vision-powered pattern extraction using OpenCV
  */
 
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Slider } from '@/components/ui/slider';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Sparkles, Loader2, Image as ImageIcon, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
-import { useAutomation } from '@/contexts/automation-context';
-import { prepareStateImageCreation } from '@/lib/state-image-creator';
-import { createImageAsset, imageExistsInLibrary } from '@/lib/image-library-utils';
-import { toast } from 'sonner';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Sparkles,
+  Loader2,
+  Image as ImageIcon,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+} from "lucide-react";
+import { useAutomation } from "@/contexts/automation-context";
+import { prepareStateImageCreation } from "@/lib/state-image-creator";
+import {
+  createImageAsset,
+  imageExistsInLibrary,
+} from "@/lib/image-library-utils";
+import { toast } from "sonner";
 
 interface AutoPatternExtractionProps {
   onSuccess?: () => void;
@@ -33,32 +55,39 @@ interface DetectedPattern {
   source_screenshot: string;
 }
 
-export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ onSuccess, screenshots }) => {
-  const [stateName, setStateName] = useState('');
-  const [screenshotPaths, setScreenshotPaths] = useState<string>('');
+export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
+  onSuccess,
+  screenshots,
+}) => {
+  const [stateName, setStateName] = useState("");
+  const [screenshotPaths, setScreenshotPaths] = useState<string>("");
   const [detectButtons, setDetectButtons] = useState(true);
   const [detectInputs, setDetectInputs] = useState(true);
   const [detectIcons, setDetectIcons] = useState(true);
   const [minConfidence, setMinConfidence] = useState(0.7);
   const [isExtracting, setIsExtracting] = useState(false);
-  const [detectedPatterns, setDetectedPatterns] = useState<DetectedPattern[]>([]);
-  const [selectedPatterns, setSelectedPatterns] = useState<Set<string>>(new Set());
+  const [detectedPatterns, setDetectedPatterns] = useState<DetectedPattern[]>(
+    []
+  );
+  const [selectedPatterns, setSelectedPatterns] = useState<Set<string>>(
+    new Set()
+  );
 
   const { states, addState, updateState, images, addImage } = useAutomation();
 
   const handleExtract = async () => {
     if (!stateName.trim()) {
-      toast.error('Please enter a state name');
+      toast.error("Please enter a state name");
       return;
     }
 
     if (!screenshotPaths.trim()) {
-      toast.error('Please enter screenshot paths');
+      toast.error("Please enter screenshot paths");
       return;
     }
 
     if (!detectButtons && !detectInputs && !detectIcons) {
-      toast.error('Please select at least one detection type');
+      toast.error("Please select at least one detection type");
       return;
     }
 
@@ -74,28 +103,31 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
         .filter((p) => p.length > 0);
 
       if (paths.length === 0) {
-        toast.error('No valid screenshot paths provided');
+        toast.error("No valid screenshot paths provided");
         setIsExtracting(false);
         return;
       }
 
-      const response = await fetch('/api/integration-testing/patterns/auto-extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          state_name: stateName,
-          screenshot_paths: paths,
-          snapshot_ids: [],
-          detect_buttons: detectButtons,
-          detect_inputs: detectInputs,
-          detect_icons: detectIcons,
-          min_confidence: minConfidence,
-        }),
-      });
+      const response = await fetch(
+        "/api/integration-testing/patterns/auto-extract",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            state_name: stateName,
+            screenshot_paths: paths,
+            snapshot_ids: [],
+            detect_buttons: detectButtons,
+            detect_inputs: detectInputs,
+            detect_icons: detectIcons,
+            min_confidence: minConfidence,
+          }),
+        }
+      );
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || 'Extraction failed');
+        throw new Error(error.detail || "Extraction failed");
       }
 
       const data = await response.json();
@@ -107,10 +139,14 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
         .map((p: DetectedPattern) => p.suggested_name);
       setSelectedPatterns(new Set(autoSelected));
 
-      toast.success(`Detected ${data.total_detected} patterns from ${data.total_screenshots} screenshots`);
+      toast.success(
+        `Detected ${data.total_detected} patterns from ${data.total_screenshots} screenshots`
+      );
     } catch (error) {
-      console.error('Extraction failed:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to extract patterns');
+      console.error("Extraction failed:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to extract patterns"
+      );
     } finally {
       setIsExtracting(false);
     }
@@ -128,13 +164,15 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
 
   const handleSaveSelected = async () => {
     if (selectedPatterns.size === 0) {
-      toast.error('Please select at least one pattern');
+      toast.error("Please select at least one pattern");
       return;
     }
 
     try {
       let addedCount = 0;
-      const patternsToSave = detectedPatterns.filter((p) => selectedPatterns.has(p.suggested_name));
+      const patternsToSave = detectedPatterns.filter((p) =>
+        selectedPatterns.has(p.suggested_name)
+      );
 
       for (const pattern of patternsToSave) {
         // Add to Image Library if not already exists
@@ -142,7 +180,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
           const imageAsset = createImageAsset(
             pattern.image_data,
             pattern.suggested_name,
-            'auto_extraction'
+            "auto_extraction"
           );
           addImage(imageAsset);
           addedCount++;
@@ -158,8 +196,8 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
       // Reset selections
       setSelectedPatterns(new Set());
     } catch (error) {
-      console.error('Failed to save patterns:', error);
-      toast.error('Failed to save patterns');
+      console.error("Failed to save patterns:", error);
+      toast.error("Failed to save patterns");
     }
   };
 
@@ -169,8 +207,9 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
       <Alert className="border-yellow-500 bg-yellow-50">
         <AlertTriangle className="h-4 w-4 text-yellow-600" />
         <AlertDescription className="text-yellow-900">
-          <strong>EXPERIMENTAL FEATURE:</strong> Computer vision-based pattern detection using OpenCV.
-          Accuracy may vary depending on screenshot quality and UI design.
+          <strong>EXPERIMENTAL FEATURE:</strong> Computer vision-based pattern
+          detection using OpenCV. Accuracy may vary depending on screenshot
+          quality and UI design.
         </AlertDescription>
       </Alert>
 
@@ -180,10 +219,13 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
             Auto-Extract Patterns
-            <Badge variant="outline" className="ml-2">EXPERIMENTAL</Badge>
+            <Badge variant="outline" className="ml-2">
+              EXPERIMENTAL
+            </Badge>
           </CardTitle>
           <CardDescription>
-            Uses computer vision to automatically detect UI elements like buttons, inputs, and icons
+            Uses computer vision to automatically detect UI elements like
+            buttons, inputs, and icons
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -196,7 +238,9 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
               value={stateName}
               onChange={(e) => setStateName(e.target.value)}
             />
-            <p className="text-xs text-gray-600">Used for naming detected patterns</p>
+            <p className="text-xs text-gray-600">
+              Used for naming detected patterns
+            </p>
           </div>
 
           {/* Screenshot Paths */}
@@ -221,7 +265,9 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
                 <Checkbox
                   id="detect-buttons"
                   checked={detectButtons}
-                  onCheckedChange={(checked) => setDetectButtons(checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    setDetectButtons(checked as boolean)
+                  }
                 />
                 <label
                   htmlFor="detect-buttons"
@@ -234,7 +280,9 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
                 <Checkbox
                   id="detect-inputs"
                   checked={detectInputs}
-                  onCheckedChange={(checked) => setDetectInputs(checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    setDetectInputs(checked as boolean)
+                  }
                 />
                 <label
                   htmlFor="detect-inputs"
@@ -247,7 +295,9 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
                 <Checkbox
                   id="detect-icons"
                   checked={detectIcons}
-                  onCheckedChange={(checked) => setDetectIcons(checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    setDetectIcons(checked as boolean)
+                  }
                 />
                 <label
                   htmlFor="detect-icons"
@@ -263,7 +313,9 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
           <div className="space-y-2">
             <div className="flex justify-between">
               <Label>Min Confidence Threshold</Label>
-              <span className="text-sm text-gray-600">{(minConfidence * 100).toFixed(0)}%</span>
+              <span className="text-sm text-gray-600">
+                {(minConfidence * 100).toFixed(0)}%
+              </span>
             </div>
             <Slider
               value={[minConfidence]}
@@ -278,7 +330,11 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
             </p>
           </div>
 
-          <Button onClick={handleExtract} disabled={isExtracting} className="w-full">
+          <Button
+            onClick={handleExtract}
+            disabled={isExtracting}
+            className="w-full"
+          >
             {isExtracting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -299,10 +355,18 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Detected Patterns ({detectedPatterns.length})</CardTitle>
+              <CardTitle>
+                Detected Patterns ({detectedPatterns.length})
+              </CardTitle>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">{selectedPatterns.size} selected</span>
-                <Button onClick={handleSaveSelected} disabled={selectedPatterns.size === 0} size="sm">
+                <span className="text-sm text-gray-600">
+                  {selectedPatterns.size} selected
+                </span>
+                <Button
+                  onClick={handleSaveSelected}
+                  disabled={selectedPatterns.size === 0}
+                  size="sm"
+                >
                   Save Selected ({selectedPatterns.size})
                 </Button>
               </div>
@@ -315,8 +379,8 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
                   key={index}
                   className={`p-2 border rounded cursor-pointer transition-all ${
                     selectedPatterns.has(pattern.suggested_name)
-                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                      : 'border-gray-200 hover:bg-gray-50'
+                      ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200"
+                      : "border-gray-200 hover:bg-gray-50"
                   }`}
                   onClick={() => handleTogglePattern(pattern.suggested_name)}
                 >
@@ -332,7 +396,10 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
                     )}
                   </div>
                   <div className="space-y-1">
-                    <div className="text-xs font-medium truncate" title={pattern.suggested_name}>
+                    <div
+                      className="text-xs font-medium truncate"
+                      title={pattern.suggested_name}
+                    >
                       {pattern.suggested_name}
                     </div>
                     <div className="flex items-center justify-between text-xs">
@@ -342,17 +409,25 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({ on
                       <span
                         className={`font-medium ${
                           pattern.confidence >= 0.8
-                            ? 'text-green-600'
+                            ? "text-green-600"
                             : pattern.confidence >= 0.6
-                            ? 'text-yellow-600'
-                            : 'text-red-600'
+                              ? "text-yellow-600"
+                              : "text-red-600"
                         }`}
                       >
                         {(pattern.confidence * 100).toFixed(0)}%
                       </span>
                     </div>
-                    <div className="text-xs text-gray-500 truncate" title={pattern.region ? `${pattern.region.w}x${pattern.region.h}` : ''}>
-                      {pattern.region && `${pattern.region.w}x${pattern.region.h}px`}
+                    <div
+                      className="text-xs text-gray-500 truncate"
+                      title={
+                        pattern.region
+                          ? `${pattern.region.w}x${pattern.region.h}`
+                          : ""
+                      }
+                    >
+                      {pattern.region &&
+                        `${pattern.region.w}x${pattern.region.h}px`}
                     </div>
                   </div>
                   {selectedPatterns.has(pattern.suggested_name) && (

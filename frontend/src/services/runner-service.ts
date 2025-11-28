@@ -1,5 +1,5 @@
-import { HttpClient } from './http-client';
-import { ApiConfig } from './api-config';
+import { HttpClient } from "./http-client";
+import { ApiConfig } from "./api-config";
 import type {
   RunnerToken,
   RunnerTokenWithSecret,
@@ -8,8 +8,8 @@ import type {
   ConnectionHistoryResponse,
   CreateTokenRequest,
   ConnectionInfo,
-  TestConnectionResponse
-} from '@/types/runner';
+  TestConnectionResponse,
+} from "@/types/runner";
 
 /**
  * RunnerService - Handles desktop runner token management and connection tracking
@@ -22,30 +22,35 @@ export class RunnerService {
     this.httpClient = httpClient;
     // Always use relative URLs for browser requests - they go through Next.js proxy
     // which handles CORS and forwards to the backend
-    this.baseUrl = '/api/v1';
+    this.baseUrl = "/api/v1";
   }
 
   /**
    * Token Management
    */
 
-  async createToken(name: string, expiresInDays?: number | null): Promise<RunnerTokenWithSecret> {
+  async createToken(
+    name: string,
+    expiresInDays?: number | null
+  ): Promise<RunnerTokenWithSecret> {
     const body: CreateTokenRequest = {
       name,
-      expires_in_days: expiresInDays
+      expires_in_days: expiresInDays,
     };
 
     const response = await this.httpClient.fetch(
       `${this.baseUrl}/runners/tokens`,
       {
-        method: 'POST',
-        body: JSON.stringify(body)
+        method: "POST",
+        body: JSON.stringify(body),
       }
     );
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Failed to create token' }));
-      throw new Error(error.detail || 'Failed to create token');
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Failed to create token" }));
+      throw new Error(error.detail || "Failed to create token");
     }
 
     return response.json();
@@ -57,7 +62,7 @@ export class RunnerService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch runner tokens');
+      throw new Error("Failed to fetch runner tokens");
     }
 
     return response.json();
@@ -68,13 +73,15 @@ export class RunnerService {
     const response = await this.httpClient.fetch(
       `${this.baseUrl}/runners/tokens/${tokenId}`,
       {
-        method: 'DELETE'
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Failed to revoke token' }));
-      throw new Error(error.detail || 'Failed to revoke token');
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Failed to revoke token" }));
+      throw new Error(error.detail || "Failed to revoke token");
     }
   }
 
@@ -83,13 +90,15 @@ export class RunnerService {
     const response = await this.httpClient.fetch(
       `${this.baseUrl}/runners/tokens/${tokenId}/permanent`,
       {
-        method: 'DELETE'
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Failed to delete token' }));
-      throw new Error(error.detail || 'Failed to delete token');
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Failed to delete token" }));
+      throw new Error(error.detail || "Failed to delete token");
     }
   }
 
@@ -103,26 +112,28 @@ export class RunnerService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch active connections');
+      throw new Error("Failed to fetch active connections");
     }
 
     return response.json();
   }
 
-  async getConnectionHistory(params: ConnectionHistoryParams = {}): Promise<ConnectionHistoryResponse> {
+  async getConnectionHistory(
+    params: ConnectionHistoryParams = {}
+  ): Promise<ConnectionHistoryResponse> {
     const queryParams = new URLSearchParams();
 
-    if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.offset) queryParams.append('offset', params.offset.toString());
-    if (params.search) queryParams.append('search', params.search);
-    if (params.start_date) queryParams.append('start_date', params.start_date);
-    if (params.end_date) queryParams.append('end_date', params.end_date);
+    if (params.limit) queryParams.append("limit", params.limit.toString());
+    if (params.offset) queryParams.append("offset", params.offset.toString());
+    if (params.search) queryParams.append("search", params.search);
+    if (params.start_date) queryParams.append("start_date", params.start_date);
+    if (params.end_date) queryParams.append("end_date", params.end_date);
 
     const url = `${this.baseUrl}/runners/connections?${queryParams.toString()}`;
     const response = await this.httpClient.fetch(url);
 
     if (!response.ok) {
-      throw new Error('Failed to fetch connection history');
+      throw new Error("Failed to fetch connection history");
     }
 
     return response.json();
@@ -132,13 +143,15 @@ export class RunnerService {
     const response = await this.httpClient.fetch(
       `${this.baseUrl}/runners/connections/${connectionId}/disconnect`,
       {
-        method: 'POST'
+        method: "POST",
       }
     );
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Failed to disconnect runner' }));
-      throw new Error(error.detail || 'Failed to disconnect runner');
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Failed to disconnect runner" }));
+      throw new Error(error.detail || "Failed to disconnect runner");
     }
   }
 
@@ -155,16 +168,17 @@ export class RunnerService {
     const queryParams = new URLSearchParams();
 
     if (createToken) {
-      queryParams.append('create_token', 'true');
-      if (tokenName) queryParams.append('token_name', tokenName);
-      if (expiresInDays) queryParams.append('expires_in_days', expiresInDays.toString());
+      queryParams.append("create_token", "true");
+      if (tokenName) queryParams.append("token_name", tokenName);
+      if (expiresInDays)
+        queryParams.append("expires_in_days", expiresInDays.toString());
     }
 
-    const url = `${this.baseUrl}/users/me/connection-info${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    const url = `${this.baseUrl}/users/me/connection-info${queryParams.toString() ? "?" + queryParams.toString() : ""}`;
     const response = await this.httpClient.fetch(url);
 
     if (!response.ok) {
-      throw new Error('Failed to fetch connection info');
+      throw new Error("Failed to fetch connection info");
     }
 
     return response.json();
@@ -179,7 +193,7 @@ export class RunnerService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch token');
+      throw new Error("Failed to fetch token");
     }
 
     return response.json();
@@ -188,17 +202,20 @@ export class RunnerService {
   /**
    * Get connections for a specific token
    */
-  async getTokenConnections(tokenId: string, params: ConnectionHistoryParams = {}): Promise<ConnectionHistoryResponse> {
+  async getTokenConnections(
+    tokenId: string,
+    params: ConnectionHistoryParams = {}
+  ): Promise<ConnectionHistoryResponse> {
     const queryParams = new URLSearchParams();
 
-    if (params.limit) queryParams.append('limit', params.limit.toString());
-    if (params.offset) queryParams.append('offset', params.offset.toString());
+    if (params.limit) queryParams.append("limit", params.limit.toString());
+    if (params.offset) queryParams.append("offset", params.offset.toString());
 
     const url = `${this.baseUrl}/runners/tokens/${tokenId}/connections?${queryParams.toString()}`;
     const response = await this.httpClient.fetch(url);
 
     if (!response.ok) {
-      throw new Error('Failed to fetch token connections');
+      throw new Error("Failed to fetch token connections");
     }
 
     return response.json();
@@ -212,13 +229,15 @@ export class RunnerService {
     const response = await this.httpClient.fetch(
       `${this.baseUrl}/runners/test-connection?token=${encodeURIComponent(token)}`,
       {
-        method: 'POST'
+        method: "POST",
       }
     );
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Connection test failed' }));
-      throw new Error(error.detail || 'Connection test failed');
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Connection test failed" }));
+      throw new Error(error.detail || "Connection test failed");
     }
 
     return response.json();

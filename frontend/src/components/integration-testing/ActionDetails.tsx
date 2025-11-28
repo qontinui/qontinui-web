@@ -1,7 +1,7 @@
 // components/integration-testing/ActionDetails.tsx
 
-import { Card } from '@/components/ui/card';
-import type { ActionVisualization } from '@/types/integration-testing';
+import { Card } from "@/components/ui/card";
+import type { ActionVisualization } from "@/types/integration-testing";
 
 interface ActionDetailsProps {
   action: ActionVisualization;
@@ -36,7 +36,8 @@ export function ActionDetails({ action }: ActionDetailsProps) {
           <div>
             <dt className="text-gray-500">Region</dt>
             <dd className="font-medium font-mono text-xs">
-              ({action.action_region.x}, {action.action_region.y}) {action.action_region.w}×{action.action_region.h}
+              ({action.action_region.x}, {action.action_region.y}){" "}
+              {action.action_region.w}×{action.action_region.h}
             </dd>
           </div>
         )}
@@ -48,7 +49,7 @@ export function ActionDetails({ action }: ActionDetailsProps) {
           </div>
         )}
 
-        {action.action_type === 'SCROLL' && (action as any).direction && (
+        {action.action_type === "SCROLL" && (action as any).direction && (
           <>
             <div>
               <dt className="text-gray-500">Direction</dt>
@@ -56,12 +57,15 @@ export function ActionDetails({ action }: ActionDetailsProps) {
             </div>
             <div>
               <dt className="text-gray-500">Amount</dt>
-              <dd className="font-medium">{(action as any).amount || 1} {((action as any).amount || 1) === 1 ? 'unit' : 'units'}</dd>
+              <dd className="font-medium">
+                {(action as any).amount || 1}{" "}
+                {((action as any).amount || 1) === 1 ? "unit" : "units"}
+              </dd>
             </div>
           </>
         )}
 
-        {action.action_type === 'WAIT' && (
+        {action.action_type === "WAIT" && (
           <div>
             <dt className="text-gray-500">Wait Duration</dt>
             <dd className="font-medium">
@@ -72,12 +76,13 @@ export function ActionDetails({ action }: ActionDetailsProps) {
           </div>
         )}
 
-        {(action.action_type === 'DEFINE' || action.action_type === 'VANISH') && (action as any).state_name && (
-          <div className="col-span-2">
-            <dt className="text-gray-500">State Name</dt>
-            <dd className="font-medium">{(action as any).state_name}</dd>
-          </div>
-        )}
+        {(action.action_type === "DEFINE" || action.action_type === "VANISH") &&
+          (action as any).state_name && (
+            <div className="col-span-2">
+              <dt className="text-gray-500">State Name</dt>
+              <dd className="font-medium">{(action as any).state_name}</dd>
+            </div>
+          )}
 
         {action.matches && action.matches.length > 0 && (
           <div className="col-span-2">
@@ -85,7 +90,8 @@ export function ActionDetails({ action }: ActionDetailsProps) {
             <dd className="space-y-1 mt-1">
               {action.matches.map((match, i) => (
                 <div key={i} className="text-xs font-mono">
-                  [{i}] ({match.x}, {match.y}) {match.w}×{match.h} - {Math.round(match.score * 100)}%
+                  [{i}] ({match.x}, {match.y}) {match.w}×{match.h} -{" "}
+                  {Math.round(match.score * 100)}%
                 </div>
               ))}
             </dd>
@@ -93,10 +99,15 @@ export function ActionDetails({ action }: ActionDetailsProps) {
         )}
 
         <div className="col-span-2">
-          <dt className="text-gray-500">Active States ({action.active_states.length})</dt>
+          <dt className="text-gray-500">
+            Active States ({action.active_states.length})
+          </dt>
           <dd className="flex flex-wrap gap-1 mt-1">
-            {action.active_states.map(state => (
-              <span key={state} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+            {action.active_states.map((state) => (
+              <span
+                key={state}
+                className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs"
+              >
                 {state}
               </span>
             ))}

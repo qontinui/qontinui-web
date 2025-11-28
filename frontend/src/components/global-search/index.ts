@@ -2,4 +2,4 @@
  * Global Search Component Exports
  */
 
-export { GlobalSearch, useGlobalSearch } from './GlobalSearch';
+export { GlobalSearch, useGlobalSearch } from "./GlobalSearch";

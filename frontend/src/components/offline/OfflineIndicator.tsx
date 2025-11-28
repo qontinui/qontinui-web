@@ -4,16 +4,16 @@
  * Shows connection status and sync queue status in the UI.
  */
 
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { syncQueue, SyncQueueStats } from '@/lib/sync-queue';
-import { syncProcessor } from '@/lib/sync-processor';
-import { WifiOff, Wifi, CloudOff, Cloud, RefreshCw } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { syncQueue, SyncQueueStats } from "@/lib/sync-queue";
+import { syncProcessor } from "@/lib/sync-processor";
+import { WifiOff, Wifi, CloudOff, Cloud, RefreshCw } from "lucide-react";
 
 export function OfflineIndicator() {
   const [isOnline, setIsOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true
+    typeof navigator !== "undefined" ? navigator.onLine : true
   );
   const [stats, setStats] = useState<SyncQueueStats>({
     total: 0,
@@ -37,8 +37,8 @@ export function OfflineIndicator() {
       setIsOnline(false);
     };
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     // Subscribe to sync queue changes
     const unsubscribe = syncQueue.subscribe((newStats) => {
@@ -54,15 +54,20 @@ export function OfflineIndicator() {
     }, 500);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
       unsubscribe();
       clearInterval(syncInterval);
     };
   }, []);
 
   // Don't show if everything is synced and online
-  if (isOnline && stats.pending === 0 && stats.syncing === 0 && stats.failed === 0) {
+  if (
+    isOnline &&
+    stats.pending === 0 &&
+    stats.syncing === 0 &&
+    stats.failed === 0
+  ) {
     return null;
   }
 
@@ -73,12 +78,12 @@ export function OfflineIndicator() {
     <div
       className={`fixed bottom-4 right-4 z-50 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 ${
         !isOnline
-          ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-900 dark:text-yellow-100'
+          ? "bg-yellow-100 dark:bg-yellow-900 text-yellow-900 dark:text-yellow-100"
           : hasFailed
-          ? 'bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100'
-          : hasPending
-          ? 'bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100'
-          : 'bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100'
+            ? "bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100"
+            : hasPending
+              ? "bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100"
+              : "bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100"
       }`}
     >
       {/* Icon */}
@@ -102,7 +107,13 @@ export function OfflineIndicator() {
           <span>Syncing {stats.syncing} items...</span>
         ) : hasFailed ? (
           <span>
-            {stats.failed} failed uploads - <button className="underline" onClick={() => syncProcessor.processQueue()}>Retry</button>
+            {stats.failed} failed uploads -{" "}
+            <button
+              className="underline"
+              onClick={() => syncProcessor.processQueue()}
+            >
+              Retry
+            </button>
           </span>
         ) : hasPending ? (
           <span>{stats.pending} items pending sync</span>

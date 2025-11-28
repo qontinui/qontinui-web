@@ -9,9 +9,13 @@
  * - Metrics tracking
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { State, ImageAsset, Transition } from '@/contexts/automation-context/types';
-import { workflowComplexityAnalyzer } from '../workflow-complexity-analyzer';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type {
+  State,
+  ImageAsset,
+  Transition,
+} from "@/contexts/automation-context/types";
+import { workflowComplexityAnalyzer } from "../workflow-complexity-analyzer";
 import type {
   ProjectHealth,
   HealthFactor,
@@ -26,12 +30,20 @@ import type {
   MetricsTrend,
   HealthAlert,
   HealthAlertTrigger,
-} from './types';
-import { analyzeWorkflows, analyzeStates, analyzeImages, analyzeTransitions } from './resource-analyzer';
-import { calculateTestCoverage, calculateDocumentationCoverage } from './coverage-analyzer';
-import { getStorageUsage } from './storage-analyzer';
-import { generateSuggestions } from './suggestion-generator';
-import { formatBytes } from './utils';
+} from "./types";
+import {
+  analyzeWorkflows,
+  analyzeStates,
+  analyzeImages,
+  analyzeTransitions,
+} from "./resource-analyzer";
+import {
+  calculateTestCoverage,
+  calculateDocumentationCoverage,
+} from "./coverage-analyzer";
+import { getStorageUsage } from "./storage-analyzer";
+import { generateSuggestions } from "./suggestion-generator";
+import { formatBytes } from "./utils";
 
 /**
  * Calculate overall project health score (0-100)
@@ -89,11 +101,11 @@ export function getHealthReport(
 
   const overallScore = Math.round(
     testCoverage.contribution +
-    documentationCoverage.contribution +
-    organization.contribution +
-    complexity.contribution +
-    unusedResources.contribution +
-    brokenReferences.contribution
+      documentationCoverage.contribution +
+      organization.contribution +
+      complexity.contribution +
+      unusedResources.contribution +
+      brokenReferences.contribution
   );
 
   const rating = getHealthRating(overallScore);
@@ -146,12 +158,14 @@ export function getHealthReport(
 /**
  * Get health rating from score
  */
-function getHealthRating(score: number): 'critical' | 'poor' | 'fair' | 'good' | 'excellent' {
-  if (score >= 90) return 'excellent';
-  if (score >= 75) return 'good';
-  if (score >= 60) return 'fair';
-  if (score >= 40) return 'poor';
-  return 'critical';
+function getHealthRating(
+  score: number
+): "critical" | "poor" | "fair" | "good" | "excellent" {
+  if (score >= 90) return "excellent";
+  if (score >= 75) return "good";
+  if (score >= 60) return "fair";
+  if (score >= 40) return "poor";
+  return "critical";
 }
 
 /**
@@ -166,17 +180,30 @@ function calculateTestCoverageFactor(workflows: Workflow[]): HealthFactor {
     score,
     weight,
     contribution: (score * weight) / 100,
-    status: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'warning' : 'critical',
+    status:
+      score >= 80
+        ? "excellent"
+        : score >= 60
+          ? "good"
+          : score >= 40
+            ? "warning"
+            : "critical",
     details: `${coverage.untested.length} of ${workflows.length} workflows lack tests`,
-    issues: coverage.untested.length > 0 ? [`${coverage.untested.length} workflows without tests`] : [],
-    suggestions: coverage.overall < 80 ? ['Add tests to increase coverage'] : [],
+    issues:
+      coverage.untested.length > 0
+        ? [`${coverage.untested.length} workflows without tests`]
+        : [],
+    suggestions:
+      coverage.overall < 80 ? ["Add tests to increase coverage"] : [],
   };
 }
 
 /**
  * Calculate documentation coverage factor (20% weight)
  */
-function calculateDocumentationCoverageFactor(workflows: Workflow[]): HealthFactor {
+function calculateDocumentationCoverageFactor(
+  workflows: Workflow[]
+): HealthFactor {
   const coverage = calculateDocumentationCoverage(workflows);
   const score = Math.round(coverage.overall);
   const weight = 20;
@@ -185,10 +212,21 @@ function calculateDocumentationCoverageFactor(workflows: Workflow[]): HealthFact
     score,
     weight,
     contribution: (score * weight) / 100,
-    status: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'warning' : 'critical',
+    status:
+      score >= 80
+        ? "excellent"
+        : score >= 60
+          ? "good"
+          : score >= 40
+            ? "warning"
+            : "critical",
     details: `${coverage.undocumented.length} of ${workflows.length} workflows lack documentation`,
-    issues: coverage.undocumented.length > 0 ? [`${coverage.undocumented.length} workflows without documentation`] : [],
-    suggestions: coverage.overall < 80 ? ['Add documentation to workflows'] : [],
+    issues:
+      coverage.undocumented.length > 0
+        ? [`${coverage.undocumented.length} workflows without documentation`]
+        : [],
+    suggestions:
+      coverage.overall < 80 ? ["Add documentation to workflows"] : [],
   };
 }
 
@@ -196,18 +234,34 @@ function calculateDocumentationCoverageFactor(workflows: Workflow[]): HealthFact
  * Calculate organization factor (15% weight)
  */
 function calculateOrganizationFactor(workflows: Workflow[]): HealthFactor {
-  const unorganized = workflows.filter(w => !w.category || w.category === 'Uncategorized');
-  const score = Math.round(((workflows.length - unorganized.length) / Math.max(workflows.length, 1)) * 100);
+  const unorganized = workflows.filter(
+    (w) => !w.category || w.category === "Uncategorized"
+  );
+  const score = Math.round(
+    ((workflows.length - unorganized.length) / Math.max(workflows.length, 1)) *
+      100
+  );
   const weight = 15;
 
   return {
     score,
     weight,
     contribution: (score * weight) / 100,
-    status: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'warning' : 'critical',
+    status:
+      score >= 80
+        ? "excellent"
+        : score >= 60
+          ? "good"
+          : score >= 40
+            ? "warning"
+            : "critical",
     details: `${workflows.length - unorganized.length} of ${workflows.length} workflows are organized`,
-    issues: unorganized.length > 0 ? [`${unorganized.length} workflows not organized in folders`] : [],
-    suggestions: score < 80 ? ['Organize workflows into folders/categories'] : [],
+    issues:
+      unorganized.length > 0
+        ? [`${unorganized.length} workflows not organized in folders`]
+        : [],
+    suggestions:
+      score < 80 ? ["Organize workflows into folders/categories"] : [],
   };
 }
 
@@ -215,19 +269,34 @@ function calculateOrganizationFactor(workflows: Workflow[]): HealthFactor {
  * Calculate complexity factor (20% weight)
  */
 function calculateComplexityFactor(workflows: Workflow[]): HealthFactor {
-  const distribution = workflowComplexityAnalyzer.getComplexityDistribution(workflows);
-  const highComplexCount = distribution.byRating.high + distribution.byRating['very-high'];
-  const score = Math.round(100 - (highComplexCount / Math.max(workflows.length, 1)) * 100);
+  const distribution =
+    workflowComplexityAnalyzer.getComplexityDistribution(workflows);
+  const highComplexCount =
+    distribution.byRating.high + distribution.byRating["very-high"];
+  const score = Math.round(
+    100 - (highComplexCount / Math.max(workflows.length, 1)) * 100
+  );
   const weight = 20;
 
   return {
     score,
     weight,
     contribution: (score * weight) / 100,
-    status: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'warning' : 'critical',
+    status:
+      score >= 80
+        ? "excellent"
+        : score >= 60
+          ? "good"
+          : score >= 40
+            ? "warning"
+            : "critical",
     details: `${highComplexCount} workflows have high complexity`,
-    issues: highComplexCount > 0 ? [`${highComplexCount} workflows with high complexity`] : [],
-    suggestions: score < 80 ? ['Reduce complexity in high-complexity workflows'] : [],
+    issues:
+      highComplexCount > 0
+        ? [`${highComplexCount} workflows with high complexity`]
+        : [],
+    suggestions:
+      score < 80 ? ["Reduce complexity in high-complexity workflows"] : [],
   };
 }
 
@@ -239,28 +308,37 @@ function calculateUnusedResourcesFactor(
   states: StateAnalysis[],
   images: ImageAnalysis[]
 ): HealthFactor {
-  const unusedWorkflows = workflows.filter(w => w.isUnused).length;
-  const unusedStates = states.filter(s => !s.isUsed).length;
-  const unusedImages = images.filter(i => !i.isUsed).length;
+  const unusedWorkflows = workflows.filter((w) => w.isUnused).length;
+  const unusedStates = states.filter((s) => !s.isUsed).length;
+  const unusedImages = images.filter((i) => !i.isUsed).length;
 
   const totalUnused = unusedWorkflows + unusedStates + unusedImages;
   const totalResources = workflows.length + states.length + images.length;
 
-  const score = Math.round(100 - (totalUnused / Math.max(totalResources, 1)) * 100);
+  const score = Math.round(
+    100 - (totalUnused / Math.max(totalResources, 1)) * 100
+  );
   const weight = 10;
 
   return {
     score,
     weight,
     contribution: (score * weight) / 100,
-    status: score >= 90 ? 'excellent' : score >= 70 ? 'good' : score >= 50 ? 'warning' : 'critical',
+    status:
+      score >= 90
+        ? "excellent"
+        : score >= 70
+          ? "good"
+          : score >= 50
+            ? "warning"
+            : "critical",
     details: `${totalUnused} unused resources found`,
     issues: [
       unusedWorkflows > 0 ? `${unusedWorkflows} unused workflows` : null,
       unusedStates > 0 ? `${unusedStates} unused states` : null,
       unusedImages > 0 ? `${unusedImages} unused images` : null,
     ].filter(Boolean) as string[],
-    suggestions: totalUnused > 0 ? ['Remove unused resources'] : [],
+    suggestions: totalUnused > 0 ? ["Remove unused resources"] : [],
   };
 }
 
@@ -272,9 +350,18 @@ function calculateBrokenReferencesFactor(
   states: StateAnalysis[],
   transitions: TransitionAnalysis[]
 ): HealthFactor {
-  const workflowRefs = workflows.reduce((sum, w) => sum + w.brokenReferences.length, 0);
-  const stateRefs = states.reduce((sum, s) => sum + s.brokenReferences.length, 0);
-  const transitionRefs = transitions.reduce((sum, t) => sum + t.brokenReferences.length, 0);
+  const workflowRefs = workflows.reduce(
+    (sum, w) => sum + w.brokenReferences.length,
+    0
+  );
+  const stateRefs = states.reduce(
+    (sum, s) => sum + s.brokenReferences.length,
+    0
+  );
+  const transitionRefs = transitions.reduce(
+    (sum, t) => sum + t.brokenReferences.length,
+    0
+  );
 
   const totalBroken = workflowRefs + stateRefs + transitionRefs;
   const score = totalBroken === 0 ? 100 : Math.max(0, 100 - totalBroken * 10);
@@ -284,10 +371,18 @@ function calculateBrokenReferencesFactor(
     score,
     weight,
     contribution: (score * weight) / 100,
-    status: score >= 95 ? 'excellent' : score >= 80 ? 'good' : score >= 60 ? 'warning' : 'critical',
+    status:
+      score >= 95
+        ? "excellent"
+        : score >= 80
+          ? "good"
+          : score >= 60
+            ? "warning"
+            : "critical",
     details: `${totalBroken} broken references found`,
-    issues: totalBroken > 0 ? [`${totalBroken} broken references need fixing`] : [],
-    suggestions: totalBroken > 0 ? ['Fix broken references'] : [],
+    issues:
+      totalBroken > 0 ? [`${totalBroken} broken references need fixing`] : [],
+    suggestions: totalBroken > 0 ? ["Fix broken references"] : [],
   };
 }
 
@@ -303,19 +398,24 @@ function collectIssues(
   const issues: ProjectIssue[] = [];
   let issueId = 1;
 
-  workflows.forEach(w => {
-    if (w.status === 'critical' || w.status === 'warning') {
-      w.issues.forEach(issue => {
+  workflows.forEach((w) => {
+    if (w.status === "critical" || w.status === "warning") {
+      w.issues.forEach((issue) => {
         issues.push({
           id: `issue-${issueId++}`,
-          severity: w.status === 'critical' ? 'error' : 'warning',
-          type: issue.includes('broken') ? 'broken-reference' :
-                issue.includes('test') ? 'missing-test' :
-                issue.includes('doc') ? 'missing-doc' :
-                issue.includes('complex') ? 'high-complexity' : 'unused-resource',
+          severity: w.status === "critical" ? "error" : "warning",
+          type: issue.includes("broken")
+            ? "broken-reference"
+            : issue.includes("test")
+              ? "missing-test"
+              : issue.includes("doc")
+                ? "missing-doc"
+                : issue.includes("complex")
+                  ? "high-complexity"
+                  : "unused-resource",
           message: issue,
           resource: {
-            type: 'workflow',
+            type: "workflow",
             id: w.workflowId,
             name: w.name,
           },
@@ -324,16 +424,18 @@ function collectIssues(
     }
   });
 
-  states.forEach(s => {
-    if (s.status === 'critical' || s.status === 'warning') {
-      s.issues.forEach(issue => {
+  states.forEach((s) => {
+    if (s.status === "critical" || s.status === "warning") {
+      s.issues.forEach((issue) => {
         issues.push({
           id: `issue-${issueId++}`,
-          severity: s.status === 'critical' ? 'error' : 'warning',
-          type: issue.includes('broken') ? 'broken-reference' : 'unused-resource',
+          severity: s.status === "critical" ? "error" : "warning",
+          type: issue.includes("broken")
+            ? "broken-reference"
+            : "unused-resource",
           message: issue,
           resource: {
-            type: 'state',
+            type: "state",
             id: s.stateId,
             name: s.name,
           },
@@ -342,16 +444,16 @@ function collectIssues(
     }
   });
 
-  images.forEach(i => {
-    if (i.status === 'warning') {
-      i.issues.forEach(issue => {
+  images.forEach((i) => {
+    if (i.status === "warning") {
+      i.issues.forEach((issue) => {
         issues.push({
           id: `issue-${issueId++}`,
-          severity: 'warning',
-          type: issue.includes('duplicate') ? 'duplicate' : 'unused-resource',
+          severity: "warning",
+          type: issue.includes("duplicate") ? "duplicate" : "unused-resource",
           message: issue,
           resource: {
-            type: 'image',
+            type: "image",
             id: i.imageId,
             name: i.name,
           },
@@ -383,11 +485,13 @@ export function createMetricsSnapshot(
   const transitionAnalyses = analyzeTransitions(transitions, workflows, states);
 
   const issues = {
-    critical: workflowAnalyses.filter(w => w.status === 'critical').length +
-              stateAnalyses.filter(s => s.status === 'critical').length +
-              transitionAnalyses.filter(t => t.status === 'critical').length,
-    warnings: workflowAnalyses.filter(w => w.status === 'warning').length +
-              stateAnalyses.filter(s => s.status === 'warning').length,
+    critical:
+      workflowAnalyses.filter((w) => w.status === "critical").length +
+      stateAnalyses.filter((s) => s.status === "critical").length +
+      transitionAnalyses.filter((t) => t.status === "critical").length,
+    warnings:
+      workflowAnalyses.filter((w) => w.status === "warning").length +
+      stateAnalyses.filter((s) => s.status === "warning").length,
     info: 0,
   };
 
@@ -411,19 +515,22 @@ export function createMetricsSnapshot(
 /**
  * Calculate metrics trend
  */
-export function calculateMetricsTrend(metrics: ProjectMetrics[], days: number = 7): MetricsTrend {
+export function calculateMetricsTrend(
+  metrics: ProjectMetrics[],
+  days: number = 7
+): MetricsTrend {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
 
-  const filtered = metrics.filter(m => new Date(m.timestamp) >= cutoff);
+  const filtered = metrics.filter((m) => new Date(m.timestamp) >= cutoff);
 
   if (filtered.length === 0) {
     return {
       metrics: [],
       trend: {
-        health: 'stable',
-        coverage: 'stable',
-        issues: 'stable',
+        health: "stable",
+        coverage: "stable",
+        issues: "stable",
       },
       period: {
         start: cutoff.toISOString(),
@@ -436,7 +543,10 @@ export function calculateMetricsTrend(metrics: ProjectMetrics[], days: number = 
   const firstMetric = filtered[0];
   const lastMetric = filtered[filtered.length - 1];
 
-  const healthTrend = calculateTrend(firstMetric.healthScore, lastMetric.healthScore);
+  const healthTrend = calculateTrend(
+    firstMetric.healthScore,
+    lastMetric.healthScore
+  );
   const coverageTrend = calculateTrend(
     (firstMetric.coverage.tests + firstMetric.coverage.documentation) / 2,
     (lastMetric.coverage.tests + lastMetric.coverage.documentation) / 2
@@ -463,13 +573,16 @@ export function calculateMetricsTrend(metrics: ProjectMetrics[], days: number = 
 /**
  * Calculate trend direction
  */
-function calculateTrend(oldValue: number, newValue: number): 'improving' | 'declining' | 'stable' {
+function calculateTrend(
+  oldValue: number,
+  newValue: number
+): "improving" | "declining" | "stable" {
   const diff = newValue - oldValue;
   const threshold = 5; // 5% change
 
-  if (diff > threshold) return 'improving';
-  if (diff < -threshold) return 'declining';
-  return 'stable';
+  if (diff > threshold) return "improving";
+  if (diff < -threshold) return "declining";
+  return "stable";
 }
 
 /**
@@ -484,16 +597,16 @@ export function checkAlerts(
 
   const triggers: HealthAlertTrigger[] = [];
 
-  alerts.forEach(alert => {
+  alerts.forEach((alert) => {
     if (!alert.enabled) return;
 
     let shouldTrigger = false;
     let currentValue = 0;
     let previousValue = 0;
-    let message = '';
+    let message = "";
 
     switch (alert.type) {
-      case 'health-drop':
+      case "health-drop":
         currentValue = currentMetrics.healthScore;
         previousValue = previousMetrics.healthScore;
         const drop = previousValue - currentValue;
@@ -503,7 +616,7 @@ export function checkAlerts(
         }
         break;
 
-      case 'critical-issue':
+      case "critical-issue":
         currentValue = currentMetrics.issues.critical;
         previousValue = previousMetrics.issues.critical;
         if (currentValue >= alert.threshold) {
@@ -512,7 +625,7 @@ export function checkAlerts(
         }
         break;
 
-      case 'storage-limit':
+      case "storage-limit":
         currentValue = currentMetrics.storage;
         previousValue = previousMetrics.storage;
         if (currentValue >= alert.threshold) {

@@ -7,12 +7,14 @@ The `project-optimization-service.ts` file (2,880 lines) has been refactored int
 ## What Changed
 
 ### Before: Single File Structure
+
 ```
 services/
 └── project-optimization-service.ts (2,880 lines)
 ```
 
 ### After: Modular Structure
+
 ```
 services/
 ├── project-optimization-service.ts (DEPRECATED - kept for reference)
@@ -39,13 +41,15 @@ services/
 ### Step 1: Update Import Paths (Required)
 
 **Before:**
+
 ```typescript
-import { projectOptimizationService } from '@/services/project-optimization-service';
+import { projectOptimizationService } from "@/services/project-optimization-service";
 ```
 
 **After:**
+
 ```typescript
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 ```
 
 **That's it!** The API remains the same.
@@ -53,21 +57,23 @@ import { projectOptimizationService } from '@/services/project-optimization';
 ### Step 2: Update Type Imports (If Using Types)
 
 **Before:**
+
 ```typescript
 import type {
   ProjectHealth,
   HealthReport,
   OptimizationSuggestion,
-} from '@/services/project-optimization-service';
+} from "@/services/project-optimization-service";
 ```
 
 **After:**
+
 ```typescript
 import type {
   ProjectHealth,
   HealthReport,
   OptimizationSuggestion,
-} from '@/services/project-optimization';
+} from "@/services/project-optimization";
 ```
 
 ## Usage Patterns
@@ -75,19 +81,27 @@ import type {
 ### Pattern 1: Singleton Service (Recommended for Consistency)
 
 ```typescript
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 
 // All methods work exactly as before
 const health = projectOptimizationService.calculateProjectHealth(
-  workflows, states, images, transitions
+  workflows,
+  states,
+  images,
+  transitions
 );
 
 const report = projectOptimizationService.getHealthReport(
-  workflows, states, images, transitions
+  workflows,
+  states,
+  images,
+  transitions
 );
 
 const unusedImages = projectOptimizationService.findUnusedImages(
-  images, workflows, states
+  images,
+  workflows,
+  states
 );
 ```
 
@@ -101,15 +115,21 @@ import {
   getHealthReport,
   findUnusedImages,
   validateAllReferences,
-} from '@/services/project-optimization';
+} from "@/services/project-optimization";
 
 // Use directly without the service instance
 const health = calculateProjectHealth(workflows, states, images, transitions);
 const unusedImages = findUnusedImages(images, workflows, states);
-const brokenRefs = validateAllReferences(workflows, states, images, transitions);
+const brokenRefs = validateAllReferences(
+  workflows,
+  states,
+  images,
+  transitions
+);
 ```
 
 This is useful for:
+
 - Tree-shaking (only import what you need)
 - Testing (easier to mock individual functions)
 - Functional programming style
@@ -120,13 +140,22 @@ For specialized use cases, import from specific modules:
 
 ```typescript
 // Import only health-related functions
-import { calculateProjectHealth, getHealthReport } from '@/services/project-optimization/health-analyzer';
+import {
+  calculateProjectHealth,
+  getHealthReport,
+} from "@/services/project-optimization/health-analyzer";
 
 // Import only storage-related functions
-import { getStorageUsage, estimateStorageSavings } from '@/services/project-optimization/storage-analyzer';
+import {
+  getStorageUsage,
+  estimateStorageSavings,
+} from "@/services/project-optimization/storage-analyzer";
 
 // Import only types
-import type { ProjectHealth, HealthFactor } from '@/services/project-optimization/types';
+import type {
+  ProjectHealth,
+  HealthFactor,
+} from "@/services/project-optimization/types";
 ```
 
 ## Examples
@@ -134,8 +163,9 @@ import type { ProjectHealth, HealthFactor } from '@/services/project-optimizatio
 ### Example 1: Basic Health Check
 
 **Before & After (Same Code):**
+
 ```typescript
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 
 function checkProjectHealth() {
   const workflows = getWorkflows();
@@ -144,11 +174,14 @@ function checkProjectHealth() {
   const transitions = getTransitions();
 
   const health = projectOptimizationService.calculateProjectHealth(
-    workflows, states, images, transitions
+    workflows,
+    states,
+    images,
+    transitions
   );
 
   if (health < 60) {
-    console.warn('Project health is below 60!');
+    console.warn("Project health is below 60!");
   }
 
   return health;
@@ -158,8 +191,9 @@ function checkProjectHealth() {
 ### Example 2: Generate Optimization Report
 
 **Before & After (Same Code):**
+
 ```typescript
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 
 function generateReport() {
   const workflows = getWorkflows();
@@ -168,7 +202,10 @@ function generateReport() {
   const transitions = getTransitions();
 
   const report = projectOptimizationService.getHealthReport(
-    workflows, states, images, transitions
+    workflows,
+    states,
+    images,
+    transitions
   );
 
   return {
@@ -183,8 +220,9 @@ function generateReport() {
 ### Example 3: Find and Clean Unused Resources
 
 **Before & After (Same Code):**
+
 ```typescript
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 
 async function cleanupUnusedResources() {
   const workflows = getWorkflows();
@@ -194,10 +232,13 @@ async function cleanupUnusedResources() {
 
   // Find unused resources
   const unusedImages = projectOptimizationService.findUnusedImages(
-    images, workflows, states
+    images,
+    workflows,
+    states
   );
   const unusedStates = projectOptimizationService.findUnusedStates(
-    states, transitions
+    states,
+    transitions
   );
 
   console.log(`Found ${unusedImages.length} unused images`);
@@ -205,7 +246,10 @@ async function cleanupUnusedResources() {
 
   // Auto-optimize (dry run)
   const result = await projectOptimizationService.autoOptimize(
-    workflows, states, images, transitions,
+    workflows,
+    states,
+    images,
+    transitions,
     {
       removeUnusedImages: true,
       removeOrphanedStates: true,
@@ -220,6 +264,7 @@ async function cleanupUnusedResources() {
 ### Example 4: Using Direct Imports (New Feature)
 
 **New Pattern Available After Refactoring:**
+
 ```typescript
 import {
   calculateProjectHealth,
@@ -228,7 +273,7 @@ import {
   validateAllReferences,
   type ProjectHealth,
   type BrokenReference,
-} from '@/services/project-optimization';
+} from "@/services/project-optimization";
 
 function quickHealthCheck(): {
   health: number;
@@ -245,7 +290,12 @@ function quickHealthCheck(): {
   const health = calculateProjectHealth(workflows, states, images, transitions);
   const unusedImages = findUnusedImages(images, workflows, states);
   const unusedStates = findUnusedStates(states, transitions);
-  const brokenRefs = validateAllReferences(workflows, states, images, transitions);
+  const brokenRefs = validateAllReferences(
+    workflows,
+    states,
+    images,
+    transitions
+  );
 
   return {
     health,
@@ -262,21 +312,26 @@ function quickHealthCheck(): {
 
 ```typescript
 // Had to mock the entire service
-jest.mock('@/services/project-optimization-service');
+jest.mock("@/services/project-optimization-service");
 ```
 
 ### After: Easy to Test (Import Only What You Need)
 
 ```typescript
-import { calculateProjectHealth } from '@/services/project-optimization/health-analyzer';
+import { calculateProjectHealth } from "@/services/project-optimization/health-analyzer";
 
 // Mock only specific dependencies
-jest.mock('@/services/workflow-complexity-analyzer');
-jest.mock('@/services/project-optimization/coverage-analyzer');
+jest.mock("@/services/workflow-complexity-analyzer");
+jest.mock("@/services/project-optimization/coverage-analyzer");
 
-describe('calculateProjectHealth', () => {
-  it('calculates health correctly', () => {
-    const health = calculateProjectHealth(mockWorkflows, mockStates, mockImages, mockTransitions);
+describe("calculateProjectHealth", () => {
+  it("calculates health correctly", () => {
+    const health = calculateProjectHealth(
+      mockWorkflows,
+      mockStates,
+      mockImages,
+      mockTransitions
+    );
     expect(health).toBe(85);
   });
 });
@@ -287,24 +342,27 @@ describe('calculateProjectHealth', () => {
 ### Issue: Import Path Not Found
 
 **Error:**
+
 ```
 Cannot find module '@/services/project-optimization'
 ```
 
 **Solution:**
 Ensure you're importing from the directory (index.ts) not the old file:
+
 ```typescript
 // ❌ Wrong (old path)
-import { projectOptimizationService } from '@/services/project-optimization-service';
+import { projectOptimizationService } from "@/services/project-optimization-service";
 
 // ✅ Correct (new path)
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 ```
 
 ### Issue: Type Errors After Update
 
 **Solution:**
 Clear your TypeScript build cache and restart your IDE:
+
 ```bash
 # Clear TypeScript cache
 rm -rf node_modules/.cache
@@ -320,14 +378,14 @@ If you get errors about missing exports, make sure you're using the correct expo
 ```typescript
 // ✅ These are exported
 import {
-  projectOptimizationService,  // Singleton
-  calculateProjectHealth,       // Function
-  getHealthReport,              // Function
-  type ProjectHealth,           // Type
-} from '@/services/project-optimization';
+  projectOptimizationService, // Singleton
+  calculateProjectHealth, // Function
+  getHealthReport, // Function
+  type ProjectHealth, // Type
+} from "@/services/project-optimization";
 
 // ❌ These are NOT exported (internal modules)
-import { someInternalHelper } from '@/services/project-optimization/internal-helper';
+import { someInternalHelper } from "@/services/project-optimization/internal-helper";
 ```
 
 ## Benefits of the Refactoring

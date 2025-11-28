@@ -5,9 +5,9 @@
  * Handles sync operations, tracking sync status, and error handling.
  */
 
-import { useState, useCallback } from 'react'
-import { ResourceType, UseSyncStateReturn } from './types'
-import { syncService } from '../../services/collaboration/sync-service'
+import { useState, useCallback } from "react";
+import { ResourceType, UseSyncStateReturn } from "./types";
+import { syncService } from "../../services/collaboration/sync-service";
 
 /**
  * Hook for managing sync state
@@ -20,14 +20,14 @@ export function useSyncState(
   resourceType: ResourceType,
   resourceId: string
 ): UseSyncStateReturn {
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [lastSynced, setLastSynced] = useState<Date | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const sync = useCallback(
     async (localVersion: any) => {
-      setIsSyncing(true)
-      setSyncError(null)
+      setIsSyncing(true);
+      setSyncError(null);
 
       try {
         const result = await syncService.syncResource(
@@ -35,30 +35,31 @@ export function useSyncState(
           resourceId,
           localVersion,
           false
-        )
+        );
 
         if (result.success) {
-          setLastSynced(new Date())
+          setLastSynced(new Date());
         } else {
-          setSyncError(result.errors?.[0] || 'Sync failed')
+          setSyncError(result.errors?.[0] || "Sync failed");
         }
 
-        return result
+        return result;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        setSyncError(errorMessage)
-        throw error
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+        setSyncError(errorMessage);
+        throw error;
       } finally {
-        setIsSyncing(false)
+        setIsSyncing(false);
       }
     },
     [resourceType, resourceId]
-  )
+  );
 
   return {
     isSyncing,
     lastSynced,
     syncError,
-    sync
-  }
+    sync,
+  };
 }

@@ -4,12 +4,17 @@
  * Displays placeholder content when no item is selected in the builder.
  */
 
-import { Play, GitBranch, List as ListIcon, Workflow as WorkflowIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import type { EmptyStateProps } from '../types'
+import {
+  Play,
+  GitBranch,
+  List as ListIcon,
+  Workflow as WorkflowIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { EmptyStateProps } from "../types";
 
 export function EmptyState({ mode, onCreateNew }: EmptyStateProps) {
-  const isSequential = mode === 'sequential'
+  const isSequential = mode === "sequential";
 
   return (
     <div className="flex items-center justify-center h-full text-gray-500">
@@ -29,7 +34,8 @@ export function EmptyState({ mode, onCreateNew }: EmptyStateProps) {
             No Workflow Selected
           </h3>
           <p className="text-sm text-gray-400">
-            Select a workflow from the library to edit, or create a new one to get started.
+            Select a workflow from the library to edit, or create a new one to
+            get started.
           </p>
         </div>
 
@@ -40,8 +46,8 @@ export function EmptyState({ mode, onCreateNew }: EmptyStateProps) {
               onClick={onCreateNew}
               className={
                 isSequential
-                  ? 'w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium'
-                  : 'w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black font-medium'
+                  ? "w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black font-medium"
+                  : "w-full bg-[#00FF88] hover:bg-[#00FF88]/80 text-black font-medium"
               }
             >
               <Play className="w-4 h-4 mr-2" />
@@ -62,14 +68,15 @@ export function EmptyState({ mode, onCreateNew }: EmptyStateProps) {
               <span className="text-gray-600">•</span>
               <span>
                 {isSequential
-                  ? 'Sequential mode is for linear, step-by-step workflows'
-                  : 'Graph mode is for visual workflows with branching and loops'}
+                  ? "Sequential mode is for linear, step-by-step workflows"
+                  : "Graph mode is for visual workflows with branching and loops"}
               </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-gray-600">•</span>
               <span>
-                Use the mode toggle above to switch between sequential and graph views
+                Use the mode toggle above to switch between sequential and graph
+                views
               </span>
             </li>
             <li className="flex items-start gap-2">
@@ -82,5 +89,5 @@ export function EmptyState({ mode, onCreateNew }: EmptyStateProps) {
         </div>
       </div>
     </div>
-  )
+  );
 }

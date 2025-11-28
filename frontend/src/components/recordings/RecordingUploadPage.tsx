@@ -1,21 +1,40 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/auth-context';
-import { useProjects } from '@/hooks/use-projects';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
-import { Upload, FileArchive, X, Check, AlertCircle, ArrowLeft } from 'lucide-react';
-import { recordingService } from '@/services/service-factory';
-import type { UploadResponse, RecordingError } from '@/types/recording';
+import { useState, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { useProjects } from "@/hooks/use-projects";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
+import {
+  Upload,
+  FileArchive,
+  X,
+  Check,
+  AlertCircle,
+  ArrowLeft,
+} from "lucide-react";
+import { recordingService } from "@/services/service-factory";
+import type { UploadResponse, RecordingError } from "@/types/recording";
 
 interface UploadState {
   file: File | null;
@@ -41,9 +60,9 @@ export function RecordingUploadPage() {
 
   const [state, setState] = useState<UploadState>({
     file: null,
-    projectId: '',
-    name: '',
-    description: '',
+    projectId: "",
+    name: "",
+    description: "",
     tags: [],
     uploading: false,
     progress: 0,
@@ -55,16 +74,16 @@ export function RecordingUploadPage() {
     validationWarnings: [],
   });
 
-  const [tagInput, setTagInput] = useState('');
+  const [tagInput, setTagInput] = useState("");
   const [dragActive, setDragActive] = useState(false);
 
   // Handle drag and drop
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
+    if (e.type === "dragenter" || e.type === "dragover") {
       setDragActive(true);
-    } else if (e.type === 'dragleave') {
+    } else if (e.type === "dragleave") {
       setDragActive(false);
     }
   }, []);
@@ -81,22 +100,22 @@ export function RecordingUploadPage() {
 
   const handleFileSelect = (file: File) => {
     // Validate file type
-    if (!file.name.endsWith('.zip')) {
-      toast.error('Please select a ZIP file');
+    if (!file.name.endsWith(".zip")) {
+      toast.error("Please select a ZIP file");
       return;
     }
 
     // Validate file size (max 500MB)
     const maxSize = 500 * 1024 * 1024; // 500MB
     if (file.size > maxSize) {
-      toast.error('File size must be less than 500MB');
+      toast.error("File size must be less than 500MB");
       return;
     }
 
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       file,
-      name: prev.name || file.name.replace('.zip', ''),
+      name: prev.name || file.name.replace(".zip", ""),
       error: null,
     }));
   };
@@ -110,31 +129,36 @@ export function RecordingUploadPage() {
   const handleAddTag = () => {
     const tag = tagInput.trim();
     if (tag && !state.tags.includes(tag)) {
-      setState(prev => ({ ...prev, tags: [...prev.tags, tag] }));
-      setTagInput('');
+      setState((prev) => ({ ...prev, tags: [...prev.tags, tag] }));
+      setTagInput("");
     }
   };
 
   const handleRemoveTag = (tag: string) => {
-    setState(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }));
+    setState((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tag) }));
   };
 
   const handleUpload = async () => {
     // Validation
     if (!state.file) {
-      toast.error('Please select a file');
+      toast.error("Please select a file");
       return;
     }
     if (!state.projectId) {
-      toast.error('Please select a project');
+      toast.error("Please select a project");
       return;
     }
     if (!state.name.trim()) {
-      toast.error('Please enter a recording name');
+      toast.error("Please enter a recording name");
       return;
     }
 
-    setState(prev => ({ ...prev, uploading: true, progress: 0, error: null }));
+    setState((prev) => ({
+      ...prev,
+      uploading: true,
+      progress: 0,
+      error: null,
+    }));
 
     try {
       const response = await recordingService.uploadRecording(
@@ -143,25 +167,25 @@ export function RecordingUploadPage() {
         state.description,
         state.tags,
         (progress) => {
-          setState(prev => ({ ...prev, progress }));
+          setState((prev) => ({ ...prev, progress }));
         }
       );
 
       // Check for validation errors
       if (response.validation_errors.length > 0) {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           uploading: false,
-          error: 'Recording uploaded with validation errors',
+          error: "Recording uploaded with validation errors",
           validationErrors: response.validation_errors,
           validationWarnings: response.validation_warnings,
         }));
-        toast.error('Recording uploaded but has validation errors');
+        toast.error("Recording uploaded but has validation errors");
         return;
       }
 
       // Success
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         uploading: false,
         success: true,
@@ -169,21 +193,20 @@ export function RecordingUploadPage() {
         validationWarnings: response.validation_warnings,
       }));
 
-      toast.success('Recording uploaded successfully!');
+      toast.success("Recording uploaded successfully!");
 
       // Redirect to recording detail page after 2 seconds
       setTimeout(() => {
         router.push(`/recordings/${response.recording_id}`);
       }, 2000);
-
     } catch (error: any) {
-      console.error('Upload failed:', error);
-      setState(prev => ({
+      console.error("Upload failed:", error);
+      setState((prev) => ({
         ...prev,
         uploading: false,
-        error: error.message || 'Failed to upload recording',
+        error: error.message || "Failed to upload recording",
       }));
-      toast.error(error.message || 'Failed to upload recording');
+      toast.error(error.message || "Failed to upload recording");
     }
   };
 
@@ -191,8 +214,8 @@ export function RecordingUploadPage() {
     setState({
       file: null,
       projectId: state.projectId, // Keep project selection
-      name: '',
-      description: '',
+      name: "",
+      description: "",
       tags: [],
       uploading: false,
       progress: 0,
@@ -203,9 +226,9 @@ export function RecordingUploadPage() {
       validationErrors: [],
       validationWarnings: [],
     });
-    setTagInput('');
+    setTagInput("");
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = "";
     }
   };
 
@@ -215,7 +238,7 @@ export function RecordingUploadPage() {
       <div className="mb-8">
         <Button
           variant="ghost"
-          onClick={() => router.push('/recordings')}
+          onClick={() => router.push("/recordings")}
           className="mb-4"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -223,7 +246,8 @@ export function RecordingUploadPage() {
         </Button>
         <h1 className="text-3xl font-bold">Upload Recording</h1>
         <p className="text-muted-foreground mt-2">
-          Upload an annotated recording to automatically discover states and transitions
+          Upload an annotated recording to automatically discover states and
+          transitions
         </p>
       </div>
 
@@ -231,7 +255,8 @@ export function RecordingUploadPage() {
         <CardHeader>
           <CardTitle>Recording Details</CardTitle>
           <CardDescription>
-            Upload a ZIP file containing frames, interactions, and context events
+            Upload a ZIP file containing frames, interactions, and context
+            events
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -240,7 +265,9 @@ export function RecordingUploadPage() {
             <Label htmlFor="project">Project *</Label>
             <Select
               value={state.projectId}
-              onValueChange={(value) => setState(prev => ({ ...prev, projectId: value }))}
+              onValueChange={(value) =>
+                setState((prev) => ({ ...prev, projectId: value }))
+              }
               disabled={state.uploading || state.success}
             >
               <SelectTrigger id="project">
@@ -262,10 +289,10 @@ export function RecordingUploadPage() {
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
                 dragActive
-                  ? 'border-primary bg-primary/5'
+                  ? "border-primary bg-primary/5"
                   : state.file
-                  ? 'border-green-500 bg-green-50 dark:bg-green-950'
-                  : 'border-border hover:border-primary/50'
+                    ? "border-green-500 bg-green-50 dark:bg-green-950"
+                    : "border-border hover:border-primary/50"
               }`}
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
@@ -286,8 +313,9 @@ export function RecordingUploadPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setState(prev => ({ ...prev, file: null }));
-                        if (fileInputRef.current) fileInputRef.current.value = '';
+                        setState((prev) => ({ ...prev, file: null }));
+                        if (fileInputRef.current)
+                          fileInputRef.current.value = "";
                       }}
                     >
                       <X className="h-4 w-4" />
@@ -331,7 +359,9 @@ export function RecordingUploadPage() {
             <Input
               id="name"
               value={state.name}
-              onChange={(e) => setState(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setState((prev) => ({ ...prev, name: e.target.value }))
+              }
               placeholder="e.g., User Login Flow"
               disabled={state.uploading || state.success}
             />
@@ -343,7 +373,9 @@ export function RecordingUploadPage() {
             <Textarea
               id="description"
               value={state.description}
-              onChange={(e) => setState(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e) =>
+                setState((prev) => ({ ...prev, description: e.target.value }))
+              }
               placeholder="Describe what this recording captures..."
               rows={3}
               disabled={state.uploading || state.success}
@@ -359,7 +391,7 @@ export function RecordingUploadPage() {
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === "Enter") {
                     e.preventDefault();
                     handleAddTag();
                   }
@@ -378,7 +410,11 @@ export function RecordingUploadPage() {
             {state.tags.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2">
                 {state.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="flex items-center gap-1">
+                  <Badge
+                    key={tag}
+                    variant="secondary"
+                    className="flex items-center gap-1"
+                  >
                     {tag}
                     {!state.uploading && !state.success && (
                       <X
@@ -446,7 +482,9 @@ export function RecordingUploadPage() {
             <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
               <div className="flex items-start space-x-2">
                 <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
-                <p className="text-sm text-red-800 dark:text-red-200">{state.error}</p>
+                <p className="text-sm text-red-800 dark:text-red-200">
+                  {state.error}
+                </p>
               </div>
             </div>
           )}
@@ -461,8 +499,8 @@ export function RecordingUploadPage() {
                     Upload Successful!
                   </h4>
                   <p className="text-sm text-green-800 dark:text-green-200 mt-1">
-                    Your recording has been uploaded and will be processed shortly.
-                    Redirecting to recording details...
+                    Your recording has been uploaded and will be processed
+                    shortly. Redirecting to recording details...
                   </p>
                 </div>
               </div>
@@ -473,14 +511,13 @@ export function RecordingUploadPage() {
           <div className="flex justify-end space-x-3 pt-4">
             {state.success ? (
               <>
-                <Button
-                  variant="outline"
-                  onClick={handleReset}
-                >
+                <Button variant="outline" onClick={handleReset}>
                   Upload Another
                 </Button>
                 <Button
-                  onClick={() => router.push(`/recordings/${state.recordingId}`)}
+                  onClick={() =>
+                    router.push(`/recordings/${state.recordingId}`)
+                  }
                 >
                   View Recording
                 </Button>
@@ -489,7 +526,7 @@ export function RecordingUploadPage() {
               <>
                 <Button
                   variant="outline"
-                  onClick={() => router.push('/recordings')}
+                  onClick={() => router.push("/recordings")}
                   disabled={state.uploading}
                 >
                   Cancel

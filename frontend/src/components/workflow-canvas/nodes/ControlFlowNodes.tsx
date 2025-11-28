@@ -10,11 +10,11 @@
  * - TRY_CATCH - Error handling (2 outputs: main/error)
  */
 
-import React from 'react';
-import { NodeProps } from '@xyflow/react';
-import { Action } from '@/lib/action-schema/action-types';
-import { BaseNode, BaseNodeData, MultiOutputNode } from './BaseNode';
-import { MultiOutputHandles, getSwitchOutputHandles } from './handles';
+import React from "react";
+import { NodeProps } from "@xyflow/react";
+import { Action } from "@/lib/action-schema/action-types";
+import { BaseNode, BaseNodeData, MultiOutputNode } from "./BaseNode";
+import { MultiOutputHandles, getSwitchOutputHandles } from "./handles";
 import type {
   IfActionConfig,
   LoopActionConfig,
@@ -22,19 +22,19 @@ import type {
   BreakActionConfig,
   ContinueActionConfig,
   TryCatchActionConfig,
-} from '@/lib/action-schema/configs/control-flow-actions';
+} from "@/lib/action-schema/configs/control-flow-actions";
 
 /**
  * IF Node - Conditional execution with true/false branches
  */
 export function IfNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as IfActionConfig;
-  const conditionType = config.condition?.type || 'expression';
-  const expression = config.condition?.expression || '';
+  const conditionType = config.condition?.type || "expression";
+  const expression = config.condition?.expression || "";
 
   const outputLabels = [
-    { id: 'main-0', label: 'True', color: 'bg-green-500 text-white' },
-    { id: 'main-1', label: 'False', color: 'bg-red-500 text-white' },
+    { id: "main-0", label: "True", color: "bg-green-500 text-white" },
+    { id: "main-1", label: "False", color: "bg-red-500 text-white" },
   ];
 
   return (
@@ -51,13 +51,13 @@ export function IfNode(props: NodeProps<BaseNodeData>) {
  */
 export function LoopNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as LoopActionConfig;
-  const loopType = config.loopType || 'FOR';
+  const loopType = config.loopType || "FOR";
   const iterations = config.iterations;
-  const iteratorVar = config.iteratorVariable || 'i';
+  const iteratorVar = config.iteratorVariable || "i";
 
   const outputLabels = [
-    { id: 'main-0', label: 'Loop', color: 'bg-blue-500 text-white' },
-    { id: 'main-1', label: 'Exit', color: 'bg-gray-500 text-white' },
+    { id: "main-0", label: "Loop", color: "bg-blue-500 text-white" },
+    { id: "main-1", label: "Exit", color: "bg-gray-500 text-white" },
   ];
 
   return (
@@ -75,7 +75,7 @@ export function LoopNode(props: NodeProps<BaseNodeData>) {
 export function SwitchNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as SwitchActionConfig;
   const cases = config.cases || [];
-  const expression = config.expression || 'value';
+  const expression = config.expression || "value";
 
   // Generate output handles for each case + default
   const outputConfigs = getSwitchOutputHandles(cases.length);
@@ -83,7 +83,10 @@ export function SwitchNode(props: NodeProps<BaseNodeData>) {
   const outputLabels = outputConfigs.map((output) => ({
     id: output.id,
     label: output.label,
-    color: output.id === 'default' ? 'bg-gray-500 text-white' : 'bg-blue-500 text-white',
+    color:
+      output.id === "default"
+        ? "bg-gray-500 text-white"
+        : "bg-blue-500 text-white",
   }));
 
   return (
@@ -97,7 +100,7 @@ export function SwitchNode(props: NodeProps<BaseNodeData>) {
       {/* Show case values as tooltips/hints */}
       <div className="absolute left-0 bottom-full mb-2 pointer-events-none">
         <div className="text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm border border-gray-200">
-          {cases.length} case{cases.length !== 1 ? 's' : ''}
+          {cases.length} case{cases.length !== 1 ? "s" : ""}
         </div>
       </div>
     </div>
@@ -146,8 +149,8 @@ export function TryCatchNode(props: NodeProps<BaseNodeData>) {
   const hasFinally = config.finallyActions && config.finallyActions.length > 0;
 
   const outputLabels = [
-    { id: 'main-0', label: 'Success', color: 'bg-green-500 text-white' },
-    { id: 'error-0', label: 'Error', color: 'bg-red-500 text-white' },
+    { id: "main-0", label: "Success", color: "bg-green-500 text-white" },
+    { id: "error-0", label: "Error", color: "bg-red-500 text-white" },
   ];
 
   return (

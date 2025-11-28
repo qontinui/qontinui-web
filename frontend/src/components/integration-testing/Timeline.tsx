@@ -1,8 +1,8 @@
 // components/integration-testing/Timeline.tsx
 
-import { Play, Pause, SkipBack, SkipForward, RotateCcw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import type { ActionVisualization } from '@/types/integration-testing';
+import { Play, Pause, SkipBack, SkipForward, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { ActionVisualization } from "@/types/integration-testing";
 
 interface TimelineProps {
   actions: ActionVisualization[];
@@ -29,16 +29,26 @@ export function Timeline({
 }: TimelineProps) {
   const getActionIcon = (type: string) => {
     switch (type) {
-      case 'FIND': return '🔍';
-      case 'CLICK': return '👆';
-      case 'TYPE': return '⌨️';
-      case 'WAIT': return '⏱️';
-      case 'SCROLL': return '📜';
-      case 'MOVE_MOUSE': return '🖱️';
-      case 'HIGHLIGHT': return '✨';
-      case 'DEFINE': return '📝';
-      case 'VANISH': return '👻';
-      default: return '•';
+      case "FIND":
+        return "🔍";
+      case "CLICK":
+        return "👆";
+      case "TYPE":
+        return "⌨️";
+      case "WAIT":
+        return "⏱️";
+      case "SCROLL":
+        return "📜";
+      case "MOVE_MOUSE":
+        return "🖱️";
+      case "HIGHLIGHT":
+        return "✨";
+      case "DEFINE":
+        return "📝";
+      case "VANISH":
+        return "👻";
+      default:
+        return "•";
     }
   };
 
@@ -52,16 +62,21 @@ export function Timeline({
             onClick={() => onJumpTo(index)}
             className={`
               flex flex-col items-center p-2 rounded-lg transition-all
-              ${index === currentIndex
-                ? 'bg-blue-100 ring-2 ring-blue-500'
-                : 'bg-gray-100 hover:bg-gray-200'
+              ${
+                index === currentIndex
+                  ? "bg-blue-100 ring-2 ring-blue-500"
+                  : "bg-gray-100 hover:bg-gray-200"
               }
-              ${!action.success && 'ring-2 ring-red-500'}
+              ${!action.success && "ring-2 ring-red-500"}
               min-w-[60px]
             `}
           >
-            <span className="text-2xl">{getActionIcon(action.action_type)}</span>
-            <span className="text-xs font-medium mt-1">{action.action_type}</span>
+            <span className="text-2xl">
+              {getActionIcon(action.action_type)}
+            </span>
+            <span className="text-xs font-medium mt-1">
+              {action.action_type}
+            </span>
             {!action.success && <span className="text-red-500 text-xs">✗</span>}
           </button>
         ))}
@@ -79,11 +94,7 @@ export function Timeline({
 
       {/* Playback Controls */}
       <div className="flex items-center justify-center space-x-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={onReset}
-        >
+        <Button size="sm" variant="outline" onClick={onReset}>
           <RotateCcw className="w-4 h-4" />
         </Button>
 

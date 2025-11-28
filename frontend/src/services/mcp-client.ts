@@ -9,7 +9,11 @@
  * - Iterative refinement
  */
 
-import type { Workflow, Action, ActionType } from '../lib/action-schema/action-types';
+import type {
+  Workflow,
+  Action,
+  ActionType,
+} from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -58,8 +62,13 @@ export interface ActionDetails {
 export interface ValidationError {
   id: string;
   actionId?: string;
-  type: 'connection' | 'cycle' | 'orphaned' | 'missing_connection' | 'invalid_config';
-  severity: 'error' | 'warning';
+  type:
+    | "connection"
+    | "cycle"
+    | "orphaned"
+    | "missing_connection"
+    | "invalid_config";
+  severity: "error" | "warning";
   message: string;
   details?: any;
   suggestion?: string;
@@ -101,13 +110,18 @@ export interface GeneratedWorkflow {
 
 export interface WorkflowSuggestion {
   id: string;
-  type: 'optimization' | 'error_handling' | 'missing_action' | 'improvement' | 'alternative';
+  type:
+    | "optimization"
+    | "error_handling"
+    | "missing_action"
+    | "improvement"
+    | "alternative";
   title: string;
   description: string;
   confidence: number;
-  impact: 'high' | 'medium' | 'low';
+  impact: "high" | "medium" | "low";
   actions?: Array<{
-    type: 'add' | 'remove' | 'modify' | 'connect';
+    type: "add" | "remove" | "modify" | "connect";
     actionId?: string;
     action?: Action;
     connection?: any;
@@ -133,10 +147,13 @@ export class MCPClient {
   private cache: Map<string, { data: any; timestamp: number }>;
   private cacheTimeout: number;
 
-  constructor(baseUrl: string = 'http://localhost:3000/mcp', options?: {
-    timeout?: number;
-    cacheTimeout?: number;
-  }) {
+  constructor(
+    baseUrl: string = "http://localhost:3000/mcp",
+    options?: {
+      timeout?: number;
+      cacheTimeout?: number;
+    }
+  ) {
     this.baseUrl = baseUrl;
     this.timeout = options?.timeout || 30000;
     this.cacheTimeout = options?.cacheTimeout || 300000; // 5 minutes
@@ -154,12 +171,15 @@ export class MCPClient {
    * searchActions("click the submit button")
    * searchActions("find an image on screen", { category: ['vision'] })
    */
-  async searchActions(query: string, filters?: SearchFilters): Promise<ActionResult[]> {
+  async searchActions(
+    query: string,
+    filters?: SearchFilters
+  ): Promise<ActionResult[]> {
     const cacheKey = `search:${query}:${JSON.stringify(filters)}`;
     const cached = this.getCached(cacheKey);
     if (cached) return cached;
 
-    const response = await this.request('POST', '/search/actions', {
+    const response = await this.request("POST", "/search/actions", {
       query,
       filters,
       limit: filters?.limit || 10,
@@ -177,7 +197,7 @@ export class MCPClient {
     const cached = this.getCached(cacheKey);
     if (cached) return cached;
 
-    const response = await this.request('GET', `/actions/${actionType}`);
+    const response = await this.request("GET", `/actions/${actionType}`);
 
     this.setCache(cacheKey, response);
     return response;
@@ -191,7 +211,10 @@ export class MCPClient {
     const cached = this.getCached(cacheKey);
     if (cached) return cached;
 
-    const response = await this.request('GET', `/categories/${category}/actions`);
+    const response = await this.request(
+      "GET",
+      `/categories/${category}/actions`
+    );
 
     this.setCache(cacheKey, response.results);
     return response.results;
@@ -200,12 +223,14 @@ export class MCPClient {
   /**
    * Get all available categories
    */
-  async getCategories(): Promise<Array<{ id: string; name: string; count: number }>> {
-    const cacheKey = 'categories:all';
+  async getCategories(): Promise<
+    Array<{ id: string; name: string; count: number }>
+  > {
+    const cacheKey = "categories:all";
     const cached = this.getCached(cacheKey);
     if (cached) return cached;
 
-    const response = await this.request('GET', '/categories');
+    const response = await this.request("GET", "/categories");
 
     this.setCache(cacheKey, response.categories);
     return response.categories;
@@ -225,7 +250,7 @@ export class MCPClient {
    * - Invalid configurations
    */
   async validateWorkflow(workflow: Workflow): Promise<ValidationResult> {
-    const response = await this.request('POST', '/workflows/validate', {
+    const response = await this.request("POST", "/workflows/validate", {
       workflow,
     });
 
@@ -243,7 +268,7 @@ export class MCPClient {
     };
     suggestions: WorkflowSuggestion[];
   }> {
-    const response = await this.request('POST', '/workflows/analyze', {
+    const response = await this.request("POST", "/workflows/analyze", {
       workflow,
     });
 
@@ -265,19 +290,24 @@ export class MCPClient {
     description: string,
     context?: GenerationContext
   ): Promise<GeneratedWorkflow> {
-    const response = await this.request('POST', '/workflows/generate', {
-      description,
-      context: {
-        existingWorkflow: context?.existingWorkflow,
-        templates: context?.templates,
-        constraints: context?.constraints,
-        examples: context?.examples,
-        preferredActions: context?.preferredActions,
-        avoidActions: context?.avoidActions,
+    const response = await this.request(
+      "POST",
+      "/workflows/generate",
+      {
+        description,
+        context: {
+          existingWorkflow: context?.existingWorkflow,
+          templates: context?.templates,
+          constraints: context?.constraints,
+          examples: context?.examples,
+          preferredActions: context?.preferredActions,
+          avoidActions: context?.avoidActions,
+        },
       },
-    }, {
-      timeout: 60000, // Longer timeout for AI generation
-    });
+      {
+        timeout: 60000, // Longer timeout for AI generation
+      }
+    );
 
     return {
       workflow: response.workflow,
@@ -300,16 +330,20 @@ export class MCPClient {
     workflow: Workflow,
     feedback: string | RefinementFeedback
   ): Promise<GeneratedWorkflow> {
-    const refinementData = typeof feedback === 'string'
-      ? { feedback }
-      : feedback;
+    const refinementData =
+      typeof feedback === "string" ? { feedback } : feedback;
 
-    const response = await this.request('POST', '/workflows/refine', {
-      workflow,
-      ...refinementData,
-    }, {
-      timeout: 60000,
-    });
+    const response = await this.request(
+      "POST",
+      "/workflows/refine",
+      {
+        workflow,
+        ...refinementData,
+      },
+      {
+        timeout: 60000,
+      }
+    );
 
     return {
       workflow: response.workflow,
@@ -328,7 +362,7 @@ export class MCPClient {
     templateId: string,
     parameters?: Record<string, any>
   ): Promise<GeneratedWorkflow> {
-    const response = await this.request('POST', '/workflows/from-template', {
+    const response = await this.request("POST", "/workflows/from-template", {
       templateId,
       parameters,
     });
@@ -355,8 +389,10 @@ export class MCPClient {
    * - Missing connections
    * - Parallel execution opportunities
    */
-  async getSuggestions(partialWorkflow: Workflow): Promise<WorkflowSuggestion[]> {
-    const response = await this.request('POST', '/workflows/suggestions', {
+  async getSuggestions(
+    partialWorkflow: Workflow
+  ): Promise<WorkflowSuggestion[]> {
+    const response = await this.request("POST", "/workflows/suggestions", {
       workflow: partialWorkflow,
     });
 
@@ -369,12 +405,14 @@ export class MCPClient {
   async getNextActionSuggestions(
     workflow: Workflow,
     afterActionId?: string
-  ): Promise<Array<{
-    action: ActionResult;
-    reason: string;
-    confidence: number;
-  }>> {
-    const response = await this.request('POST', '/workflows/suggest-next', {
+  ): Promise<
+    Array<{
+      action: ActionResult;
+      reason: string;
+      confidence: number;
+    }>
+  > {
+    const response = await this.request("POST", "/workflows/suggest-next", {
       workflow,
       afterActionId,
     });
@@ -389,7 +427,7 @@ export class MCPClient {
     workflow: Workflow,
     suggestion: WorkflowSuggestion
   ): Promise<Workflow> {
-    const response = await this.request('POST', '/workflows/apply-suggestion', {
+    const response = await this.request("POST", "/workflows/apply-suggestion", {
       workflow,
       suggestionId: suggestion.id,
       actions: suggestion.actions,
@@ -405,26 +443,31 @@ export class MCPClient {
   /**
    * Get available workflow templates
    */
-  async getTemplates(category?: string): Promise<Array<{
-    id: string;
-    name: string;
-    description: string;
-    category: string;
-    tags: string[];
-    parameters?: Array<{
+  async getTemplates(category?: string): Promise<
+    Array<{
+      id: string;
       name: string;
-      type: string;
       description: string;
-      required: boolean;
-      default?: any;
-    }>;
-    preview?: Workflow;
-  }>> {
-    const cacheKey = `templates:${category || 'all'}`;
+      category: string;
+      tags: string[];
+      parameters?: Array<{
+        name: string;
+        type: string;
+        description: string;
+        required: boolean;
+        default?: any;
+      }>;
+      preview?: Workflow;
+    }>
+  > {
+    const cacheKey = `templates:${category || "all"}`;
     const cached = this.getCached(cacheKey);
     if (cached) return cached;
 
-    const response = await this.request('GET', `/templates${category ? `?category=${category}` : ''}`);
+    const response = await this.request(
+      "GET",
+      `/templates${category ? `?category=${category}` : ""}`
+    );
 
     this.setCache(cacheKey, response.templates);
     return response.templates;
@@ -448,7 +491,7 @@ export class MCPClient {
     potentialIssues?: string[];
     recommendations?: string[];
   }> {
-    const response = await this.request('POST', '/workflows/explain', {
+    const response = await this.request("POST", "/workflows/explain", {
       workflow,
     });
 
@@ -464,7 +507,7 @@ export class MCPClient {
     how: string;
     alternatives?: string[];
   }> {
-    const response = await this.request('POST', '/actions/explain', {
+    const response = await this.request("POST", "/actions/explain", {
       action,
     });
 
@@ -480,14 +523,21 @@ export class MCPClient {
    */
   async optimizeWorkflow(
     workflow: Workflow,
-    optimizationGoals?: Array<'speed' | 'reliability' | 'simplicity' | 'maintainability'>
+    optimizationGoals?: Array<
+      "speed" | "reliability" | "simplicity" | "maintainability"
+    >
   ): Promise<GeneratedWorkflow> {
-    const response = await this.request('POST', '/workflows/optimize', {
-      workflow,
-      goals: optimizationGoals || ['speed', 'reliability'],
-    }, {
-      timeout: 60000,
-    });
+    const response = await this.request(
+      "POST",
+      "/workflows/optimize",
+      {
+        workflow,
+        goals: optimizationGoals || ["speed", "reliability"],
+      },
+      {
+        timeout: 60000,
+      }
+    );
 
     return {
       workflow: response.workflow,
@@ -503,7 +553,7 @@ export class MCPClient {
   // ==========================================================================
 
   private async request(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: "GET" | "POST" | "PUT" | "DELETE",
     endpoint: string,
     data?: any,
     options?: { timeout?: number }
@@ -518,7 +568,7 @@ export class MCPClient {
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
         method,
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: data ? JSON.stringify(data) : undefined,
         signal: controller.signal,
@@ -543,15 +593,11 @@ export class MCPClient {
         throw error;
       }
 
-      if (error.name === 'AbortError') {
-        throw new MCPError('Request timeout', 408);
+      if (error.name === "AbortError") {
+        throw new MCPError("Request timeout", 408);
       }
 
-      throw new MCPError(
-        error.message || 'Network error',
-        0,
-        error
-      );
+      throw new MCPError(error.message || "Network error", 0, error);
     }
   }
 
@@ -591,7 +637,7 @@ export class MCPClient {
     capabilities?: string[];
   }> {
     try {
-      const response = await this.request('GET', '/health');
+      const response = await this.request("GET", "/health");
       return {
         available: true,
         version: response.version,
@@ -616,7 +662,7 @@ export class MCPError extends Error {
     public details?: any
   ) {
     super(message);
-    this.name = 'MCPError';
+    this.name = "MCPError";
   }
 }
 
@@ -631,7 +677,7 @@ let mcpClient: MCPClient | null = null;
  */
 export function getMCPClient(): MCPClient {
   if (!mcpClient) {
-    const baseUrl = import.meta.env.VITE_MCP_URL || 'http://localhost:3000/mcp';
+    const baseUrl = import.meta.env.VITE_MCP_URL || "http://localhost:3000/mcp";
     mcpClient = new MCPClient(baseUrl);
   }
   return mcpClient;

@@ -12,7 +12,7 @@ import {
   Action,
   ActionType,
   getActionOutputCount,
-} from './action-types';
+} from "./action-types";
 
 // ============================================================================
 // Entry and Exit Points
@@ -25,7 +25,7 @@ export function getEntryPoints(workflow: Workflow): string[] {
   const actionsWithIncoming = new Set<string>();
 
   Object.values(workflow.connections).forEach((outputs) => {
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const connections = outputs[type as keyof typeof outputs];
       if (connections) {
         connections.forEach((outputConnections) => {
@@ -62,7 +62,7 @@ export function getActionConnections(
 export function getNextActions(
   workflow: Workflow,
   actionId: string,
-  connectionType?: 'main' | 'error' | 'success' | 'parallel'
+  connectionType?: "main" | "error" | "success" | "parallel"
 ): string[] {
   const connections = getActionConnections(workflow, actionId);
   if (!connections) {
@@ -72,7 +72,7 @@ export function getNextActions(
   const nextActionIds = new Set<string>();
   const types = connectionType
     ? [connectionType]
-    : (['main', 'error', 'success', 'parallel'] as const);
+    : (["main", "error", "success", "parallel"] as const);
 
   types.forEach((type) => {
     const typeConnections = connections[type];
@@ -98,7 +98,7 @@ export function getPreviousActions(
   const previousActionIds: string[] = [];
 
   Object.entries(workflow.connections).forEach(([sourceId, outputs]) => {
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const connections = outputs[type as keyof typeof outputs];
       if (connections) {
         connections.forEach((outputConnections) => {
@@ -164,7 +164,7 @@ export function hasMergeNodes(workflow: Workflow): boolean {
   const incomingCounts = new Map<string, number>();
 
   Object.values(workflow.connections).forEach((outputs) => {
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const connections = outputs[type as keyof typeof outputs];
       if (connections) {
         connections.forEach((outputConnections) => {
@@ -195,7 +195,7 @@ export function findOrphanedActions(workflow: Workflow): string[] {
 
   // Add all actions with incoming connections
   Object.values(workflow.connections).forEach((outputs) => {
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const connections = outputs[type as keyof typeof outputs];
       if (connections) {
         connections.forEach((outputConnections) => {
@@ -331,7 +331,7 @@ export function cloneWorkflow(
     if (!newSourceId) return;
 
     newConnections[newSourceId] = {};
-    ['main', 'error', 'success', 'parallel'].forEach((type) => {
+    ["main", "error", "success", "parallel"].forEach((type) => {
       const connections = outputs[type as keyof typeof outputs];
       if (connections) {
         newConnections[newSourceId][type as keyof typeof outputs] =
@@ -347,7 +347,9 @@ export function cloneWorkflow(
 
   return {
     ...workflow,
-    id: newWorkflowId || `workflow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id:
+      newWorkflowId ||
+      `workflow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     actions: newActions,
     connections: newConnections,
   };
@@ -399,7 +401,7 @@ export function processToWorkflow(process: LegacyProcess): Workflow {
     if (index < process.actions.length - 1) {
       const nextActionId = process.actions[index + 1].id;
       connections[action.id] = {
-        main: [[{ action: nextActionId, type: 'main', index: 0 }]],
+        main: [[{ action: nextActionId, type: "main", index: 0 }]],
       };
     }
   });
@@ -407,16 +409,16 @@ export function processToWorkflow(process: LegacyProcess): Workflow {
   return {
     id: process.id,
     name: process.name,
-    version: '1.0.0',
-    format: 'graph',
+    version: "1.0.0",
+    format: "graph",
     category: process.category,
-    description: process.description || '',
+    description: process.description || "",
     actions,
     connections,
     initialScreenshotId: process.initialScreenshotId,
     initialStateIds: process.initialStateIds,
     metadata: {
-      viewMode: 'sequential', // Mark as sequential since it came from Process
+      viewMode: "sequential", // Mark as sequential since it came from Process
       created: new Date().toISOString(),
     },
   };
@@ -439,7 +441,7 @@ export function workflowToProcess(workflow: Workflow): LegacyProcess | null {
   return {
     id: workflow.id,
     name: workflow.name,
-    description: workflow.description || '',
+    description: workflow.description || "",
     category: workflow.category,
     actions: orderedActions.map((action) => ({
       id: action.id,
@@ -518,7 +520,9 @@ export function getLinearActionOrder(workflow: Workflow): Action[] {
   const entryActions = actions.filter((a) => !incomingMap.has(a.id));
 
   if (entryActions.length === 0) {
-    console.warn('[getLinearActionOrder] No entry point found, using first action');
+    console.warn(
+      "[getLinearActionOrder] No entry point found, using first action"
+    );
     return actions; // Fallback to original order
   }
 
@@ -549,14 +553,14 @@ export function getLinearActionOrder(workflow: Workflow): Action[] {
  *
  * Returns 'sequential' if workflow is linear, 'graph' if it has branching
  */
-export function detectViewMode(workflow: Workflow): 'sequential' | 'graph' {
+export function detectViewMode(workflow: Workflow): "sequential" | "graph" {
   // Check metadata hint first
   if (workflow.metadata?.viewMode) {
     return workflow.metadata.viewMode;
   }
 
   // Auto-detect based on structure
-  return isLinearWorkflow(workflow) ? 'sequential' : 'graph';
+  return isLinearWorkflow(workflow) ? "sequential" : "graph";
 }
 
 // ============================================================================
@@ -570,19 +574,19 @@ export function createWorkflow(options: {
   name: string;
   category?: string;
   description?: string;
-  viewMode?: 'sequential' | 'graph';
+  viewMode?: "sequential" | "graph";
 }): Workflow {
   return {
     id: `workflow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name: options.name,
-    version: '1.0.0',
-    format: 'graph',
-    category: options.category || 'Main',
-    description: options.description || '',
+    version: "1.0.0",
+    format: "graph",
+    category: options.category || "Main",
+    description: options.description || "",
     actions: [],
     connections: {},
     metadata: {
-      viewMode: options.viewMode || 'sequential',
+      viewMode: options.viewMode || "sequential",
       created: new Date().toISOString(),
     },
   };
@@ -622,7 +626,10 @@ export function ensurePositions(workflow: Workflow): Workflow {
       hasChanges = true;
       return {
         ...action,
-        position: [100 + (index % 5) * 250, 100 + Math.floor(index / 5) * 150] as [number, number],
+        position: [
+          100 + (index % 5) * 250,
+          100 + Math.floor(index / 5) * 150,
+        ] as [number, number],
       };
     }
     return action;
@@ -648,7 +655,7 @@ export function buildLinearConnections(actions: Action[]): Connections {
     const nextId = actions[i + 1].id;
 
     connections[currentId] = {
-      main: [[{ action: nextId, type: 'main', index: 0 }]],
+      main: [[{ action: nextId, type: "main", index: 0 }]],
     };
   }
 

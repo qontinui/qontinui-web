@@ -1,5 +1,14 @@
 import Link from "next/link";
-import { Play, Pause, RotateCcw, Settings, AlertCircle, CheckCircle2, Clock, FileJson } from "lucide-react";
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  Settings,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  FileJson,
+} from "lucide-react";
 
 export const metadata = {
   title: "Running Automations - Qontinui Runner Documentation",
@@ -93,11 +102,13 @@ export default function ExecutionDocPage() {
               <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm text-blue-900 mb-2">
-                  <strong>Configuration Validation:</strong> Runner automatically validates your
-                  configuration on load. Check for warnings or errors in the console output.
+                  <strong>Configuration Validation:</strong> Runner
+                  automatically validates your configuration on load. Check for
+                  warnings or errors in the console output.
                 </p>
                 <p className="text-xs text-blue-800">
-                  Common issues: missing images, invalid state references, malformed processes
+                  Common issues: missing images, invalid state references,
+                  malformed processes
                 </p>
               </div>
             </div>
@@ -159,8 +170,9 @@ export default function ExecutionDocPage() {
           </h2>
 
           <p className="text-slate-700 mb-6">
-            Configure how Qontinui Runner executes your automation. These settings are typically
-            defined in your JSON configuration but can sometimes be overridden in Runner.
+            Configure how Qontinui Runner executes your automation. These
+            settings are typically defined in your JSON configuration but can
+            sometimes be overridden in Runner.
           </p>
 
           <div className="space-y-4">
@@ -348,9 +360,7 @@ export default function ExecutionDocPage() {
 
         {/* Next Steps */}
         <section className="border-t border-slate-200 pt-12">
-          <h2 className="text-2xl font-bold text-slate-900 mb-6">
-            Next Steps
-          </h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-6">Next Steps</h2>
           <div className="grid md:grid-cols-2 gap-6">
             <NextStepCard
               title="Monitoring & Logs"
@@ -378,7 +388,14 @@ interface PrerequisiteCardProps {
   linkText?: string;
 }
 
-function PrerequisiteCard({ icon, title, description, steps, link, linkText }: PrerequisiteCardProps) {
+function PrerequisiteCard({
+  icon,
+  title,
+  description,
+  steps,
+  link,
+  linkText,
+}: PrerequisiteCardProps) {
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
       <div className="flex items-start gap-4 mb-3">
@@ -390,7 +407,9 @@ function PrerequisiteCard({ icon, title, description, steps, link, linkText }: P
             <ol className="text-sm text-slate-700 space-y-1">
               {steps.map((step, idx) => (
                 <li key={idx} className="flex items-start gap-2">
-                  <span className="text-blue-600 font-semibold">{idx + 1}.</span>
+                  <span className="text-blue-600 font-semibold">
+                    {idx + 1}.
+                  </span>
                   <span>{step}</span>
                 </li>
               ))}
@@ -438,7 +457,13 @@ interface ModeCardProps {
   bestFor: string;
 }
 
-function ModeCard({ icon, title, description, details, bestFor }: ModeCardProps) {
+function ModeCard({
+  icon,
+  title,
+  description,
+  details,
+  bestFor,
+}: ModeCardProps) {
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-6">
       <div className="flex items-start gap-4 mb-4">
@@ -448,7 +473,10 @@ function ModeCard({ icon, title, description, details, bestFor }: ModeCardProps)
           <p className="text-slate-600 text-sm mb-3">{description}</p>
           <ul className="space-y-1 mb-3">
             {details.map((detail, idx) => (
-              <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+              <li
+                key={idx}
+                className="flex items-start gap-2 text-sm text-slate-700"
+              >
                 <span className="text-blue-600">•</span>
                 <span>{detail}</span>
               </li>
@@ -472,7 +500,12 @@ interface SettingCardProps {
   description: string;
 }
 
-function SettingCard({ name, type, defaultValue, description }: SettingCardProps) {
+function SettingCard({
+  name,
+  type,
+  defaultValue,
+  description,
+}: SettingCardProps) {
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-4">
       <div className="flex items-start justify-between mb-2">
@@ -483,7 +516,10 @@ function SettingCard({ name, type, defaultValue, description }: SettingCardProps
       </div>
       <p className="text-sm text-slate-700 mb-2">{description}</p>
       <p className="text-xs text-slate-500">
-        Default: <span className="font-mono bg-slate-100 px-1 rounded">{defaultValue}</span>
+        Default:{" "}
+        <span className="font-mono bg-slate-100 px-1 rounded">
+          {defaultValue}
+        </span>
       </p>
     </div>
   );
@@ -495,14 +531,21 @@ interface MonitoringFeatureProps {
   items: string[];
 }
 
-function MonitoringFeature({ title, description, items }: MonitoringFeatureProps) {
+function MonitoringFeature({
+  title,
+  description,
+  items,
+}: MonitoringFeatureProps) {
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
       <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
       <p className="text-sm text-slate-600 mb-3">{description}</p>
       <ul className="space-y-1">
         {items.map((item, idx) => (
-          <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+          <li
+            key={idx}
+            className="flex items-start gap-2 text-sm text-slate-700"
+          >
             <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
             <span>{item}</span>
           </li>

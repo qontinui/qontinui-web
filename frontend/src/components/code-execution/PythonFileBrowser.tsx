@@ -14,7 +14,7 @@
  * - Accessible keyboard navigation
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from "react";
 import {
   File,
   Folder,
@@ -27,12 +27,12 @@ import {
   ChevronDown,
   Loader2,
   RefreshCw,
-} from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -49,7 +49,7 @@ export interface PythonFile {
 export interface FileTreeNode {
   name: string;
   path: string;
-  type: 'file' | 'directory';
+  type: "file" | "directory";
   children?: FileTreeNode[];
   file?: PythonFile;
 }
@@ -87,9 +87,9 @@ function buildFileTree(files: PythonFile[]): FileTreeNode[] {
   const dirMap = new Map<string, FileTreeNode>();
 
   files.forEach((file) => {
-    const pathParts = file.path.split('/');
+    const pathParts = file.path.split("/");
     let currentLevel = root;
-    let currentPath = '';
+    let currentPath = "";
 
     // Process directories
     for (let i = 0; i < pathParts.length - 1; i++) {
@@ -101,7 +101,7 @@ function buildFileTree(files: PythonFile[]): FileTreeNode[] {
         dirNode = {
           name: dirName,
           path: currentPath,
-          type: 'directory',
+          type: "directory",
           children: [],
         };
         dirMap.set(currentPath, dirNode);
@@ -115,7 +115,7 @@ function buildFileTree(files: PythonFile[]): FileTreeNode[] {
     currentLevel.push({
       name: fileName,
       path: file.path,
-      type: 'file',
+      type: "file",
       file,
     });
   });
@@ -138,11 +138,11 @@ function formatFileSize(bytes: number): string {
 function formatDate(dateString: string): string {
   try {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   } catch {
     return dateString;
@@ -161,12 +161,18 @@ interface TreeNodeProps {
   depth: number;
 }
 
-function TreeNode({ node, selectedPath, onSelectFile, showMetadata, depth }: TreeNodeProps) {
+function TreeNode({
+  node,
+  selectedPath,
+  onSelectFile,
+  showMetadata,
+  depth,
+}: TreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(depth === 0);
   const isSelected = selectedPath === node.path;
 
   const handleClick = useCallback(() => {
-    if (node.type === 'file') {
+    if (node.type === "file") {
       onSelectFile(node.path);
     } else {
       setIsExpanded(!isExpanded);
@@ -175,13 +181,21 @@ function TreeNode({ node, selectedPath, onSelectFile, showMetadata, depth }: Tre
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         handleClick();
-      } else if (e.key === 'ArrowRight' && node.type === 'directory' && !isExpanded) {
+      } else if (
+        e.key === "ArrowRight" &&
+        node.type === "directory" &&
+        !isExpanded
+      ) {
         e.preventDefault();
         setIsExpanded(true);
-      } else if (e.key === 'ArrowLeft' && node.type === 'directory' && isExpanded) {
+      } else if (
+        e.key === "ArrowLeft" &&
+        node.type === "directory" &&
+        isExpanded
+      ) {
         e.preventDefault();
         setIsExpanded(false);
       }
@@ -191,14 +205,14 @@ function TreeNode({ node, selectedPath, onSelectFile, showMetadata, depth }: Tre
 
   const paddingLeft = depth * 16 + 8;
 
-  if (node.type === 'directory') {
+  if (node.type === "directory") {
     return (
       <div>
         <div
           className={cn(
-            'flex items-center gap-2 py-1.5 px-2 cursor-pointer rounded transition-colors',
-            'hover:bg-gray-100 dark:hover:bg-gray-800',
-            'focus:outline-none focus:ring-2 focus:ring-blue-500'
+            "flex items-center gap-2 py-1.5 px-2 cursor-pointer rounded transition-colors",
+            "hover:bg-gray-100 dark:hover:bg-gray-800",
+            "focus:outline-none focus:ring-2 focus:ring-blue-500"
           )}
           style={{ paddingLeft }}
           onClick={handleClick}
@@ -217,7 +231,9 @@ function TreeNode({ node, selectedPath, onSelectFile, showMetadata, depth }: Tre
           ) : (
             <Folder className="w-4 h-4 text-blue-500 flex-shrink-0" />
           )}
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{node.name}</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {node.name}
+          </span>
           {node.children && (
             <Badge variant="secondary" className="ml-auto text-xs">
               {node.children.length}
@@ -246,10 +262,11 @@ function TreeNode({ node, selectedPath, onSelectFile, showMetadata, depth }: Tre
   return (
     <div
       className={cn(
-        'flex items-center gap-2 py-1.5 px-2 cursor-pointer rounded transition-colors',
-        'hover:bg-gray-100 dark:hover:bg-gray-800',
-        'focus:outline-none focus:ring-2 focus:ring-blue-500',
-        isSelected && 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700'
+        "flex items-center gap-2 py-1.5 px-2 cursor-pointer rounded transition-colors",
+        "hover:bg-gray-100 dark:hover:bg-gray-800",
+        "focus:outline-none focus:ring-2 focus:ring-blue-500",
+        isSelected &&
+          "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700"
       )}
       style={{ paddingLeft }}
       onClick={handleClick}
@@ -261,11 +278,18 @@ function TreeNode({ node, selectedPath, onSelectFile, showMetadata, depth }: Tre
       <FileCode className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-900 dark:text-gray-100 truncate">{node.name}</span>
+          <span className="text-sm text-gray-900 dark:text-gray-100 truncate">
+            {node.name}
+          </span>
           {node.file?.isValid === false && (
-            <AlertCircle className="w-3 h-3 text-red-500 flex-shrink-0" title="File validation failed" />
+            <AlertCircle
+              className="w-3 h-3 text-red-500 flex-shrink-0"
+              title="File validation failed"
+            />
           )}
-          {isSelected && <CheckCircle className="w-3 h-3 text-blue-500 flex-shrink-0" />}
+          {isSelected && (
+            <CheckCircle className="w-3 h-3 text-blue-500 flex-shrink-0" />
+          )}
         </div>
         {showMetadata && node.file && (
           <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
@@ -290,10 +314,10 @@ export function PythonFileBrowser({
   error = null,
   onRefresh,
   validateOnSelect = false,
-  height = '400px',
+  height = "400px",
   showMetadata = true,
 }: PythonFileBrowserProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Filter files by search query
   const filteredFiles = useMemo(() => {
@@ -301,7 +325,8 @@ export function PythonFileBrowser({
     const query = searchQuery.toLowerCase();
     return files.filter(
       (file) =>
-        file.name.toLowerCase().includes(query) || file.path.toLowerCase().includes(query)
+        file.name.toLowerCase().includes(query) ||
+        file.path.toLowerCase().includes(query)
     );
   }, [files, searchQuery]);
 
@@ -331,7 +356,7 @@ export function PythonFileBrowser({
             disabled={isLoading}
             aria-label="Refresh file list"
           >
-            <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
+            <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
           </Button>
         )}
       </div>
@@ -340,10 +365,15 @@ export function PythonFileBrowser({
       {!error && (
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>
-            {filteredFiles.length} file{filteredFiles.length !== 1 ? 's' : ''} found
+            {filteredFiles.length} file{filteredFiles.length !== 1 ? "s" : ""}{" "}
+            found
             {searchQuery && ` (filtered from ${files.length})`}
           </span>
-          {selectedPath && <span className="text-blue-600 dark:text-blue-400">Selected: {selectedPath}</span>}
+          {selectedPath && (
+            <span className="text-blue-600 dark:text-blue-400">
+              Selected: {selectedPath}
+            </span>
+          )}
         </div>
       )}
 
@@ -352,8 +382,12 @@ export function PythonFileBrowser({
         <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
           <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-red-900 dark:text-red-100">Error loading files</p>
-            <p className="text-xs text-red-700 dark:text-red-300 mt-1">{error}</p>
+            <p className="text-sm font-medium text-red-900 dark:text-red-100">
+              Error loading files
+            </p>
+            <p className="text-xs text-red-700 dark:text-red-300 mt-1">
+              {error}
+            </p>
           </div>
           {onRefresh && (
             <Button variant="outline" size="sm" onClick={onRefresh}>
@@ -379,12 +413,14 @@ export function PythonFileBrowser({
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <FileCode className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {searchQuery ? 'No files match your search' : 'No Python files found'}
+                  {searchQuery
+                    ? "No files match your search"
+                    : "No Python files found"}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
                   {searchQuery
-                    ? 'Try a different search term'
-                    : 'Add .py files to your project directory'}
+                    ? "Try a different search term"
+                    : "Add .py files to your project directory"}
                 </p>
               </div>
             ) : (
@@ -408,7 +444,8 @@ export function PythonFileBrowser({
       {/* Help Text */}
       {!error && !isLoading && files.length > 0 && (
         <p className="text-xs text-gray-500">
-          Select a Python file to use in your code execution action. Files are relative to your project root.
+          Select a Python file to use in your code execution action. Files are
+          relative to your project root.
         </p>
       )}
     </div>

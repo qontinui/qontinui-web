@@ -8,17 +8,17 @@
  * - MCP server connection
  */
 
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
-import { getMCPClient } from '../services/mcp-client';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import { getMCPClient } from "../services/mcp-client";
 import type {
   GeneratedWorkflow,
   WorkflowSuggestion,
   ActionResult,
   GenerationContext,
   RefinementFeedback,
-} from '../services/mcp-client';
-import type { Workflow, Action } from '../lib/action-schema/action-types';
+} from "../services/mcp-client";
+import type { Workflow, Action } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -65,15 +65,24 @@ export interface MCPActions {
   disconnect: () => void;
 
   // Generation
-  generateWorkflow: (description: string, context?: GenerationContext) => Promise<void>;
-  refineWorkflow: (workflow: Workflow, feedback: string | RefinementFeedback) => Promise<void>;
+  generateWorkflow: (
+    description: string,
+    context?: GenerationContext
+  ) => Promise<void>;
+  refineWorkflow: (
+    workflow: Workflow,
+    feedback: string | RefinementFeedback
+  ) => Promise<void>;
   acceptGenerated: () => Workflow | null;
   rejectGenerated: () => void;
   clearGeneration: () => void;
 
   // Suggestions
   getSuggestions: (workflow: Workflow) => Promise<void>;
-  applySuggestion: (workflow: Workflow, suggestion: WorkflowSuggestion) => Promise<Workflow>;
+  applySuggestion: (
+    workflow: Workflow,
+    suggestion: WorkflowSuggestion
+  ) => Promise<Workflow>;
   dismissSuggestion: (suggestionId: string) => void;
   clearSuggestions: () => void;
 
@@ -121,7 +130,7 @@ const initialState: MCPState = {
   searchResults: [],
   isSearching: false,
   searchError: null,
-  lastSearchQuery: '',
+  lastSearchQuery: "",
 
   // UI State
   showGenerationDialog: false,
@@ -154,7 +163,7 @@ export const useMCPStore = create<MCPStore>()(
             capabilities: health.capabilities || [],
           });
         } catch (error) {
-          console.error('MCP health check failed:', error);
+          console.error("MCP health check failed:", error);
           set({
             isConnected: false,
             serverVersion: null,
@@ -175,7 +184,10 @@ export const useMCPStore = create<MCPStore>()(
       // Generation
       // ======================================================================
 
-      generateWorkflow: async (description: string, context?: GenerationContext) => {
+      generateWorkflow: async (
+        description: string,
+        context?: GenerationContext
+      ) => {
         set({
           isGenerating: true,
           generationError: null,
@@ -189,18 +201,25 @@ export const useMCPStore = create<MCPStore>()(
           set((state) => ({
             isGenerating: false,
             generatedWorkflow: result,
-            generationHistory: [result, ...state.generationHistory].slice(0, 10), // Keep last 10
+            generationHistory: [result, ...state.generationHistory].slice(
+              0,
+              10
+            ), // Keep last 10
           }));
         } catch (error) {
-          console.error('Workflow generation failed:', error);
+          console.error("Workflow generation failed:", error);
           set({
             isGenerating: false,
-            generationError: error instanceof Error ? error.message : 'Generation failed',
+            generationError:
+              error instanceof Error ? error.message : "Generation failed",
           });
         }
       },
 
-      refineWorkflow: async (workflow: Workflow, feedback: string | RefinementFeedback) => {
+      refineWorkflow: async (
+        workflow: Workflow,
+        feedback: string | RefinementFeedback
+      ) => {
         set({
           isRefining: true,
           refinementError: null,
@@ -213,13 +232,17 @@ export const useMCPStore = create<MCPStore>()(
           set((state) => ({
             isRefining: false,
             generatedWorkflow: result,
-            generationHistory: [result, ...state.generationHistory].slice(0, 10),
+            generationHistory: [result, ...state.generationHistory].slice(
+              0,
+              10
+            ),
           }));
         } catch (error) {
-          console.error('Workflow refinement failed:', error);
+          console.error("Workflow refinement failed:", error);
           set({
             isRefining: false,
-            refinementError: error instanceof Error ? error.message : 'Refinement failed',
+            refinementError:
+              error instanceof Error ? error.message : "Refinement failed",
           });
         }
       },
@@ -273,34 +296,45 @@ export const useMCPStore = create<MCPStore>()(
             suggestions: results,
           });
         } catch (error) {
-          console.error('Failed to fetch suggestions:', error);
+          console.error("Failed to fetch suggestions:", error);
           set({
             isFetchingSuggestions: false,
-            suggestionsError: error instanceof Error ? error.message : 'Failed to fetch suggestions',
+            suggestionsError:
+              error instanceof Error
+                ? error.message
+                : "Failed to fetch suggestions",
           });
         }
       },
 
-      applySuggestion: async (workflow: Workflow, suggestion: WorkflowSuggestion) => {
+      applySuggestion: async (
+        workflow: Workflow,
+        suggestion: WorkflowSuggestion
+      ) => {
         try {
           const mcpClient = getMCPClient();
-          const updatedWorkflow = await mcpClient.applySuggestion(workflow, suggestion);
+          const updatedWorkflow = await mcpClient.applySuggestion(
+            workflow,
+            suggestion
+          );
 
           // Remove applied suggestion
           set((state) => ({
-            suggestions: state.suggestions.filter(s => s.id !== suggestion.id),
+            suggestions: state.suggestions.filter(
+              (s) => s.id !== suggestion.id
+            ),
           }));
 
           return updatedWorkflow;
         } catch (error) {
-          console.error('Failed to apply suggestion:', error);
+          console.error("Failed to apply suggestion:", error);
           throw error;
         }
       },
 
       dismissSuggestion: (suggestionId: string) => {
         set((state) => ({
-          suggestions: state.suggestions.filter(s => s.id !== suggestionId),
+          suggestions: state.suggestions.filter((s) => s.id !== suggestionId),
         }));
       },
 
@@ -332,10 +366,11 @@ export const useMCPStore = create<MCPStore>()(
             searchResults: results,
           });
         } catch (error) {
-          console.error('Action search failed:', error);
+          console.error("Action search failed:", error);
           set({
             isSearching: false,
-            searchError: error instanceof Error ? error.message : 'Search failed',
+            searchError:
+              error instanceof Error ? error.message : "Search failed",
             searchResults: [],
           });
         }
@@ -345,7 +380,7 @@ export const useMCPStore = create<MCPStore>()(
         set({
           searchResults: [],
           searchError: null,
-          lastSearchQuery: '',
+          lastSearchQuery: "",
         });
       },
 
@@ -373,7 +408,7 @@ export const useMCPStore = create<MCPStore>()(
         set((state) => ({ showActionSearch: !state.showActionSearch }));
       },
     }),
-    { name: 'MCPStore' }
+    { name: "MCPStore" }
   )
 );
 
@@ -385,7 +420,7 @@ export const useMCPStore = create<MCPStore>()(
  * Check if MCP features are available
  */
 export const useMCPAvailable = () => {
-  const isConnected = useMCPStore(state => state.isConnected);
+  const isConnected = useMCPStore((state) => state.isConnected);
   return isConnected;
 };
 
@@ -393,7 +428,7 @@ export const useMCPAvailable = () => {
  * Get current generation state
  */
 export const useGenerationState = () => {
-  return useMCPStore(state => ({
+  return useMCPStore((state) => ({
     isGenerating: state.isGenerating,
     isRefining: state.isRefining,
     result: state.generatedWorkflow,
@@ -405,14 +440,14 @@ export const useGenerationState = () => {
  * Get suggestions count
  */
 export const useSuggestionsCount = () => {
-  return useMCPStore(state => state.suggestions.length);
+  return useMCPStore((state) => state.suggestions.length);
 };
 
 /**
  * Get high-impact suggestions
  */
 export const useHighImpactSuggestions = () => {
-  return useMCPStore(state =>
-    state.suggestions.filter(s => s.impact === 'high')
+  return useMCPStore((state) =>
+    state.suggestions.filter((s) => s.impact === "high")
   );
 };

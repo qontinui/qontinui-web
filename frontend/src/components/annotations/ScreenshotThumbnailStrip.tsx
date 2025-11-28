@@ -11,30 +11,30 @@
  * - Current screenshot indicator
  */
 
-import React, { useRef } from 'react'
-import { Plus, ChevronLeft, ChevronRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { ThumbnailCard } from './ThumbnailCard'
-import { cn } from '@/lib/utils'
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
+import React, { useRef } from "react";
+import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ThumbnailCard } from "./ThumbnailCard";
+import { cn } from "@/lib/utils";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 export interface ScreenshotData {
-  id: string
-  file: File
-  url: string // Blob URL for display
-  permanentUrl?: string // Permanent URL from backend (for saving)
-  dimensions: { width: number; height: number }
-  annotations: any[]
-  hasUnsavedChanges: boolean
+  id: string;
+  file: File;
+  url: string; // Blob URL for display
+  permanentUrl?: string; // Permanent URL from backend (for saving)
+  dimensions: { width: number; height: number };
+  annotations: any[];
+  hasUnsavedChanges: boolean;
 }
 
 export interface ScreenshotThumbnailStripProps {
-  screenshots: ScreenshotData[]
-  currentIndex: number
-  onScreenshotSelect: (index: number) => void
-  onScreenshotRemove: (index: number) => void
-  onAddScreenshot: () => void
-  className?: string
+  screenshots: ScreenshotData[];
+  currentIndex: number;
+  onScreenshotSelect: (index: number) => void;
+  onScreenshotRemove: (index: number) => void;
+  onAddScreenshot: () => void;
+  className?: string;
 }
 
 export function ScreenshotThumbnailStrip({
@@ -45,24 +45,24 @@ export function ScreenshotThumbnailStrip({
   onAddScreenshot,
   className,
 }: ScreenshotThumbnailStripProps) {
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleScroll = (direction: 'left' | 'right') => {
+  const handleScroll = (direction: "left" | "right") => {
     if (scrollRef.current) {
-      const scrollAmount = 150
+      const scrollAmount = 150;
       scrollRef.current.scrollBy({
-        left: direction === 'left' ? -scrollAmount : scrollAmount,
-        behavior: 'smooth',
-      })
+        left: direction === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth",
+      });
     }
-  }
+  };
 
   if (screenshots.length === 0) {
-    return null
+    return null;
   }
 
   return (
-    <div className={cn('relative', className)}>
+    <div className={cn("relative", className)}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
@@ -90,10 +90,10 @@ export function ScreenshotThumbnailStrip({
             variant="outline"
             size="sm"
             className={cn(
-              'absolute left-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 p-0 rounded-full shadow-md',
-              'opacity-0 group-hover:opacity-100 transition-opacity'
+              "absolute left-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 p-0 rounded-full shadow-md",
+              "opacity-0 group-hover:opacity-100 transition-opacity"
             )}
-            onClick={() => handleScroll('left')}
+            onClick={() => handleScroll("left")}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -126,15 +126,15 @@ export function ScreenshotThumbnailStrip({
             variant="outline"
             size="sm"
             className={cn(
-              'absolute right-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 p-0 rounded-full shadow-md',
-              'opacity-0 group-hover:opacity-100 transition-opacity'
+              "absolute right-0 top-1/2 -translate-y-1/2 z-10 h-8 w-8 p-0 rounded-full shadow-md",
+              "opacity-0 group-hover:opacity-100 transition-opacity"
             )}
-            onClick={() => handleScroll('right')}
+            onClick={() => handleScroll("right")}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
         )}
       </div>
     </div>
-  )
+  );
 }

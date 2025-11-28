@@ -4,7 +4,7 @@
  * Shared utility functions used across multiple slices
  */
 
-import type { Action, Connections } from './types';
+import type { Action, Connections } from "./types";
 
 /**
  * Generate a unique ID for actions
