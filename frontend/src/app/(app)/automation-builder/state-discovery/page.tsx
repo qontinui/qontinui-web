@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * State Discovery Page (Beta)
@@ -14,13 +14,13 @@
  * - Export discovered states to the state editor
  */
 
-import StateDiscoveryTab from '@/components/state-discovery/StateDiscoveryTab'
-import { RequireProject } from '@/components/require-project'
+import StateDiscoveryTab from "@/components/state-discovery/StateDiscoveryTab";
+import { RequireProject } from "@/components/require-project";
 
 export default function StateDiscoveryPage() {
   return (
     <RequireProject pageName="State Discovery">
       <StateDiscoveryTab />
     </RequireProject>
-  )
+  );
 }

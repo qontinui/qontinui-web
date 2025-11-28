@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { Suspense } from 'react';
+import { Suspense } from "react";
 import AutomationBuilder from "@/components/automation-builder";
-import { RequireProject } from '@/components/require-project'
-import { Loader2 } from 'lucide-react';
+import { RequireProject } from "@/components/require-project";
+import { Loader2 } from "lucide-react";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 
 function LoadingFallback() {
   return (

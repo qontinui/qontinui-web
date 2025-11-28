@@ -11,7 +11,7 @@
  * - Run tests
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from "react";
 import {
   X,
   Folder,
@@ -27,22 +27,22 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-} from 'lucide-react';
-import { Workflow } from '../../lib/action-schema/action-types';
-import { WorkflowFolder } from './types';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Badge } from '../ui/badge';
-import { Progress } from '../ui/progress';
-import { Separator } from '../ui/separator';
+} from "lucide-react";
+import { Workflow } from "../../lib/action-schema/action-types";
+import { WorkflowFolder } from "./types";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Badge } from "../ui/badge";
+import { Progress } from "../ui/progress";
+import { Separator } from "../ui/separator";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../ui/select';
+} from "../ui/select";
 import {
   Dialog,
   DialogContent,
@@ -50,7 +50,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../ui/dialog';
+} from "../ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,16 +60,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '../ui/alert-dialog';
+} from "../ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
-import { cn } from '../../lib/utils';
-import { toast } from 'sonner';
+} from "../ui/dropdown-menu";
+import { cn } from "../../lib/utils";
+import { toast } from "sonner";
 
 // ============================================================================
 // Types
@@ -94,7 +94,7 @@ interface OperationProgress {
   current: number;
   total: number;
   operation: string;
-  status: 'running' | 'success' | 'error';
+  status: "running" | "success" | "error";
   message?: string;
 }
 
@@ -148,14 +148,13 @@ export function BulkOperations({
   const [showRemoveTagsDialog, setShowRemoveTagsDialog] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [selectedFolderId, setSelectedFolderId] = useState('');
-  const [newTagInput, setNewTagInput] = useState('');
+  const [selectedFolderId, setSelectedFolderId] = useState("");
+  const [newTagInput, setNewTagInput] = useState("");
   const [tagsToAdd, setTagsToAdd] = useState<string[]>([]);
   const [tagsToRemove, setTagsToRemove] = useState<string[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [operationProgress, setOperationProgress] = useState<OperationProgress | null>(
-    null
-  );
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [operationProgress, setOperationProgress] =
+    useState<OperationProgress | null>(null);
 
   // Extract existing tags and categories
   const existingTags = useMemo(
@@ -170,14 +169,14 @@ export function BulkOperations({
   // Handlers
   const handleMoveToFolder = useCallback(() => {
     if (!selectedFolderId) {
-      toast.error('Please select a folder');
+      toast.error("Please select a folder");
       return;
     }
 
     const folder = folders.find((f) => f.id === selectedFolderId);
     onMoveToFolder(selectedFolderId);
     setShowMoveDialog(false);
-    setSelectedFolderId('');
+    setSelectedFolderId("");
     toast.success(
       `Moved ${selectedWorkflows.length} workflow(s) to "${folder?.name}"`
     );
@@ -185,14 +184,14 @@ export function BulkOperations({
 
   const handleAddTags = useCallback(() => {
     if (tagsToAdd.length === 0) {
-      toast.error('Please add at least one tag');
+      toast.error("Please add at least one tag");
       return;
     }
 
     onAddTags(tagsToAdd);
     setShowAddTagsDialog(false);
     setTagsToAdd([]);
-    setNewTagInput('');
+    setNewTagInput("");
     toast.success(
       `Added ${tagsToAdd.length} tag(s) to ${selectedWorkflows.length} workflow(s)`
     );
@@ -200,7 +199,7 @@ export function BulkOperations({
 
   const handleRemoveTags = useCallback(() => {
     if (tagsToRemove.length === 0) {
-      toast.error('Please select at least one tag to remove');
+      toast.error("Please select at least one tag to remove");
       return;
     }
 
@@ -214,13 +213,13 @@ export function BulkOperations({
 
   const handleChangeCategory = useCallback(() => {
     if (!selectedCategory) {
-      toast.error('Please select a category');
+      toast.error("Please select a category");
       return;
     }
 
     onChangeCategory(selectedCategory);
     setShowCategoryDialog(false);
-    setSelectedCategory('');
+    setSelectedCategory("");
     toast.success(
       `Changed category to "${selectedCategory}" for ${selectedWorkflows.length} workflow(s)`
     );
@@ -247,8 +246,8 @@ export function BulkOperations({
     setOperationProgress({
       current: 0,
       total: selectedWorkflows.length,
-      operation: 'Running tests',
-      status: 'running',
+      operation: "Running tests",
+      status: "running",
     });
 
     try {
@@ -260,11 +259,11 @@ export function BulkOperations({
         setOperationProgress({
           current: i,
           total: selectedWorkflows.length,
-          operation: 'Running tests',
-          status: i === selectedWorkflows.length ? 'success' : 'running',
+          operation: "Running tests",
+          status: i === selectedWorkflows.length ? "success" : "running",
           message:
             i === selectedWorkflows.length
-              ? 'All tests completed'
+              ? "All tests completed"
               : `Testing workflow ${i}/${selectedWorkflows.length}`,
         });
       }
@@ -277,16 +276,16 @@ export function BulkOperations({
       setOperationProgress({
         current: 0,
         total: selectedWorkflows.length,
-        operation: 'Running tests',
-        status: 'error',
-        message: 'Test execution failed',
+        operation: "Running tests",
+        status: "error",
+        message: "Test execution failed",
       });
 
       setTimeout(() => {
         setOperationProgress(null);
       }, 2000);
 
-      toast.error('Failed to run tests');
+      toast.error("Failed to run tests");
     }
   }, [selectedWorkflows, onRunTests]);
 
@@ -294,7 +293,7 @@ export function BulkOperations({
     const tag = newTagInput.trim();
     if (tag && !tagsToAdd.includes(tag)) {
       setTagsToAdd([...tagsToAdd, tag]);
-      setNewTagInput('');
+      setNewTagInput("");
     }
   }, [newTagInput, tagsToAdd]);
 
@@ -325,7 +324,7 @@ export function BulkOperations({
       {/* Toolbar */}
       <div
         className={cn(
-          'fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80',
+          "fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80",
           className
         )}
       >
@@ -378,7 +377,9 @@ export function BulkOperations({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setShowRemoveTagsDialog(true)}>
+                  <DropdownMenuItem
+                    onClick={() => setShowRemoveTagsDialog(true)}
+                  >
                     <TagIcon className="h-4 w-4 mr-2" />
                     Remove Tags
                   </DropdownMenuItem>
@@ -420,24 +421,28 @@ export function BulkOperations({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-medium">{operationProgress.operation}</span>
-              {operationProgress.status === 'running' && (
+              {operationProgress.status === "running" && (
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
               )}
-              {operationProgress.status === 'success' && (
+              {operationProgress.status === "success" && (
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
               )}
-              {operationProgress.status === 'error' && (
+              {operationProgress.status === "error" && (
                 <XCircle className="h-4 w-4 text-destructive" />
               )}
             </div>
             <Progress
-              value={(operationProgress.current / operationProgress.total) * 100}
+              value={
+                (operationProgress.current / operationProgress.total) * 100
+              }
             />
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>
                 {operationProgress.current} / {operationProgress.total}
               </span>
-              {operationProgress.message && <span>{operationProgress.message}</span>}
+              {operationProgress.message && (
+                <span>{operationProgress.message}</span>
+              )}
             </div>
           </div>
         </div>
@@ -454,7 +459,10 @@ export function BulkOperations({
           </DialogHeader>
           <div className="py-4">
             <Label htmlFor="folder-select">Folder</Label>
-            <Select value={selectedFolderId} onValueChange={setSelectedFolderId}>
+            <Select
+              value={selectedFolderId}
+              onValueChange={setSelectedFolderId}
+            >
               <SelectTrigger id="folder-select" className="mt-2">
                 <SelectValue placeholder="Select a folder..." />
               </SelectTrigger>
@@ -495,7 +503,7 @@ export function BulkOperations({
                   value={newTagInput}
                   onChange={(e) => setNewTagInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (e.key === "Enter") {
                       e.preventDefault();
                       handleAddNewTag();
                     }
@@ -525,7 +533,10 @@ export function BulkOperations({
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddTagsDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowAddTagsDialog(false)}
+            >
               Cancel
             </Button>
             <Button onClick={handleAddTags} disabled={tagsToAdd.length === 0}>
@@ -536,7 +547,10 @@ export function BulkOperations({
       </Dialog>
 
       {/* Remove Tags Dialog */}
-      <Dialog open={showRemoveTagsDialog} onOpenChange={setShowRemoveTagsDialog}>
+      <Dialog
+        open={showRemoveTagsDialog}
+        onOpenChange={setShowRemoveTagsDialog}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Remove Tags</DialogTitle>
@@ -572,7 +586,10 @@ export function BulkOperations({
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRemoveTagsDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowRemoveTagsDialog(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -597,7 +614,10 @@ export function BulkOperations({
           </DialogHeader>
           <div className="py-4">
             <Label htmlFor="category-select">Category</Label>
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+            <Select
+              value={selectedCategory}
+              onValueChange={setSelectedCategory}
+            >
               <SelectTrigger id="category-select" className="mt-2">
                 <SelectValue placeholder="Select a category..." />
               </SelectTrigger>
@@ -614,7 +634,10 @@ export function BulkOperations({
             </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCategoryDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowCategoryDialog(false)}
+            >
               Cancel
             </Button>
             <Button onClick={handleChangeCategory}>Change Category</Button>
@@ -631,8 +654,8 @@ export function BulkOperations({
               Delete Workflows
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete {selectedWorkflows.length} workflow(s)?
-              This action cannot be undone.
+              Are you sure you want to delete {selectedWorkflows.length}{" "}
+              workflow(s)? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

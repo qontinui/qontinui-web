@@ -6,9 +6,9 @@
  */
 
 // Main Components
-export { TutorialDialog } from './tutorial-dialog';
-export { TutorialSidebar } from './tutorial-sidebar';
-export { StepRenderer } from './step-renderer';
+export { TutorialDialog } from "./tutorial-dialog";
+export { TutorialSidebar } from "./tutorial-sidebar";
+export { StepRenderer } from "./step-renderer";
 export {
   AnnotatedImage,
   type Annotation,
@@ -17,10 +17,7 @@ export {
   type AnnotationColor,
   type ArrowDirection,
 } from "./annotated-image";
-export {
-  TryItButton,
-  type TryItButtonProps,
-} from "./try-it-button";
+export { TryItButton, type TryItButtonProps } from "./try-it-button";
 
 // Types (re-exported for convenience)
 export type {
@@ -29,10 +26,10 @@ export type {
   TutorialProgress,
   StepProgress,
   TryItConfig,
-} from '@/types/tutorial';
+} from "@/types/tutorial";
 
 // Store hook (for external use)
-export { useTutorialStore } from '@/stores/tutorial-store';
+export { useTutorialStore } from "@/stores/tutorial-store";
 
 /**
  * Quick Start Example:

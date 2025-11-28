@@ -5,25 +5,25 @@
  * with auto-refresh, manual refresh, and export functionality.
  */
 
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, Download, Activity } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { toast } from 'sonner'
-import { healthService } from '@/services/admin/health-service'
-import { HealthOverviewCard } from './HealthOverviewCard'
-import { RedisStatusCard } from './RedisStatusCard'
-import { SecurityWarningsCard } from './SecurityWarningsCard'
-import { SessionStatsCard } from './SessionStatsCard'
-import { SystemMetricsCard } from './SystemMetricsCard'
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { RefreshCw, Download, Activity } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { healthService } from "@/services/admin/health-service";
+import { HealthOverviewCard } from "./HealthOverviewCard";
+import { RedisStatusCard } from "./RedisStatusCard";
+import { SecurityWarningsCard } from "./SecurityWarningsCard";
+import { SessionStatsCard } from "./SessionStatsCard";
+import { SystemMetricsCard } from "./SystemMetricsCard";
 
-const REFRESH_INTERVAL = 30000 // 30 seconds
+const REFRESH_INTERVAL = 30000; // 30 seconds
 
 export default function HealthDashboardTab() {
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
-  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Fetch health overview
   const {
@@ -31,10 +31,10 @@ export default function HealthDashboardTab() {
     isLoading: overviewLoading,
     refetch: refetchOverview,
   } = useQuery({
-    queryKey: ['admin', 'health', 'overview'],
+    queryKey: ["admin", "health", "overview"],
     queryFn: () => healthService.getHealthOverview(),
     refetchInterval: autoRefresh ? REFRESH_INTERVAL : false,
-  })
+  });
 
   // Fetch Redis status
   const {
@@ -42,10 +42,10 @@ export default function HealthDashboardTab() {
     isLoading: redisLoading,
     refetch: refetchRedis,
   } = useQuery({
-    queryKey: ['admin', 'health', 'redis'],
+    queryKey: ["admin", "health", "redis"],
     queryFn: () => healthService.getRedisStatus(),
     refetchInterval: autoRefresh ? REFRESH_INTERVAL : false,
-  })
+  });
 
   // Fetch security warnings
   const {
@@ -53,10 +53,10 @@ export default function HealthDashboardTab() {
     isLoading: warningsLoading,
     refetch: refetchWarnings,
   } = useQuery({
-    queryKey: ['admin', 'health', 'security-warnings'],
+    queryKey: ["admin", "health", "security-warnings"],
     queryFn: () => healthService.getSecurityWarnings(),
     refetchInterval: autoRefresh ? REFRESH_INTERVAL : false,
-  })
+  });
 
   // Fetch session stats
   const {
@@ -64,10 +64,10 @@ export default function HealthDashboardTab() {
     isLoading: sessionsLoading,
     refetch: refetchSessions,
   } = useQuery({
-    queryKey: ['admin', 'health', 'sessions'],
+    queryKey: ["admin", "health", "sessions"],
     queryFn: () => healthService.getSessionStats(),
     refetchInterval: autoRefresh ? REFRESH_INTERVAL : false,
-  })
+  });
 
   // Fetch system metrics
   const {
@@ -75,24 +75,31 @@ export default function HealthDashboardTab() {
     isLoading: metricsLoading,
     refetch: refetchMetrics,
   } = useQuery({
-    queryKey: ['admin', 'health', 'system-metrics'],
+    queryKey: ["admin", "health", "system-metrics"],
     queryFn: () => healthService.getSystemMetrics(),
     refetchInterval: autoRefresh ? REFRESH_INTERVAL : false,
-  })
+  });
 
   const isLoading =
     overviewLoading ||
     redisLoading ||
     warningsLoading ||
     sessionsLoading ||
-    metricsLoading
+    metricsLoading;
 
   // Update last updated timestamp
   useEffect(() => {
     if (!isLoading) {
-      setLastUpdated(new Date())
+      setLastUpdated(new Date());
     }
-  }, [isLoading, healthOverview, redisStatus, securityWarnings, sessionStats, systemMetrics])
+  }, [
+    isLoading,
+    healthOverview,
+    redisStatus,
+    securityWarnings,
+    sessionStats,
+    systemMetrics,
+  ]);
 
   const handleManualRefresh = async () => {
     const refreshPromises = [
@@ -101,34 +108,34 @@ export default function HealthDashboardTab() {
       refetchWarnings(),
       refetchSessions(),
       refetchMetrics(),
-    ]
+    ];
 
     toast.promise(Promise.all(refreshPromises), {
-      loading: 'Refreshing health data...',
-      success: 'Health data refreshed successfully',
-      error: 'Failed to refresh some health data',
-    })
-  }
+      loading: "Refreshing health data...",
+      success: "Health data refreshed successfully",
+      error: "Failed to refresh some health data",
+    });
+  };
 
   const handleExportJSON = async () => {
     try {
-      const data = await healthService.exportHealthReport()
-      healthService.downloadHealthReportJSON(data)
-      toast.success('Health report exported as JSON')
+      const data = await healthService.exportHealthReport();
+      healthService.downloadHealthReportJSON(data);
+      toast.success("Health report exported as JSON");
     } catch (error) {
-      toast.error('Failed to export health report')
+      toast.error("Failed to export health report");
     }
-  }
+  };
 
   const handleExportCSV = async () => {
     try {
-      const data = await healthService.exportHealthReport()
-      healthService.downloadHealthReportCSV(data)
-      toast.success('Health report exported as CSV')
+      const data = await healthService.exportHealthReport();
+      healthService.downloadHealthReportCSV(data);
+      toast.success("Health report exported as CSV");
     } catch (error) {
-      toast.error('Failed to export health report')
+      toast.error("Failed to export health report");
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -149,9 +156,9 @@ export default function HealthDashboardTab() {
             variant="outline"
             size="sm"
             onClick={() => setAutoRefresh(!autoRefresh)}
-            className={autoRefresh ? 'bg-green-500/10 border-green-500/20' : ''}
+            className={autoRefresh ? "bg-green-500/10 border-green-500/20" : ""}
           >
-            {autoRefresh ? 'Auto-Refresh On' : 'Auto-Refresh Off'}
+            {autoRefresh ? "Auto-Refresh On" : "Auto-Refresh Off"}
           </Button>
 
           <Button
@@ -161,7 +168,9 @@ export default function HealthDashboardTab() {
             disabled={isLoading}
             className="flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
 
@@ -181,8 +190,10 @@ export default function HealthDashboardTab() {
 
       {/* Export Options Hint */}
       <div className="text-xs text-muted-foreground text-right">
-        Last updated: {lastUpdated.toLocaleTimeString()} •{' '}
-        {autoRefresh ? `Auto-refresh every ${REFRESH_INTERVAL / 1000}s` : 'Auto-refresh disabled'}
+        Last updated: {lastUpdated.toLocaleTimeString()} •{" "}
+        {autoRefresh
+          ? `Auto-refresh every ${REFRESH_INTERVAL / 1000}s`
+          : "Auto-refresh disabled"}
       </div>
 
       {/* Health Overview */}
@@ -195,7 +206,10 @@ export default function HealthDashboardTab() {
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <RedisStatusCard data={redisStatus || null} loading={redisLoading} />
-        <SystemMetricsCard data={systemMetrics || null} loading={metricsLoading} />
+        <SystemMetricsCard
+          data={systemMetrics || null}
+          loading={metricsLoading}
+        />
       </div>
 
       {/* Security and Sessions */}
@@ -205,7 +219,10 @@ export default function HealthDashboardTab() {
           loading={warningsLoading}
           onRefresh={refetchWarnings}
         />
-        <SessionStatsCard data={sessionStats || null} loading={sessionsLoading} />
+        <SessionStatsCard
+          data={sessionStats || null}
+          loading={sessionsLoading}
+        />
       </div>
 
       {/* Export Options Details */}
@@ -243,13 +260,15 @@ export default function HealthDashboardTab() {
           <div className="p-4 rounded-lg bg-red-500 text-white shadow-lg">
             <div className="font-medium mb-1">Critical System Alerts</div>
             <div className="text-sm">
-              {healthOverview.critical_alerts} critical{' '}
-              {healthOverview.critical_alerts === 1 ? 'alert requires' : 'alerts require'}{' '}
+              {healthOverview.critical_alerts} critical{" "}
+              {healthOverview.critical_alerts === 1
+                ? "alert requires"
+                : "alerts require"}{" "}
               immediate attention
             </div>
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }

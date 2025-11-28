@@ -6,7 +6,7 @@
  * the qontinui library's MockMode.
  */
 
-import type { Workflow } from '@/types';
+import type { Workflow } from "@/types";
 
 /**
  * Current workflow test execution state
@@ -14,7 +14,7 @@ import type { Workflow } from '@/types';
 export interface WorkflowTestExecution {
   workflowId: string;
   workflowName: string;
-  status: 'pending' | 'running' | 'passed' | 'failed';
+  status: "pending" | "running" | "passed" | "failed";
   currentAction?: number;
   totalActions?: number;
 }
@@ -41,7 +41,7 @@ export interface StepResult {
 export interface WorkflowTestResult {
   workflowId: string;
   workflowName: string;
-  status: 'pending' | 'running' | 'passed' | 'failed';
+  status: "pending" | "running" | "passed" | "failed";
   successRate?: number;
   totalActions?: number;
   executedActions?: number;
@@ -92,7 +92,7 @@ export interface TestResultsPanelProps {
 /**
  * Visualization modes for test results
  */
-export type VisualizationMode = 'none' | 'screenshots' | 'state_viz';
+export type VisualizationMode = "none" | "screenshots" | "state_viz";
 
 /**
  * Props for VisualizationModeSelector component

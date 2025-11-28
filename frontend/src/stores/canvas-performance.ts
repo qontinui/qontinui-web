@@ -11,8 +11,8 @@
  * - Performance monitoring
  */
 
-import { useCallback, useMemo, useRef, useEffect } from 'react';
-import type { Action, Workflow } from '../lib/action-schema/action-types';
+import { useCallback, useMemo, useRef, useEffect } from "react";
+import type { Action, Workflow } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Debounce & Throttle Utilities
@@ -192,7 +192,10 @@ export function useThrottledCallback<T extends (...args: any[]) => any>(
  * Memoized selector for action count
  */
 export function useActionCount(workflow: Workflow | null): number {
-  return useMemo(() => workflow?.actions.length ?? 0, [workflow?.actions.length]);
+  return useMemo(
+    () => workflow?.actions.length ?? 0,
+    [workflow?.actions.length]
+  );
 }
 
 /**
@@ -206,7 +209,10 @@ export function useConnectionCount(workflow: Workflow | null): number {
       return (
         count +
         Object.values(sourceConn).reduce((typeCount, outputs) => {
-          return typeCount + (outputs?.reduce((sum, arr) => sum + arr.length, 0) || 0);
+          return (
+            typeCount +
+            (outputs?.reduce((sum, arr) => sum + arr.length, 0) || 0)
+          );
         }, 0)
       );
     }, 0);
@@ -216,9 +222,12 @@ export function useConnectionCount(workflow: Workflow | null): number {
 /**
  * Memoized selector for actions by type
  */
-export function useActionsByType(workflow: Workflow | null, type: string): Action[] {
+export function useActionsByType(
+  workflow: Workflow | null,
+  type: string
+): Action[] {
   return useMemo(() => {
-    return workflow?.actions.filter(a => a.type === type) ?? [];
+    return workflow?.actions.filter((a) => a.type === type) ?? [];
   }, [workflow?.actions, type]);
 }
 
@@ -228,7 +237,7 @@ export function useActionsByType(workflow: Workflow | null, type: string): Actio
 export function useActionMap(workflow: Workflow | null): Map<string, Action> {
   return useMemo(() => {
     const map = new Map<string, Action>();
-    workflow?.actions.forEach(action => {
+    workflow?.actions.forEach((action) => {
       map.set(action.id, action);
     });
     return map;
@@ -250,7 +259,7 @@ export function useVisibleActions(
     const visibleWidth = canvasWidth / viewport.zoom;
     const visibleHeight = canvasHeight / viewport.zoom;
 
-    return actions.filter(action => {
+    return actions.filter((action) => {
       const [x, y] = action.position;
 
       // Add some padding for nodes that are partially visible
@@ -340,8 +349,11 @@ export class PerformanceMonitor {
   /**
    * Get all measurements
    */
-  getAllStats(): Record<string, ReturnType<PerformanceMonitor['getStats']>> {
-    const stats: Record<string, ReturnType<PerformanceMonitor['getStats']>> = {};
+  getAllStats(): Record<string, ReturnType<PerformanceMonitor["getStats"]>> {
+    const stats: Record<
+      string,
+      ReturnType<PerformanceMonitor["getStats"]>
+    > = {};
 
     for (const label of this.measurements.keys()) {
       stats[label] = this.getStats(label);
@@ -498,7 +510,7 @@ export function useBatchUpdater<T>(
 
 function useState<T>(initialValue: T): [T, (value: T) => void] {
   // This is a placeholder - in actual use, import from React
-  const { useState: reactUseState } = require('react');
+  const { useState: reactUseState } = require("react");
   return reactUseState(initialValue);
 }
 

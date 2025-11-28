@@ -24,7 +24,13 @@ import {
 import { SubflowComponent } from "@/lib/workflow-organization/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -51,7 +57,10 @@ import { cn } from "@/lib/utils";
 export interface ComponentLibraryProps {
   components: SubflowComponent[];
   onSelectComponent: (component: SubflowComponent) => void;
-  onInsertComponent: (componentId: string, parameters: Record<string, any>) => void;
+  onInsertComponent: (
+    componentId: string,
+    parameters: Record<string, any>
+  ) => void;
   onCreateComponent: (component: SubflowComponent) => void;
   onUpdateComponent: (id: string, updates: Partial<SubflowComponent>) => void;
   onDeleteComponent: (id: string) => void;
@@ -91,10 +100,11 @@ export function ComponentLibrary({
     onlyFavorites: false,
   });
   const [favorites, setFavorites] = React.useState<Set<string>>(new Set());
-  const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(
-    new Set(["all"])
-  );
-  const [draggedComponent, setDraggedComponent] = React.useState<SubflowComponent | null>(null);
+  const [expandedCategories, setExpandedCategories] = React.useState<
+    Set<string>
+  >(new Set(["all"]));
+  const [draggedComponent, setDraggedComponent] =
+    React.useState<SubflowComponent | null>(null);
 
   // Extract unique categories and tags
   const categories = React.useMemo(() => {
@@ -131,9 +141,13 @@ export function ComponentLibrary({
     // Apply category filter
     if (filter.category !== "all") {
       if (filter.category === "built-in") {
-        filtered = filtered.filter((comp) => !comp.author || comp.author === "system");
+        filtered = filtered.filter(
+          (comp) => !comp.author || comp.author === "system"
+        );
       } else if (filter.category === "custom") {
-        filtered = filtered.filter((comp) => comp.author && comp.author !== "system");
+        filtered = filtered.filter(
+          (comp) => comp.author && comp.author !== "system"
+        );
       } else {
         filtered = filtered.filter((comp) => comp.category === filter.category);
       }
@@ -163,7 +177,8 @@ export function ComponentLibrary({
           comparison = (a.usageCount || 0) - (b.usageCount || 0);
           break;
         case "date":
-          comparison = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+          comparison =
+            new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
           break;
         case "category":
           comparison = (a.category || "").localeCompare(b.category || "");
@@ -249,7 +264,10 @@ export function ComponentLibrary({
 
         <div className="flex items-center gap-2">
           {/* View Mode Toggle */}
-          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+          <Tabs
+            value={viewMode}
+            onValueChange={(v) => setViewMode(v as ViewMode)}
+          >
             <TabsList>
               <TabsTrigger value="grid">
                 <Grid3x3 className="size-4" />
@@ -277,7 +295,9 @@ export function ComponentLibrary({
             <Input
               placeholder="Search components..."
               value={filter.search}
-              onChange={(e) => setFilter((prev) => ({ ...prev, search: e.target.value }))}
+              onChange={(e) =>
+                setFilter((prev) => ({ ...prev, search: e.target.value }))
+              }
               className="pl-9"
             />
           </div>
@@ -285,7 +305,9 @@ export function ComponentLibrary({
           {/* Category Filter */}
           <Select
             value={filter.category}
-            onValueChange={(v) => setFilter((prev) => ({ ...prev, category: v }))}
+            onValueChange={(v) =>
+              setFilter((prev) => ({ ...prev, category: v }))
+            }
           >
             <SelectTrigger className="w-[180px]">
               <Folder className="size-4" />
@@ -315,23 +337,38 @@ export function ComponentLibrary({
           </Select>
 
           <Button variant="outline" size="icon" onClick={toggleSortOrder}>
-            <ArrowUpDown className={cn("size-4", sortOrder === "desc" && "rotate-180")} />
+            <ArrowUpDown
+              className={cn("size-4", sortOrder === "desc" && "rotate-180")}
+            />
           </Button>
 
           {/* Favorites Toggle */}
           <Button
             variant={filter.onlyFavorites ? "default" : "outline"}
             size="icon"
-            onClick={() => setFilter((prev) => ({ ...prev, onlyFavorites: !prev.onlyFavorites }))}
+            onClick={() =>
+              setFilter((prev) => ({
+                ...prev,
+                onlyFavorites: !prev.onlyFavorites,
+              }))
+            }
           >
-            {filter.onlyFavorites ? <Star className="size-4 fill-current" /> : <Star className="size-4" />}
+            {filter.onlyFavorites ? (
+              <Star className="size-4 fill-current" />
+            ) : (
+              <Star className="size-4" />
+            )}
           </Button>
         </div>
 
         {/* Active Filters */}
-        {(filter.tags.length > 0 || filter.search || filter.category !== "all") && (
+        {(filter.tags.length > 0 ||
+          filter.search ||
+          filter.category !== "all") && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-muted-foreground">Active filters:</span>
+            <span className="text-sm text-muted-foreground">
+              Active filters:
+            </span>
             {filter.search && (
               <Badge variant="secondary">
                 Search: {filter.search}
@@ -352,7 +389,9 @@ export function ComponentLibrary({
                   variant="ghost"
                   size="icon"
                   className="ml-1 size-3 p-0"
-                  onClick={() => setFilter((prev) => ({ ...prev, category: "all" }))}
+                  onClick={() =>
+                    setFilter((prev) => ({ ...prev, category: "all" }))
+                  }
                 >
                   <X className="size-3" />
                 </Button>
@@ -397,47 +436,49 @@ export function ComponentLibrary({
           </div>
         ) : (
           <div className="space-y-4">
-            {Array.from(groupedComponents.entries()).map(([category, comps]) => (
-              <div key={category} className="space-y-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2"
-                  onClick={() => toggleCategory(category)}
-                >
-                  {expandedCategories.has(category) ? (
-                    <ChevronDown className="size-4" />
-                  ) : (
-                    <ChevronRight className="size-4" />
-                  )}
-                  <Folder className="size-4" />
-                  <span className="font-medium">{category}</span>
-                  <Badge variant="secondary" className="ml-auto">
-                    {comps.length}
-                  </Badge>
-                </Button>
+            {Array.from(groupedComponents.entries()).map(
+              ([category, comps]) => (
+                <div key={category} className="space-y-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2"
+                    onClick={() => toggleCategory(category)}
+                  >
+                    {expandedCategories.has(category) ? (
+                      <ChevronDown className="size-4" />
+                    ) : (
+                      <ChevronRight className="size-4" />
+                    )}
+                    <Folder className="size-4" />
+                    <span className="font-medium">{category}</span>
+                    <Badge variant="secondary" className="ml-auto">
+                      {comps.length}
+                    </Badge>
+                  </Button>
 
-                {expandedCategories.has(category) && (
-                  <div className="space-y-2 pl-6">
-                    {comps.map((comp) => (
-                      <ComponentListItem
-                        key={comp.id}
-                        component={comp}
-                        isFavorite={favorites.has(comp.id)}
-                        onToggleFavorite={() => toggleFavorite(comp.id)}
-                        onSelect={() => onSelectComponent(comp)}
-                        onInsert={() => onInsertComponent(comp.id, {})}
-                        onEdit={() => onUpdateComponent(comp.id, {})}
-                        onDelete={() => onDeleteComponent(comp.id)}
-                        onDragStart={handleDragStart(comp)}
-                        onDragEnd={handleDragEnd}
-                        isDragging={draggedComponent?.id === comp.id}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+                  {expandedCategories.has(category) && (
+                    <div className="space-y-2 pl-6">
+                      {comps.map((comp) => (
+                        <ComponentListItem
+                          key={comp.id}
+                          component={comp}
+                          isFavorite={favorites.has(comp.id)}
+                          onToggleFavorite={() => toggleFavorite(comp.id)}
+                          onSelect={() => onSelectComponent(comp)}
+                          onInsert={() => onInsertComponent(comp.id, {})}
+                          onEdit={() => onUpdateComponent(comp.id, {})}
+                          onDelete={() => onDeleteComponent(comp.id)}
+                          onDragStart={handleDragStart(comp)}
+                          onDragEnd={handleDragEnd}
+                          isDragging={draggedComponent?.id === comp.id}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            )}
           </div>
         )}
 
@@ -446,7 +487,9 @@ export function ComponentLibrary({
             <Package className="size-12" />
             <div className="text-center">
               <p className="font-medium">No components found</p>
-              <p className="text-sm">Try adjusting your filters or create a new component</p>
+              <p className="text-sm">
+                Try adjusting your filters or create a new component
+              </p>
             </div>
           </div>
         )}
@@ -503,7 +546,9 @@ function ComponentCard({
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <CardTitle className="text-base truncate">{component.name}</CardTitle>
+              <CardTitle className="text-base truncate">
+                {component.name}
+              </CardTitle>
             </div>
           </div>
 
@@ -541,7 +586,10 @@ function ComponentCard({
                   Insert
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onDelete} className="text-destructive">
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-destructive"
+                >
                   <Trash2 className="size-4" />
                   Delete
                 </DropdownMenuItem>
@@ -584,7 +632,12 @@ function ComponentCard({
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            <Button variant="default" size="sm" className="flex-1" onClick={onInsert}>
+            <Button
+              variant="default"
+              size="sm"
+              className="flex-1"
+              onClick={onInsert}
+            >
               Insert
             </Button>
             <Button variant="outline" size="sm" onClick={onSelect}>
@@ -641,7 +694,9 @@ function ComponentListItem({
           ))}
         </div>
         {component.description && (
-          <p className="text-sm text-muted-foreground truncate">{component.description}</p>
+          <p className="text-sm text-muted-foreground truncate">
+            {component.description}
+          </p>
         )}
         <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
           <span>{component.actions.length} actions</span>
@@ -652,7 +707,12 @@ function ComponentListItem({
 
       {/* Actions */}
       <div className="flex items-center gap-2 shrink-0">
-        <Button variant="ghost" size="icon" className="size-8" onClick={onToggleFavorite}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          onClick={onToggleFavorite}
+        >
           {isFavorite ? (
             <Star className="size-4 fill-current text-yellow-500" />
           ) : (

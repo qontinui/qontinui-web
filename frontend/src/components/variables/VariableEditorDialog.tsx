@@ -5,9 +5,9 @@
  * JSON validation, type detection, and value preview.
  */
 
-'use client';
+"use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -15,33 +15,41 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { GlobalVariable, CreateVariableRequest, UpdateVariableRequest, VariableType } from '@/types/variables';
-import Editor from '@monaco-editor/react';
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { AlertCircle, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type {
+  GlobalVariable,
+  CreateVariableRequest,
+  UpdateVariableRequest,
+  VariableType,
+} from "@/types/variables";
+import Editor from "@monaco-editor/react";
 
 interface VariableEditorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (data: CreateVariableRequest | UpdateVariableRequest, originalName?: string) => Promise<void>;
+  onSave: (
+    data: CreateVariableRequest | UpdateVariableRequest,
+    originalName?: string
+  ) => Promise<void>;
   variable?: GlobalVariable | null;
   existingNames?: string[];
 }
 
-type EditorMode = 'simple' | 'json';
+type EditorMode = "simple" | "json";
 
 export function VariableEditorDialog({
   open,
@@ -51,12 +59,12 @@ export function VariableEditorDialog({
   existingNames = [],
 }: VariableEditorDialogProps) {
   const isEditing = !!variable;
-  const [name, setName] = useState('');
-  const [valueType, setValueType] = useState<VariableType>('string');
-  const [simpleValue, setSimpleValue] = useState('');
-  const [jsonValue, setJsonValue] = useState('');
-  const [description, setDescription] = useState('');
-  const [editorMode, setEditorMode] = useState<EditorMode>('simple');
+  const [name, setName] = useState("");
+  const [valueType, setValueType] = useState<VariableType>("string");
+  const [simpleValue, setSimpleValue] = useState("");
+  const [jsonValue, setJsonValue] = useState("");
+  const [description, setDescription] = useState("");
+  const [editorMode, setEditorMode] = useState<EditorMode>("simple");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
 
@@ -66,24 +74,24 @@ export function VariableEditorDialog({
       if (variable) {
         setName(variable.name);
         setValueType(variable.type);
-        setDescription(variable.description || '');
+        setDescription(variable.description || "");
 
         // Set value based on type
-        if (variable.type === 'object' || variable.type === 'array') {
-          setEditorMode('json');
+        if (variable.type === "object" || variable.type === "array") {
+          setEditorMode("json");
           setJsonValue(JSON.stringify(variable.value, null, 2));
         } else {
-          setEditorMode('simple');
+          setEditorMode("simple");
           setSimpleValue(String(variable.value));
         }
       } else {
         // Reset for new variable
-        setName('');
-        setValueType('string');
-        setSimpleValue('');
-        setJsonValue('');
-        setDescription('');
-        setEditorMode('simple');
+        setName("");
+        setValueType("string");
+        setSimpleValue("");
+        setJsonValue("");
+        setDescription("");
+        setEditorMode("simple");
       }
       setErrors({});
     }
@@ -95,26 +103,27 @@ export function VariableEditorDialog({
 
     // Validate name
     if (!name.trim()) {
-      newErrors.name = 'Name is required';
+      newErrors.name = "Name is required";
     } else if (!/^[a-zA-Z0-9_]+$/.test(name)) {
-      newErrors.name = 'Name can only contain letters, numbers, and underscores';
+      newErrors.name =
+        "Name can only contain letters, numbers, and underscores";
     } else if (!isEditing && existingNames.includes(name)) {
-      newErrors.name = 'A variable with this name already exists';
+      newErrors.name = "A variable with this name already exists";
     }
 
     // Validate value
-    if (editorMode === 'simple') {
-      if (!simpleValue.trim() && valueType !== 'boolean') {
-        newErrors.value = 'Value is required';
+    if (editorMode === "simple") {
+      if (!simpleValue.trim() && valueType !== "boolean") {
+        newErrors.value = "Value is required";
       }
     } else {
       if (!jsonValue.trim()) {
-        newErrors.value = 'Value is required';
+        newErrors.value = "Value is required";
       } else {
         try {
           JSON.parse(jsonValue);
         } catch (e) {
-          newErrors.value = 'Invalid JSON syntax';
+          newErrors.value = "Invalid JSON syntax";
         }
       }
     }
@@ -125,16 +134,16 @@ export function VariableEditorDialog({
 
   // Parse value based on mode and type
   const parseValue = (): unknown => {
-    if (editorMode === 'json') {
+    if (editorMode === "json") {
       return JSON.parse(jsonValue);
     }
 
     switch (valueType) {
-      case 'number':
+      case "number":
         return Number(simpleValue);
-      case 'boolean':
-        return simpleValue.toLowerCase() === 'true';
-      case 'string':
+      case "boolean":
+        return simpleValue.toLowerCase() === "true";
+      case "string":
       default:
         return simpleValue;
     }
@@ -160,8 +169,8 @@ export function VariableEditorDialog({
 
       onOpenChange(false);
     } catch (error) {
-      console.error('Failed to save variable:', error);
-      setErrors({ submit: 'Failed to save variable. Please try again.' });
+      console.error("Failed to save variable:", error);
+      setErrors({ submit: "Failed to save variable. Please try again." });
     } finally {
       setIsSaving(false);
     }
@@ -172,13 +181,13 @@ export function VariableEditorDialog({
     setValueType(newType);
 
     // Switch to JSON mode for complex types
-    if (newType === 'object' || newType === 'array') {
-      setEditorMode('json');
+    if (newType === "object" || newType === "array") {
+      setEditorMode("json");
       if (!jsonValue) {
-        setJsonValue(newType === 'array' ? '[]' : '{}');
+        setJsonValue(newType === "array" ? "[]" : "{}");
       }
     } else {
-      setEditorMode('simple');
+      setEditorMode("simple");
     }
   };
 
@@ -188,13 +197,13 @@ export function VariableEditorDialog({
       const value = parseValue();
       return JSON.stringify(value, null, 2);
     } catch {
-      return 'Invalid value';
+      return "Invalid value";
     }
   }, [simpleValue, jsonValue, valueType, editorMode]);
 
   // Is JSON valid
   const isJsonValid = useMemo(() => {
-    if (editorMode !== 'json') return true;
+    if (editorMode !== "json") return true;
     try {
       JSON.parse(jsonValue);
       return true;
@@ -207,11 +216,13 @@ export function VariableEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Edit Variable' : 'Create Variable'}</DialogTitle>
+          <DialogTitle>
+            {isEditing ? "Edit Variable" : "Create Variable"}
+          </DialogTitle>
           <DialogDescription>
             {isEditing
-              ? 'Update the variable value and description.'
-              : 'Create a new global variable that can be used across all workflows.'}
+              ? "Update the variable value and description."
+              : "Create a new global variable that can be used across all workflows."}
           </DialogDescription>
         </DialogHeader>
 
@@ -227,7 +238,7 @@ export function VariableEditorDialog({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="my_variable"
-                className={cn(errors.name && 'border-destructive')}
+                className={cn(errors.name && "border-destructive")}
               />
               {errors.name && (
                 <p className="text-sm text-destructive flex items-center gap-1">
@@ -264,8 +275,11 @@ export function VariableEditorDialog({
               <Label htmlFor="value">
                 Value <span className="text-destructive">*</span>
               </Label>
-              {(valueType === 'object' || valueType === 'array') && (
-                <Badge variant={isJsonValid ? 'default' : 'destructive'} className="text-xs">
+              {(valueType === "object" || valueType === "array") && (
+                <Badge
+                  variant={isJsonValid ? "default" : "destructive"}
+                  className="text-xs"
+                >
                   {isJsonValid ? (
                     <>
                       <Check className="h-3 w-3 mr-1" />
@@ -281,9 +295,9 @@ export function VariableEditorDialog({
               )}
             </div>
 
-            {editorMode === 'simple' ? (
+            {editorMode === "simple" ? (
               <>
-                {valueType === 'boolean' ? (
+                {valueType === "boolean" ? (
                   <Select value={simpleValue} onValueChange={setSimpleValue}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select value" />
@@ -296,30 +310,31 @@ export function VariableEditorDialog({
                 ) : (
                   <Input
                     id="value"
-                    type={valueType === 'number' ? 'number' : 'text'}
+                    type={valueType === "number" ? "number" : "text"}
                     value={simpleValue}
                     onChange={(e) => setSimpleValue(e.target.value)}
-                    placeholder={
-                      valueType === 'number'
-                        ? '42'
-                        : 'Enter value'
-                    }
-                    className={cn(errors.value && 'border-destructive')}
+                    placeholder={valueType === "number" ? "42" : "Enter value"}
+                    className={cn(errors.value && "border-destructive")}
                   />
                 )}
               </>
             ) : (
-              <div className={cn('border rounded-md overflow-hidden', errors.value && 'border-destructive')}>
+              <div
+                className={cn(
+                  "border rounded-md overflow-hidden",
+                  errors.value && "border-destructive"
+                )}
+              >
                 <Editor
                   height="200px"
                   defaultLanguage="json"
                   value={jsonValue}
-                  onChange={(value) => setJsonValue(value || '')}
+                  onChange={(value) => setJsonValue(value || "")}
                   theme="vs-dark"
                   options={{
                     minimap: { enabled: false },
                     fontSize: 13,
-                    lineNumbers: 'on',
+                    lineNumbers: "on",
                     scrollBeyondLastLine: false,
                     automaticLayout: true,
                     tabSize: 2,
@@ -366,11 +381,15 @@ export function VariableEditorDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isSaving}
+          >
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+            {isSaving ? "Saving..." : isEditing ? "Update" : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

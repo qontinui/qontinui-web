@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Background Removal Page (Experimental)
@@ -16,13 +16,13 @@
  * Note: This feature is experimental and may require manual refinement.
  */
 
-import { BackgroundRemovalTab } from '@/components/background-removal/BackgroundRemovalTab'
-import { RequireProject } from '@/components/require-project'
+import { BackgroundRemovalTab } from "@/components/background-removal/BackgroundRemovalTab";
+import { RequireProject } from "@/components/require-project";
 
 export default function BackgroundRemovalPage() {
   return (
     <RequireProject pageName="Remove Background">
       <BackgroundRemovalTab />
     </RequireProject>
-  )
+  );
 }

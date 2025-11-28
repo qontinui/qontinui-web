@@ -5,11 +5,11 @@
  * trigger tutorials based on configured conditions.
  */
 
-import React, { useEffect, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
-import { useTutorial } from './TutorialProvider';
-import { useTutorialStore } from '@/stores/tutorial-store';
-import type { Tutorial } from '@/types/tutorial';
+import React, { useEffect, useRef, useCallback } from "react";
+import { useLocation } from "react-router-dom";
+import { useTutorial } from "./TutorialProvider";
+import { useTutorialStore } from "@/stores/tutorial-store";
+import type { Tutorial } from "@/types/tutorial";
 
 // ============================================================================
 // Types
@@ -36,8 +36,8 @@ interface TriggerHistory {
 // Local Storage Keys
 // ============================================================================
 
-const TRIGGER_HISTORY_KEY = 'qontinui-tutorial-trigger-history';
-const DONT_SHOW_KEY = 'qontinui-tutorial-dont-show';
+const TRIGGER_HISTORY_KEY = "qontinui-tutorial-trigger-history";
+const DONT_SHOW_KEY = "qontinui-tutorial-dont-show";
 
 // ============================================================================
 // Component
@@ -50,11 +50,8 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
 }) => {
   const location = useLocation();
   const { startTutorial } = useTutorial();
-  const {
-    dontShowTutorialsAgain,
-    completedTutorials,
-    inProgressTutorials,
-  } = useTutorialStore();
+  const { dontShowTutorialsAgain, completedTutorials, inProgressTutorials } =
+    useTutorialStore();
 
   const hasCheckedRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout>();
@@ -68,7 +65,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
       const stored = localStorage.getItem(TRIGGER_HISTORY_KEY);
       return stored ? JSON.parse(stored) : {};
     } catch (error) {
-      console.error('Failed to load trigger history:', error);
+      console.error("Failed to load trigger history:", error);
       return {};
     }
   }, []);
@@ -77,7 +74,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
     try {
       localStorage.setItem(TRIGGER_HISTORY_KEY, JSON.stringify(history));
     } catch (error) {
-      console.error('Failed to save trigger history:', error);
+      console.error("Failed to save trigger history:", error);
     }
   }, []);
 
@@ -86,22 +83,25 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
       const stored = localStorage.getItem(DONT_SHOW_KEY);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
-      console.error('Failed to load dont show list:', error);
+      console.error("Failed to load dont show list:", error);
       return [];
     }
   }, []);
 
-  const addToDontShow = useCallback((tutorialId: string) => {
-    try {
-      const list = getDontShowList();
-      if (!list.includes(tutorialId)) {
-        list.push(tutorialId);
-        localStorage.setItem(DONT_SHOW_KEY, JSON.stringify(list));
+  const addToDontShow = useCallback(
+    (tutorialId: string) => {
+      try {
+        const list = getDontShowList();
+        if (!list.includes(tutorialId)) {
+          list.push(tutorialId);
+          localStorage.setItem(DONT_SHOW_KEY, JSON.stringify(list));
+        }
+      } catch (error) {
+        console.error("Failed to save dont show preference:", error);
       }
-    } catch (error) {
-      console.error('Failed to save dont show preference:', error);
-    }
-  }, [getDontShowList]);
+    },
+    [getDontShowList]
+  );
 
   // ============================================================================
   // Trigger Evaluation
@@ -161,7 +161,10 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
   const checkPageTriggers = useCallback(
     (tutorial: Tutorial): boolean => {
       // Check if tutorial is for current page
-      if (tutorial.targetPage && !location.pathname.includes(tutorial.targetPage)) {
+      if (
+        tutorial.targetPage &&
+        !location.pathname.includes(tutorial.targetPage)
+      ) {
         return false;
       }
 
@@ -181,7 +184,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
         try {
           // Create a safe evaluation function
           // Note: In production, use a safer evaluation method
-          const conditionFunc = new Function('return ' + trigger.condition);
+          const conditionFunc = new Function("return " + trigger.condition);
           const result = conditionFunc();
 
           if (result) {
@@ -290,7 +293,9 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
 
   // Listen for custom tutorial trigger events
   useEffect(() => {
-    const handleCustomTrigger = (event: CustomEvent<{ tutorialId: string }>) => {
+    const handleCustomTrigger = (
+      event: CustomEvent<{ tutorialId: string }>
+    ) => {
       const tutorial = tutorials.find((t) => t.id === event.detail.tutorialId);
 
       if (tutorial && shouldTriggerTutorial(tutorial)) {
@@ -299,13 +304,13 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
     };
 
     window.addEventListener(
-      'trigger-tutorial' as any,
+      "trigger-tutorial" as any,
       handleCustomTrigger as EventListener
     );
 
     return () => {
       window.removeEventListener(
-        'trigger-tutorial' as any,
+        "trigger-tutorial" as any,
         handleCustomTrigger as EventListener
       );
     };
@@ -338,7 +343,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
  * ```
  */
 export function triggerTutorialById(tutorialId: string): void {
-  const event = new CustomEvent('trigger-tutorial', {
+  const event = new CustomEvent("trigger-tutorial", {
     detail: { tutorialId },
   });
   window.dispatchEvent(event);
@@ -368,7 +373,7 @@ export function dismissTutorial(tutorialId: string): void {
       localStorage.setItem(DONT_SHOW_KEY, JSON.stringify(list));
     }
   } catch (error) {
-    console.error('Failed to dismiss tutorial:', error);
+    console.error("Failed to dismiss tutorial:", error);
   }
 }
 
@@ -389,7 +394,7 @@ export function resetTriggerHistory(): void {
     localStorage.removeItem(TRIGGER_HISTORY_KEY);
     localStorage.removeItem(DONT_SHOW_KEY);
   } catch (error) {
-    console.error('Failed to reset trigger history:', error);
+    console.error("Failed to reset trigger history:", error);
   }
 }
 

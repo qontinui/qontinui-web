@@ -7,10 +7,10 @@
  * - Duplicate workflows
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { State, ImageAsset } from '@/contexts/automation-context/types';
-import type { DuplicateMatch } from './types';
-import { calculateStringSimilarity, formatBytes } from './utils';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type { State, ImageAsset } from "@/contexts/automation-context/types";
+import type { DuplicateMatch } from "./types";
+import { calculateStringSimilarity, formatBytes } from "./utils";
 
 /**
  * Find duplicate images by similarity
@@ -22,7 +22,7 @@ export function findDuplicateImages(
 ): DuplicateMatch[] {
   const duplicates: DuplicateMatch[] = [];
 
-  allImages.forEach(other => {
+  allImages.forEach((other) => {
     if (other.id === image.id) return;
 
     // Exact name match
@@ -31,8 +31,8 @@ export function findDuplicateImages(
         id: other.id,
         name: other.name,
         similarity: 1.0,
-        matchType: 'exact',
-        details: 'Exact name match',
+        matchType: "exact",
+        details: "Exact name match",
       });
       return;
     }
@@ -46,7 +46,7 @@ export function findDuplicateImages(
           id: other.id,
           name: other.name,
           similarity,
-          matchType: 'similar',
+          matchType: "similar",
           details: `Similar size: ${formatBytes(other.size)}`,
         });
       }
@@ -59,8 +59,8 @@ export function findDuplicateImages(
         id: other.id,
         name: other.name,
         similarity: nameSimilarity,
-        matchType: 'potential',
-        details: 'Similar name',
+        matchType: "potential",
+        details: "Similar name",
       });
     }
   });
@@ -78,7 +78,7 @@ export function findDuplicateStates(
 ): DuplicateMatch[] {
   const duplicates: DuplicateMatch[] = [];
 
-  allStates.forEach(other => {
+  allStates.forEach((other) => {
     if (other.id === state.id) return;
 
     // Exact name match
@@ -87,25 +87,30 @@ export function findDuplicateStates(
         id: other.id,
         name: other.name,
         similarity: 1.0,
-        matchType: 'exact',
-        details: 'Exact name match',
+        matchType: "exact",
+        details: "Exact name match",
       });
       return;
     }
 
     // Structure similarity
-    const imageCountSimilar = state.stateImages.length === other.stateImages.length;
+    const imageCountSimilar =
+      state.stateImages.length === other.stateImages.length;
     const regionCountSimilar = state.regions.length === other.regions.length;
 
-    if (imageCountSimilar && regionCountSimilar && state.stateImages.length > 0) {
+    if (
+      imageCountSimilar &&
+      regionCountSimilar &&
+      state.stateImages.length > 0
+    ) {
       const nameSimilarity = calculateStringSimilarity(state.name, other.name);
       if (nameSimilarity >= threshold) {
         duplicates.push({
           id: other.id,
           name: other.name,
           similarity: nameSimilarity,
-          matchType: 'potential',
-          details: 'Similar structure and name',
+          matchType: "potential",
+          details: "Similar structure and name",
         });
       }
     }
@@ -124,7 +129,7 @@ export function findDuplicateWorkflows(
 ): DuplicateMatch[] {
   const duplicates: DuplicateMatch[] = [];
 
-  allWorkflows.forEach(other => {
+  allWorkflows.forEach((other) => {
     if (other.id === workflow.id) return;
 
     // Exact name match
@@ -133,8 +138,8 @@ export function findDuplicateWorkflows(
         id: other.id,
         name: other.name,
         similarity: 1.0,
-        matchType: 'exact',
-        details: 'Exact name match',
+        matchType: "exact",
+        details: "Exact name match",
       });
       return;
     }
@@ -143,17 +148,20 @@ export function findDuplicateWorkflows(
     const actionCountSame = other.actions.length === workflow.actions.length;
     if (actionCountSame && workflow.actions.length > 0) {
       // Compare action types
-      const workflowTypes = workflow.actions.map(a => a.type).join(',');
-      const otherTypes = other.actions.map(a => a.type).join(',');
+      const workflowTypes = workflow.actions.map((a) => a.type).join(",");
+      const otherTypes = other.actions.map((a) => a.type).join(",");
 
       if (workflowTypes === otherTypes) {
-        const nameSimilarity = calculateStringSimilarity(workflow.name, other.name);
+        const nameSimilarity = calculateStringSimilarity(
+          workflow.name,
+          other.name
+        );
         duplicates.push({
           id: other.id,
           name: other.name,
           similarity: nameSimilarity,
-          matchType: 'potential',
-          details: 'Identical action sequence',
+          matchType: "potential",
+          details: "Identical action sequence",
         });
       }
     }

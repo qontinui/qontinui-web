@@ -1,8 +1,8 @@
-import { HttpClient } from './http-client';
-import { ApiConfig } from './api-config';
+import { HttpClient } from "./http-client";
+import { ApiConfig } from "./api-config";
 
 export interface Subscription {
-  tier: 'free' | 'hobby' | 'pro';
+  tier: "free" | "hobby" | "pro";
   status: string;
   cancel_at_period_end: boolean;
   current_period_end: string | null;
@@ -38,9 +38,11 @@ class BillingService {
    * Get current user's subscription details
    */
   async getSubscription(): Promise<Subscription> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/billing/subscription`);
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/billing/subscription`
+    );
     if (!response.ok) {
-      throw new Error('Failed to get subscription');
+      throw new Error("Failed to get subscription");
     }
     return response.json();
   }
@@ -48,13 +50,16 @@ class BillingService {
   /**
    * Create a Stripe checkout session
    */
-  async createCheckoutSession(tier: 'hobby' | 'pro'): Promise<CheckoutSession> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/billing/checkout`, {
-      method: 'POST',
-      body: JSON.stringify({ tier }),
-    });
+  async createCheckoutSession(tier: "hobby" | "pro"): Promise<CheckoutSession> {
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/billing/checkout`,
+      {
+        method: "POST",
+        body: JSON.stringify({ tier }),
+      }
+    );
     if (!response.ok) {
-      throw new Error('Failed to create checkout session');
+      throw new Error("Failed to create checkout session");
     }
     return response.json();
   }
@@ -63,11 +68,14 @@ class BillingService {
    * Create a billing portal session for subscription management
    */
   async createBillingPortal(): Promise<BillingPortal> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/billing/portal`, {
-      method: 'POST',
-    });
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/billing/portal`,
+      {
+        method: "POST",
+      }
+    );
     if (!response.ok) {
-      throw new Error('Failed to create billing portal session');
+      throw new Error("Failed to create billing portal session");
     }
     return response.json();
   }
@@ -76,9 +84,11 @@ class BillingService {
    * Get tier limits for current user
    */
   async getTierLimits(): Promise<TierLimits> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/billing/limits`);
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/billing/limits`
+    );
     if (!response.ok) {
-      throw new Error('Failed to get tier limits');
+      throw new Error("Failed to get tier limits");
     }
     return response.json();
   }
@@ -86,7 +96,7 @@ class BillingService {
   /**
    * Redirect to checkout
    */
-  async redirectToCheckout(tier: 'hobby' | 'pro'): Promise<void> {
+  async redirectToCheckout(tier: "hobby" | "pro"): Promise<void> {
     const session = await this.createCheckoutSession(tier);
     window.location.href = session.url;
   }

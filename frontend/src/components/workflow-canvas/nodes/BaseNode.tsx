@@ -11,15 +11,19 @@
  * - Hover effects
  */
 
-import React from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
-import { Action, ActionType } from '@/lib/action-schema/action-types';
-import { getNodeIcon } from './node-icons';
-import { getNodeSummary, getNodeCategory, getCategoryColor } from './node-utils';
+import React from "react";
+import { Handle, Position, NodeProps } from "@xyflow/react";
+import { Action, ActionType } from "@/lib/action-schema/action-types";
+import { getNodeIcon } from "./node-icons";
+import {
+  getNodeSummary,
+  getNodeCategory,
+  getCategoryColor,
+} from "./node-utils";
 
 export interface BaseNodeData {
   action: Action;
-  executionState?: 'idle' | 'running' | 'completed' | 'failed' | 'skipped';
+  executionState?: "idle" | "running" | "completed" | "failed" | "skipped";
   error?: string;
   outputCount?: number;
   onNodeClick?: (nodeId: string) => void;
@@ -43,11 +47,11 @@ export function BaseNode({
   selected,
   showInputHandle = true,
   showOutputHandle = true,
-  outputHandleIds = ['main-0'],
-  className = '',
+  outputHandleIds = ["main-0"],
+  className = "",
   compact = false,
 }: BaseNodeProps) {
-  const { action, executionState = 'idle', error } = data;
+  const { action, executionState = "idle", error } = data;
   const category = getNodeCategory(action.type);
   const categoryColor = getCategoryColor(category);
   const Icon = getNodeIcon(action.type);
@@ -64,25 +68,25 @@ export function BaseNode({
   // Get execution state styles
   const getExecutionStateStyles = () => {
     switch (executionState) {
-      case 'running':
-        return 'ring-2 ring-blue-500 ring-offset-2 animate-pulse';
-      case 'completed':
-        return 'ring-2 ring-green-500 ring-offset-2';
-      case 'failed':
-        return 'ring-2 ring-red-500 ring-offset-2';
-      case 'skipped':
-        return 'opacity-50';
+      case "running":
+        return "ring-2 ring-blue-500 ring-offset-2 animate-pulse";
+      case "completed":
+        return "ring-2 ring-green-500 ring-offset-2";
+      case "failed":
+        return "ring-2 ring-red-500 ring-offset-2";
+      case "skipped":
+        return "opacity-50";
       default:
-        return '';
+        return "";
     }
   };
 
   // Get selection styles
   const getSelectionStyles = () => {
     if (selected) {
-      return 'ring-2 ring-blue-400 ring-offset-2';
+      return "ring-2 ring-blue-400 ring-offset-2";
     }
-    return '';
+    return "";
   };
 
   return (
@@ -93,7 +97,7 @@ export function BaseNode({
         ${categoryColor}
         ${getExecutionStateStyles()}
         ${getSelectionStyles()}
-        ${compact ? 'compact' : ''}
+        ${compact ? "compact" : ""}
         ${className}
         relative rounded-lg bg-white border-2 border-gray-300
         shadow-md hover:shadow-lg transition-all duration-200
@@ -111,23 +115,25 @@ export function BaseNode({
           id="input-0"
           className="node-handle node-handle-input"
           style={{
-            width: '16px',
-            height: '16px',
-            background: '#666',
-            border: '2px solid #fff',
-            cursor: 'crosshair',
+            width: "16px",
+            height: "16px",
+            background: "#666",
+            border: "2px solid #fff",
+            cursor: "crosshair",
           }}
         />
       )}
 
       {/* Node Header */}
-      <div className={`
+      <div
+        className={`
         node-header
         px-3 py-2
         border-b border-gray-200
         flex items-center gap-2
         ${categoryColor}
-      `}>
+      `}
+      >
         {/* Icon */}
         <div className="node-icon flex-shrink-0">
           <Icon className="w-4 h-4" />
@@ -136,7 +142,7 @@ export function BaseNode({
         {/* Type and Name */}
         <div className="flex-1 min-w-0">
           <div className="node-type text-xs font-semibold text-gray-700 uppercase tracking-wide">
-            {action.type.replace(/_/g, ' ')}
+            {action.type.replace(/_/g, " ")}
           </div>
           {action.name && !compact && (
             <div className="node-name text-xs text-gray-600 truncate">
@@ -146,18 +152,18 @@ export function BaseNode({
         </div>
 
         {/* Execution State Indicator */}
-        {executionState !== 'idle' && (
+        {executionState !== "idle" && (
           <div className="execution-indicator flex-shrink-0">
-            {executionState === 'running' && (
+            {executionState === "running" && (
               <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
             )}
-            {executionState === 'completed' && (
+            {executionState === "completed" && (
               <div className="w-2 h-2 rounded-full bg-green-500" />
             )}
-            {executionState === 'failed' && (
+            {executionState === "failed" && (
               <div className="w-2 h-2 rounded-full bg-red-500" />
             )}
-            {executionState === 'skipped' && (
+            {executionState === "skipped" && (
               <div className="w-2 h-2 rounded-full bg-gray-400" />
             )}
           </div>
@@ -165,14 +171,14 @@ export function BaseNode({
       </div>
 
       {/* Node Body */}
-      <div className={`
+      <div
+        className={`
         node-body
         px-3 py-2
-        ${compact ? 'py-1' : 'py-2'}
-      `}>
-        <div className="node-summary text-sm text-gray-700">
-          {summary}
-        </div>
+        ${compact ? "py-1" : "py-2"}
+      `}
+      >
+        <div className="node-summary text-sm text-gray-700">{summary}</div>
 
         {/* Error Message */}
         {error && (
@@ -208,11 +214,11 @@ export function BaseNode({
                 className="node-handle node-handle-output"
                 style={{
                   top: `${topPercent}%`,
-                  width: '16px',
-                  height: '16px',
-                  background: '#666',
-                  border: '2px solid #fff',
-                  cursor: 'crosshair',
+                  width: "16px",
+                  height: "16px",
+                  background: "#666",
+                  border: "2px solid #fff",
+                  cursor: "crosshair",
                 }}
               />
             );
@@ -256,7 +262,7 @@ export function MultiOutputNode({
               <span
                 className={`
                   px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap
-                  ${output.color || 'bg-gray-100 text-gray-700'}
+                  ${output.color || "bg-gray-100 text-gray-700"}
                 `}
               >
                 {output.label}
@@ -280,23 +286,25 @@ export function CompactNode(props: BaseNodeProps) {
  * Start/End node variant with special styling
  */
 export interface TerminalNodeProps extends BaseNodeProps {
-  variant: 'start' | 'end';
+  variant: "start" | "end";
 }
 
 export function TerminalNode({ variant, ...props }: TerminalNodeProps) {
-  const isStart = variant === 'start';
+  const isStart = variant === "start";
 
   return (
-    <div className={`
+    <div
+      className={`
       terminal-node
-      ${isStart ? 'start-node' : 'end-node'}
-    `}>
+      ${isStart ? "start-node" : "end-node"}
+    `}
+    >
       <BaseNode
         {...props}
         showInputHandle={!isStart}
         showOutputHandle={isStart}
         className={`
-          ${isStart ? 'bg-green-50 border-green-400' : 'bg-red-50 border-red-400'}
+          ${isStart ? "bg-green-50 border-green-400" : "bg-red-50 border-red-400"}
           font-semibold
         `}
       />

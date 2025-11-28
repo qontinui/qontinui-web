@@ -15,8 +15,8 @@
  *   }
  */
 
-import { MigrationEngine } from './migration-engine';
-import { ALL_MIGRATIONS, CURRENT_VERSION } from './migrations';
+import { MigrationEngine } from "./migration-engine";
+import { ALL_MIGRATIONS, CURRENT_VERSION } from "./migrations";
 
 // Initialize global migration engine
 const migrationEngine = new MigrationEngine(CURRENT_VERSION);
@@ -108,6 +108,11 @@ export function getMigrationCacheStats() {
 }
 
 // Re-export types for convenience
-export type { Migration, MigrationResult, MigrationContext, MigrationHistoryEntry } from './migration-types';
-export { MigrationEngine } from './migration-engine';
-export * from './version-utils';
+export type {
+  Migration,
+  MigrationResult,
+  MigrationContext,
+  MigrationHistoryEntry,
+} from "./migration-types";
+export { MigrationEngine } from "./migration-engine";
+export * from "./version-utils";

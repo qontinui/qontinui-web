@@ -8,8 +8,8 @@
  * - Organization switching
  */
 
-import { HttpClient } from '../http-client';
-import { ApiConfig } from '../api-config';
+import { HttpClient } from "../http-client";
+import { ApiConfig } from "../api-config";
 import type {
   Organization,
   OrganizationCreate,
@@ -18,7 +18,7 @@ import type {
   Invitation,
   InvitationCreate,
   MemberRole,
-} from '@/types/collaboration';
+} from "@/types/collaboration";
 
 export class OrganizationService {
   private httpClient: HttpClient;
@@ -46,14 +46,14 @@ export class OrganizationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/organizations/`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(data),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to create organization');
+      throw new Error(error.message || "Failed to create organization");
     }
 
     const organization = await response.json();
@@ -77,10 +77,13 @@ export class OrganizationService {
 
     if (!response.ok) {
       // Only throw for actual errors, not empty results
-      const errorText = await response.text().catch(() => '');
+      const errorText = await response.text().catch(() => "");
       // Check if this is just an "empty" response vs a real error
-      if (response.status >= 500 || (response.status >= 400 && response.status !== 404)) {
-        throw new Error(errorText || 'Failed to fetch organizations');
+      if (
+        response.status >= 500 ||
+        (response.status >= 400 && response.status !== 404)
+      ) {
+        throw new Error(errorText || "Failed to fetch organizations");
       }
       return [];
     }
@@ -99,7 +102,7 @@ export class OrganizationService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch organization');
+      throw new Error("Failed to fetch organization");
     }
 
     return response.json();
@@ -115,14 +118,14 @@ export class OrganizationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/organizations/${id}`,
       {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(updates),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to update organization');
+      throw new Error(error.message || "Failed to update organization");
     }
 
     const organization = await response.json();
@@ -143,13 +146,13 @@ export class OrganizationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/organizations/${id}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to delete organization');
+      throw new Error(error.message || "Failed to delete organization");
     }
 
     // Clear current organization if it's the one being deleted
@@ -176,14 +179,14 @@ export class OrganizationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/organizations/${orgId}/invitations`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(data),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to send invitation');
+      throw new Error(error.message || "Failed to send invitation");
     }
 
     return response.json();
@@ -198,7 +201,7 @@ export class OrganizationService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch members');
+      throw new Error("Failed to fetch members");
     }
 
     return response.json();
@@ -215,14 +218,14 @@ export class OrganizationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/organizations/${orgId}/members/${userId}`,
       {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({ role }),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to update member role');
+      throw new Error(error.message || "Failed to update member role");
     }
 
     return response.json();
@@ -235,13 +238,13 @@ export class OrganizationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/organizations/${orgId}/members/${userId}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to remove member');
+      throw new Error(error.message || "Failed to remove member");
     }
   }
 
@@ -254,7 +257,7 @@ export class OrganizationService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch invitations');
+      throw new Error("Failed to fetch invitations");
     }
 
     return response.json();
@@ -267,13 +270,13 @@ export class OrganizationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/organizations/${orgId}/invitations/${invitationId}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to revoke invitation');
+      throw new Error(error.message || "Failed to revoke invitation");
     }
   }
 
@@ -284,13 +287,13 @@ export class OrganizationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/invitations/${token}/accept`,
       {
-        method: 'POST',
+        method: "POST",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to accept invitation');
+      throw new Error(error.message || "Failed to accept invitation");
     }
   }
 
@@ -302,14 +305,14 @@ export class OrganizationService {
    * Get the current organization
    */
   getCurrentOrganization(): Organization | null {
-    if (!this.currentOrganization && typeof window !== 'undefined') {
-      const stored = localStorage.getItem('current_organization');
+    if (!this.currentOrganization && typeof window !== "undefined") {
+      const stored = localStorage.getItem("current_organization");
       if (stored) {
         try {
           this.currentOrganization = JSON.parse(stored);
         } catch (error) {
-          console.error('Failed to parse stored organization:', error);
-          localStorage.removeItem('current_organization');
+          console.error("Failed to parse stored organization:", error);
+          localStorage.removeItem("current_organization");
         }
       }
     }
@@ -330,8 +333,8 @@ export class OrganizationService {
    */
   clearCurrentOrganization(): void {
     this.currentOrganization = null;
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('current_organization');
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("current_organization");
     }
   }
 
@@ -343,8 +346,11 @@ export class OrganizationService {
    * Store current organization in localStorage
    */
   private storeCurrentOrganization(organization: Organization): void {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('current_organization', JSON.stringify(organization));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        "current_organization",
+        JSON.stringify(organization)
+      );
     }
   }
 }

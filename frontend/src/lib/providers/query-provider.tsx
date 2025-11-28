@@ -18,14 +18,14 @@
  *   }
  */
 
-'use client'
+"use client";
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { useState, type ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { useState, type ReactNode } from "react";
 
 interface QueryProviderProps {
-  children: ReactNode
+  children: ReactNode;
 }
 
 export function QueryProvider({ children }: QueryProviderProps) {
@@ -38,13 +38,14 @@ export function QueryProvider({ children }: QueryProviderProps) {
             staleTime: 60 * 1000,
 
             // Don't refetch on window focus in development
-            refetchOnWindowFocus: process.env.NODE_ENV === 'production',
+            refetchOnWindowFocus: process.env.NODE_ENV === "production",
 
             // Retry failed requests 3 times
             retry: 3,
 
             // Exponential backoff
-            retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+            retryDelay: (attemptIndex) =>
+              Math.min(1000 * 2 ** attemptIndex, 30000),
           },
           mutations: {
             // Retry failed mutations once
@@ -52,16 +53,16 @@ export function QueryProvider({ children }: QueryProviderProps) {
           },
         },
       })
-  )
+  );
 
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      {process.env.NODE_ENV === 'development' && (
+      {process.env.NODE_ENV === "development" && (
         <ReactQueryDevtools initialIsOpen={false} position="bottom-right" />
       )}
     </QueryClientProvider>
-  )
+  );
 }
 
 /**

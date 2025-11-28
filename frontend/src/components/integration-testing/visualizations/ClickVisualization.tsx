@@ -34,12 +34,7 @@ export function ClickVisualization({ location }: ClickVisualizationProps) {
       />
 
       {/* Center dot */}
-      <circle
-        cx={x}
-        cy={y}
-        r="6"
-        fill="#ef4444"
-      />
+      <circle cx={x} cy={y} r="6" fill="#ef4444" />
 
       {/* Crosshair */}
       <line

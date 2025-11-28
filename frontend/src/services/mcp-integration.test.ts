@@ -4,36 +4,36 @@
  * Tests for AI workflow generation and MCP client functionality.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { MCPClient, MCPError } from './mcp-client';
-import type { Workflow } from '../lib/action-schema/action-types';
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { MCPClient, MCPError } from "./mcp-client";
+import type { Workflow } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Mock Data
 // ============================================================================
 
 const mockWorkflow: Workflow = {
-  id: 'test-workflow-1',
-  name: 'Test Workflow',
-  version: '1.0.0',
-  format: 'graph',
+  id: "test-workflow-1",
+  name: "Test Workflow",
+  version: "1.0.0",
+  format: "graph",
   actions: [
     {
-      id: 'action-1',
-      type: 'CLICK',
-      config: { findBy: 'text', searchText: 'Submit' } as any,
+      id: "action-1",
+      type: "CLICK",
+      config: { findBy: "text", searchText: "Submit" } as any,
       position: [100, 100],
     },
     {
-      id: 'action-2',
-      type: 'TYPE',
-      config: { text: 'Hello World' } as any,
+      id: "action-2",
+      type: "TYPE",
+      config: { text: "Hello World" } as any,
       position: [100, 200],
     },
   ],
   connections: {
-    'action-1': {
-      main: [[{ action: 'action-2', type: 'main', index: 0 }]],
+    "action-1": {
+      main: [[{ action: "action-2", type: "main", index: 0 }]],
     },
   },
 };
@@ -42,7 +42,7 @@ const mockWorkflow: Workflow = {
 // Test Setup
 // ============================================================================
 
-describe('MCPClient', () => {
+describe("MCPClient", () => {
   let client: MCPClient;
   let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -52,7 +52,7 @@ describe('MCPClient', () => {
     global.fetch = fetchMock;
 
     // Create client with test URL
-    client = new MCPClient('http://localhost:3000/test');
+    client = new MCPClient("http://localhost:3000/test");
   });
 
   afterEach(() => {
@@ -63,25 +63,25 @@ describe('MCPClient', () => {
   // Connection Tests
   // ==========================================================================
 
-  describe('Connection', () => {
-    it('should check server health', async () => {
+  describe("Connection", () => {
+    it("should check server health", async () => {
       fetchMock.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          version: '1.0.0',
-          capabilities: ['generate', 'search', 'validate'],
+          version: "1.0.0",
+          capabilities: ["generate", "search", "validate"],
         }),
       });
 
       const health = await client.healthCheck();
 
       expect(health.available).toBe(true);
-      expect(health.version).toBe('1.0.0');
+      expect(health.version).toBe("1.0.0");
       expect(health.capabilities).toHaveLength(3);
     });
 
-    it('should handle connection errors', async () => {
-      fetchMock.mockRejectedValueOnce(new Error('Network error'));
+    it("should handle connection errors", async () => {
+      fetchMock.mockRejectedValueOnce(new Error("Network error"));
 
       const health = await client.healthCheck();
 
@@ -93,15 +93,15 @@ describe('MCPClient', () => {
   // Action Search Tests
   // ==========================================================================
 
-  describe('Action Search', () => {
-    it('should search actions by query', async () => {
+  describe("Action Search", () => {
+    it("should search actions by query", async () => {
       const mockResults = [
         {
-          id: 'click',
-          type: 'CLICK',
-          name: 'Click',
-          description: 'Click an element',
-          category: 'Mouse',
+          id: "click",
+          type: "CLICK",
+          name: "Click",
+          description: "Click an element",
+          category: "Mouse",
           confidence: 0.95,
         },
       ];
@@ -111,66 +111,66 @@ describe('MCPClient', () => {
         json: async () => ({ results: mockResults }),
       });
 
-      const results = await client.searchActions('click button');
+      const results = await client.searchActions("click button");
 
       expect(results).toHaveLength(1);
-      expect(results[0].type).toBe('CLICK');
+      expect(results[0].type).toBe("CLICK");
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining('/search/actions'),
+        expect.stringContaining("/search/actions"),
         expect.objectContaining({
-          method: 'POST',
+          method: "POST",
         })
       );
     });
 
-    it('should apply search filters', async () => {
+    it("should apply search filters", async () => {
       fetchMock.mockResolvedValueOnce({
         ok: true,
         json: async () => ({ results: [] }),
       });
 
-      await client.searchActions('click', {
-        category: ['Mouse'],
-        actionType: ['CLICK'],
+      await client.searchActions("click", {
+        category: ["Mouse"],
+        actionType: ["CLICK"],
         limit: 5,
       });
 
       const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(callBody.filters).toEqual({
-        category: ['Mouse'],
-        actionType: ['CLICK'],
+        category: ["Mouse"],
+        actionType: ["CLICK"],
         limit: 5,
       });
     });
 
-    it('should cache search results', async () => {
+    it("should cache search results", async () => {
       fetchMock.mockResolvedValueOnce({
         ok: true,
         json: async () => ({ results: [] }),
       });
 
       // First call
-      await client.searchActions('test');
+      await client.searchActions("test");
 
       // Second call (should use cache)
-      await client.searchActions('test');
+      await client.searchActions("test");
 
       // Should only call fetch once
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it('should get action details', async () => {
+    it("should get action details", async () => {
       const mockDetails = {
-        id: 'click',
-        type: 'CLICK',
-        name: 'Click',
-        description: 'Click an element',
-        category: 'Mouse',
+        id: "click",
+        type: "CLICK",
+        name: "Click",
+        description: "Click an element",
+        category: "Mouse",
         parameters: [
           {
-            name: 'findBy',
-            type: 'string',
-            description: 'How to find element',
+            name: "findBy",
+            type: "string",
+            description: "How to find element",
             required: true,
           },
         ],
@@ -182,9 +182,9 @@ describe('MCPClient', () => {
         json: async () => mockDetails,
       });
 
-      const details = await client.getActionDetails('CLICK');
+      const details = await client.getActionDetails("CLICK");
 
-      expect(details.type).toBe('CLICK');
+      expect(details.type).toBe("CLICK");
       expect(details.parameters).toHaveLength(1);
     });
   });
@@ -193,8 +193,8 @@ describe('MCPClient', () => {
   // Workflow Validation Tests
   // ==========================================================================
 
-  describe('Workflow Validation', () => {
-    it('should validate workflow structure', async () => {
+  describe("Workflow Validation", () => {
+    it("should validate workflow structure", async () => {
       const mockValidation = {
         valid: true,
         errors: [],
@@ -219,15 +219,15 @@ describe('MCPClient', () => {
       expect(result.stats?.actionCount).toBe(2);
     });
 
-    it('should detect validation errors', async () => {
+    it("should detect validation errors", async () => {
       const mockValidation = {
         valid: false,
         errors: [
           {
-            id: 'error-1',
-            type: 'cycle',
-            severity: 'error',
-            message: 'Cycle detected in workflow',
+            id: "error-1",
+            type: "cycle",
+            severity: "error",
+            message: "Cycle detected in workflow",
           },
         ],
         warnings: [],
@@ -242,7 +242,7 @@ describe('MCPClient', () => {
 
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].type).toBe('cycle');
+      expect(result.errors[0].type).toBe("cycle");
     });
   });
 
@@ -250,13 +250,13 @@ describe('MCPClient', () => {
   // Workflow Generation Tests
   // ==========================================================================
 
-  describe('Workflow Generation', () => {
-    it('should generate workflow from description', async () => {
+  describe("Workflow Generation", () => {
+    it("should generate workflow from description", async () => {
       const mockGenerated = {
         workflow: mockWorkflow,
         confidence: 0.92,
-        explanation: 'Created a simple workflow',
-        reasoning: ['Added click action', 'Added type action'],
+        explanation: "Created a simple workflow",
+        reasoning: ["Added click action", "Added type action"],
       };
 
       fetchMock.mockResolvedValueOnce({
@@ -264,39 +264,41 @@ describe('MCPClient', () => {
         json: async () => mockGenerated,
       });
 
-      const result = await client.generateWorkflow('Create a workflow that clicks and types');
+      const result = await client.generateWorkflow(
+        "Create a workflow that clicks and types"
+      );
 
       expect(result.workflow.actions).toHaveLength(2);
       expect(result.confidence).toBeGreaterThan(0.9);
       expect(result.explanation).toBeTruthy();
     });
 
-    it('should handle generation with context', async () => {
+    it("should handle generation with context", async () => {
       fetchMock.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           workflow: mockWorkflow,
           confidence: 0.9,
-          explanation: 'Extended existing workflow',
+          explanation: "Extended existing workflow",
         }),
       });
 
-      await client.generateWorkflow('Add error handling', {
+      await client.generateWorkflow("Add error handling", {
         existingWorkflow: mockWorkflow,
-        templates: ['error_handling'],
+        templates: ["error_handling"],
       });
 
       const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(callBody.context.existingWorkflow).toBeDefined();
-      expect(callBody.context.templates).toContain('error_handling');
+      expect(callBody.context.templates).toContain("error_handling");
     });
 
-    it('should refine workflow with feedback', async () => {
+    it("should refine workflow with feedback", async () => {
       const mockRefined = {
         workflow: mockWorkflow,
         confidence: 0.88,
-        explanation: 'Added error handling',
-        reasoning: ['Added try-catch block'],
+        explanation: "Added error handling",
+        reasoning: ["Added try-catch block"],
       };
 
       fetchMock.mockResolvedValueOnce({
@@ -304,18 +306,21 @@ describe('MCPClient', () => {
         json: async () => mockRefined,
       });
 
-      const result = await client.refineWorkflow(mockWorkflow, 'Add error handling');
-
-      expect(result.workflow).toBeDefined();
-      expect(result.explanation).toContain('error handling');
-    });
-
-    it('should handle generation timeout', async () => {
-      fetchMock.mockImplementationOnce(
-        () => new Promise(resolve => setTimeout(resolve, 100000))
+      const result = await client.refineWorkflow(
+        mockWorkflow,
+        "Add error handling"
       );
 
-      await expect(client.generateWorkflow('test')).rejects.toThrow('timeout');
+      expect(result.workflow).toBeDefined();
+      expect(result.explanation).toContain("error handling");
+    });
+
+    it("should handle generation timeout", async () => {
+      fetchMock.mockImplementationOnce(
+        () => new Promise((resolve) => setTimeout(resolve, 100000))
+      );
+
+      await expect(client.generateWorkflow("test")).rejects.toThrow("timeout");
     }, 10000);
   });
 
@@ -323,16 +328,16 @@ describe('MCPClient', () => {
   // Suggestions Tests
   // ==========================================================================
 
-  describe('Suggestions', () => {
-    it('should get workflow suggestions', async () => {
+  describe("Suggestions", () => {
+    it("should get workflow suggestions", async () => {
       const mockSuggestions = [
         {
-          id: 'suggestion-1',
-          type: 'optimization',
-          title: 'Add parallel execution',
-          description: 'Execute independent actions in parallel',
+          id: "suggestion-1",
+          type: "optimization",
+          title: "Add parallel execution",
+          description: "Execute independent actions in parallel",
           confidence: 0.85,
-          impact: 'high',
+          impact: "high",
         },
       ];
 
@@ -344,18 +349,18 @@ describe('MCPClient', () => {
       const suggestions = await client.getSuggestions(mockWorkflow);
 
       expect(suggestions).toHaveLength(1);
-      expect(suggestions[0].type).toBe('optimization');
-      expect(suggestions[0].impact).toBe('high');
+      expect(suggestions[0].type).toBe("optimization");
+      expect(suggestions[0].impact).toBe("high");
     });
 
-    it('should apply suggestion to workflow', async () => {
+    it("should apply suggestion to workflow", async () => {
       const suggestion = {
-        id: 'suggestion-1',
-        type: 'optimization' as const,
-        title: 'Test',
-        description: 'Test',
+        id: "suggestion-1",
+        type: "optimization" as const,
+        title: "Test",
+        description: "Test",
         confidence: 0.8,
-        impact: 'high' as const,
+        impact: "high" as const,
         actions: [],
       };
 
@@ -375,25 +380,25 @@ describe('MCPClient', () => {
   // Error Handling Tests
   // ==========================================================================
 
-  describe('Error Handling', () => {
-    it('should throw MCPError on failed request', async () => {
+  describe("Error Handling", () => {
+    it("should throw MCPError on failed request", async () => {
       fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 500,
-        statusText: 'Internal Server Error',
-        json: async () => ({ message: 'Server error' }),
+        statusText: "Internal Server Error",
+        json: async () => ({ message: "Server error" }),
       });
 
-      await expect(client.searchActions('test')).rejects.toThrow(MCPError);
+      await expect(client.searchActions("test")).rejects.toThrow(MCPError);
     });
 
-    it('should handle network errors', async () => {
-      fetchMock.mockRejectedValueOnce(new Error('Network error'));
+    it("should handle network errors", async () => {
+      fetchMock.mockRejectedValueOnce(new Error("Network error"));
 
-      await expect(client.searchActions('test')).rejects.toThrow();
+      await expect(client.searchActions("test")).rejects.toThrow();
     });
 
-    it('should clear cache', () => {
+    it("should clear cache", () => {
       client.clearCache();
       // Cache should be empty, so next call should hit network
       // This is tested implicitly by other tests
@@ -404,13 +409,13 @@ describe('MCPClient', () => {
   // Optimization Tests
   // ==========================================================================
 
-  describe('Optimization', () => {
-    it('should optimize workflow', async () => {
+  describe("Optimization", () => {
+    it("should optimize workflow", async () => {
       const mockOptimized = {
         workflow: mockWorkflow,
         confidence: 0.9,
-        explanation: 'Optimized for speed',
-        reasoning: ['Removed redundant actions', 'Added parallel execution'],
+        explanation: "Optimized for speed",
+        reasoning: ["Removed redundant actions", "Added parallel execution"],
       };
 
       fetchMock.mockResolvedValueOnce({
@@ -418,7 +423,7 @@ describe('MCPClient', () => {
         json: async () => mockOptimized,
       });
 
-      const result = await client.optimizeWorkflow(mockWorkflow, ['speed']);
+      const result = await client.optimizeWorkflow(mockWorkflow, ["speed"]);
 
       expect(result.workflow).toBeDefined();
       expect(result.reasoning).toBeDefined();
@@ -429,18 +434,18 @@ describe('MCPClient', () => {
   // Explanation Tests
   // ==========================================================================
 
-  describe('Explanation', () => {
-    it('should explain workflow', async () => {
+  describe("Explanation", () => {
+    it("should explain workflow", async () => {
       const mockExplanation = {
-        summary: 'This workflow clicks and types',
+        summary: "This workflow clicks and types",
         steps: [
           {
-            actionId: 'action-1',
-            explanation: 'Clicks the submit button',
-            purpose: 'To submit the form',
+            actionId: "action-1",
+            explanation: "Clicks the submit button",
+            purpose: "To submit the form",
           },
         ],
-        flowDescription: 'Linear flow with 2 steps',
+        flowDescription: "Linear flow with 2 steps",
       };
 
       fetchMock.mockResolvedValueOnce({
@@ -460,21 +465,21 @@ describe('MCPClient', () => {
 // Integration Tests (require actual MCP server)
 // ============================================================================
 
-describe.skip('MCP Integration (requires server)', () => {
+describe.skip("MCP Integration (requires server)", () => {
   let client: MCPClient;
 
   beforeEach(() => {
-    client = new MCPClient('http://localhost:3000/mcp');
+    client = new MCPClient("http://localhost:3000/mcp");
   });
 
-  it('should connect to real MCP server', async () => {
+  it("should connect to real MCP server", async () => {
     const health = await client.healthCheck();
     expect(health.available).toBe(true);
   });
 
-  it('should generate real workflow', async () => {
+  it("should generate real workflow", async () => {
     const result = await client.generateWorkflow(
-      'Create a workflow that clicks login and types credentials'
+      "Create a workflow that clicks login and types credentials"
     );
 
     expect(result.workflow.actions.length).toBeGreaterThan(0);

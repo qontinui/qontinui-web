@@ -8,14 +8,14 @@
  * - Permission-based action authorization
  */
 
-import { HttpClient } from '../http-client';
-import { ApiConfig } from '../api-config';
+import { HttpClient } from "../http-client";
+import { ApiConfig } from "../api-config";
 import type {
   Collaborator,
   ProjectShare,
   PermissionLevel,
   ProjectAction,
-} from '@/types/collaboration';
+} from "@/types/collaboration";
 
 // Permission hierarchy for access checks
 const PERMISSION_HIERARCHY: Record<PermissionLevel, number> = {
@@ -29,13 +29,13 @@ const PERMISSION_HIERARCHY: Record<PermissionLevel, number> = {
 
 // Actions and their required permission levels
 const ACTION_PERMISSIONS: Record<ProjectAction, PermissionLevel> = {
-  view: 'view',
-  comment: 'comment',
-  edit: 'edit',
-  delete: 'admin',
-  share: 'admin',
-  manage_permissions: 'admin',
-  export: 'edit',
+  view: "view",
+  comment: "comment",
+  edit: "edit",
+  delete: "admin",
+  share: "admin",
+  manage_permissions: "admin",
+  export: "edit",
 };
 
 export class ProjectCollaborationService {
@@ -65,14 +65,14 @@ export class ProjectCollaborationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/projects/${projectId}/share`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(data),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to share project');
+      throw new Error(error.message || "Failed to share project");
     }
 
     // Clear cached permissions for this project
@@ -92,14 +92,16 @@ export class ProjectCollaborationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/projects/${projectId}/share`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(data),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to share project with organization');
+      throw new Error(
+        error.message || "Failed to share project with organization"
+      );
     }
 
     // Clear cached permissions for this project
@@ -115,7 +117,7 @@ export class ProjectCollaborationService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch collaborators');
+      throw new Error("Failed to fetch collaborators");
     }
 
     return response.json();
@@ -132,14 +134,16 @@ export class ProjectCollaborationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/projects/${projectId}/collaborators/${userId}`,
       {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({ permission }),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to update collaborator permission');
+      throw new Error(
+        error.message || "Failed to update collaborator permission"
+      );
     }
 
     // Clear cached permissions for this project
@@ -153,13 +157,13 @@ export class ProjectCollaborationService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/projects/${projectId}/collaborators/${userId}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to revoke access');
+      throw new Error(error.message || "Failed to revoke access");
     }
 
     // Clear cached permissions for this project
@@ -187,7 +191,7 @@ export class ProjectCollaborationService {
 
     if (!response.ok) {
       // If we can't fetch permissions, assume no access
-      return 'none';
+      return "none";
     }
 
     const data = await response.json();
@@ -270,8 +274,6 @@ export class ProjectCollaborationService {
     }
 
     // Fetch permissions in parallel
-    await Promise.all(
-      uncachedIds.map((id) => this.getProjectAccessLevel(id))
-    );
+    await Promise.all(uncachedIds.map((id) => this.getProjectAccessLevel(id)));
   }
 }

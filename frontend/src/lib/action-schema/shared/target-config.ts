@@ -2,43 +2,52 @@
  * Target configuration - used by actions that need to locate something on screen
  */
 
-import { Region, Coordinates } from './common-types';
-import { SearchOptions } from './search-options';
+import { Region, Coordinates } from "./common-types";
+import { SearchOptions } from "./search-options";
 
-export type TargetType = 'image' | 'region' | 'text' | 'coordinates' | 'stateString' | 'currentPosition' | 'resultIndex' | 'allResults' | 'resultByImage';
+export type TargetType =
+  | "image"
+  | "region"
+  | "text"
+  | "coordinates"
+  | "stateString"
+  | "currentPosition"
+  | "resultIndex"
+  | "allResults"
+  | "resultByImage";
 
 export interface ImageTarget {
-  type: 'image';
+  type: "image";
   imageId: string;
   searchOptions?: SearchOptions;
 }
 
 export interface RegionTarget {
-  type: 'region';
+  type: "region";
   region: Region;
 }
 
 export interface TextTarget {
-  type: 'text';
+  type: "text";
   text: string;
   searchOptions?: SearchOptions;
   textOptions?: TextSearchOptions;
 }
 
 export interface CoordinatesTarget {
-  type: 'coordinates';
+  type: "coordinates";
   coordinates: Coordinates;
 }
 
 export interface StateStringTarget {
-  type: 'stateString';
+  type: "stateString";
   stateId: string;
   stringIds: string[];
   useAll?: boolean;
 }
 
 export interface CurrentPositionTarget {
-  type: 'currentPosition';
+  type: "currentPosition";
 }
 
 /**
@@ -46,7 +55,7 @@ export interface CurrentPositionTarget {
  * Used after a FIND action that returned multiple matches
  */
 export interface ResultIndexTarget {
-  type: 'resultIndex';
+  type: "resultIndex";
   index: number;
 }
 
@@ -55,7 +64,7 @@ export interface ResultIndexTarget {
  * Primarily for multi-location actions; single-location actions use first match with warning
  */
 export interface AllResultsTarget {
-  type: 'allResults';
+  type: "allResults";
 }
 
 /**
@@ -63,7 +72,7 @@ export interface AllResultsTarget {
  * Used after a FIND action with multiple images (EACH strategy)
  */
 export interface ResultByImageTarget {
-  type: 'resultByImage';
+  type: "resultByImage";
   imageId: string;
 }
 
@@ -82,11 +91,17 @@ export type TargetConfig =
  * Text search options for OCR-based finding
  */
 export interface TextSearchOptions {
-  ocrEngine?: 'TESSERACT' | 'EASYOCR' | 'PADDLEOCR' | 'NATIVE';
+  ocrEngine?: "TESSERACT" | "EASYOCR" | "PADDLEOCR" | "NATIVE";
   language?: string;
   whitelistChars?: string;
   blacklistChars?: string;
-  matchType?: 'EXACT' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'REGEX' | 'FUZZY';
+  matchType?:
+    | "EXACT"
+    | "CONTAINS"
+    | "STARTS_WITH"
+    | "ENDS_WITH"
+    | "REGEX"
+    | "FUZZY";
   caseSensitive?: boolean;
   ignoreWhitespace?: boolean;
   normalizeUnicode?: boolean;

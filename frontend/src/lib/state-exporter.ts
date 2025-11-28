@@ -3,8 +3,16 @@
  * Exports states with all their objects (StateImage, StateRegion, StateLocation, StateString)
  */
 
-import { State, StateImage, SearchRegion } from '../contexts/automation-context/types';
-import { Screenshot, ScreenshotRegion, ScreenshotLocation } from '../types/Screenshot';
+import {
+  State,
+  StateImage,
+  SearchRegion,
+} from "../contexts/automation-context/types";
+import {
+  Screenshot,
+  ScreenshotRegion,
+  ScreenshotLocation,
+} from "../types/Screenshot";
 
 interface QontinuiStateExport {
   version: string;
@@ -74,10 +82,10 @@ interface QontinuiStateString {
   name: string;
   value: string;
   // Type flags
-  identifier?: boolean;     // OCR verification
-  inputText?: boolean;      // To be typed (default: true)
-  expectedText?: boolean;   // Validation
-  regexPattern?: boolean;   // Regex pattern
+  identifier?: boolean; // OCR verification
+  inputText?: boolean; // To be typed (default: true)
+  expectedText?: boolean; // Validation
+  regexPattern?: boolean; // Regex pattern
 }
 
 /**
@@ -87,9 +95,9 @@ export function exportStatesToQontinui(
   states: State[],
   screenshots: Screenshot[]
 ): QontinuiStateExport {
-  const qontinuiStates: QontinuiState[] = states.map(state => {
+  const qontinuiStates: QontinuiState[] = states.map((state) => {
     // Get all screenshots associated with this state
-    const stateScreenshots = screenshots.filter(s =>
+    const stateScreenshots = screenshots.filter((s) =>
       s.associatedStates.includes(state.id)
     );
 
@@ -99,42 +107,42 @@ export function exportStatesToQontinui(
 
     // Add StateImages from state definition
     if (state.stateImages) {
-      state.stateImages.forEach(stateImage => {
+      state.stateImages.forEach((stateImage) => {
         if (!imageIds.has(stateImage.id)) {
           imageIds.add(stateImage.id);
           stateImages.push({
             id: stateImage.id,
             name: stateImage.name,
             imageData: stateImage.image, // Assuming this is base64 or a path
-            searchRegions: (stateImage.searchRegions || []).map(sr => ({
+            searchRegions: (stateImage.searchRegions || []).map((sr) => ({
               id: sr.id,
               name: sr.name,
               x: sr.x,
               y: sr.y,
               width: sr.width,
-              height: sr.height
+              height: sr.height,
             })),
-            fixed: stateImage.fixed || false
+            fixed: stateImage.fixed || false,
           });
         }
       });
     }
 
     // Add StateImages from screenshots (if not already added)
-    stateScreenshots.forEach(screenshot => {
+    stateScreenshots.forEach((screenshot) => {
       // Create a StateImage for each screenshot
       const stateImageId = `state_image_${screenshot.id}`;
 
       // Find SearchRegions (regions of type SearchRegion linked to this StateImage)
       const searchRegions = screenshot.regions
-        .filter(r => r.type === 'SearchRegion')
-        .map(r => ({
+        .filter((r) => r.type === "SearchRegion")
+        .map((r) => ({
           id: r.id,
           name: r.name,
           x: r.bounds.x,
           y: r.bounds.y,
           width: r.bounds.width,
-          height: r.bounds.height
+          height: r.bounds.height,
         }));
 
       // Only add if not already present
@@ -145,7 +153,7 @@ export function exportStatesToQontinui(
           name: screenshot.name,
           imageData: screenshot.imageData,
           searchRegions,
-          fixed: false
+          fixed: false,
         });
       }
     });
@@ -156,7 +164,7 @@ export function exportStatesToQontinui(
 
     // Add StateRegions from state definition
     if (state.regions) {
-      state.regions.forEach(region => {
+      state.regions.forEach((region) => {
         if (!regionIds.has(region.id)) {
           regionIds.add(region.id);
           stateRegions.push({
@@ -166,17 +174,17 @@ export function exportStatesToQontinui(
             y: region.y,
             width: region.width,
             height: region.height,
-            searchRegion: false
+            searchRegion: false,
           });
         }
       });
     }
 
     // Add StateRegions from screenshots
-    stateScreenshots.forEach(screenshot => {
+    stateScreenshots.forEach((screenshot) => {
       screenshot.regions
-        .filter(r => r.type === 'StateRegion')
-        .forEach(region => {
+        .filter((r) => r.type === "StateRegion")
+        .forEach((region) => {
           if (!regionIds.has(region.id)) {
             regionIds.add(region.id);
             stateRegions.push({
@@ -186,7 +194,7 @@ export function exportStatesToQontinui(
               y: region.bounds.y,
               width: region.bounds.width,
               height: region.bounds.height,
-              searchRegion: false
+              searchRegion: false,
             });
           }
         });
@@ -198,7 +206,7 @@ export function exportStatesToQontinui(
 
     // Add StateLocations from state definition
     if (state.locations) {
-      state.locations.forEach(location => {
+      state.locations.forEach((location) => {
         if (!locationIds.has(location.id)) {
           locationIds.add(location.id);
           stateLocations.push({
@@ -211,15 +219,15 @@ export function exportStatesToQontinui(
             referenceImageId: location.referenceImageId,
             offsetX: location.offsetX ?? 0,
             offsetY: location.offsetY ?? 0,
-            position: location.position
+            position: location.position,
           });
         }
       });
     }
 
     // Add StateLocations from screenshots
-    stateScreenshots.forEach(screenshot => {
-      screenshot.locations.forEach(location => {
+    stateScreenshots.forEach((screenshot) => {
+      screenshot.locations.forEach((location) => {
         if (!locationIds.has(location.id)) {
           locationIds.add(location.id);
           stateLocations.push({
@@ -232,7 +240,7 @@ export function exportStatesToQontinui(
             anchorType: location.anchorType,
             referenceImageId: location.referenceImageId,
             offsetX: location.offsetX || 0,
-            offsetY: location.offsetY || 0
+            offsetY: location.offsetY || 0,
           });
         }
       });
@@ -242,7 +250,7 @@ export function exportStatesToQontinui(
     const stateStrings: QontinuiStateString[] = [];
     const stringIds = new Set<string>();
 
-    (state.strings || []).forEach(str => {
+    (state.strings || []).forEach((str) => {
       if (!stringIds.has(str.id)) {
         stringIds.add(str.id);
         stateStrings.push({
@@ -252,7 +260,7 @@ export function exportStatesToQontinui(
           identifier: str.identifier,
           inputText: str.inputText,
           expectedText: str.expectedText,
-          regexPattern: str.regexPattern
+          regexPattern: str.regexPattern,
         });
       }
     });
@@ -260,19 +268,19 @@ export function exportStatesToQontinui(
     return {
       id: state.id,
       name: state.name,
-      description: state.description || '',
+      description: state.description || "",
       initial: state.initial || false,
       stateImages,
       stateRegions,
       stateLocations,
-      stateStrings
+      stateStrings,
     };
   });
 
   return {
-    version: '1.0.0',
+    version: "1.0.0",
     exportDate: new Date().toISOString(),
-    states: qontinuiStates
+    states: qontinuiStates,
   };
 }
 
@@ -282,14 +290,14 @@ export function exportStatesToQontinui(
 export function downloadStateExport(
   states: State[],
   screenshots: Screenshot[],
-  filename: string = 'qontinui-states.json'
+  filename: string = "qontinui-states.json"
 ): void {
   const exportData = exportStatesToQontinui(states, screenshots);
   const jsonString = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([jsonString], { type: 'application/json' });
+  const blob = new Blob([jsonString], { type: "application/json" });
   const url = URL.createObjectURL(blob);
 
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
@@ -308,49 +316,53 @@ export function generatePythonStateCode(state: QontinuiState): string {
   lines.push(`state = State()`);
   lines.push(`state.name = "${state.name}"`);
   lines.push(`state.description = "${state.description}"`);
-  lines.push(`state.initial = ${state.initial ? 'True' : 'False'}`);
-  lines.push('');
+  lines.push(`state.initial = ${state.initial ? "True" : "False"}`);
+  lines.push("");
 
   // Add StateImages
   if (state.stateImages.length > 0) {
-    lines.push('# StateImages');
-    state.stateImages.forEach(img => {
+    lines.push("# StateImages");
+    state.stateImages.forEach((img) => {
       lines.push(`state_image = StateImage()`);
       lines.push(`state_image.name = "${img.name}"`);
-      lines.push(`state_image.fixed = ${img.fixed ? 'True' : 'False'}`);
+      lines.push(`state_image.fixed = ${img.fixed ? "True" : "False"}`);
 
       // Add SearchRegions
       if (img.searchRegions.length > 0) {
         lines.push(`search_regions = SearchRegions()`);
-        img.searchRegions.forEach(sr => {
-          lines.push(`search_regions.add_region(Region(${sr.x}, ${sr.y}, ${sr.width}, ${sr.height}))`);
+        img.searchRegions.forEach((sr) => {
+          lines.push(
+            `search_regions.add_region(Region(${sr.x}, ${sr.y}, ${sr.width}, ${sr.height}))`
+          );
         });
         lines.push(`state_image.set_search_regions(search_regions)`);
       }
 
       lines.push(`state.add_state_image(state_image)`);
-      lines.push('');
+      lines.push("");
     });
   }
 
   // Add StateRegions
   if (state.stateRegions.length > 0) {
-    lines.push('# StateRegions');
-    state.stateRegions.forEach(region => {
-      lines.push(`state.add_state_region(StateRegion("${region.name}", ${region.x}, ${region.y}, ${region.width}, ${region.height}))`);
+    lines.push("# StateRegions");
+    state.stateRegions.forEach((region) => {
+      lines.push(
+        `state.add_state_region(StateRegion("${region.name}", ${region.x}, ${region.y}, ${region.width}, ${region.height}))`
+      );
     });
-    lines.push('');
+    lines.push("");
   }
 
   // Add StateLocations
   if (state.stateLocations.length > 0) {
-    lines.push('# StateLocations');
-    state.stateLocations.forEach(loc => {
+    lines.push("# StateLocations");
+    state.stateLocations.forEach((loc) => {
       const params: string[] = [];
       params.push(`x=${loc.x}`);
       params.push(`y=${loc.y}`);
       params.push(`name="${loc.name}"`);
-      params.push(`fixed=${loc.fixed ? 'True' : 'False'}`);
+      params.push(`fixed=${loc.fixed ? "True" : "False"}`);
 
       if (loc.referenceImageId) {
         params.push(`reference_image_id="${loc.referenceImageId}"`);
@@ -362,37 +374,40 @@ export function generatePythonStateCode(state: QontinuiState): string {
         params.push(`offset_y=${loc.offsetY}`);
       }
 
-      lines.push(`location = Location(${params.join(', ')})`);
+      lines.push(`location = Location(${params.join(", ")})`);
 
       if (loc.anchor) {
-        lines.push(`# This location is also used as an anchor (${loc.anchorType || 'CENTER'})`);
+        lines.push(
+          `# This location is also used as an anchor (${loc.anchorType || "CENTER"})`
+        );
       }
 
       lines.push(`state.add_state_location(location)`);
-      lines.push('');
+      lines.push("");
     });
   }
 
   // Add StateStrings
   if (state.stateStrings.length > 0) {
-    lines.push('# StateStrings');
-    state.stateStrings.forEach(str => {
+    lines.push("# StateStrings");
+    state.stateStrings.forEach((str) => {
       const params: string[] = [];
       params.push(`name="${str.name}"`);
       params.push(`value="${str.value}"`);
 
       // Add type flags if set
-      if (str.identifier) params.push('identifier=True');
-      if (str.inputText !== undefined && str.inputText) params.push('input_text=True');
-      if (str.expectedText) params.push('expected_text=True');
-      if (str.regexPattern) params.push('regex_pattern=True');
+      if (str.identifier) params.push("identifier=True");
+      if (str.inputText !== undefined && str.inputText)
+        params.push("input_text=True");
+      if (str.expectedText) params.push("expected_text=True");
+      if (str.regexPattern) params.push("regex_pattern=True");
 
-      lines.push(`state.add_state_string(StateString(${params.join(', ')}))`);
+      lines.push(`state.add_state_string(StateString(${params.join(", ")}))`);
     });
-    lines.push('');
+    lines.push("");
   }
 
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 /**
@@ -401,34 +416,38 @@ export function generatePythonStateCode(state: QontinuiState): string {
 export function downloadPythonStateCode(
   states: State[],
   screenshots: Screenshot[],
-  filename: string = 'qontinui_states.py'
+  filename: string = "qontinui_states.py"
 ): void {
   const exportData = exportStatesToQontinui(states, screenshots);
 
   const lines: string[] = [];
   lines.push('"""');
-  lines.push('Qontinui State Definitions');
+  lines.push("Qontinui State Definitions");
   lines.push(`Generated: ${new Date().toISOString()}`);
   lines.push('"""');
-  lines.push('');
-  lines.push('from qontinui.model.state import State');
-  lines.push('from qontinui.model.state import StateImage, StateRegion, StateString');
-  lines.push('from qontinui.model.element import Location, Region, SearchRegions');
-  lines.push('');
-  lines.push('');
+  lines.push("");
+  lines.push("from qontinui.model.state import State");
+  lines.push(
+    "from qontinui.model.state import StateImage, StateRegion, StateString"
+  );
+  lines.push(
+    "from qontinui.model.element import Location, Region, SearchRegions"
+  );
+  lines.push("");
+  lines.push("");
 
-  exportData.states.forEach(state => {
+  exportData.states.forEach((state) => {
     lines.push(generatePythonStateCode(state));
-    lines.push('');
-    lines.push('# ' + '=' * 50);
-    lines.push('');
+    lines.push("");
+    lines.push("# " + "=" * 50);
+    lines.push("");
   });
 
-  const pythonCode = lines.join('\n');
-  const blob = new Blob([pythonCode], { type: 'text/plain' });
+  const pythonCode = lines.join("\n");
+  const blob = new Blob([pythonCode], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
 
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);

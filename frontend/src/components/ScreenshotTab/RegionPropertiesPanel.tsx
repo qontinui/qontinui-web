@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, Check } from 'lucide-react';
-import { ScreenshotRegion, Screenshot } from '../../types/Screenshot';
+import React, { useState, useEffect } from "react";
+import { X, Check } from "lucide-react";
+import { ScreenshotRegion, Screenshot } from "../../types/Screenshot";
 
 interface State {
   id: string;
@@ -23,13 +23,13 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
   selectedRegion,
   states,
   onUpdate,
-  onDelete
+  onDelete,
 }) => {
   const [region, setRegion] = useState<ScreenshotRegion>(selectedRegion);
   const [showSaved, setShowSaved] = useState(false);
   const [linkToMatch, setLinkToMatch] = useState(false);
-  const [linkedMatchState, setLinkedMatchState] = useState<string>('');
-  const [linkedMatchImage, setLinkedMatchImage] = useState<string>('');
+  const [linkedMatchState, setLinkedMatchState] = useState<string>("");
+  const [linkedMatchImage, setLinkedMatchImage] = useState<string>("");
   const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
@@ -44,8 +44,10 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
 
     if (hasLinkedImage) {
       // Find the state containing the linked image
-      const state = states.find(s =>
-        s.stateImages?.some((img) => img.id === selectedRegion.linkedStateObjectId)
+      const state = states.find((s) =>
+        s.stateImages?.some(
+          (img) => img.id === selectedRegion.linkedStateObjectId
+        )
       );
       if (state) {
         setLinkedMatchState(state.id);
@@ -53,8 +55,8 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
       }
     } else if (isInitializing || selectedRegion.id !== region.id) {
       // Only clear local state during initialization or region change
-      setLinkedMatchState('');
-      setLinkedMatchImage('');
+      setLinkedMatchState("");
+      setLinkedMatchImage("");
     }
   }, [selectedRegion, states, isInitializing, region.id]);
 
@@ -70,24 +72,26 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
     setTimeout(() => setShowSaved(false), 2000);
   };
 
-  const handleTypeChange = (type: 'StateRegion' | 'SearchRegion') => {
+  const handleTypeChange = (type: "StateRegion" | "SearchRegion") => {
     const updatedRegion = { ...region, type };
     setRegion(updatedRegion);
     onUpdate(updatedRegion);
   };
 
-  const handleBoundsChange = (field: 'x' | 'y' | 'width' | 'height', value: number) => {
+  const handleBoundsChange = (
+    field: "x" | "y" | "width" | "height",
+    value: number
+  ) => {
     const updatedRegion = {
       ...region,
       bounds: {
         ...region.bounds,
-        [field]: value
-      }
+        [field]: value,
+      },
     };
     setRegion(updatedRegion);
     onUpdate(updatedRegion);
   };
-
 
   const handleLinkToMatchChange = (checked: boolean) => {
     setLinkToMatch(checked);
@@ -96,18 +100,18 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
       const updatedRegion = {
         ...region,
         linkedStateObjectId: undefined,
-        linkedStateObjectType: undefined
+        linkedStateObjectType: undefined,
       };
       setRegion(updatedRegion);
       onUpdate(updatedRegion);
-      setLinkedMatchState('');
-      setLinkedMatchImage('');
+      setLinkedMatchState("");
+      setLinkedMatchImage("");
     }
   };
 
   const handleLinkedMatchStateChange = (stateId: string) => {
     setLinkedMatchState(stateId);
-    setLinkedMatchImage(''); // Reset image when state changes
+    setLinkedMatchImage(""); // Reset image when state changes
     // Don't clear linkedStateObjectId here - just reset the image selection
     // The linkToMatch checkbox should remain checked
   };
@@ -117,7 +121,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
     const updatedRegion = {
       ...region,
       linkedStateObjectId: imageId,
-      linkedStateObjectType: 'StateImage' as const
+      linkedStateObjectType: "StateImage" as const,
     };
     setRegion(updatedRegion);
     onUpdate(updatedRegion);
@@ -129,7 +133,9 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
       <div className="p-4 border-b bg-gray-50">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-semibold text-gray-900">Region Properties</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Region Properties
+            </h3>
             {showSaved && (
               <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
                 <Check className="w-3 h-3" />
@@ -169,21 +175,21 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
           <div className="flex gap-2">
             <button
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                region.type === 'StateRegion'
-                  ? 'bg-green-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                region.type === "StateRegion"
+                  ? "bg-green-500 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
-              onClick={() => handleTypeChange('StateRegion')}
+              onClick={() => handleTypeChange("StateRegion")}
             >
               StateRegion
             </button>
             <button
               className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                region.type === 'SearchRegion'
-                  ? 'bg-yellow-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                region.type === "SearchRegion"
+                  ? "bg-yellow-500 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
-              onClick={() => handleTypeChange('SearchRegion')}
+              onClick={() => handleTypeChange("SearchRegion")}
             >
               SearchRegion
             </button>
@@ -191,7 +197,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
         </div>
 
         {/* Save to State (for StateRegion) */}
-        {region.type === 'StateRegion' && (
+        {region.type === "StateRegion" && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Save to State
@@ -207,7 +213,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
             >
               <option value="">Select state</option>
-              {states.map(state => (
+              {states.map((state) => (
                 <option key={state.id} value={state.id}>
                   {state.name}
                 </option>
@@ -217,19 +223,19 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
         )}
 
         {/* Select State and Save to StateImage (for SearchRegion) */}
-        {region.type === 'SearchRegion' && (
+        {region.type === "SearchRegion" && (
           <>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Select State
               </label>
               <select
-                value={region.saveToStateImageStateId || ''}
+                value={region.saveToStateImageStateId || ""}
                 onChange={(e) => {
                   const updatedRegion = {
                     ...region,
                     saveToStateImageStateId: e.target.value || undefined,
-                    saveToStateImageId: undefined // Reset image selection when state changes
+                    saveToStateImageId: undefined, // Reset image selection when state changes
                   };
                   setRegion(updatedRegion);
                   onUpdate(updatedRegion);
@@ -238,7 +244,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
               >
                 <option value="">Select state</option>
-                {states.map(state => (
+                {states.map((state) => (
                   <option key={state.id} value={state.id}>
                     {state.name}
                   </option>
@@ -255,11 +261,11 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   Save to StateImage
                 </label>
                 <select
-                  value={region.saveToStateImageId || ''}
+                  value={region.saveToStateImageId || ""}
                   onChange={(e) => {
                     const updatedRegion = {
                       ...region,
-                      saveToStateImageId: e.target.value || undefined
+                      saveToStateImageId: e.target.value || undefined,
                     };
                     setRegion(updatedRegion);
                     onUpdate(updatedRegion);
@@ -268,11 +274,13 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 >
                   <option value="">Select StateImage</option>
-                  {states.find(s => s.id === region.saveToStateImageStateId)?.stateImages?.map((stateImage) => (
-                    <option key={stateImage.id} value={stateImage.id}>
-                      {stateImage.name}
-                    </option>
-                  ))}
+                  {states
+                    .find((s) => s.id === region.saveToStateImageStateId)
+                    ?.stateImages?.map((stateImage) => (
+                      <option key={stateImage.id} value={stateImage.id}>
+                        {stateImage.name}
+                      </option>
+                    ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
                   SearchRegion will be saved to this StateImage
@@ -292,12 +300,16 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
               onChange={(e) => handleLinkToMatchChange(e.target.checked)}
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
-            <label htmlFor="link-to-match" className="text-sm font-medium text-gray-700">
+            <label
+              htmlFor="link-to-match"
+              className="text-sm font-medium text-gray-700"
+            >
               Link to StateImage Match
             </label>
           </div>
           <p className="text-xs text-gray-500 mt-1 ml-6">
-            Position and size will be determined at runtime by the linked image match
+            Position and size will be determined at runtime by the linked image
+            match
           </p>
         </div>
 
@@ -308,58 +320,82 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
           </label>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className={`block text-xs ${linkToMatch ? 'text-gray-400' : 'text-gray-500'}`}>X</label>
+              <label
+                className={`block text-xs ${linkToMatch ? "text-gray-400" : "text-gray-500"}`}
+              >
+                X
+              </label>
               <input
                 type="number"
                 value={region.bounds.x}
-                onChange={(e) => handleBoundsChange('x', Number(e.target.value))}
+                onChange={(e) =>
+                  handleBoundsChange("x", Number(e.target.value))
+                }
                 disabled={linkToMatch}
                 className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
                   linkToMatch
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'text-gray-900'
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "text-gray-900"
                 }`}
               />
             </div>
             <div>
-              <label className={`block text-xs ${linkToMatch ? 'text-gray-400' : 'text-gray-500'}`}>Y</label>
+              <label
+                className={`block text-xs ${linkToMatch ? "text-gray-400" : "text-gray-500"}`}
+              >
+                Y
+              </label>
               <input
                 type="number"
                 value={region.bounds.y}
-                onChange={(e) => handleBoundsChange('y', Number(e.target.value))}
+                onChange={(e) =>
+                  handleBoundsChange("y", Number(e.target.value))
+                }
                 disabled={linkToMatch}
                 className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
                   linkToMatch
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'text-gray-900'
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "text-gray-900"
                 }`}
               />
             </div>
             <div>
-              <label className={`block text-xs ${linkToMatch ? 'text-gray-400' : 'text-gray-500'}`}>Width</label>
+              <label
+                className={`block text-xs ${linkToMatch ? "text-gray-400" : "text-gray-500"}`}
+              >
+                Width
+              </label>
               <input
                 type="number"
                 value={region.bounds.width}
-                onChange={(e) => handleBoundsChange('width', Number(e.target.value))}
+                onChange={(e) =>
+                  handleBoundsChange("width", Number(e.target.value))
+                }
                 disabled={linkToMatch}
                 className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
                   linkToMatch
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'text-gray-900'
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "text-gray-900"
                 }`}
               />
             </div>
             <div>
-              <label className={`block text-xs ${linkToMatch ? 'text-gray-400' : 'text-gray-500'}`}>Height</label>
+              <label
+                className={`block text-xs ${linkToMatch ? "text-gray-400" : "text-gray-500"}`}
+              >
+                Height
+              </label>
               <input
                 type="number"
                 value={region.bounds.height}
-                onChange={(e) => handleBoundsChange('height', Number(e.target.value))}
+                onChange={(e) =>
+                  handleBoundsChange("height", Number(e.target.value))
+                }
                 disabled={linkToMatch}
                 className={`w-full px-2 py-1 border border-gray-300 rounded text-sm ${
                   linkToMatch
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'text-gray-900'
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "text-gray-900"
                 }`}
               />
             </div>
@@ -379,7 +415,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
               >
                 <option value="">Select state</option>
-                {states.map(state => (
+                {states.map((state) => (
                   <option key={state.id} value={state.id}>
                     {state.name}
                   </option>
@@ -401,21 +437,23 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 >
                   <option value="">Select StateImage</option>
-                  {states.find(s => s.id === linkedMatchState)?.stateImages?.map((stateImage) => (
-                    <option key={stateImage.id} value={stateImage.id}>
-                      {stateImage.name}
-                    </option>
-                  ))}
+                  {states
+                    .find((s) => s.id === linkedMatchState)
+                    ?.stateImages?.map((stateImage) => (
+                      <option key={stateImage.id} value={stateImage.id}>
+                        {stateImage.name}
+                      </option>
+                    ))}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
-                  The linked StateImage will define this region&apos;s position at runtime
+                  The linked StateImage will define this region&apos;s position
+                  at runtime
                 </p>
               </div>
             )}
           </>
         )}
       </div>
-
     </>
   );
 };

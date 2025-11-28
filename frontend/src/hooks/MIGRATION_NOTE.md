@@ -7,6 +7,7 @@ The file `useConflictResolution.ts` (503 lines) has been refactored into focused
 ## New Location
 
 All collaboration hooks are now located in:
+
 ```
 /frontend/src/hooks/collaboration/
 ```
@@ -14,34 +15,38 @@ All collaboration hooks are now located in:
 ## Migration Path
 
 ### Old Import (Deprecated)
+
 ```typescript
-import { useConflictResolution } from '@/hooks/useConflictResolution'
-import { useSyncState } from '@/hooks/useConflictResolution'
-import { useOptimisticUpdate } from '@/hooks/useConflictResolution'
-import { useOfflineQueue } from '@/hooks/useConflictResolution'
-import { useRealtimeCollaboration } from '@/hooks/useConflictResolution'
+import { useConflictResolution } from "@/hooks/useConflictResolution";
+import { useSyncState } from "@/hooks/useConflictResolution";
+import { useOptimisticUpdate } from "@/hooks/useConflictResolution";
+import { useOfflineQueue } from "@/hooks/useConflictResolution";
+import { useRealtimeCollaboration } from "@/hooks/useConflictResolution";
 ```
 
 ### New Import (Recommended)
+
 ```typescript
 import {
   useConflictResolution,
   useSyncState,
   useOptimisticUpdate,
   useOfflineQueue,
-  useRealtimeCollaboration
-} from '@/hooks/collaboration'
+  useRealtimeCollaboration,
+} from "@/hooks/collaboration";
 ```
 
 ## What Changed?
 
 ### Before: Monolithic File (503 lines)
+
 - Single file with 5 different hooks
 - Mixed responsibilities
 - Difficult to maintain and test
 - Large bundle size
 
 ### After: Modular Structure
+
 ```
 collaboration/
 ├── index.ts                      # Re-exports (backward compatible)

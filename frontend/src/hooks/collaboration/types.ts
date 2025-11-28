@@ -8,8 +8,8 @@ import {
   ConflictCheckResult,
   ConflictDetails,
   AutoResolutionResult,
-  ResourceType
-} from '../../types/collaboration/conflict-types'
+  ResourceType,
+} from "../../types/collaboration/conflict-types";
 
 // Re-export types from collaboration types
 export type {
@@ -18,24 +18,24 @@ export type {
   ConflictCheckResult,
   ConflictDetails,
   AutoResolutionResult,
-  ResourceType
-}
+  ResourceType,
+};
 
 /**
  * Options for useConflictResolution hook
  */
 export interface UseConflictResolutionOptions {
   /** Auto-check for conflicts on changes */
-  autoCheck?: boolean
+  autoCheck?: boolean;
 
   /** Auto-resolve when possible */
-  autoResolve?: boolean
+  autoResolve?: boolean;
 
   /** Polling interval for checking conflicts (ms) */
-  pollingInterval?: number
+  pollingInterval?: number;
 
   /** Enable real-time conflict notifications */
-  enableRealtimeNotifications?: boolean
+  enableRealtimeNotifications?: boolean;
 }
 
 /**
@@ -43,38 +43,38 @@ export interface UseConflictResolutionOptions {
  */
 export interface UseConflictResolutionReturn {
   /** Current conflicts */
-  conflicts: Conflict[]
+  conflicts: Conflict[];
 
   /** Whether there are any conflicts */
-  hasConflicts: boolean
+  hasConflicts: boolean;
 
   /** Whether currently checking for conflicts */
-  isChecking: boolean
+  isChecking: boolean;
 
   /** Whether currently resolving conflicts */
-  isResolving: boolean
+  isResolving: boolean;
 
   /** Check for conflicts manually */
-  checkForConflicts: (localChanges: any) => Promise<ConflictCheckResult>
+  checkForConflicts: (localChanges: any) => Promise<ConflictCheckResult>;
 
   /** Resolve a specific conflict */
   resolveConflict: (
     conflictId: string,
     strategy: ResolutionStrategy,
     resolution?: any
-  ) => Promise<void>
+  ) => Promise<void>;
 
   /** Auto-resolve all resolvable conflicts */
-  autoResolve: () => Promise<AutoResolutionResult>
+  autoResolve: () => Promise<AutoResolutionResult>;
 
   /** Get detailed information about a conflict */
-  getConflictDetails: (conflictId: string) => Promise<ConflictDetails>
+  getConflictDetails: (conflictId: string) => Promise<ConflictDetails>;
 
   /** Clear all conflicts */
-  clearConflicts: () => void
+  clearConflicts: () => void;
 
   /** Refresh conflict state */
-  refresh: () => Promise<void>
+  refresh: () => Promise<void>;
 }
 
 /**
@@ -82,16 +82,16 @@ export interface UseConflictResolutionReturn {
  */
 export interface UseSyncStateReturn {
   /** Whether currently syncing */
-  isSyncing: boolean
+  isSyncing: boolean;
 
   /** Last successful sync timestamp */
-  lastSynced: Date | null
+  lastSynced: Date | null;
 
   /** Last sync error message */
-  syncError: string | null
+  syncError: string | null;
 
   /** Perform sync operation */
-  sync: (localVersion: any) => Promise<any>
+  sync: (localVersion: any) => Promise<any>;
 }
 
 /**
@@ -99,16 +99,16 @@ export interface UseSyncStateReturn {
  */
 export interface UseOptimisticUpdateReturn {
   /** Current optimistic state */
-  optimisticState: any
+  optimisticState: any;
 
   /** Whether there are optimistic updates */
-  hasOptimistic: boolean
+  hasOptimistic: boolean;
 
   /** Apply optimistic update */
-  applyOptimistic: (change: any) => void
+  applyOptimistic: (change: any) => void;
 
   /** Rollback optimistic update */
-  rollback: (changeId: string) => void
+  rollback: (changeId: string) => void;
 }
 
 /**
@@ -116,16 +116,16 @@ export interface UseOptimisticUpdateReturn {
  */
 export interface UseOfflineQueueReturn {
   /** Current queue state */
-  queueState: any
+  queueState: any;
 
   /** Whether currently processing queue */
-  isProcessing: boolean
+  isProcessing: boolean;
 
   /** Process offline queue */
-  processQueue: () => Promise<void>
+  processQueue: () => Promise<void>;
 
   /** Clear offline queue */
-  clearQueue: () => void
+  clearQueue: () => void;
 }
 
 /**
@@ -133,11 +133,11 @@ export interface UseOfflineQueueReturn {
  */
 export interface UseRealtimeCollaborationReturn {
   /** Whether WebSocket is connected */
-  isConnected: boolean
+  isConnected: boolean;
 
   /** Remote changes received */
-  remoteChanges: any[]
+  remoteChanges: any[];
 
   /** Clear remote changes buffer */
-  clearRemoteChanges: () => void
+  clearRemoteChanges: () => void;
 }

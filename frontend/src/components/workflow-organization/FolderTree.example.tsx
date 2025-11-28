@@ -4,15 +4,15 @@
  * Example showing how to integrate FolderTree into a workflow browser
  */
 
-import React, { useState, useEffect } from 'react';
-import { FolderTree } from './FolderTree';
-import { useFolderManager } from './useFolderManager';
-import { WorkflowFolder } from './types';
-import { Workflow } from '../../lib/action-schema/action-types';
-import { getWorkflowsInFolder } from './folder-utils';
-import { Card } from '../ui/card';
-import { Button } from '../ui/button';
-import { Download, Upload } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { FolderTree } from "./FolderTree";
+import { useFolderManager } from "./useFolderManager";
+import { WorkflowFolder } from "./types";
+import { Workflow } from "../../lib/action-schema/action-types";
+import { getWorkflowsInFolder } from "./folder-utils";
+import { Card } from "../ui/card";
+import { Button } from "../ui/button";
+import { Download, Upload } from "lucide-react";
 
 /**
  * Example: Workflow Browser with Folder Organization
@@ -21,85 +21,80 @@ export function WorkflowBrowserExample() {
   // Example workflows
   const [workflows, setWorkflows] = useState<Workflow[]>([
     {
-      id: 'wf1',
-      name: 'Login Automation',
-      version: '1.0.0',
-      format: 'graph',
+      id: "wf1",
+      name: "Login Automation",
+      version: "1.0.0",
+      format: "graph",
       actions: [],
       connections: { flow: [], data: [] },
-      category: 'Authentication',
+      category: "Authentication",
     } as Workflow,
     {
-      id: 'wf2',
-      name: 'Data Entry',
-      version: '1.0.0',
-      format: 'graph',
+      id: "wf2",
+      name: "Data Entry",
+      version: "1.0.0",
+      format: "graph",
       actions: [],
       connections: { flow: [], data: [] },
-      category: 'Forms',
+      category: "Forms",
     } as Workflow,
     {
-      id: 'wf3',
-      name: 'Report Generation',
-      version: '1.0.0',
-      format: 'graph',
+      id: "wf3",
+      name: "Report Generation",
+      version: "1.0.0",
+      format: "graph",
       actions: [],
       connections: { flow: [], data: [] },
     } as Workflow,
   ]);
 
   // Folder manager
-  const {
-    folders,
-    createNewFolder,
-    updateFolder,
-    deleteFolder,
-    moveFolder,
-  } = useFolderManager({
-    initialFolders: [
-      {
-        id: 'folder1',
-        name: 'Authentication',
-        parentId: null,
-        color: '#3b82f6',
-        icon: 'Shield',
-        createdAt: new Date('2024-01-01'),
-        updatedAt: new Date('2024-01-01'),
-        order: 0,
+  const { folders, createNewFolder, updateFolder, deleteFolder, moveFolder } =
+    useFolderManager({
+      initialFolders: [
+        {
+          id: "folder1",
+          name: "Authentication",
+          parentId: null,
+          color: "#3b82f6",
+          icon: "Shield",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          order: 0,
+        },
+        {
+          id: "folder2",
+          name: "Forms",
+          parentId: null,
+          color: "#10b981",
+          icon: "Folder",
+          createdAt: new Date("2024-01-02"),
+          updatedAt: new Date("2024-01-02"),
+          order: 1,
+        },
+        {
+          id: "folder3",
+          name: "Reports",
+          parentId: null,
+          color: "#f59e0b",
+          createdAt: new Date("2024-01-03"),
+          updatedAt: new Date("2024-01-03"),
+          order: 2,
+        },
+        {
+          id: "folder4",
+          name: "User Management",
+          parentId: "folder1",
+          createdAt: new Date("2024-01-04"),
+          updatedAt: new Date("2024-01-04"),
+          order: 0,
+        },
+      ],
+      onFoldersChange: (newFolders) => {
+        // Persist to backend/localStorage
+        console.log("Folders updated:", newFolders);
       },
-      {
-        id: 'folder2',
-        name: 'Forms',
-        parentId: null,
-        color: '#10b981',
-        icon: 'Folder',
-        createdAt: new Date('2024-01-02'),
-        updatedAt: new Date('2024-01-02'),
-        order: 1,
-      },
-      {
-        id: 'folder3',
-        name: 'Reports',
-        parentId: null,
-        color: '#f59e0b',
-        createdAt: new Date('2024-01-03'),
-        updatedAt: new Date('2024-01-03'),
-        order: 2,
-      },
-      {
-        id: 'folder4',
-        name: 'User Management',
-        parentId: 'folder1',
-        createdAt: new Date('2024-01-04'),
-        updatedAt: new Date('2024-01-04'),
-        order: 0,
-      },
-    ],
-    onFoldersChange: (newFolders) => {
-      // Persist to backend/localStorage
-      console.log('Folders updated:', newFolders);
-    },
-  });
+    });
 
   // Selected folder
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -108,15 +103,15 @@ export function WorkflowBrowserExample() {
   const filteredWorkflows =
     selectedFolderId === null
       ? workflows
-      : selectedFolderId === 'uncategorized'
-      ? workflows.filter((w) => !(w as any).folderId)
-      : getWorkflowsInFolder(selectedFolderId, workflows, folders, true);
+      : selectedFolderId === "uncategorized"
+        ? workflows.filter((w) => !(w as any).folderId)
+        : getWorkflowsInFolder(selectedFolderId, workflows, folders, true);
 
   // Handle folder creation
   const handleCreateFolder = (name: string, parentId?: string | null) => {
     const newFolder = createNewFolder(name, parentId ?? null);
     if (newFolder) {
-      console.log('Created folder:', newFolder);
+      console.log("Created folder:", newFolder);
     }
   };
 
@@ -138,20 +133,20 @@ export function WorkflowBrowserExample() {
   // Export folders
   const handleExport = () => {
     const data = JSON.stringify(folders, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
+    const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'workflow-folders.json';
+    a.download = "workflow-folders.json";
     a.click();
     URL.revokeObjectURL(url);
   };
 
   // Import folders
   const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
@@ -160,9 +155,9 @@ export function WorkflowBrowserExample() {
           try {
             const imported = JSON.parse(event.target?.result as string);
             // Validate and import
-            console.log('Imported folders:', imported);
+            console.log("Imported folders:", imported);
           } catch (error) {
-            console.error('Failed to import folders:', error);
+            console.error("Failed to import folders:", error);
           }
         };
         reader.readAsText(file);
@@ -208,11 +203,11 @@ export function WorkflowBrowserExample() {
         <div className="mb-4">
           <h1 className="text-2xl font-bold">
             {selectedFolderId === null
-              ? 'All Workflows'
-              : selectedFolderId === 'uncategorized'
-              ? 'Uncategorized Workflows'
-              : folders.find((f) => f.id === selectedFolderId)?.name ||
-                'Unknown Folder'}
+              ? "All Workflows"
+              : selectedFolderId === "uncategorized"
+                ? "Uncategorized Workflows"
+                : folders.find((f) => f.id === selectedFolderId)?.name ||
+                  "Unknown Folder"}
           </h1>
           <p className="text-muted-foreground">
             {filteredWorkflows.length} workflow(s)
@@ -286,7 +281,7 @@ export function SimpleFolderTreeExample() {
           );
         }}
         onMoveWorkflow={(workflowId, folderId) => {
-          console.log('Move workflow', workflowId, 'to folder', folderId);
+          console.log("Move workflow", workflowId, "to folder", folderId);
         }}
       />
     </div>
@@ -302,7 +297,7 @@ export function FolderTreeWithPersistence() {
 
   // Load from localStorage on mount
   useEffect(() => {
-    const saved = localStorage.getItem('workflow-folders');
+    const saved = localStorage.getItem("workflow-folders");
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -314,7 +309,7 @@ export function FolderTreeWithPersistence() {
           }))
         );
       } catch (error) {
-        console.error('Failed to load folders:', error);
+        console.error("Failed to load folders:", error);
       }
     }
   }, []);
@@ -322,7 +317,7 @@ export function FolderTreeWithPersistence() {
   // Save to localStorage on change
   useEffect(() => {
     if (folders.length > 0) {
-      localStorage.setItem('workflow-folders', JSON.stringify(folders));
+      localStorage.setItem("workflow-folders", JSON.stringify(folders));
     }
   }, [folders]);
 
@@ -345,7 +340,7 @@ export function FolderTreeWithPersistence() {
       onDeleteFolder={deleteFolder}
       onMoveFolder={moveFolder}
       onMoveWorkflow={(workflowId, folderId) => {
-        console.log('Move workflow', workflowId, 'to folder', folderId);
+        console.log("Move workflow", workflowId, "to folder", folderId);
       }}
     />
   );

@@ -4,8 +4,8 @@
  * Centralized configuration for the workflow canvas appearance and behavior.
  */
 
-import { ActionCategory, ACTION_TYPE_TO_CATEGORY } from './canvas-types';
-import type { ActionType } from '@/lib/action-schema/action-types';
+import { ActionCategory, ACTION_TYPE_TO_CATEGORY } from "./canvas-types";
+import type { ActionType } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Color Palette
@@ -16,57 +16,57 @@ import type { ActionType } from '@/lib/action-schema/action-types';
  */
 export const COLORS = {
   // Primary brand colors
-  primary: '#00D9FF',
-  primaryDark: '#00B8D4',
-  primaryLight: '#4DFFFF',
+  primary: "#00D9FF",
+  primaryDark: "#00B8D4",
+  primaryLight: "#4DFFFF",
 
   // Secondary colors
-  secondary: '#BD00FF',
-  secondaryDark: '#9D00D4',
-  secondaryLight: '#D44DFF',
+  secondary: "#BD00FF",
+  secondaryDark: "#9D00D4",
+  secondaryLight: "#D44DFF",
 
   // Accent colors
-  accent: '#00FF88',
-  accentDark: '#00D46E',
-  accentLight: '#4DFFA4',
+  accent: "#00FF88",
+  accentDark: "#00D46E",
+  accentLight: "#4DFFA4",
 
   // Node category colors
-  find: '#00D9FF', // Cyan
-  mouse: '#00FF88', // Green
-  keyboard: '#BD00FF', // Purple
-  controlFlow: '#FF9D00', // Orange
-  data: '#0088FF', // Blue
-  state: '#FF0080', // Pink
+  find: "#00D9FF", // Cyan
+  mouse: "#00FF88", // Green
+  keyboard: "#BD00FF", // Purple
+  controlFlow: "#FF9D00", // Orange
+  data: "#0088FF", // Blue
+  state: "#FF0080", // Pink
 
   // Connection type colors
-  main: '#00D9FF', // Cyan - normal flow
-  error: '#FF4444', // Red - error handling
-  success: '#00FF88', // Green - success condition
+  main: "#00D9FF", // Cyan - normal flow
+  error: "#FF4444", // Red - error handling
+  success: "#00FF88", // Green - success condition
 
   // State colors
-  idle: '#666666',
-  running: '#00D9FF',
-  successState: '#00FF88',
-  errorState: '#FF4444',
-  warning: '#FFB800',
+  idle: "#666666",
+  running: "#00D9FF",
+  successState: "#00FF88",
+  errorState: "#FF4444",
+  warning: "#FFB800",
 
   // UI colors
-  background: '#18181B',
-  backgroundLight: '#27272A',
-  border: '#3F3F46',
-  borderLight: '#52525B',
-  text: '#FAFAFA',
-  textMuted: '#A1A1AA',
-  textDark: '#71717A',
+  background: "#18181B",
+  backgroundLight: "#27272A",
+  border: "#3F3F46",
+  borderLight: "#52525B",
+  text: "#FAFAFA",
+  textMuted: "#A1A1AA",
+  textDark: "#71717A",
 
   // Selection colors
-  selection: '#00D9FF',
-  selectionBorder: '#00D9FF',
-  selectionFill: 'rgba(0, 217, 255, 0.1)',
+  selection: "#00D9FF",
+  selectionBorder: "#00D9FF",
+  selectionFill: "rgba(0, 217, 255, 0.1)",
 
   // Grid colors
-  gridDot: '#3F3F46',
-  gridLine: '#27272A',
+  gridDot: "#3F3F46",
+  gridLine: "#27272A",
 } as const;
 
 // ============================================================================
@@ -101,18 +101,21 @@ export function getActionTypeColor(actionType: ActionType): string {
  * Get the number of output handles for an action type
  * Most actions have 1 output, but control flow actions may have multiple
  */
-export function getActionOutputCount(actionType: ActionType, config?: any): number {
+export function getActionOutputCount(
+  actionType: ActionType,
+  config?: any
+): number {
   switch (actionType) {
-    case 'IF':
+    case "IF":
       // IF has 2 outputs: true and false
       return 2;
 
-    case 'SWITCH':
+    case "SWITCH":
       // SWITCH has multiple outputs based on cases
       // Default to 3 if config not provided (case 1, case 2, default)
       return config?.cases?.length ? config.cases.length + 1 : 3;
 
-    case 'TRY_CATCH':
+    case "TRY_CATCH":
       // TRY_CATCH has 2 outputs: success and error
       return 2;
 
@@ -127,7 +130,7 @@ export function getActionOutputCount(actionType: ActionType, config?: any): numb
  */
 export function getDarkerColor(color: string, amount: number = 0.2): string {
   // Simple darkening - multiply RGB values
-  if (color.startsWith('#')) {
+  if (color.startsWith("#")) {
     const r = parseInt(color.slice(1, 3), 16);
     const g = parseInt(color.slice(3, 5), 16);
     const b = parseInt(color.slice(5, 7), 16);
@@ -136,7 +139,7 @@ export function getDarkerColor(color: string, amount: number = 0.2): string {
     const newG = Math.floor(g * (1 - amount));
     const newB = Math.floor(b * (1 - amount));
 
-    return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+    return `#${newR.toString(16).padStart(2, "0")}${newG.toString(16).padStart(2, "0")}${newB.toString(16).padStart(2, "0")}`;
   }
 
   return color;
@@ -146,7 +149,7 @@ export function getDarkerColor(color: string, amount: number = 0.2): string {
  * Get lighter shade of a color
  */
 export function getLighterColor(color: string, amount: number = 0.2): string {
-  if (color.startsWith('#')) {
+  if (color.startsWith("#")) {
     const r = parseInt(color.slice(1, 3), 16);
     const g = parseInt(color.slice(3, 5), 16);
     const b = parseInt(color.slice(5, 7), 16);
@@ -155,7 +158,7 @@ export function getLighterColor(color: string, amount: number = 0.2): string {
     const newG = Math.min(255, Math.floor(g + (255 - g) * amount));
     const newB = Math.min(255, Math.floor(b + (255 - b) * amount));
 
-    return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+    return `#${newR.toString(16).padStart(2, "0")}${newG.toString(16).padStart(2, "0")}${newB.toString(16).padStart(2, "0")}`;
   }
 
   return color;
@@ -165,7 +168,7 @@ export function getLighterColor(color: string, amount: number = 0.2): string {
  * Convert hex color to rgba with alpha
  */
 export function hexToRgba(hex: string, alpha: number = 1): string {
-  if (hex.startsWith('#')) {
+  if (hex.startsWith("#")) {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
@@ -181,9 +184,7 @@ export function hexToRgba(hex: string, alpha: number = 1): string {
 /**
  * Get color for a connection type
  */
-export function getConnectionColor(
-  type: 'main' | 'error' | 'success'
-): string {
+export function getConnectionColor(type: "main" | "error" | "success"): string {
   const colorMap = {
     main: COLORS.main,
     error: COLORS.error,
@@ -196,13 +197,15 @@ export function getConnectionColor(
 /**
  * Get connection style based on type
  */
-export function getConnectionStyle(type: 'main' | 'error' | 'success' | 'parallel') {
+export function getConnectionStyle(
+  type: "main" | "error" | "success" | "parallel"
+) {
   const color = getConnectionColor(type);
 
   return {
     stroke: color,
     strokeWidth: 2,
-    strokeDasharray: type === 'parallel' ? '5,5' : undefined, // Dashed for parallel
+    strokeDasharray: type === "parallel" ? "5,5" : undefined, // Dashed for parallel
   };
 }
 
@@ -277,7 +280,7 @@ export const GRID_CONFIG = {
   size: 20,
 
   /** Grid type */
-  type: 'dots' as const, // 'dots' | 'lines' | 'cross'
+  type: "dots" as const, // 'dots' | 'lines' | 'cross'
 
   /** Grid color */
   color: COLORS.gridDot,
@@ -358,7 +361,7 @@ export const ZOOM_CONFIG = {
   zoomOnScroll: true,
 
   /** Pan on scroll modifier */
-  panOnScrollMode: 'free' as const, // 'free' | 'vertical' | 'horizontal'
+  panOnScrollMode: "free" as const, // 'free' | 'vertical' | 'horizontal'
 };
 
 // ============================================================================
@@ -385,7 +388,7 @@ export const CANVAS_CONFIG = {
   showPattern: true,
 
   /** Pattern type */
-  patternType: 'dots' as const, // 'dots' | 'lines' | 'cross'
+  patternType: "dots" as const, // 'dots' | 'lines' | 'cross'
 };
 
 // ============================================================================
@@ -406,28 +409,28 @@ export const ANIMATION_CONFIG = {
   nodeEntrance: {
     enabled: true,
     duration: 200,
-    easing: 'ease-out',
+    easing: "ease-out",
   },
 
   /** Edge entrance animation */
   edgeEntrance: {
     enabled: true,
     duration: 150,
-    easing: 'ease-out',
+    easing: "ease-out",
   },
 
   /** Selection animation */
   selection: {
     enabled: true,
     duration: 100,
-    easing: 'ease-in-out',
+    easing: "ease-in-out",
   },
 
   /** Hover animation */
   hover: {
     enabled: true,
     duration: 150,
-    easing: 'ease-in-out',
+    easing: "ease-in-out",
   },
 };
 
@@ -461,7 +464,7 @@ export const HANDLE_CONFIG = {
   style: {
     width: 12,
     height: 12,
-    borderRadius: '50%',
+    borderRadius: "50%",
     border: `2px solid ${COLORS.background}`,
     background: COLORS.primary,
   },
@@ -503,7 +506,7 @@ export const SELECTION_CONFIG = {
  */
 export const EDGE_CONFIG = {
   /** Default edge type */
-  type: 'smoothstep' as const,
+  type: "smoothstep" as const,
 
   /** Edge width */
   width: 2,
@@ -533,7 +536,7 @@ export const EDGE_CONFIG = {
   markerSize: 20,
 
   /** Marker color (uses edge color by default) */
-  markerColor: 'inherit',
+  markerColor: "inherit",
 };
 
 // ============================================================================
@@ -548,7 +551,7 @@ export const MINIMAP_CONFIG = {
   enabled: true,
 
   /** Minimap position */
-  position: 'bottom-right' as const, // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  position: "bottom-right" as const, // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 
   /** Minimap width */
   width: 200,
@@ -586,7 +589,7 @@ export const CONTROLS_CONFIG = {
   enabled: true,
 
   /** Controls position */
-  position: 'top-left' as const, // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  position: "top-left" as const, // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 
   /** Show zoom controls */
   showZoom: true,

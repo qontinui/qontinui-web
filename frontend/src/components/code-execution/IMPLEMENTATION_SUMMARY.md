@@ -9,9 +9,11 @@ This document summarizes the implementation of the Python file browser component
 ### 1. Core Components
 
 #### `/src/components/code-execution/PythonFileBrowser.tsx`
+
 **Purpose:** Main file browser component with tree view, search, and selection.
 
 **Key Features:**
+
 - Tree view of Python files organized by directory
 - Collapsible directory nodes
 - Search/filter functionality
@@ -21,6 +23,7 @@ This document summarizes the implementation of the Python file browser component
 - Accessible design with ARIA labels
 
 **Props:**
+
 ```typescript
 interface PythonFileBrowserProps {
   selectedPath?: string;
@@ -36,6 +39,7 @@ interface PythonFileBrowserProps {
 ```
 
 **Usage Example:**
+
 ```tsx
 <PythonFileBrowser
   selectedPath={selectedPath}
@@ -54,9 +58,11 @@ interface PythonFileBrowserProps {
 ### 2. API Integration
 
 #### `/src/hooks/useCodeExecutionFiles.ts`
+
 **Purpose:** Custom hook for fetching and validating Python files from backend.
 
 **Key Features:**
+
 - Fetches Python files from `/api/v1/code-execution/files/list`
 - Validates file paths via `/api/v1/code-execution/files/validate`
 - Auto-load on mount (optional)
@@ -64,6 +70,7 @@ interface PythonFileBrowserProps {
 - Error handling and retry logic
 
 **API Endpoints:**
+
 ```typescript
 // List files
 GET /api/v1/code-execution/files/list?project_id=123
@@ -77,12 +84,14 @@ POST /api/v1/code-execution/files/validate
 ```
 
 **Usage Example:**
+
 ```tsx
-const { files, isLoading, error, refresh, validateFile } = useCodeExecutionFiles({
-  projectId: 123,
-  autoLoad: true,
-  autoRefresh: 30000, // 30 seconds
-});
+const { files, isLoading, error, refresh, validateFile } =
+  useCodeExecutionFiles({
+    projectId: 123,
+    autoLoad: true,
+    autoRefresh: 30000, // 30 seconds
+  });
 ```
 
 ---
@@ -90,9 +99,11 @@ const { files, isLoading, error, refresh, validateFile } = useCodeExecutionFiles
 ### 3. Action Properties Component
 
 #### `/src/components/action-properties/actions/code-execution/CodeBlockActionProperties.tsx`
+
 **Purpose:** Configuration UI for CODE_BLOCK action in the action properties panel.
 
 **Key Features:**
+
 - Code source selector (inline vs. file)
 - Monaco editor for inline Python code
 - File browser integration for external files
@@ -112,10 +123,13 @@ Automatically appears when editing a CODE_BLOCK action in the workflow canvas pr
 ### 4. Supporting Files
 
 #### `/src/components/code-execution/index.ts`
+
 Export file for code-execution components.
 
 #### `/src/components/code-execution/README.md`
+
 Comprehensive documentation with:
+
 - Component usage guides
 - API integration details
 - Type definitions
@@ -123,7 +137,9 @@ Comprehensive documentation with:
 - Future enhancement ideas
 
 #### `/src/components/code-execution/PythonFileBrowser.example.tsx`
+
 Standalone example/demo component with:
+
 - Mock data for testing
 - Multiple state demonstrations (normal, loading, error, empty)
 - Interactive controls
@@ -138,12 +154,17 @@ The CODE_BLOCK action properties component was registered in:
 **File:** `/src/components/action-properties/actions/index.ts`
 
 **Changes:**
+
 ```typescript
 // Import Code Execution components
-import { CodeBlockActionProperties } from "./code-execution/CodeBlockActionProperties"
+import { CodeBlockActionProperties } from "./code-execution/CodeBlockActionProperties";
 
 // Register Code Execution components
-actionConfigRegistry.register("CODE_BLOCK", CodeBlockActionProperties, "CODE_BLOCK")
+actionConfigRegistry.register(
+  "CODE_BLOCK",
+  CodeBlockActionProperties,
+  "CODE_BLOCK"
+);
 ```
 
 ---
@@ -196,6 +217,7 @@ actionConfigRegistry.register("CODE_BLOCK", CodeBlockActionProperties, "CODE_BLO
 The frontend expects the following backend endpoints to be implemented:
 
 ### 1. List Python Files
+
 ```
 GET /api/v1/code-execution/files/list?project_id={id}
 
@@ -214,6 +236,7 @@ Response:
 ```
 
 ### 2. Validate File Path
+
 ```
 POST /api/v1/code-execution/files/validate
 
@@ -238,21 +261,25 @@ Response:
 ## Design Patterns Used
 
 ### 1. Component Registry Pattern
+
 - Actions registered in `actionConfigRegistry`
 - Eliminates large switch statements
 - Easy to add new action types
 
 ### 2. Custom Hook Pattern
+
 - `useCodeExecutionFiles` encapsulates API logic
 - Reusable across components
 - Separation of concerns
 
 ### 3. Tree View Pattern
+
 - Hierarchical display of files/directories
 - Collapsible nodes
 - Keyboard navigation support
 
 ### 4. Search/Filter Pattern
+
 - Client-side filtering for fast response
 - Debounced search input (future enhancement)
 - Clear visual feedback
@@ -262,6 +289,7 @@ Response:
 ## UI/UX Features
 
 ### Accessibility
+
 - ✅ ARIA labels on all interactive elements
 - ✅ Keyboard navigation (Tab, Enter, Arrow keys)
 - ✅ Focus management
@@ -269,12 +297,14 @@ Response:
 - ✅ Semantic HTML structure
 
 ### Responsiveness
+
 - ✅ Flexible height configuration
 - ✅ Scroll area for long file lists
 - ✅ Mobile-friendly (touch targets)
 - ✅ Tailwind responsive utilities
 
 ### Visual Feedback
+
 - ✅ Loading spinner during fetch
 - ✅ Error messages with retry button
 - ✅ Empty state messaging
@@ -286,12 +316,14 @@ Response:
 ## Testing Checklist
 
 ### Unit Tests (Future)
+
 - [ ] File tree building logic
 - [ ] Search/filter functionality
 - [ ] File selection handling
 - [ ] Error state rendering
 
 ### Integration Tests
+
 - [x] Component renders without errors
 - [x] File browser displays files correctly
 - [x] Search filters files by name/path
@@ -303,6 +335,7 @@ Response:
 - [x] Monaco editor loads for inline code
 
 ### E2E Tests (Future)
+
 - [ ] Create CODE_BLOCK action in workflow
 - [ ] Select external file source
 - [ ] Browse and select Python file
@@ -337,12 +370,15 @@ Response:
 ## Performance Considerations
 
 ### Current Implementation
+
 - Client-side tree building (fast for <1000 files)
 - Client-side search/filter (instant response)
 - Lazy rendering with scroll area (handles long lists)
 
 ### Optimizations for Large Projects
+
 If project has 1000+ Python files:
+
 1. Implement virtual scrolling (react-window)
 2. Add server-side search/filter
 3. Paginate file list
@@ -353,6 +389,7 @@ If project has 1000+ Python files:
 ## Future Enhancements
 
 ### Phase 2 Features
+
 1. **File Preview:**
    - Show file contents in read-only editor
    - Syntax highlighting
@@ -385,11 +422,13 @@ If project has 1000+ Python files:
 ### Problem: Files Not Loading
 
 **Symptoms:**
+
 - File browser shows "No Python files found"
 - Loading spinner never stops
 - Error message appears
 
 **Solutions:**
+
 1. Check backend API is running (port 8000)
 2. Verify project has Python files in directory
 3. Check browser console for API errors
@@ -399,11 +438,13 @@ If project has 1000+ Python files:
 ### Problem: File Selection Not Working
 
 **Symptoms:**
+
 - Clicking file doesn't select it
 - Selected file doesn't show in config
 - No visual feedback on click
 
 **Solutions:**
+
 1. Check browser console for JavaScript errors
 2. Verify `onSelectFile` callback is provided
 3. Check action config is being updated
@@ -412,11 +453,13 @@ If project has 1000+ Python files:
 ### Problem: Monaco Editor Not Loading
 
 **Symptoms:**
+
 - Code editor doesn't appear for inline code
 - White box instead of editor
 - Console shows Monaco loading errors
 
 **Solutions:**
+
 1. Ensure @monaco-editor/react is installed
 2. Verify component has "use client" directive
 3. Check browser memory (Monaco needs ~50MB)
@@ -429,8 +472,8 @@ If project has 1000+ Python files:
 ### Basic Usage
 
 ```tsx
-import { PythonFileBrowser } from '@/components/code-execution';
-import { useCodeExecutionFiles } from '@/hooks/useCodeExecutionFiles';
+import { PythonFileBrowser } from "@/components/code-execution";
+import { useCodeExecutionFiles } from "@/hooks/useCodeExecutionFiles";
 
 function MyComponent() {
   const { files, isLoading, error, refresh } = useCodeExecutionFiles({
@@ -464,7 +507,7 @@ const handleSelect = async (path: string) => {
   if (result.valid) {
     setSelectedPath(path);
   } else {
-    alert(`Invalid file: ${result.errors?.join(', ')}`);
+    alert(`Invalid file: ${result.errors?.join(", ")}`);
   }
 };
 
@@ -472,14 +515,14 @@ const handleSelect = async (path: string) => {
   onSelectFile={handleSelect}
   validateOnSelect={true}
   // ...
-/>
+/>;
 ```
 
 ### Custom Height
 
 ```tsx
 <PythonFileBrowser
-  height="600px"  // Custom height
+  height="600px" // Custom height
   // ...
 />
 ```
@@ -488,7 +531,7 @@ const handleSelect = async (path: string) => {
 
 ```tsx
 <PythonFileBrowser
-  showMetadata={false}  // Hide file size and date
+  showMetadata={false} // Hide file size and date
   // ...
 />
 ```
@@ -498,6 +541,7 @@ const handleSelect = async (path: string) => {
 ## Dependencies
 
 ### Required
+
 - `react` (19.1.0)
 - `lucide-react` (icons)
 - `@radix-ui/*` (UI primitives via shadcn/ui)
@@ -505,6 +549,7 @@ const handleSelect = async (path: string) => {
 - `tailwindcss` (styling)
 
 ### UI Components Used
+
 - `Input` - Search box, text inputs
 - `Button` - Refresh, browse buttons
 - `ScrollArea` - Scrollable file list
@@ -522,6 +567,7 @@ const handleSelect = async (path: string) => {
 The file browser component is fully implemented and integrated into the action properties system. It follows the existing Qontinui design patterns, uses the component registry architecture, and provides a rich, accessible UI for selecting Python files.
 
 The component is production-ready and includes:
+
 - ✅ Core functionality (browse, search, select)
 - ✅ Error handling and loading states
 - ✅ Keyboard navigation and accessibility
@@ -530,6 +576,7 @@ The component is production-ready and includes:
 - ✅ Backend API integration
 
 Next steps:
+
 1. Implement backend endpoints (if not already done)
 2. Test with real project data
 3. Add to workflow canvas action palette (if CODE_BLOCK not already added)

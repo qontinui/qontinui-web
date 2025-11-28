@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, {
   createContext,
@@ -6,9 +6,9 @@ import React, {
   useState,
   useEffect,
   ReactNode,
-} from 'react';
-import { websocketCollaborationService } from '@/services/websocket-collaboration-service';
-import type { UserPresence, Lock, Comment, Activity } from './types';
+} from "react";
+import { websocketCollaborationService } from "@/services/websocket-collaboration-service";
+import type { UserPresence, Lock, Comment, Activity } from "./types";
 
 // ============================================================================
 // Context Types
@@ -48,7 +48,10 @@ interface WebSocketProviderProps {
 // Provider Component
 // ============================================================================
 
-export function WebSocketProvider({ children, projectId }: WebSocketProviderProps) {
+export function WebSocketProvider({
+  children,
+  projectId,
+}: WebSocketProviderProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [handlers, setHandlers] = useState<WebSocketHandlers>({});
 
@@ -107,7 +110,7 @@ export function WebSocketProvider({ children, projectId }: WebSocketProviderProp
 
       websocketCollaborationService.connect(projectId);
     } catch (error) {
-      console.error('[WebSocket] Failed to connect:', error);
+      console.error("[WebSocket] Failed to connect:", error);
       throw error;
     }
   };
@@ -146,7 +149,7 @@ export function WebSocketProvider({ children, projectId }: WebSocketProviderProp
 export function useWebSocket() {
   const context = useContext(WebSocketContext);
   if (context === undefined) {
-    throw new Error('useWebSocket must be used within a WebSocketProvider');
+    throw new Error("useWebSocket must be used within a WebSocketProvider");
   }
   return context;
 }

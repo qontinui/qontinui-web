@@ -61,7 +61,7 @@ export interface ConnectionInfo {
   runnerTokenId?: string; // If using a dedicated runner token
 }
 
-export type TokenStatus = 'active' | 'expired' | 'revoked';
+export type TokenStatus = "active" | "expired" | "revoked";
 
 export interface RunnerTokenCardProps {
   token: RunnerToken;
@@ -75,7 +75,7 @@ export interface TestConnectionResponse {
   message: string;
   user_id: string;
   username: string;
-  auth_method: 'jwt' | 'runner_token';
+  auth_method: "jwt" | "runner_token";
   token_name: string | null;
   connection_id: number;
   tested_at: string;

@@ -1,4 +1,4 @@
-import { useEffect, useState, RefObject } from 'react';
+import { useEffect, useState, RefObject } from "react";
 
 /**
  * Custom hook for intersection observer
@@ -28,7 +28,7 @@ export function useIntersectionObserver(
     // Default options: trigger when 10% visible, with 100px margin for preloading
     const defaultOptions: IntersectionObserverInit = {
       threshold: 0.1,
-      rootMargin: '100px',
+      rootMargin: "100px",
       ...options,
     };
 
@@ -70,7 +70,7 @@ export function useIntersectionObserverRepeating(
 
     const defaultOptions: IntersectionObserverInit = {
       threshold: 0.1,
-      rootMargin: '0px',
+      rootMargin: "0px",
       ...options,
     };
 

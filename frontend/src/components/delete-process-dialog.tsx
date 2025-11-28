@@ -5,15 +5,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { AlertTriangle } from "lucide-react"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
 
 interface DeleteWorkflowDialogProps {
-  open: boolean
-  workflowName: string
-  onClose: () => void
-  onConfirm: () => void
+  open: boolean;
+  workflowName: string;
+  onClose: () => void;
+  onConfirm: () => void;
 }
 
 export function DeleteWorkflowDialog({
@@ -31,7 +31,8 @@ export function DeleteWorkflowDialog({
             Delete Workflow
           </DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete "{workflowName}"? This action cannot be undone.
+            Are you sure you want to delete "{workflowName}"? This action cannot
+            be undone.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -52,5 +53,5 @@ export function DeleteWorkflowDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

@@ -5,85 +5,85 @@
  * with mock data for testing and development.
  */
 
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { PythonFileBrowser, PythonFile } from './PythonFileBrowser';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import React, { useState } from "react";
+import { PythonFileBrowser, PythonFile } from "./PythonFileBrowser";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Mock data for demonstration
 const MOCK_FILES: PythonFile[] = [
   {
-    path: 'scripts/detector.py',
-    name: 'detector.py',
+    path: "scripts/detector.py",
+    name: "detector.py",
     size: 2048,
-    lastModified: '2025-11-22T10:30:00Z',
+    lastModified: "2025-11-22T10:30:00Z",
     isValid: true,
   },
   {
-    path: 'scripts/utils.py',
-    name: 'utils.py',
+    path: "scripts/utils.py",
+    name: "utils.py",
     size: 1024,
-    lastModified: '2025-11-22T09:15:00Z',
+    lastModified: "2025-11-22T09:15:00Z",
     isValid: true,
   },
   {
-    path: 'scripts/helpers/image_processing.py',
-    name: 'image_processing.py',
+    path: "scripts/helpers/image_processing.py",
+    name: "image_processing.py",
     size: 3072,
-    lastModified: '2025-11-21T16:45:00Z',
+    lastModified: "2025-11-21T16:45:00Z",
     isValid: true,
   },
   {
-    path: 'scripts/helpers/math_utils.py',
-    name: 'math_utils.py',
+    path: "scripts/helpers/math_utils.py",
+    name: "math_utils.py",
     size: 512,
-    lastModified: '2025-11-20T14:20:00Z',
+    lastModified: "2025-11-20T14:20:00Z",
     isValid: true,
   },
   {
-    path: 'automation/civ6_utils.py',
-    name: 'civ6_utils.py',
+    path: "automation/civ6_utils.py",
+    name: "civ6_utils.py",
     size: 4096,
-    lastModified: '2025-11-22T11:00:00Z',
+    lastModified: "2025-11-22T11:00:00Z",
     isValid: true,
   },
   {
-    path: 'automation/unit_detector.py',
-    name: 'unit_detector.py',
+    path: "automation/unit_detector.py",
+    name: "unit_detector.py",
     size: 2560,
-    lastModified: '2025-11-19T08:30:00Z',
+    lastModified: "2025-11-19T08:30:00Z",
     isValid: true,
   },
   {
-    path: 'lib/vision_helpers.py',
-    name: 'vision_helpers.py',
+    path: "lib/vision_helpers.py",
+    name: "vision_helpers.py",
     size: 1536,
-    lastModified: '2025-11-18T12:00:00Z',
+    lastModified: "2025-11-18T12:00:00Z",
     isValid: true,
   },
   {
-    path: 'lib/config_loader.py',
-    name: 'config_loader.py',
+    path: "lib/config_loader.py",
+    name: "config_loader.py",
     size: 768,
-    lastModified: '2025-11-17T15:30:00Z',
+    lastModified: "2025-11-17T15:30:00Z",
     isValid: true,
   },
   {
-    path: 'tests/test_detector.py',
-    name: 'test_detector.py',
+    path: "tests/test_detector.py",
+    name: "test_detector.py",
     size: 2048,
-    lastModified: '2025-11-22T10:30:00Z',
+    lastModified: "2025-11-22T10:30:00Z",
     isValid: true,
   },
   {
-    path: 'main.py',
-    name: 'main.py',
+    path: "main.py",
+    name: "main.py",
     size: 512,
-    lastModified: '2025-11-15T10:00:00Z',
+    lastModified: "2025-11-15T10:00:00Z",
     isValid: true,
   },
 ];
@@ -103,8 +103,8 @@ export function PythonFileBrowserExample() {
         setFiles([
           ...MOCK_FILES,
           {
-            path: 'new_file.py',
-            name: 'new_file.py',
+            path: "new_file.py",
+            name: "new_file.py",
             size: 256,
             lastModified: new Date().toISOString(),
             isValid: true,
@@ -117,7 +117,7 @@ export function PythonFileBrowserExample() {
   };
 
   const simulateError = () => {
-    setError('Failed to load files from server');
+    setError("Failed to load files from server");
     setFiles([]);
   };
 
@@ -135,7 +135,8 @@ export function PythonFileBrowserExample() {
             Python File Browser Example
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Standalone demonstration of the PythonFileBrowser component with mock data
+            Standalone demonstration of the PythonFileBrowser component with
+            mock data
           </p>
         </div>
 
@@ -226,8 +227,12 @@ export function PythonFileBrowserExample() {
                                 Valid
                               </Label>
                               <div className="mt-1">
-                                <Badge variant={file.isValid ? 'default' : 'destructive'}>
-                                  {file.isValid ? 'Yes' : 'No'}
+                                <Badge
+                                  variant={
+                                    file.isValid ? "default" : "destructive"
+                                  }
+                                >
+                                  {file.isValid ? "Yes" : "No"}
                                 </Badge>
                               </div>
                             </div>
@@ -246,7 +251,9 @@ export function PythonFileBrowserExample() {
                   ) : (
                     <div className="text-center py-8 text-gray-500">
                       <p>No file selected</p>
-                      <p className="text-sm mt-2">Select a file from the browser to see details</p>
+                      <p className="text-sm mt-2">
+                        Select a file from the browser to see details
+                      </p>
                     </div>
                   )}
 
@@ -257,14 +264,26 @@ export function PythonFileBrowserExample() {
                       Actions
                     </Label>
                     <div className="space-y-2">
-                      <Button variant="outline" className="w-full" onClick={handleRefresh}>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleRefresh}
+                      >
                         Refresh Files
                       </Button>
-                      <Button variant="outline" className="w-full" onClick={simulateError}>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={simulateError}
+                      >
                         Simulate Error
                       </Button>
                       {error && (
-                        <Button variant="outline" className="w-full" onClick={clearError}>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={clearError}
+                        >
                           Clear Error
                         </Button>
                       )}
@@ -307,7 +326,7 @@ export function PythonFileBrowserExample() {
                   files={[]}
                   isLoading={false}
                   error="Failed to connect to backend API. Please check your network connection."
-                  onRefresh={() => alert('Refresh clicked')}
+                  onRefresh={() => alert("Refresh clicked")}
                   height="500px"
                 />
               </CardContent>
@@ -371,7 +390,13 @@ export function PythonFileBrowserExample() {
 }
 
 // Helper component for labels
-function Label({ className, children }: { className?: string; children: React.ReactNode }) {
+function Label({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
   return <div className={className}>{children}</div>;
 }
 

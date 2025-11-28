@@ -36,7 +36,11 @@ export function QontinuiCard({
   return (
     <Card
       className={cn(
-        selected ? styles.cardSelected : hoverable ? styles.cardHover : styles.card,
+        selected
+          ? styles.cardSelected
+          : hoverable
+            ? styles.cardHover
+            : styles.card,
         className
       )}
       {...props}
@@ -51,7 +55,9 @@ export function QontinuiCardHeader({
   className,
   ...props
 }: React.ComponentProps<typeof CardHeader>) {
-  return <CardHeader className={cn(styles.text.primary, className)} {...props} />;
+  return (
+    <CardHeader className={cn(styles.text.primary, className)} {...props} />
+  );
 }
 
 /**
@@ -61,7 +67,9 @@ export function QontinuiCardTitle({
   className,
   ...props
 }: React.ComponentProps<typeof CardTitle>) {
-  return <CardTitle className={cn(styles.text.primary, className)} {...props} />;
+  return (
+    <CardTitle className={cn(styles.text.primary, className)} {...props} />
+  );
 }
 
 /**
@@ -72,7 +80,10 @@ export function QontinuiCardDescription({
   ...props
 }: React.ComponentProps<typeof CardDescription>) {
   return (
-    <CardDescription className={cn(styles.text.secondary, className)} {...props} />
+    <CardDescription
+      className={cn(styles.text.secondary, className)}
+      {...props}
+    />
   );
 }
 
@@ -83,7 +94,9 @@ export function QontinuiCardContent({
   className,
   ...props
 }: React.ComponentProps<typeof CardContent>) {
-  return <CardContent className={cn(styles.text.secondary, className)} {...props} />;
+  return (
+    <CardContent className={cn(styles.text.secondary, className)} {...props} />
+  );
 }
 
 /**

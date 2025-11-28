@@ -1,14 +1,20 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { useRouter, useParams } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { useOrganization } from "@/hooks/useOrganization"
-import { organizationService } from "@/services/service-factory"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useEffect, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { useOrganization } from "@/hooks/useOrganization";
+import { organizationService } from "@/services/service-factory";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
   Users,
@@ -18,96 +24,107 @@ import {
   Calendar,
   Loader2,
   UserPlus,
-  FolderOpen
-} from "lucide-react"
-import { toast } from "sonner"
-import type { Organization, Activity as ActivityType } from "@/types/collaboration"
+  FolderOpen,
+} from "lucide-react";
+import { toast } from "sonner";
+import type {
+  Organization,
+  Activity as ActivityType,
+} from "@/types/collaboration";
 
 export default function OrganizationDetailsPage() {
-  const router = useRouter()
-  const params = useParams()
-  const orgId = params?.id as string
+  const router = useRouter();
+  const params = useParams();
+  const orgId = params?.id as string;
 
-  const { user, loading: authLoading } = useAuth()
-  const { switchOrg, currentOrg, members, loading: orgLoading, getMembers } = useOrganization()
+  const { user, loading: authLoading } = useAuth();
+  const {
+    switchOrg,
+    currentOrg,
+    members,
+    loading: orgLoading,
+    getMembers,
+  } = useOrganization();
 
-  const [organization, setOrganization] = useState<Organization | null>(null)
+  const [organization, setOrganization] = useState<Organization | null>(null);
   const [statistics, setStatistics] = useState<{
-    member_count: number
-    project_count: number
-    active_users_today: number
-    total_workflows: number
-  } | null>(null)
-  const [activities, setActivities] = useState<ActivityType[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+    member_count: number;
+    project_count: number;
+    active_users_today: number;
+    total_workflows: number;
+  } | null>(null);
+  const [activities, setActivities] = useState<ActivityType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
+      router.push("/");
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (!orgId || !user) return
+    if (!orgId || !user) return;
 
     const loadData = async () => {
-      setLoading(true)
-      setError(null)
+      setLoading(true);
+      setError(null);
 
       try {
         // Load organization details
-        await switchOrg(orgId)
-        const org = await organizationService.getOrganization(orgId)
-        setOrganization(org)
+        await switchOrg(orgId);
+        const org = await organizationService.getOrganization(orgId);
+        setOrganization(org);
 
         // Load statistics
         try {
-          const stats = await organizationService.getStatistics(orgId)
-          setStatistics(stats)
+          const stats = await organizationService.getStatistics(orgId);
+          setStatistics(stats);
         } catch (err) {
-          console.error('Failed to load statistics:', err)
+          console.error("Failed to load statistics:", err);
         }
 
         // Load members
-        await getMembers(orgId)
+        await getMembers(orgId);
       } catch (err) {
-        console.error('Failed to load organization:', err)
-        setError(err as Error)
-        toast.error('Failed to load organization details')
+        console.error("Failed to load organization:", err);
+        setError(err as Error);
+        toast.error("Failed to load organization details");
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    loadData()
-  }, [orgId, user])
+    loadData();
+  }, [orgId, user]);
 
   const getUserRole = (org: Organization | null, userId: string): string => {
-    if (!org) return 'Member'
-    if (org.owner_id === userId) return 'Owner'
-    return 'Member'
-  }
+    if (!org) return "Member";
+    if (org.owner_id === userId) return "Owner";
+    return "Member";
+  };
 
   const getRoleBadgeColor = (org: Organization | null, userId: string) => {
-    if (!org) return 'bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30'
+    if (!org) return "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30";
     if (org.owner_id === userId) {
-      return 'bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30'
+      return "bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30";
     }
-    return 'bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30'
-  }
+    return "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30";
+  };
 
   const getRelativeTime = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+    );
 
-    if (diffInHours < 1) return 'Just now'
-    if (diffInHours < 24) return `${diffInHours} hours ago`
-    const diffInDays = Math.floor(diffInHours / 24)
-    if (diffInDays === 1) return '1 day ago'
-    return `${diffInDays} days ago`
-  }
+    if (diffInHours < 1) return "Just now";
+    if (diffInHours < 24) return `${diffInHours} hours ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays === 1) return "1 day ago";
+    return `${diffInDays} days ago`;
+  };
 
   if (authLoading || !user) {
     return (
@@ -117,7 +134,7 @@ export default function OrganizationDetailsPage() {
           <div className="text-lg text-muted-foreground">Loading...</div>
         </div>
       </div>
-    )
+    );
   }
 
   if (loading) {
@@ -130,7 +147,7 @@ export default function OrganizationDetailsPage() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   if (error || !organization) {
@@ -141,7 +158,7 @@ export default function OrganizationDetailsPage() {
             <CardContent className="p-8 text-center">
               <p className="text-red-400 mb-4">Failed to load organization</p>
               <Button
-                onClick={() => router.push('/organizations')}
+                onClick={() => router.push("/organizations")}
                 variant="outline"
                 className="border-gray-700 hover:border-[#00D9FF]"
               >
@@ -151,7 +168,7 @@ export default function OrganizationDetailsPage() {
           </Card>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -161,7 +178,7 @@ export default function OrganizationDetailsPage() {
         <div className="mb-8">
           <Button
             variant="ghost"
-            onClick={() => router.push('/organizations')}
+            onClick={() => router.push("/organizations")}
             className="mb-4 text-gray-400 hover:text-white"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -180,7 +197,8 @@ export default function OrganizationDetailsPage() {
                 <p className="text-gray-400 mb-2">{organization.description}</p>
               )}
               <p className="text-sm text-gray-500">
-                Created {getRelativeTime(organization.created_at)} • Updated {getRelativeTime(organization.updated_at)}
+                Created {getRelativeTime(organization.created_at)} • Updated{" "}
+                {getRelativeTime(organization.updated_at)}
               </p>
             </div>
 
@@ -194,7 +212,9 @@ export default function OrganizationDetailsPage() {
               </Button>
               {organization.owner_id === user.id && (
                 <Button
-                  onClick={() => router.push(`/organizations/${orgId}/settings`)}
+                  onClick={() =>
+                    router.push(`/organizations/${orgId}/settings`)
+                  }
                   variant="outline"
                   className="border-gray-700 hover:border-[#BD00FF] hover:text-[#BD00FF]"
                 >
@@ -297,27 +317,35 @@ export default function OrganizationDetailsPage() {
                   {organization.description && (
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Description</p>
-                      <p className="text-gray-300">{organization.description}</p>
+                      <p className="text-gray-300">
+                        {organization.description}
+                      </p>
                     </div>
                   )}
                   <div>
                     <p className="text-sm text-gray-400 mb-1">Created</p>
                     <p className="text-gray-300">
-                      {new Date(organization.created_at).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
+                      {new Date(organization.created_at).toLocaleDateString(
+                        "en-US",
+                        {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        }
+                      )}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-400 mb-1">Last Updated</p>
                     <p className="text-gray-300">
-                      {new Date(organization.updated_at).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
+                      {new Date(organization.updated_at).toLocaleDateString(
+                        "en-US",
+                        {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        }
+                      )}
                     </p>
                   </div>
                 </CardContent>
@@ -330,7 +358,9 @@ export default function OrganizationDetailsPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <Button
-                    onClick={() => router.push(`/organizations/${orgId}/members`)}
+                    onClick={() =>
+                      router.push(`/organizations/${orgId}/members`)
+                    }
                     className="w-full justify-start bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30"
                   >
                     <Users className="w-4 h-4 mr-2" />
@@ -339,7 +369,9 @@ export default function OrganizationDetailsPage() {
                   {organization.owner_id === user.id && (
                     <>
                       <Button
-                        onClick={() => router.push(`/organizations/${orgId}/settings`)}
+                        onClick={() =>
+                          router.push(`/organizations/${orgId}/settings`)
+                        }
                         className="w-full justify-start bg-[#BD00FF]/10 hover:bg-[#BD00FF]/20 text-[#BD00FF] border border-[#BD00FF]/30"
                       >
                         <Settings className="w-4 h-4 mr-2" />
@@ -359,7 +391,9 @@ export default function OrganizationDetailsPage() {
                 <div className="flex items-center justify-between">
                   <CardTitle>Team Members ({members.length})</CardTitle>
                   <Button
-                    onClick={() => router.push(`/organizations/${orgId}/members`)}
+                    onClick={() =>
+                      router.push(`/organizations/${orgId}/members`)
+                    }
                     size="sm"
                     className="bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
                   >
@@ -383,19 +417,27 @@ export default function OrganizationDetailsPage() {
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-gradient-to-br from-[#00D9FF] to-[#BD00FF] rounded-full flex items-center justify-center text-sm font-bold">
-                            {(member.name || member.email).charAt(0).toUpperCase()}
+                            {(member.name || member.email)
+                              .charAt(0)
+                              .toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-medium">{member.name || 'Unknown'}</p>
-                            <p className="text-sm text-gray-400">{member.email}</p>
+                            <p className="font-medium">
+                              {member.name || "Unknown"}
+                            </p>
+                            <p className="text-sm text-gray-400">
+                              {member.email}
+                            </p>
                           </div>
                         </div>
-                        <Badge className={`
-                          ${member.role === 'owner' ? 'bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30' : ''}
-                          ${member.role === 'admin' ? 'bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30' : ''}
-                          ${member.role === 'member' ? 'bg-gray-500/20 text-gray-400 border-gray-500/30' : ''}
-                          ${member.role === 'viewer' ? 'bg-gray-600/20 text-gray-500 border-gray-600/30' : ''}
-                        `}>
+                        <Badge
+                          className={`
+                          ${member.role === "owner" ? "bg-[#BD00FF]/20 text-[#BD00FF] border-[#BD00FF]/30" : ""}
+                          ${member.role === "admin" ? "bg-[#00D9FF]/20 text-[#00D9FF] border-[#00D9FF]/30" : ""}
+                          ${member.role === "member" ? "bg-gray-500/20 text-gray-400 border-gray-500/30" : ""}
+                          ${member.role === "viewer" ? "bg-gray-600/20 text-gray-500 border-gray-600/30" : ""}
+                        `}
+                        >
                           {member.role}
                         </Badge>
                       </div>
@@ -403,7 +445,9 @@ export default function OrganizationDetailsPage() {
                     {members.length > 5 && (
                       <Button
                         variant="ghost"
-                        onClick={() => router.push(`/organizations/${orgId}/members`)}
+                        onClick={() =>
+                          router.push(`/organizations/${orgId}/members`)
+                        }
                         className="w-full text-[#00D9FF] hover:text-[#00D9FF]/80"
                       >
                         View all {members.length} members
@@ -432,5 +476,5 @@ export default function OrganizationDetailsPage() {
         </Tabs>
       </div>
     </div>
-  )
+  );
 }

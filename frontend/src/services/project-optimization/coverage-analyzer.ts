@@ -7,34 +7,35 @@
  * - Uncovered resource detection
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import { WorkflowDocumentationService } from '../workflow-documentation-service';
-import { getWorkflowTestingService } from '../workflow-testing-service';
-import type { CoverageReport } from './types';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import { WorkflowDocumentationService } from "../workflow-documentation-service";
+import { getWorkflowTestingService } from "../workflow-testing-service";
+import type { CoverageReport } from "./types";
 
 /**
  * Calculate test coverage
  */
-export function calculateTestCoverage(workflows: Workflow[]): CoverageReport['testCoverage'] {
+export function calculateTestCoverage(
+  workflows: Workflow[]
+): CoverageReport["testCoverage"] {
   const tested = new Set<string>();
   const workflowTestingService = getWorkflowTestingService();
   const allTests = workflowTestingService.getAllTests();
 
-  allTests.forEach(test => {
+  allTests.forEach((test) => {
     if (test.enabled !== false) {
       tested.add(test.workflowId);
     }
   });
 
-  const overall = workflows.length > 0
-    ? (tested.size / workflows.length) * 100
-    : 0;
+  const overall =
+    workflows.length > 0 ? (tested.size / workflows.length) * 100 : 0;
 
   const byFolder: Record<string, number> = {};
   const folderCounts: Record<string, { total: number; tested: number }> = {};
 
-  workflows.forEach(workflow => {
-    const folder = workflow.category || 'Uncategorized';
+  workflows.forEach((workflow) => {
+    const folder = workflow.category || "Uncategorized";
     if (!folderCounts[folder]) {
       folderCounts[folder] = { total: 0, tested: 0 };
     }
@@ -48,9 +49,7 @@ export function calculateTestCoverage(workflows: Workflow[]): CoverageReport['te
     byFolder[folder] = (counts.tested / counts.total) * 100;
   });
 
-  const untested = workflows
-    .filter(w => !tested.has(w.id))
-    .map(w => w.id);
+  const untested = workflows.filter((w) => !tested.has(w.id)).map((w) => w.id);
 
   return {
     overall,
@@ -62,25 +61,27 @@ export function calculateTestCoverage(workflows: Workflow[]): CoverageReport['te
 /**
  * Calculate documentation coverage
  */
-export function calculateDocumentationCoverage(workflows: Workflow[]): CoverageReport['documentationCoverage'] {
+export function calculateDocumentationCoverage(
+  workflows: Workflow[]
+): CoverageReport["documentationCoverage"] {
   const documentationService = WorkflowDocumentationService.getInstance();
   const documented = new Set<string>();
 
-  workflows.forEach(workflow => {
+  workflows.forEach((workflow) => {
     if (documentationService.hasDocumentation(workflow.id)) {
       documented.add(workflow.id);
     }
   });
 
-  const overall = workflows.length > 0
-    ? (documented.size / workflows.length) * 100
-    : 0;
+  const overall =
+    workflows.length > 0 ? (documented.size / workflows.length) * 100 : 0;
 
   const byFolder: Record<string, number> = {};
-  const folderCounts: Record<string, { total: number; documented: number }> = {};
+  const folderCounts: Record<string, { total: number; documented: number }> =
+    {};
 
-  workflows.forEach(workflow => {
-    const folder = workflow.category || 'Uncategorized';
+  workflows.forEach((workflow) => {
+    const folder = workflow.category || "Uncategorized";
     if (!folderCounts[folder]) {
       folderCounts[folder] = { total: 0, documented: 0 };
     }
@@ -95,8 +96,8 @@ export function calculateDocumentationCoverage(workflows: Workflow[]): CoverageR
   });
 
   const undocumented = workflows
-    .filter(w => !documented.has(w.id))
-    .map(w => w.id);
+    .filter((w) => !documented.has(w.id))
+    .map((w) => w.id);
 
   return {
     overall,
@@ -111,8 +112,8 @@ export function calculateDocumentationCoverage(workflows: Workflow[]): CoverageR
 export function getUndocumentedResources(workflows: Workflow[]): string[] {
   const documentationService = WorkflowDocumentationService.getInstance();
   return workflows
-    .filter(w => !documentationService.hasDocumentation(w.id))
-    .map(w => w.id);
+    .filter((w) => !documentationService.hasDocumentation(w.id))
+    .map((w) => w.id);
 }
 
 /**

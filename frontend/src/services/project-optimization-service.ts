@@ -19,12 +19,23 @@
  * - Health alerts
  */
 
-import type { Workflow, Action, ActionType } from '@/lib/action-schema/action-types';
-import type { State, ImageAsset, Transition } from '@/contexts/automation-context/types';
-import { workflowComplexityAnalyzer, ComplexityAnalysis } from './workflow-complexity-analyzer';
-import { WorkflowDependencyAnalyzer } from './workflow-dependency-analyzer';
-import { WorkflowDocumentationService } from './workflow-documentation-service';
-import { workflowTestingService } from './workflow-testing-service';
+import type {
+  Workflow,
+  Action,
+  ActionType,
+} from "@/lib/action-schema/action-types";
+import type {
+  State,
+  ImageAsset,
+  Transition,
+} from "@/contexts/automation-context/types";
+import {
+  workflowComplexityAnalyzer,
+  ComplexityAnalysis,
+} from "./workflow-complexity-analyzer";
+import { WorkflowDependencyAnalyzer } from "./workflow-dependency-analyzer";
+import { WorkflowDocumentationService } from "./workflow-documentation-service";
+import { workflowTestingService } from "./workflow-testing-service";
 
 // ============================================================================
 // Core Types
@@ -38,7 +49,7 @@ export interface ProjectHealth {
   score: number;
 
   /** Rating based on score */
-  rating: 'critical' | 'poor' | 'fair' | 'good' | 'excellent';
+  rating: "critical" | "poor" | "fair" | "good" | "excellent";
 
   /** Individual factor scores */
   factors: {
@@ -76,7 +87,7 @@ export interface HealthFactor {
   contribution: number;
 
   /** Status based on score */
-  status: 'critical' | 'warning' | 'good' | 'excellent';
+  status: "critical" | "warning" | "good" | "excellent";
 
   /** Detailed breakdown */
   details: string;
@@ -154,7 +165,7 @@ export interface WorkflowAnalysis {
   brokenReferences: BrokenReference[];
 
   /** Overall status */
-  status: 'healthy' | 'warning' | 'critical';
+  status: "healthy" | "warning" | "critical";
 
   /** Issues */
   issues: string[];
@@ -191,7 +202,7 @@ export interface StateAnalysis {
   brokenReferences: BrokenReference[];
 
   /** Status */
-  status: 'healthy' | 'warning' | 'critical';
+  status: "healthy" | "warning" | "critical";
 
   /** Issues */
   issues: string[];
@@ -215,7 +226,7 @@ export interface ImageAnalysis {
 
   /** Where it's used */
   usedIn: Array<{
-    type: 'state' | 'workflow';
+    type: "state" | "workflow";
     id: string;
     name: string;
   }>;
@@ -228,7 +239,7 @@ export interface ImageAnalysis {
   potentialSavings: number;
 
   /** Status */
-  status: 'healthy' | 'warning' | 'critical';
+  status: "healthy" | "warning" | "critical";
 
   /** Issues */
   issues: string[];
@@ -253,7 +264,7 @@ export interface TransitionAnalysis {
   isCircular: boolean;
 
   /** Status */
-  status: 'healthy' | 'warning' | 'critical';
+  status: "healthy" | "warning" | "critical";
 
   /** Issues */
   issues: string[];
@@ -272,20 +283,20 @@ export interface OptimizationSuggestion {
 
   /** Suggestion type */
   type:
-    | 'delete-unused-images'
-    | 'delete-unused-states'
-    | 'delete-unused-workflows'
-    | 'add-tests'
-    | 'add-documentation'
-    | 'organize-folders'
-    | 'fix-broken-references'
-    | 'reduce-complexity'
-    | 'remove-orphaned-states'
-    | 'consolidate-duplicates'
-    | 'optimize-storage';
+    | "delete-unused-images"
+    | "delete-unused-states"
+    | "delete-unused-workflows"
+    | "add-tests"
+    | "add-documentation"
+    | "organize-folders"
+    | "fix-broken-references"
+    | "reduce-complexity"
+    | "remove-orphaned-states"
+    | "consolidate-duplicates"
+    | "optimize-storage";
 
   /** Priority level */
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  priority: "low" | "medium" | "high" | "critical";
 
   /** Human-readable title */
   title: string;
@@ -295,7 +306,7 @@ export interface OptimizationSuggestion {
 
   /** Affected resource IDs */
   affectedResources: Array<{
-    type: 'workflow' | 'state' | 'image' | 'transition';
+    type: "workflow" | "state" | "image" | "transition";
     id: string;
     name: string;
   }>;
@@ -306,10 +317,10 @@ export interface OptimizationSuggestion {
     storageSavings?: number;
 
     /** Performance improvement estimate */
-    performanceGain?: 'low' | 'medium' | 'high';
+    performanceGain?: "low" | "medium" | "high";
 
     /** Maintainability improvement */
-    maintainabilityGain?: 'low' | 'medium' | 'high';
+    maintainabilityGain?: "low" | "medium" | "high";
   };
 
   /** Can be auto-fixed? */
@@ -327,17 +338,23 @@ export interface ProjectIssue {
   id: string;
 
   /** Severity */
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
 
   /** Issue type */
-  type: 'broken-reference' | 'unused-resource' | 'missing-test' | 'missing-doc' | 'high-complexity' | 'duplicate';
+  type:
+    | "broken-reference"
+    | "unused-resource"
+    | "missing-test"
+    | "missing-doc"
+    | "high-complexity"
+    | "duplicate";
 
   /** Message */
   message: string;
 
   /** Resource affected */
   resource: {
-    type: 'workflow' | 'state' | 'image' | 'transition';
+    type: "workflow" | "state" | "image" | "transition";
     id: string;
     name: string;
   };
@@ -364,7 +381,7 @@ export interface DuplicateMatch {
   similarity: number;
 
   /** Match type */
-  matchType: 'exact' | 'similar' | 'potential';
+  matchType: "exact" | "similar" | "potential";
 
   /** Details about the match */
   details?: string;
@@ -379,11 +396,11 @@ export interface DuplicateMatch {
  */
 export interface BrokenReference {
   /** Reference type */
-  type: 'workflow' | 'state' | 'image' | 'action';
+  type: "workflow" | "state" | "image" | "action";
 
   /** Source resource */
   source: {
-    type: 'workflow' | 'state' | 'transition';
+    type: "workflow" | "state" | "transition";
     id: string;
     name: string;
   };
@@ -482,7 +499,7 @@ export interface ComplexityReport {
   highComplexity: Array<{
     id: string;
     name: string;
-    type: 'workflow' | 'state';
+    type: "workflow" | "state";
     score: number;
   }>;
 }
@@ -527,9 +544,9 @@ export interface MetricsTrend {
 
   /** Trend direction */
   trend: {
-    health: 'improving' | 'declining' | 'stable';
-    coverage: 'improving' | 'declining' | 'stable';
-    issues: 'improving' | 'declining' | 'stable';
+    health: "improving" | "declining" | "stable";
+    coverage: "improving" | "declining" | "stable";
+    issues: "improving" | "declining" | "stable";
   };
 
   /** Period */
@@ -644,7 +661,7 @@ export interface HealthAlert {
   id: string;
 
   /** Alert type */
-  type: 'health-drop' | 'critical-issue' | 'storage-limit' | 'complexity-spike';
+  type: "health-drop" | "critical-issue" | "storage-limit" | "complexity-spike";
 
   /** Threshold value */
   threshold: number;
@@ -686,8 +703,8 @@ export class ProjectOptimizationService {
   private metricsHistory: ProjectMetrics[] = [];
   private alerts: HealthAlert[] = [];
 
-  private readonly STORAGE_KEY = 'project-optimization-metrics';
-  private readonly ALERTS_STORAGE_KEY = 'project-optimization-alerts';
+  private readonly STORAGE_KEY = "project-optimization-metrics";
+  private readonly ALERTS_STORAGE_KEY = "project-optimization-alerts";
 
   private dependencyAnalyzer: WorkflowDependencyAnalyzer;
   private documentationService: WorkflowDocumentationService;
@@ -735,11 +752,16 @@ export class ProjectOptimizationService {
     const workflowAnalyses = this.analyzeWorkflows(workflows, states, images);
     const stateAnalyses = this.analyzeStates(states, transitions, images);
     const imageAnalyses = this.analyzeImages(images, workflows, states);
-    const transitionAnalyses = this.analyzeTransitions(transitions, workflows, states);
+    const transitionAnalyses = this.analyzeTransitions(
+      transitions,
+      workflows,
+      states
+    );
 
     // Calculate health factors
     const testCoverage = this.calculateTestCoverageFactor(workflows);
-    const documentationCoverage = this.calculateDocumentationCoverageFactor(workflows);
+    const documentationCoverage =
+      this.calculateDocumentationCoverageFactor(workflows);
     const organization = this.calculateOrganizationFactor(workflows);
     const complexity = this.calculateComplexityFactor(workflows);
     const unusedResources = this.calculateUnusedResourcesFactor(
@@ -765,11 +787,11 @@ export class ProjectOptimizationService {
 
     const overallScore = Math.round(
       testCoverage.contribution +
-      documentationCoverage.contribution +
-      organization.contribution +
-      complexity.contribution +
-      unusedResources.contribution +
-      brokenReferences.contribution
+        documentationCoverage.contribution +
+        organization.contribution +
+        complexity.contribution +
+        unusedResources.contribution +
+        brokenReferences.contribution
     );
 
     const rating = this.getHealthRating(overallScore);
@@ -802,7 +824,12 @@ export class ProjectOptimizationService {
       transitionAnalyses
     );
 
-    const storage = this.getStorageUsage(workflows, states, images, transitions);
+    const storage = this.getStorageUsage(
+      workflows,
+      states,
+      images,
+      transitions
+    );
 
     return {
       health,
@@ -822,12 +849,14 @@ export class ProjectOptimizationService {
   /**
    * Get health rating from score
    */
-  private getHealthRating(score: number): 'critical' | 'poor' | 'fair' | 'good' | 'excellent' {
-    if (score >= 90) return 'excellent';
-    if (score >= 75) return 'good';
-    if (score >= 60) return 'fair';
-    if (score >= 40) return 'poor';
-    return 'critical';
+  private getHealthRating(
+    score: number
+  ): "critical" | "poor" | "fair" | "good" | "excellent" {
+    if (score >= 90) return "excellent";
+    if (score >= 75) return "good";
+    if (score >= 60) return "fair";
+    if (score >= 40) return "poor";
+    return "critical";
   }
 
   /**
@@ -842,17 +871,30 @@ export class ProjectOptimizationService {
       score,
       weight,
       contribution: (score * weight) / 100,
-      status: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'warning' : 'critical',
+      status:
+        score >= 80
+          ? "excellent"
+          : score >= 60
+            ? "good"
+            : score >= 40
+              ? "warning"
+              : "critical",
       details: `${coverage.untested.length} of ${workflows.length} workflows lack tests`,
-      issues: coverage.untested.length > 0 ? [`${coverage.untested.length} workflows without tests`] : [],
-      suggestions: coverage.overall < 80 ? ['Add tests to increase coverage'] : [],
+      issues:
+        coverage.untested.length > 0
+          ? [`${coverage.untested.length} workflows without tests`]
+          : [],
+      suggestions:
+        coverage.overall < 80 ? ["Add tests to increase coverage"] : [],
     };
   }
 
   /**
    * Calculate documentation coverage factor (20% weight)
    */
-  private calculateDocumentationCoverageFactor(workflows: Workflow[]): HealthFactor {
+  private calculateDocumentationCoverageFactor(
+    workflows: Workflow[]
+  ): HealthFactor {
     const coverage = this.calculateDocumentationCoverage(workflows);
     const score = Math.round(coverage.overall);
     const weight = 20;
@@ -861,10 +903,21 @@ export class ProjectOptimizationService {
       score,
       weight,
       contribution: (score * weight) / 100,
-      status: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'warning' : 'critical',
+      status:
+        score >= 80
+          ? "excellent"
+          : score >= 60
+            ? "good"
+            : score >= 40
+              ? "warning"
+              : "critical",
       details: `${coverage.undocumented.length} of ${workflows.length} workflows lack documentation`,
-      issues: coverage.undocumented.length > 0 ? [`${coverage.undocumented.length} workflows without documentation`] : [],
-      suggestions: coverage.overall < 80 ? ['Add documentation to workflows'] : [],
+      issues:
+        coverage.undocumented.length > 0
+          ? [`${coverage.undocumented.length} workflows without documentation`]
+          : [],
+      suggestions:
+        coverage.overall < 80 ? ["Add documentation to workflows"] : [],
     };
   }
 
@@ -872,18 +925,35 @@ export class ProjectOptimizationService {
    * Calculate organization factor (15% weight)
    */
   private calculateOrganizationFactor(workflows: Workflow[]): HealthFactor {
-    const unorganized = workflows.filter(w => !w.category || w.category === 'Uncategorized');
-    const score = Math.round(((workflows.length - unorganized.length) / Math.max(workflows.length, 1)) * 100);
+    const unorganized = workflows.filter(
+      (w) => !w.category || w.category === "Uncategorized"
+    );
+    const score = Math.round(
+      ((workflows.length - unorganized.length) /
+        Math.max(workflows.length, 1)) *
+        100
+    );
     const weight = 15;
 
     return {
       score,
       weight,
       contribution: (score * weight) / 100,
-      status: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'warning' : 'critical',
+      status:
+        score >= 80
+          ? "excellent"
+          : score >= 60
+            ? "good"
+            : score >= 40
+              ? "warning"
+              : "critical",
       details: `${workflows.length - unorganized.length} of ${workflows.length} workflows are organized`,
-      issues: unorganized.length > 0 ? [`${unorganized.length} workflows not organized in folders`] : [],
-      suggestions: score < 80 ? ['Organize workflows into folders/categories'] : [],
+      issues:
+        unorganized.length > 0
+          ? [`${unorganized.length} workflows not organized in folders`]
+          : [],
+      suggestions:
+        score < 80 ? ["Organize workflows into folders/categories"] : [],
     };
   }
 
@@ -891,19 +961,34 @@ export class ProjectOptimizationService {
    * Calculate complexity factor (20% weight)
    */
   private calculateComplexityFactor(workflows: Workflow[]): HealthFactor {
-    const distribution = workflowComplexityAnalyzer.getComplexityDistribution(workflows);
-    const highComplexCount = distribution.byRating.high + distribution.byRating['very-high'];
-    const score = Math.round(100 - (highComplexCount / Math.max(workflows.length, 1)) * 100);
+    const distribution =
+      workflowComplexityAnalyzer.getComplexityDistribution(workflows);
+    const highComplexCount =
+      distribution.byRating.high + distribution.byRating["very-high"];
+    const score = Math.round(
+      100 - (highComplexCount / Math.max(workflows.length, 1)) * 100
+    );
     const weight = 20;
 
     return {
       score,
       weight,
       contribution: (score * weight) / 100,
-      status: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'warning' : 'critical',
+      status:
+        score >= 80
+          ? "excellent"
+          : score >= 60
+            ? "good"
+            : score >= 40
+              ? "warning"
+              : "critical",
       details: `${highComplexCount} workflows have high complexity`,
-      issues: highComplexCount > 0 ? [`${highComplexCount} workflows with high complexity`] : [],
-      suggestions: score < 80 ? ['Reduce complexity in high-complexity workflows'] : [],
+      issues:
+        highComplexCount > 0
+          ? [`${highComplexCount} workflows with high complexity`]
+          : [],
+      suggestions:
+        score < 80 ? ["Reduce complexity in high-complexity workflows"] : [],
     };
   }
 
@@ -915,28 +1000,37 @@ export class ProjectOptimizationService {
     states: StateAnalysis[],
     images: ImageAnalysis[]
   ): HealthFactor {
-    const unusedWorkflows = workflows.filter(w => w.isUnused).length;
-    const unusedStates = states.filter(s => !s.isUsed).length;
-    const unusedImages = images.filter(i => !i.isUsed).length;
+    const unusedWorkflows = workflows.filter((w) => w.isUnused).length;
+    const unusedStates = states.filter((s) => !s.isUsed).length;
+    const unusedImages = images.filter((i) => !i.isUsed).length;
 
     const totalUnused = unusedWorkflows + unusedStates + unusedImages;
     const totalResources = workflows.length + states.length + images.length;
 
-    const score = Math.round(100 - (totalUnused / Math.max(totalResources, 1)) * 100);
+    const score = Math.round(
+      100 - (totalUnused / Math.max(totalResources, 1)) * 100
+    );
     const weight = 10;
 
     return {
       score,
       weight,
       contribution: (score * weight) / 100,
-      status: score >= 90 ? 'excellent' : score >= 70 ? 'good' : score >= 50 ? 'warning' : 'critical',
+      status:
+        score >= 90
+          ? "excellent"
+          : score >= 70
+            ? "good"
+            : score >= 50
+              ? "warning"
+              : "critical",
       details: `${totalUnused} unused resources found`,
       issues: [
         unusedWorkflows > 0 ? `${unusedWorkflows} unused workflows` : null,
         unusedStates > 0 ? `${unusedStates} unused states` : null,
         unusedImages > 0 ? `${unusedImages} unused images` : null,
       ].filter(Boolean) as string[],
-      suggestions: totalUnused > 0 ? ['Remove unused resources'] : [],
+      suggestions: totalUnused > 0 ? ["Remove unused resources"] : [],
     };
   }
 
@@ -948,9 +1042,18 @@ export class ProjectOptimizationService {
     states: StateAnalysis[],
     transitions: TransitionAnalysis[]
   ): HealthFactor {
-    const workflowRefs = workflows.reduce((sum, w) => sum + w.brokenReferences.length, 0);
-    const stateRefs = states.reduce((sum, s) => sum + s.brokenReferences.length, 0);
-    const transitionRefs = transitions.reduce((sum, t) => sum + t.brokenReferences.length, 0);
+    const workflowRefs = workflows.reduce(
+      (sum, w) => sum + w.brokenReferences.length,
+      0
+    );
+    const stateRefs = states.reduce(
+      (sum, s) => sum + s.brokenReferences.length,
+      0
+    );
+    const transitionRefs = transitions.reduce(
+      (sum, t) => sum + t.brokenReferences.length,
+      0
+    );
 
     const totalBroken = workflowRefs + stateRefs + transitionRefs;
     const score = totalBroken === 0 ? 100 : Math.max(0, 100 - totalBroken * 10);
@@ -960,10 +1063,18 @@ export class ProjectOptimizationService {
       score,
       weight,
       contribution: (score * weight) / 100,
-      status: score >= 95 ? 'excellent' : score >= 80 ? 'good' : score >= 60 ? 'warning' : 'critical',
+      status:
+        score >= 95
+          ? "excellent"
+          : score >= 80
+            ? "good"
+            : score >= 60
+              ? "warning"
+              : "critical",
       details: `${totalBroken} broken references found`,
-      issues: totalBroken > 0 ? [`${totalBroken} broken references need fixing`] : [],
-      suggestions: totalBroken > 0 ? ['Fix broken references'] : [],
+      issues:
+        totalBroken > 0 ? [`${totalBroken} broken references need fixing`] : [],
+      suggestions: totalBroken > 0 ? ["Fix broken references"] : [],
     };
   }
 
@@ -974,8 +1085,12 @@ export class ProjectOptimizationService {
   /**
    * Analyze all workflows
    */
-  analyzeWorkflows(workflows: Workflow[], states: State[], images: ImageAsset[]): WorkflowAnalysis[] {
-    return workflows.map(workflow => {
+  analyzeWorkflows(
+    workflows: Workflow[],
+    states: State[],
+    images: ImageAsset[]
+  ): WorkflowAnalysis[] {
+    return workflows.map((workflow) => {
       const complexity = workflowComplexityAnalyzer.analyzeComplexity(workflow);
 
       // Check testing
@@ -983,41 +1098,53 @@ export class ProjectOptimizationService {
       const hasTesting = tests.length > 0;
 
       // Check documentation
-      const hasDocumentation = this.documentationService.hasDocumentation(workflow.id);
+      const hasDocumentation = this.documentationService.hasDocumentation(
+        workflow.id
+      );
 
       // Check organization
-      const isOrganized = workflow.category && workflow.category !== 'Uncategorized';
+      const isOrganized =
+        workflow.category && workflow.category !== "Uncategorized";
 
       // Analyze dependencies
       const deps = this.dependencyAnalyzer.analyzeDependencies(workflow);
-      const dependents = this.dependencyAnalyzer.getDependents(workflow.id, workflows);
+      const dependents = this.dependencyAnalyzer.getDependents(
+        workflow.id,
+        workflows
+      );
 
       // Check if unused
-      const isUnused = dependents.length === 0 && !workflow.metadata?.isEntryPoint;
+      const isUnused =
+        dependents.length === 0 && !workflow.metadata?.isEntryPoint;
 
       // Find broken references
-      const brokenReferences = this.findBrokenWorkflowReferences(workflow, workflows, states, images);
+      const brokenReferences = this.findBrokenWorkflowReferences(
+        workflow,
+        workflows,
+        states,
+        images
+      );
 
       // Determine status
-      let status: 'healthy' | 'warning' | 'critical' = 'healthy';
+      let status: "healthy" | "warning" | "critical" = "healthy";
       const issues: string[] = [];
 
       if (brokenReferences.length > 0) {
-        status = 'critical';
+        status = "critical";
         issues.push(`${brokenReferences.length} broken references`);
       }
 
       if (complexity.complexityScore > 75) {
-        status = status === 'critical' ? 'critical' : 'warning';
-        issues.push('High complexity');
+        status = status === "critical" ? "critical" : "warning";
+        issues.push("High complexity");
       }
 
       if (!hasTesting) {
-        issues.push('No tests');
+        issues.push("No tests");
       }
 
       if (!hasDocumentation) {
-        issues.push('No documentation');
+        issues.push("No documentation");
       }
 
       return {
@@ -1042,12 +1169,20 @@ export class ProjectOptimizationService {
   /**
    * Analyze all states
    */
-  analyzeStates(states: State[], transitions: Transition[], images: ImageAsset[]): StateAnalysis[] {
-    return states.map(state => {
+  analyzeStates(
+    states: State[],
+    transitions: Transition[],
+    images: ImageAsset[]
+  ): StateAnalysis[] {
+    return states.map((state) => {
       // Count usage in transitions
-      const usageCount = transitions.filter(t => {
-        if (t.type === 'OutgoingTransition') {
-          return t.fromState === state.id || t.toState === state.id || t.activateStates.includes(state.id);
+      const usageCount = transitions.filter((t) => {
+        if (t.type === "OutgoingTransition") {
+          return (
+            t.fromState === state.id ||
+            t.toState === state.id ||
+            t.activateStates.includes(state.id)
+          );
         }
         return t.toState === state.id;
       }).length;
@@ -1055,9 +1190,9 @@ export class ProjectOptimizationService {
       const isUsed = usageCount > 0 || state.initial === true;
 
       // Find orphaned images (referenced but don't exist)
-      const imageIds = new Set(images.map(img => img.id));
+      const imageIds = new Set(images.map((img) => img.id));
       const orphanedImageIds = state.stateImages
-        .flatMap(si => si.patterns.map(p => p.imageId))
+        .flatMap((si) => si.patterns.map((p) => p.imageId))
         .filter((id): id is string => id !== undefined && !imageIds.has(id));
 
       // Calculate complexity
@@ -1067,21 +1202,21 @@ export class ProjectOptimizationService {
       const brokenReferences = this.findBrokenStateReferences(state, images);
 
       // Determine status
-      let status: 'healthy' | 'warning' | 'critical' = 'healthy';
+      let status: "healthy" | "warning" | "critical" = "healthy";
       const issues: string[] = [];
 
       if (brokenReferences.length > 0) {
-        status = 'critical';
+        status = "critical";
         issues.push(`${brokenReferences.length} broken references`);
       }
 
       if (!isUsed && !state.initial) {
-        status = status === 'critical' ? 'critical' : 'warning';
-        issues.push('Unused state');
+        status = status === "critical" ? "critical" : "warning";
+        issues.push("Unused state");
       }
 
       if (orphanedImageIds.length > 0) {
-        status = status === 'critical' ? 'critical' : 'warning';
+        status = status === "critical" ? "critical" : "warning";
         issues.push(`${orphanedImageIds.length} missing images`);
       }
 
@@ -1106,29 +1241,43 @@ export class ProjectOptimizationService {
   /**
    * Analyze all images
    */
-  analyzeImages(images: ImageAsset[], workflows: Workflow[], states: State[]): ImageAnalysis[] {
-    return images.map(image => {
+  analyzeImages(
+    images: ImageAsset[],
+    workflows: Workflow[],
+    states: State[]
+  ): ImageAnalysis[] {
+    return images.map((image) => {
       // Find usage
-      const usedIn: Array<{ type: 'state' | 'workflow'; id: string; name: string }> = [];
+      const usedIn: Array<{
+        type: "state" | "workflow";
+        id: string;
+        name: string;
+      }> = [];
 
       // Check states
-      states.forEach(state => {
-        const usedInState = state.stateImages.some(si =>
-          si.patterns.some(p => p.imageId === image.id)
+      states.forEach((state) => {
+        const usedInState = state.stateImages.some((si) =>
+          si.patterns.some((p) => p.imageId === image.id)
         );
         if (usedInState) {
-          usedIn.push({ type: 'state', id: state.id, name: state.name });
+          usedIn.push({ type: "state", id: state.id, name: state.name });
         }
       });
 
       // Check workflows (actions with image configs)
-      workflows.forEach(workflow => {
-        const usedInWorkflow = workflow.actions.some(action => {
+      workflows.forEach((workflow) => {
+        const usedInWorkflow = workflow.actions.some((action) => {
           const config = action.config as any;
-          return config.target?.image === image.id || config.imageId === image.id;
+          return (
+            config.target?.image === image.id || config.imageId === image.id
+          );
         });
         if (usedInWorkflow) {
-          usedIn.push({ type: 'workflow', id: workflow.id, name: workflow.name });
+          usedIn.push({
+            type: "workflow",
+            id: workflow.id,
+            name: workflow.name,
+          });
         }
       });
 
@@ -1142,12 +1291,12 @@ export class ProjectOptimizationService {
       const potentialSavings = canOptimize ? Math.round(image.size * 0.3) : 0; // Assume 30% compression
 
       // Determine status
-      let status: 'healthy' | 'warning' | 'critical' = 'healthy';
+      let status: "healthy" | "warning" | "critical" = "healthy";
       const issues: string[] = [];
 
       if (!isUsed) {
-        status = 'warning';
-        issues.push('Unused image');
+        status = "warning";
+        issues.push("Unused image");
       }
 
       if (duplicates.length > 0) {
@@ -1155,7 +1304,7 @@ export class ProjectOptimizationService {
       }
 
       if (canOptimize) {
-        issues.push('Large file size - can be optimized');
+        issues.push("Large file size - can be optimized");
       }
 
       return {
@@ -1177,22 +1326,30 @@ export class ProjectOptimizationService {
   /**
    * Analyze all transitions
    */
-  analyzeTransitions(transitions: Transition[], workflows: Workflow[], states: State[]): TransitionAnalysis[] {
-    const workflowIds = new Set(workflows.map(w => w.id));
-    const stateIds = new Set(states.map(s => s.id));
+  analyzeTransitions(
+    transitions: Transition[],
+    workflows: Workflow[],
+    states: State[]
+  ): TransitionAnalysis[] {
+    const workflowIds = new Set(workflows.map((w) => w.id));
+    const stateIds = new Set(states.map((s) => s.id));
 
-    return transitions.map(transition => {
+    return transitions.map((transition) => {
       const brokenReferences: BrokenReference[] = [];
 
       // Check state references
       let hasValidStates = true;
 
-      if (transition.type === 'OutgoingTransition') {
+      if (transition.type === "OutgoingTransition") {
         if (!stateIds.has(transition.fromState)) {
           hasValidStates = false;
           brokenReferences.push({
-            type: 'state',
-            source: { type: 'transition', id: transition.id, name: transition.id },
+            type: "state",
+            source: {
+              type: "transition",
+              id: transition.id,
+              name: transition.id,
+            },
             referencedId: transition.fromState,
             message: `From state "${transition.fromState}" does not exist`,
           });
@@ -1201,19 +1358,27 @@ export class ProjectOptimizationService {
         if (transition.toState && !stateIds.has(transition.toState)) {
           hasValidStates = false;
           brokenReferences.push({
-            type: 'state',
-            source: { type: 'transition', id: transition.id, name: transition.id },
+            type: "state",
+            source: {
+              type: "transition",
+              id: transition.id,
+              name: transition.id,
+            },
             referencedId: transition.toState,
             message: `To state "${transition.toState}" does not exist`,
           });
         }
 
-        transition.activateStates.forEach(stateId => {
+        transition.activateStates.forEach((stateId) => {
           if (!stateIds.has(stateId)) {
             hasValidStates = false;
             brokenReferences.push({
-              type: 'state',
-              source: { type: 'transition', id: transition.id, name: transition.id },
+              type: "state",
+              source: {
+                type: "transition",
+                id: transition.id,
+                name: transition.id,
+              },
               referencedId: stateId,
               message: `Activate state "${stateId}" does not exist`,
             });
@@ -1223,8 +1388,12 @@ export class ProjectOptimizationService {
         if (!stateIds.has(transition.toState)) {
           hasValidStates = false;
           brokenReferences.push({
-            type: 'state',
-            source: { type: 'transition', id: transition.id, name: transition.id },
+            type: "state",
+            source: {
+              type: "transition",
+              id: transition.id,
+              name: transition.id,
+            },
             referencedId: transition.toState,
             message: `To state "${transition.toState}" does not exist`,
           });
@@ -1233,12 +1402,16 @@ export class ProjectOptimizationService {
 
       // Check workflow references
       let hasValidWorkflows = true;
-      transition.workflows.forEach(workflowId => {
+      transition.workflows.forEach((workflowId) => {
         if (!workflowIds.has(workflowId)) {
           hasValidWorkflows = false;
           brokenReferences.push({
-            type: 'workflow',
-            source: { type: 'transition', id: transition.id, name: transition.id },
+            type: "workflow",
+            source: {
+              type: "transition",
+              id: transition.id,
+              name: transition.id,
+            },
             referencedId: workflowId,
             message: `Workflow "${workflowId}" does not exist`,
           });
@@ -1249,16 +1422,16 @@ export class ProjectOptimizationService {
       const isCircular = this.isTransitionCircular(transition, transitions);
 
       // Determine status
-      let status: 'healthy' | 'warning' | 'critical' = 'healthy';
+      let status: "healthy" | "warning" | "critical" = "healthy";
       const issues: string[] = [];
 
       if (brokenReferences.length > 0) {
-        status = 'critical';
+        status = "critical";
         issues.push(`${brokenReferences.length} broken references`);
       }
 
       if (isCircular) {
-        issues.push('Part of circular dependency');
+        issues.push("Part of circular dependency");
       }
 
       return {
@@ -1290,86 +1463,86 @@ export class ProjectOptimizationService {
     let suggestionId = 1;
 
     // Unused images
-    const unusedImages = images.filter(i => !i.isUsed);
+    const unusedImages = images.filter((i) => !i.isUsed);
     if (unusedImages.length > 0) {
       const totalSize = unusedImages.reduce((sum, i) => sum + i.size, 0);
       suggestions.push({
         id: `opt-${suggestionId++}`,
-        type: 'delete-unused-images',
-        priority: totalSize > 10_000_000 ? 'high' : 'medium',
+        type: "delete-unused-images",
+        priority: totalSize > 10_000_000 ? "high" : "medium",
         title: `Delete ${unusedImages.length} unused images`,
         description: `Found ${unusedImages.length} images that are not referenced anywhere. Removing them will save ${this.formatBytes(totalSize)}.`,
-        affectedResources: unusedImages.map(i => ({
-          type: 'image',
+        affectedResources: unusedImages.map((i) => ({
+          type: "image",
           id: i.imageId,
           name: i.name,
         })),
         impact: {
           storageSavings: totalSize,
-          maintainabilityGain: 'medium',
+          maintainabilityGain: "medium",
         },
         autoFixable: true,
       });
     }
 
     // Workflows without tests
-    const untestedWorkflows = workflows.filter(w => !w.hasTesting);
+    const untestedWorkflows = workflows.filter((w) => !w.hasTesting);
     if (untestedWorkflows.length > 0) {
       suggestions.push({
         id: `opt-${suggestionId++}`,
-        type: 'add-tests',
-        priority: untestedWorkflows.length > 10 ? 'high' : 'medium',
+        type: "add-tests",
+        priority: untestedWorkflows.length > 10 ? "high" : "medium",
         title: `Add tests to ${untestedWorkflows.length} workflows`,
         description: `${untestedWorkflows.length} workflows lack automated tests. Adding tests will improve reliability.`,
-        affectedResources: untestedWorkflows.map(w => ({
-          type: 'workflow',
+        affectedResources: untestedWorkflows.map((w) => ({
+          type: "workflow",
           id: w.workflowId,
           name: w.name,
         })),
         impact: {
-          maintainabilityGain: 'high',
+          maintainabilityGain: "high",
         },
         autoFixable: false,
       });
     }
 
     // Workflows without documentation
-    const undocumentedWorkflows = workflows.filter(w => !w.hasDocumentation);
+    const undocumentedWorkflows = workflows.filter((w) => !w.hasDocumentation);
     if (undocumentedWorkflows.length > 0) {
       suggestions.push({
         id: `opt-${suggestionId++}`,
-        type: 'add-documentation',
-        priority: undocumentedWorkflows.length > 10 ? 'high' : 'medium',
+        type: "add-documentation",
+        priority: undocumentedWorkflows.length > 10 ? "high" : "medium",
         title: `Document ${undocumentedWorkflows.length} workflows`,
         description: `${undocumentedWorkflows.length} workflows lack documentation. Adding documentation will improve maintainability.`,
-        affectedResources: undocumentedWorkflows.map(w => ({
-          type: 'workflow',
+        affectedResources: undocumentedWorkflows.map((w) => ({
+          type: "workflow",
           id: w.workflowId,
           name: w.name,
         })),
         impact: {
-          maintainabilityGain: 'high',
+          maintainabilityGain: "high",
         },
         autoFixable: true, // Can auto-generate
       });
     }
 
     // Unorganized workflows
-    const unorganizedWorkflows = workflows.filter(w => !w.isOrganized);
+    const unorganizedWorkflows = workflows.filter((w) => !w.isOrganized);
     if (unorganizedWorkflows.length > 0) {
       suggestions.push({
         id: `opt-${suggestionId++}`,
-        type: 'organize-folders',
-        priority: unorganizedWorkflows.length > 20 ? 'high' : 'low',
+        type: "organize-folders",
+        priority: unorganizedWorkflows.length > 20 ? "high" : "low",
         title: `Organize ${unorganizedWorkflows.length} workflows into folders`,
         description: `${unorganizedWorkflows.length} workflows are not organized. Organizing them will improve navigation.`,
-        affectedResources: unorganizedWorkflows.map(w => ({
-          type: 'workflow',
+        affectedResources: unorganizedWorkflows.map((w) => ({
+          type: "workflow",
           id: w.workflowId,
           name: w.name,
         })),
         impact: {
-          maintainabilityGain: 'medium',
+          maintainabilityGain: "medium",
         },
         autoFixable: true,
       });
@@ -1377,122 +1550,134 @@ export class ProjectOptimizationService {
 
     // Broken references
     const withBrokenRefs = [
-      ...workflows.filter(w => w.brokenReferences.length > 0).map(w => ({
-        type: 'workflow' as const,
-        id: w.workflowId,
-        name: w.name,
-        count: w.brokenReferences.length,
-      })),
-      ...states.filter(s => s.brokenReferences.length > 0).map(s => ({
-        type: 'state' as const,
-        id: s.stateId,
-        name: s.name,
-        count: s.brokenReferences.length,
-      })),
+      ...workflows
+        .filter((w) => w.brokenReferences.length > 0)
+        .map((w) => ({
+          type: "workflow" as const,
+          id: w.workflowId,
+          name: w.name,
+          count: w.brokenReferences.length,
+        })),
+      ...states
+        .filter((s) => s.brokenReferences.length > 0)
+        .map((s) => ({
+          type: "state" as const,
+          id: s.stateId,
+          name: s.name,
+          count: s.brokenReferences.length,
+        })),
     ];
 
     if (withBrokenRefs.length > 0) {
       const totalBroken = withBrokenRefs.reduce((sum, r) => sum + r.count, 0);
       suggestions.push({
         id: `opt-${suggestionId++}`,
-        type: 'fix-broken-references',
-        priority: 'critical',
+        type: "fix-broken-references",
+        priority: "critical",
         title: `Fix ${totalBroken} broken references`,
         description: `Found ${totalBroken} broken references across ${withBrokenRefs.length} resources. These can cause runtime errors.`,
-        affectedResources: withBrokenRefs.map(r => ({
+        affectedResources: withBrokenRefs.map((r) => ({
           type: r.type,
           id: r.id,
           name: r.name,
         })),
         impact: {
-          maintainabilityGain: 'high',
+          maintainabilityGain: "high",
         },
         autoFixable: false,
       });
     }
 
     // High complexity workflows
-    const highComplexity = workflows.filter(w => w.complexity.complexityScore > 75);
+    const highComplexity = workflows.filter(
+      (w) => w.complexity.complexityScore > 75
+    );
     if (highComplexity.length > 0) {
       suggestions.push({
         id: `opt-${suggestionId++}`,
-        type: 'reduce-complexity',
-        priority: highComplexity.length > 5 ? 'high' : 'medium',
+        type: "reduce-complexity",
+        priority: highComplexity.length > 5 ? "high" : "medium",
         title: `Reduce complexity in ${highComplexity.length} workflows`,
         description: `${highComplexity.length} workflows have high complexity. Consider breaking them into smaller workflows.`,
-        affectedResources: highComplexity.map(w => ({
-          type: 'workflow',
+        affectedResources: highComplexity.map((w) => ({
+          type: "workflow",
           id: w.workflowId,
           name: w.name,
         })),
         impact: {
-          maintainabilityGain: 'high',
+          maintainabilityGain: "high",
         },
         autoFixable: false,
       });
     }
 
     // Orphaned states
-    const orphanedStates = states.filter(s => !s.isUsed && !s.brokenReferences.length);
+    const orphanedStates = states.filter(
+      (s) => !s.isUsed && !s.brokenReferences.length
+    );
     if (orphanedStates.length > 0) {
       suggestions.push({
         id: `opt-${suggestionId++}`,
-        type: 'remove-orphaned-states',
-        priority: 'medium',
+        type: "remove-orphaned-states",
+        priority: "medium",
         title: `Remove ${orphanedStates.length} orphaned states`,
         description: `${orphanedStates.length} states are not referenced by any transitions. Consider removing them.`,
-        affectedResources: orphanedStates.map(s => ({
-          type: 'state',
+        affectedResources: orphanedStates.map((s) => ({
+          type: "state",
           id: s.stateId,
           name: s.name,
         })),
         impact: {
-          maintainabilityGain: 'medium',
+          maintainabilityGain: "medium",
         },
         autoFixable: true,
       });
     }
 
     // Duplicate images
-    const withDuplicates = images.filter(i => i.duplicates.length > 0);
+    const withDuplicates = images.filter((i) => i.duplicates.length > 0);
     if (withDuplicates.length > 0) {
       suggestions.push({
         id: `opt-${suggestionId++}`,
-        type: 'consolidate-duplicates',
-        priority: 'low',
+        type: "consolidate-duplicates",
+        priority: "low",
         title: `Consolidate ${withDuplicates.length} potential duplicate images`,
         description: `Found ${withDuplicates.length} images with potential duplicates. Review and consolidate to save space.`,
-        affectedResources: withDuplicates.map(i => ({
-          type: 'image',
+        affectedResources: withDuplicates.map((i) => ({
+          type: "image",
           id: i.imageId,
           name: i.name,
         })),
         impact: {
-          storageSavings: withDuplicates.reduce((sum, i) => sum + i.size, 0) / 2,
-          maintainabilityGain: 'low',
+          storageSavings:
+            withDuplicates.reduce((sum, i) => sum + i.size, 0) / 2,
+          maintainabilityGain: "low",
         },
         autoFixable: false,
       });
     }
 
     // Large images
-    const largeImages = images.filter(i => i.canOptimize);
+    const largeImages = images.filter((i) => i.canOptimize);
     if (largeImages.length > 0) {
-      const totalSavings = largeImages.reduce((sum, i) => sum + i.potentialSavings, 0);
+      const totalSavings = largeImages.reduce(
+        (sum, i) => sum + i.potentialSavings,
+        0
+      );
       suggestions.push({
         id: `opt-${suggestionId++}`,
-        type: 'optimize-storage',
-        priority: totalSavings > 50_000_000 ? 'high' : 'low',
+        type: "optimize-storage",
+        priority: totalSavings > 50_000_000 ? "high" : "low",
         title: `Optimize ${largeImages.length} large images`,
         description: `${largeImages.length} images are larger than 500KB. Optimizing them could save ${this.formatBytes(totalSavings)}.`,
-        affectedResources: largeImages.map(i => ({
-          type: 'image',
+        affectedResources: largeImages.map((i) => ({
+          type: "image",
           id: i.imageId,
           name: i.name,
         })),
         impact: {
           storageSavings: totalSavings,
-          performanceGain: 'medium',
+          performanceGain: "medium",
         },
         autoFixable: true,
       });
@@ -1511,9 +1696,13 @@ export class ProjectOptimizationService {
   /**
    * Find unused images
    */
-  findUnusedImages(images: ImageAsset[], workflows: Workflow[], states: State[]): string[] {
+  findUnusedImages(
+    images: ImageAsset[],
+    workflows: Workflow[],
+    states: State[]
+  ): string[] {
     const analyses = this.analyzeImages(images, workflows, states);
-    return analyses.filter(a => !a.isUsed).map(a => a.imageId);
+    return analyses.filter((a) => !a.isUsed).map((a) => a.imageId);
   }
 
   /**
@@ -1521,7 +1710,7 @@ export class ProjectOptimizationService {
    */
   findUnusedStates(states: State[], transitions: Transition[]): string[] {
     const analyses = this.analyzeStates(states, transitions, []);
-    return analyses.filter(a => !a.isUsed).map(a => a.stateId);
+    return analyses.filter((a) => !a.isUsed).map((a) => a.stateId);
   }
 
   /**
@@ -1537,19 +1726,19 @@ export class ProjectOptimizationService {
   findOrphanedStates(states: State[], transitions: Transition[]): string[] {
     const statesInTransitions = new Set<string>();
 
-    transitions.forEach(t => {
-      if (t.type === 'OutgoingTransition') {
+    transitions.forEach((t) => {
+      if (t.type === "OutgoingTransition") {
         statesInTransitions.add(t.fromState);
         if (t.toState) statesInTransitions.add(t.toState);
-        t.activateStates.forEach(id => statesInTransitions.add(id));
+        t.activateStates.forEach((id) => statesInTransitions.add(id));
       } else {
         statesInTransitions.add(t.toState);
       }
     });
 
     return states
-      .filter(s => !statesInTransitions.has(s.id) && !s.initial)
-      .map(s => s.id);
+      .filter((s) => !statesInTransitions.has(s.id) && !s.initial)
+      .map((s) => s.id);
   }
 
   // ==========================================================================
@@ -1566,7 +1755,7 @@ export class ProjectOptimizationService {
   ): DuplicateMatch[] {
     const duplicates: DuplicateMatch[] = [];
 
-    allImages.forEach(other => {
+    allImages.forEach((other) => {
       if (other.id === image.id) return;
 
       // Exact name match
@@ -1575,8 +1764,8 @@ export class ProjectOptimizationService {
           id: other.id,
           name: other.name,
           similarity: 1.0,
-          matchType: 'exact',
-          details: 'Exact name match',
+          matchType: "exact",
+          details: "Exact name match",
         });
         return;
       }
@@ -1590,21 +1779,24 @@ export class ProjectOptimizationService {
             id: other.id,
             name: other.name,
             similarity,
-            matchType: 'similar',
+            matchType: "similar",
             details: `Similar size: ${this.formatBytes(other.size)}`,
           });
         }
       }
 
       // Name similarity (basic)
-      const nameSimilarity = this.calculateStringSimilarity(image.name, other.name);
+      const nameSimilarity = this.calculateStringSimilarity(
+        image.name,
+        other.name
+      );
       if (nameSimilarity >= threshold) {
         duplicates.push({
           id: other.id,
           name: other.name,
           similarity: nameSimilarity,
-          matchType: 'potential',
-          details: 'Similar name',
+          matchType: "potential",
+          details: "Similar name",
         });
       }
     });
@@ -1615,10 +1807,14 @@ export class ProjectOptimizationService {
   /**
    * Find duplicate states
    */
-  findDuplicateStates(state: State, allStates: State[], threshold: number = 0.9): DuplicateMatch[] {
+  findDuplicateStates(
+    state: State,
+    allStates: State[],
+    threshold: number = 0.9
+  ): DuplicateMatch[] {
     const duplicates: DuplicateMatch[] = [];
 
-    allStates.forEach(other => {
+    allStates.forEach((other) => {
       if (other.id === state.id) return;
 
       // Exact name match
@@ -1627,25 +1823,33 @@ export class ProjectOptimizationService {
           id: other.id,
           name: other.name,
           similarity: 1.0,
-          matchType: 'exact',
-          details: 'Exact name match',
+          matchType: "exact",
+          details: "Exact name match",
         });
         return;
       }
 
       // Structure similarity
-      const imageCountSimilar = state.stateImages.length === other.stateImages.length;
+      const imageCountSimilar =
+        state.stateImages.length === other.stateImages.length;
       const regionCountSimilar = state.regions.length === other.regions.length;
 
-      if (imageCountSimilar && regionCountSimilar && state.stateImages.length > 0) {
-        const nameSimilarity = this.calculateStringSimilarity(state.name, other.name);
+      if (
+        imageCountSimilar &&
+        regionCountSimilar &&
+        state.stateImages.length > 0
+      ) {
+        const nameSimilarity = this.calculateStringSimilarity(
+          state.name,
+          other.name
+        );
         if (nameSimilarity >= threshold) {
           duplicates.push({
             id: other.id,
             name: other.name,
             similarity: nameSimilarity,
-            matchType: 'potential',
-            details: 'Similar structure and name',
+            matchType: "potential",
+            details: "Similar structure and name",
           });
         }
       }
@@ -1664,7 +1868,7 @@ export class ProjectOptimizationService {
   ): DuplicateMatch[] {
     const duplicates: DuplicateMatch[] = [];
 
-    allWorkflows.forEach(other => {
+    allWorkflows.forEach((other) => {
       if (other.id === workflow.id) return;
 
       // Exact name match
@@ -1673,8 +1877,8 @@ export class ProjectOptimizationService {
           id: other.id,
           name: other.name,
           similarity: 1.0,
-          matchType: 'exact',
-          details: 'Exact name match',
+          matchType: "exact",
+          details: "Exact name match",
         });
         return;
       }
@@ -1683,17 +1887,20 @@ export class ProjectOptimizationService {
       const actionCountSame = other.actions.length === workflow.actions.length;
       if (actionCountSame && workflow.actions.length > 0) {
         // Compare action types
-        const workflowTypes = workflow.actions.map(a => a.type).join(',');
-        const otherTypes = other.actions.map(a => a.type).join(',');
+        const workflowTypes = workflow.actions.map((a) => a.type).join(",");
+        const otherTypes = other.actions.map((a) => a.type).join(",");
 
         if (workflowTypes === otherTypes) {
-          const nameSimilarity = this.calculateStringSimilarity(workflow.name, other.name);
+          const nameSimilarity = this.calculateStringSimilarity(
+            workflow.name,
+            other.name
+          );
           duplicates.push({
             id: other.id,
             name: other.name,
             similarity: nameSimilarity,
-            matchType: 'potential',
-            details: 'Identical action sequence',
+            matchType: "potential",
+            details: "Identical action sequence",
           });
         }
       }
@@ -1717,16 +1924,25 @@ export class ProjectOptimizationService {
   ): BrokenReference[] {
     const broken: BrokenReference[] = [];
 
-    workflows.forEach(workflow => {
-      broken.push(...this.findBrokenWorkflowReferences(workflow, workflows, states, images));
+    workflows.forEach((workflow) => {
+      broken.push(
+        ...this.findBrokenWorkflowReferences(
+          workflow,
+          workflows,
+          states,
+          images
+        )
+      );
     });
 
-    states.forEach(state => {
+    states.forEach((state) => {
       broken.push(...this.findBrokenStateReferences(state, images));
     });
 
-    transitions.forEach(transition => {
-      broken.push(...this.findBrokenTransitionReferences(transition, workflows, states));
+    transitions.forEach((transition) => {
+      broken.push(
+        ...this.findBrokenTransitionReferences(transition, workflows, states)
+      );
     });
 
     return broken;
@@ -1742,18 +1958,18 @@ export class ProjectOptimizationService {
     images: ImageAsset[]
   ): BrokenReference[] {
     const broken: BrokenReference[] = [];
-    const workflowIds = new Set(allWorkflows.map(w => w.id));
-    const stateIds = new Set(states.map(s => s.id));
-    const imageIds = new Set(images.map(i => i.id));
+    const workflowIds = new Set(allWorkflows.map((w) => w.id));
+    const stateIds = new Set(states.map((s) => s.id));
+    const imageIds = new Set(images.map((i) => i.id));
 
-    workflow.actions.forEach(action => {
+    workflow.actions.forEach((action) => {
       // Check RUN_WORKFLOW actions
-      if (action.type === 'RUN_WORKFLOW') {
+      if (action.type === "RUN_WORKFLOW") {
         const config = action.config as any;
         if (config.workflowId && !workflowIds.has(config.workflowId)) {
           broken.push({
-            type: 'workflow',
-            source: { type: 'workflow', id: workflow.id, name: workflow.name },
+            type: "workflow",
+            source: { type: "workflow", id: workflow.id, name: workflow.name },
             referencedId: config.workflowId,
             location: action.id,
             message: `Action "${action.name || action.id}" references missing workflow "${config.workflowId}"`,
@@ -1762,12 +1978,12 @@ export class ProjectOptimizationService {
       }
 
       // Check GO_TO_STATE actions
-      if (action.type === 'GO_TO_STATE') {
+      if (action.type === "GO_TO_STATE") {
         const config = action.config as any;
         if (config.stateId && !stateIds.has(config.stateId)) {
           broken.push({
-            type: 'state',
-            source: { type: 'workflow', id: workflow.id, name: workflow.name },
+            type: "state",
+            source: { type: "workflow", id: workflow.id, name: workflow.name },
             referencedId: config.stateId,
             location: action.id,
             message: `Action "${action.name || action.id}" references missing state "${config.stateId}"`,
@@ -1779,8 +1995,8 @@ export class ProjectOptimizationService {
       const config = action.config as any;
       if (config.target?.image && !imageIds.has(config.target.image)) {
         broken.push({
-          type: 'image',
-          source: { type: 'workflow', id: workflow.id, name: workflow.name },
+          type: "image",
+          source: { type: "workflow", id: workflow.id, name: workflow.name },
           referencedId: config.target.image,
           location: action.id,
           message: `Action "${action.name || action.id}" references missing image "${config.target.image}"`,
@@ -1789,8 +2005,8 @@ export class ProjectOptimizationService {
 
       if (config.imageId && !imageIds.has(config.imageId)) {
         broken.push({
-          type: 'image',
-          source: { type: 'workflow', id: workflow.id, name: workflow.name },
+          type: "image",
+          source: { type: "workflow", id: workflow.id, name: workflow.name },
           referencedId: config.imageId,
           location: action.id,
           message: `Action "${action.name || action.id}" references missing image "${config.imageId}"`,
@@ -1804,16 +2020,19 @@ export class ProjectOptimizationService {
   /**
    * Find broken references in a state
    */
-  findBrokenStateReferences(state: State, images: ImageAsset[]): BrokenReference[] {
+  findBrokenStateReferences(
+    state: State,
+    images: ImageAsset[]
+  ): BrokenReference[] {
     const broken: BrokenReference[] = [];
-    const imageIds = new Set(images.map(i => i.id));
+    const imageIds = new Set(images.map((i) => i.id));
 
-    state.stateImages.forEach(stateImage => {
-      stateImage.patterns.forEach(pattern => {
+    state.stateImages.forEach((stateImage) => {
+      stateImage.patterns.forEach((pattern) => {
         if (pattern.imageId && !imageIds.has(pattern.imageId)) {
           broken.push({
-            type: 'image',
-            source: { type: 'state', id: state.id, name: state.name },
+            type: "image",
+            source: { type: "state", id: state.id, name: state.name },
             referencedId: pattern.imageId,
             location: stateImage.id,
             message: `State image "${stateImage.name}" pattern references missing image "${pattern.imageId}"`,
@@ -1834,15 +2053,19 @@ export class ProjectOptimizationService {
     states: State[]
   ): BrokenReference[] {
     const broken: BrokenReference[] = [];
-    const workflowIds = new Set(workflows.map(w => w.id));
-    const stateIds = new Set(states.map(s => s.id));
+    const workflowIds = new Set(workflows.map((w) => w.id));
+    const stateIds = new Set(states.map((s) => s.id));
 
     // Check workflow references
-    transition.workflows.forEach(workflowId => {
+    transition.workflows.forEach((workflowId) => {
       if (!workflowIds.has(workflowId)) {
         broken.push({
-          type: 'workflow',
-          source: { type: 'transition', id: transition.id, name: transition.id },
+          type: "workflow",
+          source: {
+            type: "transition",
+            id: transition.id,
+            name: transition.id,
+          },
           referencedId: workflowId,
           message: `Transition references missing workflow "${workflowId}"`,
         });
@@ -1850,11 +2073,15 @@ export class ProjectOptimizationService {
     });
 
     // Check state references
-    if (transition.type === 'OutgoingTransition') {
+    if (transition.type === "OutgoingTransition") {
       if (!stateIds.has(transition.fromState)) {
         broken.push({
-          type: 'state',
-          source: { type: 'transition', id: transition.id, name: transition.id },
+          type: "state",
+          source: {
+            type: "transition",
+            id: transition.id,
+            name: transition.id,
+          },
           referencedId: transition.fromState,
           message: `Transition references missing from state "${transition.fromState}"`,
         });
@@ -1862,18 +2089,26 @@ export class ProjectOptimizationService {
 
       if (transition.toState && !stateIds.has(transition.toState)) {
         broken.push({
-          type: 'state',
-          source: { type: 'transition', id: transition.id, name: transition.id },
+          type: "state",
+          source: {
+            type: "transition",
+            id: transition.id,
+            name: transition.id,
+          },
           referencedId: transition.toState,
           message: `Transition references missing to state "${transition.toState}"`,
         });
       }
 
-      transition.activateStates.forEach(stateId => {
+      transition.activateStates.forEach((stateId) => {
         if (!stateIds.has(stateId)) {
           broken.push({
-            type: 'state',
-            source: { type: 'transition', id: transition.id, name: transition.id },
+            type: "state",
+            source: {
+              type: "transition",
+              id: transition.id,
+              name: transition.id,
+            },
             referencedId: stateId,
             message: `Transition references missing activate state "${stateId}"`,
           });
@@ -1882,8 +2117,12 @@ export class ProjectOptimizationService {
     } else {
       if (!stateIds.has(transition.toState)) {
         broken.push({
-          type: 'state',
-          source: { type: 'transition', id: transition.id, name: transition.id },
+          type: "state",
+          source: {
+            type: "transition",
+            id: transition.id,
+            name: transition.id,
+          },
           referencedId: transition.toState,
           message: `Transition references missing to state "${transition.toState}"`,
         });
@@ -1915,20 +2154,26 @@ export class ProjectOptimizationService {
     const transitionStorage = transitions.length * 256; // ~256B per transition
 
     // Storage from localStorage
-    const testStorage = this.estimateLocalStorageSize('workflow-test-');
-    const docStorage = this.estimateLocalStorageSize('workflow-documentation');
+    const testStorage = this.estimateLocalStorageSize("workflow-test-");
+    const docStorage = this.estimateLocalStorageSize("workflow-documentation");
 
-    const total = imageStorage + workflowStorage + stateStorage + transitionStorage + testStorage + docStorage;
+    const total =
+      imageStorage +
+      workflowStorage +
+      stateStorage +
+      transitionStorage +
+      testStorage +
+      docStorage;
 
     // Breakdown by folder
     const byFolder: Record<string, number> = {};
-    workflows.forEach(workflow => {
-      const folder = workflow.category || 'Uncategorized';
+    workflows.forEach((workflow) => {
+      const folder = workflow.category || "Uncategorized";
       byFolder[folder] = (byFolder[folder] || 0) + 1024;
     });
 
     // Calculate potential savings
-    const unusedImages = images.filter(img => {
+    const unusedImages = images.filter((img) => {
       const analyses = this.analyzeImages([img], workflows, states);
       return !analyses[0].isUsed;
     });
@@ -1962,7 +2207,11 @@ export class ProjectOptimizationService {
   /**
    * Estimate storage savings from optimizations
    */
-  estimateStorageSavings(images: ImageAsset[], workflows: Workflow[], states: State[]): number {
+  estimateStorageSavings(
+    images: ImageAsset[],
+    workflows: Workflow[],
+    states: State[]
+  ): number {
     const storage = this.getStorageUsage(workflows, states, images, []);
     return storage.potentialSavings;
   }
@@ -1973,8 +2222,8 @@ export class ProjectOptimizationService {
   getImageStorageBreakdown(images: ImageAsset[]): Record<string, number> {
     const breakdown: Record<string, number> = {};
 
-    images.forEach(image => {
-      const category = image.source || 'unknown';
+    images.forEach((image) => {
+      const category = image.source || "unknown";
       breakdown[category] = (breakdown[category] || 0) + image.size;
     });
 
@@ -1989,19 +2238,24 @@ export class ProjectOptimizationService {
    * Get complexity distribution
    */
   getComplexityDistribution(workflows: Workflow[]): ComplexityReport {
-    const distribution = workflowComplexityAnalyzer.getComplexityDistribution(workflows);
+    const distribution =
+      workflowComplexityAnalyzer.getComplexityDistribution(workflows);
 
-    const scores = workflows.map(w => workflowComplexityAnalyzer.getComplexityScore(w));
+    const scores = workflows.map((w) =>
+      workflowComplexityAnalyzer.getComplexityScore(w)
+    );
     const sortedScores = [...scores].sort((a, b) => a - b);
-    const median = sortedScores.length > 0
-      ? sortedScores[Math.floor(sortedScores.length / 2)]
-      : 0;
+    const median =
+      sortedScores.length > 0
+        ? sortedScores[Math.floor(sortedScores.length / 2)]
+        : 0;
 
-    const highComplexity = workflowComplexityAnalyzer.getComplexWorkflows(workflows, 50)
-      .map(item => ({
+    const highComplexity = workflowComplexityAnalyzer
+      .getComplexWorkflows(workflows, 50)
+      .map((item) => ({
         id: item.workflow.id,
         name: item.workflow.name,
-        type: 'workflow' as const,
+        type: "workflow" as const,
         score: item.analysis.complexityScore,
       }));
 
@@ -2010,7 +2264,7 @@ export class ProjectOptimizationService {
         low: distribution.byRating.low,
         medium: distribution.byRating.medium,
         high: distribution.byRating.high,
-        veryHigh: distribution.byRating['very-high'],
+        veryHigh: distribution.byRating["very-high"],
       },
       average: distribution.averageScore,
       median,
@@ -2021,17 +2275,21 @@ export class ProjectOptimizationService {
   /**
    * Find high complexity resources
    */
-  findHighComplexityResources(workflows: Workflow[], threshold: number = 50): Array<{
+  findHighComplexityResources(
+    workflows: Workflow[],
+    threshold: number = 50
+  ): Array<{
     id: string;
     name: string;
-    type: 'workflow';
+    type: "workflow";
     score: number;
   }> {
-    return workflowComplexityAnalyzer.getComplexWorkflows(workflows, threshold)
-      .map(item => ({
+    return workflowComplexityAnalyzer
+      .getComplexWorkflows(workflows, threshold)
+      .map((item) => ({
         id: item.workflow.id,
         name: item.workflow.name,
-        type: 'workflow' as const,
+        type: "workflow" as const,
         score: item.analysis.complexityScore,
       }));
   }
@@ -2040,8 +2298,9 @@ export class ProjectOptimizationService {
    * Suggest complexity reductions
    */
   suggestComplexityReductions(workflow: Workflow): string[] {
-    const suggestions = workflowComplexityAnalyzer.suggestSimplifications(workflow);
-    return suggestions.map(s => s.recommendation);
+    const suggestions =
+      workflowComplexityAnalyzer.suggestSimplifications(workflow);
+    return suggestions.map((s) => s.recommendation);
   }
 
   /**
@@ -2055,7 +2314,8 @@ export class ProjectOptimizationService {
     const stringCount = state.strings.length;
 
     // Weighted sum
-    const score = imageCount * 10 + regionCount * 5 + locationCount * 3 + stringCount * 2;
+    const score =
+      imageCount * 10 + regionCount * 5 + locationCount * 3 + stringCount * 2;
 
     // Normalize to 0-100
     return Math.min(100, score);
@@ -2068,25 +2328,24 @@ export class ProjectOptimizationService {
   /**
    * Calculate test coverage
    */
-  calculateTestCoverage(workflows: Workflow[]): CoverageReport['testCoverage'] {
+  calculateTestCoverage(workflows: Workflow[]): CoverageReport["testCoverage"] {
     const tested = new Set<string>();
     const allTests = workflowTestingService.getAllTests();
 
-    allTests.forEach(test => {
+    allTests.forEach((test) => {
       if (test.enabled !== false) {
         tested.add(test.workflowId);
       }
     });
 
-    const overall = workflows.length > 0
-      ? (tested.size / workflows.length) * 100
-      : 0;
+    const overall =
+      workflows.length > 0 ? (tested.size / workflows.length) * 100 : 0;
 
     const byFolder: Record<string, number> = {};
     const folderCounts: Record<string, { total: number; tested: number }> = {};
 
-    workflows.forEach(workflow => {
-      const folder = workflow.category || 'Uncategorized';
+    workflows.forEach((workflow) => {
+      const folder = workflow.category || "Uncategorized";
       if (!folderCounts[folder]) {
         folderCounts[folder] = { total: 0, tested: 0 };
       }
@@ -2101,8 +2360,8 @@ export class ProjectOptimizationService {
     });
 
     const untested = workflows
-      .filter(w => !tested.has(w.id))
-      .map(w => w.id);
+      .filter((w) => !tested.has(w.id))
+      .map((w) => w.id);
 
     return {
       overall,
@@ -2114,24 +2373,26 @@ export class ProjectOptimizationService {
   /**
    * Calculate documentation coverage
    */
-  calculateDocumentationCoverage(workflows: Workflow[]): CoverageReport['documentationCoverage'] {
+  calculateDocumentationCoverage(
+    workflows: Workflow[]
+  ): CoverageReport["documentationCoverage"] {
     const documented = new Set<string>();
 
-    workflows.forEach(workflow => {
+    workflows.forEach((workflow) => {
       if (this.documentationService.hasDocumentation(workflow.id)) {
         documented.add(workflow.id);
       }
     });
 
-    const overall = workflows.length > 0
-      ? (documented.size / workflows.length) * 100
-      : 0;
+    const overall =
+      workflows.length > 0 ? (documented.size / workflows.length) * 100 : 0;
 
     const byFolder: Record<string, number> = {};
-    const folderCounts: Record<string, { total: number; documented: number }> = {};
+    const folderCounts: Record<string, { total: number; documented: number }> =
+      {};
 
-    workflows.forEach(workflow => {
-      const folder = workflow.category || 'Uncategorized';
+    workflows.forEach((workflow) => {
+      const folder = workflow.category || "Uncategorized";
       if (!folderCounts[folder]) {
         folderCounts[folder] = { total: 0, documented: 0 };
       }
@@ -2146,8 +2407,8 @@ export class ProjectOptimizationService {
     });
 
     const undocumented = workflows
-      .filter(w => !documented.has(w.id))
-      .map(w => w.id);
+      .filter((w) => !documented.has(w.id))
+      .map((w) => w.id);
 
     return {
       overall,
@@ -2161,8 +2422,8 @@ export class ProjectOptimizationService {
    */
   getUndocumentedResources(workflows: Workflow[]): string[] {
     return workflows
-      .filter(w => !this.documentationService.hasDocumentation(w.id))
-      .map(w => w.id);
+      .filter((w) => !this.documentationService.hasDocumentation(w.id))
+      .map((w) => w.id);
   }
 
   /**
@@ -2187,10 +2448,13 @@ export class ProjectOptimizationService {
   /**
    * Find critical resources (most depended-on)
    */
-  findCriticalResources(workflows: Workflow[], limit: number = 10): Array<{
+  findCriticalResources(
+    workflows: Workflow[],
+    limit: number = 10
+  ): Array<{
     id: string;
     name: string;
-    type: 'workflow';
+    type: "workflow";
     dependentCount: number;
   }> {
     const graph = this.dependencyAnalyzer.buildDependencyGraph(workflows);
@@ -2198,10 +2462,10 @@ export class ProjectOptimizationService {
     return Array.from(graph.nodes.values())
       .sort((a, b) => b.inDegree - a.inDegree)
       .slice(0, limit)
-      .map(node => ({
+      .map((node) => ({
         id: node.id,
         name: node.name,
-        type: 'workflow' as const,
+        type: "workflow" as const,
         dependentCount: node.inDegree,
       }));
   }
@@ -2216,8 +2480,14 @@ export class ProjectOptimizationService {
   /**
    * Get impact analysis for a resource
    */
-  getImpactAnalysis(resourceId: string, type: 'workflow' | 'state' | 'image', workflows: Workflow[], states: State[], images: ImageAsset[]) {
-    if (type === 'workflow') {
+  getImpactAnalysis(
+    resourceId: string,
+    type: "workflow" | "state" | "image",
+    workflows: Workflow[],
+    states: State[],
+    images: ImageAsset[]
+  ) {
+    if (type === "workflow") {
       return this.dependencyAnalyzer.getImpactAnalysis(resourceId, workflows);
     }
 
@@ -2225,11 +2495,11 @@ export class ProjectOptimizationService {
     const affectedWorkflows: string[] = [];
     const affectedStates: string[] = [];
 
-    if (type === 'image') {
+    if (type === "image") {
       // Find states using this image
-      states.forEach(state => {
-        const usesImage = state.stateImages.some(si =>
-          si.patterns.some(p => p.imageId === resourceId)
+      states.forEach((state) => {
+        const usesImage = state.stateImages.some((si) =>
+          si.patterns.some((p) => p.imageId === resourceId)
         );
         if (usesImage) {
           affectedStates.push(state.id);
@@ -2237,20 +2507,22 @@ export class ProjectOptimizationService {
       });
 
       // Find workflows using this image
-      workflows.forEach(workflow => {
-        const usesImage = workflow.actions.some(action => {
+      workflows.forEach((workflow) => {
+        const usesImage = workflow.actions.some((action) => {
           const config = action.config as any;
-          return config.target?.image === resourceId || config.imageId === resourceId;
+          return (
+            config.target?.image === resourceId || config.imageId === resourceId
+          );
         });
         if (usesImage) {
           affectedWorkflows.push(workflow.id);
         }
       });
-    } else if (type === 'state') {
+    } else if (type === "state") {
       // Find workflows using this state
-      workflows.forEach(workflow => {
-        const usesState = workflow.actions.some(action => {
-          if (action.type === 'GO_TO_STATE') {
+      workflows.forEach((workflow) => {
+        const usesState = workflow.actions.some((action) => {
+          if (action.type === "GO_TO_STATE") {
             const config = action.config as any;
             return config.stateId === resourceId;
           }
@@ -2269,7 +2541,14 @@ export class ProjectOptimizationService {
       directDependents: [...affectedWorkflows, ...affectedStates],
       allDependents: [...affectedWorkflows, ...affectedStates],
       criticalPaths: [],
-      impactLevel: totalAffected === 0 ? 'low' : totalAffected <= 2 ? 'medium' : totalAffected <= 5 ? 'high' : 'critical' as const,
+      impactLevel:
+        totalAffected === 0
+          ? "low"
+          : totalAffected <= 2
+            ? "medium"
+            : totalAffected <= 5
+              ? "high"
+              : ("critical" as const),
       affectedCount: totalAffected,
     };
   }
@@ -2277,8 +2556,11 @@ export class ProjectOptimizationService {
   /**
    * Check if transition is circular
    */
-  private isTransitionCircular(transition: Transition, allTransitions: Transition[]): boolean {
-    if (transition.type !== 'OutgoingTransition' || !transition.toState) {
+  private isTransitionCircular(
+    transition: Transition,
+    allTransitions: Transition[]
+  ): boolean {
+    if (transition.type !== "OutgoingTransition" || !transition.toState) {
       return false;
     }
 
@@ -2287,8 +2569,8 @@ export class ProjectOptimizationService {
       if (visited.has(fromState)) return false;
       visited.add(fromState);
 
-      const outgoing = allTransitions.filter(t =>
-        t.type === 'OutgoingTransition' && t.fromState === fromState
+      const outgoing = allTransitions.filter(
+        (t) => t.type === "OutgoingTransition" && t.fromState === fromState
       ) as any[];
 
       for (const t of outgoing) {
@@ -2328,7 +2610,7 @@ export class ProjectOptimizationService {
       },
       errors: [],
       warnings: [],
-      summary: '',
+      summary: "",
     };
 
     try {
@@ -2340,12 +2622,14 @@ export class ProjectOptimizationService {
           // In a real implementation, would delete from backend
           result.changes.imagesRemoved = unusedImageIds.length;
           const savings = unusedImageIds.reduce((sum, id) => {
-            const img = images.find(i => i.id === id);
+            const img = images.find((i) => i.id === id);
             return sum + (img?.size || 0);
           }, 0);
           result.changes.storageSaved += savings;
         } else {
-          result.warnings.push(`Would remove ${unusedImageIds.length} unused images`);
+          result.warnings.push(
+            `Would remove ${unusedImageIds.length} unused images`
+          );
         }
       }
 
@@ -2357,38 +2641,48 @@ export class ProjectOptimizationService {
           // In a real implementation, would delete from backend
           result.changes.statesRemoved = orphanedStateIds.length;
         } else {
-          result.warnings.push(`Would remove ${orphanedStateIds.length} orphaned states`);
+          result.warnings.push(
+            `Would remove ${orphanedStateIds.length} orphaned states`
+          );
         }
       }
 
       // Organize folders
       if (options.organizeFolders) {
-        const unorganized = workflows.filter(w => !w.category || w.category === 'Uncategorized');
+        const unorganized = workflows.filter(
+          (w) => !w.category || w.category === "Uncategorized"
+        );
 
         if (!options.dryRun) {
           // Auto-categorize based on workflow characteristics
           const folders = new Set<string>();
-          unorganized.forEach(workflow => {
+          unorganized.forEach((workflow) => {
             const category = this.suggestCategory(workflow);
-            if (category !== 'Uncategorized') {
+            if (category !== "Uncategorized") {
               folders.add(category);
             }
           });
           result.changes.foldersCreated = folders.size;
         } else {
-          result.warnings.push(`Would organize ${unorganized.length} workflows`);
+          result.warnings.push(
+            `Would organize ${unorganized.length} workflows`
+          );
         }
       }
 
       // Generate summary
-      const totalChanges = Object.values(result.changes).reduce((sum, val) => sum + val, 0);
+      const totalChanges = Object.values(result.changes).reduce(
+        (sum, val) => sum + val,
+        0
+      );
       result.summary = options.dryRun
         ? `Dry run: Would make ${totalChanges} changes`
         : `Successfully made ${totalChanges} optimizations`;
-
     } catch (error) {
       result.success = false;
-      result.errors.push(error instanceof Error ? error.message : 'Unknown error');
+      result.errors.push(
+        error instanceof Error ? error.message : "Unknown error"
+      );
     }
 
     return result;
@@ -2398,24 +2692,31 @@ export class ProjectOptimizationService {
    * Suggest category for workflow
    */
   private suggestCategory(workflow: Workflow): string {
-    const actionTypes = workflow.actions.map(a => a.type);
+    const actionTypes = workflow.actions.map((a) => a.type);
 
     // UI testing
-    if (actionTypes.some(t => ['CLICK', 'TYPE', 'FIND', 'EXISTS'].includes(t))) {
-      return 'UI Testing';
+    if (
+      actionTypes.some((t) => ["CLICK", "TYPE", "FIND", "EXISTS"].includes(t))
+    ) {
+      return "UI Testing";
     }
 
     // Data processing
-    if (actionTypes.some(t => ['FILTER', 'MAP', 'REDUCE', 'SORT'].includes(t))) {
-      return 'Data Processing';
+    if (
+      actionTypes.some((t) => ["FILTER", "MAP", "REDUCE", "SORT"].includes(t))
+    ) {
+      return "Data Processing";
     }
 
     // Control flow heavy
-    if (actionTypes.filter(t => ['IF', 'LOOP', 'SWITCH'].includes(t)).length >= 3) {
-      return 'Business Logic';
+    if (
+      actionTypes.filter((t) => ["IF", "LOOP", "SWITCH"].includes(t)).length >=
+      3
+    ) {
+      return "Business Logic";
     }
 
-    return 'Uncategorized';
+    return "Uncategorized";
   }
 
   // ==========================================================================
@@ -2431,13 +2732,18 @@ export class ProjectOptimizationService {
     images: ImageAsset[],
     transitions: Transition[]
   ): OptimizationReport {
-    const healthReport = this.getHealthReport(workflows, states, images, transitions);
+    const healthReport = this.getHealthReport(
+      workflows,
+      states,
+      images,
+      transitions
+    );
 
     return {
       metadata: {
         generatedAt: new Date().toISOString(),
-        projectName: 'qontinui-project',
-        version: '1.0.0',
+        projectName: "qontinui-project",
+        version: "1.0.0",
       },
       health: healthReport.health,
       suggestions: healthReport.suggestions,
@@ -2465,7 +2771,7 @@ export class ProjectOptimizationService {
       timestamp: new Date().toISOString(),
       workflows,
       states,
-      images: images.map(img => ({
+      images: images.map((img) => ({
         ...img,
         url: undefined, // Don't include URLs in backup
       })),
@@ -2488,7 +2794,12 @@ export class ProjectOptimizationService {
     images: ImageAsset[],
     transitions: Transition[]
   ): void {
-    const health = this.calculateProjectHealth(workflows, states, images, transitions);
+    const health = this.calculateProjectHealth(
+      workflows,
+      states,
+      images,
+      transitions
+    );
     const coverage = {
       tests: this.calculateTestCoverage(workflows).overall,
       documentation: this.calculateDocumentationCoverage(workflows).overall,
@@ -2496,18 +2807,29 @@ export class ProjectOptimizationService {
 
     const workflowAnalyses = this.analyzeWorkflows(workflows, states, images);
     const stateAnalyses = this.analyzeStates(states, transitions, images);
-    const transitionAnalyses = this.analyzeTransitions(transitions, workflows, states);
+    const transitionAnalyses = this.analyzeTransitions(
+      transitions,
+      workflows,
+      states
+    );
 
     const issues = {
-      critical: workflowAnalyses.filter(w => w.status === 'critical').length +
-                stateAnalyses.filter(s => s.status === 'critical').length +
-                transitionAnalyses.filter(t => t.status === 'critical').length,
-      warnings: workflowAnalyses.filter(w => w.status === 'warning').length +
-                stateAnalyses.filter(s => s.status === 'warning').length,
+      critical:
+        workflowAnalyses.filter((w) => w.status === "critical").length +
+        stateAnalyses.filter((s) => s.status === "critical").length +
+        transitionAnalyses.filter((t) => t.status === "critical").length,
+      warnings:
+        workflowAnalyses.filter((w) => w.status === "warning").length +
+        stateAnalyses.filter((s) => s.status === "warning").length,
       info: 0,
     };
 
-    const storage = this.getStorageUsage(workflows, states, images, transitions);
+    const storage = this.getStorageUsage(
+      workflows,
+      states,
+      images,
+      transitions
+    );
 
     const metrics: ProjectMetrics = {
       timestamp: new Date().toISOString(),
@@ -2543,15 +2865,17 @@ export class ProjectOptimizationService {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
-    const metrics = this.metricsHistory.filter(m => new Date(m.timestamp) >= cutoff);
+    const metrics = this.metricsHistory.filter(
+      (m) => new Date(m.timestamp) >= cutoff
+    );
 
     if (metrics.length === 0) {
       return {
         metrics: [],
         trend: {
-          health: 'stable',
-          coverage: 'stable',
-          issues: 'stable',
+          health: "stable",
+          coverage: "stable",
+          issues: "stable",
         },
         period: {
           start: cutoff.toISOString(),
@@ -2564,7 +2888,10 @@ export class ProjectOptimizationService {
     const firstMetric = metrics[0];
     const lastMetric = metrics[metrics.length - 1];
 
-    const healthTrend = this.calculateTrend(firstMetric.healthScore, lastMetric.healthScore);
+    const healthTrend = this.calculateTrend(
+      firstMetric.healthScore,
+      lastMetric.healthScore
+    );
     const coverageTrend = this.calculateTrend(
       (firstMetric.coverage.tests + firstMetric.coverage.documentation) / 2,
       (lastMetric.coverage.tests + lastMetric.coverage.documentation) / 2
@@ -2591,13 +2918,16 @@ export class ProjectOptimizationService {
   /**
    * Calculate trend direction
    */
-  private calculateTrend(oldValue: number, newValue: number): 'improving' | 'declining' | 'stable' {
+  private calculateTrend(
+    oldValue: number,
+    newValue: number
+  ): "improving" | "declining" | "stable" {
     const diff = newValue - oldValue;
     const threshold = 5; // 5% change
 
-    if (diff > threshold) return 'improving';
-    if (diff < -threshold) return 'declining';
-    return 'stable';
+    if (diff > threshold) return "improving";
+    if (diff < -threshold) return "declining";
+    return "stable";
   }
 
   /**
@@ -2612,8 +2942,8 @@ export class ProjectOptimizationService {
 
     if (thresholds.healthDrop !== undefined) {
       this.alerts.push({
-        id: 'health-drop',
-        type: 'health-drop',
+        id: "health-drop",
+        type: "health-drop",
         threshold: thresholds.healthDrop,
         enabled: true,
       });
@@ -2621,8 +2951,8 @@ export class ProjectOptimizationService {
 
     if (thresholds.criticalIssues !== undefined) {
       this.alerts.push({
-        id: 'critical-issues',
-        type: 'critical-issue',
+        id: "critical-issues",
+        type: "critical-issue",
         threshold: thresholds.criticalIssues,
         enabled: true,
       });
@@ -2630,8 +2960,8 @@ export class ProjectOptimizationService {
 
     if (thresholds.storageLimit !== undefined) {
       this.alerts.push({
-        id: 'storage-limit',
-        type: 'storage-limit',
+        id: "storage-limit",
+        type: "storage-limit",
         threshold: thresholds.storageLimit,
         enabled: true,
       });
@@ -2648,16 +2978,16 @@ export class ProjectOptimizationService {
 
     const previousMetrics = this.metricsHistory[this.metricsHistory.length - 2];
 
-    this.alerts.forEach(alert => {
+    this.alerts.forEach((alert) => {
       if (!alert.enabled) return;
 
       let shouldTrigger = false;
       let currentValue = 0;
       let previousValue = 0;
-      let message = '';
+      let message = "";
 
       switch (alert.type) {
-        case 'health-drop':
+        case "health-drop":
           currentValue = currentMetrics.healthScore;
           previousValue = previousMetrics.healthScore;
           const drop = previousValue - currentValue;
@@ -2667,7 +2997,7 @@ export class ProjectOptimizationService {
           }
           break;
 
-        case 'critical-issue':
+        case "critical-issue":
           currentValue = currentMetrics.issues.critical;
           previousValue = previousMetrics.issues.critical;
           if (currentValue >= alert.threshold) {
@@ -2676,7 +3006,7 @@ export class ProjectOptimizationService {
           }
           break;
 
-        case 'storage-limit':
+        case "storage-limit":
           currentValue = currentMetrics.storage;
           previousValue = previousMetrics.storage;
           if (currentValue >= alert.threshold) {
@@ -2715,19 +3045,24 @@ export class ProjectOptimizationService {
     const issues: ProjectIssue[] = [];
     let issueId = 1;
 
-    workflows.forEach(w => {
-      if (w.status === 'critical' || w.status === 'warning') {
-        w.issues.forEach(issue => {
+    workflows.forEach((w) => {
+      if (w.status === "critical" || w.status === "warning") {
+        w.issues.forEach((issue) => {
           issues.push({
             id: `issue-${issueId++}`,
-            severity: w.status === 'critical' ? 'error' : 'warning',
-            type: issue.includes('broken') ? 'broken-reference' :
-                  issue.includes('test') ? 'missing-test' :
-                  issue.includes('doc') ? 'missing-doc' :
-                  issue.includes('complex') ? 'high-complexity' : 'unused-resource',
+            severity: w.status === "critical" ? "error" : "warning",
+            type: issue.includes("broken")
+              ? "broken-reference"
+              : issue.includes("test")
+                ? "missing-test"
+                : issue.includes("doc")
+                  ? "missing-doc"
+                  : issue.includes("complex")
+                    ? "high-complexity"
+                    : "unused-resource",
             message: issue,
             resource: {
-              type: 'workflow',
+              type: "workflow",
               id: w.workflowId,
               name: w.name,
             },
@@ -2736,16 +3071,18 @@ export class ProjectOptimizationService {
       }
     });
 
-    states.forEach(s => {
-      if (s.status === 'critical' || s.status === 'warning') {
-        s.issues.forEach(issue => {
+    states.forEach((s) => {
+      if (s.status === "critical" || s.status === "warning") {
+        s.issues.forEach((issue) => {
           issues.push({
             id: `issue-${issueId++}`,
-            severity: s.status === 'critical' ? 'error' : 'warning',
-            type: issue.includes('broken') ? 'broken-reference' : 'unused-resource',
+            severity: s.status === "critical" ? "error" : "warning",
+            type: issue.includes("broken")
+              ? "broken-reference"
+              : "unused-resource",
             message: issue,
             resource: {
-              type: 'state',
+              type: "state",
               id: s.stateId,
               name: s.name,
             },
@@ -2754,16 +3091,16 @@ export class ProjectOptimizationService {
       }
     });
 
-    images.forEach(i => {
-      if (i.status === 'warning') {
-        i.issues.forEach(issue => {
+    images.forEach((i) => {
+      if (i.status === "warning") {
+        i.issues.forEach((issue) => {
           issues.push({
             id: `issue-${issueId++}`,
-            severity: 'warning',
-            type: issue.includes('duplicate') ? 'duplicate' : 'unused-resource',
+            severity: "warning",
+            type: issue.includes("duplicate") ? "duplicate" : "unused-resource",
             message: issue,
             resource: {
-              type: 'image',
+              type: "image",
               id: i.imageId,
               name: i.name,
             },
@@ -2830,13 +3167,13 @@ export class ProjectOptimizationService {
    * Format bytes to human readable
    */
   private formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return "0 Bytes";
 
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
 
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   }
 
   /**
@@ -2844,10 +3181,16 @@ export class ProjectOptimizationService {
    */
   private saveToStorage(): void {
     try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.metricsHistory));
-      localStorage.setItem(this.ALERTS_STORAGE_KEY, JSON.stringify(this.alerts));
+      localStorage.setItem(
+        this.STORAGE_KEY,
+        JSON.stringify(this.metricsHistory)
+      );
+      localStorage.setItem(
+        this.ALERTS_STORAGE_KEY,
+        JSON.stringify(this.alerts)
+      );
     } catch (error) {
-      console.error('Failed to save optimization metrics:', error);
+      console.error("Failed to save optimization metrics:", error);
     }
   }
 
@@ -2866,7 +3209,7 @@ export class ProjectOptimizationService {
         this.alerts = JSON.parse(alertsJson);
       }
     } catch (error) {
-      console.error('Failed to load optimization metrics:', error);
+      console.error("Failed to load optimization metrics:", error);
     }
   }
 }
@@ -2875,6 +3218,7 @@ export class ProjectOptimizationService {
 // Singleton Export
 // ============================================================================
 
-export const projectOptimizationService = ProjectOptimizationService.getInstance();
+export const projectOptimizationService =
+  ProjectOptimizationService.getInstance();
 
 export default projectOptimizationService;

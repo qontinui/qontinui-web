@@ -26,7 +26,7 @@ A comprehensive search and filter component that allows users to find workflows 
 #### Usage
 
 ```tsx
-import { AdvancedSearch } from '@/components/workflow-organization';
+import { AdvancedSearch } from "@/components/workflow-organization";
 
 function MyComponent() {
   const [filteredWorkflows, setFilteredWorkflows] = useState<Workflow[]>([]);
@@ -75,6 +75,7 @@ interface AdvancedSearchProps {
 #### Complexity Calculation
 
 Workflow complexity is automatically calculated based on:
+
 - Number of actions (< 5: low, < 15: medium, < 30: high, >= 30: very-high)
 - Presence of control flow actions (IF, LOOP, SWITCH, TRY_CATCH)
 - Presence of data operations (MAP, REDUCE, FILTER, SORT)
@@ -103,29 +104,31 @@ A bulk operations toolbar for performing actions on multiple workflows simultane
 #### Usage
 
 ```tsx
-import { BulkOperations } from '@/components/workflow-organization';
+import { BulkOperations } from "@/components/workflow-organization";
 
 function MyComponent() {
   const [selectedWorkflows, setSelectedWorkflows] = useState<Workflow[]>([]);
 
   const handleMoveToFolder = (folderId: string) => {
     // Update workflows with new folderId
-    updateWorkflows(selectedWorkflows.map(w => ({ ...w, folderId })));
+    updateWorkflows(selectedWorkflows.map((w) => ({ ...w, folderId })));
     setSelectedWorkflows([]);
   };
 
   const handleAddTags = (tags: string[]) => {
     // Add tags to workflows
-    updateWorkflows(selectedWorkflows.map(w => ({
-      ...w,
-      tags: [...(w.tags || []), ...tags]
-    })));
+    updateWorkflows(
+      selectedWorkflows.map((w) => ({
+        ...w,
+        tags: [...(w.tags || []), ...tags],
+      }))
+    );
     setSelectedWorkflows([]);
   };
 
   const handleDelete = () => {
     // Delete selected workflows
-    deleteWorkflows(selectedWorkflows.map(w => w.id));
+    deleteWorkflows(selectedWorkflows.map((w) => w.id));
     setSelectedWorkflows([]);
   };
 
@@ -179,14 +182,17 @@ These components are designed to work together for a complete workflow managemen
 ### Complete Example
 
 ```tsx
-import { AdvancedSearch, BulkOperations } from '@/components/workflow-organization';
+import {
+  AdvancedSearch,
+  BulkOperations,
+} from "@/components/workflow-organization";
 
 function WorkflowManager() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [filteredWorkflows, setFilteredWorkflows] = useState<Workflow[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const selectedWorkflows = workflows.filter(w => selectedIds.includes(w.id));
+  const selectedWorkflows = workflows.filter((w) => selectedIds.includes(w.id));
 
   return (
     <div>
@@ -204,7 +210,7 @@ function WorkflowManager() {
         selectedIds={selectedIds}
         onToggleSelect={(id) => {
           if (selectedIds.includes(id)) {
-            setSelectedIds(selectedIds.filter(i => i !== id));
+            setSelectedIds(selectedIds.filter((i) => i !== id));
           } else {
             setSelectedIds([...selectedIds, id]);
           }
@@ -224,7 +230,7 @@ function WorkflowManager() {
         onAddTags={(tags) => {
           // Add tags
           updateWorkflows(selectedIds, (w) => ({
-            tags: [...(w.tags || []), ...tags]
+            tags: [...(w.tags || []), ...tags],
           }));
           setSelectedIds([]);
         }}
@@ -246,7 +252,7 @@ interface SearchFilter {
   query?: string;
   folderIds?: string[];
   tags?: string[];
-  tagOperator?: 'AND' | 'OR';
+  tagOperator?: "AND" | "OR";
   createdDateRange?: DateRange;
   modifiedDateRange?: DateRange;
   actionTypes?: string[];
@@ -272,7 +278,7 @@ interface SavedFilter {
 ### ComplexityLevel
 
 ```typescript
-type ComplexityLevel = 'low' | 'medium' | 'high' | 'very-high';
+type ComplexityLevel = "low" | "medium" | "high" | "very-high";
 ```
 
 ---
@@ -346,6 +352,7 @@ Components respect your theme configuration and work in both light and dark mode
 ## Examples
 
 See `AdvancedSearch.example.tsx` for a complete working example demonstrating:
+
 - Search filtering
 - Workflow selection
 - Bulk operations

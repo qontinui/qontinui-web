@@ -1,15 +1,25 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { RotateCw } from "lucide-react"
-import { ActionPropertiesComponentProps } from "../../types"
-import { TimingProperties } from "../../TimingProperties"
-import { ConditionEditor, ActionListEditor, VariableSelector } from "../../shared"
-import { LoopActionConfig } from "@/lib/action-schema"
+import * as React from "react";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RotateCw } from "lucide-react";
+import { ActionPropertiesComponentProps } from "../../types";
+import { TimingProperties } from "../../TimingProperties";
+import {
+  ConditionEditor,
+  ActionListEditor,
+  VariableSelector,
+} from "../../shared";
+import { LoopActionConfig } from "@/lib/action-schema";
 
 /**
  * Properties component for LOOP action.
@@ -25,15 +35,17 @@ export function LoopActionProperties({
   updateConfig,
   images,
 }: ActionPropertiesComponentProps) {
-  const config = action.config as LoopActionConfig
+  const config = action.config as LoopActionConfig;
 
   // Initialize config with defaults if needed
-  const loopType = config.loopType || 'FOR'
-  const actions = config.actions || []
-  const maxIterations = config.maxIterations !== undefined ? config.maxIterations : 1000
-  const breakOnError = config.breakOnError !== undefined ? config.breakOnError : true
+  const loopType = config.loopType || "FOR";
+  const actions = config.actions || [];
+  const maxIterations =
+    config.maxIterations !== undefined ? config.maxIterations : 1000;
+  const breakOnError =
+    config.breakOnError !== undefined ? config.breakOnError : true;
 
-  const handleLoopTypeChange = (newType: LoopActionConfig['loopType']) => {
+  const handleLoopTypeChange = (newType: LoopActionConfig["loopType"]) => {
     // Reset type-specific fields when changing loop type
     const updates: Partial<LoopActionConfig> = {
       loopType: newType,
@@ -41,30 +53,30 @@ export function LoopActionProperties({
       condition: undefined,
       collection: undefined,
       iteratorVariable: undefined,
-    }
+    };
 
     // Set defaults for new type
-    if (newType === 'FOR') {
-      updates.iterations = 10
-      updates.iteratorVariable = 'i'
-    } else if (newType === 'WHILE') {
+    if (newType === "FOR") {
+      updates.iterations = 10;
+      updates.iteratorVariable = "i";
+    } else if (newType === "WHILE") {
       updates.condition = {
-        type: 'variable',
-        variableName: '',
-        operator: '==',
-        expectedValue: '',
-      }
-    } else if (newType === 'FOREACH') {
+        type: "variable",
+        variableName: "",
+        operator: "==",
+        expectedValue: "",
+      };
+    } else if (newType === "FOREACH") {
       updates.collection = {
-        type: 'variable',
-        variableName: '',
-      }
-      updates.iteratorVariable = 'item'
+        type: "variable",
+        variableName: "",
+      };
+      updates.iteratorVariable = "item";
     }
 
     // Apply all updates at once
-    updateConfig("__reset__", { ...config, ...updates })
-  }
+    updateConfig("__reset__", { ...config, ...updates });
+  };
 
   return (
     <>
@@ -82,36 +94,45 @@ export function LoopActionProperties({
       {/* Loop Type Selector */}
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Loop Type</Label>
-        <Select
-          value={loopType}
-          onValueChange={handleLoopTypeChange}
-        >
+        <Select value={loopType} onValueChange={handleLoopTypeChange}>
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="FOR">FOR - Fixed number of iterations</SelectItem>
-            <SelectItem value="WHILE">WHILE - Repeat while condition is true</SelectItem>
-            <SelectItem value="FOREACH">FOREACH - Iterate over collection</SelectItem>
+            <SelectItem value="FOR">
+              FOR - Fixed number of iterations
+            </SelectItem>
+            <SelectItem value="WHILE">
+              WHILE - Repeat while condition is true
+            </SelectItem>
+            <SelectItem value="FOREACH">
+              FOREACH - Iterate over collection
+            </SelectItem>
           </SelectContent>
         </Select>
         <p className="text-xs text-gray-500">
-          {loopType === 'FOR' && 'Execute actions a fixed number of times'}
-          {loopType === 'WHILE' && 'Execute actions while a condition remains true'}
-          {loopType === 'FOREACH' && 'Execute actions for each item in a collection'}
+          {loopType === "FOR" && "Execute actions a fixed number of times"}
+          {loopType === "WHILE" &&
+            "Execute actions while a condition remains true"}
+          {loopType === "FOREACH" &&
+            "Execute actions for each item in a collection"}
         </p>
       </div>
 
       {/* FOR Loop Configuration */}
-      {loopType === 'FOR' && (
+      {loopType === "FOR" && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs text-gray-400">Number of Iterations</Label>
+            <Label className="text-xs text-gray-400">
+              Number of Iterations
+            </Label>
             <Input
               type="number"
               min="1"
               value={config.iterations || 10}
-              onChange={(e) => updateConfig("iterations", Number.parseInt(e.target.value) || 1)}
+              onChange={(e) =>
+                updateConfig("iterations", Number.parseInt(e.target.value) || 1)
+              }
               className="bg-transparent border-gray-700"
             />
             <p className="text-xs text-gray-500">
@@ -121,8 +142,10 @@ export function LoopActionProperties({
 
           <VariableSelector
             label="Iterator Variable Name"
-            value={config.iteratorVariable || 'i'}
-            onChange={(name) => updateConfig("iteratorVariable", name || undefined)}
+            value={config.iteratorVariable || "i"}
+            onChange={(name) =>
+              updateConfig("iteratorVariable", name || undefined)
+            }
             placeholder="i"
             required={false}
           />
@@ -133,7 +156,7 @@ export function LoopActionProperties({
       )}
 
       {/* WHILE Loop Configuration */}
-      {loopType === 'WHILE' && (
+      {loopType === "WHILE" && (
         <div className="space-y-2">
           <Label className="text-xs text-gray-400">Loop Condition</Label>
           <div className="p-3 bg-gray-800/50 rounded-md border border-gray-700">
@@ -152,17 +175,19 @@ export function LoopActionProperties({
       )}
 
       {/* FOREACH Loop Configuration */}
-      {loopType === 'FOREACH' && (
+      {loopType === "FOREACH" && (
         <>
           <div className="space-y-2">
             <Label className="text-xs text-gray-400">Collection Type</Label>
             <Select
-              value={config.collection?.type || 'variable'}
-              onValueChange={(type) => updateConfig("collection", {
-                type,
-                ...(type === 'variable' && { variableName: '' }),
-                ...(type === 'range' && { start: 0, end: 10, step: 1 }),
-              })}
+              value={config.collection?.type || "variable"}
+              onValueChange={(type) =>
+                updateConfig("collection", {
+                  type,
+                  ...(type === "variable" && { variableName: "" }),
+                  ...(type === "range" && { start: 0, end: 10, step: 1 }),
+                })
+              }
             >
               <SelectTrigger className="bg-transparent border-gray-700">
                 <SelectValue />
@@ -176,28 +201,35 @@ export function LoopActionProperties({
           </div>
 
           {/* Variable Collection */}
-          {config.collection?.type === 'variable' && (
+          {config.collection?.type === "variable" && (
             <VariableSelector
               label="Variable Name"
-              value={config.collection.variableName || ''}
-              onChange={(name) => updateConfig("collection", { ...config.collection, variableName: name })}
+              value={config.collection.variableName || ""}
+              onChange={(name) =>
+                updateConfig("collection", {
+                  ...config.collection,
+                  variableName: name,
+                })
+              }
               placeholder="myArray"
               required
             />
           )}
 
           {/* Range Collection */}
-          {config.collection?.type === 'range' && (
+          {config.collection?.type === "range" && (
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-2">
                 <Label className="text-xs text-gray-500">Start</Label>
                 <Input
                   type="number"
                   value={config.collection.start ?? 0}
-                  onChange={(e) => updateConfig("collection", {
-                    ...config.collection,
-                    start: Number.parseInt(e.target.value) || 0
-                  })}
+                  onChange={(e) =>
+                    updateConfig("collection", {
+                      ...config.collection,
+                      start: Number.parseInt(e.target.value) || 0,
+                    })
+                  }
                   className="bg-transparent border-gray-700"
                 />
               </div>
@@ -206,10 +238,12 @@ export function LoopActionProperties({
                 <Input
                   type="number"
                   value={config.collection.end ?? 10}
-                  onChange={(e) => updateConfig("collection", {
-                    ...config.collection,
-                    end: Number.parseInt(e.target.value) || 10
-                  })}
+                  onChange={(e) =>
+                    updateConfig("collection", {
+                      ...config.collection,
+                      end: Number.parseInt(e.target.value) || 10,
+                    })
+                  }
                   className="bg-transparent border-gray-700"
                 />
               </div>
@@ -218,10 +252,12 @@ export function LoopActionProperties({
                 <Input
                   type="number"
                   value={config.collection.step ?? 1}
-                  onChange={(e) => updateConfig("collection", {
-                    ...config.collection,
-                    step: Number.parseInt(e.target.value) || 1
-                  })}
+                  onChange={(e) =>
+                    updateConfig("collection", {
+                      ...config.collection,
+                      step: Number.parseInt(e.target.value) || 1,
+                    })
+                  }
                   className="bg-transparent border-gray-700"
                 />
               </div>
@@ -229,7 +265,7 @@ export function LoopActionProperties({
           )}
 
           {/* Matches Collection */}
-          {config.collection?.type === 'matches' && (
+          {config.collection?.type === "matches" && (
             <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs text-yellow-300">
               <p className="font-medium">Coming Soon</p>
               <p className="text-yellow-400 mt-1">
@@ -240,8 +276,10 @@ export function LoopActionProperties({
 
           <VariableSelector
             label="Iterator Variable Name"
-            value={config.iteratorVariable || 'item'}
-            onChange={(name) => updateConfig("iteratorVariable", name || undefined)}
+            value={config.iteratorVariable || "item"}
+            onChange={(name) =>
+              updateConfig("iteratorVariable", name || undefined)
+            }
             placeholder="item"
             required={false}
           />
@@ -272,7 +310,9 @@ export function LoopActionProperties({
 
       {/* Safety Settings */}
       <div className="space-y-3 p-3 bg-gray-800/30 border border-gray-700 rounded-md">
-        <Label className="text-xs text-gray-400 font-medium">Safety Settings</Label>
+        <Label className="text-xs text-gray-400 font-medium">
+          Safety Settings
+        </Label>
 
         <div className="space-y-2">
           <Label className="text-xs text-gray-500">Max Iterations</Label>
@@ -280,7 +320,12 @@ export function LoopActionProperties({
             type="number"
             min="1"
             value={maxIterations}
-            onChange={(e) => updateConfig("maxIterations", Number.parseInt(e.target.value) || 1000)}
+            onChange={(e) =>
+              updateConfig(
+                "maxIterations",
+                Number.parseInt(e.target.value) || 1000
+              )
+            }
             className="bg-transparent border-gray-700"
           />
           <p className="text-xs text-gray-500">
@@ -320,5 +365,5 @@ export function LoopActionProperties({
       {/* Timing Properties */}
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
-  )
+  );
 }

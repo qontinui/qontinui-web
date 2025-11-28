@@ -12,7 +12,11 @@
  * - Clipboard history
  */
 
-import type { Action, Connections, Connection } from '../lib/action-schema/action-types';
+import type {
+  Action,
+  Connections,
+  Connection,
+} from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -32,7 +36,7 @@ export interface ClipboardData {
   sourceWorkflowId?: string;
 
   /** Copy operation type */
-  operation: 'copy' | 'cut';
+  operation: "copy" | "cut";
 }
 
 export interface ClipboardHistoryEntry extends ClipboardData {
@@ -99,7 +103,7 @@ export class ClipboardManager {
    * Copy actions to clipboard
    */
   copy(actions: Action[], allConnections: Connections): void {
-    const actionIds = new Set(actions.map(a => a.id));
+    const actionIds = new Set(actions.map((a) => a.id));
 
     // Filter connections to only include those between copied actions
     const connections = this.filterConnections(allConnections, actionIds);
@@ -108,7 +112,7 @@ export class ClipboardManager {
       actions: JSON.parse(JSON.stringify(actions)), // Deep clone
       connections: JSON.parse(JSON.stringify(connections)),
       timestamp: Date.now(),
-      operation: 'copy',
+      operation: "copy",
     };
 
     this.state.current = clipboardData;
@@ -123,14 +127,14 @@ export class ClipboardManager {
    * Cut actions to clipboard
    */
   cut(actions: Action[], allConnections: Connections): void {
-    const actionIds = new Set(actions.map(a => a.id));
+    const actionIds = new Set(actions.map((a) => a.id));
     const connections = this.filterConnections(allConnections, actionIds);
 
     const clipboardData: ClipboardData = {
       actions: JSON.parse(JSON.stringify(actions)),
       connections: JSON.parse(JSON.stringify(connections)),
       timestamp: Date.now(),
-      operation: 'cut',
+      operation: "cut",
     };
 
     this.state.current = clipboardData;
@@ -202,7 +206,11 @@ export class ClipboardManager {
   /**
    * Duplicate: paste without consuming clipboard
    */
-  duplicate(actions: Action[], allConnections: Connections, offset = { x: 50, y: 50 }): PasteResult {
+  duplicate(
+    actions: Action[],
+    allConnections: Connections,
+    offset = { x: 50, y: 50 }
+  ): PasteResult {
     // Temporarily save current clipboard
     const savedClipboard = this.state.current;
 
@@ -245,7 +253,7 @@ export class ClipboardManager {
    * Check if clipboard operation was cut
    */
   isCutOperation(): boolean {
-    return this.state.current?.operation === 'cut';
+    return this.state.current?.operation === "cut";
   }
 
   // ==========================================================================
@@ -263,7 +271,7 @@ export class ClipboardManager {
    * Load from history
    */
   loadFromHistory(entryId: string): boolean {
-    const entry = this.state.history.find(e => e.id === entryId);
+    const entry = this.state.history.find((e) => e.id === entryId);
     if (!entry) return false;
 
     this.state.current = {
@@ -304,8 +312,8 @@ export class ClipboardManager {
   private async copyToSystemClipboard(data: ClipboardData): Promise<void> {
     try {
       const text = JSON.stringify({
-        type: 'qontinui-workflow-clipboard',
-        version: '1.0',
+        type: "qontinui-workflow-clipboard",
+        version: "1.0",
         data,
       });
 
@@ -313,7 +321,7 @@ export class ClipboardManager {
         await navigator.clipboard.writeText(text);
       }
     } catch (error) {
-      console.warn('Failed to copy to system clipboard:', error);
+      console.warn("Failed to copy to system clipboard:", error);
     }
   }
 
@@ -329,7 +337,7 @@ export class ClipboardManager {
       const text = await navigator.clipboard.readText();
       const parsed = JSON.parse(text);
 
-      if (parsed.type !== 'qontinui-workflow-clipboard') {
+      if (parsed.type !== "qontinui-workflow-clipboard") {
         return false;
       }
 
@@ -338,7 +346,7 @@ export class ClipboardManager {
 
       return true;
     } catch (error) {
-      console.warn('Failed to read from system clipboard:', error);
+      console.warn("Failed to read from system clipboard:", error);
       return false;
     }
   }
@@ -363,12 +371,12 @@ export class ClipboardManager {
       filtered[sourceId] = {};
 
       for (const [type, outputs] of Object.entries(sourceConnections)) {
-        const filteredOutputs = outputs?.map(outputConnections =>
-          outputConnections.filter(conn => actionIds.has(conn.action))
+        const filteredOutputs = outputs?.map((outputConnections) =>
+          outputConnections.filter((conn) => actionIds.has(conn.action))
         );
 
         // Only include if there are connections
-        if (filteredOutputs?.some(arr => arr.length > 0)) {
+        if (filteredOutputs?.some((arr) => arr.length > 0)) {
           filtered[sourceId][type] = filteredOutputs;
         }
       }
@@ -396,8 +404,8 @@ export class ClipboardManager {
       updated[newSourceId] = {};
 
       for (const [type, outputs] of Object.entries(sourceConnections)) {
-        updated[newSourceId][type] = outputs?.map(outputConnections =>
-          outputConnections.map(conn => ({
+        updated[newSourceId][type] = outputs?.map((outputConnections) =>
+          outputConnections.map((conn) => ({
             ...conn,
             action: idMap.get(conn.action) || conn.action,
           }))
@@ -428,7 +436,10 @@ export class ClipboardManager {
 
     // Limit history size
     if (this.state.history.length > this.state.maxHistorySize) {
-      this.state.history = this.state.history.slice(0, this.state.maxHistorySize);
+      this.state.history = this.state.history.slice(
+        0,
+        this.state.maxHistorySize
+      );
     }
   }
 
@@ -436,7 +447,7 @@ export class ClipboardManager {
    * Notify listeners
    */
   private notifyListeners(): void {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       listener(this.state);
     });
   }

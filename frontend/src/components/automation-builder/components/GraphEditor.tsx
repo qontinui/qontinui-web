@@ -6,12 +6,17 @@
  * Matches the interface style of SequentialEditor for consistency.
  */
 
-import React, { useCallback } from 'react'
-import { ReactFlowProvider } from '@xyflow/react'
-import { WorkflowCanvas } from '@/components/workflow-canvas'
-import { NodePalette } from '@/components/workflow-canvas/NodePalette'
-import type { Workflow, Action, Connection, ActionType } from '@/lib/action-schema/action-types'
-import type { GraphEditorProps } from '../types'
+import React, { useCallback } from "react";
+import { ReactFlowProvider } from "@xyflow/react";
+import { WorkflowCanvas } from "@/components/workflow-canvas";
+import { NodePalette } from "@/components/workflow-canvas/NodePalette";
+import type {
+  Workflow,
+  Action,
+  Connection,
+  ActionType,
+} from "@/lib/action-schema/action-types";
+import type { GraphEditorProps } from "../types";
 
 function GraphEditorInner({
   workflow,
@@ -25,44 +30,45 @@ function GraphEditorInner({
    */
   const handleWorkflowChange = useCallback(
     (updatedWorkflow: Workflow) => {
-      onUpdateWorkflow(updatedWorkflow)
+      onUpdateWorkflow(updatedWorkflow);
     },
     [onUpdateWorkflow]
-  )
+  );
 
   /**
    * Handle node clicks - select the action
    */
   const handleNodeClick = useCallback(
     (action: Action) => {
-      onSelectNode(action)
+      onSelectNode(action);
     },
     [onSelectNode]
-  )
+  );
 
   /**
    * Handle edge clicks - currently just logs
    * TODO: Implement edge property editing if needed
    */
-  const handleEdgeClick = useCallback(
-    (connection: Connection) => {
-      console.log('[GraphEditor] Edge clicked:', connection)
-    },
-    []
-  )
+  const handleEdgeClick = useCallback((connection: Connection) => {
+    console.log("[GraphEditor] Edge clicked:", connection);
+  }, []);
 
   /**
    * Handle adding new nodes from palette
    */
   const handleNodeAdd = useCallback(
     (nodeType: ActionType) => {
-      console.log('[GraphEditor] handleNodeAdd called with:', nodeType)
-      console.log('[GraphEditor] Current workflow has', workflow.actions.length, 'actions')
-      onAddNode(nodeType)
-      console.log('[GraphEditor] onAddNode completed')
+      console.log("[GraphEditor] handleNodeAdd called with:", nodeType);
+      console.log(
+        "[GraphEditor] Current workflow has",
+        workflow.actions.length,
+        "actions"
+      );
+      onAddNode(nodeType);
+      console.log("[GraphEditor] onAddNode completed");
     },
     [onAddNode, workflow.actions.length]
-  )
+  );
 
   return (
     <div className="flex h-full w-full">
@@ -104,7 +110,7 @@ function GraphEditorInner({
         />
       </div>
     </div>
-  )
+  );
 }
 
 export function GraphEditor(props: GraphEditorProps) {
@@ -112,5 +118,5 @@ export function GraphEditor(props: GraphEditorProps) {
     <ReactFlowProvider>
       <GraphEditorInner {...props} />
     </ReactFlowProvider>
-  )
+  );
 }

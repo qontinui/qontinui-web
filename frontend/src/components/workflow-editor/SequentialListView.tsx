@@ -14,8 +14,8 @@
  * - Visual connection lines for nesting
  */
 
-import React, { useState, useRef } from 'react';
-import type { Workflow, Action } from '@/lib/action-schema/action-types';
+import React, { useState, useRef } from "react";
+import type { Workflow, Action } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -52,9 +52,11 @@ export function SequentialListView({
   onActionReorder,
   onAddAction,
   selectedActionId,
-  editable = true
+  editable = true,
 }: SequentialListViewProps) {
-  const [expandedActions, setExpandedActions] = useState<Set<string>>(new Set());
+  const [expandedActions, setExpandedActions] = useState<Set<string>>(
+    new Set()
+  );
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
@@ -62,7 +64,7 @@ export function SequentialListView({
   const actionTree = buildActionTree(workflow.actions, expandedActions);
 
   const handleToggleExpand = (actionId: string) => {
-    setExpandedActions(prev => {
+    setExpandedActions((prev) => {
       const next = new Set(prev);
       if (next.has(actionId)) {
         next.delete(actionId);
@@ -76,7 +78,7 @@ export function SequentialListView({
   const handleDragStart = (e: React.DragEvent, index: number) => {
     if (!editable) return;
     setDraggedIndex(index);
-    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.effectAllowed = "move";
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
@@ -150,7 +152,10 @@ export function SequentialListView({
         <div className="empty-list">
           <p>No actions in this workflow</p>
           {editable && onAddAction && (
-            <button className="add-first-action-button" onClick={() => onAddAction(-1)}>
+            <button
+              className="add-first-action-button"
+              onClick={() => onAddAction(-1)}
+            >
               Add First Action
             </button>
           )}
@@ -195,7 +200,7 @@ function ActionItem({
   onDragStart,
   onDragOver,
   onDrop,
-  onDragEnd
+  onDragEnd,
 }: ActionItemProps) {
   const { action, level, children } = node;
   const hasChildren = children && children.length > 0;
@@ -205,7 +210,7 @@ function ActionItem({
 
   return (
     <div
-      className={`action-item ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isDropTarget ? 'drop-target' : ''}`}
+      className={`action-item ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""} ${isDropTarget ? "drop-target" : ""}`}
       style={{ paddingLeft: `${indentWidth + 16}px` }}
       draggable={editable}
       onDragStart={onDragStart}
@@ -246,7 +251,7 @@ function ActionItem({
             onToggleExpand(action.id);
           }}
         >
-          {isExpanded ? '▼' : '▶'}
+          {isExpanded ? "▼" : "▶"}
         </button>
       )}
 
@@ -256,9 +261,7 @@ function ActionItem({
       </div>
 
       {/* Summary */}
-      <div className="action-summary">
-        {getActionSummary(action)}
-      </div>
+      <div className="action-summary">{getActionSummary(action)}</div>
 
       {/* Actions */}
       {editable && (
@@ -327,7 +330,7 @@ interface AddActionButtonProps {
 
 function AddActionButton({ onClick, visible }: AddActionButtonProps) {
   return (
-    <div className={`add-action-divider ${visible ? 'visible' : ''}`}>
+    <div className={`add-action-divider ${visible ? "visible" : ""}`}>
       <button className="add-action-inline-button" onClick={onClick}>
         + Add Action
       </button>
@@ -339,7 +342,10 @@ function AddActionButton({ onClick, visible }: AddActionButtonProps) {
 // Helper Functions
 // ============================================================================
 
-function buildActionTree(actions: Action[], expandedActions: Set<string>): ActionTreeNode[] {
+function buildActionTree(
+  actions: Action[],
+  expandedActions: Set<string>
+): ActionTreeNode[] {
   const tree: ActionTreeNode[] = [];
   let index = 0;
 
@@ -348,42 +354,60 @@ function buildActionTree(actions: Action[], expandedActions: Set<string>): Actio
       action,
       index: index++,
       level,
-      collapsed: !expandedActions.has(action.id)
+      collapsed: !expandedActions.has(action.id),
     };
 
     // Check for nested actions
-    if (action.type === 'IF') {
+    if (action.type === "IF") {
       const ifConfig = action.config as any;
       const children: ActionTreeNode[] = [];
 
       // Then branch
       if (ifConfig.thenActions && Array.isArray(ifConfig.thenActions)) {
-        children.push(...ifConfig.thenActions.map((a: Action) => processAction(a, level + 1)));
+        children.push(
+          ...ifConfig.thenActions.map((a: Action) =>
+            processAction(a, level + 1)
+          )
+        );
       }
 
       // Else branch
       if (ifConfig.elseActions && Array.isArray(ifConfig.elseActions)) {
-        children.push(...ifConfig.elseActions.map((a: Action) => processAction(a, level + 1)));
+        children.push(
+          ...ifConfig.elseActions.map((a: Action) =>
+            processAction(a, level + 1)
+          )
+        );
       }
 
       if (children.length > 0) {
         node.children = children;
       }
-    } else if (action.type === 'LOOP') {
+    } else if (action.type === "LOOP") {
       const loopConfig = action.config as any;
       if (loopConfig.loopActions && Array.isArray(loopConfig.loopActions)) {
-        node.children = loopConfig.loopActions.map((a: Action) => processAction(a, level + 1));
+        node.children = loopConfig.loopActions.map((a: Action) =>
+          processAction(a, level + 1)
+        );
       }
-    } else if (action.type === 'TRY_CATCH') {
+    } else if (action.type === "TRY_CATCH") {
       const tryConfig = action.config as any;
       const children: ActionTreeNode[] = [];
 
       if (tryConfig.tryActions && Array.isArray(tryConfig.tryActions)) {
-        children.push(...tryConfig.tryActions.map((a: Action) => processAction(a, level + 1)));
+        children.push(
+          ...tryConfig.tryActions.map((a: Action) =>
+            processAction(a, level + 1)
+          )
+        );
       }
 
       if (tryConfig.catchActions && Array.isArray(tryConfig.catchActions)) {
-        children.push(...tryConfig.catchActions.map((a: Action) => processAction(a, level + 1)));
+        children.push(
+          ...tryConfig.catchActions.map((a: Action) =>
+            processAction(a, level + 1)
+          )
+        );
       }
 
       if (children.length > 0) {
@@ -403,23 +427,23 @@ function buildActionTree(actions: Action[], expandedActions: Set<string>): Actio
 
 function getActionIcon(type: string): string {
   const icons: Record<string, string> = {
-    CLICK: '🖱️',
-    TYPE: '⌨️',
-    WAIT: '⏱️',
-    SCREENSHOT: '📷',
-    IF: '🔀',
-    LOOP: '🔁',
-    TRY_CATCH: '⚠️',
-    SWITCH: '🔀',
-    EXISTS: '🔍',
-    FIND: '🔍',
-    GET_VARIABLE: '📥',
-    SET_VARIABLE: '📤',
-    FILTER: '🔽',
-    MAP: '🗺️',
-    REDUCE: '⚙️'
+    CLICK: "🖱️",
+    TYPE: "⌨️",
+    WAIT: "⏱️",
+    SCREENSHOT: "📷",
+    IF: "🔀",
+    LOOP: "🔁",
+    TRY_CATCH: "⚠️",
+    SWITCH: "🔀",
+    EXISTS: "🔍",
+    FIND: "🔍",
+    GET_VARIABLE: "📥",
+    SET_VARIABLE: "📤",
+    FILTER: "🔽",
+    MAP: "🗺️",
+    REDUCE: "⚙️",
   };
-  return icons[type] || '•';
+  return icons[type] || "•";
 }
 
 function getActionSummary(action: Action): string {
@@ -431,59 +455,64 @@ function getActionSummary(action: Action): string {
   const config = action.config as any;
 
   switch (action.type) {
-    case 'CLICK':
+    case "CLICK":
       if (config.target?.image) {
         return `Click "${config.target.image}"`;
       } else if (config.target?.selector) {
         return `Click "${config.target.selector}"`;
       }
-      return 'Click element';
+      return "Click element";
 
-    case 'TYPE':
+    case "TYPE":
       if (config.text) {
-        const truncated = config.text.length > 30 ? config.text.substring(0, 30) + '...' : config.text;
+        const truncated =
+          config.text.length > 30
+            ? config.text.substring(0, 30) + "..."
+            : config.text;
         return `Type "${truncated}"`;
       }
-      return 'Type text';
+      return "Type text";
 
-    case 'WAIT':
+    case "WAIT":
       if (config.duration) {
         return `Wait ${config.duration}ms`;
       }
-      return 'Wait';
+      return "Wait";
 
-    case 'SCREENSHOT':
-      return config.filename ? `Screenshot "${config.filename}"` : 'Take screenshot';
+    case "SCREENSHOT":
+      return config.filename
+        ? `Screenshot "${config.filename}"`
+        : "Take screenshot";
 
-    case 'IF':
-      return 'If condition';
+    case "IF":
+      return "If condition";
 
-    case 'LOOP':
-      return config.iterations ? `Loop ${config.iterations} times` : 'Loop';
+    case "LOOP":
+      return config.iterations ? `Loop ${config.iterations} times` : "Loop";
 
-    case 'TRY_CATCH':
-      return 'Try-Catch block';
+    case "TRY_CATCH":
+      return "Try-Catch block";
 
-    case 'EXISTS':
-      return 'Check if exists';
+    case "EXISTS":
+      return "Check if exists";
 
-    case 'FIND':
-      return 'Find element';
+    case "FIND":
+      return "Find element";
 
-    case 'GET_VARIABLE':
-      return config.variable ? `Get "${config.variable}"` : 'Get variable';
+    case "GET_VARIABLE":
+      return config.variable ? `Get "${config.variable}"` : "Get variable";
 
-    case 'SET_VARIABLE':
-      return config.variable ? `Set "${config.variable}"` : 'Set variable';
+    case "SET_VARIABLE":
+      return config.variable ? `Set "${config.variable}"` : "Set variable";
 
-    case 'FILTER':
-      return 'Filter data';
+    case "FILTER":
+      return "Filter data";
 
-    case 'MAP':
-      return 'Map/Transform data';
+    case "MAP":
+      return "Map/Transform data";
 
-    case 'REDUCE':
-      return 'Reduce data';
+    case "REDUCE":
+      return "Reduce data";
 
     default:
       return action.type;

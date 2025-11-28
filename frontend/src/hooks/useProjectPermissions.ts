@@ -16,9 +16,9 @@
  * }
  */
 
-import { useMemo } from 'react';
-import { useAuth } from '@/contexts/auth-context';
-import type { User } from '@/lib/schemas';
+import { useMemo } from "react";
+import { useAuth } from "@/contexts/auth-context";
+import type { User } from "@/lib/schemas";
 import {
   type PermissionLevel,
   type ProjectWithPermissions,
@@ -29,7 +29,7 @@ import {
   canUserAdmin,
   isProjectOwner,
   hasPermission,
-} from '@/lib/permissions';
+} from "@/lib/permissions";
 
 // ============================================================================
 // Hook Return Type
@@ -119,7 +119,7 @@ export function useProjectPermissions(
     if (!project) {
       // No project provided - return no permissions
       return {
-        permissionLevel: 'none',
+        permissionLevel: "none",
         canView: false,
         canComment: false,
         canEdit: false,

@@ -1,20 +1,33 @@
 // components/integration-testing/VideoExportDialog.tsx
 
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
-import { Download, Video, Settings, CheckCircle, XCircle } from 'lucide-react';
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { Download, Video, Settings, CheckCircle, XCircle } from "lucide-react";
 
 export interface VideoExportOptions {
   frameDuration: number;
-  quality: '480p' | '720p' | '1080p';
+  quality: "480p" | "720p" | "1080p";
   includeOverlays: boolean;
   includeTimeline: boolean;
   includeText: boolean;
@@ -27,7 +40,7 @@ interface VideoExportDialogProps {
   onExport: (options: VideoExportOptions) => void;
   isExporting: boolean;
   exportProgress: number;
-  exportStatus: 'idle' | 'processing' | 'completed' | 'failed';
+  exportStatus: "idle" | "processing" | "completed" | "failed";
   videoUrl?: string;
   errorMessage?: string;
 }
@@ -44,7 +57,7 @@ export function VideoExportDialog({
 }: VideoExportDialogProps) {
   const [options, setOptions] = useState<VideoExportOptions>({
     frameDuration: 1.5,
-    quality: '720p',
+    quality: "720p",
     includeOverlays: true,
     includeTimeline: true,
     includeText: true,
@@ -57,7 +70,7 @@ export function VideoExportDialog({
 
   const handleDownload = () => {
     if (videoUrl) {
-      window.open(videoUrl, '_blank');
+      window.open(videoUrl, "_blank");
     }
   };
 
@@ -76,17 +89,20 @@ export function VideoExportDialog({
             Export Execution Video
           </DialogTitle>
           <DialogDescription>
-            Generate an MP4 video from the execution playback with overlays and visualizations.
+            Generate an MP4 video from the execution playback with overlays and
+            visualizations.
           </DialogDescription>
         </DialogHeader>
 
-        {exportStatus === 'idle' && (
+        {exportStatus === "idle" && (
           <div className="space-y-6 py-4">
             {/* Frame Duration */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label htmlFor="frameDuration">Frame Duration</Label>
-                <span className="text-sm text-gray-500">{options.frameDuration.toFixed(1)}s per action</span>
+                <span className="text-sm text-gray-500">
+                  {options.frameDuration.toFixed(1)}s per action
+                </span>
               </div>
               <Slider
                 id="frameDuration"
@@ -109,7 +125,7 @@ export function VideoExportDialog({
               <Label htmlFor="quality">Video Quality</Label>
               <Select
                 value={options.quality}
-                onValueChange={(value: '480p' | '720p' | '1080p') =>
+                onValueChange={(value: "480p" | "720p" | "1080p") =>
                   setOptions({ ...options, quality: value })
                 }
                 disabled={isExporting}
@@ -118,9 +134,15 @@ export function VideoExportDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="480p">480p (Low - Smaller file)</SelectItem>
-                  <SelectItem value="720p">720p (Medium - Recommended)</SelectItem>
-                  <SelectItem value="1080p">1080p (High - Larger file)</SelectItem>
+                  <SelectItem value="480p">
+                    480p (Low - Smaller file)
+                  </SelectItem>
+                  <SelectItem value="720p">
+                    720p (Medium - Recommended)
+                  </SelectItem>
+                  <SelectItem value="1080p">
+                    1080p (High - Larger file)
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-500">
@@ -216,7 +238,7 @@ export function VideoExportDialog({
           </div>
         )}
 
-        {exportStatus === 'processing' && (
+        {exportStatus === "processing" && (
           <div className="space-y-4 py-8">
             <div className="text-center">
               <Video className="h-12 w-12 mx-auto mb-4 text-blue-500 animate-pulse" />
@@ -236,7 +258,7 @@ export function VideoExportDialog({
           </div>
         )}
 
-        {exportStatus === 'completed' && (
+        {exportStatus === "completed" && (
           <div className="space-y-4 py-8 text-center">
             <CheckCircle className="h-16 w-16 mx-auto text-green-500" />
             <div>
@@ -248,7 +270,7 @@ export function VideoExportDialog({
           </div>
         )}
 
-        {exportStatus === 'failed' && (
+        {exportStatus === "failed" && (
           <div className="space-y-4 py-8 text-center">
             <XCircle className="h-16 w-16 mx-auto text-red-500" />
             <div>
@@ -266,7 +288,7 @@ export function VideoExportDialog({
         )}
 
         <DialogFooter>
-          {exportStatus === 'idle' && (
+          {exportStatus === "idle" && (
             <>
               <Button
                 variant="outline"
@@ -275,23 +297,20 @@ export function VideoExportDialog({
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handleExport}
-                disabled={isExporting}
-              >
+              <Button onClick={handleExport} disabled={isExporting}>
                 <Video className="h-4 w-4 mr-2" />
                 Generate Video
               </Button>
             </>
           )}
 
-          {exportStatus === 'processing' && (
+          {exportStatus === "processing" && (
             <Button variant="outline" disabled>
               Processing...
             </Button>
           )}
 
-          {exportStatus === 'completed' && (
+          {exportStatus === "completed" && (
             <>
               <Button variant="outline" onClick={handleClose}>
                 Close
@@ -303,14 +322,12 @@ export function VideoExportDialog({
             </>
           )}
 
-          {exportStatus === 'failed' && (
+          {exportStatus === "failed" && (
             <>
               <Button variant="outline" onClick={handleClose}>
                 Close
               </Button>
-              <Button onClick={handleExport}>
-                Try Again
-              </Button>
+              <Button onClick={handleExport}>Try Again</Button>
             </>
           )}
         </DialogFooter>

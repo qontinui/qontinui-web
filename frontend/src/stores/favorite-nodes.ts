@@ -5,9 +5,9 @@
  * Persists to localStorage with custom ordering support.
  */
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { ActionType } from '@/lib/action-schema/action-types';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { ActionType } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -152,7 +152,7 @@ export const useFavoriteNodes = create<FavoriteNodesStore>()(
       },
     }),
     {
-      name: 'favorite-nodes-storage',
+      name: "favorite-nodes-storage",
       version: 1,
     }
   )

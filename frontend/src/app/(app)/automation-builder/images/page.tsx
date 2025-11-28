@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Images Library Page
@@ -14,17 +14,17 @@
  * - Associate images with states and patterns
  */
 
-import { Suspense } from 'react'
-import { ImagesManager } from '@/components/images-manager'
-import { RequireProject } from '@/components/require-project'
-import { Loader2 } from 'lucide-react'
+import { Suspense } from "react";
+import { ImagesManager } from "@/components/images-manager";
+import { RequireProject } from "@/components/require-project";
+import { Loader2 } from "lucide-react";
 
 function LoadingFallback() {
   return (
     <div className="flex items-center justify-center min-h-[400px]">
       <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
     </div>
-  )
+  );
 }
 
 export default function ImagesPage() {
@@ -34,5 +34,5 @@ export default function ImagesPage() {
         <ImagesManager />
       </RequireProject>
     </Suspense>
-  )
+  );
 }

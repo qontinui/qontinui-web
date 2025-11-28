@@ -1,6 +1,6 @@
-import { useMemo } from "react"
-import { Transition, State } from "@/contexts/automation-context/types"
-import { TransitionFilters, TransitionValidation } from "../types"
+import { useMemo } from "react";
+import { Transition, State } from "@/contexts/automation-context/types";
+import { TransitionFilters, TransitionValidation } from "../types";
 
 export function useTransitionFilters(
   transitions: Transition[],
@@ -12,25 +12,24 @@ export function useTransitionFilters(
     return transitions.filter((t) => {
       // Search query
       if (filters.searchQuery) {
-        const query = filters.searchQuery.toLowerCase()
+        const query = filters.searchQuery.toLowerCase();
         const fromStateName =
           t.type === "OutgoingTransition"
             ? states.find((s) => s.id === t.fromState)?.name.toLowerCase()
-            : ""
+            : "";
         const toStateName =
           t.type === "IncomingTransition"
             ? states.find((s) => s.id === t.toState)?.name.toLowerCase()
             : t.type === "OutgoingTransition"
-            ? t.activateStates
-                .map((id) => states.find((s) => s.id === id)?.name.toLowerCase())
-                .join(" ")
-            : ""
+              ? t.activateStates
+                  .map((id) =>
+                    states.find((s) => s.id === id)?.name.toLowerCase()
+                  )
+                  .join(" ")
+              : "";
 
-        if (
-          !fromStateName?.includes(query) &&
-          !toStateName?.includes(query)
-        ) {
-          return false
+        if (!fromStateName?.includes(query) && !toStateName?.includes(query)) {
+          return false;
         }
       }
 
@@ -40,31 +39,28 @@ export function useTransitionFilters(
         t.type === "OutgoingTransition" &&
         t.fromState !== filters.fromState
       ) {
-        return false
+        return false;
       }
 
       // To state filter
       if (filters.toState !== "all") {
         if (t.type === "IncomingTransition" && t.toState !== filters.toState) {
-          return false
+          return false;
         }
         if (
           t.type === "OutgoingTransition" &&
           !t.activateStates.includes(filters.toState)
         ) {
-          return false
+          return false;
         }
       }
 
       // Action type filter
       if (filters.actionType === "with_workflow" && t.workflows.length === 0) {
-        return false
+        return false;
       }
-      if (
-        filters.actionType === "without_workflow" &&
-        t.workflows.length > 0
-      ) {
-        return false
+      if (filters.actionType === "without_workflow" && t.workflows.length > 0) {
+        return false;
       }
 
       // Has workflow filter
@@ -72,12 +68,12 @@ export function useTransitionFilters(
         filters.hasWorkflow !== "all" &&
         !t.workflows.includes(filters.hasWorkflow)
       ) {
-        return false
+        return false;
       }
 
       // Show circular filter
       if (filters.showCircular && !validation.circular.includes(t.id)) {
-        return false
+        return false;
       }
 
       // Show broken filter
@@ -85,10 +81,10 @@ export function useTransitionFilters(
         filters.showBroken &&
         !validation.brokenStateReferences.includes(t.id)
       ) {
-        return false
+        return false;
       }
 
-      return true
-    })
-  }, [transitions, filters, states, validation])
+      return true;
+    });
+  }, [transitions, filters, states, validation]);
 }

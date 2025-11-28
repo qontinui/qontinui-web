@@ -1,26 +1,32 @@
-"use client"
+"use client";
 
-import React, { useState, useEffect } from "react"
-import { Transition, State } from "@/contexts/automation-context/types"
-import { Workflow } from "@/lib/action-schema/action-types"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Separator } from "@/components/ui/separator"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { X, Save, Trash2, Edit } from "lucide-react"
-import { COLORS } from "./types"
+import React, { useState, useEffect } from "react";
+import { Transition, State } from "@/contexts/automation-context/types";
+import { Workflow } from "@/lib/action-schema/action-types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { X, Save, Trash2, Edit } from "lucide-react";
+import { COLORS } from "./types";
 
 interface TransitionDetailsPanelProps {
-  transition: Transition | null
-  states: State[]
-  workflows: Workflow[]
-  onUpdate: (transition: Transition, updates: Partial<Transition>) => void
-  onDelete: (id: string) => void
-  onClose: () => void
+  transition: Transition | null;
+  states: State[];
+  workflows: Workflow[];
+  onUpdate: (transition: Transition, updates: Partial<Transition>) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
 }
 
 export function TransitionDetailsPanel({
@@ -31,11 +37,11 @@ export function TransitionDetailsPanel({
   onDelete,
   onClose,
 }: TransitionDetailsPanelProps) {
-  const [localTransition, setLocalTransition] = useState(transition)
+  const [localTransition, setLocalTransition] = useState(transition);
 
   useEffect(() => {
-    setLocalTransition(transition)
-  }, [transition])
+    setLocalTransition(transition);
+  }, [transition]);
 
   if (!localTransition) {
     return (
@@ -47,12 +53,12 @@ export function TransitionDetailsPanel({
           </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   const handleSave = () => {
-    onUpdate(transition!, localTransition)
-  }
+    onUpdate(transition!, localTransition);
+  };
 
   return (
     <Card className="border-gray-700 bg-[#27272A] h-full flex flex-col">
@@ -194,7 +200,7 @@ export function TransitionDetailsPanel({
             <Label className="text-xs">Workflows</Label>
             <div className="space-y-1">
               {localTransition.workflows.map((workflowId, index) => {
-                const workflow = workflows.find((w) => w.id === workflowId)
+                const workflow = workflows.find((w) => w.id === workflowId);
                 return (
                   <div
                     key={workflowId}
@@ -222,7 +228,7 @@ export function TransitionDetailsPanel({
                       <X className="w-3 h-3" />
                     </Button>
                   </div>
-                )
+                );
               })}
               <Select
                 value=""
@@ -270,5 +276,5 @@ export function TransitionDetailsPanel({
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }

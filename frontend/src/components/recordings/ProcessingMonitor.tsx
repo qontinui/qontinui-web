@@ -1,22 +1,34 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
-import { recordingService } from '@/services/service-factory';
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Clock,
+  AlertCircle,
+} from "lucide-react";
+import { recordingService } from "@/services/service-factory";
 import {
   RecordingStatusLabels,
   ProcessingPhaseLabels,
-} from '@/types/recording';
+} from "@/types/recording";
 import type {
   ProcessingJobStatus,
   ProcessingLogEntry,
   ProcessingPhase,
-} from '@/types/recording';
-import { formatDistanceToNow } from 'date-fns';
+} from "@/types/recording";
+import { formatDistanceToNow } from "date-fns";
 
 interface ProcessingMonitorProps {
   recordingId: string;
@@ -38,23 +50,25 @@ export function ProcessingMonitor({
 
     const poll = async () => {
       try {
-        const jobStatus = await recordingService.getProcessingStatus(recordingId);
+        const jobStatus =
+          await recordingService.getProcessingStatus(recordingId);
         setStatus(jobStatus);
 
         // Fetch logs
-        const logEntries = await recordingService.getProcessingLogs(recordingId);
+        const logEntries =
+          await recordingService.getProcessingLogs(recordingId);
         setLogs(logEntries);
 
         // Check if completed or failed
-        if (jobStatus.status === 'completed') {
+        if (jobStatus.status === "completed") {
           setPolling(false);
           onComplete?.();
-        } else if (jobStatus.status === 'failed') {
+        } else if (jobStatus.status === "failed") {
           setPolling(false);
-          onError?.(jobStatus.error || 'Processing failed');
+          onError?.(jobStatus.error || "Processing failed");
         }
       } catch (error: any) {
-        console.error('Failed to fetch processing status:', error);
+        console.error("Failed to fetch processing status:", error);
       }
     };
 
@@ -70,7 +84,9 @@ export function ProcessingMonitor({
   const getPhaseIcon = (phase: ProcessingPhase) => {
     if (!status) return <Clock className="h-5 w-5 text-gray-400" />;
 
-    const currentPhaseIndex = Object.keys(ProcessingPhaseLabels).indexOf(status.phase || '');
+    const currentPhaseIndex = Object.keys(ProcessingPhaseLabels).indexOf(
+      status.phase || ""
+    );
     const thisPhaseIndex = Object.keys(ProcessingPhaseLabels).indexOf(phase);
 
     if (currentPhaseIndex > thisPhaseIndex) {
@@ -82,36 +98,40 @@ export function ProcessingMonitor({
     }
   };
 
-  const getPhaseStatus = (phase: ProcessingPhase): 'completed' | 'active' | 'pending' => {
-    if (!status || !status.phase) return 'pending';
+  const getPhaseStatus = (
+    phase: ProcessingPhase
+  ): "completed" | "active" | "pending" => {
+    if (!status || !status.phase) return "pending";
 
-    const currentPhaseIndex = Object.keys(ProcessingPhaseLabels).indexOf(status.phase);
+    const currentPhaseIndex = Object.keys(ProcessingPhaseLabels).indexOf(
+      status.phase
+    );
     const thisPhaseIndex = Object.keys(ProcessingPhaseLabels).indexOf(phase);
 
-    if (currentPhaseIndex > thisPhaseIndex) return 'completed';
-    if (currentPhaseIndex === thisPhaseIndex) return 'active';
-    return 'pending';
+    if (currentPhaseIndex > thisPhaseIndex) return "completed";
+    if (currentPhaseIndex === thisPhaseIndex) return "active";
+    return "pending";
   };
 
   const getLogLevelColor = (level: string) => {
     switch (level) {
-      case 'error':
-        return 'text-red-600 dark:text-red-400';
-      case 'warning':
-        return 'text-yellow-600 dark:text-yellow-400';
-      case 'info':
+      case "error":
+        return "text-red-600 dark:text-red-400";
+      case "warning":
+        return "text-yellow-600 dark:text-yellow-400";
+      case "info":
       default:
-        return 'text-gray-600 dark:text-gray-400';
+        return "text-gray-600 dark:text-gray-400";
     }
   };
 
   const getLogLevelIcon = (level: string) => {
     switch (level) {
-      case 'error':
+      case "error":
         return <XCircle className="h-4 w-4" />;
-      case 'warning':
+      case "warning":
         return <AlertCircle className="h-4 w-4" />;
-      case 'info':
+      case "info":
       default:
         return <CheckCircle className="h-4 w-4" />;
     }
@@ -137,20 +157,20 @@ export function ProcessingMonitor({
             <div>
               <CardTitle>Processing Status</CardTitle>
               <CardDescription>
-                {status.status === 'completed'
-                  ? 'Processing completed successfully'
-                  : status.status === 'failed'
-                  ? 'Processing failed'
-                  : 'Automated state discovery in progress...'}
+                {status.status === "completed"
+                  ? "Processing completed successfully"
+                  : status.status === "failed"
+                    ? "Processing failed"
+                    : "Automated state discovery in progress..."}
               </CardDescription>
             </div>
             <Badge
               className={
-                status.status === 'completed'
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-                  : status.status === 'failed'
-                  ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
-                  : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
+                status.status === "completed"
+                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                  : status.status === "failed"
+                    ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
+                    : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100"
               }
             >
               {RecordingStatusLabels[status.status]}
@@ -162,18 +182,24 @@ export function ProcessingMonitor({
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">
-                {status.phase ? ProcessingPhaseLabels[status.phase] : 'Initializing...'}
+                {status.phase
+                  ? ProcessingPhaseLabels[status.phase]
+                  : "Initializing..."}
               </span>
-              <span className="font-medium">{Math.round(status.progress * 100)}%</span>
+              <span className="font-medium">
+                {Math.round(status.progress * 100)}%
+              </span>
             </div>
             <Progress value={status.progress * 100} />
           </div>
 
           {/* Estimated Completion */}
-          {status.estimated_completion && status.status === 'processing' && (
+          {status.estimated_completion && status.status === "processing" && (
             <p className="text-sm text-muted-foreground">
-              Estimated completion:{' '}
-              {formatDistanceToNow(new Date(status.estimated_completion), { addSuffix: true })}
+              Estimated completion:{" "}
+              {formatDistanceToNow(new Date(status.estimated_completion), {
+                addSuffix: true,
+              })}
             </p>
           )}
 
@@ -206,45 +232,47 @@ export function ProcessingMonitor({
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {(Object.keys(ProcessingPhaseLabels) as ProcessingPhase[]).map((phase, index) => {
-              const phaseStatus = getPhaseStatus(phase);
-              return (
-                <div
-                  key={phase}
-                  className={`flex items-start space-x-3 p-3 rounded-lg ${
-                    phaseStatus === 'active'
-                      ? 'bg-blue-50 dark:bg-blue-950'
-                      : phaseStatus === 'completed'
-                      ? 'bg-green-50 dark:bg-green-950'
-                      : 'bg-gray-50 dark:bg-gray-900'
-                  }`}
-                >
-                  {getPhaseIcon(phase)}
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-medium">
-                        {index + 1}. {ProcessingPhaseLabels[phase]}
-                      </h4>
-                      {phaseStatus === 'completed' && (
-                        <Badge variant="outline" className="text-green-600">
-                          Complete
-                        </Badge>
-                      )}
-                      {phaseStatus === 'active' && (
-                        <Badge variant="outline" className="text-blue-600">
-                          In Progress
-                        </Badge>
+            {(Object.keys(ProcessingPhaseLabels) as ProcessingPhase[]).map(
+              (phase, index) => {
+                const phaseStatus = getPhaseStatus(phase);
+                return (
+                  <div
+                    key={phase}
+                    className={`flex items-start space-x-3 p-3 rounded-lg ${
+                      phaseStatus === "active"
+                        ? "bg-blue-50 dark:bg-blue-950"
+                        : phaseStatus === "completed"
+                          ? "bg-green-50 dark:bg-green-950"
+                          : "bg-gray-50 dark:bg-gray-900"
+                    }`}
+                  >
+                    {getPhaseIcon(phase)}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium">
+                          {index + 1}. {ProcessingPhaseLabels[phase]}
+                        </h4>
+                        {phaseStatus === "completed" && (
+                          <Badge variant="outline" className="text-green-600">
+                            Complete
+                          </Badge>
+                        )}
+                        {phaseStatus === "active" && (
+                          <Badge variant="outline" className="text-blue-600">
+                            In Progress
+                          </Badge>
+                        )}
+                      </div>
+                      {phaseStatus === "active" && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {getPhaseDescription(phase)}
+                        </p>
                       )}
                     </div>
-                    {phaseStatus === 'active' && (
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {getPhaseDescription(phase)}
-                      </p>
-                    )}
                   </div>
-                </div>
-              );
-            })}
+                );
+              }
+            )}
           </div>
         </CardContent>
       </Card>
@@ -295,19 +323,19 @@ export function ProcessingMonitor({
 
 function getPhaseDescription(phase: ProcessingPhase): string {
   switch (phase) {
-    case 'frame_analysis':
-      return 'Computing perceptual hashes and clustering similar frames...';
-    case 'state_identification':
-      return 'Identifying states from frame clusters and extracting visual elements...';
-    case 'interaction_processing':
-      return 'Processing mouse and keyboard interactions...';
-    case 'transition_discovery':
-      return 'Discovering transitions between states and generating workflows...';
-    case 'state_machine_assembly':
-      return 'Assembling complete state machine structure...';
-    case 'optimization':
-      return 'Optimizing and validating discovered structures...';
-    case 'completed':
-      return 'Processing complete';
+    case "frame_analysis":
+      return "Computing perceptual hashes and clustering similar frames...";
+    case "state_identification":
+      return "Identifying states from frame clusters and extracting visual elements...";
+    case "interaction_processing":
+      return "Processing mouse and keyboard interactions...";
+    case "transition_discovery":
+      return "Discovering transitions between states and generating workflows...";
+    case "state_machine_assembly":
+      return "Assembling complete state machine structure...";
+    case "optimization":
+      return "Optimizing and validating discovered structures...";
+    case "completed":
+      return "Processing complete";
   }
 }

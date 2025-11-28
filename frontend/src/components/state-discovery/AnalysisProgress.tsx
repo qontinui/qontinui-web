@@ -3,21 +3,26 @@
  * Shows real-time progress during State Discovery analysis
  */
 
-import React from 'react';
+import React from "react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 import {
-  Upload, Search, Layers, Package,
-  CheckCircle, Circle, Loader2
-} from 'lucide-react';
+  Upload,
+  Search,
+  Layers,
+  Package,
+  CheckCircle,
+  Circle,
+  Loader2,
+} from "lucide-react";
 
 interface AnalysisProgressProps {
   progress: number;
@@ -33,42 +38,44 @@ interface Stage {
 
 const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
   progress,
-  onCancel
+  onCancel,
 }) => {
   const stages: Stage[] = [
     {
-      id: 'uploading',
-      name: 'Uploading',
+      id: "uploading",
+      name: "Uploading",
       icon: Upload,
-      percentage: 0
+      percentage: 0,
     },
     {
-      id: 'pixel_analysis',
-      name: 'Analyzing Pixels',
+      id: "pixel_analysis",
+      name: "Analyzing Pixels",
       icon: Search,
-      percentage: 30
+      percentage: 30,
     },
     {
-      id: 'region_extraction',
-      name: 'Extracting Regions',
+      id: "region_extraction",
+      name: "Extracting Regions",
       icon: Layers,
-      percentage: 60
+      percentage: 60,
     },
     {
-      id: 'state_assembly',
-      name: 'Building States',
+      id: "state_assembly",
+      name: "Building States",
       icon: Package,
-      percentage: 90
-    }
+      percentage: 90,
+    },
   ];
 
-  const currentStageIndex = stages.findIndex(s => progress <= s.percentage) || stages.length - 1;
+  const currentStageIndex =
+    stages.findIndex((s) => progress <= s.percentage) || stages.length - 1;
   const currentStage = stages[Math.max(0, currentStageIndex)];
 
   const getStageStatus = (stage: Stage) => {
-    if (progress >= stage.percentage + 30) return 'complete';
-    if (progress >= stage.percentage && progress < stage.percentage + 30) return 'active';
-    return 'pending';
+    if (progress >= stage.percentage + 30) return "complete";
+    if (progress >= stage.percentage && progress < stage.percentage + 30)
+      return "active";
+    return "pending";
   };
 
   return (
@@ -93,15 +100,15 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
                   key={stage.id}
                   className={cn(
                     "flex flex-col items-center space-y-2",
-                    status === 'complete' && "text-green-600",
-                    status === 'active' && "text-blue-600",
-                    status === 'pending' && "text-gray-400"
+                    status === "complete" && "text-green-600",
+                    status === "active" && "text-blue-600",
+                    status === "pending" && "text-gray-400"
                   )}
                 >
                   <div className="relative">
-                    {status === 'complete' ? (
+                    {status === "complete" ? (
                       <CheckCircle className="h-8 w-8" />
-                    ) : status === 'active' ? (
+                    ) : status === "active" ? (
                       <div className="relative">
                         <Circle className="h-8 w-8" />
                         <Loader2 className="h-8 w-8 absolute top-0 left-0 animate-spin" />
@@ -119,11 +126,11 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
                     <div
                       className={cn(
                         "absolute left-full top-4 w-full h-0.5",
-                        status === 'complete' ? "bg-green-600" : "bg-gray-300"
+                        status === "complete" ? "bg-green-600" : "bg-gray-300"
                       )}
                       style={{
-                        width: 'calc(100% - 2rem)',
-                        marginLeft: '1rem'
+                        width: "calc(100% - 2rem)",
+                        marginLeft: "1rem",
                       }}
                     />
                   )}
@@ -144,10 +151,16 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
           {/* Status message */}
           <div className="bg-gray-50 rounded-lg p-3">
             <p className="text-sm text-gray-600">
-              {progress < 30 && "Creating pixel stability map across screenshots..."}
-              {progress >= 30 && progress < 60 && "Identifying stable regions and extracting StateImages..."}
-              {progress >= 60 && progress < 90 && "Grouping StateImages based on co-occurrence patterns..."}
-              {progress >= 90 && "Finalizing state structure and calculating statistics..."}
+              {progress < 30 &&
+                "Creating pixel stability map across screenshots..."}
+              {progress >= 30 &&
+                progress < 60 &&
+                "Identifying stable regions and extracting StateImages..."}
+              {progress >= 60 &&
+                progress < 90 &&
+                "Grouping StateImages based on co-occurrence patterns..."}
+              {progress >= 90 &&
+                "Finalizing state structure and calculating statistics..."}
             </p>
           </div>
 

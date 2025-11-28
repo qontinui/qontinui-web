@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React from 'react';
+import React from "react";
 import {
   CheckCircle,
   XCircle,
@@ -12,10 +12,10 @@ import {
   Zap,
   AlertCircle,
   Play,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import type { WorkflowTestResult, StepResult } from '@/types/integration-tests';
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import type { WorkflowTestResult, StepResult } from "@/types/integration-tests";
 
 interface TestResultsDetailPanelProps {
   result: WorkflowTestResult;
@@ -40,10 +40,14 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
 
   const getActionTypeIcon = (actionType: string) => {
     const type = actionType.toLowerCase();
-    if (type.includes('find') || type.includes('wait')) {
+    if (type.includes("find") || type.includes("wait")) {
       return <Target className="w-4 h-4" />;
     }
-    if (type.includes('click') || type.includes('type') || type.includes('key')) {
+    if (
+      type.includes("click") ||
+      type.includes("type") ||
+      type.includes("key")
+    ) {
       return <Zap className="w-4 h-4" />;
     }
     return <Activity className="w-4 h-4" />;
@@ -51,25 +55,27 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
 
   const getActionTypeLabel = (actionType: string): string => {
     const typeMap: Record<string, string> = {
-      find: 'Find Pattern',
-      find_state_image: 'Find State Image',
-      click: 'Click',
-      type: 'Type Text',
-      key: 'Key Press',
-      wait: 'Wait',
-      wait_for: 'Wait For',
-      scroll: 'Scroll',
-      drag: 'Drag',
-      move: 'Move Mouse',
+      find: "Find Pattern",
+      find_state_image: "Find State Image",
+      click: "Click",
+      type: "Type Text",
+      key: "Key Press",
+      wait: "Wait",
+      wait_for: "Wait For",
+      scroll: "Scroll",
+      drag: "Drag",
+      move: "Move Mouse",
     };
     return typeMap[actionType.toLowerCase()] || actionType;
   };
 
-  const successRate = result.totalSteps > 0
-    ? Math.round((result.successfulSteps / result.totalSteps) * 100)
-    : 0;
+  const successRate =
+    result.totalSteps > 0
+      ? Math.round((result.successfulSteps / result.totalSteps) * 100)
+      : 0;
 
-  const hasPlayback = result.historicalResultIds && result.historicalResultIds.length > 0;
+  const hasPlayback =
+    result.historicalResultIds && result.historicalResultIds.length > 0;
 
   return (
     <Card className="bg-white border border-gray-200 h-full flex flex-col">
@@ -115,14 +121,20 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
       <CardContent className="flex-1 overflow-hidden flex flex-col gap-4">
         {/* Summary Stats */}
         <div className="grid grid-cols-4 gap-3">
-          <div className={`p-3 rounded-lg border ${
-            result.passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-          }`}>
+          <div
+            className={`p-3 rounded-lg border ${
+              result.passed
+                ? "bg-green-50 border-green-200"
+                : "bg-red-50 border-red-200"
+            }`}
+          >
             <p className="text-xs text-gray-600 font-medium">Status</p>
-            <p className={`text-lg font-bold ${
-              result.passed ? 'text-green-700' : 'text-red-700'
-            }`}>
-              {result.passed ? 'PASSED' : 'FAILED'}
+            <p
+              className={`text-lg font-bold ${
+                result.passed ? "text-green-700" : "text-red-700"
+              }`}
+            >
+              {result.passed ? "PASSED" : "FAILED"}
             </p>
           </div>
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -148,10 +160,10 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
           <div
             className={`h-full rounded-full transition-all ${
               successRate >= 80
-                ? 'bg-green-500'
+                ? "bg-green-500"
                 : successRate >= 50
-                ? 'bg-yellow-500'
-                : 'bg-red-500'
+                  ? "bg-yellow-500"
+                  : "bg-red-500"
             }`}
             style={{ width: `${successRate}%` }}
           />
@@ -173,7 +185,9 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
         {/* Step Results Timeline */}
         <div className="flex-1 overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-700">Step-by-Step Results</h3>
+            <h3 className="text-sm font-semibold text-gray-700">
+              Step-by-Step Results
+            </h3>
             <span className="text-xs text-gray-500">
               {result.stepResults?.length || 0} steps executed
             </span>
@@ -183,7 +197,11 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
             {result.stepResults && result.stepResults.length > 0 ? (
               <div className="space-y-2">
                 {result.stepResults.map((step, index) => (
-                  <StepResultCard key={step.actionId || index} step={step} index={index} />
+                  <StepResultCard
+                    key={step.actionId || index}
+                    step={step}
+                    index={index}
+                  />
                 ))}
               </div>
             ) : (
@@ -204,7 +222,10 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
 /**
  * Individual step result card component
  */
-const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({ step, index }) => {
+const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({
+  step,
+  index,
+}) => {
   const formatDuration = (ms: number): string => {
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(2)}s`;
@@ -212,10 +233,14 @@ const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({ step, i
 
   const getActionTypeIcon = (actionType: string) => {
     const type = actionType.toLowerCase();
-    if (type.includes('find') || type.includes('wait')) {
+    if (type.includes("find") || type.includes("wait")) {
       return <Target className="w-3.5 h-3.5" />;
     }
-    if (type.includes('click') || type.includes('type') || type.includes('key')) {
+    if (
+      type.includes("click") ||
+      type.includes("type") ||
+      type.includes("key")
+    ) {
       return <Zap className="w-3.5 h-3.5" />;
     }
     return <Activity className="w-3.5 h-3.5" />;
@@ -225,8 +250,8 @@ const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({ step, i
     <div
       className={`p-3 rounded-lg border transition-all ${
         step.success
-          ? 'bg-white border-gray-200 hover:border-green-300'
-          : 'bg-red-50 border-red-200 hover:border-red-300'
+          ? "bg-white border-gray-200 hover:border-green-300"
+          : "bg-red-50 border-red-200 hover:border-red-300"
       }`}
     >
       <div className="flex items-start gap-3">
@@ -235,8 +260,8 @@ const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({ step, i
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
               step.success
-                ? 'bg-green-100 text-green-700'
-                : 'bg-red-100 text-red-700'
+                ? "bg-green-100 text-green-700"
+                : "bg-red-100 text-red-700"
             }`}
           >
             {index + 1}
@@ -252,7 +277,9 @@ const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({ step, i
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className={`${step.success ? 'text-gray-500' : 'text-red-500'}`}>
+              <span
+                className={`${step.success ? "text-gray-500" : "text-red-500"}`}
+              >
                 {getActionTypeIcon(step.actionType)}
               </span>
               <span className="font-medium text-sm text-gray-900 truncate">
@@ -268,24 +295,29 @@ const StepResultCard: React.FC<{ step: StepResult; index: number }> = ({ step, i
           </div>
 
           <div className="mt-1.5 flex items-center gap-3 text-xs">
-            <span className={`px-2 py-0.5 rounded-full font-medium ${
-              step.success
-                ? 'bg-green-100 text-green-700'
-                : 'bg-red-100 text-red-700'
-            }`}>
+            <span
+              className={`px-2 py-0.5 rounded-full font-medium ${
+                step.success
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-700"
+              }`}
+            >
               {step.actionType.toUpperCase()}
             </span>
             {step.patternName && (
               <span className="text-gray-500 truncate">
-                Pattern: <span className="text-gray-700">{step.patternName}</span>
+                Pattern:{" "}
+                <span className="text-gray-700">{step.patternName}</span>
               </span>
             )}
           </div>
 
           {/* Message */}
-          <p className={`mt-2 text-xs ${
-            step.success ? 'text-gray-600' : 'text-red-600'
-          }`}>
+          <p
+            className={`mt-2 text-xs ${
+              step.success ? "text-gray-600" : "text-red-600"
+            }`}
+          >
             {step.message}
           </p>
 

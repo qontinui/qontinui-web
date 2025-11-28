@@ -8,9 +8,9 @@
  * - Math operations: MATH_OPERATION (add, subtract, multiply, etc.)
  */
 
-import React from 'react';
-import { NodeProps } from '@xyflow/react';
-import { BaseNode, BaseNodeData, CompactNode } from './BaseNode';
+import React from "react";
+import { NodeProps } from "@xyflow/react";
+import { BaseNode, BaseNodeData, CompactNode } from "./BaseNode";
 import type {
   SetVariableActionConfig,
   GetVariableActionConfig,
@@ -20,7 +20,7 @@ import type {
   SortActionConfig,
   StringOperationActionConfig,
   MathOperationActionConfig,
-} from '@/lib/action-schema/configs/data-actions';
+} from "@/lib/action-schema/configs/data-actions";
 
 // =============================================================================
 // Variable Operation Nodes
@@ -31,8 +31,8 @@ import type {
  */
 export function SetVariableNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as SetVariableActionConfig;
-  const varName = config.variableName || 'variable';
-  const scope = config.scope || 'local';
+  const varName = config.variableName || "variable";
+  const scope = config.scope || "local";
 
   return (
     <BaseNode
@@ -47,7 +47,7 @@ export function SetVariableNode(props: NodeProps<BaseNodeData>) {
  */
 export function GetVariableNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as GetVariableActionConfig;
-  const varName = config.variableName || 'variable';
+  const varName = config.variableName || "variable";
 
   return (
     <CompactNode
@@ -66,7 +66,7 @@ export function GetVariableNode(props: NodeProps<BaseNodeData>) {
  */
 export function FilterNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as FilterActionConfig;
-  const varName = config.variableName || 'array';
+  const varName = config.variableName || "array";
 
   return (
     <BaseNode
@@ -81,7 +81,7 @@ export function FilterNode(props: NodeProps<BaseNodeData>) {
  */
 export function MapNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as MapActionConfig;
-  const varName = config.variableName || 'array';
+  const varName = config.variableName || "array";
 
   return (
     <BaseNode
@@ -96,7 +96,7 @@ export function MapNode(props: NodeProps<BaseNodeData>) {
  */
 export function ReduceNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as ReduceActionConfig;
-  const varName = config.variableName || 'array';
+  const varName = config.variableName || "array";
 
   return (
     <BaseNode
@@ -111,7 +111,7 @@ export function ReduceNode(props: NodeProps<BaseNodeData>) {
  */
 export function SortNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as SortActionConfig;
-  const order = config.order === 'desc' ? 'desc' : 'asc';
+  const order = config.order === "desc" ? "desc" : "asc";
   const field = config.sortBy;
 
   return (
@@ -131,19 +131,19 @@ export function SortNode(props: NodeProps<BaseNodeData>) {
  */
 export function StringOperationNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as StringOperationActionConfig;
-  const operation = config.operation || 'concat';
+  const operation = config.operation || "concat";
 
   // Map operation to display name
   const operationNames: Record<string, string> = {
-    concat: 'Concatenate',
-    substring: 'Substring',
-    replace: 'Replace',
-    split: 'Split',
-    trim: 'Trim',
-    uppercase: 'Uppercase',
-    lowercase: 'Lowercase',
-    match: 'Match Pattern',
-    parse_json: 'Parse JSON',
+    concat: "Concatenate",
+    substring: "Substring",
+    replace: "Replace",
+    split: "Split",
+    trim: "Trim",
+    uppercase: "Uppercase",
+    lowercase: "Lowercase",
+    match: "Match Pattern",
+    parse_json: "Parse JSON",
   };
 
   const displayName = operationNames[operation] || operation;
@@ -165,20 +165,20 @@ export function StringOperationNode(props: NodeProps<BaseNodeData>) {
  */
 export function MathOperationNode(props: NodeProps<BaseNodeData>) {
   const config = props.data.action.config as MathOperationActionConfig;
-  const operation = config.operation || 'add';
+  const operation = config.operation || "add";
 
   // Map operation to symbol
   const operationSymbols: Record<string, string> = {
-    add: '+',
-    subtract: '-',
-    multiply: '×',
-    divide: '÷',
-    modulo: '%',
-    power: '^',
-    sqrt: '√',
-    abs: '|x|',
-    round: '⌊⌉',
-    custom: 'ƒ(x)',
+    add: "+",
+    subtract: "-",
+    multiply: "×",
+    divide: "÷",
+    modulo: "%",
+    power: "^",
+    sqrt: "√",
+    abs: "|x|",
+    round: "⌊⌉",
+    custom: "ƒ(x)",
   };
 
   const symbol = operationSymbols[operation] || operation;

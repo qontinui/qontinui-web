@@ -7,7 +7,9 @@
 /**
  * Parse semantic version string into components
  */
-export function parseVersion(version: string): { major: number; minor: number; patch: number } | null {
+export function parseVersion(
+  version: string
+): { major: number; minor: number; patch: number } | null {
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
   if (!match) return null;
 

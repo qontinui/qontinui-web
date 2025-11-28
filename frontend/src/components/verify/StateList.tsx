@@ -11,65 +11,79 @@
  * - Groups states by initial/normal
  */
 
-import React, { useState, useMemo } from 'react'
-import type { State } from '@/contexts/automation-context/types'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Star, Layers } from 'lucide-react'
+import React, { useState, useMemo } from "react";
+import type { State } from "@/contexts/automation-context/types";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Search, Star, Layers } from "lucide-react";
 
 export interface StateListProps {
-  states: State[]
-  selectedStateId: string | null
-  onSelectState: (stateId: string) => void
+  states: State[];
+  selectedStateId: string | null;
+  onSelectState: (stateId: string) => void;
 }
 
-export function StateList({ states, selectedStateId, onSelectState }: StateListProps) {
-  const [searchQuery, setSearchQuery] = useState('')
+export function StateList({
+  states,
+  selectedStateId,
+  onSelectState,
+}: StateListProps) {
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Filter states by search query
   const filteredStates = useMemo(() => {
-    if (!searchQuery.trim()) return states
+    if (!searchQuery.trim()) return states;
 
-    const query = searchQuery.toLowerCase()
-    return states.filter((state) =>
-      state.name.toLowerCase().includes(query) ||
-      state.description?.toLowerCase().includes(query)
-    )
-  }, [states, searchQuery])
+    const query = searchQuery.toLowerCase();
+    return states.filter(
+      (state) =>
+        state.name.toLowerCase().includes(query) ||
+        state.description?.toLowerCase().includes(query)
+    );
+  }, [states, searchQuery]);
 
   // Group states by initial/normal
   const { initialStates, normalStates } = useMemo(() => {
-    const initial: State[] = []
-    const normal: State[] = []
+    const initial: State[] = [];
+    const normal: State[] = [];
 
     filteredStates.forEach((state) => {
       if (state.initial) {
-        initial.push(state)
+        initial.push(state);
       } else {
-        normal.push(state)
+        normal.push(state);
       }
-    })
+    });
 
-    return { initialStates: initial, normalStates: normal }
-  }, [filteredStates])
+    return { initialStates: initial, normalStates: normal };
+  }, [filteredStates]);
 
   // Count elements for a state
   const getElementCounts = (state: State) => {
-    const imageCount = state.stateImages?.filter(img =>
-      img.patterns?.some(p => p.fixed && p.offsetX !== undefined && p.offsetY !== undefined)
-    ).length || 0
-    const regionCount = state.regions?.length || 0
-    const locationCount = state.locations?.length || 0
-    const total = imageCount + regionCount + locationCount
+    const imageCount =
+      state.stateImages?.filter((img) =>
+        img.patterns?.some(
+          (p) => p.fixed && p.offsetX !== undefined && p.offsetY !== undefined
+        )
+      ).length || 0;
+    const regionCount = state.regions?.length || 0;
+    const locationCount = state.locations?.length || 0;
+    const total = imageCount + regionCount + locationCount;
 
-    return { imageCount, regionCount, locationCount, total }
-  }
+    return { imageCount, regionCount, locationCount, total };
+  };
 
   const renderStateItem = (state: State) => {
-    const isSelected = selectedStateId === state.id
-    const counts = getElementCounts(state)
+    const isSelected = selectedStateId === state.id;
+    const counts = getElementCounts(state);
 
     return (
       <div
@@ -77,9 +91,10 @@ export function StateList({ states, selectedStateId, onSelectState }: StateListP
         className={`
           flex flex-col gap-2 p-3 rounded-lg border cursor-pointer
           transition-colors
-          ${isSelected
-            ? 'bg-primary/10 border-primary shadow-sm'
-            : 'hover:bg-muted/50 hover:border-muted-foreground/20'
+          ${
+            isSelected
+              ? "bg-primary/10 border-primary shadow-sm"
+              : "hover:bg-muted/50 hover:border-muted-foreground/20"
           }
         `}
         onClick={() => onSelectState(state.id)}
@@ -88,7 +103,10 @@ export function StateList({ states, selectedStateId, onSelectState }: StateListP
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               {state.initial && (
-                <Star className="h-3 w-3 text-yellow-500 flex-shrink-0" fill="currentColor" />
+                <Star
+                  className="h-3 w-3 text-yellow-500 flex-shrink-0"
+                  fill="currentColor"
+                />
               )}
               <div className="font-medium truncate">{state.name}</div>
             </div>
@@ -135,8 +153,8 @@ export function StateList({ states, selectedStateId, onSelectState }: StateListP
           </div>
         )}
       </div>
-    )
-  }
+    );
+  };
 
   return (
     <Card className="flex flex-col h-full">
@@ -145,9 +163,7 @@ export function StateList({ states, selectedStateId, onSelectState }: StateListP
           <span>States</span>
           <Badge variant="outline">{states.length}</Badge>
         </CardTitle>
-        <CardDescription>
-          Select a state to visualize
-        </CardDescription>
+        <CardDescription>Select a state to visualize</CardDescription>
 
         {/* Search */}
         <div className="relative pt-2">
@@ -174,7 +190,9 @@ export function StateList({ states, selectedStateId, onSelectState }: StateListP
               ) : (
                 <>
                   <p className="text-sm">No states yet</p>
-                  <p className="text-xs mt-1">Create states to visualize them</p>
+                  <p className="text-xs mt-1">
+                    Create states to visualize them
+                  </p>
                 </>
               )}
             </div>
@@ -186,7 +204,10 @@ export function StateList({ states, selectedStateId, onSelectState }: StateListP
               {initialStates.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-2 px-1">
-                    <Star className="h-3 w-3 text-yellow-500" fill="currentColor" />
+                    <Star
+                      className="h-3 w-3 text-yellow-500"
+                      fill="currentColor"
+                    />
                     <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                       Initial States
                     </div>
@@ -218,5 +239,5 @@ export function StateList({ states, selectedStateId, onSelectState }: StateListP
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

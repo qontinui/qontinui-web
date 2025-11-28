@@ -5,15 +5,18 @@
  * Detects if a graph can be linearized and produces sequential action lists.
  */
 
-import { Workflow, Action, Connections } from '../action-schema/action-types';
+import { Workflow, Action, Connections } from "../action-schema/action-types";
 import {
   getTopologicalOrder,
   getActionById,
   getNextActions,
-} from '../action-schema/workflow-utils';
-import { LinearizabilityChecker, LinearizabilityResult } from './linearizability-checker';
-import { PatternDetector, IfPattern, LoopPattern } from './pattern-detector';
-import { NonLinearWorkflowError, WorkflowValidationError } from './errors';
+} from "../action-schema/workflow-utils";
+import {
+  LinearizabilityChecker,
+  LinearizabilityResult,
+} from "./linearizability-checker";
+import { PatternDetector, IfPattern, LoopPattern } from "./pattern-detector";
+import { NonLinearWorkflowError, WorkflowValidationError } from "./errors";
 
 /**
  * Conversion options
@@ -59,24 +62,24 @@ export class GraphToSequentialConverter {
     };
 
     // Step 1: Validate it's a graph workflow
-    if (workflow.format !== 'graph') {
-      throw new WorkflowValidationError(
-        'Workflow is not in graph format',
-        { format: workflow.format }
-      );
+    if (workflow.format !== "graph") {
+      throw new WorkflowValidationError("Workflow is not in graph format", {
+        format: workflow.format,
+      });
     }
 
-    if (!workflow.connections || Object.keys(workflow.connections).length === 0) {
-      throw new WorkflowValidationError(
-        'Graph workflow has no connections'
-      );
+    if (
+      !workflow.connections ||
+      Object.keys(workflow.connections).length === 0
+    ) {
+      throw new WorkflowValidationError("Graph workflow has no connections");
     }
 
     // Step 2: Check if linearizable
     const linearizabilityResult = this.checker.check(workflow);
     if (!linearizabilityResult.linearizable) {
       throw new NonLinearWorkflowError(
-        'Workflow cannot be converted to sequential format',
+        "Workflow cannot be converted to sequential format",
         linearizabilityResult.issues
       );
     }
@@ -106,10 +109,10 @@ export class GraphToSequentialConverter {
    * Check if workflow can be linearized
    */
   canLinearize(workflow: Workflow): LinearizabilityResult {
-    if (workflow.format !== 'graph') {
+    if (workflow.format !== "graph") {
       return {
         linearizable: false,
-        issues: ['Workflow is not in graph format'],
+        issues: ["Workflow is not in graph format"],
       };
     }
 
@@ -123,8 +126,8 @@ export class GraphToSequentialConverter {
     const order = getTopologicalOrder(workflow);
     if (!order) {
       throw new NonLinearWorkflowError(
-        'Cannot sort workflow: contains cycles',
-        ['Cyclic dependencies detected']
+        "Cannot sort workflow: contains cycles",
+        ["Cyclic dependencies detected"]
       );
     }
 
@@ -157,11 +160,19 @@ export class GraphToSequentialConverter {
       }
 
       // Handle control flow actions
-      if (action.type === 'IF') {
-        const reconstructed = this.reconstructIf(action, workflow, processedActions);
+      if (action.type === "IF") {
+        const reconstructed = this.reconstructIf(
+          action,
+          workflow,
+          processedActions
+        );
         result.push(reconstructed);
-      } else if (action.type === 'LOOP') {
-        const reconstructed = this.reconstructLoop(action, workflow, processedActions);
+      } else if (action.type === "LOOP") {
+        const reconstructed = this.reconstructLoop(
+          action,
+          workflow,
+          processedActions
+        );
         result.push(reconstructed);
       } else {
         // Regular action
@@ -300,15 +311,11 @@ export class GraphToSequentialConverter {
       }
 
       if (!action.type) {
-        throw new WorkflowValidationError(
-          `Action ${action.id} missing type`
-        );
+        throw new WorkflowValidationError(`Action ${action.id} missing type`);
       }
 
       if (!action.config) {
-        throw new WorkflowValidationError(
-          `Action ${action.id} missing config`
-        );
+        throw new WorkflowValidationError(`Action ${action.id} missing config`);
       }
     });
 
@@ -316,16 +323,14 @@ export class GraphToSequentialConverter {
     const ids = new Set<string>();
     actions.forEach((action) => {
       if (ids.has(action.id)) {
-        throw new WorkflowValidationError(
-          `Duplicate action ID: ${action.id}`
-        );
+        throw new WorkflowValidationError(`Duplicate action ID: ${action.id}`);
       }
       ids.add(action.id);
     });
 
     // Validate control flow references
     actions.forEach((action) => {
-      if (action.type === 'IF') {
+      if (action.type === "IF") {
         const config = action.config as any;
         if (config.thenActions) {
           this.validateActionReferences(config.thenActions, ids, action.id);
@@ -333,7 +338,7 @@ export class GraphToSequentialConverter {
         if (config.elseActions) {
           this.validateActionReferences(config.elseActions, ids, action.id);
         }
-      } else if (action.type === 'LOOP') {
+      } else if (action.type === "LOOP") {
         const config = action.config as any;
         if (config.actions) {
           this.validateActionReferences(config.actions, ids, action.id);

@@ -1,4 +1,4 @@
-import { Tutorial } from '@/types/tutorial';
+import { Tutorial } from "@/types/tutorial";
 
 /**
  * Image Annotation Basics Tutorial
@@ -12,26 +12,32 @@ import { Tutorial } from '@/types/tutorial';
  * work with the actual annotation tools.
  */
 const annotationBasicsTutorial: Tutorial = {
-  id: 'image-annotation-basics',
-  title: 'Image Annotation Basics',
+  id: "image-annotation-basics",
+  title: "Image Annotation Basics",
   description:
-    'Learn how to annotate screenshots and create accurate pattern matches for automation. Master the fundamentals of identifying UI elements, defining search regions, and setting confidence thresholds.',
-  duration: '20 minutes',
-  difficulty: 'beginner',
-  mode: 'contextual',
-  targetPage: '/annotations',
-  category: 'Core Skills',
-  tags: ['annotation', 'pattern-matching', 'screenshots', 'beginner', 'fundamentals'],
+    "Learn how to annotate screenshots and create accurate pattern matches for automation. Master the fundamentals of identifying UI elements, defining search regions, and setting confidence thresholds.",
+  duration: "20 minutes",
+  difficulty: "beginner",
+  mode: "contextual",
+  targetPage: "/annotations",
+  category: "Core Skills",
+  tags: [
+    "annotation",
+    "pattern-matching",
+    "screenshots",
+    "beginner",
+    "fundamentals",
+  ],
 
   learningObjectives: [
-    'Understand the purpose and importance of image annotation',
-    'Upload and manage screenshots effectively',
-    'Identify and annotate UI elements accurately',
-    'Create reliable pattern matches',
-    'Define optimal search regions for efficiency',
-    'Set appropriate confidence thresholds',
-    'Test and validate pattern matches',
-    'Save and organize annotations for reuse',
+    "Understand the purpose and importance of image annotation",
+    "Upload and manage screenshots effectively",
+    "Identify and annotate UI elements accurately",
+    "Create reliable pattern matches",
+    "Define optimal search regions for efficiency",
+    "Set appropriate confidence thresholds",
+    "Test and validate pattern matches",
+    "Save and organize annotations for reuse",
   ],
 
   triggers: {
@@ -39,11 +45,12 @@ const annotationBasicsTutorial: Tutorial = {
     manual: true,
     contextual: [
       {
-        event: 'page-load',
-        condition: 'return window.location.pathname === "/annotations" && !localStorage.getItem("annotation-basics-completed")',
+        event: "page-load",
+        condition:
+          'return window.location.pathname === "/annotations" && !localStorage.getItem("annotation-basics-completed")',
       },
       {
-        event: 'first-annotation-attempt',
+        event: "first-annotation-attempt",
         condition: 'return !localStorage.getItem("annotation-basics-started")',
       },
     ],
@@ -55,14 +62,14 @@ const annotationBasicsTutorial: Tutorial = {
     validateUserActions: true,
     sampleData: {
       sampleScreenshots: [
-        '/tutorials/annotation-basics/sample-ui.png',
-        '/tutorials/annotation-basics/sample-button.png',
+        "/tutorials/annotation-basics/sample-ui.png",
+        "/tutorials/annotation-basics/sample-button.png",
       ],
       sampleElements: [
         {
-          name: 'Login Button',
-          type: 'button',
-          description: 'Primary login button on authentication screen',
+          name: "Login Button",
+          type: "button",
+          description: "Primary login button on authentication screen",
         },
       ],
     },
@@ -70,21 +77,21 @@ const annotationBasicsTutorial: Tutorial = {
   },
 
   author: {
-    name: 'Qontinui Team',
+    name: "Qontinui Team",
   },
 
   metadata: {
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    version: '1.0.0',
+    version: "1.0.0",
   },
 
   isPublished: true,
 
   steps: [
     {
-      id: 'step-1-welcome',
-      title: 'Welcome to Image Annotation',
+      id: "step-1-welcome",
+      title: "Welcome to Image Annotation",
       content: `
 # Welcome to Image Annotation in Qontinui
 
@@ -143,29 +150,29 @@ By the end of this tutorial, you'll:
 **Let's get started with the fundamentals!**
 `,
       estimatedDuration: 2,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand what image annotation is and why it matters',
-        'See the advantages of pattern matching over coordinate-based automation',
-        'Learn the workflow for creating annotations',
+        "Understand what image annotation is and why it matters",
+        "See the advantages of pattern matching over coordinate-based automation",
+        "Learn the workflow for creating annotations",
       ],
       tips: [
-        'Pattern matching is more reliable than coordinate clicking',
-        'Good annotations are the foundation of robust automations',
-        'Start with clear, distinct UI elements for your first annotations',
+        "Pattern matching is more reliable than coordinate clicking",
+        "Good annotations are the foundation of robust automations",
+        "Start with clear, distinct UI elements for your first annotations",
       ],
       targetElement: {
         selector: '[data-tutorial-id="annotation-welcome"]',
-        highlightType: 'spotlight',
-        position: 'center',
+        highlightType: "spotlight",
+        position: "center",
         allowInteraction: false,
         scrollIntoView: true,
       },
     },
 
     {
-      id: 'step-2-upload-screenshot',
-      title: 'Upload a Screenshot',
+      id: "step-2-upload-screenshot",
+      title: "Upload a Screenshot",
       content: `
 # Capturing and Uploading Screenshots
 
@@ -228,75 +235,77 @@ Upload a screenshot using the uploader below. You can either:
 **Pro tip**: If this is your first annotation, start with a simple, clearly visible button or icon.
 `,
       estimatedDuration: 3,
-      difficulty: 'beginner',
-      screenshot: '/tutorials/annotation-basics/screenshot-example.png',
+      difficulty: "beginner",
+      screenshot: "/tutorials/annotation-basics/screenshot-example.png",
       annotations: [
         {
-          type: 'highlight',
+          type: "highlight",
           x: 100,
           y: 100,
           width: 400,
           height: 300,
-          label: 'Clear UI element\nGood for annotation',
-          color: '#4CAF50',
+          label: "Clear UI element\nGood for annotation",
+          color: "#4CAF50",
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 300,
           y: 450,
-          label: 'Avoid capturing tooltips',
+          label: "Avoid capturing tooltips",
         },
       ],
       learningObjectives: [
-        'Understand what makes a good screenshot for annotation',
-        'Learn how to capture screenshots on your platform',
-        'Practice uploading screenshots to Qontinui',
+        "Understand what makes a good screenshot for annotation",
+        "Learn how to capture screenshots on your platform",
+        "Practice uploading screenshots to Qontinui",
       ],
       tryIt: {
-        type: 'upload-screenshots',
-        component: 'ScreenshotUploader',
+        type: "upload-screenshots",
+        component: "ScreenshotUploader",
         hints: [
-          'Use PNG format for best quality',
-          'Ensure the UI element you want to annotate is clearly visible',
-          'Full window captures are better than cropped regions',
-          'You can upload multiple screenshots for different UI states',
+          "Use PNG format for best quality",
+          "Ensure the UI element you want to annotate is clearly visible",
+          "Full window captures are better than cropped regions",
+          "You can upload multiple screenshots for different UI states",
         ],
         successCriteria: {
-          description: 'Upload at least one screenshot showing a clear UI element',
+          description:
+            "Upload at least one screenshot showing a clear UI element",
           validation: {
             minScreenshots: 1,
-            format: 'png or jpg',
+            format: "png or jpg",
             minWidth: 400,
             minHeight: 300,
           },
         },
       },
       tips: [
-        'Screenshot quality directly impacts pattern matching accuracy',
-        'Multiple screenshots of the same element in different states improve recognition',
-        'Name your screenshots descriptively for easy organization',
+        "Screenshot quality directly impacts pattern matching accuracy",
+        "Multiple screenshots of the same element in different states improve recognition",
+        "Name your screenshots descriptively for easy organization",
       ],
       targetElement: {
         selector: '[data-tutorial-id="screenshot-uploader"]',
-        highlightType: 'border',
-        position: 'top',
+        highlightType: "border",
+        position: "top",
         allowInteraction: true,
         scrollIntoView: true,
       },
       validation: {
-        type: 'action',
-        condition: 'return document.querySelectorAll("[data-screenshot-uploaded]").length > 0',
+        type: "action",
+        condition:
+          'return document.querySelectorAll("[data-screenshot-uploaded]").length > 0',
         feedback: {
-          success: 'Great! Screenshot uploaded successfully.',
-          failure: 'Please upload a screenshot to continue.',
-          hint: 'Click the upload area or drag and drop your screenshot file.',
+          success: "Great! Screenshot uploaded successfully.",
+          failure: "Please upload a screenshot to continue.",
+          hint: "Click the upload area or drag and drop your screenshot file.",
         },
       },
     },
 
     {
-      id: 'step-3-identify-element',
-      title: 'Identify UI Elements',
+      id: "step-3-identify-element",
+      title: "Identify UI Elements",
       content: `
 # Identifying and Annotating UI Elements
 
@@ -367,56 +376,64 @@ Identify a clear UI element in your screenshot:
 **Tip**: Start with a button or icon - they're usually the easiest elements to annotate.
 `,
       estimatedDuration: 4,
-      difficulty: 'beginner',
-      screenshot: '/tutorials/annotation-basics/identify-element.png',
+      difficulty: "beginner",
+      screenshot: "/tutorials/annotation-basics/identify-element.png",
       annotations: [
         {
-          type: 'highlight',
+          type: "highlight",
           x: 200,
           y: 150,
           width: 120,
           height: 40,
-          label: 'Example button\nGood size for annotation',
-          color: '#2196F3',
+          label: "Example button\nGood size for annotation",
+          color: "#2196F3",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 200,
           y: 220,
           width: 300,
           height: 100,
-          label: 'Too much context\nReduce bounding box',
-          color: '#FF5722',
+          label: "Too much context\nReduce bounding box",
+          color: "#FF5722",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 220,
           y: 350,
           width: 30,
           height: 15,
-          label: 'Too small\nAdd more context',
-          color: '#FF5722',
+          label: "Too small\nAdd more context",
+          color: "#FF5722",
         },
       ],
       learningObjectives: [
-        'Identify different types of UI elements',
-        'Create accurate bounding boxes',
-        'Name and describe elements effectively',
+        "Identify different types of UI elements",
+        "Create accurate bounding boxes",
+        "Name and describe elements effectively",
       ],
       tryIt: {
-        type: 'identify-element',
-        component: 'ElementHighlighter',
+        type: "identify-element",
+        component: "ElementHighlighter",
         preloadedData: {
-          elementTypes: ['button', 'icon', 'text-field', 'label', 'image', 'indicator'],
+          elementTypes: [
+            "button",
+            "icon",
+            "text-field",
+            "label",
+            "image",
+            "indicator",
+          ],
         },
         hints: [
-          'Click and drag to create a bounding box around the element',
-          'The box should fully contain the element with a small margin',
-          'Use descriptive names that indicate what the element is and does',
-          'Include the element type in your description (button, icon, etc.)',
+          "Click and drag to create a bounding box around the element",
+          "The box should fully contain the element with a small margin",
+          "Use descriptive names that indicate what the element is and does",
+          "Include the element type in your description (button, icon, etc.)",
         ],
         successCriteria: {
-          description: 'Successfully identify and annotate at least one UI element',
+          description:
+            "Successfully identify and annotate at least one UI element",
           validation: {
             minAnnotations: 1,
             hasValidBoundingBox: true,
@@ -426,31 +443,32 @@ Identify a clear UI element in your screenshot:
         },
       },
       tips: [
-        'Good bounding boxes are crucial for accurate pattern matching',
-        'If an element has multiple states (hover, pressed), annotate the normal state first',
-        'You can always adjust the annotation later if needed',
+        "Good bounding boxes are crucial for accurate pattern matching",
+        "If an element has multiple states (hover, pressed), annotate the normal state first",
+        "You can always adjust the annotation later if needed",
       ],
       targetElement: {
         selector: '[data-tutorial-id="element-highlighter"]',
-        highlightType: 'border',
-        position: 'right',
+        highlightType: "border",
+        position: "right",
         allowInteraction: true,
         scrollIntoView: true,
       },
       validation: {
-        type: 'state',
-        condition: 'return window.annotationState && window.annotationState.elements && window.annotationState.elements.length > 0',
+        type: "state",
+        condition:
+          "return window.annotationState && window.annotationState.elements && window.annotationState.elements.length > 0",
         feedback: {
-          success: 'Excellent! Element identified and annotated.',
-          failure: 'Please identify at least one UI element.',
-          hint: 'Use the highlighter tool to draw a box around a UI element.',
+          success: "Excellent! Element identified and annotated.",
+          failure: "Please identify at least one UI element.",
+          hint: "Use the highlighter tool to draw a box around a UI element.",
         },
       },
     },
 
     {
-      id: 'step-4-create-pattern',
-      title: 'Create a Pattern Match',
+      id: "step-4-create-pattern",
+      title: "Create a Pattern Match",
       content: `
 # Creating Pattern Matches
 
@@ -529,65 +547,65 @@ Create a pattern match for the element you identified:
 **Pro tip**: Most buttons and icons work well with Template Match and Normalized Cross-Correlation.
 `,
       estimatedDuration: 4,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand how pattern matching works',
-        'Choose appropriate matching algorithms',
-        'Create effective pattern templates',
-        'Avoid common pattern matching mistakes',
+        "Understand how pattern matching works",
+        "Choose appropriate matching algorithms",
+        "Create effective pattern templates",
+        "Avoid common pattern matching mistakes",
       ],
       config: {
         patternMatchTypes: [
           {
-            name: 'Template Match',
-            description: 'Standard pattern matching for most UI elements',
-            algorithm: 'TM_CCOEFF_NORMED',
-            bestFor: 'Buttons, icons, text labels',
+            name: "Template Match",
+            description: "Standard pattern matching for most UI elements",
+            algorithm: "TM_CCOEFF_NORMED",
+            bestFor: "Buttons, icons, text labels",
           },
           {
-            name: 'Exact Match',
-            description: 'Pixel-perfect matching for identical elements',
-            algorithm: 'TM_SQDIFF_NORMED',
-            bestFor: 'Logos, specific graphics',
+            name: "Exact Match",
+            description: "Pixel-perfect matching for identical elements",
+            algorithm: "TM_SQDIFF_NORMED",
+            bestFor: "Logos, specific graphics",
           },
           {
-            name: 'Feature Match',
-            description: 'Advanced matching for complex patterns',
-            algorithm: 'FEATURE_BASED',
-            bestFor: 'Complex UI, variable elements',
+            name: "Feature Match",
+            description: "Advanced matching for complex patterns",
+            algorithm: "FEATURE_BASED",
+            bestFor: "Complex UI, variable elements",
           },
         ],
       },
       tips: [
-        'Start with Template Match - it works for 90% of UI elements',
-        'If matching is too loose, try Exact Match',
-        'For elements with variable parts, use Feature Match',
-        'Pattern names should be unique and descriptive',
+        "Start with Template Match - it works for 90% of UI elements",
+        "If matching is too loose, try Exact Match",
+        "For elements with variable parts, use Feature Match",
+        "Pattern names should be unique and descriptive",
       ],
       resources: [
         {
-          title: 'Pattern Matching Algorithms Explained',
-          url: 'https://docs.qontinui.io/concepts/pattern-matching',
-          type: 'documentation',
+          title: "Pattern Matching Algorithms Explained",
+          url: "https://docs.qontinui.io/concepts/pattern-matching",
+          type: "documentation",
         },
         {
-          title: 'Choosing the Right Match Type',
-          url: 'https://docs.qontinui.io/guides/match-types',
-          type: 'article',
+          title: "Choosing the Right Match Type",
+          url: "https://docs.qontinui.io/guides/match-types",
+          type: "article",
         },
       ],
       targetElement: {
         selector: '[data-tutorial-id="pattern-creator"]',
-        highlightType: 'spotlight',
-        position: 'left',
+        highlightType: "spotlight",
+        position: "left",
         allowInteraction: true,
         scrollIntoView: true,
       },
     },
 
     {
-      id: 'step-5-search-region',
-      title: 'Define Search Region',
+      id: "step-5-search-region",
+      title: "Define Search Region",
       content: `
 # Optimizing with Search Regions
 
@@ -693,66 +711,86 @@ Example: If annotating a "Save" button that always appears in the bottom-right c
 **Tip**: If unsure, start with a larger region and refine it later based on performance.
 `,
       estimatedDuration: 3,
-      difficulty: 'beginner',
-      screenshot: '/tutorials/annotation-basics/search-regions.png',
+      difficulty: "beginner",
+      screenshot: "/tutorials/annotation-basics/search-regions.png",
       annotations: [
         {
-          type: 'highlight',
+          type: "highlight",
           x: 50,
           y: 50,
           width: 900,
           height: 600,
-          label: 'Full screen search\nSlow, may find duplicates',
-          color: '#FF9800',
+          label: "Full screen search\nSlow, may find duplicates",
+          color: "#FF9800",
         },
         {
-          type: 'highlight',
+          type: "highlight",
           x: 700,
           y: 500,
           width: 200,
           height: 100,
-          label: 'Optimized region\nFast, accurate',
-          color: '#4CAF50',
+          label: "Optimized region\nFast, accurate",
+          color: "#4CAF50",
         },
         {
-          type: 'arrow',
+          type: "arrow",
           x: 750,
           y: 520,
-          label: 'Element always here',
+          label: "Element always here",
         },
       ],
       learningObjectives: [
-        'Understand the purpose and benefits of search regions',
-        'Define effective search regions for UI elements',
-        'Balance region size for performance and reliability',
-        'Use different methods to specify regions',
+        "Understand the purpose and benefits of search regions",
+        "Define effective search regions for UI elements",
+        "Balance region size for performance and reliability",
+        "Use different methods to specify regions",
       ],
       config: {
         regionTypes: [
-          { name: 'Full Screen', description: 'Search entire screen', performance: 'slow', accuracy: 'low' },
-          { name: 'Quadrant', description: 'Top-left, top-right, bottom-left, bottom-right', performance: 'medium', accuracy: 'medium' },
-          { name: 'Custom Rectangle', description: 'Specific coordinates', performance: 'fast', accuracy: 'high' },
-          { name: 'Element-Relative', description: 'Relative to another element', performance: 'fast', accuracy: 'high' },
+          {
+            name: "Full Screen",
+            description: "Search entire screen",
+            performance: "slow",
+            accuracy: "low",
+          },
+          {
+            name: "Quadrant",
+            description: "Top-left, top-right, bottom-left, bottom-right",
+            performance: "medium",
+            accuracy: "medium",
+          },
+          {
+            name: "Custom Rectangle",
+            description: "Specific coordinates",
+            performance: "fast",
+            accuracy: "high",
+          },
+          {
+            name: "Element-Relative",
+            description: "Relative to another element",
+            performance: "fast",
+            accuracy: "high",
+          },
         ],
       },
       tips: [
-        'Most UI elements stay in consistent screen positions - use this to your advantage',
-        'For game HUDs, search regions are essential as HUD elements rarely move',
-        'You can have multiple search regions for elements that appear in different contexts',
-        'Test your search region at different resolutions to ensure it works universally',
+        "Most UI elements stay in consistent screen positions - use this to your advantage",
+        "For game HUDs, search regions are essential as HUD elements rarely move",
+        "You can have multiple search regions for elements that appear in different contexts",
+        "Test your search region at different resolutions to ensure it works universally",
       ],
       targetElement: {
         selector: '[data-tutorial-id="search-region-tool"]',
-        highlightType: 'border',
-        position: 'top',
+        highlightType: "border",
+        position: "top",
         allowInteraction: true,
         scrollIntoView: true,
       },
     },
 
     {
-      id: 'step-6-confidence-threshold',
-      title: 'Set Confidence Threshold',
+      id: "step-6-confidence-threshold",
+      title: "Set Confidence Threshold",
       content: `
 # Understanding Confidence Thresholds
 
@@ -858,12 +896,12 @@ Set an appropriate confidence threshold for your pattern:
 **Important**: You'll test this threshold in the next step and can adjust it based on results.
 `,
       estimatedDuration: 3,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand what confidence thresholds represent',
-        'Choose appropriate thresholds for different element types',
-        'Balance accuracy with flexibility',
-        'Troubleshoot threshold-related issues',
+        "Understand what confidence thresholds represent",
+        "Choose appropriate thresholds for different element types",
+        "Balance accuracy with flexibility",
+        "Troubleshoot threshold-related issues",
       ],
       config: {
         recommendedThresholds: {
@@ -877,55 +915,55 @@ Set an appropriate confidence threshold for your pattern:
         thresholdExamples: [
           {
             threshold: 95,
-            description: 'Company logo (exact match required)',
-            pros: 'No false positives',
-            cons: 'May fail with minor rendering differences',
+            description: "Company logo (exact match required)",
+            pros: "No false positives",
+            cons: "May fail with minor rendering differences",
           },
           {
             threshold: 87,
-            description: 'Primary action button (standard)',
-            pros: 'Reliable, tolerates minor changes',
-            cons: 'Rarely an issue',
+            description: "Primary action button (standard)",
+            pros: "Reliable, tolerates minor changes",
+            cons: "Rarely an issue",
           },
           {
             threshold: 80,
-            description: 'Health indicator bar (variable fill)',
-            pros: 'Works with different states',
-            cons: 'May match similar elements',
+            description: "Health indicator bar (variable fill)",
+            pros: "Works with different states",
+            cons: "May match similar elements",
           },
         ],
       },
       tips: [
-        'Default to 85% for most buttons and UI elements',
-        'Use higher thresholds (90%+) for critical actions to avoid mistakes',
-        'Lower thresholds (80-85%) work better for elements with variable content',
-        'Always test your threshold in real scenarios before relying on it',
-        'Keep notes on which thresholds work for different element types',
+        "Default to 85% for most buttons and UI elements",
+        "Use higher thresholds (90%+) for critical actions to avoid mistakes",
+        "Lower thresholds (80-85%) work better for elements with variable content",
+        "Always test your threshold in real scenarios before relying on it",
+        "Keep notes on which thresholds work for different element types",
       ],
       resources: [
         {
-          title: 'Confidence Threshold Guide',
-          url: 'https://docs.qontinui.io/guides/confidence-thresholds',
-          type: 'documentation',
+          title: "Confidence Threshold Guide",
+          url: "https://docs.qontinui.io/guides/confidence-thresholds",
+          type: "documentation",
         },
         {
-          title: 'Troubleshooting Pattern Matching',
-          url: 'https://docs.qontinui.io/guides/troubleshooting-patterns',
-          type: 'article',
+          title: "Troubleshooting Pattern Matching",
+          url: "https://docs.qontinui.io/guides/troubleshooting-patterns",
+          type: "article",
         },
       ],
       targetElement: {
         selector: '[data-tutorial-id="confidence-slider"]',
-        highlightType: 'pulse',
-        position: 'right',
+        highlightType: "pulse",
+        position: "right",
         allowInteraction: true,
         scrollIntoView: true,
       },
     },
 
     {
-      id: 'step-7-test-pattern',
-      title: 'Test the Pattern Match',
+      id: "step-7-test-pattern",
+      title: "Test the Pattern Match",
       content: `
 # Testing Your Pattern Match
 
@@ -1051,42 +1089,43 @@ Test your pattern match:
 **Success criteria**: Pattern consistently finds the element with 85%+ confidence and no false positives.
 `,
       estimatedDuration: 5,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand the importance of testing pattern matches',
-        'Use the pattern testing tool effectively',
-        'Interpret test results and confidence scores',
-        'Troubleshoot common pattern matching issues',
-        'Iterate on patterns for optimal performance',
+        "Understand the importance of testing pattern matches",
+        "Use the pattern testing tool effectively",
+        "Interpret test results and confidence scores",
+        "Troubleshoot common pattern matching issues",
+        "Iterate on patterns for optimal performance",
       ],
       tryIt: {
-        type: 'test-automation',
-        component: 'PatternTester',
+        type: "test-automation",
+        component: "PatternTester",
         preloadedData: {
           testScenarios: [
             {
-              name: 'Basic Match',
-              description: 'Test on original screenshot',
+              name: "Basic Match",
+              description: "Test on original screenshot",
             },
             {
-              name: 'Different State',
-              description: 'Test with UI in different state',
+              name: "Different State",
+              description: "Test with UI in different state",
             },
             {
-              name: 'Similar Element Nearby',
-              description: 'Verify no false positive',
+              name: "Similar Element Nearby",
+              description: "Verify no false positive",
             },
           ],
         },
         hints: [
-          'Start by testing on the original screenshot - this should always work',
-          'Try screenshots with different window sizes or positions',
-          'Test with similar but different elements to check for false positives',
-          'If matching fails, try lowering the threshold by 5% increments',
-          'If getting false matches, increase threshold or refine search region',
+          "Start by testing on the original screenshot - this should always work",
+          "Try screenshots with different window sizes or positions",
+          "Test with similar but different elements to check for false positives",
+          "If matching fails, try lowering the threshold by 5% increments",
+          "If getting false matches, increase threshold or refine search region",
         ],
         successCriteria: {
-          description: 'Successfully test pattern and achieve reliable matching',
+          description:
+            "Successfully test pattern and achieve reliable matching",
           validation: {
             patternFound: true,
             confidenceAboveThreshold: true,
@@ -1095,40 +1134,41 @@ Test your pattern match:
         },
       },
       tips: [
-        'Good testing now saves hours of debugging later',
-        'Test with realistic scenarios you\'ll encounter in automation',
-        'Keep test screenshots for regression testing when you update patterns',
-        'Document what works and what doesn\'t for future reference',
+        "Good testing now saves hours of debugging later",
+        "Test with realistic scenarios you'll encounter in automation",
+        "Keep test screenshots for regression testing when you update patterns",
+        "Document what works and what doesn't for future reference",
       ],
       resources: [
         {
-          title: 'Pattern Testing Best Practices',
-          url: 'https://docs.qontinui.io/guides/testing-patterns',
-          type: 'documentation',
+          title: "Pattern Testing Best Practices",
+          url: "https://docs.qontinui.io/guides/testing-patterns",
+          type: "documentation",
         },
       ],
       targetElement: {
         selector: '[data-tutorial-id="pattern-tester"]',
-        highlightType: 'spotlight',
-        position: 'center',
+        highlightType: "spotlight",
+        position: "center",
         allowInteraction: true,
         scrollIntoView: true,
       },
       validation: {
-        type: 'custom',
-        condition: 'return window.patternTestResults && window.patternTestResults.success === true',
+        type: "custom",
+        condition:
+          "return window.patternTestResults && window.patternTestResults.success === true",
         feedback: {
-          success: 'Excellent! Your pattern test was successful.',
-          failure: 'Pattern test incomplete. Please test your pattern.',
-          hint: 'Click the Test Pattern button to validate your annotation.',
+          success: "Excellent! Your pattern test was successful.",
+          failure: "Pattern test incomplete. Please test your pattern.",
+          hint: "Click the Test Pattern button to validate your annotation.",
         },
         timeout: 30000,
       },
     },
 
     {
-      id: 'step-8-save-annotation',
-      title: 'Save Your Annotation',
+      id: "step-8-save-annotation",
+      title: "Save Your Annotation",
       content: `
 # Saving and Managing Annotations
 
@@ -1266,93 +1306,89 @@ Now that you've mastered the basics:
 **Welcome to the world of visual automation!**
 `,
       estimatedDuration: 3,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Save annotations with appropriate metadata',
-        'Use effective naming conventions',
-        'Organize annotations logically',
-        'Build reusable annotation libraries',
-        'Understand annotation lifecycle management',
+        "Save annotations with appropriate metadata",
+        "Use effective naming conventions",
+        "Organize annotations logically",
+        "Build reusable annotation libraries",
+        "Understand annotation lifecycle management",
       ],
       config: {
         namingExamples: {
           good: [
-            'gmail-compose-send-button',
-            'civ6-units-settler-icon',
-            'app-settings-menu-gear',
-            'game-combat-attack-button',
+            "gmail-compose-send-button",
+            "civ6-units-settler-icon",
+            "app-settings-menu-gear",
+            "game-combat-attack-button",
           ],
-          bad: [
-            'button1',
-            'element',
-            'test123',
-            'final_v2',
-          ],
+          bad: ["button1", "element", "test123", "final_v2"],
         },
         metadataFields: {
-          required: ['name', 'description', 'pattern', 'threshold'],
-          recommended: ['tags', 'searchRegion', 'category'],
-          optional: ['version', 'author', 'notes', 'dependencies'],
+          required: ["name", "description", "pattern", "threshold"],
+          recommended: ["tags", "searchRegion", "category"],
+          optional: ["version", "author", "notes", "dependencies"],
         },
       },
       tips: [
-        'Descriptive names and metadata make annotations easier to find and reuse',
-        'Build your annotation library incrementally - quality over quantity',
-        'Regularly test saved annotations to catch UI changes early',
-        'Version your annotations if you need to update them',
-        'Consider creating annotation templates for common patterns',
+        "Descriptive names and metadata make annotations easier to find and reuse",
+        "Build your annotation library incrementally - quality over quantity",
+        "Regularly test saved annotations to catch UI changes early",
+        "Version your annotations if you need to update them",
+        "Consider creating annotation templates for common patterns",
       ],
       resources: [
         {
-          title: 'Annotation Management Guide',
-          url: 'https://docs.qontinui.io/guides/annotation-management',
-          type: 'documentation',
+          title: "Annotation Management Guide",
+          url: "https://docs.qontinui.io/guides/annotation-management",
+          type: "documentation",
         },
         {
-          title: 'Building Annotation Libraries',
-          url: 'https://docs.qontinui.io/guides/annotation-libraries',
-          type: 'article',
+          title: "Building Annotation Libraries",
+          url: "https://docs.qontinui.io/guides/annotation-libraries",
+          type: "article",
         },
         {
-          title: 'Community Annotation Repository',
-          url: 'https://github.com/qontinui/annotations',
-          type: 'api-reference',
+          title: "Community Annotation Repository",
+          url: "https://github.com/qontinui/annotations",
+          type: "api-reference",
         },
       ],
       targetElement: {
         selector: '[data-tutorial-id="save-annotation"]',
-        highlightType: 'pulse',
-        position: 'bottom',
+        highlightType: "pulse",
+        position: "bottom",
         allowInteraction: true,
         scrollIntoView: true,
       },
       validation: {
-        type: 'action',
-        condition: 'return window.annotationState && window.annotationState.saved === true',
+        type: "action",
+        condition:
+          "return window.annotationState && window.annotationState.saved === true",
         feedback: {
-          success: 'Perfect! Your annotation has been saved successfully.',
-          failure: 'Please save your annotation to complete the tutorial.',
-          hint: 'Click the Save button to store your annotation.',
+          success: "Perfect! Your annotation has been saved successfully.",
+          failure: "Please save your annotation to complete the tutorial.",
+          hint: "Click the Save button to store your annotation.",
         },
       },
     },
   ],
 
   finalProject: {
-    name: 'Complete UI Element Annotation',
+    name: "Complete UI Element Annotation",
     description:
-      'A fully configured and tested annotation ready for use in automation workflows',
+      "A fully configured and tested annotation ready for use in automation workflows",
     components: [
-      'Screenshot upload',
-      'Element identification',
-      'Pattern match creation',
-      'Search region definition',
-      'Confidence threshold configuration',
-      'Pattern testing and validation',
-      'Annotation saving and metadata',
+      "Screenshot upload",
+      "Element identification",
+      "Pattern match creation",
+      "Search region definition",
+      "Confidence threshold configuration",
+      "Pattern testing and validation",
+      "Annotation saving and metadata",
     ],
     expectedOutcome:
-      'Reliable pattern match that can be used in automation sequences to interact with UI elements',
+      "Reliable pattern match that can be used in automation sequences to interact with UI elements",
   },
 
   prerequisites: [],

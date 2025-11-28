@@ -91,6 +91,7 @@ Component Re-render
 ## Responsibility Mapping
 
 ### TransitionManager.tsx
+
 ```
 ┌─────────────────────────────────────┐
 │  Orchestration Layer                │
@@ -122,6 +123,7 @@ Component Re-render
 ```
 
 ### useTransitionValidation.ts
+
 ```
 ┌─────────────────────────────────────┐
 │  Validation Logic                   │
@@ -152,6 +154,7 @@ Component Re-render
 ```
 
 ### useTransitionFilters.ts
+
 ```
 ┌─────────────────────────────────────┐
 │  Filtering Logic                    │
@@ -178,6 +181,7 @@ Component Re-render
 ```
 
 ### useTransitionOperations.ts
+
 ```
 ┌─────────────────────────────────────┐
 │  CRUD Operations                    │
@@ -207,6 +211,7 @@ Component Re-render
 ```
 
 ### View Components
+
 ```
 ┌─────────────────────────────────────┐
 │  TransitionMatrixView               │
@@ -235,6 +240,7 @@ Component Re-render
 ## Before vs After Comparison
 
 ### Before (Monolith)
+
 ```
 TransitionManager.tsx (2,031 lines)
 ├── Types (100 lines)
@@ -269,6 +275,7 @@ Problems:
 ```
 
 ### After (Modular)
+
 ```
 transitions/
 ├── TransitionManager.tsx (292 lines)
@@ -355,6 +362,7 @@ Memoization Strategy
 ## Extension Points
 
 ### Adding a New View
+
 ```typescript
 // 1. Create component
 // TransitionCalendarView.tsx
@@ -378,6 +386,7 @@ type ViewMode = "matrix" | "list" | "graph" | "statistics" | "calendar"
 ```
 
 ### Adding a New Validation Rule
+
 ```typescript
 // In useTransitionValidation.ts
 function analyzeTransitions(transitions, states) {
@@ -388,20 +397,21 @@ function analyzeTransitions(transitions, states) {
     unreachableStates: [],
     deadEndStates: [],
     duplicateWorkflows: [], // NEW
-  }
+  };
 
   // Add detection logic
-  transitions.forEach(t => {
+  transitions.forEach((t) => {
     if (hasDuplicateWorkflows(t)) {
-      validation.duplicateWorkflows.push(t.id)
+      validation.duplicateWorkflows.push(t.id);
     }
-  })
+  });
 
-  return validation
+  return validation;
 }
 ```
 
 ### Adding a New Filter
+
 ```typescript
 // 1. Update types
 interface TransitionFilters {

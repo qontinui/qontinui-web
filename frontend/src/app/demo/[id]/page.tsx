@@ -1,12 +1,18 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Globe, ArrowLeft, Eye, Lock } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Globe, ArrowLeft, Eye, Lock } from "lucide-react";
 
 interface PublicProject {
   id: string;
@@ -30,20 +36,23 @@ export default function DemoProjectPage() {
   useEffect(() => {
     const fetchPublicProject = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const response = await fetch(`${apiUrl}/api/v1/public/projects/${projectId}`);
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const response = await fetch(
+          `${apiUrl}/api/v1/public/projects/${projectId}`
+        );
 
         if (!response.ok) {
           if (response.status === 404) {
-            throw new Error('Project not found or is not public');
+            throw new Error("Project not found or is not public");
           }
-          throw new Error('Failed to fetch project');
+          throw new Error("Failed to fetch project");
         }
 
         const data = await response.json();
         setProject(data);
       } catch (err: any) {
-        setError(err.message || 'An error occurred');
+        setError(err.message || "An error occurred");
       } finally {
         setLoading(false);
       }
@@ -69,7 +78,7 @@ export default function DemoProjectPage() {
               Project Not Found
             </h1>
             <p className="text-zinc-600 dark:text-zinc-400 mb-8">
-              {error || 'This project does not exist or is not public.'}
+              {error || "This project does not exist or is not public."}
             </p>
             <Link href="/demo">
               <Button>
@@ -101,7 +110,10 @@ export default function DemoProjectPage() {
             </div>
           </div>
           <Link href="/auth/register">
-            <Button size="sm" className="bg-white text-blue-600 hover:bg-zinc-100">
+            <Button
+              size="sm"
+              className="bg-white text-blue-600 hover:bg-zinc-100"
+            >
               Create Account
             </Button>
           </Link>
@@ -111,7 +123,10 @@ export default function DemoProjectPage() {
       {/* Header */}
       <div className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Link href="/demo" className="inline-flex items-center text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 mb-4">
+          <Link
+            href="/demo"
+            className="inline-flex items-center text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 mb-4"
+          >
             <ArrowLeft className="w-4 h-4 mr-1" />
             Back to Demo Projects
           </Link>
@@ -128,11 +143,15 @@ export default function DemoProjectPage() {
                 </Badge>
               </div>
               <p className="text-zinc-600 dark:text-zinc-400 max-w-2xl">
-                {project.description || 'No description provided'}
+                {project.description || "No description provided"}
               </p>
               <div className="flex gap-4 mt-4 text-sm text-zinc-500">
-                <span>Created: {new Date(project.created_at).toLocaleDateString()}</span>
-                <span>Updated: {new Date(project.updated_at).toLocaleDateString()}</span>
+                <span>
+                  Created: {new Date(project.created_at).toLocaleDateString()}
+                </span>
+                <span>
+                  Updated: {new Date(project.updated_at).toLocaleDateString()}
+                </span>
               </div>
             </div>
           </div>
@@ -148,12 +167,15 @@ export default function DemoProjectPage() {
               <CardHeader>
                 <CardTitle>Workflows</CardTitle>
                 <CardDescription>
-                  {workflows.length} workflow{workflows.length !== 1 ? 's' : ''} in this project
+                  {workflows.length} workflow{workflows.length !== 1 ? "s" : ""}{" "}
+                  in this project
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {workflows.length === 0 ? (
-                  <p className="text-sm text-zinc-500">No workflows defined yet</p>
+                  <p className="text-sm text-zinc-500">
+                    No workflows defined yet
+                  </p>
                 ) : (
                   <div className="space-y-3">
                     {workflows.map((workflow: any, index: number) => (
@@ -167,7 +189,9 @@ export default function DemoProjectPage() {
                               {workflow.name || `Workflow ${index + 1}`}
                             </h4>
                             {workflow.description && (
-                              <p className="text-sm text-zinc-500 mt-1">{workflow.description}</p>
+                              <p className="text-sm text-zinc-500 mt-1">
+                                {workflow.description}
+                              </p>
                             )}
                           </div>
                           <Badge variant="secondary" className="text-xs">
@@ -185,12 +209,15 @@ export default function DemoProjectPage() {
               <CardHeader>
                 <CardTitle>Actions</CardTitle>
                 <CardDescription>
-                  {actions.length} action{actions.length !== 1 ? 's' : ''} defined
+                  {actions.length} action{actions.length !== 1 ? "s" : ""}{" "}
+                  defined
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {actions.length === 0 ? (
-                  <p className="text-sm text-zinc-500">No actions defined yet</p>
+                  <p className="text-sm text-zinc-500">
+                    No actions defined yet
+                  </p>
                 ) : (
                   <div className="space-y-2">
                     {actions.slice(0, 10).map((action: any, index: number) => (
@@ -203,7 +230,7 @@ export default function DemoProjectPage() {
                             {action.name || `Action ${index + 1}`}
                           </p>
                           <p className="text-xs text-zinc-500">
-                            Type: {action.type || 'Unknown'}
+                            Type: {action.type || "Unknown"}
                           </p>
                         </div>
                       </div>
@@ -230,7 +257,8 @@ export default function DemoProjectPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-zinc-700 dark:text-zinc-300">
-                  This is a public demo project. You can view the configuration, but you cannot:
+                  This is a public demo project. You can view the configuration,
+                  but you cannot:
                 </p>
                 <ul className="text-sm text-zinc-600 dark:text-zinc-400 space-y-2 list-disc list-inside">
                   <li>Edit workflows or actions</li>
@@ -259,13 +287,17 @@ export default function DemoProjectPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-zinc-600 dark:text-zinc-400">Workflows</span>
+                  <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Workflows
+                  </span>
                   <span className="font-semibold text-zinc-900 dark:text-zinc-100">
                     {workflows.length}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-zinc-600 dark:text-zinc-400">Actions</span>
+                  <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Actions
+                  </span>
                   <span className="font-semibold text-zinc-900 dark:text-zinc-100">
                     {actions.length}
                   </span>

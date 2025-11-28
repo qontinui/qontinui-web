@@ -5,7 +5,7 @@
  * across all workflows in a project.
  */
 
-export type VariableType = 'string' | 'number' | 'boolean' | 'object' | 'array';
+export type VariableType = "string" | "number" | "boolean" | "object" | "array";
 
 export interface GlobalVariable {
   name: string;

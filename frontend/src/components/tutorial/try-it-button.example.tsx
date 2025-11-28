@@ -5,8 +5,8 @@
  * used in interactive tutorial steps.
  */
 
-import { TryItButton } from "./try-it-button"
-import type { TryItConfig } from "@/types/tutorial"
+import { TryItButton } from "./try-it-button";
+import type { TryItConfig } from "@/types/tutorial";
 
 /**
  * Example 1: Simple Screenshot Upload Exercise
@@ -27,7 +27,7 @@ export function SimpleUploadScreenshotExample() {
         }}
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -38,9 +38,7 @@ export function SimpleUploadScreenshotExample() {
 export function ExerciseWithHintExample() {
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold">
-        Example 2: Exercise with Hint
-      </h3>
+      <h3 className="text-lg font-semibold">Example 2: Exercise with Hint</h3>
       <TryItButton
         config={{
           type: "identify-element",
@@ -49,7 +47,7 @@ export function ExerciseWithHintExample() {
         }}
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -76,11 +74,11 @@ export function MultipleHintsExample() {
           ],
         }}
         onComplete={(result) => {
-          console.log("Action created:", result)
+          console.log("Action created:", result);
         }}
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -96,13 +94,11 @@ export function PreloadedDataExample() {
     elementCoordinates: [1024, 512],
     elementType: "button",
     elementLabel: "End Turn",
-  }
+  };
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold">
-        Example 4: Preloaded Data
-      </h3>
+      <h3 className="text-lg font-semibold">Example 4: Preloaded Data</h3>
       <TryItButton
         config={{
           type: "identify-element",
@@ -115,7 +111,7 @@ export function PreloadedDataExample() {
         }}
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -127,9 +123,7 @@ export function PreloadedDataExample() {
 export function SuccessCriteriaExample() {
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold">
-        Example 5: Success Criteria
-      </h3>
+      <h3 className="text-lg font-semibold">Example 5: Success Criteria</h3>
       <TryItButton
         config={{
           type: "configure-automation",
@@ -147,7 +141,7 @@ export function SuccessCriteriaExample() {
         }}
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -162,7 +156,7 @@ export function CompleteAutomationExample() {
     coordinates: [1024, 512],
     label: "End Turn",
     screenshot: "/screenshots/civ6-end-turn.png",
-  }
+  };
 
   return (
     <div className="space-y-4">
@@ -200,7 +194,7 @@ export function CompleteAutomationExample() {
           optional: false,
         }}
         onComplete={(result) => {
-          console.log("Automation configured:", result)
+          console.log("Automation configured:", result);
           // Here you would typically:
           // 1. Save the automation
           // 2. Mark the tutorial step as complete
@@ -208,7 +202,7 @@ export function CompleteAutomationExample() {
         }}
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -224,7 +218,8 @@ export function OptionalTestingExerciseExample() {
       </h3>
       <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
         <p className="text-sm text-blue-900 dark:text-blue-100 mb-4">
-          This exercise is optional. You can skip it and continue to the next step.
+          This exercise is optional. You can skip it and continue to the next
+          step.
         </p>
         <TryItButton
           config={{
@@ -241,7 +236,7 @@ export function OptionalTestingExerciseExample() {
         />
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -262,13 +257,11 @@ export function PatternDebuggingExample() {
       "Pattern found after 3 attempts",
       "Error: Element coordinates changed",
     ],
-  }
+  };
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold">
-        Example 8: Pattern Debugging
-      </h3>
+      <h3 className="text-lg font-semibold">Example 8: Pattern Debugging</h3>
       <TryItButton
         config={{
           type: "debug-pattern",
@@ -293,7 +286,7 @@ export function PatternDebuggingExample() {
         }}
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -314,7 +307,7 @@ export function OptimizationExerciseExample() {
       "Pattern matching timeout too high (2000ms)",
       "Multiple redundant waits",
     ],
-  }
+  };
 
   return (
     <div className="space-y-4">
@@ -345,7 +338,7 @@ export function OptimizationExerciseExample() {
         }}
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -362,7 +355,8 @@ export function CompleteTutorialWorkflowExample() {
           Tutorial: Create Your First Game Automation
         </h3>
         <p className="text-gray-600 dark:text-gray-400 mb-6">
-          This tutorial walks you through creating a complete automation for Civilization VI.
+          This tutorial walks you through creating a complete automation for
+          Civilization VI.
         </p>
       </div>
 
@@ -370,7 +364,8 @@ export function CompleteTutorialWorkflowExample() {
       <div className="space-y-4">
         <h4 className="font-semibold text-md">Step 1: Upload a Screenshot</h4>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
-          First, capture a screenshot of your game screen showing the element you want to automate.
+          First, capture a screenshot of your game screen showing the element
+          you want to automate.
         </p>
         <TryItButton
           config={{
@@ -389,7 +384,8 @@ export function CompleteTutorialWorkflowExample() {
       <div className="space-y-4">
         <h4 className="font-semibold text-md">Step 2: Identify the Element</h4>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
-          Mark the location of the button you want to automate on your screenshot.
+          Mark the location of the button you want to automate on your
+          screenshot.
         </p>
         <TryItButton
           config={{
@@ -429,7 +425,9 @@ export function CompleteTutorialWorkflowExample() {
 
       {/* Step 4: Configure Automation */}
       <div className="space-y-4">
-        <h4 className="font-semibold text-md">Step 4: Configure the Automation</h4>
+        <h4 className="font-semibold text-md">
+          Step 4: Configure the Automation
+        </h4>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
           Set up the automation with execution rules and conditions.
         </p>
@@ -481,12 +479,12 @@ export function CompleteTutorialWorkflowExample() {
           Congratulations!
         </h4>
         <p className="text-green-800 dark:text-green-200">
-          You've successfully created your first game automation! You can now use this automation
-          in Qontinui to automate your gameplay.
+          You've successfully created your first game automation! You can now
+          use this automation in Qontinui to automate your gameplay.
         </p>
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -547,5 +545,5 @@ export function EdgeCasesExample() {
         />
       </div>
     </div>
-  )
+  );
 }

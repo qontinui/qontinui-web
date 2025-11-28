@@ -4,7 +4,11 @@
  * Helper functions for state analysis, validation, and organization
  */
 
-import type { State, StateImage, Transition } from '@/contexts/automation-context';
+import type {
+  State,
+  StateImage,
+  Transition,
+} from "@/contexts/automation-context";
 import type {
   StateWithMetadata,
   StateValidationIssue,
@@ -12,8 +16,8 @@ import type {
   StateAnalytics,
   StateComparison,
   ComplexityLevel,
-} from './types';
-import type { Workflow } from '@/lib/action-schema/action-types';
+} from "./types";
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Complexity Analysis
@@ -55,10 +59,10 @@ export function calculateStateComplexity(state: State): number {
  * Get complexity level from score
  */
 export function getComplexityLevel(score: number): ComplexityLevel {
-  if (score < 5) return 'low';
-  if (score < 15) return 'medium';
-  if (score < 30) return 'high';
-  return 'very-high';
+  if (score < 5) return "low";
+  if (score < 15) return "medium";
+  if (score < 30) return "high";
+  return "very-high";
 }
 
 /**
@@ -66,14 +70,14 @@ export function getComplexityLevel(score: number): ComplexityLevel {
  */
 export function getComplexityColor(level: ComplexityLevel): string {
   switch (level) {
-    case 'low':
-      return 'text-green-500 border-green-500';
-    case 'medium':
-      return 'text-yellow-500 border-yellow-500';
-    case 'high':
-      return 'text-orange-500 border-orange-500';
-    case 'very-high':
-      return 'text-red-500 border-red-500';
+    case "low":
+      return "text-green-500 border-green-500";
+    case "medium":
+      return "text-yellow-500 border-yellow-500";
+    case "high":
+      return "text-orange-500 border-orange-500";
+    case "very-high":
+      return "text-red-500 border-red-500";
   }
 }
 
@@ -88,32 +92,32 @@ export function validateState(state: State): StateValidationIssue[] {
   const issues: StateValidationIssue[] = [];
 
   // Check for empty name
-  if (!state.name || state.name.trim() === '') {
+  if (!state.name || state.name.trim() === "") {
     issues.push({
-      type: 'error',
-      code: 'EMPTY_NAME',
-      message: 'State name is empty',
-      suggestion: 'Provide a descriptive name for the state',
+      type: "error",
+      code: "EMPTY_NAME",
+      message: "State name is empty",
+      suggestion: "Provide a descriptive name for the state",
     });
   }
 
   // Check for very long names
   if (state.name && state.name.length > 100) {
     issues.push({
-      type: 'warning',
-      code: 'LONG_NAME',
-      message: 'State name is very long (> 100 characters)',
-      suggestion: 'Consider using a shorter, more concise name',
+      type: "warning",
+      code: "LONG_NAME",
+      message: "State name is very long (> 100 characters)",
+      suggestion: "Consider using a shorter, more concise name",
     });
   }
 
   // Check for states with no StateImages
   if (!state.stateImages || state.stateImages.length === 0) {
     issues.push({
-      type: 'warning',
-      code: 'NO_IMAGES',
-      message: 'State has no StateImages',
-      suggestion: 'Add at least one StateImage for state detection',
+      type: "warning",
+      code: "NO_IMAGES",
+      message: "State has no StateImages",
+      suggestion: "Add at least one StateImage for state detection",
     });
   }
 
@@ -121,15 +125,15 @@ export function validateState(state: State): StateValidationIssue[] {
   state.stateImages?.forEach((si) => {
     if (!si.patterns || si.patterns.length === 0) {
       issues.push({
-        type: 'error',
-        code: 'NO_PATTERNS',
+        type: "error",
+        code: "NO_PATTERNS",
         message: `StateImage "${si.name}" has no patterns`,
         element: {
-          type: 'stateImage',
+          type: "stateImage",
           id: si.id,
           name: si.name,
         },
-        suggestion: 'Add at least one pattern with an image',
+        suggestion: "Add at least one pattern with an image",
       });
     }
   });
@@ -139,15 +143,15 @@ export function validateState(state: State): StateValidationIssue[] {
     si.patterns?.forEach((pattern, idx) => {
       if (!pattern.imageId) {
         issues.push({
-          type: 'error',
-          code: 'PATTERN_NO_IMAGE',
+          type: "error",
+          code: "PATTERN_NO_IMAGE",
           message: `Pattern ${idx + 1} in StateImage "${si.name}" has no image`,
           element: {
-            type: 'stateImage',
+            type: "stateImage",
             id: si.id,
             name: si.name,
           },
-          suggestion: 'Assign an image to this pattern',
+          suggestion: "Assign an image to this pattern",
         });
       }
     });
@@ -157,15 +161,15 @@ export function validateState(state: State): StateValidationIssue[] {
   state.regions?.forEach((region) => {
     if (region.width === 0 || region.height === 0) {
       issues.push({
-        type: 'error',
-        code: 'INVALID_REGION_SIZE',
+        type: "error",
+        code: "INVALID_REGION_SIZE",
         message: `Region "${region.name}" has zero width or height`,
         element: {
-          type: 'region',
+          type: "region",
           id: region.id,
           name: region.name,
         },
-        suggestion: 'Set valid dimensions for the region',
+        suggestion: "Set valid dimensions for the region",
       });
     }
   });
@@ -174,10 +178,10 @@ export function validateState(state: State): StateValidationIssue[] {
   const complexity = calculateStateComplexity(state);
   if (complexity > 50) {
     issues.push({
-      type: 'info',
-      code: 'HIGH_COMPLEXITY',
+      type: "info",
+      code: "HIGH_COMPLEXITY",
       message: `State has very high complexity (${complexity})`,
-      suggestion: 'Consider breaking this state into multiple simpler states',
+      suggestion: "Consider breaking this state into multiple simpler states",
     });
   }
 
@@ -194,19 +198,19 @@ export function validateState(state: State): StateValidationIssue[] {
     names.forEach((count, name) => {
       if (count > 1) {
         issues.push({
-          type: 'warning',
-          code: 'DUPLICATE_NAME',
+          type: "warning",
+          code: "DUPLICATE_NAME",
           message: `Multiple ${type}s have the name "${name}"`,
-          suggestion: 'Use unique names for better clarity',
+          suggestion: "Use unique names for better clarity",
         });
       }
     });
   };
 
-  checkDuplicateNames(state.stateImages, 'StateImage');
-  checkDuplicateNames(state.regions, 'region');
-  checkDuplicateNames(state.locations, 'location');
-  checkDuplicateNames(state.strings, 'string');
+  checkDuplicateNames(state.stateImages, "StateImage");
+  checkDuplicateNames(state.regions, "region");
+  checkDuplicateNames(state.locations, "location");
+  checkDuplicateNames(state.strings, "string");
 
   return issues;
 }
@@ -227,7 +231,7 @@ export function analyzeStateUsage(
   const referencingWorkflows = workflows.filter((workflow) => {
     return workflow.actions.some((action) => {
       // Check FIND actions that target this state's images
-      if (action.type === 'FIND' && action.config.target?.type === 'state') {
+      if (action.type === "FIND" && action.config.target?.type === "state") {
         return action.config.target.stateId === state.id;
       }
       return false;
@@ -236,15 +240,21 @@ export function analyzeStateUsage(
 
   // Find transitions
   const incomingTransitions = transitions.filter(
-    (t) => t.type === 'IncomingTransition' && t.toState === state.id
+    (t) => t.type === "IncomingTransition" && t.toState === state.id
   );
   const outgoingTransitions = transitions.filter(
-    (t) => t.type === 'OutgoingTransition' && t.fromState === state.id
+    (t) => t.type === "OutgoingTransition" && t.fromState === state.id
   );
 
   const allTransitions = [
-    ...incomingTransitions.map((t) => ({ id: t.id, type: 'incoming' as const })),
-    ...outgoingTransitions.map((t) => ({ id: t.id, type: 'outgoing' as const })),
+    ...incomingTransitions.map((t) => ({
+      id: t.id,
+      type: "incoming" as const,
+    })),
+    ...outgoingTransitions.map((t) => ({
+      id: t.id,
+      type: "outgoing" as const,
+    })),
   ];
 
   return {
@@ -275,16 +285,18 @@ export function generateStateAnalytics(
   const usage = analyzeStateUsage(state, workflows, transitions);
 
   // Count total patterns
-  const totalPatterns = state.stateImages?.reduce(
-    (sum, si) => sum + (si.patterns?.length || 0),
-    0
-  ) || 0;
+  const totalPatterns =
+    state.stateImages?.reduce(
+      (sum, si) => sum + (si.patterns?.length || 0),
+      0
+    ) || 0;
 
   // Count total search regions
-  const totalSearchRegions = state.stateImages?.reduce(
-    (sum, si) => sum + (si.searchRegions?.length || 0),
-    0
-  ) || 0;
+  const totalSearchRegions =
+    state.stateImages?.reduce(
+      (sum, si) => sum + (si.searchRegions?.length || 0),
+      0
+    ) || 0;
 
   return {
     stateId: state.id,
@@ -293,9 +305,9 @@ export function generateStateAnalytics(
     totalSearchRegions,
     hasIssues: validationIssues.length > 0,
     issueCount: {
-      errors: validationIssues.filter((i) => i.type === 'error').length,
-      warnings: validationIssues.filter((i) => i.type === 'warning').length,
-      info: validationIssues.filter((i) => i.type === 'info').length,
+      errors: validationIssues.filter((i) => i.type === "error").length,
+      warnings: validationIssues.filter((i) => i.type === "warning").length,
+      info: validationIssues.filter((i) => i.type === "info").length,
     },
     usageCount: usage.totalUsageCount,
     lastModified: (state as StateWithMetadata).modifiedAt,
@@ -310,7 +322,7 @@ export function generateStateAnalytics(
  * Compare two states and find differences
  */
 export function compareStates(state1: State, state2: State): StateComparison {
-  const differences: StateComparison['differences'] = {};
+  const differences: StateComparison["differences"] = {};
 
   // Compare StateImages
   const images1 = new Set(state1.stateImages?.map((si) => si.id) || []);
@@ -422,7 +434,7 @@ export function exportStatesToJSON(states: State[]): string {
   return JSON.stringify(
     {
       exportDate: new Date().toISOString(),
-      version: '1.0.0',
+      version: "1.0.0",
       stateCount: states.length,
       states,
     },
@@ -445,7 +457,7 @@ export function exportStatesToYAML(states: State[]): string {
   states.forEach((state) => {
     yaml += `  - id: ${state.id}\n`;
     yaml += `    name: "${state.name}"\n`;
-    yaml += `    description: "${state.description || ''}"\n`;
+    yaml += `    description: "${state.description || ""}"\n`;
     yaml += `    initial: ${state.initial || false}\n`;
     yaml += `    stateImages: ${state.stateImages?.length || 0}\n`;
     yaml += `    regions: ${state.regions?.length || 0}\n`;
@@ -469,12 +481,18 @@ export function generateStateStatistics(states: State[]) {
     (sum, s) => sum + (s.stateImages?.length || 0),
     0
   );
-  const totalRegions = states.reduce((sum, s) => sum + (s.regions?.length || 0), 0);
+  const totalRegions = states.reduce(
+    (sum, s) => sum + (s.regions?.length || 0),
+    0
+  );
   const totalLocations = states.reduce(
     (sum, s) => sum + (s.locations?.length || 0),
     0
   );
-  const totalStrings = states.reduce((sum, s) => sum + (s.strings?.length || 0), 0);
+  const totalStrings = states.reduce(
+    (sum, s) => sum + (s.strings?.length || 0),
+    0
+  );
 
   const complexityScores = states.map((s) => calculateStateComplexity(s));
   const avgComplexity =
@@ -483,11 +501,14 @@ export function generateStateStatistics(states: State[]) {
   const minComplexity = Math.min(...complexityScores, 0);
 
   const complexityDistribution = {
-    low: complexityScores.filter((c) => getComplexityLevel(c) === 'low').length,
-    medium: complexityScores.filter((c) => getComplexityLevel(c) === 'medium').length,
-    high: complexityScores.filter((c) => getComplexityLevel(c) === 'high').length,
-    veryHigh: complexityScores.filter((c) => getComplexityLevel(c) === 'very-high')
+    low: complexityScores.filter((c) => getComplexityLevel(c) === "low").length,
+    medium: complexityScores.filter((c) => getComplexityLevel(c) === "medium")
       .length,
+    high: complexityScores.filter((c) => getComplexityLevel(c) === "high")
+      .length,
+    veryHigh: complexityScores.filter(
+      (c) => getComplexityLevel(c) === "very-high"
+    ).length,
   };
 
   const statesWithImages = states.filter(
@@ -513,8 +534,11 @@ export function generateStateStatistics(states: State[]) {
     statesWithImages,
     statesWithRegions,
     statesWithLocations,
-    avgStateImagesPerState: Math.round((totalStateImages / (totalStates || 1)) * 10) / 10,
-    avgRegionsPerState: Math.round((totalRegions / (totalStates || 1)) * 10) / 10,
-    avgLocationsPerState: Math.round((totalLocations / (totalStates || 1)) * 10) / 10,
+    avgStateImagesPerState:
+      Math.round((totalStateImages / (totalStates || 1)) * 10) / 10,
+    avgRegionsPerState:
+      Math.round((totalRegions / (totalStates || 1)) * 10) / 10,
+    avgLocationsPerState:
+      Math.round((totalLocations / (totalStates || 1)) * 10) / 10,
   };
 }

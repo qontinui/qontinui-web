@@ -15,6 +15,13 @@ export interface RunnerWebSocketConfig {
   onScreenshot?: (data: ScreenshotEvent) => void;
   onLog?: (data: LogEvent) => void;
   onSessionEnd?: (data: SessionEndEvent) => void;
+  // Web extraction events
+  onExtractionStarted?: (data: ExtractionStartedEvent) => void;
+  onExtractionProgress?: (data: ExtractionProgressEvent) => void;
+  onExtractionStateDetected?: (data: ExtractionStateDetectedEvent) => void;
+  onExtractionElementDetected?: (data: ExtractionElementDetectedEvent) => void;
+  onExtractionComplete?: (data: ExtractionCompleteEvent) => void;
+  onExtractionError?: (data: ExtractionErrorEvent) => void;
 }
 
 export interface SessionStartEvent {
@@ -61,7 +68,7 @@ export interface ScreenshotEvent {
 export interface LogEvent {
   log_id: string;
   session_id: string;
-  level: 'debug' | 'info' | 'warning' | 'error' | 'critical';
+  level: "debug" | "info" | "warning" | "error" | "critical";
   message: string;
   log_data?: Record<string, any>;
   sequence_number: number;
@@ -70,8 +77,70 @@ export interface LogEvent {
 
 export interface SessionEndEvent {
   session_id: string;
-  status: 'completed' | 'failed' | 'disconnected';
+  status: "completed" | "failed" | "disconnected";
   error_message?: string;
+  timestamp: string;
+}
+
+// Web extraction events
+export interface ExtractionStartedEvent {
+  extraction_id: string;
+  config: {
+    urls: string[];
+    viewports: [number, number][];
+  };
+  timestamp: string;
+}
+
+export interface ExtractionProgressEvent {
+  extraction_id: string;
+  current_url: string;
+  pages_visited: number;
+  states_found: number;
+  elements_found: number;
+  timestamp: string;
+}
+
+export interface ExtractionStateDetectedEvent {
+  extraction_id: string;
+  state: {
+    id: string;
+    name: string;
+    state_type: string;
+    bbox: { x: number; y: number; width: number; height: number };
+    screenshot_id: string;
+    element_ids: string[];
+  };
+  thumbnail: string; // base64
+  timestamp: string;
+}
+
+export interface ExtractionElementDetectedEvent {
+  extraction_id: string;
+  element: {
+    id: string;
+    element_type: string;
+    bbox: { x: number; y: number; width: number; height: number };
+    text?: string;
+    tag_name: string;
+  };
+  timestamp: string;
+}
+
+export interface ExtractionCompleteEvent {
+  extraction_id: string;
+  summary: {
+    total_pages: number;
+    total_states: number;
+    total_elements: number;
+    total_transitions: number;
+  };
+  timestamp: string;
+}
+
+export interface ExtractionErrorEvent {
+  extraction_id: string;
+  error: string;
   timestamp: string;
 }
 
@@ -98,7 +167,7 @@ export class RunnerWebSocket {
    */
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      console.warn('WebSocket is already connected');
+      console.warn("WebSocket is already connected");
       return;
     }
 
@@ -107,7 +176,7 @@ export class RunnerWebSocket {
     // Build WebSocket URL with token if provided
     let url = this.config.url;
     if (this.config.token) {
-      const separator = url.includes('?') ? '&' : '?';
+      const separator = url.includes("?") ? "&" : "?";
       url = `${url}${separator}token=${encodeURIComponent(this.config.token)}`;
     }
 
@@ -115,18 +184,21 @@ export class RunnerWebSocket {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
-        console.log('Runner WebSocket connected');
+        console.log("Runner WebSocket connected");
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
         this.config.onConnect?.();
       };
 
       this.ws.onclose = (event) => {
-        console.log('Runner WebSocket disconnected', event.code, event.reason);
+        console.log("Runner WebSocket disconnected", event.code, event.reason);
         this.config.onDisconnect?.();
 
         // Attempt to reconnect if not intentionally closed
-        if (!this.isIntentionallyClosed && this.reconnectAttempts < this.maxReconnectAttempts) {
+        if (
+          !this.isIntentionallyClosed &&
+          this.reconnectAttempts < this.maxReconnectAttempts
+        ) {
           this.reconnectAttempts++;
           console.log(
             `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
@@ -142,7 +214,10 @@ export class RunnerWebSocket {
       };
 
       this.ws.onerror = (error) => {
-        console.debug('Runner WebSocket error (runner may not be running):', error);
+        console.debug(
+          "Runner WebSocket error (runner may not be running):",
+          error
+        );
         this.config.onError?.(error);
       };
 
@@ -151,11 +226,11 @@ export class RunnerWebSocket {
           const message: WSMessage = JSON.parse(event.data);
           this.handleMessage(message);
         } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
+          console.error("Failed to parse WebSocket message:", error);
         }
       };
     } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
+      console.error("Failed to create WebSocket connection:", error);
       this.config.onError?.(error as Event);
     }
   }
@@ -184,14 +259,14 @@ export class RunnerWebSocket {
    */
   send(message: Record<string, any>): void {
     if (!this.isConnected()) {
-      console.error('Cannot send message: WebSocket is not connected');
+      console.error("Cannot send message: WebSocket is not connected");
       return;
     }
 
     try {
       this.ws?.send(JSON.stringify(message));
     } catch (error) {
-      console.error('Failed to send WebSocket message:', error);
+      console.error("Failed to send WebSocket message:", error);
     }
   }
 
@@ -200,33 +275,70 @@ export class RunnerWebSocket {
    */
   private handleMessage(message: WSMessage): void {
     switch (message.type) {
-      case 'session_start':
+      case "session_start":
         this.config.onSessionStart?.(message as unknown as SessionStartEvent);
         break;
 
-      case 'screenshot':
+      case "screenshot":
         this.config.onScreenshot?.(message as unknown as ScreenshotEvent);
         break;
 
-      case 'log':
+      case "log":
         this.config.onLog?.(message as unknown as LogEvent);
         break;
 
-      case 'session_end':
+      case "session_end":
         this.config.onSessionEnd?.(message as unknown as SessionEndEvent);
         break;
 
-      case 'response':
-        // Server acknowledgment
-        console.log('Server response:', message);
+      // Web extraction events
+      case "extraction_started":
+        this.config.onExtractionStarted?.(
+          message as unknown as ExtractionStartedEvent
+        );
         break;
 
-      case 'error':
-        console.error('Server error:', message);
+      case "extraction_progress":
+        this.config.onExtractionProgress?.(
+          message as unknown as ExtractionProgressEvent
+        );
+        break;
+
+      case "extraction_state_detected":
+        this.config.onExtractionStateDetected?.(
+          message as unknown as ExtractionStateDetectedEvent
+        );
+        break;
+
+      case "extraction_element_detected":
+        this.config.onExtractionElementDetected?.(
+          message as unknown as ExtractionElementDetectedEvent
+        );
+        break;
+
+      case "extraction_complete":
+        this.config.onExtractionComplete?.(
+          message as unknown as ExtractionCompleteEvent
+        );
+        break;
+
+      case "extraction_error":
+        this.config.onExtractionError?.(
+          message as unknown as ExtractionErrorEvent
+        );
+        break;
+
+      case "response":
+        // Server acknowledgment
+        console.log("Server response:", message);
+        break;
+
+      case "error":
+        console.error("Server error:", message);
         break;
 
       default:
-        console.warn('Unknown message type:', message.type);
+        console.warn("Unknown message type:", message.type);
     }
   }
 }
@@ -234,6 +346,8 @@ export class RunnerWebSocket {
 /**
  * Create a runner WebSocket connection
  */
-export function createRunnerWebSocket(config: RunnerWebSocketConfig): RunnerWebSocket {
+export function createRunnerWebSocket(
+  config: RunnerWebSocketConfig
+): RunnerWebSocket {
   return new RunnerWebSocket(config);
 }

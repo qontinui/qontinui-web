@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { CheckSquare, Square, Workflow as WorkflowIcon } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Button } from '@/components/ui/button';
-import type { WorkflowSelectorProps } from '@/types/integration-tests';
+import React from "react";
+import { CheckSquare, Square, Workflow as WorkflowIcon } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import type { WorkflowSelectorProps } from "@/types/integration-tests";
 
 export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
   workflows,
@@ -17,7 +17,7 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
     if (disabled) return;
 
     if (selectedIds.includes(workflowId)) {
-      onSelectionChange(selectedIds.filter(id => id !== workflowId));
+      onSelectionChange(selectedIds.filter((id) => id !== workflowId));
     } else {
       onSelectionChange([...selectedIds, workflowId]);
     }
@@ -25,7 +25,7 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
 
   const handleSelectAll = () => {
     if (disabled) return;
-    onSelectionChange(workflows.map(w => w.id));
+    onSelectionChange(workflows.map((w) => w.id));
   };
 
   const handleSelectNone = () => {
@@ -33,7 +33,8 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
     onSelectionChange([]);
   };
 
-  const allSelected = workflows.length > 0 && selectedIds.length === workflows.length;
+  const allSelected =
+    workflows.length > 0 && selectedIds.length === workflows.length;
   const noneSelected = selectedIds.length === 0;
 
   return (
@@ -71,7 +72,9 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
           <div className="text-center py-8 text-gray-500">
             <WorkflowIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">No workflows available</p>
-            <p className="text-xs mt-1">Create workflows to run integration tests</p>
+            <p className="text-xs mt-1">
+              Create workflows to run integration tests
+            </p>
           </div>
         ) : (
           <div className="max-h-80 overflow-y-auto space-y-1">
@@ -82,9 +85,9 @@ export const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({
                   key={workflow.id}
                   className={`flex items-center gap-3 p-2 rounded-lg border transition-colors cursor-pointer hover:bg-gray-50 ${
                     isSelected
-                      ? 'bg-blue-50 border-blue-200'
-                      : 'bg-white border-gray-200'
-                  } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      ? "bg-blue-50 border-blue-200"
+                      : "bg-white border-gray-200"
+                  } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
                   onClick={() => handleToggleWorkflow(workflow.id)}
                 >
                   <Checkbox

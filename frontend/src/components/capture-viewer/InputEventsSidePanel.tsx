@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import React, { useRef, useEffect } from 'react';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import React, { useRef, useEffect } from "react";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Mouse,
   MousePointer2,
@@ -14,10 +14,10 @@ import {
   Filter,
   X,
   Move,
-} from 'lucide-react';
-import { useState } from 'react';
-import type { InputEvent, InputEventType } from '@/types/capture';
-import { getButtonName } from '@/types/capture';
+} from "lucide-react";
+import { useState } from "react";
+import type { InputEvent, InputEventType } from "@/types/capture";
+import { getButtonName } from "@/types/capture";
 
 export interface InputEventsSidePanelProps {
   events: InputEvent[];
@@ -25,75 +25,78 @@ export interface InputEventsSidePanelProps {
   onEventClick: (timestamp: number) => void;
 }
 
-const EVENT_CONFIG: Record<InputEventType, {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  color: string;
-  bgColor: string;
-  borderColor: string;
-}> = {
+const EVENT_CONFIG: Record<
+  InputEventType,
+  {
+    icon: React.ComponentType<{ className?: string }>;
+    label: string;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+  }
+> = {
   mouse_move: {
     icon: Move,
-    label: 'Move',
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-50',
-    borderColor: 'border-gray-200',
+    label: "Move",
+    color: "text-gray-500",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200",
   },
   mouse_click: {
     icon: MousePointer2,
-    label: 'Click',
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    label: "Click",
+    color: "text-blue-600",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
   },
   mouse_down: {
     icon: MousePointer2,
-    label: 'Mouse Down',
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    label: "Mouse Down",
+    color: "text-blue-500",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
   },
   mouse_up: {
     icon: MousePointer2,
-    label: 'Mouse Up',
-    color: 'text-blue-400',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    label: "Mouse Up",
+    color: "text-blue-400",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
   },
   mouse_scroll: {
     icon: ArrowDown,
-    label: 'Scroll',
-    color: 'text-orange-600',
-    bgColor: 'bg-orange-50',
-    borderColor: 'border-orange-200',
+    label: "Scroll",
+    color: "text-orange-600",
+    bgColor: "bg-orange-50",
+    borderColor: "border-orange-200",
   },
   mouse_drag: {
     icon: Mouse,
-    label: 'Drag',
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-50',
-    borderColor: 'border-purple-200',
+    label: "Drag",
+    color: "text-purple-600",
+    bgColor: "bg-purple-50",
+    borderColor: "border-purple-200",
   },
   key_press: {
     icon: Keyboard,
-    label: 'Key Press',
-    color: 'text-green-600',
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-200',
+    label: "Key Press",
+    color: "text-green-600",
+    bgColor: "bg-green-50",
+    borderColor: "border-green-200",
   },
   key_down: {
     icon: Keyboard,
-    label: 'Key Down',
-    color: 'text-green-500',
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-200',
+    label: "Key Down",
+    color: "text-green-500",
+    bgColor: "bg-green-50",
+    borderColor: "border-green-200",
   },
   key_up: {
     icon: Keyboard,
-    label: 'Key Up',
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-50',
-    borderColor: 'border-gray-200',
+    label: "Key Up",
+    color: "text-gray-500",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200",
   },
 };
 
@@ -112,8 +115,8 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
   useEffect(() => {
     if (isActive && itemRef.current) {
       itemRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
+        behavior: "smooth",
+        block: "nearest",
       });
     }
   }, [isActive]);
@@ -122,49 +125,52 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     const ms = Math.floor((seconds % 1) * 1000);
-    return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(3, "0")}`;
   };
 
   const renderEventDetails = () => {
     switch (event.eventType) {
-      case 'mouse_click':
-      case 'mouse_down':
-      case 'mouse_up':
-      case 'mouse_drag':
+      case "mouse_click":
+      case "mouse_down":
+      case "mouse_up":
+      case "mouse_drag":
         return (
           <div className="space-y-1">
             {event.button && (
               <div className="text-xs">
-                <span className="font-medium">Button:</span> {getButtonName(event.button)}
+                <span className="font-medium">Button:</span>{" "}
+                {getButtonName(event.button)}
               </div>
             )}
             {event.x !== undefined && event.y !== undefined && (
               <div className="text-xs">
-                <span className="font-medium">Position:</span> ({event.x}, {event.y})
+                <span className="font-medium">Position:</span> ({event.x},{" "}
+                {event.y})
               </div>
             )}
           </div>
         );
 
-      case 'mouse_move':
+      case "mouse_move":
         return (
           <div className="space-y-1">
             {event.x !== undefined && event.y !== undefined && (
               <div className="text-xs">
-                <span className="font-medium">Position:</span> ({event.x}, {event.y})
+                <span className="font-medium">Position:</span> ({event.x},{" "}
+                {event.y})
               </div>
             )}
           </div>
         );
 
-      case 'key_press':
-      case 'key_down':
-      case 'key_up':
+      case "key_press":
+      case "key_down":
+      case "key_up":
         return (
           <div className="space-y-1">
             {event.key && (
               <div className="text-xs">
-                <span className="font-medium">Key:</span>{' '}
+                <span className="font-medium">Key:</span>{" "}
                 <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-xs font-mono">
                   {event.key}
                 </kbd>
@@ -172,7 +178,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
             )}
             {event.modifiers && event.modifiers.length > 0 && (
               <div className="text-xs">
-                <span className="font-medium">Modifiers:</span>{' '}
+                <span className="font-medium">Modifiers:</span>{" "}
                 {event.modifiers.map((mod, idx) => (
                   <kbd
                     key={idx}
@@ -186,17 +192,19 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
           </div>
         );
 
-      case 'mouse_scroll':
+      case "mouse_scroll":
         return (
           <div className="space-y-1">
             {event.x !== undefined && event.y !== undefined && (
               <div className="text-xs">
-                <span className="font-medium">Position:</span> ({event.x}, {event.y})
+                <span className="font-medium">Position:</span> ({event.x},{" "}
+                {event.y})
               </div>
             )}
             {(event.scrollDx !== undefined || event.scrollDy !== undefined) && (
               <div className="text-xs">
-                <span className="font-medium">Delta:</span> ({event.scrollDx || 0}, {event.scrollDy || 0})
+                <span className="font-medium">Delta:</span> (
+                {event.scrollDx || 0}, {event.scrollDy || 0})
               </div>
             )}
           </div>
@@ -212,16 +220,20 @@ const EventItem: React.FC<EventItemProps> = ({ event, isActive, onClick }) => {
       ref={itemRef}
       className={`relative p-3 border-l-4 rounded-r cursor-pointer transition-all ${
         config.borderColor
-      } ${isActive ? `${config.bgColor} ring-2 ring-blue-500 ring-opacity-50` : 'bg-white hover:bg-gray-50'} hover:shadow-md`}
+      } ${isActive ? `${config.bgColor} ring-2 ring-blue-500 ring-opacity-50` : "bg-white hover:bg-gray-50"} hover:shadow-md`}
       onClick={onClick}
     >
       {/* Event Header */}
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
           <Icon className={`h-4 w-4 ${config.color}`} />
-          <span className={`font-semibold text-sm ${config.color}`}>{config.label}</span>
+          <span className={`font-semibold text-sm ${config.color}`}>
+            {config.label}
+          </span>
         </div>
-        <span className="text-xs font-mono text-gray-500">{formatTime(event.timestamp)}</span>
+        <span className="text-xs font-mono text-gray-500">
+          {formatTime(event.timestamp)}
+        </span>
       </div>
 
       {/* Event Details */}
@@ -242,8 +254,10 @@ export const InputEventsSidePanel: React.FC<InputEventsSidePanelProps> = ({
   currentTimestamp,
   onEventClick,
 }) => {
-  const [filterText, setFilterText] = useState('');
-  const [filterEventTypes, setFilterEventTypes] = useState<Set<string>>(new Set());
+  const [filterText, setFilterText] = useState("");
+  const [filterEventTypes, setFilterEventTypes] = useState<Set<string>>(
+    new Set()
+  );
 
   // Find the current/most recent event based on timestamp
   const getCurrentEventIndex = (): number => {
@@ -289,14 +303,17 @@ export const InputEventsSidePanel: React.FC<InputEventsSidePanelProps> = ({
   };
 
   const clearFilters = () => {
-    setFilterText('');
+    setFilterText("");
     setFilterEventTypes(new Set());
   };
 
-  const eventTypeCounts = events.reduce((acc, event) => {
-    acc[event.eventType] = (acc[event.eventType] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const eventTypeCounts = events.reduce(
+    (acc, event) => {
+      acc[event.eventType] = (acc[event.eventType] || 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
 
   return (
     <Card className="h-[calc(100vh-12rem)] flex flex-col">
@@ -318,7 +335,7 @@ export const InputEventsSidePanel: React.FC<InputEventsSidePanelProps> = ({
           />
           {filterText && (
             <button
-              onClick={() => setFilterText('')}
+              onClick={() => setFilterText("")}
               className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="h-4 w-4" />
@@ -334,9 +351,9 @@ export const InputEventsSidePanel: React.FC<InputEventsSidePanelProps> = ({
             return (
               <Badge
                 key={eventType}
-                variant={isActive ? 'default' : 'outline'}
+                variant={isActive ? "default" : "outline"}
                 className={`cursor-pointer transition-colors ${
-                  isActive ? config.bgColor + ' ' + config.color : ''
+                  isActive ? config.bgColor + " " + config.color : ""
                 }`}
                 onClick={() => toggleEventTypeFilter(eventType)}
               >
@@ -362,7 +379,9 @@ export const InputEventsSidePanel: React.FC<InputEventsSidePanelProps> = ({
         <div className="p-4 space-y-2">
           {filteredEvents.length === 0 ? (
             <div className="text-center text-gray-500 text-sm py-8">
-              {events.length === 0 ? 'No events recorded' : 'No events match your filters'}
+              {events.length === 0
+                ? "No events recorded"
+                : "No events match your filters"}
             </div>
           ) : (
             filteredEvents.map((event, index) => {

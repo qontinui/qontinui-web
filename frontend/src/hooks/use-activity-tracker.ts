@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useEffect, useRef } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { useEffect, useRef } from "react";
+import { apiClient } from "@/lib/api-client";
 
 const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 1 hour in milliseconds
 // REMOVED: REFRESH_INTERVAL - Frontend no longer proactively refreshes tokens
@@ -27,13 +27,13 @@ export function useActivityTracker() {
   useEffect(() => {
     // Clear all timers when session expires
     const handleSessionExpired = () => {
-      console.log('[ActivityTracker] Session expired, clearing all timers');
+      console.log("[ActivityTracker] Session expired, clearing all timers");
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
     };
 
     // Listen for session-expired event
-    window.addEventListener('session-expired', handleSessionExpired);
+    window.addEventListener("session-expired", handleSessionExpired);
 
     // Update last activity time on user interaction
     const updateActivity = (event: Event) => {
@@ -67,12 +67,16 @@ export function useActivityTracker() {
       const warningDelay = INACTIVITY_TIMEOUT - WARN_BEFORE_TIMEOUT;
       warningTimerRef.current = setTimeout(() => {
         const timeSinceLastActivity = Date.now() - lastActivityRef.current;
-        const minutesRemaining = Math.ceil((INACTIVITY_TIMEOUT - timeSinceLastActivity) / 60000);
+        const minutesRemaining = Math.ceil(
+          (INACTIVITY_TIMEOUT - timeSinceLastActivity) / 60000
+        );
 
         if (minutesRemaining > 0) {
-          window.dispatchEvent(new CustomEvent('session-expiring', {
-            detail: { minutesRemaining }
-          }));
+          window.dispatchEvent(
+            new CustomEvent("session-expiring", {
+              detail: { minutesRemaining },
+            })
+          );
         }
       }, warningDelay);
 
@@ -82,26 +86,28 @@ export function useActivityTracker() {
 
         // Double-check inactivity before expiring
         if (timeSinceLastActivity >= INACTIVITY_TIMEOUT) {
-          window.dispatchEvent(new CustomEvent('session-expired'));
+          window.dispatchEvent(new CustomEvent("session-expired"));
         }
       }, INACTIVITY_TIMEOUT);
     };
 
     // Events that count as user activity
     const events = [
-      'mousedown',
-      'mousemove',
-      'keypress',
-      'scroll',
-      'touchstart',
-      'click',
+      "mousedown",
+      "mousemove",
+      "keypress",
+      "scroll",
+      "touchstart",
+      "click",
     ];
 
     // Use passive listeners for scroll/touch for better performance
-    const passiveEvents = ['scroll', 'touchstart'];
+    const passiveEvents = ["scroll", "touchstart"];
 
-    events.forEach(event => {
-      const options = passiveEvents.includes(event) ? { passive: true } : undefined;
+    events.forEach((event) => {
+      const options = passiveEvents.includes(event)
+        ? { passive: true }
+        : undefined;
       window.addEventListener(event, updateActivity, options);
     });
 
@@ -110,9 +116,9 @@ export function useActivityTracker() {
 
     // Cleanup
     return () => {
-      window.removeEventListener('session-expired', handleSessionExpired);
+      window.removeEventListener("session-expired", handleSessionExpired);
 
-      events.forEach(event => {
+      events.forEach((event) => {
         window.removeEventListener(event, updateActivity);
       });
 

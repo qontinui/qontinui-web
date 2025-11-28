@@ -20,16 +20,16 @@ The collaboration services provide:
 Manages organizations and team membership.
 
 ```typescript
-import { organizationService } from '@/services/service-factory';
+import { organizationService } from "@/services/service-factory";
 
 // Create an organization
 const org = await organizationService.createOrganization(
-  'My Team',
-  'Team workspace for project collaboration'
+  "My Team",
+  "Team workspace for project collaboration"
 );
 
 // Invite team members
-await organizationService.inviteMember(org.id, 'user@example.com', 'member');
+await organizationService.inviteMember(org.id, "user@example.com", "member");
 
 // Get all members
 const members = await organizationService.getMembers(org.id);
@@ -43,30 +43,31 @@ await organizationService.switchOrganization(org.id);
 Handles project sharing and permission management.
 
 ```typescript
-import { projectCollaborationService } from '@/services/service-factory';
+import { projectCollaborationService } from "@/services/service-factory";
 
 // Share project with a user
 await projectCollaborationService.shareProject(
   projectId,
   userId,
-  'edit' // permission level: 'view' | 'comment' | 'edit' | 'admin' | 'owner'
+  "edit" // permission level: 'view' | 'comment' | 'edit' | 'admin' | 'owner'
 );
 
 // Share with entire organization
 await projectCollaborationService.shareWithOrganization(
   projectId,
   orgId,
-  'view'
+  "view"
 );
 
 // Check permissions
 const canEdit = await projectCollaborationService.canPerformAction(
   projectId,
-  'edit'
+  "edit"
 );
 
 // Get all collaborators
-const collaborators = await projectCollaborationService.getCollaborators(projectId);
+const collaborators =
+  await projectCollaborationService.getCollaborators(projectId);
 ```
 
 ### LockService
@@ -74,12 +75,12 @@ const collaborators = await projectCollaborationService.getCollaborators(project
 Prevents concurrent edits with resource locking.
 
 ```typescript
-import { lockService } from '@/services/service-factory';
+import { lockService } from "@/services/service-factory";
 
 // Acquire a lock on a workflow
 const lock = await lockService.acquireLock(
   projectId,
-  'workflow',
+  "workflow",
   workflowId,
   300 // timeout in seconds
 );
@@ -94,7 +95,7 @@ await lockService.releaseLock(lock.id);
 // Check lock status
 const currentLock = await lockService.getLockStatus(
   projectId,
-  'workflow',
+  "workflow",
   workflowId
 );
 
@@ -108,21 +109,21 @@ if (currentLock && lockService.isLockedByOther(currentLock)) {
 Manage comments and discussions on projects.
 
 ```typescript
-import { commentService } from '@/services/service-factory';
+import { commentService } from "@/services/service-factory";
 
 // Add a comment
 const comment = await commentService.addComment(
   projectId,
   workflowId,
-  'Great workflow design!',
+  "Great workflow design!",
   { x: 100, y: 200 }, // optional position on canvas
-  ['@user123'] // optional mentions
+  ["@user123"] // optional mentions
 );
 
 // Reply to a comment
 const reply = await commentService.replyToComment(
   comment.id,
-  'Thanks! Let me know if you have suggestions.'
+  "Thanks! Let me know if you have suggestions."
 );
 
 // Resolve a comment thread
@@ -132,7 +133,7 @@ await commentService.resolveComment(comment.id);
 const comments = await commentService.getComments(projectId, workflowId);
 
 // Add reactions
-await commentService.addReaction(comment.id, '👍');
+await commentService.addReaction(comment.id, "👍");
 ```
 
 ### ActivityService
@@ -140,28 +141,28 @@ await commentService.addReaction(comment.id, '👍');
 Track and display project activity.
 
 ```typescript
-import { activityService } from '@/services/service-factory';
+import { activityService } from "@/services/service-factory";
 
 // Track activity (usually done automatically)
 await activityService.trackUpdate(
   projectId,
-  'workflow',
+  "workflow",
   workflowId,
-  { name: 'old' } // changes object
+  { name: "old" } // changes object
 );
 
 // Get activity feed
 const activities = await activityService.getActivityFeed(projectId, {
   limit: 50,
   offset: 0,
-  action_types: ['create', 'update'],
-  resource_types: ['workflow']
+  action_types: ["create", "update"],
+  resource_types: ["workflow"],
 });
 
 // Get activity for specific resource
 const workflowActivity = await activityService.getResourceActivity(
   projectId,
-  'workflow',
+  "workflow",
   workflowId
 );
 
@@ -169,7 +170,7 @@ const workflowActivity = await activityService.getResourceActivity(
 const subscription = activityService.subscribeToActivity(
   projectId,
   (activity) => {
-    console.log('New activity:', activity);
+    console.log("New activity:", activity);
   }
 );
 
@@ -182,7 +183,7 @@ subscription.unsubscribe();
 Real-time collaboration features via WebSocket.
 
 ```typescript
-import { WebSocketCollaborationService } from '@/services/collaboration';
+import { WebSocketCollaborationService } from "@/services/collaboration";
 
 // Create and connect
 const wsService = new WebSocketCollaborationService(
@@ -198,22 +199,22 @@ const wsService = new WebSocketCollaborationService(
       console.log(`${data.user_name} moved cursor to`, data.x, data.y);
     },
     onLockUpdate: (data) => {
-      console.log('Lock update:', data.lock, data.action);
+      console.log("Lock update:", data.lock, data.action);
     },
     onResourceUpdate: (data) => {
-      console.log('Resource updated:', data.resource_type, data.resource_id);
+      console.log("Resource updated:", data.resource_type, data.resource_id);
     },
     onCommentAdded: (comment) => {
-      console.log('New comment:', comment);
+      console.log("New comment:", comment);
     },
     onActivityUpdate: (activity) => {
-      console.log('New activity:', activity);
+      console.log("New activity:", activity);
     },
     onConnect: () => {
-      console.log('Connected to collaboration server');
+      console.log("Connected to collaboration server");
     },
     onDisconnect: (reason) => {
-      console.log('Disconnected:', reason);
+      console.log("Disconnected:", reason);
     },
   }
 );
@@ -221,14 +222,14 @@ const wsService = new WebSocketCollaborationService(
 await wsService.connect();
 
 // Send presence updates
-wsService.sendPresenceUpdate('active', 'workflow-123');
+wsService.sendPresenceUpdate("active", "workflow-123");
 
 // Share cursor position
-wsService.sendCursorPosition(250, 350, 'canvas-viewport');
+wsService.sendCursorPosition(250, 350, "canvas-viewport");
 
 // Notify about resource changes
-wsService.sendResourceUpdate('workflow', workflowId, {
-  name: 'Updated Workflow'
+wsService.sendResourceUpdate("workflow", workflowId, {
+  name: "Updated Workflow",
 });
 
 // Disconnect when done
@@ -246,20 +247,20 @@ import {
   commentService,
   activityService,
   WebSocketCollaborationService,
-} from '@/services/service-factory';
+} from "@/services/service-factory";
 
 // 1. Check permissions
 const canEdit = await projectCollaborationService.canPerformAction(
   projectId,
-  'edit'
+  "edit"
 );
 
 if (!canEdit) {
-  throw new Error('You do not have edit permissions');
+  throw new Error("You do not have edit permissions");
 }
 
 // 2. Acquire lock
-const lock = await lockService.acquireLock(projectId, 'workflow', workflowId);
+const lock = await lockService.acquireLock(projectId, "workflow", workflowId);
 
 // 3. Set up real-time collaboration
 const wsService = new WebSocketCollaborationService(
@@ -273,7 +274,7 @@ const wsService = new WebSocketCollaborationService(
     },
     onLockUpdate: (data) => {
       // Update UI when locks change
-      if (data.action === 'acquired') {
+      if (data.action === "acquired") {
         showLockedIndicator(data.lock);
       }
     },
@@ -286,15 +287,10 @@ await wsService.connect();
 const changes = updateWorkflow(workflow);
 
 // 5. Track activity
-await activityService.trackUpdate(
-  projectId,
-  'workflow',
-  workflowId,
-  changes
-);
+await activityService.trackUpdate(projectId, "workflow", workflowId, changes);
 
 // 6. Notify others via WebSocket
-wsService.sendResourceUpdate('workflow', workflowId, changes);
+wsService.sendResourceUpdate("workflow", workflowId, changes);
 
 // 7. Cleanup
 await lockService.releaseLock(lock.id);
@@ -307,7 +303,7 @@ wsService.disconnect();
 import {
   organizationService,
   projectCollaborationService,
-} from '@/services/service-factory';
+} from "@/services/service-factory";
 
 // Get current organization
 const org = organizationService.getCurrentOrganization();
@@ -317,18 +313,20 @@ if (org) {
   await projectCollaborationService.shareWithOrganization(
     projectId,
     org.id,
-    'view' // All members can view
+    "view" // All members can view
   );
 
   // Give specific members edit access
   const members = await organizationService.getMembers(org.id);
-  const editors = members.filter((m) => m.role === 'admin' || m.role === 'owner');
+  const editors = members.filter(
+    (m) => m.role === "admin" || m.role === "owner"
+  );
 
   for (const member of editors) {
     await projectCollaborationService.shareProject(
       projectId,
       member.user_id,
-      'edit'
+      "edit"
     );
   }
 }
@@ -337,15 +335,15 @@ if (org) {
 ### Comment Threads with Mentions
 
 ```typescript
-import { commentService } from '@/services/service-factory';
+import { commentService } from "@/services/service-factory";
 
 // Create a comment thread
 const mainComment = await commentService.addComment(
   projectId,
   workflowId,
-  'Could you review this workflow logic? @john @sarah',
-  { x: 200, y: 150, element_id: 'action-123' },
-  ['john-user-id', 'sarah-user-id']
+  "Could you review this workflow logic? @john @sarah",
+  { x: 200, y: 150, element_id: "action-123" },
+  ["john-user-id", "sarah-user-id"]
 );
 
 // Get mentions (users will be notified)
@@ -354,7 +352,7 @@ const mentions = await commentService.getMentions(projectId);
 // Reply with follow-up
 const reply = await commentService.replyToComment(
   mainComment.id,
-  'Thanks for the feedback! I made the changes.'
+  "Thanks for the feedback! I made the changes."
 );
 
 // Resolve when discussion is complete
@@ -372,10 +370,11 @@ import {
   lockService,
   commentService,
   activityService,
-} from '@/services/service-factory';
+} from "@/services/service-factory";
 ```
 
 The services are automatically configured with:
+
 - Authentication via HttpClient
 - Token management
 - Error handling
@@ -388,9 +387,9 @@ All services throw errors that should be handled appropriately:
 
 ```typescript
 try {
-  await lockService.acquireLock(projectId, 'workflow', workflowId);
+  await lockService.acquireLock(projectId, "workflow", workflowId);
 } catch (error) {
-  if (error.message.includes('already locked')) {
+  if (error.message.includes("already locked")) {
     // Resource is locked by another user
     showLockedMessage();
   } else {
@@ -415,7 +414,7 @@ import type {
   PermissionLevel,
   ResourceType,
   // ... and many more
-} from '@/types/collaboration';
+} from "@/types/collaboration";
 ```
 
 ## Best Practices

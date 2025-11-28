@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Qontinui Architecture Views Hub
@@ -6,61 +6,97 @@
  * Central page for all architecture diagrams and documentation
  */
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuth } from '@/contexts/auth-context'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Home, Shield, ArrowLeft, Network, FileText, Camera, Users, Lock, GitBranch, ArrowLeftRight, Cloud, Activity, RefreshCw, Image, Share2 } from 'lucide-react'
-import { ArchitectureDiagram } from '@/components/admin/architecture/ArchitectureDiagram'
-import { ComponentDetailPanel } from '@/components/admin/architecture/ComponentDetailPanel'
-import { ArchitectureDocsViewer } from '@/components/admin/architecture/ArchitectureDocsViewer'
-import { ScreenshotWorkflowDiagram } from '@/components/admin/architecture/ScreenshotWorkflowDiagram'
-import { CollaborationWorkflowDiagram } from '@/components/admin/architecture/CollaborationWorkflowDiagram'
-import { WorkflowExecutionDiagram } from '@/components/admin/architecture/WorkflowExecutionDiagram'
-import AuthenticationArchitectureDiagram from '@/components/admin/architecture/AuthenticationArchitectureDiagram'
-import { FrontendBackendDataFlowDiagram } from '@/components/admin/architecture/FrontendBackendDataFlowDiagram'
-import { DeploymentArchitectureDiagram } from '@/components/admin/architecture/DeploymentArchitectureDiagram'
-import { AutomationSessionLifecycleDiagram } from '@/components/admin/architecture/AutomationSessionLifecycleDiagram'
-import { ConfigMigrationDiagram } from '@/components/admin/architecture/ConfigMigrationDiagram'
-import { ImageProcessingPipelineDiagram } from '@/components/admin/architecture/ImageProcessingPipelineDiagram'
-import { PermissionsArchitectureDiagram } from '@/components/admin/architecture/PermissionsArchitectureDiagram'
+} from "@/components/ui/select";
+import {
+  Home,
+  Shield,
+  ArrowLeft,
+  Network,
+  FileText,
+  Camera,
+  Users,
+  Lock,
+  GitBranch,
+  ArrowLeftRight,
+  Cloud,
+  Activity,
+  RefreshCw,
+  Image,
+  Share2,
+} from "lucide-react";
+import { ArchitectureDiagram } from "@/components/admin/architecture/ArchitectureDiagram";
+import { ComponentDetailPanel } from "@/components/admin/architecture/ComponentDetailPanel";
+import { ArchitectureDocsViewer } from "@/components/admin/architecture/ArchitectureDocsViewer";
+import { ScreenshotWorkflowDiagram } from "@/components/admin/architecture/ScreenshotWorkflowDiagram";
+import { CollaborationWorkflowDiagram } from "@/components/admin/architecture/CollaborationWorkflowDiagram";
+import { WorkflowExecutionDiagram } from "@/components/admin/architecture/WorkflowExecutionDiagram";
+import AuthenticationArchitectureDiagram from "@/components/admin/architecture/AuthenticationArchitectureDiagram";
+import { FrontendBackendDataFlowDiagram } from "@/components/admin/architecture/FrontendBackendDataFlowDiagram";
+import { DeploymentArchitectureDiagram } from "@/components/admin/architecture/DeploymentArchitectureDiagram";
+import { AutomationSessionLifecycleDiagram } from "@/components/admin/architecture/AutomationSessionLifecycleDiagram";
+import { ConfigMigrationDiagram } from "@/components/admin/architecture/ConfigMigrationDiagram";
+import { ImageProcessingPipelineDiagram } from "@/components/admin/architecture/ImageProcessingPipelineDiagram";
+import { PermissionsArchitectureDiagram } from "@/components/admin/architecture/PermissionsArchitectureDiagram";
 
-export type ComponentType = 'qontinui' | 'multistate' | 'qontinui-runner' | 'qontinui-web' | 'qontinui-api' | null
+export type ComponentType =
+  | "qontinui"
+  | "multistate"
+  | "qontinui-runner"
+  | "qontinui-web"
+  | "qontinui-api"
+  | null;
 
-type ArchitectureView = 'ecosystem' | 'screenshots' | 'collaboration' | 'authentication' | 'workflow-execution' | 'frontend-backend-dataflow' | 'permissions' | 'deployment' | 'automation-session-lifecycle' | 'config-migration' | 'image-processing' | 'technical'
+type ArchitectureView =
+  | "ecosystem"
+  | "screenshots"
+  | "collaboration"
+  | "authentication"
+  | "workflow-execution"
+  | "frontend-backend-dataflow"
+  | "permissions"
+  | "deployment"
+  | "automation-session-lifecycle"
+  | "config-migration"
+  | "image-processing"
+  | "technical";
 
 export default function ArchitecturePage() {
-  const { user, loading: authLoading } = useAuth()
-  const router = useRouter()
-  const [selectedComponent, setSelectedComponent] = useState<ComponentType>(null)
-  const [selectedView, setSelectedView] = useState<ArchitectureView>('ecosystem')
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+  const [selectedComponent, setSelectedComponent] =
+    useState<ComponentType>(null);
+  const [selectedView, setSelectedView] =
+    useState<ArchitectureView>("ecosystem");
 
   // Protection
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/')
-      return
+      router.push("/");
+      return;
     }
 
     if (!authLoading && user && !user.is_superuser) {
-      toast.error('Access denied - Admin privileges required')
-      router.push('/dashboard')
-      return
+      toast.error("Access denied - Admin privileges required");
+      router.push("/dashboard");
+      return;
     }
-  }, [user, authLoading, router])
+  }, [user, authLoading, router]);
 
   // Don't render until auth is confirmed
   if (!user?.is_superuser) {
-    return null
+    return null;
   }
 
   return (
@@ -71,7 +107,7 @@ export default function ArchitecturePage() {
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              onClick={() => router.push('/admin')}
+              onClick={() => router.push("/admin")}
               className="hover:bg-primary/10"
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -81,7 +117,7 @@ export default function ArchitecturePage() {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => router.push('/admin')}
+              onClick={() => router.push("/admin")}
               className="flex items-center gap-2"
             >
               <Shield className="h-4 w-4" />
@@ -89,7 +125,7 @@ export default function ArchitecturePage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push("/dashboard")}
               className="flex items-center gap-2"
             >
               <Home className="h-4 w-4" />
@@ -103,12 +139,20 @@ export default function ArchitecturePage() {
           <div>
             <h1 className="text-3xl font-bold mb-2">Qontinui Architecture</h1>
             <p className="text-muted-foreground">
-              Comprehensive architecture diagrams and technical documentation for all subsystems
+              Comprehensive architecture diagrams and technical documentation
+              for all subsystems
             </p>
           </div>
           <div className="min-w-[280px]">
-            <label className="text-sm font-medium mb-2 block">Architecture View</label>
-            <Select value={selectedView} onValueChange={(value) => setSelectedView(value as ArchitectureView)}>
+            <label className="text-sm font-medium mb-2 block">
+              Architecture View
+            </label>
+            <Select
+              value={selectedView}
+              onValueChange={(value) =>
+                setSelectedView(value as ArchitectureView)
+              }
+            >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select architecture view" />
               </SelectTrigger>
@@ -191,15 +235,18 @@ export default function ArchitecturePage() {
         </div>
 
         {/* Ecosystem View */}
-        {selectedView === 'ecosystem' && (
+        {selectedView === "ecosystem" && (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Architecture Diagram */}
               <Card className="lg:col-span-2 p-6">
                 <div className="mb-4">
-                  <h2 className="text-xl font-semibold mb-2">Qontinui Ecosystem</h2>
+                  <h2 className="text-xl font-semibold mb-2">
+                    Qontinui Ecosystem
+                  </h2>
                   <p className="text-sm text-muted-foreground">
-                    Interactive visualization of all components and their relationships
+                    Interactive visualization of all components and their
+                    relationships
                   </p>
                 </div>
                 <ArchitectureDiagram
@@ -227,19 +274,31 @@ export default function ArchitecturePage() {
                 <ul className="space-y-2 text-sm text-muted-foreground">
                   <li className="flex items-start gap-2">
                     <span className="text-primary mt-1">•</span>
-                    <span><strong>Click</strong> on any component to view comprehensive details</span>
+                    <span>
+                      <strong>Click</strong> on any component to view
+                      comprehensive details
+                    </span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-primary mt-1">•</span>
-                    <span><strong>Hover</strong> over components to see quick info tooltips</span>
+                    <span>
+                      <strong>Hover</strong> over components to see quick info
+                      tooltips
+                    </span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-primary mt-1">•</span>
-                    <span><strong>Watch</strong> as related components highlight when hovering</span>
+                    <span>
+                      <strong>Watch</strong> as related components highlight
+                      when hovering
+                    </span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-primary mt-1">•</span>
-                    <span><strong>Arrows</strong> show data flow and dependencies between components</span>
+                    <span>
+                      <strong>Arrows</strong> show data flow and dependencies
+                      between components
+                    </span>
                   </li>
                 </ul>
               </Card>
@@ -251,8 +310,8 @@ export default function ArchitecturePage() {
                 </h3>
                 <div className="space-y-3 text-sm text-muted-foreground">
                   <p>
-                    The Qontinui ecosystem is a comprehensive platform for GUI automation, built on
-                    peer-reviewed academic research.
+                    The Qontinui ecosystem is a comprehensive platform for GUI
+                    automation, built on peer-reviewed academic research.
                   </p>
                   <p className="text-xs">
                     All components are open-source under the MIT license.
@@ -264,12 +323,15 @@ export default function ArchitecturePage() {
         )}
 
         {/* Screenshots Workflow View */}
-        {selectedView === 'screenshots' && (
+        {selectedView === "screenshots" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Screenshot Workflow Architecture</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Screenshot Workflow Architecture
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Interactive visualization of screenshot capture, storage, processing, and pattern matching
+                Interactive visualization of screenshot capture, storage,
+                processing, and pattern matching
               </p>
             </div>
             <ScreenshotWorkflowDiagram />
@@ -277,12 +339,15 @@ export default function ArchitecturePage() {
         )}
 
         {/* Multi-User Collaboration View */}
-        {selectedView === 'collaboration' && (
+        {selectedView === "collaboration" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Multi-User Collaboration Architecture</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Multi-User Collaboration Architecture
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Interactive visualization of real-time collaboration, permissions, locking, and conflict management
+                Interactive visualization of real-time collaboration,
+                permissions, locking, and conflict management
               </p>
             </div>
             <CollaborationWorkflowDiagram />
@@ -290,12 +355,15 @@ export default function ArchitecturePage() {
         )}
 
         {/* Authentication & Authorization View */}
-        {selectedView === 'authentication' && (
+        {selectedView === "authentication" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Authentication & Authorization Architecture</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Authentication & Authorization Architecture
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Enterprise-grade security with JWT tokens, RBAC permissions, device fingerprinting, and session management
+                Enterprise-grade security with JWT tokens, RBAC permissions,
+                device fingerprinting, and session management
               </p>
             </div>
             <AuthenticationArchitectureDiagram />
@@ -303,12 +371,16 @@ export default function ArchitecturePage() {
         )}
 
         {/* Workflow Execution Pipeline View */}
-        {selectedView === 'workflow-execution' && (
+        {selectedView === "workflow-execution" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Workflow Execution Pipeline Architecture</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Workflow Execution Pipeline Architecture
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Complete pipeline from visual workflow design through graph validation, export, mock/real execution, state machine navigation, and action execution with HAL & computer vision
+                Complete pipeline from visual workflow design through graph
+                validation, export, mock/real execution, state machine
+                navigation, and action execution with HAL & computer vision
               </p>
             </div>
             <WorkflowExecutionDiagram />
@@ -316,12 +388,16 @@ export default function ArchitecturePage() {
         )}
 
         {/* Frontend-Backend Data Flow View */}
-        {selectedView === 'frontend-backend-dataflow' && (
+        {selectedView === "frontend-backend-dataflow" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Frontend-Backend Data Flow Architecture</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Frontend-Backend Data Flow Architecture
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Complete data flow from browser through API layer, authentication, middleware, to database - including React Query caching, WebSocket streaming, and optimistic updates
+                Complete data flow from browser through API layer,
+                authentication, middleware, to database - including React Query
+                caching, WebSocket streaming, and optimistic updates
               </p>
             </div>
             <FrontendBackendDataFlowDiagram />
@@ -329,12 +405,17 @@ export default function ArchitecturePage() {
         )}
 
         {/* Project Sharing & Permissions View */}
-        {selectedView === 'permissions' && (
+        {selectedView === "permissions" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Project Sharing & Permissions Architecture</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Project Sharing & Permissions Architecture
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Comprehensive hierarchical permission system: organization roles, team memberships, project-level ACLs, invitation workflows, resource locking, time-based access control, and security analysis with recommendations
+                Comprehensive hierarchical permission system: organization
+                roles, team memberships, project-level ACLs, invitation
+                workflows, resource locking, time-based access control, and
+                security analysis with recommendations
               </p>
             </div>
             <PermissionsArchitectureDiagram />
@@ -342,12 +423,17 @@ export default function ArchitecturePage() {
         )}
 
         {/* Deployment Architecture View */}
-        {selectedView === 'deployment' && (
+        {selectedView === "deployment" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Deployment Architecture</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Deployment Architecture
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Complete infrastructure overview showing development (Docker containers, local services) and production (AWS Elastic Beanstalk, RDS, S3, Vercel) environments with service connections and data flows
+                Complete infrastructure overview showing development (Docker
+                containers, local services) and production (AWS Elastic
+                Beanstalk, RDS, S3, Vercel) environments with service
+                connections and data flows
               </p>
             </div>
             <DeploymentArchitectureDiagram />
@@ -355,12 +441,18 @@ export default function ArchitecturePage() {
         )}
 
         {/* Automation Session Lifecycle View */}
-        {selectedView === 'automation-session-lifecycle' && (
+        {selectedView === "automation-session-lifecycle" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Automation Session Lifecycle</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Automation Session Lifecycle
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Complete automation session flow from user initiation through desktop runner connection, real-time streaming (logs, screenshots, input events), pattern matching via Qontinui API, data persistence (PostgreSQL, S3, Redis), WebSocket updates, and session completion with analytics
+                Complete automation session flow from user initiation through
+                desktop runner connection, real-time streaming (logs,
+                screenshots, input events), pattern matching via Qontinui API,
+                data persistence (PostgreSQL, S3, Redis), WebSocket updates, and
+                session completion with analytics
               </p>
             </div>
             <AutomationSessionLifecycleDiagram />
@@ -368,12 +460,17 @@ export default function ArchitecturePage() {
         )}
 
         {/* Config Migration System View */}
-        {selectedView === 'config-migration' && (
+        {selectedView === "config-migration" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Config Migration System Architecture</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Config Migration System Architecture
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Intelligent backward compatibility system with BFS pathfinding algorithm for automatic config versioning - handles JSON import/export migrations from any historical version to current format with safe rollback
+                Intelligent backward compatibility system with BFS pathfinding
+                algorithm for automatic config versioning - handles JSON
+                import/export migrations from any historical version to current
+                format with safe rollback
               </p>
             </div>
             <ConfigMigrationDiagram />
@@ -381,14 +478,20 @@ export default function ArchitecturePage() {
         )}
 
         {/* Image Processing Pipeline View */}
-        {selectedView === 'image-processing' && (
+        {selectedView === "image-processing" && (
           <Card className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold mb-2">Image Processing Pipeline Architecture</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Image Processing Pipeline Architecture
+              </h2>
               <p className="text-sm text-muted-foreground">
-                End-to-end image pipeline: upload validation (MIME, magic bytes, quota), multi-tier storage (S3, PostgreSQL, Redis, IndexedDB),
-                async processing (ARQ queue, thumbnail generation, WebP optimization, EXIF handling), computer vision analysis (OpenCV template matching,
-                state discovery, semantic OCR, pattern optimization), and progressive delivery (lazy loading, zoom-aware quality selection, presigned URLs)
+                End-to-end image pipeline: upload validation (MIME, magic bytes,
+                quota), multi-tier storage (S3, PostgreSQL, Redis, IndexedDB),
+                async processing (ARQ queue, thumbnail generation, WebP
+                optimization, EXIF handling), computer vision analysis (OpenCV
+                template matching, state discovery, semantic OCR, pattern
+                optimization), and progressive delivery (lazy loading,
+                zoom-aware quality selection, presigned URLs)
               </p>
             </div>
             <ImageProcessingPipelineDiagram />
@@ -396,10 +499,8 @@ export default function ArchitecturePage() {
         )}
 
         {/* Technical Documentation View */}
-        {selectedView === 'technical' && (
-          <ArchitectureDocsViewer />
-        )}
+        {selectedView === "technical" && <ArchitectureDocsViewer />}
       </div>
     </div>
-  )
+  );
 }

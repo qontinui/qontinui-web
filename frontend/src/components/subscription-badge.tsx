@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { Rocket } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { Rocket } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 /**
  * Early Access Subscription Badge
@@ -15,8 +15,8 @@ export function SubscriptionBadge() {
     <Badge
       variant="outline"
       className={cn(
-        'flex items-center gap-1.5 px-3 py-1',
-        'bg-blue-500/20 text-blue-400 border-blue-500/30'
+        "flex items-center gap-1.5 px-3 py-1",
+        "bg-blue-500/20 text-blue-400 border-blue-500/30"
       )}
       title="Free during early access until February 2026"
     >

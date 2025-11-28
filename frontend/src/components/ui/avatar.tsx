@@ -1,15 +1,15 @@
-import * as React from "react"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { cn } from "@/lib/utils";
 
 interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
-  src?: string
-  alt?: string
-  fallback?: React.ReactNode
+  src?: string;
+  alt?: string;
+  fallback?: React.ReactNode;
 }
 
 const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
   ({ className, src, alt, fallback, children, ...props }, ref) => {
-    const [imgError, setImgError] = React.useState(false)
+    const [imgError, setImgError] = React.useState(false);
 
     return (
       <div
@@ -33,10 +33,10 @@ const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
           </div>
         )}
       </div>
-    )
+    );
   }
-)
-Avatar.displayName = "Avatar"
+);
+Avatar.displayName = "Avatar";
 
 const AvatarImage = React.forwardRef<
   HTMLImageElement,
@@ -47,8 +47,8 @@ const AvatarImage = React.forwardRef<
     className={cn("aspect-square h-full w-full object-cover", className)}
     {...props}
   />
-))
-AvatarImage.displayName = "AvatarImage"
+));
+AvatarImage.displayName = "AvatarImage";
 
 const AvatarFallback = React.forwardRef<
   HTMLDivElement,
@@ -62,7 +62,7 @@ const AvatarFallback = React.forwardRef<
     )}
     {...props}
   />
-))
-AvatarFallback.displayName = "AvatarFallback"
+));
+AvatarFallback.displayName = "AvatarFallback";
 
-export { Avatar, AvatarImage, AvatarFallback }
+export { Avatar, AvatarImage, AvatarFallback };

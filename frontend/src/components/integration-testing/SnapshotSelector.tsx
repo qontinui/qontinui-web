@@ -1,19 +1,19 @@
 // components/integration-testing/SnapshotSelector.tsx
 
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useSnapshotList } from '@/hooks/useSnapshotList';
-import { RefreshCw } from 'lucide-react';
-import type { SnapshotRun } from '@/types/snapshots';
+} from "@/components/ui/select";
+import { useSnapshotList } from "@/hooks/useSnapshotList";
+import { RefreshCw } from "lucide-react";
+import type { SnapshotRun } from "@/types/snapshots";
 
 interface SnapshotSelectorProps {
   value?: SnapshotRun;
@@ -24,7 +24,7 @@ export function SnapshotSelector({ value, onChange }: SnapshotSelectorProps) {
   const { snapshots, loading, reload } = useSnapshotList({ autoLoad: true });
 
   const handleValueChange = (runId: string) => {
-    const selected = snapshots.find(s => s.run_id === runId);
+    const selected = snapshots.find((s) => s.run_id === runId);
     onChange?.(selected);
   };
 
@@ -32,13 +32,8 @@ export function SnapshotSelector({ value, onChange }: SnapshotSelectorProps) {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="text-sm font-medium">Select Snapshot</label>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={reload}
-          disabled={loading}
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        <Button variant="ghost" size="sm" onClick={reload} disabled={loading}>
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </Button>
       </div>
 
@@ -67,9 +62,9 @@ export function SnapshotSelector({ value, onChange }: SnapshotSelectorProps) {
       {value && (
         <div className="text-sm text-gray-600 mt-2">
           <p>
-            {value.successful_actions}/{value.total_actions} actions •{' '}
-            {value.total_screenshots} screenshots •{' '}
-            {value.patterns_count} patterns
+            {value.successful_actions}/{value.total_actions} actions •{" "}
+            {value.total_screenshots} screenshots • {value.patterns_count}{" "}
+            patterns
           </p>
         </div>
       )}

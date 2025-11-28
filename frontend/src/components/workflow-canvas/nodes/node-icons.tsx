@@ -5,7 +5,7 @@
  * Provides consistent sizing and styling across all node types.
  */
 
-import React from 'react';
+import React from "react";
 import {
   MousePointer,
   MousePointer2,
@@ -54,8 +54,8 @@ import {
   Code,
   FileCode,
   LucideIcon,
-} from 'lucide-react';
-import { ActionType } from '@/lib/action-schema/action-types';
+} from "lucide-react";
+import { ActionType } from "@/lib/action-schema/action-types";
 
 /**
  * Icon component props
@@ -133,7 +133,7 @@ export function getNodeIcon(actionType: ActionType): LucideIcon {
  */
 export function NodeIcon({
   actionType,
-  className = '',
+  className = "",
   size = 16,
 }: {
   actionType: ActionType;
@@ -182,13 +182,13 @@ export const IconSizes = {
  */
 export function getCategoryIcon(
   category:
-    | 'find'
-    | 'mouse'
-    | 'keyboard'
-    | 'controlFlow'
-    | 'data'
-    | 'state'
-    | 'special'
+    | "find"
+    | "mouse"
+    | "keyboard"
+    | "controlFlow"
+    | "data"
+    | "state"
+    | "special"
 ): LucideIcon {
   return CategoryIcons[category];
 }
@@ -208,7 +208,7 @@ export const ExecutionStateIcons = {
  * Get execution state icon
  */
 export function getExecutionStateIcon(
-  state: 'running' | 'completed' | 'failed' | 'skipped' | 'idle'
+  state: "running" | "completed" | "failed" | "skipped" | "idle"
 ): LucideIcon {
   return ExecutionStateIcons[state];
 }

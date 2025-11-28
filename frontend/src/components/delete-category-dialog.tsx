@@ -5,18 +5,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { AlertTriangle } from "lucide-react"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
 
 interface DeleteCategoryDialogProps {
-  open: boolean
-  categoryName: string
-  processCount: number
-  processNames: string[]
-  onClose: () => void
-  onDeleteAll: () => void
-  onMoveToMain: () => void
+  open: boolean;
+  categoryName: string;
+  processCount: number;
+  processNames: string[];
+  onClose: () => void;
+  onDeleteAll: () => void;
+  onMoveToMain: () => void;
 }
 
 export function DeleteCategoryDialog({
@@ -37,14 +37,18 @@ export function DeleteCategoryDialog({
             Delete Category "{categoryName}"
           </DialogTitle>
           <DialogDescription>
-            This category contains {processCount} workflow{processCount !== 1 ? 's' : ''}. What would you like to do with them?
+            This category contains {processCount} workflow
+            {processCount !== 1 ? "s" : ""}. What would you like to do with
+            them?
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-4">
           <div className="bg-gray-800/50 rounded-md p-3 max-h-32 overflow-y-auto">
             <ul className="text-sm space-y-1">
               {processNames.map((name, index) => (
-                <li key={index} className="text-gray-300">• {name}</li>
+                <li key={index} className="text-gray-300">
+                  • {name}
+                </li>
               ))}
             </ul>
           </div>
@@ -63,15 +67,11 @@ export function DeleteCategoryDialog({
           >
             Delete All Workflows
           </Button>
-          <Button
-            onClick={onClose}
-            variant="outline"
-            className="w-full"
-          >
+          <Button onClick={onClose} variant="outline" className="w-full">
             Cancel
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

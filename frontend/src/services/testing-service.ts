@@ -1,12 +1,12 @@
-import { HttpClient } from './http-client';
-import { ApiConfig } from './api-config';
+import { HttpClient } from "./http-client";
+import { ApiConfig } from "./api-config";
 
 export interface TestRun {
   id: string;
   project_id: string;
   workflow_id: string;
   workflow_name: string;
-  status: 'running' | 'completed' | 'failed';
+  status: "running" | "completed" | "failed";
   start_time: string;
   end_time: string | null;
   duration_seconds: number | null;
@@ -45,8 +45,8 @@ export interface Deficiency {
   id: string;
   test_run_id: string;
   project_id: string;
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  status: 'open' | 'in_progress' | 'resolved' | 'wont_fix';
+  severity: "critical" | "high" | "medium" | "low";
+  status: "open" | "in_progress" | "resolved" | "wont_fix";
   title: string;
   description: string;
   state_name: string;
@@ -116,7 +116,7 @@ export interface GraphNode {
   label: string;
   visit_count: number;
   success_rate: number;
-  type: 'start' | 'end' | 'normal';
+  type: "start" | "end" | "normal";
 }
 
 export interface GraphEdge {
@@ -131,27 +131,27 @@ export interface GraphEdge {
 export interface TestRunFilters {
   project_id?: string;
   workflow_id?: string;
-  status?: TestRun['status'];
+  status?: TestRun["status"];
   start_date?: string;
   end_date?: string;
   min_coverage?: number;
   max_coverage?: number;
   page?: number;
   page_size?: number;
-  sort_by?: 'created_at' | 'coverage_percentage' | 'duration_seconds';
-  sort_order?: 'asc' | 'desc';
+  sort_by?: "created_at" | "coverage_percentage" | "duration_seconds";
+  sort_order?: "asc" | "desc";
 }
 
 export interface DeficiencyFilters {
   project_id?: string;
   test_run_id?: string;
-  severity?: Deficiency['severity'];
-  status?: Deficiency['status'];
+  severity?: Deficiency["severity"];
+  status?: Deficiency["status"];
   search?: string;
   page?: number;
   page_size?: number;
-  sort_by?: 'created_at' | 'severity' | 'status';
-  sort_order?: 'asc' | 'desc';
+  sort_by?: "created_at" | "severity" | "status";
+  sort_order?: "asc" | "desc";
 }
 
 export interface PaginatedResponse<T> {
@@ -171,7 +171,9 @@ export class TestingService {
   /**
    * Fetch test runs with optional filters
    */
-  async getTestRuns(filters?: TestRunFilters): Promise<PaginatedResponse<TestRun>> {
+  async getTestRuns(
+    filters?: TestRunFilters
+  ): Promise<PaginatedResponse<TestRun>> {
     const params = new URLSearchParams();
 
     if (filters) {
@@ -183,7 +185,7 @@ export class TestingService {
     }
 
     const queryString = params.toString();
-    const url = `/api/v1/testing/runs${queryString ? `?${queryString}` : ''}`;
+    const url = `/api/v1/testing/runs${queryString ? `?${queryString}` : ""}`;
 
     return this.httpClient.get<PaginatedResponse<TestRun>>(url);
   }
@@ -198,7 +200,9 @@ export class TestingService {
   /**
    * Fetch deficiencies with optional filters
    */
-  async getDeficiencies(filters?: DeficiencyFilters): Promise<PaginatedResponse<Deficiency>> {
+  async getDeficiencies(
+    filters?: DeficiencyFilters
+  ): Promise<PaginatedResponse<Deficiency>> {
     const params = new URLSearchParams();
 
     if (filters) {
@@ -210,7 +214,7 @@ export class TestingService {
     }
 
     const queryString = params.toString();
-    const url = `/api/v1/testing/deficiencies${queryString ? `?${queryString}` : ''}`;
+    const url = `/api/v1/testing/deficiencies${queryString ? `?${queryString}` : ""}`;
 
     return this.httpClient.get<PaginatedResponse<Deficiency>>(url);
   }
@@ -218,8 +222,14 @@ export class TestingService {
   /**
    * Update a deficiency
    */
-  async updateDeficiency(id: string, data: Partial<Deficiency>): Promise<Deficiency> {
-    return this.httpClient.patch<Deficiency>(`/api/v1/testing/deficiencies/${id}`, data);
+  async updateDeficiency(
+    id: string,
+    data: Partial<Deficiency>
+  ): Promise<Deficiency> {
+    return this.httpClient.patch<Deficiency>(
+      `/api/v1/testing/deficiencies/${id}`,
+      data
+    );
   }
 
   /**
@@ -232,11 +242,11 @@ export class TestingService {
   ): Promise<CoverageTrend[]> {
     const params = new URLSearchParams({ project_id: projectId });
 
-    if (startDate) params.append('start_date', startDate);
-    if (endDate) params.append('end_date', endDate);
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
 
     const queryString = params.toString();
-    const url = `/api/v1/testing/coverage-trends${queryString ? `?${queryString}` : ''}`;
+    const url = `/api/v1/testing/coverage-trends${queryString ? `?${queryString}` : ""}`;
 
     return this.httpClient.get<CoverageTrend[]>(url);
   }
@@ -250,10 +260,10 @@ export class TestingService {
   ): Promise<ReliabilityStats> {
     const params = new URLSearchParams({ project_id: projectId });
 
-    if (workflowId) params.append('workflow_id', workflowId);
+    if (workflowId) params.append("workflow_id", workflowId);
 
     const queryString = params.toString();
-    const url = `/api/v1/testing/reliability-stats${queryString ? `?${queryString}` : ''}`;
+    const url = `/api/v1/testing/reliability-stats${queryString ? `?${queryString}` : ""}`;
 
     return this.httpClient.get<ReliabilityStats>(url);
   }
@@ -267,11 +277,11 @@ export class TestingService {
   ): Promise<StateGraphData> {
     const params = new URLSearchParams({
       project_id: projectId,
-      workflow_id: workflowId
+      workflow_id: workflowId,
     });
 
     const queryString = params.toString();
-    const url = `/api/v1/testing/state-graph${queryString ? `?${queryString}` : ''}`;
+    const url = `/api/v1/testing/state-graph${queryString ? `?${queryString}` : ""}`;
 
     return this.httpClient.get<StateGraphData>(url);
   }
@@ -279,13 +289,16 @@ export class TestingService {
   /**
    * Export test run data
    */
-  async exportTestRun(id: string, format: 'json' | 'csv' | 'pdf'): Promise<Blob> {
+  async exportTestRun(
+    id: string,
+    format: "json" | "csv" | "pdf"
+  ): Promise<Blob> {
     const response = await fetch(
       `${ApiConfig.getBaseUrl()}/api/v1/testing/runs/${id}/export?format=${format}`,
       {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'Authorization': `Bearer ${this.httpClient.getAuthToken()}`,
+          Authorization: `Bearer ${this.httpClient.getAuthToken()}`,
         },
       }
     );
@@ -300,7 +313,10 @@ export class TestingService {
   /**
    * Export deficiencies data
    */
-  async exportDeficiencies(filters: DeficiencyFilters, format: 'json' | 'csv'): Promise<Blob> {
+  async exportDeficiencies(
+    filters: DeficiencyFilters,
+    format: "json" | "csv"
+  ): Promise<Blob> {
     const params = new URLSearchParams();
 
     Object.entries(filters).forEach(([key, value]) => {
@@ -309,15 +325,15 @@ export class TestingService {
       }
     });
 
-    params.append('format', format);
+    params.append("format", format);
 
     const queryString = params.toString();
-    const url = `${ApiConfig.getBaseUrl()}/api/v1/testing/deficiencies/export${queryString ? `?${queryString}` : ''}`;
+    const url = `${ApiConfig.getBaseUrl()}/api/v1/testing/deficiencies/export${queryString ? `?${queryString}` : ""}`;
 
     const response = await fetch(url, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Authorization': `Bearer ${this.httpClient.getAuthToken()}`,
+        Authorization: `Bearer ${this.httpClient.getAuthToken()}`,
       },
     });
 

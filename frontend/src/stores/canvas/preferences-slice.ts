@@ -7,12 +7,12 @@
  * - Other UI preferences
  */
 
-import type { StateCreator } from 'zustand';
-import type { CanvasStore, PreferencesSlice } from './types';
+import type { StateCreator } from "zustand";
+import type { CanvasStore, PreferencesSlice } from "./types";
 
 export const createPreferencesSlice: StateCreator<
   CanvasStore,
-  [['zustand/immer', never]],
+  [["zustand/immer", never]],
   [],
   PreferencesSlice
 > = (set) => ({

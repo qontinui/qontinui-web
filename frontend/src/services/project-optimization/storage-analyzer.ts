@@ -8,11 +8,15 @@
  * - Potential savings analysis
  */
 
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { State, ImageAsset, Transition } from '@/contexts/automation-context/types';
-import type { StorageAnalysis } from './types';
-import { analyzeImages } from './resource-analyzer';
-import { findDuplicateImages } from './duplicate-detector';
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type {
+  State,
+  ImageAsset,
+  Transition,
+} from "@/contexts/automation-context/types";
+import type { StorageAnalysis } from "./types";
+import { analyzeImages } from "./resource-analyzer";
+import { findDuplicateImages } from "./duplicate-detector";
 
 /**
  * Get storage usage breakdown
@@ -32,20 +36,26 @@ export function getStorageUsage(
   const transitionStorage = transitions.length * 256; // ~256B per transition
 
   // Storage from localStorage
-  const testStorage = estimateLocalStorageSize('workflow-test-');
-  const docStorage = estimateLocalStorageSize('workflow-documentation');
+  const testStorage = estimateLocalStorageSize("workflow-test-");
+  const docStorage = estimateLocalStorageSize("workflow-documentation");
 
-  const total = imageStorage + workflowStorage + stateStorage + transitionStorage + testStorage + docStorage;
+  const total =
+    imageStorage +
+    workflowStorage +
+    stateStorage +
+    transitionStorage +
+    testStorage +
+    docStorage;
 
   // Breakdown by folder
   const byFolder: Record<string, number> = {};
-  workflows.forEach(workflow => {
-    const folder = workflow.category || 'Uncategorized';
+  workflows.forEach((workflow) => {
+    const folder = workflow.category || "Uncategorized";
     byFolder[folder] = (byFolder[folder] || 0) + 1024;
   });
 
   // Calculate potential savings
-  const unusedImages = images.filter(img => {
+  const unusedImages = images.filter((img) => {
     const analyses = analyzeImages([img], workflows, states);
     return !analyses[0].isUsed;
   });
@@ -91,11 +101,13 @@ export function estimateStorageSavings(
 /**
  * Get image storage breakdown
  */
-export function getImageStorageBreakdown(images: ImageAsset[]): Record<string, number> {
+export function getImageStorageBreakdown(
+  images: ImageAsset[]
+): Record<string, number> {
   const breakdown: Record<string, number> = {};
 
-  images.forEach(image => {
-    const category = image.source || 'unknown';
+  images.forEach((image) => {
+    const category = image.source || "unknown";
     breakdown[category] = (breakdown[category] || 0) + image.size;
   });
 
@@ -120,7 +132,7 @@ function estimateLocalStorageSize(prefix: string): number {
     }
   } catch (error) {
     // localStorage might not be available
-    console.warn('Could not access localStorage:', error);
+    console.warn("Could not access localStorage:", error);
   }
 
   return size;

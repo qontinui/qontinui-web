@@ -1,11 +1,17 @@
-'use client';
+"use client";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 
-import { useRouter } from 'next/navigation';
-import { XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useRouter } from "next/navigation";
+import { XCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export default function BillingCanceledPage() {
   const router = useRouter();
@@ -25,19 +31,17 @@ export default function BillingCanceledPage() {
         <CardContent className="space-y-4">
           <div className="text-center space-y-2">
             <p className="text-sm text-muted-foreground">
-              No charges were made to your account. You can try again anytime or continue using the free plan.
+              No charges were made to your account. You can try again anytime or
+              continue using the free plan.
             </p>
           </div>
 
           <div className="space-y-2">
-            <Button
-              onClick={() => router.push('/pricing')}
-              className="w-full"
-            >
+            <Button onClick={() => router.push("/pricing")} className="w-full">
               View Plans Again
             </Button>
             <Button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push("/dashboard")}
               variant="outline"
               className="w-full"
             >

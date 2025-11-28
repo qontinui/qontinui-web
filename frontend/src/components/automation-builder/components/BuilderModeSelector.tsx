@@ -5,16 +5,16 @@
  * Features color-coded modes (cyan for sequential, green for graph) and smooth transitions.
  */
 
-import React from 'react'
-import { List as ListIcon, Workflow as WorkflowIcon } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import type { BuilderMode } from '../types'
+import React from "react";
+import { List as ListIcon, Workflow as WorkflowIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { BuilderMode } from "../types";
 
 export interface BuilderModeSelectorProps {
-  mode: BuilderMode
-  onModeChange: (mode: BuilderMode) => void
-  disabled?: boolean
-  className?: string
+  mode: BuilderMode;
+  onModeChange: (mode: BuilderMode) => void;
+  disabled?: boolean;
+  className?: string;
 }
 
 export function BuilderModeSelector({
@@ -23,20 +23,25 @@ export function BuilderModeSelector({
   disabled = false,
   className,
 }: BuilderModeSelectorProps) {
-  const isSequential = mode === 'sequential'
+  const isSequential = mode === "sequential";
 
   return (
-    <div className={cn('flex items-center gap-1 p-1 bg-gray-900 rounded-lg', className)}>
+    <div
+      className={cn(
+        "flex items-center gap-1 p-1 bg-gray-900 rounded-lg",
+        className
+      )}
+    >
       {/* Sequential Mode Button */}
       <button
-        onClick={() => onModeChange('sequential')}
+        onClick={() => onModeChange("sequential")}
         disabled={disabled}
         className={cn(
-          'flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all duration-200',
-          'hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed',
+          "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all duration-200",
+          "hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
           isSequential
-            ? 'bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/30'
-            : 'text-gray-400 border border-transparent'
+            ? "bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/30"
+            : "text-gray-400 border border-transparent"
         )}
         title="Sequential mode - Linear, step-by-step processes"
       >
@@ -46,14 +51,14 @@ export function BuilderModeSelector({
 
       {/* Graph Mode Button */}
       <button
-        onClick={() => onModeChange('graph')}
+        onClick={() => onModeChange("graph")}
         disabled={disabled}
         className={cn(
-          'flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all duration-200',
-          'hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed',
+          "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all duration-200",
+          "hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
           !isSequential
-            ? 'bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/30'
-            : 'text-gray-400 border border-transparent'
+            ? "bg-[#00FF88]/10 text-[#00FF88] border border-[#00FF88]/30"
+            : "text-gray-400 border border-transparent"
         )}
         title="Graph mode - Visual workflows with branching and loops"
       >
@@ -61,14 +66,14 @@ export function BuilderModeSelector({
         <span className="text-sm">Graph</span>
       </button>
     </div>
-  )
+  );
 }
 
 /**
  * Compact variant without labels
  */
 export interface CompactModeSelectorProps extends BuilderModeSelectorProps {
-  showTooltips?: boolean
+  showTooltips?: boolean;
 }
 
 export function CompactModeSelector({
@@ -78,38 +83,39 @@ export function CompactModeSelector({
   showTooltips = true,
   className,
 }: CompactModeSelectorProps) {
-  const isSequential = mode === 'sequential'
+  const isSequential = mode === "sequential";
 
   return (
-    <div className={cn('flex items-center gap-0.5 p-0.5 bg-gray-900 rounded-md', className)}>
+    <div
+      className={cn(
+        "flex items-center gap-0.5 p-0.5 bg-gray-900 rounded-md",
+        className
+      )}
+    >
       <button
-        onClick={() => onModeChange('sequential')}
+        onClick={() => onModeChange("sequential")}
         disabled={disabled}
         className={cn(
-          'p-2 rounded transition-all duration-200',
-          'hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed',
-          isSequential
-            ? 'bg-[#00D9FF]/10 text-[#00D9FF]'
-            : 'text-gray-500'
+          "p-2 rounded transition-all duration-200",
+          "hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
+          isSequential ? "bg-[#00D9FF]/10 text-[#00D9FF]" : "text-gray-500"
         )}
-        title={showTooltips ? 'Sequential mode' : undefined}
+        title={showTooltips ? "Sequential mode" : undefined}
       >
         <ListIcon className="w-4 h-4" />
       </button>
       <button
-        onClick={() => onModeChange('graph')}
+        onClick={() => onModeChange("graph")}
         disabled={disabled}
         className={cn(
-          'p-2 rounded transition-all duration-200',
-          'hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed',
-          !isSequential
-            ? 'bg-[#00FF88]/10 text-[#00FF88]'
-            : 'text-gray-500'
+          "p-2 rounded transition-all duration-200",
+          "hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
+          !isSequential ? "bg-[#00FF88]/10 text-[#00FF88]" : "text-gray-500"
         )}
-        title={showTooltips ? 'Graph mode' : undefined}
+        title={showTooltips ? "Graph mode" : undefined}
       >
         <WorkflowIcon className="w-4 h-4" />
       </button>
     </div>
-  )
+  );
 }

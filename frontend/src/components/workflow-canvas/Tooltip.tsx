@@ -14,17 +14,17 @@
  * - Multiple tooltip types
  */
 
-'use client';
+"use client";
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CanvasNode, CanvasEdge, CanvasNodeData } from './canvas-types';
-import { COLORS } from './canvas-config';
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { CanvasNode, CanvasEdge, CanvasNodeData } from "./canvas-types";
+import { COLORS } from "./canvas-config";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right' | 'auto';
+export type TooltipPlacement = "top" | "bottom" | "left" | "right" | "auto";
 
 export interface TooltipProps {
   content: React.ReactNode;
@@ -41,14 +41,14 @@ export interface NodeTooltipData {
   category: string;
   inputCount?: number;
   outputCount?: number;
-  executionState?: 'idle' | 'running' | 'success' | 'error' | 'warning';
+  executionState?: "idle" | "running" | "success" | "error" | "warning";
   executionDuration?: number;
   errorMessage?: string;
   disabled?: boolean;
 }
 
 export interface HandleTooltipData {
-  connectionType: 'main' | 'error' | 'success' | 'parallel';
+  connectionType: "main" | "error" | "success" | "parallel";
   outputIndex: number;
   connectedCount: number;
   description?: string;
@@ -57,7 +57,7 @@ export interface HandleTooltipData {
 export interface EdgeTooltipData {
   sourceNode: string;
   targetNode: string;
-  connectionType: 'main' | 'error' | 'success' | 'parallel';
+  connectionType: "main" | "error" | "success" | "parallel";
   executionCount?: number;
   lastExecuted?: Date;
 }
@@ -68,15 +68,18 @@ export interface EdgeTooltipData {
 
 export function Tooltip({
   content,
-  placement = 'auto',
+  placement = "auto",
   delay = 500,
   offset = 8,
   children,
   disabled = false,
 }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  const [actualPlacement, setActualPlacement] = useState<TooltipPlacement>(placement);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [actualPlacement, setActualPlacement] =
+    useState<TooltipPlacement>(placement);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -91,51 +94,54 @@ export function Tooltip({
 
     let x = 0;
     let y = 0;
-    let finalPlacement = placement === 'auto' ? 'top' : placement;
+    let finalPlacement = placement === "auto" ? "top" : placement;
 
     // Calculate initial position based on placement
     switch (finalPlacement) {
-      case 'top':
+      case "top":
         x = targetRect.left + targetRect.width / 2 - tooltipRect.width / 2;
         y = targetRect.top - tooltipRect.height - offset;
         break;
-      case 'bottom':
+      case "bottom":
         x = targetRect.left + targetRect.width / 2 - tooltipRect.width / 2;
         y = targetRect.bottom + offset;
         break;
-      case 'left':
+      case "left":
         x = targetRect.left - tooltipRect.width - offset;
         y = targetRect.top + targetRect.height / 2 - tooltipRect.height / 2;
         break;
-      case 'right':
+      case "right":
         x = targetRect.right + offset;
         y = targetRect.top + targetRect.height / 2 - tooltipRect.height / 2;
         break;
     }
 
     // Adjust for viewport boundaries
-    if (placement === 'auto') {
+    if (placement === "auto") {
       // Try top
       if (targetRect.top - tooltipRect.height - offset >= 0) {
-        finalPlacement = 'top';
+        finalPlacement = "top";
         x = targetRect.left + targetRect.width / 2 - tooltipRect.width / 2;
         y = targetRect.top - tooltipRect.height - offset;
       }
       // Try bottom
-      else if (targetRect.bottom + tooltipRect.height + offset <= viewportHeight) {
-        finalPlacement = 'bottom';
+      else if (
+        targetRect.bottom + tooltipRect.height + offset <=
+        viewportHeight
+      ) {
+        finalPlacement = "bottom";
         x = targetRect.left + targetRect.width / 2 - tooltipRect.width / 2;
         y = targetRect.bottom + offset;
       }
       // Try right
       else if (targetRect.right + tooltipRect.width + offset <= viewportWidth) {
-        finalPlacement = 'right';
+        finalPlacement = "right";
         x = targetRect.right + offset;
         y = targetRect.top + targetRect.height / 2 - tooltipRect.height / 2;
       }
       // Try left
       else {
-        finalPlacement = 'left';
+        finalPlacement = "left";
         x = targetRect.left - tooltipRect.width - offset;
         y = targetRect.top + targetRect.height / 2 - tooltipRect.height / 2;
       }
@@ -213,7 +219,7 @@ export function Tooltip({
           <div
             className="bg-gray-900 text-gray-100 text-sm rounded-lg shadow-xl border border-gray-700 px-3 py-2 max-w-xs"
             style={{
-              animation: 'tooltipFadeIn 150ms ease-out',
+              animation: "tooltipFadeIn 150ms ease-out",
             }}
           >
             {content}
@@ -251,11 +257,11 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
   };
 
   const statusIcons = {
-    idle: '●',
-    running: '◌',
-    success: '✓',
-    error: '✕',
-    warning: '⚠',
+    idle: "●",
+    running: "◌",
+    success: "✓",
+    error: "✕",
+    warning: "⚠",
   };
 
   return (
@@ -263,7 +269,9 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-white truncate">{data.actionName}</div>
+          <div className="font-semibold text-white truncate">
+            {data.actionName}
+          </div>
           <div className="text-xs text-gray-400">{data.actionType}</div>
         </div>
         {data.executionState && (
@@ -299,7 +307,8 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
       {/* Execution Duration */}
       {data.executionDuration !== undefined && (
         <div className="text-xs text-gray-400">
-          <span className="text-gray-500">Duration:</span> {data.executionDuration}ms
+          <span className="text-gray-500">Duration:</span>{" "}
+          {data.executionDuration}ms
         </div>
       )}
 
@@ -312,7 +321,9 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
 
       {/* Disabled State */}
       {data.disabled && (
-        <div className="text-xs text-gray-500 italic">This node is disabled</div>
+        <div className="text-xs text-gray-500 italic">
+          This node is disabled
+        </div>
       )}
 
       {/* Category Badge */}
@@ -337,9 +348,9 @@ export function HandleTooltip({ data }: { data: HandleTooltipData }) {
   };
 
   const typeLabels = {
-    main: 'Main Flow',
-    error: 'Error Handling',
-    success: 'Success Condition',
+    main: "Main Flow",
+    error: "Error Handling",
+    success: "Success Condition",
   };
 
   return (
@@ -362,7 +373,8 @@ export function HandleTooltip({ data }: { data: HandleTooltipData }) {
 
       {/* Connected Count */}
       <div className="text-xs text-gray-400">
-        <span className="text-gray-500">Connections:</span> {data.connectedCount}
+        <span className="text-gray-500">Connections:</span>{" "}
+        {data.connectedCount}
       </div>
 
       {/* Description */}
@@ -387,9 +399,9 @@ export function EdgeTooltip({ data }: { data: EdgeTooltipData }) {
   };
 
   const typeLabels = {
-    main: 'Main Flow',
-    error: 'Error Handling',
-    success: 'Success Condition',
+    main: "Main Flow",
+    error: "Error Handling",
+    success: "Success Condition",
   };
 
   return (
@@ -401,8 +413,18 @@ export function EdgeTooltip({ data }: { data: EdgeTooltipData }) {
           <span className="text-white font-medium truncate max-w-[100px]">
             {data.sourceNode}
           </span>
-          <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          <svg
+            className="w-4 h-4 text-gray-500 flex-shrink-0"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 5l7 7-7 7"
+            />
           </svg>
           <span className="text-white font-medium truncate max-w-[100px]">
             {data.targetNode}
@@ -424,13 +446,14 @@ export function EdgeTooltip({ data }: { data: EdgeTooltipData }) {
       {/* Execution Stats */}
       {data.executionCount !== undefined && (
         <div className="text-xs text-gray-400">
-          <span className="text-gray-500">Executed:</span> {data.executionCount} times
+          <span className="text-gray-500">Executed:</span> {data.executionCount}{" "}
+          times
         </div>
       )}
 
       {data.lastExecuted && (
         <div className="text-xs text-gray-400">
-          <span className="text-gray-500">Last run:</span>{' '}
+          <span className="text-gray-500">Last run:</span>{" "}
           {data.lastExecuted.toLocaleTimeString()}
         </div>
       )}
@@ -525,20 +548,24 @@ let tooltipState: TooltipState | null = null;
 let tooltipListeners: Array<(state: TooltipState | null) => void> = [];
 
 export const TooltipManager = {
-  show(content: React.ReactNode, position: { x: number; y: number }, placement: TooltipPlacement = 'auto') {
+  show(
+    content: React.ReactNode,
+    position: { x: number; y: number },
+    placement: TooltipPlacement = "auto"
+  ) {
     tooltipState = { content, position, placement };
-    tooltipListeners.forEach(listener => listener(tooltipState));
+    tooltipListeners.forEach((listener) => listener(tooltipState));
   },
 
   hide() {
     tooltipState = null;
-    tooltipListeners.forEach(listener => listener(null));
+    tooltipListeners.forEach((listener) => listener(null));
   },
 
   subscribe(listener: (state: TooltipState | null) => void) {
     tooltipListeners.push(listener);
     return () => {
-      tooltipListeners = tooltipListeners.filter(l => l !== listener);
+      tooltipListeners = tooltipListeners.filter((l) => l !== listener);
     };
   },
 

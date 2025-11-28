@@ -13,9 +13,14 @@
  * - Integration with existing snapshots
  */
 
-import { Workflow, Action, Connections, Connection } from '../lib/action-schema/action-types';
-import { cloneWorkflow } from '../lib/action-schema/workflow-utils';
-import { Snapshot, WorkflowSnapshotsService } from './workflow-snapshots';
+import {
+  Workflow,
+  Action,
+  Connections,
+  Connection,
+} from "../lib/action-schema/action-types";
+import { cloneWorkflow } from "../lib/action-schema/workflow-utils";
+import { Snapshot, WorkflowSnapshotsService } from "./workflow-snapshots";
 
 // ============================================================================
 // Types
@@ -119,7 +124,7 @@ export interface ActionModification {
 export interface ConnectionDiff {
   source: string;
   target: string;
-  type: 'main' | 'error' | 'success' | 'parallel';
+  type: "main" | "error" | "success" | "parallel";
   outputIndex: number;
   inputIndex: number;
 }
@@ -128,7 +133,7 @@ export interface ConnectionModification {
   source: string;
   oldTarget: string;
   newTarget: string;
-  type: 'main' | 'error' | 'success' | 'parallel';
+  type: "main" | "error" | "success" | "parallel";
 }
 
 export interface PropertyChange {
@@ -138,11 +143,11 @@ export interface PropertyChange {
 }
 
 export interface VariableChange {
-  scope: 'local' | 'process' | 'global';
+  scope: "local" | "process" | "global";
   key: string;
   oldValue?: any;
   newValue?: any;
-  type: 'added' | 'removed' | 'modified';
+  type: "added" | "removed" | "modified";
 }
 
 export interface DiffSummary {
@@ -160,7 +165,7 @@ export interface DiffSummary {
  */
 export interface MergeConflict {
   id: string;
-  type: 'action' | 'connection' | 'property' | 'variable';
+  type: "action" | "connection" | "property" | "variable";
   path: string;
   sourceValue: any;
   targetValue: any;
@@ -177,7 +182,7 @@ export interface MergeResult {
 
 export interface ConflictResolution {
   conflictId: string;
-  resolution: 'source' | 'target' | 'manual';
+  resolution: "source" | "target" | "manual";
   value?: any;
 }
 
@@ -274,7 +279,7 @@ export class WorkflowVersionControl {
     }
 
     const branch: Branch = {
-      id: this.generateId('branch'),
+      id: this.generateId("branch"),
       workflowId,
       name: branchName,
       description,
@@ -303,7 +308,9 @@ export class WorkflowVersionControl {
 
         // Don't allow deleting default branch if there are other branches
         if (branch.isDefault && branches.length > 1) {
-          throw new Error('Cannot delete default branch. Set another branch as default first.');
+          throw new Error(
+            "Cannot delete default branch. Set another branch as default first."
+          );
         }
 
         branches.splice(index, 1);
@@ -353,7 +360,7 @@ export class WorkflowVersionControl {
       throw new Error(`Branch not found: ${branchId}`);
     }
     if (branch.workflowId !== workflowId) {
-      throw new Error('Branch does not belong to this workflow');
+      throw new Error("Branch does not belong to this workflow");
     }
 
     this.currentBranch.set(workflowId, branchId);
@@ -390,7 +397,7 @@ export class WorkflowVersionControl {
       return {
         success: false,
         conflicts: [],
-        message: 'Source or target branch not found',
+        message: "Source or target branch not found",
       };
     }
 
@@ -398,7 +405,7 @@ export class WorkflowVersionControl {
       return {
         success: false,
         conflicts: [],
-        message: 'Branches belong to different workflows',
+        message: "Branches belong to different workflows",
       };
     }
 
@@ -414,7 +421,7 @@ export class WorkflowVersionControl {
       return {
         success: false,
         conflicts: [],
-        message: 'Source branch has no versions',
+        message: "Source branch has no versions",
       };
     }
 
@@ -445,7 +452,7 @@ export class WorkflowVersionControl {
       success: true,
       workflow: mergedWorkflow,
       conflicts: [],
-      message: 'Merge successful',
+      message: "Merge successful",
     };
   }
 
@@ -465,7 +472,7 @@ export class WorkflowVersionControl {
   ): Version {
     const branch = this.getBranch(branchId);
     if (!branch || branch.workflowId !== workflowId) {
-      throw new Error('Invalid branch');
+      throw new Error("Invalid branch");
     }
 
     // Calculate changes from previous version
@@ -479,7 +486,7 @@ export class WorkflowVersionControl {
     }
 
     const version: Version = {
-      id: this.generateId('version'),
+      id: this.generateId("version"),
       workflowId,
       branchId,
       workflow: cloneWorkflow(workflow, workflow.id),
@@ -548,12 +555,12 @@ export class WorkflowVersionControl {
   ): Version {
     const version = this.getVersion(versionId);
     if (!version || version.workflowId !== workflowId) {
-      throw new Error('Version not found');
+      throw new Error("Version not found");
     }
 
     const branch = this.getBranch(version.branchId);
     if (!branch) {
-      throw new Error('Branch not found');
+      throw new Error("Branch not found");
     }
 
     // Create new version from rolled-back state
@@ -589,7 +596,7 @@ export class WorkflowVersionControl {
   ): Tag {
     const version = this.getVersion(versionId);
     if (!version || version.workflowId !== workflowId) {
-      throw new Error('Version not found');
+      throw new Error("Version not found");
     }
 
     const tags = this.tags.get(workflowId) || [];
@@ -600,7 +607,7 @@ export class WorkflowVersionControl {
     }
 
     const tag: Tag = {
-      id: this.generateId('tag'),
+      id: this.generateId("tag"),
       workflowId,
       versionId,
       name: tagName,
@@ -791,7 +798,10 @@ export class WorkflowVersionControl {
   /**
    * Detect conflicts between two branches
    */
-  detectConflicts(sourceBranchId: string, targetBranchId: string): MergeConflict[] {
+  detectConflicts(
+    sourceBranchId: string,
+    targetBranchId: string
+  ): MergeConflict[] {
     const sourceBranch = this.getBranch(sourceBranchId);
     const targetBranch = this.getBranch(targetBranchId);
 
@@ -839,7 +849,10 @@ export class WorkflowVersionControl {
   /**
    * Get conflicts between two branches
    */
-  getConflicts(sourceBranchId: string, targetBranchId: string): MergeConflict[] {
+  getConflicts(
+    sourceBranchId: string,
+    targetBranchId: string
+  ): MergeConflict[] {
     const conflicts: MergeConflict[] = [];
 
     const sourceBranch = this.getBranch(sourceBranchId);
@@ -869,8 +882,12 @@ export class WorkflowVersionControl {
 
     // Check for conflicting action modifications
     sourceWorkflow.actions.forEach((sourceAction) => {
-      const targetAction = targetWorkflow.actions.find((a) => a.id === sourceAction.id);
-      const baseAction = baseWorkflow?.actions.find((a) => a.id === sourceAction.id);
+      const targetAction = targetWorkflow.actions.find(
+        (a) => a.id === sourceAction.id
+      );
+      const baseAction = baseWorkflow?.actions.find(
+        (a) => a.id === sourceAction.id
+      );
 
       if (targetAction && baseAction) {
         // Both branches modified the same action
@@ -884,8 +901,8 @@ export class WorkflowVersionControl {
           sourceHash !== targetHash
         ) {
           conflicts.push({
-            id: this.generateId('conflict'),
-            type: 'action',
+            id: this.generateId("conflict"),
+            type: "action",
             path: `actions.${sourceAction.id}`,
             sourceValue: sourceAction,
             targetValue: targetAction,
@@ -898,10 +915,10 @@ export class WorkflowVersionControl {
 
     // Check for conflicting property changes
     const propertyKeys = new Set([
-      'name',
-      'description',
-      'category',
-      'settings',
+      "name",
+      "description",
+      "category",
+      "settings",
     ]);
 
     propertyKeys.forEach((key) => {
@@ -910,14 +927,17 @@ export class WorkflowVersionControl {
       const baseVal = baseWorkflow ? (baseWorkflow as any)[key] : undefined;
 
       if (baseVal !== undefined) {
-        const sourceChanged = JSON.stringify(sourceVal) !== JSON.stringify(baseVal);
-        const targetChanged = JSON.stringify(targetVal) !== JSON.stringify(baseVal);
-        const different = JSON.stringify(sourceVal) !== JSON.stringify(targetVal);
+        const sourceChanged =
+          JSON.stringify(sourceVal) !== JSON.stringify(baseVal);
+        const targetChanged =
+          JSON.stringify(targetVal) !== JSON.stringify(baseVal);
+        const different =
+          JSON.stringify(sourceVal) !== JSON.stringify(targetVal);
 
         if (sourceChanged && targetChanged && different) {
           conflicts.push({
-            id: this.generateId('conflict'),
-            type: 'property',
+            id: this.generateId("conflict"),
+            type: "property",
             path: key,
             sourceValue: sourceVal,
             targetValue: targetVal,
@@ -989,7 +1009,9 @@ export class WorkflowVersionControl {
           summary.connectionsChanged;
 
         changeFrequency.actions +=
-          summary.actionsAdded + summary.actionsRemoved + summary.actionsModified;
+          summary.actionsAdded +
+          summary.actionsRemoved +
+          summary.actionsModified;
         changeFrequency.connections += summary.connectionsChanged;
         changeFrequency.properties += summary.propertiesChanged.length;
       }
@@ -1013,7 +1035,7 @@ export class WorkflowVersionControl {
     const contributorMap = new Map<string, Contributor>();
 
     versions.forEach((version) => {
-      const author = version.author || 'Unknown';
+      const author = version.author || "Unknown";
       const contributor = contributorMap.get(author) || {
         author,
         versionCount: 0,
@@ -1041,7 +1063,10 @@ export class WorkflowVersionControl {
   /**
    * Generate visual diff data for UI rendering
    */
-  generateVisualDiff(version1Id: string, version2Id: string): VersionDiff | null {
+  generateVisualDiff(
+    version1Id: string,
+    version2Id: string
+  ): VersionDiff | null {
     return this.compareVersions(version1Id, version2Id);
   }
 
@@ -1142,7 +1167,7 @@ export class WorkflowVersionControl {
       this.saveData();
       return branch;
     } catch (error) {
-      console.error('Failed to import branch:', error);
+      console.error("Failed to import branch:", error);
       return null;
     }
   }
@@ -1192,7 +1217,7 @@ export class WorkflowVersionControl {
       this.saveData();
       return true;
     } catch (error) {
-      console.error('Failed to import version history:', error);
+      console.error("Failed to import version history:", error);
       return false;
     }
   }
@@ -1223,7 +1248,12 @@ export class WorkflowVersionControl {
       // Create main branch if doesn't exist
       let branches = this.getAllBranches(workflowId);
       if (branches.length === 0) {
-        this.createBranch(workflowId, 'main', undefined, 'Migrated from snapshots');
+        this.createBranch(
+          workflowId,
+          "main",
+          undefined,
+          "Migrated from snapshots"
+        );
         branches = this.getAllBranches(workflowId);
       }
 
@@ -1250,7 +1280,10 @@ export class WorkflowVersionControl {
   /**
    * Create a version from an existing snapshot
    */
-  createVersionFromSnapshot(snapshotId: string, branchId?: string): Version | null {
+  createVersionFromSnapshot(
+    snapshotId: string,
+    branchId?: string
+  ): Version | null {
     const snapshotService = WorkflowSnapshotsService.getInstance();
     const snapshot = snapshotService.getSnapshot(snapshotId);
 
@@ -1263,7 +1296,7 @@ export class WorkflowVersionControl {
     if (!targetBranchId) {
       const branches = this.getAllBranches(snapshot.workflowId);
       if (branches.length === 0) {
-        const branch = this.createBranch(snapshot.workflowId, 'main');
+        const branch = this.createBranch(snapshot.workflowId, "main");
         targetBranchId = branch.id;
       } else {
         targetBranchId = branches[0].id;
@@ -1299,7 +1332,7 @@ export class WorkflowVersionControl {
   private countConnections(connections: Connections): number {
     let count = 0;
     Object.values(connections).forEach((outputs) => {
-      ['main', 'error', 'success', 'parallel'].forEach((type) => {
+      ["main", "error", "success", "parallel"].forEach((type) => {
         const conns = outputs[type as keyof typeof outputs];
         if (conns) {
           conns.forEach((outputConns) => {
@@ -1314,8 +1347,8 @@ export class WorkflowVersionControl {
   private compareActions(
     action1: Action,
     action2: Action
-  ): ActionModification['changes'] | null {
-    const changes: ActionModification['changes'] = {};
+  ): ActionModification["changes"] | null {
+    const changes: ActionModification["changes"] = {};
 
     if (action1.type !== action2.type) {
       changes.type = { old: action1.type, new: action2.type };
@@ -1358,7 +1391,10 @@ export class WorkflowVersionControl {
 
   private getChangedFields(obj1: any, obj2: any): string[] {
     const fields: string[] = [];
-    const allKeys = new Set([...Object.keys(obj1 || {}), ...Object.keys(obj2 || {})]);
+    const allKeys = new Set([
+      ...Object.keys(obj1 || {}),
+      ...Object.keys(obj2 || {}),
+    ]);
 
     allKeys.forEach((key) => {
       if (JSON.stringify(obj1?.[key]) !== JSON.stringify(obj2?.[key])) {
@@ -1392,10 +1428,14 @@ export class WorkflowVersionControl {
 
       if (!conns1 && conns2) {
         // All connections from this source are new
-        this.extractConnections(conns2, source).forEach((conn) => added.push(conn));
+        this.extractConnections(conns2, source).forEach((conn) =>
+          added.push(conn)
+        );
       } else if (conns1 && !conns2) {
         // All connections from this source are removed
-        this.extractConnections(conns1, source).forEach((conn) => removed.push(conn));
+        this.extractConnections(conns1, source).forEach((conn) =>
+          removed.push(conn)
+        );
       } else if (conns1 && conns2) {
         // Compare connections
         const conns1List = this.extractConnections(conns1, source);
@@ -1427,13 +1467,20 @@ export class WorkflowVersionControl {
       }
     });
 
-    return { connectionsAdded: added, connectionsRemoved: removed, connectionsModified: modified };
+    return {
+      connectionsAdded: added,
+      connectionsRemoved: removed,
+      connectionsModified: modified,
+    };
   }
 
-  private extractConnections(outputs: Connections[string], source: string): ConnectionDiff[] {
+  private extractConnections(
+    outputs: Connections[string],
+    source: string
+  ): ConnectionDiff[] {
     const connections: ConnectionDiff[] = [];
 
-    (['main', 'error', 'success', 'parallel'] as const).forEach((type) => {
+    (["main", "error", "success", "parallel"] as const).forEach((type) => {
       const conns = outputs[type];
       if (conns) {
         conns.forEach((outputConns, outputIndex) => {
@@ -1453,10 +1500,20 @@ export class WorkflowVersionControl {
     return connections;
   }
 
-  private compareProperties(workflow1: Workflow, workflow2: Workflow): PropertyChange[] {
+  private compareProperties(
+    workflow1: Workflow,
+    workflow2: Workflow
+  ): PropertyChange[] {
     const changes: PropertyChange[] = [];
 
-    const properties = ['name', 'description', 'category', 'version', 'tags', 'settings'];
+    const properties = [
+      "name",
+      "description",
+      "category",
+      "version",
+      "tags",
+      "settings",
+    ];
 
     properties.forEach((prop) => {
       const val1 = (workflow1 as any)[prop];
@@ -1474,10 +1531,17 @@ export class WorkflowVersionControl {
     return changes;
   }
 
-  private compareVariables(workflow1: Workflow, workflow2: Workflow): VariableChange[] {
+  private compareVariables(
+    workflow1: Workflow,
+    workflow2: Workflow
+  ): VariableChange[] {
     const changes: VariableChange[] = [];
 
-    const scopes: Array<'local' | 'process' | 'global'> = ['local', 'process', 'global'];
+    const scopes: Array<"local" | "process" | "global"> = [
+      "local",
+      "process",
+      "global",
+    ];
 
     scopes.forEach((scope) => {
       const vars1 = workflow1.variables?.[scope] || {};
@@ -1490,11 +1554,17 @@ export class WorkflowVersionControl {
         const val2 = vars2[key];
 
         if (val1 === undefined && val2 !== undefined) {
-          changes.push({ scope, key, newValue: val2, type: 'added' });
+          changes.push({ scope, key, newValue: val2, type: "added" });
         } else if (val1 !== undefined && val2 === undefined) {
-          changes.push({ scope, key, oldValue: val1, type: 'removed' });
+          changes.push({ scope, key, oldValue: val1, type: "removed" });
         } else if (JSON.stringify(val1) !== JSON.stringify(val2)) {
-          changes.push({ scope, key, oldValue: val1, newValue: val2, type: 'modified' });
+          changes.push({
+            scope,
+            key,
+            oldValue: val1,
+            newValue: val2,
+            type: "modified",
+          });
         }
       });
     });
@@ -1502,7 +1572,10 @@ export class WorkflowVersionControl {
     return changes;
   }
 
-  private findCommonAncestor(version1: Version, version2: Version): Version | undefined {
+  private findCommonAncestor(
+    version1: Version,
+    version2: Version
+  ): Version | undefined {
     const ancestors1 = this.getAncestors(version1);
     const ancestors2 = this.getAncestors(version2);
 
@@ -1542,12 +1615,14 @@ export class WorkflowVersionControl {
     return hash.toString(36);
   }
 
-  private getMostActiveAreas(frequency: ChangeStatistics['changeFrequency']): string[] {
+  private getMostActiveAreas(
+    frequency: ChangeStatistics["changeFrequency"]
+  ): string[] {
     const areas: Array<{ name: string; count: number }> = [
-      { name: 'actions', count: frequency.actions },
-      { name: 'connections', count: frequency.connections },
-      { name: 'properties', count: frequency.properties },
-      { name: 'variables', count: frequency.variables },
+      { name: "actions", count: frequency.actions },
+      { name: "connections", count: frequency.connections },
+      { name: "properties", count: frequency.properties },
+      { name: "variables", count: frequency.variables },
     ];
 
     return areas
@@ -1562,54 +1637,54 @@ export class WorkflowVersionControl {
 
   private loadData(): void {
     try {
-      const branchesJson = localStorage.getItem('workflow-branches');
+      const branchesJson = localStorage.getItem("workflow-branches");
       if (branchesJson) {
         const data = JSON.parse(branchesJson);
         this.branches = new Map(Object.entries(data));
       }
 
-      const versionsJson = localStorage.getItem('workflow-versions');
+      const versionsJson = localStorage.getItem("workflow-versions");
       if (versionsJson) {
         const data = JSON.parse(versionsJson);
         this.versions = new Map(Object.entries(data));
       }
 
-      const tagsJson = localStorage.getItem('workflow-version-tags');
+      const tagsJson = localStorage.getItem("workflow-version-tags");
       if (tagsJson) {
         const data = JSON.parse(tagsJson);
         this.tags = new Map(Object.entries(data));
       }
 
-      const currentBranchJson = localStorage.getItem('workflow-current-branch');
+      const currentBranchJson = localStorage.getItem("workflow-current-branch");
       if (currentBranchJson) {
         const data = JSON.parse(currentBranchJson);
         this.currentBranch = new Map(Object.entries(data));
       }
     } catch (error) {
-      console.error('Failed to load version control data:', error);
+      console.error("Failed to load version control data:", error);
     }
   }
 
   private saveData(): void {
     try {
       localStorage.setItem(
-        'workflow-branches',
+        "workflow-branches",
         JSON.stringify(Object.fromEntries(this.branches))
       );
       localStorage.setItem(
-        'workflow-versions',
+        "workflow-versions",
         JSON.stringify(Object.fromEntries(this.versions))
       );
       localStorage.setItem(
-        'workflow-version-tags',
+        "workflow-version-tags",
         JSON.stringify(Object.fromEntries(this.tags))
       );
       localStorage.setItem(
-        'workflow-current-branch',
+        "workflow-current-branch",
         JSON.stringify(Object.fromEntries(this.currentBranch))
       );
     } catch (error) {
-      console.error('Failed to save version control data:', error);
+      console.error("Failed to save version control data:", error);
     }
   }
 
@@ -1627,10 +1702,10 @@ export class WorkflowVersionControl {
       this.versions.clear();
       this.tags.clear();
       this.currentBranch.clear();
-      localStorage.removeItem('workflow-branches');
-      localStorage.removeItem('workflow-versions');
-      localStorage.removeItem('workflow-version-tags');
-      localStorage.removeItem('workflow-current-branch');
+      localStorage.removeItem("workflow-branches");
+      localStorage.removeItem("workflow-versions");
+      localStorage.removeItem("workflow-version-tags");
+      localStorage.removeItem("workflow-current-branch");
     }
     this.saveData();
   }

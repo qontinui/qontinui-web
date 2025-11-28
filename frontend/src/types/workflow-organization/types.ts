@@ -144,7 +144,7 @@ export interface FolderSearchResult {
 }
 
 export interface SearchMatch {
-  field: 'name' | 'description';
+  field: "name" | "description";
   value: string;
   matchedText: string;
 }
@@ -201,27 +201,27 @@ export const DEFAULT_VALIDATION_RULES: FolderValidationRules = {
   maxNameLength: 100,
   maxDescriptionLength: 500,
   maxDepth: 10,
-  reservedNames: ['root', 'system', 'temp', 'trash'],
+  reservedNames: ["root", "system", "temp", "trash"],
   allowedColors: [
-    '#ef4444', // red
-    '#f59e0b', // amber
-    '#10b981', // green
-    '#3b82f6', // blue
-    '#8b5cf6', // purple
-    '#ec4899', // pink
-    '#6b7280', // gray
+    "#ef4444", // red
+    "#f59e0b", // amber
+    "#10b981", // green
+    "#3b82f6", // blue
+    "#8b5cf6", // purple
+    "#ec4899", // pink
+    "#6b7280", // gray
   ],
   allowedIcons: [
-    'folder',
-    'folder-open',
-    'briefcase',
-    'archive',
-    'bookmark',
-    'star',
-    'tag',
-    'collection',
+    "folder",
+    "folder-open",
+    "briefcase",
+    "archive",
+    "bookmark",
+    "star",
+    "tag",
+    "collection",
   ],
 };
 
-export const STORAGE_VERSION = '1.0.0';
-export const STORAGE_KEY = 'workflow-folders';
+export const STORAGE_VERSION = "1.0.0";
+export const STORAGE_KEY = "workflow-folders";

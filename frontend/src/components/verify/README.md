@@ -18,12 +18,14 @@ The Verify Workflow States feature allows users to step through a workflow and v
 ## Components
 
 ### WorkflowStepList
+
 - Displays workflow steps (actions) in a scrollable list
 - Highlights the currently selected step
 - Shows action type icons and names
 - Located in left sidebar
 
 **Props:**
+
 ```typescript
 interface WorkflowStepListProps {
   workflow: Workflow;
@@ -33,12 +35,14 @@ interface WorkflowStepListProps {
 ```
 
 ### ActiveStatesVisualizer
+
 - Renders multiple active states on a canvas
 - Shows state elements at fixed positions
 - Supports zoom and pan for navigation
 - Displays color-coded overlays for different states
 
 **Props:**
+
 ```typescript
 interface ActiveStatesVisualizerProps {
   activeStates: State[];
@@ -48,6 +52,7 @@ interface ActiveStatesVisualizerProps {
 ```
 
 **Features:**
+
 - Canvas-based rendering with zoom/pan controls
 - Grid background for position reference
 - Color-coded states for easy identification
@@ -55,11 +60,13 @@ interface ActiveStatesVisualizerProps {
 - Interactive legend showing all active states
 
 ### ActiveStatesChecklist
+
 - Shows all states with checkboxes indicating active/inactive status
 - Provides metadata for each state (image count, region count, etc.)
 - Located in right sidebar
 
 **Props:**
+
 ```typescript
 interface ActiveStatesChecklistProps {
   allStates: State[];
@@ -70,6 +77,7 @@ interface ActiveStatesChecklistProps {
 ## Pages
 
 ### Main Workflows Page
+
 `/projects/[projectId]/verify/workflows/page.tsx`
 
 - Lists all workflows in the project
@@ -78,6 +86,7 @@ interface ActiveStatesChecklistProps {
 - Click to select a workflow for verification
 
 ### Workflow Visualization Page
+
 `/projects/[projectId]/verify/workflows/[workflowId]/page.tsx`
 
 - Three-column layout:
@@ -148,11 +157,13 @@ const activeStates = states.filter(s => activeStateIds.includes(s.id))
 ## Navigation
 
 Access the feature at:
+
 ```
 /projects/[projectId]/verify/workflows
 ```
 
 Then select a workflow to navigate to:
+
 ```
 /projects/[projectId]/verify/workflows/[workflowId]
 ```

@@ -2,8 +2,8 @@
  * Pattern detector - identifies control flow patterns (IF, LOOP) in graph workflows
  */
 
-import { Workflow, Connections, Action } from '../action-schema/action-types';
-import { getActionById, getNextActions } from '../action-schema/workflow-utils';
+import { Workflow, Connections, Action } from "../action-schema/action-types";
+import { getActionById, getNextActions } from "../action-schema/workflow-utils";
 
 /**
  * IF pattern structure
@@ -57,11 +57,8 @@ export class PatternDetector {
   /**
    * Detect IF pattern for a given IF action
    */
-  detectIfPattern(
-    workflow: Workflow,
-    ifAction: Action
-  ): IfPattern | null {
-    if (ifAction.type !== 'IF') {
+  detectIfPattern(workflow: Workflow, ifAction: Action): IfPattern | null {
+    if (ifAction.type !== "IF") {
       return null;
     }
 
@@ -86,11 +83,17 @@ export class PatternDetector {
 
     const elseBranch = this.extractBranchActions(
       workflow,
-      falseBranchConnections.length > 0 ? falseBranchConnections[0].action : null
+      falseBranchConnections.length > 0
+        ? falseBranchConnections[0].action
+        : null
     );
 
     // Find convergence point (if any)
-    const convergenceAction = this.findConvergencePoint(workflow, thenBranch, elseBranch);
+    const convergenceAction = this.findConvergencePoint(
+      workflow,
+      thenBranch,
+      elseBranch
+    );
 
     return {
       ifAction,
@@ -107,7 +110,7 @@ export class PatternDetector {
     workflow: Workflow,
     loopAction: Action
   ): LoopPattern | null {
-    if (loopAction.type !== 'LOOP') {
+    if (loopAction.type !== "LOOP") {
       return null;
     }
 
@@ -127,10 +130,18 @@ export class PatternDetector {
     }
 
     // Extract all actions in the loop body
-    const bodyActions = this.extractLoopBodyActions(workflow, loopAction.id, firstBodyAction);
+    const bodyActions = this.extractLoopBodyActions(
+      workflow,
+      loopAction.id,
+      firstBodyAction
+    );
 
     // Find action after loop exits
-    const nextAction = this.findLoopExitAction(workflow, loopAction.id, bodyActions);
+    const nextAction = this.findLoopExitAction(
+      workflow,
+      loopAction.id,
+      bodyActions
+    );
 
     return {
       loopAction,
@@ -165,7 +176,7 @@ export class PatternDetector {
       branchActions.push(action);
 
       // Stop at nested control flow (will be processed recursively)
-      if (['IF', 'LOOP', 'SWITCH'].includes(action.type)) {
+      if (["IF", "LOOP", "SWITCH"].includes(action.type)) {
         // Include the control flow action but don't descend into it
         break;
       }
@@ -311,7 +322,7 @@ export class PatternDetector {
    */
   detectAllIfPatterns(workflow: Workflow): Map<string, IfPattern> {
     const patterns = new Map<string, IfPattern>();
-    const ifActions = workflow.actions.filter((a) => a.type === 'IF');
+    const ifActions = workflow.actions.filter((a) => a.type === "IF");
 
     ifActions.forEach((ifAction) => {
       const pattern = this.detectIfPattern(workflow, ifAction);
@@ -328,7 +339,7 @@ export class PatternDetector {
    */
   detectAllLoopPatterns(workflow: Workflow): Map<string, LoopPattern> {
     const patterns = new Map<string, LoopPattern>();
-    const loopActions = workflow.actions.filter((a) => a.type === 'LOOP');
+    const loopActions = workflow.actions.filter((a) => a.type === "LOOP");
 
     loopActions.forEach((loopAction) => {
       const pattern = this.detectLoopPattern(workflow, loopAction);

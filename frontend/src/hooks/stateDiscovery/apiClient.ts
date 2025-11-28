@@ -3,7 +3,11 @@
  * Single Responsibility: Handle all HTTP API calls to the backend
  */
 
-import { AnalysisConfig, DeletionImpact, StateImage } from '@/types/stateDiscovery';
+import {
+  AnalysisConfig,
+  DeletionImpact,
+  StateImage,
+} from "@/types/stateDiscovery";
 
 export class StateDiscoveryAPIClient {
   private apiBaseUrl: string;
@@ -12,29 +16,32 @@ export class StateDiscoveryAPIClient {
   constructor(apiBaseUrl: string, apiPath: string) {
     this.apiBaseUrl = apiBaseUrl;
     this.apiPath = apiPath;
-    console.log('[APIClient] Initialized with:', { apiBaseUrl, apiPath });
+    console.log("[APIClient] Initialized with:", { apiBaseUrl, apiPath });
   }
 
   private getUrl(endpoint: string): string {
     return `${this.apiBaseUrl}${this.apiPath}/state-discovery${endpoint}`;
   }
 
-  async uploadScreenshots(files: File[], projectId: string = 'default'): Promise<any> {
-    console.log('[APIClient] Uploading screenshots:', {
+  async uploadScreenshots(
+    files: File[],
+    projectId: string = "default"
+  ): Promise<any> {
+    console.log("[APIClient] Uploading screenshots:", {
       filesCount: files.length,
       projectId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     const formData = new FormData();
-    files.forEach(file => {
-      formData.append('files', file);
+    files.forEach((file) => {
+      formData.append("files", file);
     });
-    formData.append('project_id', projectId);
+    formData.append("project_id", projectId);
 
-    const response = await fetch(this.getUrl('/upload'), {
-      method: 'POST',
-      body: formData
+    const response = await fetch(this.getUrl("/upload"), {
+      method: "POST",
+      body: formData,
     });
 
     if (!response.ok) {
@@ -43,18 +50,18 @@ export class StateDiscoveryAPIClient {
     }
 
     const data = await response.json();
-    console.log('[APIClient] Upload successful:', {
+    console.log("[APIClient] Upload successful:", {
       uploadId: data.upload_id,
-      count: data.count
+      count: data.count,
     });
     return data;
   }
 
   async startAnalysis(uploadId: string, config: AnalysisConfig): Promise<any> {
-    console.log('[APIClient] Starting analysis:', {
+    console.log("[APIClient] Starting analysis:", {
       uploadId,
       config,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     const requestBody = {
@@ -70,24 +77,26 @@ export class StateDiscoveryAPIClient {
         enable_rectangle_decomposition: config.enableRectangleDecomposition,
         enable_cooccurrence_analysis: config.enableCooccurrenceAnalysis,
         similarity_threshold: config.similarityThreshold || 0.95,
-        region: config.region ? {
-          x: Math.round(config.region.x),
-          y: Math.round(config.region.y),
-          width: Math.round(config.region.width),
-          height: Math.round(config.region.height)
-        } : undefined
-      }
+        region: config.region
+          ? {
+              x: Math.round(config.region.x),
+              y: Math.round(config.region.y),
+              width: Math.round(config.region.width),
+              height: Math.round(config.region.height),
+            }
+          : undefined,
+      },
     };
 
-    const response = await fetch(this.getUrl('/analyze'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
+    const response = await fetch(this.getUrl("/analyze"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
     });
 
-    console.log('[APIClient] Analysis response:', {
+    console.log("[APIClient] Analysis response:", {
       status: response.status,
-      statusText: response.statusText
+      statusText: response.statusText,
     });
 
     if (!response.ok) {
@@ -96,22 +105,22 @@ export class StateDiscoveryAPIClient {
     }
 
     const data = await response.json();
-    console.log('[APIClient] Analysis started:', {
+    console.log("[APIClient] Analysis started:", {
       analysisId: data.analysis_id,
-      websocketUrl: data.websocket_url
+      websocketUrl: data.websocket_url,
     });
     return data;
   }
 
   async getDeleteImpact(stateImageId: string): Promise<DeletionImpact> {
-    console.log('[APIClient] Getting deletion impact:', stateImageId);
+    console.log("[APIClient] Getting deletion impact:", stateImageId);
 
     const response = await fetch(
       this.getUrl(`/state-image/${stateImageId}/delete-impact`)
     );
 
     if (!response.ok) {
-      throw new Error('Failed to get deletion impact');
+      throw new Error("Failed to get deletion impact");
     }
 
     return response.json();
@@ -121,44 +130,41 @@ export class StateDiscoveryAPIClient {
     stateImageId: string,
     options?: { cascade?: boolean; force?: boolean }
   ): Promise<any> {
-    console.log('[APIClient] Deleting state image:', {
+    console.log("[APIClient] Deleting state image:", {
       stateImageId,
-      options
+      options,
     });
 
     const params = new URLSearchParams();
-    if (options?.cascade) params.append('cascade', 'true');
-    if (options?.force) params.append('force', 'true');
+    if (options?.cascade) params.append("cascade", "true");
+    if (options?.force) params.append("force", "true");
 
     const response = await fetch(
       this.getUrl(`/state-image/${stateImageId}?${params}`),
-      { method: 'DELETE' }
+      { method: "DELETE" }
     );
 
     if (!response.ok) {
-      throw new Error('Failed to delete StateImage');
+      throw new Error("Failed to delete StateImage");
     }
 
     return response.json();
   }
 
   async bulkDeleteStateImages(ids: string[], options?: any): Promise<any> {
-    console.log('[APIClient] Bulk deleting state images:', {
+    console.log("[APIClient] Bulk deleting state images:", {
       count: ids.length,
-      options
+      options,
     });
 
-    const response = await fetch(
-      this.getUrl('/state-images/batch'),
-      {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids, options })
-      }
-    );
+    const response = await fetch(this.getUrl("/state-images/batch"), {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, options }),
+    });
 
     if (!response.ok) {
-      throw new Error('Failed to delete StateImages');
+      throw new Error("Failed to delete StateImages");
     }
 
     return response.json();
@@ -168,22 +174,19 @@ export class StateDiscoveryAPIClient {
     stateImageId: string,
     updates: Partial<StateImage>
   ): Promise<any> {
-    console.log('[APIClient] Updating state image:', {
+    console.log("[APIClient] Updating state image:", {
       stateImageId,
-      updates
+      updates,
     });
 
-    const response = await fetch(
-      this.getUrl(`/state-image/${stateImageId}`),
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      }
-    );
+    const response = await fetch(this.getUrl(`/state-image/${stateImageId}`), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
 
     if (!response.ok) {
-      throw new Error('Failed to update StateImage');
+      throw new Error("Failed to update StateImage");
     }
 
     return response.json();
@@ -192,29 +195,26 @@ export class StateDiscoveryAPIClient {
   async mergeStateImages(
     sourceIds: string[],
     targetName: string,
-    strategy: string = 'union'
+    strategy: string = "union"
   ): Promise<any> {
-    console.log('[APIClient] Merging state images:', {
+    console.log("[APIClient] Merging state images:", {
       sourceCount: sourceIds.length,
       targetName,
-      strategy
+      strategy,
     });
 
-    const response = await fetch(
-      this.getUrl('/state-image/merge'),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          source_ids: sourceIds,
-          target_name: targetName,
-          merge_strategy: strategy
-        })
-      }
-    );
+    const response = await fetch(this.getUrl("/state-image/merge"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_ids: sourceIds,
+        target_name: targetName,
+        merge_strategy: strategy,
+      }),
+    });
 
     if (!response.ok) {
-      throw new Error('Failed to merge StateImages');
+      throw new Error("Failed to merge StateImages");
     }
 
     return response.json();
@@ -224,39 +224,39 @@ export class StateDiscoveryAPIClient {
     analysisId: string,
     name: string,
     description?: string,
-    projectId: string = 'default'
+    projectId: string = "default"
   ): Promise<any> {
-    console.log('[APIClient] Saving structure:', {
+    console.log("[APIClient] Saving structure:", {
       analysisId,
       name,
-      projectId
+      projectId,
     });
 
-    const response = await fetch(
-      this.getUrl('/save-structure'),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project_id: projectId,
-          analysis_id: analysisId,
-          name,
-          description
-        })
-      }
-    );
+    const response = await fetch(this.getUrl("/save-structure"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: projectId,
+        analysis_id: analysisId,
+        name,
+        description,
+      }),
+    });
 
     if (!response.ok) {
-      throw new Error('Failed to save structure');
+      throw new Error("Failed to save structure");
     }
 
     return response.json();
   }
 
-  async exportStructure(structureId: string, format: string = 'json'): Promise<any> {
-    console.log('[APIClient] Exporting structure:', {
+  async exportStructure(
+    structureId: string,
+    format: string = "json"
+  ): Promise<any> {
+    console.log("[APIClient] Exporting structure:", {
       structureId,
-      format
+      format,
     });
 
     const response = await fetch(
@@ -264,7 +264,7 @@ export class StateDiscoveryAPIClient {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to export structure');
+      throw new Error("Failed to export structure");
     }
 
     return response.json();
@@ -272,7 +272,7 @@ export class StateDiscoveryAPIClient {
 
   private async parseErrorResponse(response: Response): Promise<string> {
     const errorData = await response.text();
-    let errorMessage = 'Request failed';
+    let errorMessage = "Request failed";
 
     try {
       const errorJson = JSON.parse(errorData);
@@ -281,9 +281,9 @@ export class StateDiscoveryAPIClient {
       if (errorData) errorMessage = errorData;
     }
 
-    console.error('[APIClient] Error response:', {
+    console.error("[APIClient] Error response:", {
       status: response.status,
-      message: errorMessage
+      message: errorMessage,
     });
 
     return errorMessage;

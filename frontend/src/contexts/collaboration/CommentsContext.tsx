@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, {
   createContext,
@@ -6,9 +6,9 @@ import React, {
   useState,
   useEffect,
   ReactNode,
-} from 'react';
-import type { Comment } from './types';
-import { commentService } from '@/services/service-factory';
+} from "react";
+import type { Comment } from "./types";
+import { commentService } from "@/services/service-factory";
 
 // ============================================================================
 // Context Types
@@ -16,7 +16,10 @@ import { commentService } from '@/services/service-factory';
 
 interface CommentsContextValue {
   comments: Comment[];
-  addComment: (content: string, position?: { x: number; y: number }) => Promise<void>;
+  addComment: (
+    content: string,
+    position?: { x: number; y: number }
+  ) => Promise<void>;
   updateComment: (commentId: string, content: string) => Promise<void>;
   deleteComment: (commentId: string) => Promise<void>;
   refreshComments: () => Promise<void>;
@@ -66,10 +69,13 @@ export function CommentsProvider({
 
   const loadComments = async () => {
     try {
-      const loadedComments = await commentService.getComments(projectId, workflowId);
+      const loadedComments = await commentService.getComments(
+        projectId,
+        workflowId
+      );
       setComments(loadedComments);
     } catch (error) {
-      console.error('[Comments] Failed to load comments:', error);
+      console.error("[Comments] Failed to load comments:", error);
     }
   };
 
@@ -86,7 +92,7 @@ export function CommentsProvider({
       );
       setComments((prev) => [...prev, newComment]);
     } catch (error) {
-      console.error('[Comments] Failed to add comment:', error);
+      console.error("[Comments] Failed to add comment:", error);
       throw error;
     }
   };
@@ -101,7 +107,7 @@ export function CommentsProvider({
         prev.map((c) => (c.id === commentId ? updatedComment : c))
       );
     } catch (error) {
-      console.error('[Comments] Failed to update comment:', error);
+      console.error("[Comments] Failed to update comment:", error);
       throw error;
     }
   };
@@ -111,7 +117,7 @@ export function CommentsProvider({
       await commentService.deleteComment(commentId);
       setComments((prev) => prev.filter((c) => c.id !== commentId));
     } catch (error) {
-      console.error('[Comments] Failed to delete comment:', error);
+      console.error("[Comments] Failed to delete comment:", error);
       throw error;
     }
   };
@@ -146,7 +152,7 @@ export function CommentsProvider({
 export function useComments() {
   const context = useContext(CommentsContext);
   if (context === undefined) {
-    throw new Error('useComments must be used within a CommentsProvider');
+    throw new Error("useComments must be used within a CommentsProvider");
   }
   return context;
 }

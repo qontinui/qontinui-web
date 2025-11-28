@@ -1,38 +1,40 @@
 // components/integration-testing/SnapshotImportCard.tsx
 
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { useSnapshotImport } from '@/hooks/useSnapshotImport';
-import { toast } from 'sonner';
-import { Loader2, Upload, FolderOpen } from 'lucide-react';
+import { useState } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useSnapshotImport } from "@/hooks/useSnapshotImport";
+import { toast } from "sonner";
+import { Loader2, Upload, FolderOpen } from "lucide-react";
 
 interface SnapshotImportCardProps {
   onImportSuccess?: () => void;
 }
 
-export function SnapshotImportCard({ onImportSuccess }: SnapshotImportCardProps) {
-  const [directoryPath, setDirectoryPath] = useState('');
-  const [tags, setTags] = useState('');
-  const [notes, setNotes] = useState('');
+export function SnapshotImportCard({
+  onImportSuccess,
+}: SnapshotImportCardProps) {
+  const [directoryPath, setDirectoryPath] = useState("");
+  const [tags, setTags] = useState("");
+  const [notes, setNotes] = useState("");
 
   const { importing, error, importSnapshotDirectory } = useSnapshotImport();
 
   const handleImport = async () => {
     if (!directoryPath.trim()) {
-      toast.error('Please enter a snapshot directory path');
+      toast.error("Please enter a snapshot directory path");
       return;
     }
 
     try {
       const tagList = tags
-        .split(',')
-        .map(t => t.trim())
-        .filter(t => t.length > 0);
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
 
       const snapshot = await importSnapshotDirectory({
         snapshot_directory: directoryPath.trim(),
@@ -40,23 +42,20 @@ export function SnapshotImportCard({ onImportSuccess }: SnapshotImportCardProps)
         notes: notes.trim() || undefined,
       });
 
-      toast.success(
-        `Snapshot imported successfully: ${snapshot.run_id}`,
-        {
-          description: `${snapshot.total_actions} actions recorded`,
-        }
-      );
+      toast.success(`Snapshot imported successfully: ${snapshot.run_id}`, {
+        description: `${snapshot.total_actions} actions recorded`,
+      });
 
       // Reset form
-      setDirectoryPath('');
-      setTags('');
-      setNotes('');
+      setDirectoryPath("");
+      setTags("");
+      setNotes("");
 
       // Notify parent
       onImportSuccess?.();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      toast.error('Import failed', {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      toast.error("Import failed", {
         description: errorMessage,
       });
     }
@@ -70,7 +69,8 @@ export function SnapshotImportCard({ onImportSuccess }: SnapshotImportCardProps)
       </div>
 
       <p className="text-sm text-gray-600 mb-4">
-        Import a recorded snapshot directory to make it available for integration testing.
+        Import a recorded snapshot directory to make it available for
+        integration testing.
       </p>
 
       <div className="space-y-4">
@@ -94,7 +94,7 @@ export function SnapshotImportCard({ onImportSuccess }: SnapshotImportCardProps)
               disabled={importing}
               onClick={() => {
                 // TODO: Implement file browser dialog
-                toast.info('File browser not yet implemented');
+                toast.info("File browser not yet implemented");
               }}
             >
               <FolderOpen className="w-4 h-4" />

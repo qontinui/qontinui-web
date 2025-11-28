@@ -1,16 +1,22 @@
-"use client"
+"use client";
 
-import React from "react"
-import { State } from "@/contexts/automation-context/types"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search } from "lucide-react"
-import { TransitionFilters as FiltersType } from "./types"
+import React from "react";
+import { State } from "@/contexts/automation-context/types";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Search } from "lucide-react";
+import { TransitionFilters as FiltersType } from "./types";
 
 interface TransitionFiltersProps {
-  filters: FiltersType
-  states: State[]
-  onFiltersChange: (filters: FiltersType) => void
+  filters: FiltersType;
+  states: State[];
+  onFiltersChange: (filters: FiltersType) => void;
 }
 
 export function TransitionFilters({
@@ -86,5 +92,5 @@ export function TransitionFilters({
         </SelectContent>
       </Select>
     </div>
-  )
+  );
 }

@@ -16,7 +16,7 @@ export {
   usePatternMatchingState,
   useScreenshotAnnotationState,
   usePatternOptimizationState,
-} from './tab-state'
+} from "./tab-state";
 
 export type {
   ImageExtractionState,
@@ -24,4 +24,4 @@ export type {
   ScreenshotAnnotationState,
   PatternOptimizationState,
   TabStates,
-} from './tab-state'
+} from "./tab-state";

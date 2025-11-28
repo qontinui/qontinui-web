@@ -12,11 +12,11 @@
  * - Before/After preview for each fix
  */
 
-import React, { useState, useMemo } from 'react';
-import type { Workflow } from '@/lib/action-schema/action-types';
-import type { LayoutPreviewResult } from '@/services/layout-service';
-import { getLayoutService } from '@/services/layout-service';
-import { LayoutStyle } from '@/lib/workflow-layout/auto-layout';
+import React, { useState, useMemo } from "react";
+import type { Workflow } from "@/lib/action-schema/action-types";
+import type { LayoutPreviewResult } from "@/services/layout-service";
+import { getLayoutService } from "@/services/layout-service";
+import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
 
 // ============================================================================
 // Types
@@ -30,7 +30,7 @@ export interface LayoutSuggestionsProps {
 
 interface LayoutIssue {
   id: string;
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
   title: string;
   description: string;
   affectedNodes: string[];
@@ -45,22 +45,29 @@ interface LayoutIssue {
 export function LayoutSuggestions({
   workflow,
   layoutResult,
-  onApplySuggestion
+  onApplySuggestion,
 }: LayoutSuggestionsProps) {
-  const [dismissedIssues, setDismissedIssues] = useState<Set<string>>(new Set());
+  const [dismissedIssues, setDismissedIssues] = useState<Set<string>>(
+    new Set()
+  );
   const [expandedIssue, setExpandedIssue] = useState<string | null>(null);
 
   const layoutService = useMemo(() => getLayoutService(), []);
 
   // Detect issues
-  const issues = useMemo(() => detectIssues(workflow, layoutResult, layoutService), [workflow, layoutResult]);
+  const issues = useMemo(
+    () => detectIssues(workflow, layoutResult, layoutService),
+    [workflow, layoutResult]
+  );
 
   // Filter out dismissed issues
-  const activeIssues = issues.filter(issue => !dismissedIssues.has(issue.id));
+  const activeIssues = issues.filter((issue) => !dismissedIssues.has(issue.id));
 
-  const errorCount = activeIssues.filter(i => i.severity === 'error').length;
-  const warningCount = activeIssues.filter(i => i.severity === 'warning').length;
-  const infoCount = activeIssues.filter(i => i.severity === 'info').length;
+  const errorCount = activeIssues.filter((i) => i.severity === "error").length;
+  const warningCount = activeIssues.filter(
+    (i) => i.severity === "warning"
+  ).length;
+  const infoCount = activeIssues.filter((i) => i.severity === "info").length;
 
   const handleFixIssue = (issue: LayoutIssue) => {
     if (issue.fix) {
@@ -80,15 +87,15 @@ export function LayoutSuggestions({
   };
 
   const handleDismiss = (issueId: string) => {
-    setDismissedIssues(prev => new Set([...prev, issueId]));
+    setDismissedIssues((prev) => new Set([...prev, issueId]));
   };
 
   const handleDismissAll = () => {
-    setDismissedIssues(new Set(issues.map(i => i.id)));
+    setDismissedIssues(new Set(issues.map((i) => i.id)));
   };
 
   const toggleExpand = (issueId: string) => {
-    setExpandedIssue(prev => prev === issueId ? null : issueId);
+    setExpandedIssue((prev) => (prev === issueId ? null : issueId));
   };
 
   if (activeIssues.length === 0) {
@@ -102,7 +109,7 @@ export function LayoutSuggestions({
     );
   }
 
-  const autoFixableCount = activeIssues.filter(i => i.autoFixable).length;
+  const autoFixableCount = activeIssues.filter((i) => i.autoFixable).length;
 
   return (
     <div className="layout-suggestions">
@@ -111,18 +118,16 @@ export function LayoutSuggestions({
         <div className="issue-counts">
           {errorCount > 0 && (
             <span className="count-badge error">
-              {errorCount} Error{errorCount > 1 ? 's' : ''}
+              {errorCount} Error{errorCount > 1 ? "s" : ""}
             </span>
           )}
           {warningCount > 0 && (
             <span className="count-badge warning">
-              {warningCount} Warning{warningCount > 1 ? 's' : ''}
+              {warningCount} Warning{warningCount > 1 ? "s" : ""}
             </span>
           )}
           {infoCount > 0 && (
-            <span className="count-badge info">
-              {infoCount} Info
-            </span>
+            <span className="count-badge info">{infoCount} Info</span>
           )}
         </div>
 
@@ -140,7 +145,7 @@ export function LayoutSuggestions({
 
       {/* Issues List */}
       <div className="issues-list">
-        {activeIssues.map(issue => (
+        {activeIssues.map((issue) => (
           <IssueCard
             key={issue.id}
             issue={issue}
@@ -167,21 +172,28 @@ interface IssueCardProps {
   onDismiss: () => void;
 }
 
-function IssueCard({ issue, expanded, onToggleExpand, onFix, onDismiss }: IssueCardProps) {
+function IssueCard({
+  issue,
+  expanded,
+  onToggleExpand,
+  onFix,
+  onDismiss,
+}: IssueCardProps) {
   return (
     <div className={`issue-card severity-${issue.severity}`}>
       <div className="issue-header" onClick={onToggleExpand}>
         <div className="issue-main">
           <span className={`severity-badge ${issue.severity}`}>
-            {issue.severity === 'error' && '⚠️'}
-            {issue.severity === 'warning' && '⚠'}
-            {issue.severity === 'info' && 'ℹ️'}
+            {issue.severity === "error" && "⚠️"}
+            {issue.severity === "warning" && "⚠"}
+            {issue.severity === "info" && "ℹ️"}
             {issue.severity.toUpperCase()}
           </span>
           <span className="issue-title">{issue.title}</span>
           {issue.affectedNodes.length > 0 && (
             <span className="affected-count">
-              ({issue.affectedNodes.length} node{issue.affectedNodes.length > 1 ? 's' : ''})
+              ({issue.affectedNodes.length} node
+              {issue.affectedNodes.length > 1 ? "s" : ""})
             </span>
           )}
         </div>
@@ -206,9 +218,7 @@ function IssueCard({ issue, expanded, onToggleExpand, onFix, onDismiss }: IssueC
           >
             Dismiss
           </button>
-          <button className="expand-button">
-            {expanded ? '▼' : '▶'}
-          </button>
+          <button className="expand-button">{expanded ? "▼" : "▶"}</button>
         </div>
       </div>
 
@@ -251,17 +261,18 @@ function detectIssues(
   if (overlaps > 0) {
     const overlappingNodes = findOverlappingNodes(workflow);
     issues.push({
-      id: 'overlapping-nodes',
-      severity: 'error',
-      title: `${overlaps} overlapping node${overlaps > 1 ? 's' : ''}`,
-      description: 'Nodes are overlapping and may be difficult to distinguish. Apply auto-layout to fix.',
+      id: "overlapping-nodes",
+      severity: "error",
+      title: `${overlaps} overlapping node${overlaps > 1 ? "s" : ""}`,
+      description:
+        "Nodes are overlapping and may be difficult to distinguish. Apply auto-layout to fix.",
       affectedNodes: overlappingNodes,
       autoFixable: true,
       fix: () => {
         const fixed = JSON.parse(JSON.stringify(workflow));
         layoutService.applyLayout(fixed, LayoutStyle.HIERARCHICAL);
         return fixed;
-      }
+      },
     });
   }
 
@@ -269,21 +280,24 @@ function detectIssues(
   const unpositioned = layoutResult.statistics.nodesWithoutPosition;
   if (unpositioned > 0) {
     const unpositionedNodes = workflow.actions
-      .filter(a => !a.position || (a.position[0] === 0 && a.position[1] === 0))
-      .map(a => a.id);
+      .filter(
+        (a) => !a.position || (a.position[0] === 0 && a.position[1] === 0)
+      )
+      .map((a) => a.id);
 
     issues.push({
-      id: 'unpositioned-nodes',
-      severity: 'error',
-      title: `${unpositioned} unpositioned node${unpositioned > 1 ? 's' : ''}`,
-      description: 'Some nodes do not have positions. Apply auto-layout to position them.',
+      id: "unpositioned-nodes",
+      severity: "error",
+      title: `${unpositioned} unpositioned node${unpositioned > 1 ? "s" : ""}`,
+      description:
+        "Some nodes do not have positions. Apply auto-layout to position them.",
       affectedNodes: unpositionedNodes,
       autoFixable: true,
       fix: () => {
         const fixed = JSON.parse(JSON.stringify(workflow));
         layoutService.applyLayout(fixed, LayoutStyle.HIERARCHICAL);
         return fixed;
-      }
+      },
     });
   }
 
@@ -291,64 +305,68 @@ function detectIssues(
   const crossings = layoutResult.statistics.edgeCrossings;
   if (crossings > 10) {
     issues.push({
-      id: 'edge-crossings',
-      severity: 'warning',
+      id: "edge-crossings",
+      severity: "warning",
       title: `${crossings} edge crossings`,
-      description: 'High number of edge crossings may reduce readability. Try a different layout style.',
+      description:
+        "High number of edge crossings may reduce readability. Try a different layout style.",
       affectedNodes: [],
       autoFixable: true,
       fix: () => {
         const fixed = JSON.parse(JSON.stringify(workflow));
         layoutService.applyLayout(fixed, LayoutStyle.HIERARCHICAL);
         return fixed;
-      }
+      },
     });
   }
 
   // Check for poor compactness
   if (layoutResult.statistics.compactness < 0.2) {
     issues.push({
-      id: 'low-compactness',
-      severity: 'info',
-      title: 'Layout is very spread out',
-      description: 'The layout is using a lot of canvas space. Consider using Tree layout for more compact arrangement.',
+      id: "low-compactness",
+      severity: "info",
+      title: "Layout is very spread out",
+      description:
+        "The layout is using a lot of canvas space. Consider using Tree layout for more compact arrangement.",
       affectedNodes: [],
       autoFixable: true,
       fix: () => {
         const fixed = JSON.parse(JSON.stringify(workflow));
         layoutService.applyLayout(fixed, LayoutStyle.TREE, {
           horizontalSpacing: 150,
-          verticalSpacing: 100
+          verticalSpacing: 100,
         });
         return fixed;
-      }
+      },
     });
   } else if (layoutResult.statistics.compactness > 0.8) {
     issues.push({
-      id: 'high-compactness',
-      severity: 'info',
-      title: 'Layout is very dense',
-      description: 'The layout is very compact and may be hard to read. Consider increasing spacing.',
+      id: "high-compactness",
+      severity: "info",
+      title: "Layout is very dense",
+      description:
+        "The layout is very compact and may be hard to read. Consider increasing spacing.",
       affectedNodes: [],
       autoFixable: true,
       fix: () => {
         const fixed = JSON.parse(JSON.stringify(workflow));
         layoutService.applyLayout(fixed, LayoutStyle.HIERARCHICAL, {
           horizontalSpacing: 250,
-          verticalSpacing: 150
+          verticalSpacing: 150,
         });
         return fixed;
-      }
+      },
     });
   }
 
   // Check for poor readability
   if (layoutResult.statistics.readability < 0.6) {
     issues.push({
-      id: 'low-readability',
-      severity: 'warning',
-      title: 'Layout readability is low',
-      description: 'The layout may be hard to understand. Consider adjusting spacing or using a different layout style.',
+      id: "low-readability",
+      severity: "warning",
+      title: "Layout readability is low",
+      description:
+        "The layout may be hard to understand. Consider adjusting spacing or using a different layout style.",
       affectedNodes: [],
       autoFixable: true,
       fix: () => {
@@ -356,10 +374,10 @@ function detectIssues(
         layoutService.applyLayout(fixed, LayoutStyle.HIERARCHICAL, {
           horizontalSpacing: 200,
           verticalSpacing: 120,
-          minNodeSpacing: 30
+          minNodeSpacing: 30,
         });
         return fixed;
-      }
+      },
     });
   }
 
@@ -367,31 +385,33 @@ function detectIssues(
   const aspectRatio = layoutResult.statistics.boundingBoxAspectRatio;
   if (aspectRatio > 3) {
     issues.push({
-      id: 'wide-aspect',
-      severity: 'info',
-      title: 'Layout is very wide',
-      description: 'The layout has a wide aspect ratio. Consider using Hierarchical layout for better balance.',
+      id: "wide-aspect",
+      severity: "info",
+      title: "Layout is very wide",
+      description:
+        "The layout has a wide aspect ratio. Consider using Hierarchical layout for better balance.",
       affectedNodes: [],
       autoFixable: true,
       fix: () => {
         const fixed = JSON.parse(JSON.stringify(workflow));
         layoutService.applyLayout(fixed, LayoutStyle.HIERARCHICAL);
         return fixed;
-      }
+      },
     });
   } else if (aspectRatio < 0.33) {
     issues.push({
-      id: 'tall-aspect',
-      severity: 'info',
-      title: 'Layout is very tall',
-      description: 'The layout has a tall aspect ratio. Consider using Horizontal layout for better balance.',
+      id: "tall-aspect",
+      severity: "info",
+      title: "Layout is very tall",
+      description:
+        "The layout has a tall aspect ratio. Consider using Horizontal layout for better balance.",
       affectedNodes: [],
       autoFixable: true,
       fix: () => {
         const fixed = JSON.parse(JSON.stringify(workflow));
         layoutService.applyLayout(fixed, LayoutStyle.HORIZONTAL);
         return fixed;
-      }
+      },
     });
   }
 
@@ -399,12 +419,13 @@ function detectIssues(
   const disconnected = findDisconnectedNodes(workflow);
   if (disconnected.length > 0) {
     issues.push({
-      id: 'disconnected-nodes',
-      severity: 'warning',
-      title: `${disconnected.length} disconnected node${disconnected.length > 1 ? 's' : ''}`,
-      description: 'Some nodes are not connected to any other nodes. Verify your workflow structure.',
+      id: "disconnected-nodes",
+      severity: "warning",
+      title: `${disconnected.length} disconnected node${disconnected.length > 1 ? "s" : ""}`,
+      description:
+        "Some nodes are not connected to any other nodes. Verify your workflow structure.",
       affectedNodes: disconnected,
-      autoFixable: false
+      autoFixable: false,
     });
   }
 
@@ -450,7 +471,12 @@ function findDisconnectedNodes(workflow: Workflow): string[] {
   for (const [sourceId, connections] of Object.entries(workflow.connections)) {
     connected.add(sourceId);
 
-    for (const outputType of ['main', 'error', 'success', 'parallel'] as const) {
+    for (const outputType of [
+      "main",
+      "error",
+      "success",
+      "parallel",
+    ] as const) {
       const outputs = connections[outputType];
       if (!outputs) continue;
 
@@ -464,6 +490,6 @@ function findDisconnectedNodes(workflow: Workflow): string[] {
 
   // Find nodes that are not connected
   return workflow.actions
-    .filter(action => !connected.has(action.id))
-    .map(action => action.id);
+    .filter((action) => !connected.has(action.id))
+    .map((action) => action.id);
 }

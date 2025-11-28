@@ -5,8 +5,8 @@
  * Persists to localStorage to track completion across sessions.
  */
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 // ============================================================================
 // Types
@@ -90,7 +90,10 @@ export interface OnboardingActions {
   /**
    * Update progress on a specific quick start task
    */
-  updateQuickStartProgress: (task: keyof QuickStartProgress, completed: boolean) => void;
+  updateQuickStartProgress: (
+    task: keyof QuickStartProgress,
+    completed: boolean
+  ) => void;
 
   /**
    * Toggle welcome modal visibility
@@ -242,7 +245,10 @@ export const useOnboardingStore = create<OnboardingStore>()(
       // Quick Start Progress
       // ========================================================================
 
-      updateQuickStartProgress: (task: keyof QuickStartProgress, completed: boolean) => {
+      updateQuickStartProgress: (
+        task: keyof QuickStartProgress,
+        completed: boolean
+      ) => {
         set((state) => ({
           quickStartProgress: {
             ...state.quickStartProgress,
@@ -257,12 +263,16 @@ export const useOnboardingStore = create<OnboardingStore>()(
 
       isQuickStartComplete: (): boolean => {
         const { quickStartProgress } = get();
-        return Object.values(quickStartProgress).every((value) => value === true);
+        return Object.values(quickStartProgress).every(
+          (value) => value === true
+        );
       },
 
       getCompletedQuickStartTasks: (): number => {
         const { quickStartProgress } = get();
-        return Object.values(quickStartProgress).filter((value) => value === true).length;
+        return Object.values(quickStartProgress).filter(
+          (value) => value === true
+        ).length;
       },
 
       // ========================================================================
@@ -303,7 +313,7 @@ export const useOnboardingStore = create<OnboardingStore>()(
       },
     }),
     {
-      name: 'qontinui-onboarding-state',
+      name: "qontinui-onboarding-state",
       version: 1,
       // Persist all state to localStorage
       partialize: (state) => ({
@@ -350,7 +360,9 @@ export function useOnboardingProgress(): number {
  * Hook to get quick start progress count
  */
 export function useQuickStartProgress(): { completed: number; total: number } {
-  const completed = useOnboardingStore((state) => state.getCompletedQuickStartTasks());
+  const completed = useOnboardingStore((state) =>
+    state.getCompletedQuickStartTasks()
+  );
   return { completed, total: 6 }; // 6 quick start tasks
 }
 
@@ -358,9 +370,10 @@ export function useQuickStartProgress(): { completed: number; total: number } {
  * Hook to check if welcome should be shown
  */
 export function useShouldShowWelcome(): boolean {
-  return useOnboardingStore((state) =>
-    !state.hasCompletedWelcome &&
-    !state.dontShowWelcomeAgain &&
-    state.showWelcomeModal
+  return useOnboardingStore(
+    (state) =>
+      !state.hasCompletedWelcome &&
+      !state.dontShowWelcomeAgain &&
+      state.showWelcomeModal
   );
 }

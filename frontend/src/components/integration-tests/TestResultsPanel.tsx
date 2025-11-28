@@ -1,10 +1,18 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { CheckCircle, XCircle, Clock, Shuffle, ExternalLink, Loader2, Play } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import type { TestResultsPanelProps } from '@/types/integration-tests';
+import React from "react";
+import {
+  CheckCircle,
+  XCircle,
+  Clock,
+  Shuffle,
+  ExternalLink,
+  Loader2,
+  Play,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import type { TestResultsPanelProps } from "@/types/integration-tests";
 
 export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
   results,
@@ -35,9 +43,10 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
   };
 
   const stats = getTotalStats();
-  const successRate = stats.totalSteps > 0
-    ? Math.floor((stats.successfulSteps / stats.totalSteps) * 100)
-    : 0;
+  const successRate =
+    stats.totalSteps > 0
+      ? Math.floor((stats.successfulSteps / stats.totalSteps) * 100)
+      : 0;
 
   return (
     <Card className="bg-white border border-gray-200">
@@ -67,7 +76,9 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                   <CheckCircle className="w-4 h-4 text-green-600" />
                   <div>
                     <p className="text-xs text-green-700 font-medium">Passed</p>
-                    <p className="text-lg font-bold text-green-900">{stats.passed}</p>
+                    <p className="text-lg font-bold text-green-900">
+                      {stats.passed}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -76,7 +87,9 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                   <XCircle className="w-4 h-4 text-red-600" />
                   <div>
                     <p className="text-xs text-red-700 font-medium">Failed</p>
-                    <p className="text-lg font-bold text-red-900">{stats.failed}</p>
+                    <p className="text-lg font-bold text-red-900">
+                      {stats.failed}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -85,17 +98,21 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
             {/* Overall Success Rate */}
             <div className="p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-700 font-medium">Overall Success Rate</span>
-                <span className="text-sm font-bold text-gray-900">{successRate}%</span>
+                <span className="text-sm text-gray-700 font-medium">
+                  Overall Success Rate
+                </span>
+                <span className="text-sm font-bold text-gray-900">
+                  {successRate}%
+                </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
                     successRate >= 80
-                      ? 'bg-green-500'
+                      ? "bg-green-500"
                       : successRate >= 50
-                      ? 'bg-yellow-500'
-                      : 'bg-red-500'
+                        ? "bg-yellow-500"
+                        : "bg-red-500"
                   }`}
                   style={{ width: `${successRate}%` }}
                 />
@@ -109,15 +126,17 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
 
             {/* Individual Workflow Results */}
             <div className="space-y-2">
-              <p className="text-xs text-gray-500 font-medium">Workflow Results</p>
+              <p className="text-xs text-gray-500 font-medium">
+                Workflow Results
+              </p>
               <div className="max-h-96 overflow-y-auto space-y-2">
                 {results.map((result) => (
                   <div
                     key={result.workflowId}
                     className={`p-3 rounded-lg border ${
                       result.passed
-                        ? 'bg-green-50 border-green-200'
-                        : 'bg-red-50 border-red-200'
+                        ? "bg-green-50 border-green-200"
+                        : "bg-red-50 border-red-200"
                     }`}
                   >
                     <div className="flex items-start gap-2">
@@ -128,60 +147,89 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <p className={`text-sm font-semibold truncate ${
-                            result.passed ? 'text-green-900' : 'text-red-900'
-                          }`}>
+                          <p
+                            className={`text-sm font-semibold truncate ${
+                              result.passed ? "text-green-900" : "text-red-900"
+                            }`}
+                          >
                             {result.workflowName}
                           </p>
-                          <span className={`text-xs font-bold ${
-                            result.passed ? 'text-green-700' : 'text-red-700'
-                          }`}>
-                            {result.passed ? 'PASSED' : 'FAILED'}
+                          <span
+                            className={`text-xs font-bold ${
+                              result.passed ? "text-green-700" : "text-red-700"
+                            }`}
+                          >
+                            {result.passed ? "PASSED" : "FAILED"}
                           </span>
                         </div>
 
                         <div className="mt-2 space-y-1">
                           <div className="flex items-center justify-between text-xs">
-                            <span className={result.passed ? 'text-green-700' : 'text-red-700'}>
-                              {result.successfulSteps}/{result.totalSteps} steps successful
+                            <span
+                              className={
+                                result.passed
+                                  ? "text-green-700"
+                                  : "text-red-700"
+                              }
+                            >
+                              {result.successfulSteps}/{result.totalSteps} steps
+                              successful
                             </span>
-                            <span className={result.passed ? 'text-green-600' : 'text-red-600'}>
+                            <span
+                              className={
+                                result.passed
+                                  ? "text-green-600"
+                                  : "text-red-600"
+                              }
+                            >
                               {formatDuration(result.duration)}
                             </span>
                           </div>
 
-                          {result.randomMatchesUsed && result.randomMatchesUsed.length > 0 && (
-                            <div className="flex items-center gap-1 text-xs text-purple-700 bg-purple-50 px-2 py-1 rounded">
-                              <Shuffle className="w-3 h-3" />
-                              <span>
-                                {result.randomMatchesUsed.length} random matches used
-                              </span>
-                            </div>
-                          )}
+                          {result.randomMatchesUsed &&
+                            result.randomMatchesUsed.length > 0 && (
+                              <div className="flex items-center gap-1 text-xs text-purple-700 bg-purple-50 px-2 py-1 rounded">
+                                <Shuffle className="w-3 h-3" />
+                                <span>
+                                  {result.randomMatchesUsed.length} random
+                                  matches used
+                                </span>
+                              </div>
+                            )}
 
                           {!result.passed && result.failedSteps > 0 && (
-                            <p className={`text-xs ${result.passed ? 'text-green-700' : 'text-red-700'}`}>
-                              {result.failedSteps} step{result.failedSteps > 1 ? 's' : ''} failed
+                            <p
+                              className={`text-xs ${result.passed ? "text-green-700" : "text-red-700"}`}
+                            >
+                              {result.failedSteps} step
+                              {result.failedSteps > 1 ? "s" : ""} failed
                             </p>
                           )}
                         </div>
 
                         <div className="flex items-center gap-2 mt-2">
-                          {onPlayback && result.historicalResultIds && result.historicalResultIds.length > 0 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onPlayback(result.workflowId, result.historicalResultIds!)}
-                              className={`h-7 text-xs ${
-                                result.passed
-                                  ? 'text-green-700 hover:bg-green-100'
-                                  : 'text-red-700 hover:bg-red-100'
-                              }`}
-                            >
-                              <Play className="w-3 h-3 mr-1" />
-                              Playback
-                            </Button>
-                          )}
+                          {onPlayback &&
+                            result.historicalResultIds &&
+                            result.historicalResultIds.length > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  onPlayback(
+                                    result.workflowId,
+                                    result.historicalResultIds!
+                                  )
+                                }
+                                className={`h-7 text-xs ${
+                                  result.passed
+                                    ? "text-green-700 hover:bg-green-100"
+                                    : "text-red-700 hover:bg-red-100"
+                                }`}
+                              >
+                                <Play className="w-3 h-3 mr-1" />
+                                Playback
+                              </Button>
+                            )}
                           {onViewDetails && (
                             <Button
                               variant="ghost"
@@ -189,8 +237,8 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                               onClick={() => onViewDetails(result.workflowId)}
                               className={`h-7 text-xs ${
                                 result.passed
-                                  ? 'text-green-700 hover:bg-green-100'
-                                  : 'text-red-700 hover:bg-red-100'
+                                  ? "text-green-700 hover:bg-green-100"
+                                  : "text-red-700 hover:bg-red-100"
                               }`}
                             >
                               <ExternalLink className="w-3 h-3 mr-1" />
@@ -211,9 +259,10 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                 <div className="flex items-start gap-2">
                   <Shuffle className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-purple-900 leading-relaxed">
-                    <span className="font-semibold">Note:</span> Each run uses random historical
-                    matches, making tests vary like live automation. This simulates real-world
-                    conditions where pattern matching may find different results.
+                    <span className="font-semibold">Note:</span> Each run uses
+                    random historical matches, making tests vary like live
+                    automation. This simulates real-world conditions where
+                    pattern matching may find different results.
                   </p>
                 </div>
               </div>

@@ -8,12 +8,12 @@
  * - Viewport manipulation
  */
 
-import type { StateCreator } from 'zustand';
-import type { CanvasStore, ViewportSlice, Viewport } from './types';
+import type { StateCreator } from "zustand";
+import type { CanvasStore, ViewportSlice, Viewport } from "./types";
 
 export const createViewportSlice: StateCreator<
   CanvasStore,
-  [['zustand/immer', never]],
+  [["zustand/immer", never]],
   [],
   ViewportSlice
 > = (set, get) => ({

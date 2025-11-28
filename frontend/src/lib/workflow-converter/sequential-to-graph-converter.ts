@@ -9,15 +9,19 @@
  * const graphWorkflow = converter.convert(sequentialActions);
  */
 
-import { Action, ActionType } from '../action-schema/action-types';
-import { Workflow, Connections, Connection } from '../action-schema/action-types';
+import { Action, ActionType } from "../action-schema/action-types";
+import {
+  Workflow,
+  Connections,
+  Connection,
+} from "../action-schema/action-types";
 import {
   IfActionConfig,
   LoopActionConfig,
   SwitchActionConfig,
   TryCatchActionConfig,
-} from '../action-schema/configs/control-flow-actions';
-import { AutoLayout } from './auto-layout';
+} from "../action-schema/configs/control-flow-actions";
+import { AutoLayout } from "./auto-layout";
 
 /**
  * Converter options
@@ -111,9 +115,9 @@ export class SequentialToGraphConverter {
 
   constructor(options: ConverterOptions = {}) {
     this.options = {
-      workflowName: options.workflowName || 'Converted Workflow',
-      workflowId: options.workflowId || this.generateId('workflow'),
-      version: options.version || '1.0.0',
+      workflowName: options.workflowName || "Converted Workflow",
+      workflowId: options.workflowId || this.generateId("workflow"),
+      version: options.version || "1.0.0",
       preserveActionIds: options.preserveActionIds ?? false,
       layout: {
         horizontalSpacing: options.layout?.horizontalSpacing ?? 200,
@@ -149,11 +153,11 @@ export class SequentialToGraphConverter {
 
     // Validate input
     if (!actions || !Array.isArray(actions)) {
-      throw new Error('Actions must be an array');
+      throw new Error("Actions must be an array");
     }
 
     if (actions.length === 0) {
-      this.warnings.push('Empty action list provided');
+      this.warnings.push("Empty action list provided");
     }
 
     // Process all actions and build node graph
@@ -170,12 +174,12 @@ export class SequentialToGraphConverter {
       id: this.options.workflowId,
       name: this.options.workflowName,
       version: this.options.version,
-      format: 'graph',
+      format: "graph",
       actions: Array.from(this.actionNodes.values()).map((node) => node.action),
       connections: this.connections,
       metadata: {
         created: new Date().toISOString(),
-        description: 'Converted from sequential format',
+        description: "Converted from sequential format",
       },
     };
 
@@ -198,7 +202,7 @@ export class SequentialToGraphConverter {
     actions.forEach((action, index) => {
       const actionId = this.options.preserveActionIds
         ? action.id
-        : this.generateId('action');
+        : this.generateId("action");
 
       // Create action node with temporary position (will be updated in assignPositions)
       const node: ActionNode = {
@@ -245,7 +249,7 @@ export class SequentialToGraphConverter {
       }
 
       // Create connection
-      this.addConnection(currentId, nextId, 'main', 0, 0);
+      this.addConnection(currentId, nextId, "main", 0, 0);
     }
   }
 
@@ -261,18 +265,33 @@ export class SequentialToGraphConverter {
     this.stats.controlFlowExpanded++;
 
     switch (action.type) {
-      case 'IF':
-        this.handleIfAction(action as Action<'IF'>, actionId, depth, verticalOffset);
+      case "IF":
+        this.handleIfAction(
+          action as Action<"IF">,
+          actionId,
+          depth,
+          verticalOffset
+        );
         break;
-      case 'LOOP':
-        this.handleLoopAction(action as Action<'LOOP'>, actionId, depth, verticalOffset);
+      case "LOOP":
+        this.handleLoopAction(
+          action as Action<"LOOP">,
+          actionId,
+          depth,
+          verticalOffset
+        );
         break;
-      case 'SWITCH':
-        this.handleSwitchAction(action as Action<'SWITCH'>, actionId, depth, verticalOffset);
+      case "SWITCH":
+        this.handleSwitchAction(
+          action as Action<"SWITCH">,
+          actionId,
+          depth,
+          verticalOffset
+        );
         break;
-      case 'TRY_CATCH':
+      case "TRY_CATCH":
         this.handleTryCatchAction(
-          action as Action<'TRY_CATCH'>,
+          action as Action<"TRY_CATCH">,
           actionId,
           depth,
           verticalOffset
@@ -289,7 +308,7 @@ export class SequentialToGraphConverter {
    * - Output 1 (main[1]): false branch (else actions)
    */
   private handleIfAction(
-    action: Action<'IF'>,
+    action: Action<"IF">,
     actionId: string,
     depth: number,
     verticalOffset: number
@@ -299,7 +318,7 @@ export class SequentialToGraphConverter {
     // Process then branch (output 0)
     if (config.thenActions && config.thenActions.length > 0) {
       const thenActionId = config.thenActions[0];
-      this.addConnection(actionId, thenActionId, 'main', 0, 0);
+      this.addConnection(actionId, thenActionId, "main", 0, 0);
 
       // Note: In a full implementation, we would need to resolve action IDs
       // or inline actions. For now, we assume action IDs are provided.
@@ -308,7 +327,7 @@ export class SequentialToGraphConverter {
     // Process else branch (output 1)
     if (config.elseActions && config.elseActions.length > 0) {
       const elseActionId = config.elseActions[0];
-      this.addConnection(actionId, elseActionId, 'main', 1, 0);
+      this.addConnection(actionId, elseActionId, "main", 1, 0);
     }
   }
 
@@ -321,7 +340,7 @@ export class SequentialToGraphConverter {
    * - Exit connection after loop completes
    */
   private handleLoopAction(
-    action: Action<'LOOP'>,
+    action: Action<"LOOP">,
     actionId: string,
     depth: number,
     verticalOffset: number
@@ -331,7 +350,7 @@ export class SequentialToGraphConverter {
     // Process loop body
     if (config.actions && config.actions.length > 0) {
       const firstBodyActionId = config.actions[0];
-      this.addConnection(actionId, firstBodyActionId, 'main', 0, 0);
+      this.addConnection(actionId, firstBodyActionId, "main", 0, 0);
 
       // Note: Loop back connection would need to be handled by execution engine
       // as it creates a cycle. For visualization, we show forward flow only.
@@ -346,7 +365,7 @@ export class SequentialToGraphConverter {
    * - Last output: default case actions
    */
   private handleSwitchAction(
-    action: Action<'SWITCH'>,
+    action: Action<"SWITCH">,
     actionId: string,
     depth: number,
     verticalOffset: number
@@ -357,7 +376,7 @@ export class SequentialToGraphConverter {
     config.cases.forEach((caseItem, index) => {
       if (caseItem.actions && caseItem.actions.length > 0) {
         const caseActionId = caseItem.actions[0];
-        this.addConnection(actionId, caseActionId, 'main', index, 0);
+        this.addConnection(actionId, caseActionId, "main", index, 0);
       }
     });
 
@@ -365,7 +384,7 @@ export class SequentialToGraphConverter {
     if (config.defaultActions && config.defaultActions.length > 0) {
       const defaultActionId = config.defaultActions[0];
       const defaultIndex = config.cases.length;
-      this.addConnection(actionId, defaultActionId, 'main', defaultIndex, 0);
+      this.addConnection(actionId, defaultActionId, "main", defaultIndex, 0);
     }
   }
 
@@ -378,7 +397,7 @@ export class SequentialToGraphConverter {
    * - Finally actions connected after both paths
    */
   private handleTryCatchAction(
-    action: Action<'TRY_CATCH'>,
+    action: Action<"TRY_CATCH">,
     actionId: string,
     depth: number,
     verticalOffset: number
@@ -388,13 +407,13 @@ export class SequentialToGraphConverter {
     // Process try branch (success path)
     if (config.tryActions && config.tryActions.length > 0) {
       const tryActionId = config.tryActions[0];
-      this.addConnection(actionId, tryActionId, 'success', 0, 0);
+      this.addConnection(actionId, tryActionId, "success", 0, 0);
     }
 
     // Process catch branch (error path)
     if (config.catchActions && config.catchActions.length > 0) {
       const catchActionId = config.catchActions[0];
-      this.addConnection(actionId, catchActionId, 'error', 0, 0);
+      this.addConnection(actionId, catchActionId, "error", 0, 0);
     }
 
     // Finally actions would be handled by execution engine
@@ -411,7 +430,7 @@ export class SequentialToGraphConverter {
   private addConnection(
     sourceId: string,
     targetId: string,
-    type: 'main' | 'error' | 'success' | 'parallel',
+    type: "main" | "error" | "success" | "parallel",
     outputIndex: number,
     inputIndex: number
   ): void {
@@ -444,7 +463,9 @@ export class SequentialToGraphConverter {
    * Assign positions to all actions using auto-layout
    */
   private assignPositions(): void {
-    const actions = Array.from(this.actionNodes.values()).map((node) => node.action);
+    const actions = Array.from(this.actionNodes.values()).map(
+      (node) => node.action
+    );
 
     // Use AutoLayout algorithm
     const layout = new AutoLayout({
@@ -469,7 +490,9 @@ export class SequentialToGraphConverter {
    * Check if action type is control flow
    */
   private isControlFlowAction(type: ActionType): boolean {
-    return ['IF', 'LOOP', 'SWITCH', 'TRY_CATCH', 'BREAK', 'CONTINUE'].includes(type);
+    return ["IF", "LOOP", "SWITCH", "TRY_CATCH", "BREAK", "CONTINUE"].includes(
+      type
+    );
   }
 
   /**
@@ -493,18 +516,18 @@ export class SequentialToGraphConverter {
     const actionIds: string[] = [];
 
     switch (action.type) {
-      case 'IF': {
+      case "IF": {
         const config = action.config as IfActionConfig;
         if (config.thenActions) actionIds.push(...config.thenActions);
         if (config.elseActions) actionIds.push(...config.elseActions);
         break;
       }
-      case 'LOOP': {
+      case "LOOP": {
         const config = action.config as LoopActionConfig;
         if (config.actions) actionIds.push(...config.actions);
         break;
       }
-      case 'SWITCH': {
+      case "SWITCH": {
         const config = action.config as SwitchActionConfig;
         config.cases.forEach((caseItem) => {
           if (caseItem.actions) actionIds.push(...caseItem.actions);
@@ -512,7 +535,7 @@ export class SequentialToGraphConverter {
         if (config.defaultActions) actionIds.push(...config.defaultActions);
         break;
       }
-      case 'TRY_CATCH': {
+      case "TRY_CATCH": {
         const config = action.config as TryCatchActionConfig;
         if (config.tryActions) actionIds.push(...config.tryActions);
         if (config.catchActions) actionIds.push(...config.catchActions);
@@ -547,7 +570,7 @@ export function convertSequentialToGraph(
 
   // Log warnings if any
   if (result.warnings.length > 0) {
-    console.warn('Conversion warnings:', result.warnings);
+    console.warn("Conversion warnings:", result.warnings);
   }
 
   return result.workflow;

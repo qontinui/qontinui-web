@@ -4,7 +4,7 @@
  * Types for organizing images in folders and collections
  */
 
-import { ImageAsset } from '@/contexts/automation-context/types';
+import { ImageAsset } from "@/contexts/automation-context/types";
 
 export interface ImageFolder {
   /** Unique folder identifier */
@@ -78,10 +78,10 @@ export interface ImageCollection {
   updatedAt: Date;
 }
 
-export type ImageViewMode = 'grid' | 'list' | 'slideshow';
-export type ImageGridSize = 'small' | 'medium' | 'large';
-export type ImageSortBy = 'name' | 'date' | 'size' | 'usage';
-export type ImageSortOrder = 'asc' | 'desc';
+export type ImageViewMode = "grid" | "list" | "slideshow";
+export type ImageGridSize = "small" | "medium" | "large";
+export type ImageSortBy = "name" | "date" | "size" | "usage";
+export type ImageSortOrder = "asc" | "desc";
 
 export interface ImageFilter {
   /** Text search query */
@@ -94,13 +94,18 @@ export interface ImageFilter {
   tags?: string[];
 
   /** Tag matching mode */
-  tagOperator?: 'AND' | 'OR';
+  tagOperator?: "AND" | "OR";
 
   /** File types */
-  fileTypes?: ('png' | 'jpg' | 'jpeg' | 'gif' | 'webp')[];
+  fileTypes?: ("png" | "jpg" | "jpeg" | "gif" | "webp")[];
 
   /** Source filter */
-  sources?: ('uploaded' | 'pattern_optimization' | 'image_extraction' | 'state_discovery')[];
+  sources?: (
+    | "uploaded"
+    | "pattern_optimization"
+    | "image_extraction"
+    | "state_discovery"
+  )[];
 
   /** Uploaded date range */
   dateRange?: DateRange;
@@ -112,7 +117,7 @@ export interface ImageFilter {
   maxHeight?: number;
 
   /** Usage filter */
-  usageFilter?: 'all' | 'used' | 'unused';
+  usageFilter?: "all" | "used" | "unused";
 
   /** Size range (bytes) */
   minSize?: number;
@@ -164,7 +169,7 @@ export interface ImageWithMetadata extends ImageAsset {
 }
 
 export interface BulkOperation {
-  type: 'move' | 'tag' | 'collection' | 'delete' | 'download';
+  type: "move" | "tag" | "collection" | "delete" | "download";
   imageIds: string[];
   data?: any;
 }
@@ -174,5 +179,5 @@ export interface ImageUsageDetail {
   workflowName: string;
   stateId?: string;
   stateName?: string;
-  usageType: 'pattern' | 'action' | 'state';
+  usageType: "pattern" | "action" | "state";
 }

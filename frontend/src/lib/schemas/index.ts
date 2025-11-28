@@ -6,7 +6,7 @@
  */
 
 // API Schemas
-export * from './api-schemas'
+export * from "./api-schemas";
 
 // Form Schemas
-export * from './form-schemas'
+export * from "./form-schemas";

@@ -8,7 +8,8 @@ import { styles } from "@/config/theme";
  * Extends the base Textarea component with dark theme styling
  */
 
-export interface QontinuiTextareaProps extends React.ComponentProps<typeof Textarea> {
+export interface QontinuiTextareaProps
+  extends React.ComponentProps<typeof Textarea> {
   /**
    * Optional label for the textarea
    */
@@ -19,31 +20,35 @@ export interface QontinuiTextareaProps extends React.ComponentProps<typeof Texta
   error?: string;
 }
 
-export const QontinuiTextarea = React.forwardRef<HTMLTextAreaElement, QontinuiTextareaProps>(
-  ({ className, label, error, ...props }, ref) => {
-    const textareaId = React.useId();
+export const QontinuiTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  QontinuiTextareaProps
+>(({ className, label, error, ...props }, ref) => {
+  const textareaId = React.useId();
 
-    return (
-      <div className="flex flex-col gap-1.5">
-        {label && (
-          <label htmlFor={textareaId} className={cn(styles.text.primary, "text-sm font-medium")}>
-            {label}
-          </label>
-        )}
-        <Textarea
-          ref={ref}
-          id={textareaId}
-          className={cn(styles.input, error && "border-red-500", className)}
-          aria-invalid={!!error}
-          {...props}
-        />
-        {error && (
-          <span className="text-red-500 text-xs font-medium">{error}</span>
-        )}
-      </div>
-    );
-  }
-);
+  return (
+    <div className="flex flex-col gap-1.5">
+      {label && (
+        <label
+          htmlFor={textareaId}
+          className={cn(styles.text.primary, "text-sm font-medium")}
+        >
+          {label}
+        </label>
+      )}
+      <Textarea
+        ref={ref}
+        id={textareaId}
+        className={cn(styles.input, error && "border-red-500", className)}
+        aria-invalid={!!error}
+        {...props}
+      />
+      {error && (
+        <span className="text-red-500 text-xs font-medium">{error}</span>
+      )}
+    </div>
+  );
+});
 
 QontinuiTextarea.displayName = "QontinuiTextarea";
 

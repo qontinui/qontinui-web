@@ -20,7 +20,7 @@ export interface Screenshot {
 
 export interface ExtractionConfig {
   similarityThreshold: number; // 0-1, pixels below this are masked out
-  colorAveraging: 'mean' | 'median' | 'weighted'; // How to average pixel values
+  colorAveraging: "mean" | "median" | "weighted"; // How to average pixel values
   morphologicalOps: {
     enabled: boolean;
     erosionSize: number; // Remove noise
@@ -64,20 +64,20 @@ export interface PatternSession {
   id: string;
   screenshots: Screenshot[];
   extractedPattern?: ExtractedPattern;
-  status: 'setup' | 'extracting' | 'complete' | 'error';
+  status: "setup" | "extracting" | "complete" | "error";
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface PatternQuality {
-  rating: 'poor' | 'fair' | 'good' | 'excellent';
+  rating: "poor" | "fair" | "good" | "excellent";
   score: number; // 0-100
   recommendations: string[];
 }
 
 // New types for improved workflow
 export type OptimizationScreenshot = Screenshot & {
-  label?: 'positive' | 'negative' | 'unlabeled';
+  label?: "positive" | "negative" | "unlabeled";
 };
 
 export interface PatternAnalysis {
@@ -95,7 +95,7 @@ export interface PatternAnalysis {
 }
 
 export interface OptimizationStrategy {
-  type: 'multi-pattern' | 'consensus' | 'feature-based' | 'differential';
+  type: "multi-pattern" | "consensus" | "feature-based" | "differential";
   parameters: Record<string, any>;
 }
 
@@ -108,7 +108,7 @@ export interface StrategyEvaluation {
     processingTime: number;
   };
   recommendations: {
-    confidenceLevel: 'low' | 'medium' | 'high';
+    confidenceLevel: "low" | "medium" | "high";
   };
 }
 
@@ -118,7 +118,7 @@ export interface OptimizationSession {
   analysis?: PatternAnalysis;
   evaluations: StrategyEvaluation[];
   selectedStrategy?: OptimizationStrategy;
-  status: 'setup' | 'analyzing' | 'complete' | 'error';
+  status: "setup" | "analyzing" | "complete" | "error";
   createdAt: Date;
   updatedAt: Date;
 }

@@ -35,7 +35,7 @@ export interface Workflow {
   name: string;
   description?: string;
   category?: string;
-  format: 'graph'; // Always 'graph' in export format
+  format: "graph"; // Always 'graph' in export format
   version: string;
   actions: Action[];
   connections: WorkflowConnections;
@@ -70,7 +70,7 @@ export interface ActionOutputs {
 export interface WorkflowMetadata {
   created?: string;
   updated?: string;
-  viewMode?: 'sequential' | 'graph'; // Preferred visualization mode
+  viewMode?: "sequential" | "graph"; // Preferred visualization mode
   [key: string]: any; // Allow additional metadata
 }
 
@@ -92,7 +92,7 @@ export interface ImageAsset {
   id: string;
   name: string;
   data: string; // Base64 encoded image
-  format: 'png' | 'jpg' | 'jpeg';
+  format: "png" | "jpg" | "jpeg";
   width: number;
   height: number;
   hash?: string; // SHA256 hash for integrity
@@ -111,34 +111,34 @@ export interface Action {
 
 export type ActionType =
   // Find actions
-  | 'FIND'
-  | 'FIND_STATE_IMAGE'
+  | "FIND"
+  | "FIND_STATE_IMAGE"
   // Pure mouse actions
-  | 'MOUSE_MOVE'
-  | 'MOUSE_DOWN'
-  | 'MOUSE_UP'
-  | 'MOUSE_SCROLL'
+  | "MOUSE_MOVE"
+  | "MOUSE_DOWN"
+  | "MOUSE_UP"
+  | "MOUSE_SCROLL"
   // Combined mouse actions
-  | 'CLICK'
-  | 'DOUBLE_CLICK'
-  | 'RIGHT_CLICK'
-  | 'DRAG'
-  | 'SCROLL'
+  | "CLICK"
+  | "DOUBLE_CLICK"
+  | "RIGHT_CLICK"
+  | "DRAG"
+  | "SCROLL"
   // Pure keyboard actions
-  | 'KEY_PRESS'
-  | 'KEY_DOWN'
-  | 'KEY_UP'
+  | "KEY_PRESS"
+  | "KEY_DOWN"
+  | "KEY_UP"
   // Combined keyboard actions
-  | 'TYPE'
+  | "TYPE"
   // Other actions
-  | 'WAIT'
-  | 'VANISH'
-  | 'GO_TO_STATE'
-  | 'RUN_WORKFLOW'
-  | 'EXISTS'
-  | 'SCREENSHOT'
-  | 'CONDITION'
-  | 'LOOP';
+  | "WAIT"
+  | "VANISH"
+  | "GO_TO_STATE"
+  | "RUN_WORKFLOW"
+  | "EXISTS"
+  | "SCREENSHOT"
+  | "CONDITION"
+  | "LOOP";
 
 export interface ActionConfig {
   // === Base ActionConfig Properties (inherited by all actions) ===
@@ -147,7 +147,7 @@ export interface ActionConfig {
   pauseAfterEnd?: number; // Pause after action completes (seconds)
 
   // Behavior control
-  illustrate?: 'YES' | 'NO' | 'USE_GLOBAL'; // Override global illustration setting
+  illustrate?: "YES" | "NO" | "USE_GLOBAL"; // Override global illustration setting
   subsequentActions?: ActionConfig[]; // Chain actions to execute after
   logType?: string; // Log event type for categorization
 
@@ -169,7 +169,7 @@ export interface ActionConfig {
 
   // === Target Configuration ===
   target?: {
-    type: 'image' | 'region' | 'text' | 'coordinates';
+    type: "image" | "region" | "text" | "coordinates";
     imageId?: string;
     region?: Region;
     text?: string;
@@ -184,7 +184,7 @@ export interface ActionConfig {
   useDefinedRegion?: boolean; // Use defined regions instead of searching
   maxMatchesToActOn?: number; // Maximum matches to act on
   searchDuration?: number; // Search duration in seconds
-  searchType?: 'FIRST' | 'ALL' | 'BEST' | 'EACH'; // Type of search
+  searchType?: "FIRST" | "ALL" | "BEST" | "EACH"; // Type of search
   maxMatches?: number; // Maximum matches to return
   minMatches?: number; // Minimum matches required for success
   timeout?: number; // Maximum search time in seconds
@@ -226,11 +226,17 @@ export interface ActionConfig {
 
   // === Text Find Options (OCR-based) ===
   textOptions?: {
-    ocrEngine?: 'TESSERACT' | 'EASYOCR' | 'PADDLEOCR' | 'NATIVE';
+    ocrEngine?: "TESSERACT" | "EASYOCR" | "PADDLEOCR" | "NATIVE";
     language?: string;
     whitelistChars?: string;
     blacklistChars?: string;
-    matchType?: 'EXACT' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'REGEX' | 'FUZZY';
+    matchType?:
+      | "EXACT"
+      | "CONTAINS"
+      | "STARTS_WITH"
+      | "ENDS_WITH"
+      | "REGEX"
+      | "FUZZY";
     caseSensitive?: boolean;
     ignoreWhitespace?: boolean;
     normalizeUnicode?: boolean;
@@ -245,7 +251,7 @@ export interface ActionConfig {
 
   // === Click Options ===
   numberOfClicks?: number; // Number of clicks (1 = single, 2 = double, etc.)
-  mouseButton?: 'LEFT' | 'RIGHT' | 'MIDDLE'; // Mouse button to use
+  mouseButton?: "LEFT" | "RIGHT" | "MIDDLE"; // Mouse button to use
   pressDuration?: number; // How long to hold button (seconds)
   pauseAfterPress?: number; // Pause after pressing
   pauseAfterRelease?: number; // Pause after releasing
@@ -267,7 +273,7 @@ export interface ActionConfig {
   delayAfterDrag?: number; // Delay after drag completes
 
   // === Scroll Options ===
-  direction?: 'up' | 'down' | 'left' | 'right'; // Scroll direction
+  direction?: "up" | "down" | "left" | "right"; // Scroll direction
   distance?: number; // Scroll distance (deprecated - use clicks)
   clicks?: number; // Number of scroll clicks
   smooth?: boolean; // Enable smooth scrolling
@@ -279,7 +285,7 @@ export interface ActionConfig {
 
   // === Wait Options ===
   duration?: number; // Wait duration (seconds)
-  waitFor?: 'time' | 'image' | 'state' | 'condition'; // What to wait for
+  waitFor?: "time" | "image" | "state" | "condition"; // What to wait for
   conditionCheckInterval?: number; // Check interval for conditions
   logProgress?: boolean; // Log wait progress
 
@@ -290,7 +296,7 @@ export interface ActionConfig {
   // === GO_TO_STATE Options ===
   stateIds?: string[]; // Target state IDs for GO_TO_STATE action
   stateNames?: string[]; // Target state names (for readability in export)
-  strategy?: 'all' | 'any' | 'optimal'; // Pathfinding strategy for multiple states
+  strategy?: "all" | "any" | "optimal"; // Pathfinding strategy for multiple states
   verify?: boolean; // Verify state(s) were reached
 
   // === Repetition Options (for individual actions) ===
@@ -310,7 +316,13 @@ export interface ActionConfig {
 
   // === Verification Options ===
   verificationOptions?: {
-    event?: 'TEXT_APPEARS' | 'TEXT_DISAPPEARS' | 'IMAGE_APPEARS' | 'IMAGE_DISAPPEARS' | 'STATE_CHANGE' | 'NONE';
+    event?:
+      | "TEXT_APPEARS"
+      | "TEXT_DISAPPEARS"
+      | "IMAGE_APPEARS"
+      | "IMAGE_DISAPPEARS"
+      | "STATE_CHANGE"
+      | "NONE";
     text?: string; // Text to verify
     images?: string[]; // Image IDs to verify
     timeout?: number; // Verification timeout
@@ -343,7 +355,7 @@ export interface Coordinates {
 }
 
 export interface ConditionConfig {
-  type: 'image_exists' | 'image_vanished' | 'text_exists' | 'custom';
+  type: "image_exists" | "image_vanished" | "text_exists" | "custom";
   imageId?: string;
   text?: string;
   customScript?: string;
@@ -352,7 +364,7 @@ export interface ConditionConfig {
 }
 
 export interface LoopConfig {
-  type: 'count' | 'while' | 'until';
+  type: "count" | "while" | "until";
   count?: number;
   condition?: ConditionConfig;
   actions: string[]; // Action IDs
@@ -460,7 +472,7 @@ export interface SearchRegions {
 
 export interface Transition {
   id: string;
-  type: 'OutgoingTransition' | 'IncomingTransition';
+  type: "OutgoingTransition" | "IncomingTransition";
   name?: string;
   description?: string;
   workflows: string[]; // Workflow IDs to execute in order (all workflows are in global database)
@@ -470,7 +482,7 @@ export interface Transition {
 }
 
 export interface OutgoingTransition extends Transition {
-  type: 'OutgoingTransition';
+  type: "OutgoingTransition";
   fromState: string; // State ID
   toState: string; // State ID
   staysVisible: boolean;
@@ -480,13 +492,13 @@ export interface OutgoingTransition extends Transition {
 }
 
 export interface IncomingTransition extends Transition {
-  type: 'IncomingTransition';
+  type: "IncomingTransition";
   toState: string; // State ID
   executeAfter?: string[]; // OutgoingTransition IDs that trigger this
 }
 
 export interface TransitionCondition {
-  type: 'always' | 'image' | 'time' | 'custom';
+  type: "always" | "image" | "time" | "custom";
   imageId?: string;
   threshold?: number;
   timeDelay?: number;
@@ -539,7 +551,7 @@ export interface ExecutionSettings {
   defaultTimeout: number;
   defaultRetryCount: number;
   actionDelay: number; // Delay between actions
-  failureStrategy: 'stop' | 'continue' | 'pause';
+  failureStrategy: "stop" | "continue" | "pause";
   headless?: boolean;
   resolution?: {
     width: number;
@@ -549,16 +561,16 @@ export interface ExecutionSettings {
 
 export interface RecognitionSettings {
   defaultThreshold: number;
-  searchAlgorithm: 'template_matching' | 'feature_matching' | 'ai';
+  searchAlgorithm: "template_matching" | "feature_matching" | "ai";
   multiScaleSearch: boolean;
-  colorSpace: 'rgb' | 'grayscale' | 'hsv';
+  colorSpace: "rgb" | "grayscale" | "hsv";
   edgeDetection?: boolean;
   ocrEnabled?: boolean;
   ocrLanguage?: string;
 }
 
 export interface LoggingSettings {
-  level: 'debug' | 'info' | 'warning' | 'error';
+  level: "debug" | "info" | "warning" | "error";
   screenshotOnError: boolean;
   logFile?: string;
   consoleOutput: boolean;
@@ -574,9 +586,9 @@ export interface PerformanceSettings {
 }
 
 // Scheduler interfaces
-export type TriggerType = 'TIME' | 'INTERVAL' | 'STATE' | 'MANUAL';
-export type CheckMode = 'CHECK_ALL' | 'CHECK_INACTIVE_ONLY';
-export type ScheduleType = 'FIXED_RATE' | 'FIXED_DELAY';
+export type TriggerType = "TIME" | "INTERVAL" | "STATE" | "MANUAL";
+export type CheckMode = "CHECK_ALL" | "CHECK_INACTIVE_ONLY";
+export type ScheduleType = "FIXED_RATE" | "FIXED_DELAY";
 
 export interface Schedule {
   id: string;
@@ -613,175 +625,194 @@ export interface ExecutionRecord {
 
 // Validation schema using JSON Schema format
 export const configJsonSchema = {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Qontinui Configuration",
-  "type": "object",
-  "required": ["version", "metadata", "images", "workflows", "states", "transitions", "categories"],
-  "properties": {
-    "version": {
-      "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+  $schema: "http://json-schema.org/draft-07/schema#",
+  title: "Qontinui Configuration",
+  type: "object",
+  required: [
+    "version",
+    "metadata",
+    "images",
+    "workflows",
+    "states",
+    "transitions",
+    "categories",
+  ],
+  properties: {
+    version: {
+      type: "string",
+      pattern: "^\\d+\\.\\d+\\.\\d+$",
     },
-    "metadata": {
-      "type": "object",
-      "required": ["name", "created", "modified"],
-      "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "description": { "type": "string" },
-        "author": { "type": "string" },
-        "created": { "type": "string", "format": "date-time" },
-        "modified": { "type": "string", "format": "date-time" },
-        "tags": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      }
+    metadata: {
+      type: "object",
+      required: ["name", "created", "modified"],
+      properties: {
+        name: { type: "string", minLength: 1 },
+        description: { type: "string" },
+        author: { type: "string" },
+        created: { type: "string", format: "date-time" },
+        modified: { type: "string", format: "date-time" },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+        },
+      },
     },
-    "images": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "name", "data", "format", "width", "height"],
-        "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "data": { "type": "string" },
-          "format": { "enum": ["png", "jpg", "jpeg"] },
-          "width": { "type": "number", "minimum": 1 },
-          "height": { "type": "number", "minimum": 1 }
-        }
-      }
+    images: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "name", "data", "format", "width", "height"],
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          data: { type: "string" },
+          format: { enum: ["png", "jpg", "jpeg"] },
+          width: { type: "number", minimum: 1 },
+          height: { type: "number", minimum: 1 },
+        },
+      },
     },
-    "workflows": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "name", "format", "version", "actions", "connections"],
-        "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "description": { "type": "string" },
-          "category": { "type": "string" },
-          "format": { "const": "graph" },
-          "version": { "type": "string" },
-          "actions": { "type": "array" },
-          "connections": {
-            "type": "object",
-            "description": "Graph connections defining workflow execution flow",
-            "patternProperties": {
+    workflows: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "name", "format", "version", "actions", "connections"],
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          description: { type: "string" },
+          category: { type: "string" },
+          format: { const: "graph" },
+          version: { type: "string" },
+          actions: { type: "array" },
+          connections: {
+            type: "object",
+            description: "Graph connections defining workflow execution flow",
+            patternProperties: {
               "^[a-zA-Z0-9_-]+$": {
-                "type": "object",
-                "properties": {
-                  "main": {
-                    "type": "array",
-                    "description": "Main execution path (default)",
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": ["action", "type", "index"],
-                        "properties": {
-                          "action": { "type": "string", "description": "Target action ID" },
-                          "type": { "type": "string", "description": "Connection type" },
-                          "index": { "type": "number", "minimum": 0, "description": "Input index on target" }
-                        }
-                      }
-                    }
+                type: "object",
+                properties: {
+                  main: {
+                    type: "array",
+                    description: "Main execution path (default)",
+                    items: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        required: ["action", "type", "index"],
+                        properties: {
+                          action: {
+                            type: "string",
+                            description: "Target action ID",
+                          },
+                          type: {
+                            type: "string",
+                            description: "Connection type",
+                          },
+                          index: {
+                            type: "number",
+                            minimum: 0,
+                            description: "Input index on target",
+                          },
+                        },
+                      },
+                    },
                   },
-                  "success": {
-                    "type": "array",
-                    "description": "Path taken when action succeeds",
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": ["action", "type", "index"],
-                        "properties": {
-                          "action": { "type": "string" },
-                          "type": { "type": "string" },
-                          "index": { "type": "number", "minimum": 0 }
-                        }
-                      }
-                    }
+                  success: {
+                    type: "array",
+                    description: "Path taken when action succeeds",
+                    items: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        required: ["action", "type", "index"],
+                        properties: {
+                          action: { type: "string" },
+                          type: { type: "string" },
+                          index: { type: "number", minimum: 0 },
+                        },
+                      },
+                    },
                   },
-                  "error": {
-                    "type": "array",
-                    "description": "Path taken when action fails",
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": ["action", "type", "index"],
-                        "properties": {
-                          "action": { "type": "string" },
-                          "type": { "type": "string" },
-                          "index": { "type": "number", "minimum": 0 }
-                        }
-                      }
-                    }
+                  error: {
+                    type: "array",
+                    description: "Path taken when action fails",
+                    items: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        required: ["action", "type", "index"],
+                        properties: {
+                          action: { type: "string" },
+                          type: { type: "string" },
+                          index: { type: "number", minimum: 0 },
+                        },
+                      },
+                    },
                   },
-                  "parallel": {
-                    "type": "array",
-                    "description": "Parallel execution paths (read-only actions only)",
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": ["action", "type", "index"],
-                        "properties": {
-                          "action": { "type": "string" },
-                          "type": { "type": "string" },
-                          "index": { "type": "number", "minimum": 0 }
-                        }
-                      }
-                    }
-                  }
+                  parallel: {
+                    type: "array",
+                    description:
+                      "Parallel execution paths (read-only actions only)",
+                    items: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        required: ["action", "type", "index"],
+                        properties: {
+                          action: { type: "string" },
+                          type: { type: "string" },
+                          index: { type: "number", minimum: 0 },
+                        },
+                      },
+                    },
+                  },
                 },
-                "additionalProperties": true
-              }
-            }
+                additionalProperties: true,
+              },
+            },
           },
-          "metadata": { "type": "object" }
-        }
-      }
+          metadata: { type: "object" },
+        },
+      },
     },
-    "states": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "name", "identifyingImages", "position"],
-        "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "identifyingImages": { "type": "array" },
-          "position": {
-            "type": "object",
-            "required": ["x", "y"],
-            "properties": {
-              "x": { "type": "number" },
-              "y": { "type": "number" }
-            }
-          }
-        }
-      }
+    states: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "name", "identifyingImages", "position"],
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          identifyingImages: { type: "array" },
+          position: {
+            type: "object",
+            required: ["x", "y"],
+            properties: {
+              x: { type: "number" },
+              y: { type: "number" },
+            },
+          },
+        },
+      },
     },
-    "transitions": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["id", "type", "workflows", "timeout", "retryCount"],
-        "properties": {
-          "id": { "type": "string" },
-          "type": { "enum": ["OutgoingTransition", "IncomingTransition"] },
-          "workflows": { "type": "array", "items": { "type": "string" } },
-          "timeout": { "type": "number", "minimum": 0 },
-          "retryCount": { "type": "number", "minimum": 0 }
-        }
-      }
+    transitions: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "type", "workflows", "timeout", "retryCount"],
+        properties: {
+          id: { type: "string" },
+          type: { enum: ["OutgoingTransition", "IncomingTransition"] },
+          workflows: { type: "array", items: { type: "string" } },
+          timeout: { type: "number", minimum: 0 },
+          retryCount: { type: "number", minimum: 0 },
+        },
+      },
     },
-    "categories": {
-      "type": "array",
-      "items": { "type": "string" }
-    }
-  }
+    categories: {
+      type: "array",
+      items: { type: "string" },
+    },
+  },
 };

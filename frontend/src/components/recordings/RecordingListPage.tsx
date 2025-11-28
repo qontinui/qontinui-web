@@ -1,16 +1,28 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth } from '@/contexts/auth-context';
-import { useAutomation } from '@/contexts/automation-context';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { useAutomation } from "@/contexts/automation-context";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
 import {
   Upload,
   Play,
@@ -22,21 +34,21 @@ import {
   AlertCircle,
   Loader2,
   Search,
-} from 'lucide-react';
-import { recordingService } from '@/services/service-factory';
+} from "lucide-react";
+import { recordingService } from "@/services/service-factory";
 import {
   RecordingStatusLabels,
   ProcessingPhaseLabels,
   getConfidenceLevel,
   getConfidenceColor,
-} from '@/types/recording';
+} from "@/types/recording";
 import type {
   Recording,
   RecordingStatus,
   ProcessingPhase,
   RecordingListResponse,
-} from '@/types/recording';
-import { formatDistanceToNow } from 'date-fns';
+} from "@/types/recording";
+import { formatDistanceToNow } from "date-fns";
 
 export function RecordingListPage() {
   const router = useRouter();
@@ -45,13 +57,15 @@ export function RecordingListPage() {
   const { projectId: contextProjectId } = useAutomation();
 
   // Get project ID from context or URL (same logic as RequireProject)
-  const urlProjectId = searchParams?.get('project') ?? null;
+  const urlProjectId = searchParams?.get("project") ?? null;
   const projectId = contextProjectId || urlProjectId;
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<RecordingStatus | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<RecordingStatus | "all">(
+    "all"
+  );
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 20;
@@ -62,15 +76,15 @@ export function RecordingListPage() {
       setLoading(true);
       const response = await recordingService.listRecordings(
         projectId || undefined,
-        statusFilter !== 'all' ? statusFilter : undefined,
+        statusFilter !== "all" ? statusFilter : undefined,
         page,
         pageSize
       );
       setRecordings(response.recordings);
       setTotal(response.total);
     } catch (error: any) {
-      console.error('Failed to load recordings:', error);
-      toast.error('Failed to load recordings');
+      console.error("Failed to load recordings:", error);
+      toast.error("Failed to load recordings");
     } finally {
       setLoading(false);
     }
@@ -81,48 +95,53 @@ export function RecordingListPage() {
   }, [page, statusFilter, projectId]);
 
   // Filter recordings by search query
-  const filteredRecordings = recordings.filter((recording) =>
-    recording.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    recording.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    recording.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredRecordings = recordings.filter(
+    (recording) =>
+      recording.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      recording.description
+        ?.toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      recording.tags.some((tag) =>
+        tag.toLowerCase().includes(searchQuery.toLowerCase())
+      )
   );
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this recording?')) {
+    if (!confirm("Are you sure you want to delete this recording?")) {
       return;
     }
 
     try {
       await recordingService.deleteRecording(id);
-      toast.success('Recording deleted');
+      toast.success("Recording deleted");
       loadRecordings();
     } catch (error: any) {
-      console.error('Failed to delete recording:', error);
-      toast.error('Failed to delete recording');
+      console.error("Failed to delete recording:", error);
+      toast.error("Failed to delete recording");
     }
   };
 
   const handleStartProcessing = async (id: string) => {
     try {
       await recordingService.startProcessing(id);
-      toast.success('Processing started');
+      toast.success("Processing started");
       loadRecordings();
     } catch (error: any) {
-      console.error('Failed to start processing:', error);
-      toast.error('Failed to start processing');
+      console.error("Failed to start processing:", error);
+      toast.error("Failed to start processing");
     }
   };
 
   const getStatusIcon = (status: RecordingStatus) => {
     switch (status) {
-      case 'completed':
+      case "completed":
         return <CheckCircle className="h-5 w-5 text-green-600" />;
-      case 'failed':
+      case "failed":
         return <XCircle className="h-5 w-5 text-red-600" />;
-      case 'processing':
-      case 'validating':
+      case "processing":
+      case "validating":
         return <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />;
-      case 'cancelled':
+      case "cancelled":
         return <XCircle className="h-5 w-5 text-gray-600" />;
       default:
         return <Clock className="h-5 w-5 text-gray-600" />;
@@ -131,17 +150,17 @@ export function RecordingListPage() {
 
   const getStatusColor = (status: RecordingStatus) => {
     switch (status) {
-      case 'completed':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100';
-      case 'failed':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100';
-      case 'processing':
-      case 'validating':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100';
-      case 'cancelled':
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100';
+      case "completed":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100";
+      case "failed":
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
+      case "processing":
+      case "validating":
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100";
+      case "cancelled":
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100";
       default:
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100';
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100";
     }
   };
 
@@ -155,7 +174,7 @@ export function RecordingListPage() {
             Manage your annotated recordings and discovered state structures
           </p>
         </div>
-        <Button onClick={() => router.push('/recordings/upload')}>
+        <Button onClick={() => router.push("/recordings/upload")}>
           <Upload className="mr-2 h-4 w-4" />
           Upload Recording
         </Button>
@@ -181,7 +200,9 @@ export function RecordingListPage() {
             {/* Status Filter */}
             <Select
               value={statusFilter}
-              onValueChange={(value) => setStatusFilter(value as RecordingStatus | 'all')}
+              onValueChange={(value) =>
+                setStatusFilter(value as RecordingStatus | "all")
+              }
             >
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="All Statuses" />
@@ -211,11 +232,11 @@ export function RecordingListPage() {
             <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">No recordings found</h3>
             <p className="text-muted-foreground mb-4">
-              {searchQuery || statusFilter !== 'all'
-                ? 'Try adjusting your filters'
-                : 'Upload your first recording to get started'}
+              {searchQuery || statusFilter !== "all"
+                ? "Try adjusting your filters"
+                : "Upload your first recording to get started"}
             </p>
-            <Button onClick={() => router.push('/recordings/upload')}>
+            <Button onClick={() => router.push("/recordings/upload")}>
               <Upload className="mr-2 h-4 w-4" />
               Upload Recording
             </Button>
@@ -224,13 +245,18 @@ export function RecordingListPage() {
       ) : (
         <div className="space-y-4">
           {filteredRecordings.map((recording) => (
-            <Card key={recording.id} className="hover:shadow-lg transition-shadow">
+            <Card
+              key={recording.id}
+              className="hover:shadow-lg transition-shadow"
+            >
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       {getStatusIcon(recording.status)}
-                      <CardTitle className="text-xl">{recording.name}</CardTitle>
+                      <CardTitle className="text-xl">
+                        {recording.name}
+                      </CardTitle>
                       <Badge className={getStatusColor(recording.status)}>
                         {RecordingStatusLabels[recording.status]}
                       </Badge>
@@ -247,7 +273,7 @@ export function RecordingListPage() {
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
-                    {recording.status === 'uploaded' && (
+                    {recording.status === "uploaded" && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -270,13 +296,14 @@ export function RecordingListPage() {
               <CardContent>
                 <div className="space-y-4">
                   {/* Processing Progress */}
-                  {(recording.status === 'processing' || recording.status === 'validating') && (
+                  {(recording.status === "processing" ||
+                    recording.status === "validating") && (
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">
                           {recording.processing_phase
                             ? ProcessingPhaseLabels[recording.processing_phase]
-                            : 'Processing...'}
+                            : "Processing..."}
                         </span>
                         <span className="font-medium">
                           {Math.round(recording.processing_progress * 100)}%
@@ -290,11 +317,17 @@ export function RecordingListPage() {
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
                       <p className="text-xs text-muted-foreground">Frames</p>
-                      <p className="text-lg font-semibold">{recording.stats.total_frames}</p>
+                      <p className="text-lg font-semibold">
+                        {recording.stats.total_frames}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Interactions</p>
-                      <p className="text-lg font-semibold">{recording.stats.total_interactions}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Interactions
+                      </p>
+                      <p className="text-lg font-semibold">
+                        {recording.stats.total_interactions}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Duration</p>
@@ -302,16 +335,20 @@ export function RecordingListPage() {
                         {recording.stats.duration_seconds}s
                       </p>
                     </div>
-                    {recording.status === 'completed' && (
+                    {recording.status === "completed" && (
                       <>
                         <div>
-                          <p className="text-xs text-muted-foreground">States</p>
+                          <p className="text-xs text-muted-foreground">
+                            States
+                          </p>
                           <p className="text-lg font-semibold">
                             {recording.stats.discovered_states}
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground">Transitions</p>
+                          <p className="text-xs text-muted-foreground">
+                            Transitions
+                          </p>
                           <p className="text-lg font-semibold">
                             {recording.stats.discovered_transitions}
                           </p>
@@ -330,7 +367,11 @@ export function RecordingListPage() {
                       ))}
                     </div>
                     {recording.confidence && (
-                      <Badge className={getConfidenceColor(getConfidenceLevel(recording.confidence))}>
+                      <Badge
+                        className={getConfidenceColor(
+                          getConfidenceLevel(recording.confidence)
+                        )}
+                      >
                         {Math.round(recording.confidence * 100)}% Confidence
                       </Badge>
                     )}
@@ -340,19 +381,26 @@ export function RecordingListPage() {
                   {recording.validation_errors.length > 0 && (
                     <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400">
                       <AlertCircle className="h-4 w-4 mt-0.5" />
-                      <span>{recording.validation_errors.length} validation error(s)</span>
+                      <span>
+                        {recording.validation_errors.length} validation error(s)
+                      </span>
                     </div>
                   )}
                   {recording.validation_warnings.length > 0 && (
                     <div className="flex items-start gap-2 text-sm text-yellow-600 dark:text-yellow-400">
                       <AlertCircle className="h-4 w-4 mt-0.5" />
-                      <span>{recording.validation_warnings.length} warning(s)</span>
+                      <span>
+                        {recording.validation_warnings.length} warning(s)
+                      </span>
                     </div>
                   )}
 
                   {/* Timestamp */}
                   <p className="text-xs text-muted-foreground">
-                    Created {formatDistanceToNow(new Date(recording.created_at), { addSuffix: true })}
+                    Created{" "}
+                    {formatDistanceToNow(new Date(recording.created_at), {
+                      addSuffix: true,
+                    })}
                   </p>
                 </div>
               </CardContent>
@@ -376,7 +424,9 @@ export function RecordingListPage() {
           </span>
           <Button
             variant="outline"
-            onClick={() => setPage(Math.min(Math.ceil(total / pageSize), page + 1))}
+            onClick={() =>
+              setPage(Math.min(Math.ceil(total / pageSize), page + 1))
+            }
             disabled={page >= Math.ceil(total / pageSize)}
           >
             Next

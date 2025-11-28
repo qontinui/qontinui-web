@@ -33,7 +33,7 @@ import {
   type Activity,
   type ResourceType,
   type PermissionLevel,
-} from '@/contexts/collaboration';
+} from "@/contexts/collaboration";
 ```
 
 ---
@@ -51,76 +51,83 @@ import {
 ## Hooks Quick Reference
 
 ### useOrganization()
+
 ```typescript
 const {
-  currentOrg,              // Organization | null
-  organizations,           // Organization[]
-  switchOrganization,      // (orgId: string) => Promise<void>
-  refreshOrganizations,    // () => Promise<void>
+  currentOrg, // Organization | null
+  organizations, // Organization[]
+  switchOrganization, // (orgId: string) => Promise<void>
+  refreshOrganizations, // () => Promise<void>
 } = useOrganization();
 ```
 
 ### usePermissions()
+
 ```typescript
 const {
-  projectAccess,           // PermissionLevel | null
-  setProjectAccess,        // (level: PermissionLevel) => void
-  canView,                 // boolean
-  canComment,              // boolean
-  canEdit,                 // boolean
-  canAdmin,                // boolean
-  hasPermission,           // (required: PermissionLevel) => boolean
+  projectAccess, // PermissionLevel | null
+  setProjectAccess, // (level: PermissionLevel) => void
+  canView, // boolean
+  canComment, // boolean
+  canEdit, // boolean
+  canAdmin, // boolean
+  hasPermission, // (required: PermissionLevel) => boolean
 } = usePermissions();
 ```
 
 ### usePresence()
+
 ```typescript
 const {
-  activeUsers,             // UserPresence[]
-  setActiveUsers,          // (users: UserPresence[]) => void
-  addUser,                 // (user: UserPresence) => void
-  removeUser,              // (userId: string) => void
-  updateUser,              // (userId: string, updates: Partial<UserPresence>) => void
+  activeUsers, // UserPresence[]
+  setActiveUsers, // (users: UserPresence[]) => void
+  addUser, // (user: UserPresence) => void
+  removeUser, // (userId: string) => void
+  updateUser, // (userId: string, updates: Partial<UserPresence>) => void
 } = usePresence();
 ```
 
 ### useEditLock()
+
 ```typescript
 const {
-  currentLock,             // Lock | null
-  acquireEditLock,         // (resourceType: ResourceType, resourceId: string) => Promise<void>
-  releaseEditLock,         // () => Promise<void>
-  hasLock,                 // (resourceType: ResourceType, resourceId: string) => boolean
+  currentLock, // Lock | null
+  acquireEditLock, // (resourceType: ResourceType, resourceId: string) => Promise<void>
+  releaseEditLock, // () => Promise<void>
+  hasLock, // (resourceType: ResourceType, resourceId: string) => boolean
 } = useEditLock();
 ```
 
 ### useComments()
+
 ```typescript
 const {
-  comments,                // Comment[]
-  addComment,              // (content: string, position?: { x: number; y: number }) => Promise<void>
-  updateComment,           // (commentId: string, content: string) => Promise<void>
-  deleteComment,           // (commentId: string) => Promise<void>
-  refreshComments,         // () => Promise<void>
+  comments, // Comment[]
+  addComment, // (content: string, position?: { x: number; y: number }) => Promise<void>
+  updateComment, // (commentId: string, content: string) => Promise<void>
+  deleteComment, // (commentId: string) => Promise<void>
+  refreshComments, // () => Promise<void>
 } = useComments();
 ```
 
 ### useActivity()
+
 ```typescript
 const {
-  activityFeed,            // Activity[]
-  refreshActivity,         // () => Promise<void>
-  addActivity,             // (activity: Activity) => void
+  activityFeed, // Activity[]
+  refreshActivity, // () => Promise<void>
+  addActivity, // (activity: Activity) => void
 } = useActivity();
 ```
 
 ### useWebSocket()
+
 ```typescript
 const {
-  isConnected,             // boolean
-  connect,                 // () => Promise<void>
-  disconnect,              // () => void
-  registerHandlers,        // (handlers: WebSocketHandlers) => void
+  isConnected, // boolean
+  connect, // () => Promise<void>
+  disconnect, // () => void
+  registerHandlers, // (handlers: WebSocketHandlers) => void
 } = useWebSocket();
 ```
 
@@ -129,6 +136,7 @@ const {
 ## Common Usage Patterns
 
 ### Check Permission
+
 ```tsx
 const { canEdit, hasPermission } = usePermissions();
 
@@ -136,20 +144,21 @@ if (canEdit) {
   // User can edit
 }
 
-if (hasPermission('admin')) {
+if (hasPermission("admin")) {
   // User is admin
 }
 ```
 
 ### Acquire Edit Lock
+
 ```tsx
 const { acquireEditLock, releaseEditLock, hasLock } = useEditLock();
 
 // Acquire lock
-await acquireEditLock('workflow', workflowId);
+await acquireEditLock("workflow", workflowId);
 
 // Check if has lock
-if (hasLock('workflow', workflowId)) {
+if (hasLock("workflow", workflowId)) {
   // Can edit
 }
 
@@ -158,22 +167,24 @@ await releaseEditLock();
 ```
 
 ### Add Comment
+
 ```tsx
 const { addComment } = useComments();
 
-await addComment('Great work!');
+await addComment("Great work!");
 
 // With position
-await addComment('Fix this', { x: 100, y: 200 });
+await addComment("Fix this", { x: 100, y: 200 });
 ```
 
 ### Show Active Users
+
 ```tsx
 const { activeUsers } = usePresence();
 
 return (
   <div>
-    {activeUsers.map(user => (
+    {activeUsers.map((user) => (
       <Avatar key={user.id} user={user} />
     ))}
   </div>
@@ -181,12 +192,13 @@ return (
 ```
 
 ### Connection Status
+
 ```tsx
 const { isConnected } = useWebSocket();
 
 return (
-  <div className={isConnected ? 'connected' : 'disconnected'}>
-    {isConnected ? 'Online' : 'Offline'}
+  <div className={isConnected ? "connected" : "disconnected"}>
+    {isConnected ? "Online" : "Offline"}
   </div>
 );
 ```
@@ -196,6 +208,7 @@ return (
 ## Type Definitions
 
 ### Organization
+
 ```typescript
 interface Organization {
   id: string;
@@ -206,18 +219,20 @@ interface Organization {
 ```
 
 ### PermissionLevel
+
 ```typescript
-type PermissionLevel = 'none' | 'view' | 'comment' | 'edit' | 'admin';
+type PermissionLevel = "none" | "view" | "comment" | "edit" | "admin";
 ```
 
 ### UserPresence
+
 ```typescript
 interface UserPresence {
   id: string;
   name: string;
   email: string;
   avatar?: string;
-  status: 'active' | 'idle' | 'away';
+  status: "active" | "idle" | "away";
   cursor_position?: { x: number; y: number };
   current_resource_type?: ResourceType;
   current_resource_id?: string;
@@ -226,6 +241,7 @@ interface UserPresence {
 ```
 
 ### Lock
+
 ```typescript
 interface Lock {
   id: string;
@@ -240,6 +256,7 @@ interface Lock {
 ```
 
 ### Comment
+
 ```typescript
 interface Comment {
   id: string;
@@ -256,6 +273,7 @@ interface Comment {
 ```
 
 ### Activity
+
 ```typescript
 interface Activity {
   id: string;
@@ -271,8 +289,9 @@ interface Activity {
 ```
 
 ### ResourceType
+
 ```typescript
-type ResourceType = 'workflow' | 'project' | 'organization' | 'canvas' | 'node';
+type ResourceType = "workflow" | "project" | "organization" | "canvas" | "node";
 ```
 
 ---
@@ -280,8 +299,9 @@ type ResourceType = 'workflow' | 'project' | 'organization' | 'canvas' | 'node';
 ## Migration Cheat Sheet
 
 ### Old Way (Deprecated)
+
 ```tsx
-import { useCollaboration } from '@/contexts/collaboration-context';
+import { useCollaboration } from "@/contexts/collaboration-context";
 
 const {
   currentOrg,
@@ -290,11 +310,12 @@ const {
   acquireEditLock,
   comments,
   activityFeed,
-  isConnected
+  isConnected,
 } = useCollaboration();
 ```
 
 ### New Way
+
 ```tsx
 import {
   useOrganization,
@@ -303,8 +324,8 @@ import {
   useEditLock,
   useComments,
   useActivity,
-  useWebSocket
-} from '@/contexts/collaboration';
+  useWebSocket,
+} from "@/contexts/collaboration";
 
 const { currentOrg } = useOrganization();
 const { canEdit } = usePermissions();
@@ -363,11 +384,13 @@ collaboration/
 ## Common Mistakes to Avoid
 
 ❌ **Don't:** Import everything when you only need one thing
+
 ```tsx
 const everything = useCollaboration(); // Deprecated!
 ```
 
 ✅ **Do:** Import only what you need
+
 ```tsx
 const { canEdit } = usePermissions();
 ```
@@ -375,6 +398,7 @@ const { canEdit } = usePermissions();
 ---
 
 ❌ **Don't:** Forget to wrap with provider
+
 ```tsx
 function Component() {
   const { comments } = useComments(); // Error: No provider!
@@ -382,6 +406,7 @@ function Component() {
 ```
 
 ✅ **Do:** Use within provider
+
 ```tsx
 <CollaborationProvider projectId={id}>
   <Component />
@@ -391,14 +416,16 @@ function Component() {
 ---
 
 ❌ **Don't:** Mix old and new imports
+
 ```tsx
-import { useCollaboration } from '@/contexts/collaboration-context'; // Old
-import { useComments } from '@/contexts/collaboration'; // New
+import { useCollaboration } from "@/contexts/collaboration-context"; // Old
+import { useComments } from "@/contexts/collaboration"; // New
 ```
 
 ✅ **Do:** Use only new imports
+
 ```tsx
-import { useComments, usePermissions } from '@/contexts/collaboration';
+import { useComments, usePermissions } from "@/contexts/collaboration";
 ```
 
 ---
@@ -406,7 +433,11 @@ import { useComments, usePermissions } from '@/contexts/collaboration';
 ## Quick Start Template
 
 ```tsx
-import { CollaborationProvider, usePermissions, useComments } from '@/contexts/collaboration';
+import {
+  CollaborationProvider,
+  usePermissions,
+  useComments,
+} from "@/contexts/collaboration";
 
 function App() {
   return (
@@ -423,9 +454,7 @@ function MyComponent() {
   return (
     <div>
       {canEdit && (
-        <button onClick={() => addComment('Hello!')}>
-          Add Comment
-        </button>
+        <button onClick={() => addComment("Hello!")}>Add Comment</button>
       )}
       <CommentList comments={comments} />
     </div>

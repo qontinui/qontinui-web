@@ -86,37 +86,37 @@ export type {
   Activity,
   ResourceType,
   PermissionLevel,
-} from './types';
+} from "./types";
 
 // ============================================================================
 // Combined Provider (Recommended)
 // ============================================================================
 
-export { CollaborationProvider } from './CollaborationProvider';
+export { CollaborationProvider } from "./CollaborationProvider";
 
 // ============================================================================
 // Individual Providers
 // ============================================================================
 
-export { OrganizationProvider } from './OrganizationContext';
-export { PermissionsProvider } from './PermissionsContext';
-export { PresenceProvider } from './PresenceContext';
-export { EditLockProvider } from './EditLockContext';
-export { CommentsProvider } from './CommentsContext';
-export { ActivityProvider } from './ActivityContext';
-export { WebSocketProvider } from './WebSocketContext';
+export { OrganizationProvider } from "./OrganizationContext";
+export { PermissionsProvider } from "./PermissionsContext";
+export { PresenceProvider } from "./PresenceContext";
+export { EditLockProvider } from "./EditLockContext";
+export { CommentsProvider } from "./CommentsContext";
+export { ActivityProvider } from "./ActivityContext";
+export { WebSocketProvider } from "./WebSocketContext";
 
 // ============================================================================
 // Hooks
 // ============================================================================
 
-export { useOrganization } from './OrganizationContext';
-export { usePermissions } from './PermissionsContext';
-export { usePresence } from './PresenceContext';
-export { useEditLock } from './EditLockContext';
-export { useComments } from './CommentsContext';
-export { useActivity } from './ActivityContext';
-export { useWebSocket } from './WebSocketContext';
+export { useOrganization } from "./OrganizationContext";
+export { usePermissions } from "./PermissionsContext";
+export { usePresence } from "./PresenceContext";
+export { useEditLock } from "./EditLockContext";
+export { useComments } from "./CommentsContext";
+export { useActivity } from "./ActivityContext";
+export { useWebSocket } from "./WebSocketContext";
 
 // ============================================================================
 // Legacy Compatibility Export
@@ -142,8 +142,8 @@ export function useCollaboration() {
   // This function would need to be implemented if backward compatibility is required
   // For now, we'll throw an error directing users to the new hooks
   throw new Error(
-    'useCollaboration() has been deprecated. Please use individual hooks: ' +
-    'useOrganization(), usePermissions(), usePresence(), useEditLock(), ' +
-    'useComments(), useActivity(), useWebSocket()'
+    "useCollaboration() has been deprecated. Please use individual hooks: " +
+      "useOrganization(), usePermissions(), usePresence(), useEditLock(), " +
+      "useComments(), useActivity(), useWebSocket()"
   );
 }

@@ -1,9 +1,9 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Card } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { useState } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,14 +13,28 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { XCircle, Loader2, Monitor, Clock, MapPin, RefreshCw, WifiOff } from "lucide-react"
-import { useActiveConnections, useDisconnectRunner } from "@/hooks/useRunners"
-import { formatRelativeTime } from "@/utils/formatDuration"
-import { StatusIndicator } from "./StatusIndicator"
+} from "@/components/ui/alert-dialog";
+import {
+  XCircle,
+  Loader2,
+  Monitor,
+  Clock,
+  MapPin,
+  RefreshCw,
+  WifiOff,
+} from "lucide-react";
+import { useActiveConnections, useDisconnectRunner } from "@/hooks/useRunners";
+import { formatRelativeTime } from "@/utils/formatDuration";
+import { StatusIndicator } from "./StatusIndicator";
 
 export function ActiveConnectionsList() {
-  const { data: connections, isLoading, error, refetch, isRefetching } = useActiveConnections(5000); // Auto-refresh every 5s
+  const {
+    data: connections,
+    isLoading,
+    error,
+    refetch,
+    isRefetching,
+  } = useActiveConnections(5000); // Auto-refresh every 5s
   const disconnectMutation = useDisconnectRunner();
   const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
 
@@ -38,26 +52,32 @@ export function ActiveConnectionsList() {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-8 h-8 animate-spin text-[#00D9FF]" />
-        <span className="ml-3 text-gray-400">Loading active connections...</span>
+        <span className="ml-3 text-gray-400">
+          Loading active connections...
+        </span>
       </div>
     );
   }
 
   if (error) {
-    const isConnectionError = error.message?.includes('fetch failed') ||
-                              error.message?.includes('proxy') ||
-                              error.message?.includes('network');
+    const isConnectionError =
+      error.message?.includes("fetch failed") ||
+      error.message?.includes("proxy") ||
+      error.message?.includes("network");
     return (
       <Card className="bg-[#1A1A1B] border-gray-800 p-12">
         <div className="text-center">
           <WifiOff className="w-16 h-16 mx-auto text-gray-600 mb-4" />
           <h3 className="text-xl font-semibold text-gray-300 mb-2">
-            {isConnectionError ? 'Unable to Connect to Server' : 'Failed to Load Connections'}
+            {isConnectionError
+              ? "Unable to Connect to Server"
+              : "Failed to Load Connections"}
           </h3>
           <p className="text-gray-400 mb-6 max-w-md mx-auto">
             {isConnectionError
-              ? 'The backend server appears to be offline or unreachable. Please ensure the server is running and try again.'
-              : error.message || 'An unexpected error occurred while loading active connections.'}
+              ? "The backend server appears to be offline or unreachable. Please ensure the server is running and try again."
+              : error.message ||
+                "An unexpected error occurred while loading active connections."}
           </p>
           <Button
             onClick={() => refetch()}
@@ -85,7 +105,9 @@ export function ActiveConnectionsList() {
     return (
       <div className="text-center py-12">
         <Monitor className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-        <h3 className="text-xl font-semibold text-gray-300 mb-2">No Active Connections</h3>
+        <h3 className="text-xl font-semibold text-gray-300 mb-2">
+          No Active Connections
+        </h3>
         <p className="text-gray-400">
           No runners are currently connected to your account
         </p>
@@ -97,17 +119,23 @@ export function ActiveConnectionsList() {
     <>
       <div className="grid gap-4">
         {connections.map((connection) => (
-          <Card key={connection.id} className="bg-[#1A1A1B] border-gray-800 p-6">
+          <Card
+            key={connection.id}
+            className="bg-[#1A1A1B] border-gray-800 p-6"
+          >
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 {/* Header with Status */}
                 <div className="flex items-center gap-3 mb-4">
                   <Monitor className="w-5 h-5 text-[#00D9FF]" />
                   <h3 className="text-lg font-semibold text-white">
-                    {connection.runner_name || 'Unknown Runner'}
+                    {connection.runner_name || "Unknown Runner"}
                   </h3>
                   <StatusIndicator status="active" showLabel={false} />
-                  <Badge variant="outline" className="border-green-500/50 text-green-500">
+                  <Badge
+                    variant="outline"
+                    className="border-green-500/50 text-green-500"
+                  >
                     Connected
                   </Badge>
                 </div>
@@ -144,7 +172,9 @@ export function ActiveConnectionsList() {
                       <div className="w-4 h-4 bg-[#00D9FF] rounded mt-1" />
                       <div>
                         <p className="text-sm text-gray-400">Project</p>
-                        <p className="text-white font-medium">{connection.project_name}</p>
+                        <p className="text-white font-medium">
+                          {connection.project_name}
+                        </p>
                       </div>
                     </div>
                   )}
@@ -180,14 +210,18 @@ export function ActiveConnectionsList() {
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect Runner?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will immediately terminate the connection to this runner. The runner can
-              reconnect using the same token.
+              This will immediately terminate the connection to this runner. The
+              runner can reconnect using the same token.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-gray-700">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="border-gray-700">
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => disconnectingId && handleDisconnect(disconnectingId)}
+              onClick={() =>
+                disconnectingId && handleDisconnect(disconnectingId)
+              }
               className="bg-red-500 hover:bg-red-600 text-white"
               disabled={disconnectMutation.isPending}
             >

@@ -16,18 +16,28 @@
  * - Integration with analytics, complexity analyzer, and testing services
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Workflow } from '../../lib/action-schema/action-types';
-import { workflowFileManager } from '../../services/workflow-file-manager';
-import { workflowSnapshots } from '../../services/workflow-snapshots';
-import { cloneWorkflow } from '../../lib/action-schema/workflow-utils';
-import { workflowFolderManager } from '../../services/workflow-folder-manager';
-import { workflowAnalyticsService } from '../../services/workflow-analytics-service';
-import { workflowComplexityAnalyzer } from '../../services/workflow-complexity-analyzer';
-import { getWorkflowTestingService } from '../../services/workflow-testing-service';
-import { FolderTree } from '../workflow-organization/FolderTree';
-import { AdvancedSearch } from '../workflow-organization/AdvancedSearch';
-import type { WorkflowFolder, SearchFilter, SavedFilter } from '../../types/workflow-organization/types';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
+import { Workflow } from "../../lib/action-schema/action-types";
+import { workflowFileManager } from "../../services/workflow-file-manager";
+import { workflowSnapshots } from "../../services/workflow-snapshots";
+import { cloneWorkflow } from "../../lib/action-schema/workflow-utils";
+import { workflowFolderManager } from "../../services/workflow-folder-manager";
+import { workflowAnalyticsService } from "../../services/workflow-analytics-service";
+import { workflowComplexityAnalyzer } from "../../services/workflow-complexity-analyzer";
+import { getWorkflowTestingService } from "../../services/workflow-testing-service";
+import { FolderTree } from "../workflow-organization/FolderTree";
+import { AdvancedSearch } from "../workflow-organization/AdvancedSearch";
+import type {
+  WorkflowFolder,
+  SearchFilter,
+  SavedFilter,
+} from "../../types/workflow-organization/types";
 import {
   X,
   Search,
@@ -63,20 +73,20 @@ import {
   Rows,
   Check,
   Filter as FilterIcon,
-} from 'lucide-react';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Badge } from '../ui/badge';
-import { Separator } from '../ui/separator';
-import { ScrollArea } from '../ui/scroll-area';
-import { Checkbox } from '../ui/checkbox';
+} from "lucide-react";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Badge } from "../ui/badge";
+import { Separator } from "../ui/separator";
+import { ScrollArea } from "../ui/scroll-area";
+import { Checkbox } from "../ui/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../ui/select';
+} from "../ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,16 +97,16 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from '../ui/dropdown-menu';
+} from "../ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '../ui/tooltip';
-import { cn } from '../../lib/utils';
-import { toast } from 'sonner';
-import { FixedSizeList as VirtualList } from 'react-window';
+} from "../ui/tooltip";
+import { cn } from "../../lib/utils";
+import { toast } from "sonner";
+import { FixedSizeList as VirtualList } from "react-window";
 
 // ============================================================================
 // Types
@@ -110,7 +120,7 @@ interface EnhancedWorkflowItem {
   folderId?: string | null;
   folderPath?: string[];
   complexity?: number;
-  complexityRating?: 'low' | 'medium' | 'high' | 'very-high';
+  complexityRating?: "low" | "medium" | "high" | "very-high";
   testCoverage?: number;
   hasTests?: boolean;
   hasDocumentation?: boolean;
@@ -122,10 +132,17 @@ interface EnhancedWorkflowItem {
   recentlyModified?: boolean;
 }
 
-type ViewMode = 'list' | 'grid' | 'compact';
-type SortBy = 'date' | 'name' | 'actions' | 'complexity' | 'successRate' | 'lastRun' | 'modified';
-type SortOrder = 'asc' | 'desc';
-type GroupBy = 'none' | 'folder' | 'category' | 'tag' | 'complexity';
+type ViewMode = "list" | "grid" | "compact";
+type SortBy =
+  | "date"
+  | "name"
+  | "actions"
+  | "complexity"
+  | "successRate"
+  | "lastRun"
+  | "modified";
+type SortOrder = "asc" | "desc";
+type GroupBy = "none" | "folder" | "category" | "tag" | "complexity";
 
 interface WorkflowBrowserProps {
   onOpen: (workflow: Workflow) => void;
@@ -152,51 +169,51 @@ interface QuickFilter {
 // ============================================================================
 
 const DEFAULT_COLUMNS: ColumnConfig[] = [
-  { id: 'name', label: 'Name', visible: true, width: 250 },
-  { id: 'folder', label: 'Folder', visible: true, width: 150 },
-  { id: 'complexity', label: 'Complexity', visible: true, width: 120 },
-  { id: 'testCoverage', label: 'Test Coverage', visible: false, width: 120 },
-  { id: 'lastRun', label: 'Last Run', visible: false, width: 150 },
-  { id: 'successRate', label: 'Success Rate', visible: false, width: 120 },
-  { id: 'actions', label: 'Actions', visible: true, width: 100 },
-  { id: 'modified', label: 'Modified', visible: true, width: 150 },
+  { id: "name", label: "Name", visible: true, width: 250 },
+  { id: "folder", label: "Folder", visible: true, width: 150 },
+  { id: "complexity", label: "Complexity", visible: true, width: 120 },
+  { id: "testCoverage", label: "Test Coverage", visible: false, width: 120 },
+  { id: "lastRun", label: "Last Run", visible: false, width: 150 },
+  { id: "successRate", label: "Success Rate", visible: false, width: 120 },
+  { id: "actions", label: "Actions", visible: true, width: 100 },
+  { id: "modified", label: "Modified", visible: true, width: 150 },
 ];
 
 const QUICK_FILTERS: QuickFilter[] = [
   {
-    id: 'all',
-    label: 'All Workflows',
+    id: "all",
+    label: "All Workflows",
     icon: LayoutGrid,
     filter: () => true,
   },
   {
-    id: 'recent',
-    label: 'Recent',
+    id: "recent",
+    label: "Recent",
     icon: Clock,
     filter: (item) => item.recentlyModified || false,
   },
   {
-    id: 'noTests',
-    label: 'No Tests',
+    id: "noTests",
+    label: "No Tests",
     icon: AlertTriangle,
     filter: (item) => !item.hasTests,
   },
   {
-    id: 'noDocs',
-    label: 'No Documentation',
+    id: "noDocs",
+    label: "No Documentation",
     icon: BookOpen,
     filter: (item) => !item.hasDocumentation,
   },
   {
-    id: 'highComplexity',
-    label: 'High Complexity',
+    id: "highComplexity",
+    label: "High Complexity",
     icon: TrendingUp,
     filter: (item) =>
-      item.complexityRating === 'high' || item.complexityRating === 'very-high',
+      item.complexityRating === "high" || item.complexityRating === "very-high",
   },
   {
-    id: 'errors',
-    label: 'Errors',
+    id: "errors",
+    label: "Errors",
     icon: AlertTriangle,
     filter: (item) => item.failedLastRun || false,
   },
@@ -233,8 +250,8 @@ function formatRelativeTime(date: Date): string {
   const diff = now.getTime() - date.getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
   if (days < 7) return `${days} days ago`;
   if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
   if (days < 365) return `${Math.floor(days / 30)} months ago`;
@@ -245,31 +262,37 @@ function formatRelativeTime(date: Date): string {
 // Workflow Browser Component
 // ============================================================================
 
-export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps) {
+export function WorkflowBrowser({
+  onOpen,
+  onClose,
+  open,
+}: WorkflowBrowserProps) {
   // Core state
   const [workflows, setWorkflows] = useState<EnhancedWorkflowItem[]>([]);
   const [folders, setFolders] = useState<WorkflowFolder[]>([]);
   const [loading, setLoading] = useState(false);
 
   // View state
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [showFolderTree, setShowFolderTree] = useState(true);
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
 
   // Filter and search state
   const [searchFilter, setSearchFilter] = useState<SearchFilter>({});
-  const [activeQuickFilter, setActiveQuickFilter] = useState<string>('all');
+  const [activeQuickFilter, setActiveQuickFilter] = useState<string>("all");
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
 
   // Sort and group state
-  const [sortBy, setSortBy] = useState<SortBy>('modified');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const [groupBy, setGroupBy] = useState<GroupBy>('none');
+  const [sortBy, setSortBy] = useState<SortBy>("modified");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
 
   // Bulk operations state
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
-  const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<Set<string>>(new Set());
+  const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<Set<string>>(
+    new Set()
+  );
 
   // Column configuration
   const [columns, setColumns] = useState<ColumnConfig[]>(DEFAULT_COLUMNS);
@@ -299,23 +322,29 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
           const snapshotCount = workflowSnapshots.getSnapshotCount(workflow.id);
 
           // Get folder info
-          const folderAssoc = workflowFolderManager.getWorkflowFolder(workflow.id);
+          const folderAssoc = workflowFolderManager.getWorkflowFolder(
+            workflow.id
+          );
           const folderId = folderAssoc.success ? folderAssoc.folder?.id : null;
           const folderPath = folderId
             ? workflowFolderManager.getFolderPath(folderId).map((p) => p.name)
             : undefined;
 
           // Get complexity analysis
-          const complexityAnalysis = workflowComplexityAnalyzer.analyzeComplexity(workflow);
+          const complexityAnalysis =
+            workflowComplexityAnalyzer.analyzeComplexity(workflow);
 
           // Get test coverage
           const testCases = testingService.getTestCasesForWorkflow(workflow.id);
-          const coverage = testCases.length > 0
-            ? testingService.calculateCoverage(workflow.id, workflow)
-            : null;
+          const coverage =
+            testCases.length > 0
+              ? testingService.calculateCoverage(workflow.id, workflow)
+              : null;
 
           // Get analytics metrics
-          const metrics = workflowAnalyticsService.getWorkflowMetrics(workflow.id);
+          const metrics = workflowAnalyticsService.getWorkflowMetrics(
+            workflow.id
+          );
 
           // Check if recently modified
           const lastModified = workflow.metadata?.updated
@@ -333,13 +362,17 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
             complexityRating: complexityAnalysis.complexityRating,
             testCoverage: coverage?.coveragePercentage,
             hasTests: testCases.length > 0,
-            hasDocumentation: Boolean(workflow.description && workflow.description.length > 0),
+            hasDocumentation: Boolean(
+              workflow.description && workflow.description.length > 0
+            ),
             lastRun: metrics?.lastExecuted,
-            successRate: metrics?.successRate ? metrics.successRate * 100 : undefined,
+            successRate: metrics?.successRate
+              ? metrics.successRate * 100
+              : undefined,
             avgDuration: metrics?.avgDuration,
             failedLastRun: metrics ? (metrics.successRate || 0) < 1 : false,
             hasDependencies: workflow.actions.some(
-              (a) => a.type === 'SUBWORKFLOW' || a.type === 'CALL_WORKFLOW'
+              (a) => a.type === "SUBWORKFLOW" || a.type === "CALL_WORKFLOW"
             ),
             recentlyModified: isRecentlyModified(lastModified),
           });
@@ -348,8 +381,8 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
 
       setWorkflows(items);
     } catch (error) {
-      console.error('Failed to load workflows:', error);
-      toast.error('Failed to load workflows');
+      console.error("Failed to load workflows:", error);
+      toast.error("Failed to load workflows");
     } finally {
       setLoading(false);
     }
@@ -360,12 +393,12 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
       loadWorkflows();
       // Load saved filters from localStorage
       try {
-        const saved = localStorage.getItem('workflow-browser-filters');
+        const saved = localStorage.getItem("workflow-browser-filters");
         if (saved) {
           setSavedFilters(JSON.parse(saved));
         }
       } catch (error) {
-        console.error('Failed to load saved filters:', error);
+        console.error("Failed to load saved filters:", error);
       }
     }
   }, [open, loadWorkflows]);
@@ -375,7 +408,7 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
     if (selectedFolderId === null) {
       return workflows; // All workflows
     }
-    if (selectedFolderId === 'uncategorized') {
+    if (selectedFolderId === "uncategorized") {
       return workflows.filter((w) => !w.folderId);
     }
     return workflows.filter((w) => w.folderId === selectedFolderId);
@@ -394,7 +427,7 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
   // Apply quick filter
   const quickFilteredWorkflows = useMemo(() => {
     const quickFilter = QUICK_FILTERS.find((qf) => qf.id === activeQuickFilter);
-    if (!quickFilter || quickFilter.id === 'all') {
+    if (!quickFilter || quickFilter.id === "all") {
       return searchFilteredWorkflows;
     }
     return searchFilteredWorkflows.filter(quickFilter.filter);
@@ -406,57 +439,57 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
       let comparison = 0;
 
       switch (sortBy) {
-        case 'modified':
-        case 'date':
+        case "modified":
+        case "date":
           const dateA = a.lastModified?.getTime() || 0;
           const dateB = b.lastModified?.getTime() || 0;
           comparison = dateA - dateB;
           break;
-        case 'name':
+        case "name":
           comparison = a.workflow.name.localeCompare(b.workflow.name);
           break;
-        case 'actions':
+        case "actions":
           comparison = a.workflow.actions.length - b.workflow.actions.length;
           break;
-        case 'complexity':
+        case "complexity":
           comparison = (a.complexity || 0) - (b.complexity || 0);
           break;
-        case 'successRate':
+        case "successRate":
           comparison = (a.successRate || 0) - (b.successRate || 0);
           break;
-        case 'lastRun':
+        case "lastRun":
           const runA = a.lastRun ? new Date(a.lastRun).getTime() : 0;
           const runB = b.lastRun ? new Date(b.lastRun).getTime() : 0;
           comparison = runA - runB;
           break;
       }
 
-      return sortOrder === 'asc' ? comparison : -comparison;
+      return sortOrder === "asc" ? comparison : -comparison;
     });
   }, [quickFilteredWorkflows, sortBy, sortOrder]);
 
   // Group workflows
   const groupedWorkflows = useMemo(() => {
-    if (groupBy === 'none') {
-      return [{ key: 'all', label: 'All Workflows', items: sortedWorkflows }];
+    if (groupBy === "none") {
+      return [{ key: "all", label: "All Workflows", items: sortedWorkflows }];
     }
 
     const groups = new Map<string, EnhancedWorkflowItem[]>();
 
     sortedWorkflows.forEach((item) => {
-      let groupKey = 'Uncategorized';
+      let groupKey = "Uncategorized";
 
       switch (groupBy) {
-        case 'folder':
-          groupKey = item.folderPath?.[0] || 'Uncategorized';
+        case "folder":
+          groupKey = item.folderPath?.[0] || "Uncategorized";
           break;
-        case 'category':
-          groupKey = item.workflow.category || 'Uncategorized';
+        case "category":
+          groupKey = item.workflow.category || "Uncategorized";
           break;
-        case 'tag':
+        case "tag":
           const tags = item.workflow.tags || [];
           if (tags.length === 0) {
-            groupKey = 'No Tags';
+            groupKey = "No Tags";
           } else {
             // Add to all tag groups
             tags.forEach((tag) => {
@@ -468,10 +501,11 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
             return; // Don't add to default group
           }
           break;
-        case 'complexity':
+        case "complexity":
           groupKey = item.complexityRating
-            ? item.complexityRating.charAt(0).toUpperCase() + item.complexityRating.slice(1)
-            : 'Unknown';
+            ? item.complexityRating.charAt(0).toUpperCase() +
+              item.complexityRating.slice(1)
+            : "Unknown";
           break;
       }
 
@@ -502,7 +536,7 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
       const duplicated = cloneWorkflow(item.workflow);
       duplicated.name = `${item.workflow.name} (Copy)`;
       await workflowFileManager.saveWorkflow(duplicated);
-      toast.success('Workflow duplicated');
+      toast.success("Workflow duplicated");
       loadWorkflows();
     },
     [loadWorkflows]
@@ -512,7 +546,7 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
     async (item: EnhancedWorkflowItem) => {
       if (confirm(`Delete workflow "${item.workflow.name}"?`)) {
         await workflowFileManager.deleteWorkflow(item.key);
-        toast.success('Workflow deleted');
+        toast.success("Workflow deleted");
         loadWorkflows();
       }
     },
@@ -524,7 +558,7 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
 
     if (
       confirm(
-        `Delete ${selectedWorkflowIds.size} workflow${selectedWorkflowIds.size !== 1 ? 's' : ''}?`
+        `Delete ${selectedWorkflowIds.size} workflow${selectedWorkflowIds.size !== 1 ? "s" : ""}?`
       )
     ) {
       for (const id of selectedWorkflowIds) {
@@ -567,29 +601,34 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
       .map((w) => w.workflow);
 
     const data = JSON.stringify(selectedWorkflows, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
+    const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `workflows-export-${new Date().toISOString()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Workflows exported');
+    toast.success("Workflows exported");
   }, [selectedWorkflowIds, workflows]);
 
   const handleToggleSelectAll = useCallback(() => {
     if (selectedWorkflowIds.size === sortedWorkflows.length) {
       setSelectedWorkflowIds(new Set());
     } else {
-      setSelectedWorkflowIds(new Set(sortedWorkflows.map((w) => w.workflow.id)));
+      setSelectedWorkflowIds(
+        new Set(sortedWorkflows.map((w) => w.workflow.id))
+      );
     }
   }, [selectedWorkflowIds, sortedWorkflows]);
 
-  const handleColumnVisibilityChange = useCallback((columnId: string, visible: boolean) => {
-    setColumns((prev) =>
-      prev.map((col) => (col.id === columnId ? { ...col, visible } : col))
-    );
-  }, []);
+  const handleColumnVisibilityChange = useCallback(
+    (columnId: string, visible: boolean) => {
+      setColumns((prev) =>
+        prev.map((col) => (col.id === columnId ? { ...col, visible } : col))
+      );
+    },
+    []
+  );
 
   const handleSaveFilter = useCallback(
     (name: string, filter: SearchFilter) => {
@@ -601,7 +640,7 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
       };
       const updated = [...savedFilters, newFilter];
       setSavedFilters(updated);
-      localStorage.setItem('workflow-browser-filters', JSON.stringify(updated));
+      localStorage.setItem("workflow-browser-filters", JSON.stringify(updated));
     },
     [savedFilters]
   );
@@ -620,23 +659,23 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl/Cmd + F: Focus search
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
         setShowAdvancedSearch(true);
       }
       // Ctrl/Cmd + A: Select all
-      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
         e.preventDefault();
         handleToggleSelectAll();
       }
       // Ctrl/Cmd + N: New workflow (not implemented here, but could be)
       // Delete: Delete selected
-      if (e.key === 'Delete' && selectedWorkflowIds.size > 0) {
+      if (e.key === "Delete" && selectedWorkflowIds.size > 0) {
         e.preventDefault();
         handleBulkDelete();
       }
       // Escape: Close or exit bulk mode
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         if (bulkSelectMode) {
           setBulkSelectMode(false);
           setSelectedWorkflowIds(new Set());
@@ -646,8 +685,8 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     open,
     bulkSelectMode,
@@ -669,7 +708,8 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
           <div className="flex items-center gap-4">
             <h2 className="text-2xl font-bold">Workflow Browser</h2>
             <Badge variant="secondary">
-              {sortedWorkflows.length} workflow{sortedWorkflows.length !== 1 ? 's' : ''}
+              {sortedWorkflows.length} workflow
+              {sortedWorkflows.length !== 1 ? "s" : ""}
             </Badge>
           </div>
 
@@ -680,9 +720,9 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant={viewMode === 'list' ? 'default' : 'ghost'}
+                      variant={viewMode === "list" ? "default" : "ghost"}
                       size="sm"
-                      onClick={() => setViewMode('list')}
+                      onClick={() => setViewMode("list")}
                     >
                       <List className="h-4 w-4" />
                     </Button>
@@ -695,9 +735,9 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                      variant={viewMode === "grid" ? "default" : "ghost"}
                       size="sm"
-                      onClick={() => setViewMode('grid')}
+                      onClick={() => setViewMode("grid")}
                     >
                       <Grid className="h-4 w-4" />
                     </Button>
@@ -710,9 +750,9 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant={viewMode === 'compact' ? 'default' : 'ghost'}
+                      variant={viewMode === "compact" ? "default" : "ghost"}
                       size="sm"
-                      onClick={() => setViewMode('compact')}
+                      onClick={() => setViewMode("compact")}
                     >
                       <Rows className="h-4 w-4" />
                     </Button>
@@ -723,7 +763,7 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
             </div>
 
             {/* Column Visibility */}
-            {viewMode === 'list' && (
+            {viewMode === "list" && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm">
@@ -769,7 +809,7 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
 
             {/* Bulk Select Toggle */}
             <Button
-              variant={bulkSelectMode ? 'default' : 'outline'}
+              variant={bulkSelectMode ? "default" : "outline"}
               size="sm"
               onClick={() => {
                 setBulkSelectMode(!bulkSelectMode);
@@ -799,7 +839,10 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                   selectedFolderId={selectedFolderId}
                   onSelectFolder={setSelectedFolderId}
                   onCreateFolder={(name, parentId) => {
-                    workflowFolderManager.createFolder({ name, parentId: parentId || null });
+                    workflowFolderManager.createFolder({
+                      name,
+                      parentId: parentId || null,
+                    });
                     loadWorkflows();
                   }}
                   onUpdateFolder={(id, updates) => {
@@ -816,9 +859,14 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                   }}
                   onMoveWorkflow={(workflowId, folderId) => {
                     if (folderId) {
-                      workflowFolderManager.addWorkflowToFolder(workflowId, folderId);
+                      workflowFolderManager.addWorkflowToFolder(
+                        workflowId,
+                        folderId
+                      );
                     } else {
-                      workflowFolderManager.removeWorkflowFromFolder(workflowId);
+                      workflowFolderManager.removeWorkflowFromFolder(
+                        workflowId
+                      );
                     }
                     loadWorkflows();
                   }}
@@ -850,7 +898,9 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                   return (
                     <Button
                       key={qf.id}
-                      variant={activeQuickFilter === qf.id ? 'default' : 'outline'}
+                      variant={
+                        activeQuickFilter === qf.id ? "default" : "outline"
+                      }
                       size="sm"
                       onClick={() => setActiveQuickFilter(qf.id)}
                     >
@@ -878,7 +928,9 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
-                      <DropdownMenuItem onClick={() => handleBulkMoveToFolder(null)}>
+                      <DropdownMenuItem
+                        onClick={() => handleBulkMoveToFolder(null)}
+                      >
                         Remove from Folder
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
@@ -892,11 +944,19 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <Button variant="outline" size="sm" onClick={handleBulkExport}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkExport}
+                  >
                     <Download className="h-4 w-4 mr-2" />
                     Export
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                  >
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </Button>
@@ -951,18 +1011,24 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                    onClick={() =>
+                      setSortOrder(sortOrder === "asc" ? "desc" : "asc")
+                    }
                   >
-                    {sortOrder === 'asc' ? 'A→Z' : 'Z→A'}
+                    {sortOrder === "asc" ? "A→Z" : "Z→A"}
                   </Button>
                 </div>
               )}
 
               {bulkSelectMode && (
-                <Button variant="outline" size="sm" onClick={handleToggleSelectAll}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleToggleSelectAll}
+                >
                   {selectedWorkflowIds.size === sortedWorkflows.length
-                    ? 'Deselect All'
-                    : 'Select All'}
+                    ? "Deselect All"
+                    : "Select All"}
                 </Button>
               )}
             </div>
@@ -973,23 +1039,27 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
-                    <p className="text-muted-foreground">Loading workflows...</p>
+                    <p className="text-muted-foreground">
+                      Loading workflows...
+                    </p>
                   </div>
                 </div>
               ) : sortedWorkflows.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center max-w-md">
                     <LayoutGrid className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-20" />
-                    <h3 className="text-lg font-semibold mb-2">No workflows found</h3>
+                    <h3 className="text-lg font-semibold mb-2">
+                      No workflows found
+                    </h3>
                     <p className="text-sm text-muted-foreground mb-4">
                       {selectedFolderId
-                        ? 'This folder is empty. Try selecting a different folder or adjusting your filters.'
-                        : 'Try adjusting your search filters or create your first workflow to get started.'}
+                        ? "This folder is empty. Try selecting a different folder or adjusting your filters."
+                        : "Try adjusting your search filters or create your first workflow to get started."}
                     </p>
                     {!selectedFolderId && (
                       <Button
                         onClick={() => {
-                          setActiveQuickFilter('all');
+                          setActiveQuickFilter("all");
                           setSearchFilter({});
                         }}
                       >
@@ -1002,7 +1072,7 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                 <div className="p-4">
                   {groupedWorkflows.map((group) => (
                     <div key={group.key} className="mb-6">
-                      {groupBy !== 'none' && (
+                      {groupBy !== "none" && (
                         <div className="mb-3">
                           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                             {group.label}
@@ -1013,14 +1083,16 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                         </div>
                       )}
 
-                      {viewMode === 'grid' ? (
+                      {viewMode === "grid" ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                           {group.items.map((item) => (
                             <WorkflowGridCard
                               key={item.key}
                               item={item}
                               bulkSelectMode={bulkSelectMode}
-                              selected={selectedWorkflowIds.has(item.workflow.id)}
+                              selected={selectedWorkflowIds.has(
+                                item.workflow.id
+                              )}
                               onToggleSelect={() => {
                                 const newSet = new Set(selectedWorkflowIds);
                                 if (newSet.has(item.workflow.id)) {
@@ -1036,14 +1108,16 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                             />
                           ))}
                         </div>
-                      ) : viewMode === 'compact' ? (
+                      ) : viewMode === "compact" ? (
                         <div className="space-y-1">
                           {group.items.map((item) => (
                             <WorkflowCompactRow
                               key={item.key}
                               item={item}
                               bulkSelectMode={bulkSelectMode}
-                              selected={selectedWorkflowIds.has(item.workflow.id)}
+                              selected={selectedWorkflowIds.has(
+                                item.workflow.id
+                              )}
                               onToggleSelect={() => {
                                 const newSet = new Set(selectedWorkflowIds);
                                 if (newSet.has(item.workflow.id)) {
@@ -1067,7 +1141,9 @@ export function WorkflowBrowser({ onOpen, onClose, open }: WorkflowBrowserProps)
                               item={item}
                               columns={visibleColumns}
                               bulkSelectMode={bulkSelectMode}
-                              selected={selectedWorkflowIds.has(item.workflow.id)}
+                              selected={selectedWorkflowIds.has(
+                                item.workflow.id
+                              )}
                               onToggleSelect={() => {
                                 const newSet = new Set(selectedWorkflowIds);
                                 if (newSet.has(item.workflow.id)) {
@@ -1124,8 +1200,8 @@ function WorkflowListRow({
   return (
     <div
       className={cn(
-        'border rounded-lg p-4 hover:border-primary hover:shadow-sm transition cursor-pointer',
-        selected && 'border-primary bg-accent'
+        "border rounded-lg p-4 hover:border-primary hover:shadow-sm transition cursor-pointer",
+        selected && "border-primary bg-accent"
       )}
       onClick={bulkSelectMode ? onToggleSelect : onOpen}
     >
@@ -1136,15 +1212,22 @@ function WorkflowListRow({
         )}
 
         {/* Column Content */}
-        <div className="flex-1 grid gap-4" style={{ gridTemplateColumns: columns.map(c => `${c.width}px`).join(' ') }}>
+        <div
+          className="flex-1 grid gap-4"
+          style={{
+            gridTemplateColumns: columns.map((c) => `${c.width}px`).join(" "),
+          }}
+        >
           {columns.map((col) => {
             switch (col.id) {
-              case 'name':
+              case "name":
                 return (
                   <div key={col.id} className="flex items-center gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold truncate">{item.workflow.name}</h3>
+                        <h3 className="font-semibold truncate">
+                          {item.workflow.name}
+                        </h3>
                         <WorkflowBadges item={item} />
                       </div>
                       {item.workflow.description && (
@@ -1155,63 +1238,83 @@ function WorkflowListRow({
                     </div>
                   </div>
                 );
-              case 'folder':
+              case "folder":
                 return (
-                  <div key={col.id} className="flex items-center gap-1 text-sm text-muted-foreground">
+                  <div
+                    key={col.id}
+                    className="flex items-center gap-1 text-sm text-muted-foreground"
+                  >
                     <Folder className="h-4 w-4" />
                     <span className="truncate">
-                      {item.folderPath?.join(' / ') || 'None'}
+                      {item.folderPath?.join(" / ") || "None"}
                     </span>
                   </div>
                 );
-              case 'complexity':
+              case "complexity":
                 return (
                   <div key={col.id} className="flex items-center gap-2">
-                    <ComplexityBadge rating={item.complexityRating} score={item.complexity} />
+                    <ComplexityBadge
+                      rating={item.complexityRating}
+                      score={item.complexity}
+                    />
                   </div>
                 );
-              case 'testCoverage':
+              case "testCoverage":
                 return (
                   <div key={col.id} className="flex items-center gap-2">
                     {item.testCoverage !== undefined ? (
-                      <Badge variant={item.testCoverage > 80 ? 'default' : 'secondary'}>
+                      <Badge
+                        variant={
+                          item.testCoverage > 80 ? "default" : "secondary"
+                        }
+                      >
                         {item.testCoverage.toFixed(0)}% coverage
                       </Badge>
                     ) : (
-                      <span className="text-sm text-muted-foreground">No tests</span>
+                      <span className="text-sm text-muted-foreground">
+                        No tests
+                      </span>
                     )}
                   </div>
                 );
-              case 'lastRun':
+              case "lastRun":
                 return (
                   <div key={col.id} className="text-sm text-muted-foreground">
                     {item.lastRun
                       ? formatRelativeTime(new Date(item.lastRun))
-                      : 'Never'}
+                      : "Never"}
                   </div>
                 );
-              case 'successRate':
+              case "successRate":
                 return (
                   <div key={col.id} className="flex items-center gap-2">
                     {item.successRate !== undefined ? (
-                      <Badge variant={item.successRate > 80 ? 'default' : 'destructive'}>
+                      <Badge
+                        variant={
+                          item.successRate > 80 ? "default" : "destructive"
+                        }
+                      >
                         {item.successRate.toFixed(0)}% success
                       </Badge>
                     ) : (
-                      <span className="text-sm text-muted-foreground">No data</span>
+                      <span className="text-sm text-muted-foreground">
+                        No data
+                      </span>
                     )}
                   </div>
                 );
-              case 'actions':
+              case "actions":
                 return (
                   <div key={col.id} className="text-sm text-muted-foreground">
                     {item.workflow.actions.length} actions
                   </div>
                 );
-              case 'modified':
+              case "modified":
                 return (
                   <div key={col.id} className="text-sm text-muted-foreground">
-                    {item.lastModified ? formatRelativeTime(item.lastModified) : 'Unknown'}
+                    {item.lastModified
+                      ? formatRelativeTime(item.lastModified)
+                      : "Unknown"}
                   </div>
                 );
               default:
@@ -1229,17 +1332,30 @@ function WorkflowListRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen();
+                }}
+              >
                 <Eye className="h-4 w-4 mr-2" />
                 Open
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDuplicate();
+                }}
+              >
                 <Copy className="h-4 w-4 mr-2" />
                 Duplicate
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
@@ -1279,8 +1395,8 @@ function WorkflowGridCard({
   return (
     <div
       className={cn(
-        'border rounded-lg p-4 hover:border-primary hover:shadow-md transition cursor-pointer relative',
-        selected && 'border-primary bg-accent'
+        "border rounded-lg p-4 hover:border-primary hover:shadow-md transition cursor-pointer relative",
+        selected && "border-primary bg-accent"
       )}
       onClick={bulkSelectMode ? onToggleSelect : onOpen}
     >
@@ -1314,7 +1430,12 @@ function WorkflowGridCard({
       {/* Stats */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{item.workflow.actions.length} actions</span>
-        {item.complexity && <ComplexityBadge rating={item.complexityRating} score={item.complexity} />}
+        {item.complexity && (
+          <ComplexityBadge
+            rating={item.complexityRating}
+            score={item.complexity}
+          />
+        )}
       </div>
 
       {/* Actions Menu */}
@@ -1327,17 +1448,30 @@ function WorkflowGridCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen();
+                }}
+              >
                 <Eye className="h-4 w-4 mr-2" />
                 Open
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDuplicate();
+                }}
+              >
                 <Copy className="h-4 w-4 mr-2" />
                 Duplicate
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
@@ -1367,12 +1501,14 @@ function WorkflowCompactRow({
   return (
     <div
       className={cn(
-        'border rounded px-3 py-2 hover:border-primary hover:bg-accent/50 transition cursor-pointer flex items-center gap-3',
-        selected && 'border-primary bg-accent'
+        "border rounded px-3 py-2 hover:border-primary hover:bg-accent/50 transition cursor-pointer flex items-center gap-3",
+        selected && "border-primary bg-accent"
       )}
       onClick={bulkSelectMode ? onToggleSelect : onOpen}
     >
-      {bulkSelectMode && <Checkbox checked={selected} onCheckedChange={onToggleSelect} />}
+      {bulkSelectMode && (
+        <Checkbox checked={selected} onCheckedChange={onToggleSelect} />
+      )}
 
       <div className="flex-1 flex items-center gap-3 min-w-0">
         <span className="font-medium truncate">{item.workflow.name}</span>
@@ -1381,7 +1517,10 @@ function WorkflowCompactRow({
           {item.workflow.actions.length} actions
         </span>
         {item.complexity && (
-          <ComplexityBadge rating={item.complexityRating} score={item.complexity} />
+          <ComplexityBadge
+            rating={item.complexityRating}
+            score={item.complexity}
+          />
         )}
       </div>
 
@@ -1393,17 +1532,30 @@ function WorkflowCompactRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen();
+              }}
+            >
               <Eye className="h-4 w-4 mr-2" />
               Open
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                onDuplicate();
+              }}
+            >
               <Copy className="h-4 w-4 mr-2" />
               Duplicate
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
               className="text-destructive focus:text-destructive"
             >
               <Trash2 className="h-4 w-4 mr-2" />
@@ -1435,7 +1587,7 @@ function WorkflowBadges({ item, compact }: WorkflowBadgesProps) {
           <TooltipTrigger>
             <Badge variant="outline" className="gap-1">
               <TestTube className="h-3 w-3" />
-              {!compact && 'Tests'}
+              {!compact && "Tests"}
             </Badge>
           </TooltipTrigger>
           <TooltipContent>Has test cases</TooltipContent>
@@ -1451,7 +1603,7 @@ function WorkflowBadges({ item, compact }: WorkflowBadgesProps) {
           <TooltipTrigger>
             <Badge variant="outline" className="gap-1">
               <BookOpen className="h-3 w-3" />
-              {!compact && 'Docs'}
+              {!compact && "Docs"}
             </Badge>
           </TooltipTrigger>
           <TooltipContent>Has documentation</TooltipContent>
@@ -1467,7 +1619,7 @@ function WorkflowBadges({ item, compact }: WorkflowBadgesProps) {
           <TooltipTrigger>
             <Badge variant="destructive" className="gap-1">
               <AlertTriangle className="h-3 w-3" />
-              {!compact && 'Error'}
+              {!compact && "Error"}
             </Badge>
           </TooltipTrigger>
           <TooltipContent>Failed last run</TooltipContent>
@@ -1483,7 +1635,7 @@ function WorkflowBadges({ item, compact }: WorkflowBadgesProps) {
           <TooltipTrigger>
             <Badge variant="secondary" className="gap-1">
               <Clock className="h-3 w-3" />
-              {!compact && 'New'}
+              {!compact && "New"}
             </Badge>
           </TooltipTrigger>
           <TooltipContent>Recently modified</TooltipContent>
@@ -1499,7 +1651,7 @@ function WorkflowBadges({ item, compact }: WorkflowBadgesProps) {
           <TooltipTrigger>
             <Badge variant="outline" className="gap-1">
               <Link2 className="h-3 w-3" />
-              {!compact && 'Deps'}
+              {!compact && "Deps"}
             </Badge>
           </TooltipTrigger>
           <TooltipContent>Has dependencies</TooltipContent>
@@ -1516,18 +1668,21 @@ function WorkflowBadges({ item, compact }: WorkflowBadgesProps) {
 // ============================================================================
 
 interface ComplexityBadgeProps {
-  rating?: 'low' | 'medium' | 'high' | 'very-high';
+  rating?: "low" | "medium" | "high" | "very-high";
   score?: number;
 }
 
 function ComplexityBadge({ rating, score }: ComplexityBadgeProps) {
   if (!rating) return null;
 
-  const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-    low: 'outline',
-    medium: 'secondary',
-    high: 'default',
-    'very-high': 'destructive',
+  const variants: Record<
+    string,
+    "default" | "secondary" | "destructive" | "outline"
+  > = {
+    low: "outline",
+    medium: "secondary",
+    high: "default",
+    "very-high": "destructive",
   };
 
   return (
@@ -1535,7 +1690,7 @@ function ComplexityBadge({ rating, score }: ComplexityBadgeProps) {
       <Tooltip>
         <TooltipTrigger>
           <Badge variant={variants[rating]} className="text-xs">
-            {rating.replace('-', ' ')}
+            {rating.replace("-", " ")}
           </Badge>
         </TooltipTrigger>
         <TooltipContent>

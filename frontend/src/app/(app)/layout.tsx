@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import type React from "react";
 import { AuthProvider } from "@/contexts/auth-context";
@@ -21,29 +21,29 @@ import { cn } from "@/lib/utils";
 // import { allTutorials } from "@/data/tutorials";
 // import "@/components/tutorial/integration/tutorial-targets.css";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
-  const { isCollapsed } = useSidebar()
+  const { isCollapsed } = useSidebar();
 
   return (
     <div className="flex min-h-screen bg-background">
       <UnifiedSidebar />
-      <div className={cn(
-        "flex-1 flex flex-col transition-all duration-300",
-        isCollapsed ? "ml-16" : "ml-64"
-      )}>
+      <div
+        className={cn(
+          "flex-1 flex flex-col transition-all duration-300",
+          isCollapsed ? "ml-16" : "ml-64"
+        )}
+      >
         <BetaBanner />
-        <main className="flex-1">
-          {children}
-        </main>
+        <main className="flex-1">{children}</main>
       </div>
       <OfflineIndicator />
       <SyncQueueViewer />
       <OnboardingTour />
       <SessionTimeoutWarning />
     </div>
-  )
+  );
 }
 
 export default function AppLayout({
@@ -58,9 +58,7 @@ export default function AppLayout({
           <AutomationProvider>
             <TabStateProvider>
               <AppInitializer>
-                <AppLayoutContent>
-                  {children}
-                </AppLayoutContent>
+                <AppLayoutContent>{children}</AppLayoutContent>
               </AppInitializer>
             </TabStateProvider>
           </AutomationProvider>

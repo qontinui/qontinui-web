@@ -11,23 +11,27 @@
  * - Import/Export functionality
  */
 
-import type { Workflow, Action, ActionType } from '@/lib/action-schema/action-types';
+import type {
+  Workflow,
+  Action,
+  ActionType,
+} from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Test Case Types
 // ============================================================================
 
 export type AssertionType =
-  | 'equals'
-  | 'notEquals'
-  | 'contains'
-  | 'notContains'
-  | 'exists'
-  | 'notExists'
-  | 'greaterThan'
-  | 'lessThan'
-  | 'regex'
-  | 'custom';
+  | "equals"
+  | "notEquals"
+  | "contains"
+  | "notContains"
+  | "exists"
+  | "notExists"
+  | "greaterThan"
+  | "lessThan"
+  | "regex"
+  | "custom";
 
 export interface Assertion {
   /** Unique assertion ID */
@@ -135,7 +139,7 @@ export interface TestSuite {
   testCaseIds: string[];
 
   /** Execution order preference */
-  executionOrder?: 'parallel' | 'sequential';
+  executionOrder?: "parallel" | "sequential";
 
   /** Stop on first failure */
   stopOnFailure?: boolean;
@@ -346,9 +350,9 @@ export interface CoverageReport {
 // ============================================================================
 
 const STORAGE_KEYS = {
-  TEST_CASES: 'workflow-test-cases',
-  TEST_SUITES: 'workflow-test-suites',
-  TEST_RESULTS: 'workflow-test-results',
+  TEST_CASES: "workflow-test-cases",
+  TEST_SUITES: "workflow-test-suites",
+  TEST_RESULTS: "workflow-test-results",
 } as const;
 
 // ============================================================================
@@ -372,13 +376,17 @@ export class WorkflowTestingService {
   /**
    * Create a new test case
    */
-  createTestCase(workflowId: string, config: TestCaseConfig, options?: {
-    name?: string;
-    description?: string;
-    enabled?: boolean;
-  }): TestCase {
+  createTestCase(
+    workflowId: string,
+    config: TestCaseConfig,
+    options?: {
+      name?: string;
+      description?: string;
+      enabled?: boolean;
+    }
+  ): TestCase {
     const testCase: TestCase = {
-      id: this.generateId('test'),
+      id: this.generateId("test"),
       name: options?.name || `Test Case ${this.testCases.size + 1}`,
       description: options?.description,
       workflowId,
@@ -398,7 +406,10 @@ export class WorkflowTestingService {
   /**
    * Update an existing test case
    */
-  updateTestCase(testId: string, updates: Partial<Omit<TestCase, 'id'>>): TestCase {
+  updateTestCase(
+    testId: string,
+    updates: Partial<Omit<TestCase, "id">>
+  ): TestCase {
     const testCase = this.testCases.get(testId);
     if (!testCase) {
       throw new Error(`Test case not found: ${testId}`);
@@ -470,9 +481,12 @@ export class WorkflowTestingService {
   /**
    * Duplicate a test case
    */
-  duplicateTestCase(testId: string, options?: {
-    name?: string;
-  }): TestCase {
+  duplicateTestCase(
+    testId: string,
+    options?: {
+      name?: string;
+    }
+  ): TestCase {
     const original = this.testCases.get(testId);
     if (!original) {
       throw new Error(`Test case not found: ${testId}`);
@@ -480,7 +494,7 @@ export class WorkflowTestingService {
 
     const duplicate: TestCase = {
       ...original,
-      id: this.generateId('test'),
+      id: this.generateId("test"),
       name: options?.name || `${original.name} (Copy)`,
       metadata: {
         ...original.metadata,
@@ -507,11 +521,11 @@ export class WorkflowTestingService {
     testCaseIds: string[] = []
   ): TestSuite {
     const suite: TestSuite = {
-      id: this.generateId('suite'),
+      id: this.generateId("suite"),
       name,
       description,
       testCaseIds,
-      executionOrder: 'sequential',
+      executionOrder: "sequential",
       stopOnFailure: false,
       metadata: {
         created: new Date().toISOString(),
@@ -527,7 +541,10 @@ export class WorkflowTestingService {
   /**
    * Update a test suite
    */
-  updateTestSuite(suiteId: string, updates: Partial<Omit<TestSuite, 'id'>>): TestSuite {
+  updateTestSuite(
+    suiteId: string,
+    updates: Partial<Omit<TestSuite, "id">>
+  ): TestSuite {
     const suite = this.testSuites.get(suiteId);
     if (!suite) {
       throw new Error(`Test suite not found: ${suiteId}`);
@@ -640,14 +657,15 @@ export class WorkflowTestingService {
 
       // Check if aborted
       if (abortController.signal.aborted) {
-        throw new Error('Test execution was stopped');
+        throw new Error("Test execution was stopped");
       }
 
       // Mock execution results
-      const mockExecutionPath = workflow?.actions.slice(0, 3).map((a) => a.id) || [];
+      const mockExecutionPath =
+        workflow?.actions.slice(0, 3).map((a) => a.id) || [];
       const mockVariables = {
         ...testCase.config.inputs,
-        result: 'mock_result',
+        result: "mock_result",
       };
 
       // Evaluate assertions
@@ -656,14 +674,15 @@ export class WorkflowTestingService {
       );
 
       const endTime = new Date().toISOString();
-      const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
+      const duration =
+        new Date(endTime).getTime() - new Date(startTime).getTime();
 
       // Determine if test passed
       const allAssertionsPassed = assertionResults.every((r) => r.passed);
       const expectedBehaviorMet = true; // Mock: always meets expected behavior
 
       const result: TestResult = {
-        id: this.generateId('result'),
+        id: this.generateId("result"),
         testCaseId: testId,
         testCaseName: testCase.name,
         workflowId: testCase.workflowId,
@@ -696,10 +715,11 @@ export class WorkflowTestingService {
       return result;
     } catch (error) {
       const endTime = new Date().toISOString();
-      const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
+      const duration =
+        new Date(endTime).getTime() - new Date(startTime).getTime();
 
       const result: TestResult = {
-        id: this.generateId('result'),
+        id: this.generateId("result"),
         testCaseId: testId,
         testCaseName: testCase.name,
         workflowId: testCase.workflowId,
@@ -709,7 +729,7 @@ export class WorkflowTestingService {
         endTime,
         duration,
         assertions: [],
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : "Unknown error",
       };
 
       this.saveTestResult(result);
@@ -722,7 +742,10 @@ export class WorkflowTestingService {
   /**
    * Run a test suite
    */
-  async runTestSuite(suiteId: string, workflows?: Map<string, Workflow>): Promise<TestResult[]> {
+  async runTestSuite(
+    suiteId: string,
+    workflows?: Map<string, Workflow>
+  ): Promise<TestResult[]> {
     const suite = this.testSuites.get(suiteId);
     if (!suite) {
       throw new Error(`Test suite not found: ${suiteId}`);
@@ -730,11 +753,13 @@ export class WorkflowTestingService {
 
     const results: TestResult[] = [];
 
-    if (suite.executionOrder === 'parallel') {
+    if (suite.executionOrder === "parallel") {
       // Run all tests in parallel
       const promises = suite.testCaseIds.map((testId) => {
         const testCase = this.testCases.get(testId);
-        const workflow = testCase ? workflows?.get(testCase.workflowId) : undefined;
+        const workflow = testCase
+          ? workflows?.get(testCase.workflowId)
+          : undefined;
         return this.runTestCase(testId, workflow);
       });
       results.push(...(await Promise.all(promises)));
@@ -742,7 +767,9 @@ export class WorkflowTestingService {
       // Run tests sequentially
       for (const testId of suite.testCaseIds) {
         const testCase = this.testCases.get(testId);
-        const workflow = testCase ? workflows?.get(testCase.workflowId) : undefined;
+        const workflow = testCase
+          ? workflows?.get(testCase.workflowId)
+          : undefined;
         const result = await this.runTestCase(testId, workflow);
         results.push(result);
 
@@ -778,7 +805,10 @@ export class WorkflowTestingService {
   /**
    * Run all test cases for a specific workflow
    */
-  async runTestsForWorkflow(workflowId: string, workflow?: Workflow): Promise<TestResult[]> {
+  async runTestsForWorkflow(
+    workflowId: string,
+    workflow?: Workflow
+  ): Promise<TestResult[]> {
     const testCases = this.getTestCasesForWorkflow(workflowId);
     const results: TestResult[] = [];
 
@@ -830,26 +860,26 @@ export class WorkflowTestingService {
       let error: string | undefined;
 
       switch (assertion.type) {
-        case 'equals':
+        case "equals":
           passed = this.deepEquals(actualValue, assertion.expected);
           if (!passed) {
             error = `Expected ${JSON.stringify(assertion.expected)}, got ${JSON.stringify(actualValue)}`;
           }
           break;
 
-        case 'notEquals':
+        case "notEquals":
           passed = !this.deepEquals(actualValue, assertion.expected);
           if (!passed) {
             error = `Expected value not to equal ${JSON.stringify(assertion.expected)}`;
           }
           break;
 
-        case 'contains':
+        case "contains":
           if (Array.isArray(actualValue)) {
             passed = actualValue.includes(assertion.expected);
-          } else if (typeof actualValue === 'string') {
+          } else if (typeof actualValue === "string") {
             passed = actualValue.includes(assertion.expected);
-          } else if (typeof actualValue === 'object' && actualValue !== null) {
+          } else if (typeof actualValue === "object" && actualValue !== null) {
             passed = assertion.expected in actualValue;
           }
           if (!passed) {
@@ -857,12 +887,12 @@ export class WorkflowTestingService {
           }
           break;
 
-        case 'notContains':
+        case "notContains":
           if (Array.isArray(actualValue)) {
             passed = !actualValue.includes(assertion.expected);
-          } else if (typeof actualValue === 'string') {
+          } else if (typeof actualValue === "string") {
             passed = !actualValue.includes(assertion.expected);
-          } else if (typeof actualValue === 'object' && actualValue !== null) {
+          } else if (typeof actualValue === "object" && actualValue !== null) {
             passed = !(assertion.expected in actualValue);
           }
           if (!passed) {
@@ -870,35 +900,37 @@ export class WorkflowTestingService {
           }
           break;
 
-        case 'exists':
+        case "exists":
           passed = actualValue !== undefined && actualValue !== null;
           if (!passed) {
-            error = 'Expected value to exist';
+            error = "Expected value to exist";
           }
           break;
 
-        case 'notExists':
+        case "notExists":
           passed = actualValue === undefined || actualValue === null;
           if (!passed) {
-            error = 'Expected value not to exist';
+            error = "Expected value not to exist";
           }
           break;
 
-        case 'greaterThan':
-          passed = typeof actualValue === 'number' && actualValue > assertion.expected;
+        case "greaterThan":
+          passed =
+            typeof actualValue === "number" && actualValue > assertion.expected;
           if (!passed) {
             error = `Expected ${actualValue} to be greater than ${assertion.expected}`;
           }
           break;
 
-        case 'lessThan':
-          passed = typeof actualValue === 'number' && actualValue < assertion.expected;
+        case "lessThan":
+          passed =
+            typeof actualValue === "number" && actualValue < assertion.expected;
           if (!passed) {
             error = `Expected ${actualValue} to be less than ${assertion.expected}`;
           }
           break;
 
-        case 'regex':
+        case "regex":
           if (assertion.pattern) {
             const regex = new RegExp(assertion.pattern);
             passed = regex.test(String(actualValue));
@@ -907,24 +939,28 @@ export class WorkflowTestingService {
             }
           } else {
             passed = false;
-            error = 'No regex pattern provided';
+            error = "No regex pattern provided";
           }
           break;
 
-        case 'custom':
+        case "custom":
           if (assertion.customFunction) {
             try {
               // Create a function from the string and execute it
 
-              const fn = new Function('value', 'context', assertion.customFunction);
+              const fn = new Function(
+                "value",
+                "context",
+                assertion.customFunction
+              );
               passed = Boolean(fn(actualValue, context));
             } catch (err) {
               passed = false;
-              error = `Custom function error: ${err instanceof Error ? err.message : 'Unknown error'}`;
+              error = `Custom function error: ${err instanceof Error ? err.message : "Unknown error"}`;
             }
           } else {
             passed = false;
-            error = 'No custom function provided';
+            error = "No custom function provided";
           }
           break;
 
@@ -943,7 +979,7 @@ export class WorkflowTestingService {
       return {
         assertion,
         passed: false,
-        error: err instanceof Error ? err.message : 'Unknown error',
+        error: err instanceof Error ? err.message : "Unknown error",
       };
     }
   }
@@ -1079,14 +1115,17 @@ export class WorkflowTestingService {
 
     const actions = Array.from(actionCoverageMap.values());
     const coveredActions = actions.filter((a) => a.covered).length;
-    const untestedActions = actions.filter((a) => !a.covered).map((a) => a.actionId);
+    const untestedActions = actions
+      .filter((a) => !a.covered)
+      .map((a) => a.actionId);
 
     return {
       workflowId,
       workflowName: workflow.name,
-      coveragePercentage: workflow.actions.length > 0
-        ? (coveredActions / workflow.actions.length) * 100
-        : 0,
+      coveragePercentage:
+        workflow.actions.length > 0
+          ? (coveredActions / workflow.actions.length) * 100
+          : 0,
       totalActions: workflow.actions.length,
       coveredActions,
       actions,
@@ -1128,7 +1167,8 @@ export class WorkflowTestingService {
     return {
       timestamp: new Date().toISOString(),
       workflows: workflowCoverages,
-      overallCoverage: totalActions > 0 ? (coveredActions / totalActions) * 100 : 0,
+      overallCoverage:
+        totalActions > 0 ? (coveredActions / totalActions) * 100 : 0,
       totalWorkflows: workflows.size,
       summary: {
         totalActions,
@@ -1160,7 +1200,7 @@ export class WorkflowTestingService {
       suite,
       testCases,
       exportedAt: new Date().toISOString(),
-      version: '1.0.0',
+      version: "1.0.0",
     };
 
     return JSON.stringify(exportData, null, 2);
@@ -1174,7 +1214,7 @@ export class WorkflowTestingService {
       const parsed = JSON.parse(data);
 
       if (!parsed.suite || !parsed.testCases) {
-        throw new Error('Invalid test suite export format');
+        throw new Error("Invalid test suite export format");
       }
 
       // Import test cases first
@@ -1213,7 +1253,7 @@ export class WorkflowTestingService {
       });
     } catch (error) {
       throw new Error(
-        `Failed to import test suite: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to import test suite: ${error instanceof Error ? error.message : "Unknown error"}`
       );
     }
   }
@@ -1231,7 +1271,7 @@ export class WorkflowTestingService {
       results,
       statistics,
       exportedAt: new Date().toISOString(),
-      version: '1.0.0',
+      version: "1.0.0",
     };
 
     return JSON.stringify(exportData, null, 2);
@@ -1246,7 +1286,7 @@ export class WorkflowTestingService {
       testSuites: Array.from(this.testSuites.values()),
       testResults: Array.from(this.testResults.entries()),
       exportedAt: new Date().toISOString(),
-      version: '1.0.0',
+      version: "1.0.0",
     };
 
     return JSON.stringify(exportData, null, 2);
@@ -1278,7 +1318,7 @@ export class WorkflowTestingService {
       this.saveToStorage();
     } catch (error) {
       throw new Error(
-        `Failed to import test data: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to import test data: ${error instanceof Error ? error.message : "Unknown error"}`
       );
     }
   }
@@ -1307,7 +1347,7 @@ export class WorkflowTestingService {
         JSON.stringify(Array.from(this.testResults.entries()))
       );
     } catch (error) {
-      console.error('Failed to save to localStorage:', error);
+      console.error("Failed to save to localStorage:", error);
     }
   }
 
@@ -1331,7 +1371,7 @@ export class WorkflowTestingService {
         this.testResults = new Map(JSON.parse(testResultsData));
       }
     } catch (error) {
-      console.error('Failed to load from localStorage:', error);
+      console.error("Failed to load from localStorage:", error);
     }
   }
 
@@ -1368,7 +1408,7 @@ export class WorkflowTestingService {
     if (a == null || b == null) return false;
     if (typeof a !== typeof b) return false;
 
-    if (typeof a === 'object') {
+    if (typeof a === "object") {
       const aKeys = Object.keys(a);
       const bKeys = Object.keys(b);
 
@@ -1384,7 +1424,7 @@ export class WorkflowTestingService {
    * Get a value from an object by path string
    */
   private getValueByPath(obj: any, path: string): any {
-    const parts = path.split('.');
+    const parts = path.split(".");
     let current = obj;
 
     for (const part of parts) {

@@ -28,9 +28,7 @@ export function QontinuiDialogContent({
   className,
   ...props
 }: QontinuiDialogContentProps) {
-  return (
-    <DialogContent className={cn(styles.dialog, className)} {...props} />
-  );
+  return <DialogContent className={cn(styles.dialog, className)} {...props} />;
 }
 
 export function QontinuiDialogOverlay({
@@ -53,7 +51,9 @@ export function QontinuiDialogTitle({
   className,
   ...props
 }: React.ComponentProps<typeof DialogTitle>) {
-  return <DialogTitle className={cn(styles.text.primary, className)} {...props} />;
+  return (
+    <DialogTitle className={cn(styles.text.primary, className)} {...props} />
+  );
 }
 
 export function QontinuiDialogDescription({
@@ -61,7 +61,10 @@ export function QontinuiDialogDescription({
   ...props
 }: React.ComponentProps<typeof DialogDescription>) {
   return (
-    <DialogDescription className={cn(styles.text.secondary, className)} {...props} />
+    <DialogDescription
+      className={cn(styles.text.secondary, className)}
+      {...props}
+    />
   );
 }
 

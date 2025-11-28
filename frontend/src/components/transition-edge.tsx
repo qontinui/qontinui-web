@@ -1,24 +1,28 @@
-"use client"
+"use client";
 
-import { type EdgeProps, getBezierPath, EdgeLabelRenderer } from "@xyflow/react"
-import { Badge } from "@/components/ui/badge"
+import {
+  type EdgeProps,
+  getBezierPath,
+  EdgeLabelRenderer,
+} from "@xyflow/react";
+import { Badge } from "@/components/ui/badge";
 
 interface TransitionEdgeData {
   transition: {
-    id: string
-    type?: "OutgoingTransition" | "IncomingTransition"
-    fromState?: string
-    toState?: string
-    activateStates?: string[]
-    deactivateStates?: string[]
-    process?: string
-    workflows?: string[]
-    staysVisible?: boolean
-  }
-  isMultiTarget?: boolean
-  targetIndex?: number
-  totalTargets?: number
-  isIncoming?: boolean
+    id: string;
+    type?: "OutgoingTransition" | "IncomingTransition";
+    fromState?: string;
+    toState?: string;
+    activateStates?: string[];
+    deactivateStates?: string[];
+    process?: string;
+    workflows?: string[];
+    staysVisible?: boolean;
+  };
+  isMultiTarget?: boolean;
+  targetIndex?: number;
+  totalTargets?: number;
+  isIncoming?: boolean;
 }
 
 export function TransitionEdge({
@@ -39,25 +43,27 @@ export function TransitionEdge({
     targetX,
     targetY,
     targetPosition,
-  })
+  });
 
-  const { transition, isMultiTarget, targetIndex, totalTargets, isIncoming } = data || {
-    transition: { process: "", staysVisible: false },
-    isMultiTarget: false,
-    targetIndex: 0,
-    totalTargets: 1,
-    isIncoming: false
-  }
+  const { transition, isMultiTarget, targetIndex, totalTargets, isIncoming } =
+    data || {
+      transition: { process: "", staysVisible: false },
+      isMultiTarget: false,
+      targetIndex: 0,
+      totalTargets: 1,
+      isIncoming: false,
+    };
 
   // Determine edge styling based on transition type
-  const isIncomingTransition = isIncoming || transition.type === "IncomingTransition"
+  const isIncomingTransition =
+    isIncoming || transition.type === "IncomingTransition";
 
   // Edge colors
-  const normalColor = isIncomingTransition ? "#00FF88" : "#BD00FF"  // Green for incoming, Magenta for outgoing
-  const selectedColor = "#00D9FF"  // Cyan when selected
+  const normalColor = isIncomingTransition ? "#00FF88" : "#BD00FF"; // Green for incoming, Magenta for outgoing
+  const selectedColor = "#00D9FF"; // Cyan when selected
 
   // Check if this is an outgoing transition's target edge (the dotted purple ones)
-  const isOutgoingTargetEdge = !isIncomingTransition && id.includes("-target-")
+  const isOutgoingTargetEdge = !isIncomingTransition && id.includes("-target-");
 
   return (
     <>
@@ -89,5 +95,5 @@ export function TransitionEdge({
 
       {/* Don't show any badges on edges since we're using transition nodes for all transitions */}
     </>
-  )
+  );
 }

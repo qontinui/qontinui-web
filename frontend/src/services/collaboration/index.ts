@@ -4,30 +4,27 @@
  * Central export for all collaboration-related services
  */
 
-export { OrganizationService } from './organization-service';
-export { ProjectCollaborationService } from './project-collaboration-service';
-export { LockService } from './lock-service';
-export { CommentService } from './comment-service';
-export { ActivityService } from './activity-service';
+export { OrganizationService } from "./organization-service";
+export { ProjectCollaborationService } from "./project-collaboration-service";
+export { LockService } from "./lock-service";
+export { CommentService } from "./comment-service";
+export { ActivityService } from "./activity-service";
 export {
   WebSocketCollaborationService,
   type WebSocketCollaborationConfig,
   type CollaborationCallbacks,
   type ConnectionState,
-} from './websocket-collaboration-service';
+} from "./websocket-collaboration-service";
 export {
   ConflictDetector,
   ConflictResolutionService,
-  conflictResolutionService
-} from './conflict-resolution-service';
+  conflictResolutionService,
+} from "./conflict-resolution-service";
 export {
   OperationalTransformService,
-  operationalTransformService
-} from './operational-transform-service';
-export {
-  SyncService,
-  syncService
-} from './sync-service';
+  operationalTransformService,
+} from "./operational-transform-service";
+export { SyncService, syncService } from "./sync-service";
 
 // Re-export types for convenience
 export type {
@@ -57,4 +54,4 @@ export type {
   UserPresence,
   CursorPosition,
   Subscription,
-} from '@/types/collaboration';
+} from "@/types/collaboration";

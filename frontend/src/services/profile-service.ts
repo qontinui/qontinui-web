@@ -1,6 +1,6 @@
-import { HttpClient } from './http-client';
-import { ApiConfig } from './api-config';
-import { User } from '@/types/auth-types';
+import { HttpClient } from "./http-client";
+import { ApiConfig } from "./api-config";
+import { User } from "@/types/auth-types";
 
 export interface ProfileUpdateData {
   full_name?: string;
@@ -34,25 +34,30 @@ export class ProfileService {
   }
 
   async getProfile(): Promise<User> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/users/me`);
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/users/me`
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Failed to fetch profile');
+      throw new Error(error.detail || "Failed to fetch profile");
     }
 
     return response.json();
   }
 
   async updateProfile(data: ProfileUpdateData): Promise<User> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/users/me`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/users/me`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Failed to update profile');
+      throw new Error(error.detail || "Failed to update profile");
     }
 
     return response.json();
@@ -60,39 +65,47 @@ export class ProfileService {
 
   async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
 
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/users/me/avatar`, {
-      method: 'POST',
-      headers: {}, // Let browser set Content-Type with boundary for FormData
-      body: formData,
-    });
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/users/me/avatar`,
+      {
+        method: "POST",
+        headers: {}, // Let browser set Content-Type with boundary for FormData
+        body: formData,
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Failed to upload avatar');
+      throw new Error(error.detail || "Failed to upload avatar");
     }
 
     return response.json();
   }
 
   async deleteAvatar(): Promise<void> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/users/me/avatar`, {
-      method: 'DELETE',
-    });
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/users/me/avatar`,
+      {
+        method: "DELETE",
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Failed to delete avatar');
+      throw new Error(error.detail || "Failed to delete avatar");
     }
   }
 
   async getStorageUsage(): Promise<StorageUsage> {
-    const response = await this.httpClient.fetch(`${this.apiUrl}/api/v1/users/me/storage`);
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/users/me/storage`
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Failed to fetch storage usage');
+      throw new Error(error.detail || "Failed to fetch storage usage");
     }
 
     return response.json();
@@ -105,7 +118,7 @@ export class ProfileService {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Failed to fetch activity logs');
+      throw new Error(error.detail || "Failed to fetch activity logs");
     }
 
     return response.json();

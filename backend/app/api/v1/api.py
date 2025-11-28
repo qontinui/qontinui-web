@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     conflicts,
     custom_functions,
     export,
+    extraction,
     feedback,
     health,
     images,
@@ -117,3 +118,4 @@ api_router.include_router(
     training_datasets.router, prefix="/datasets", tags=["training-datasets"]
 )
 api_router.include_router(recordings.router, prefix="/recordings", tags=["recordings"])
+api_router.include_router(extraction.router, tags=["extraction"])

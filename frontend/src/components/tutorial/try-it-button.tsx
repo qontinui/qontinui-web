@@ -1,17 +1,17 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
-import { Button } from "@/components/ui/button"
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Loader2, Check } from "lucide-react"
-import { toast } from "sonner"
-import type { TryItConfig } from "@/types/tutorial"
+} from "@/components/ui/dialog";
+import { Loader2, Check } from "lucide-react";
+import { toast } from "sonner";
+import type { TryItConfig } from "@/types/tutorial";
 
 /**
  * TryItButtonProps
@@ -20,13 +20,13 @@ import type { TryItConfig } from "@/types/tutorial"
  */
 interface TryItButtonProps {
   /** Configuration for the Try It exercise */
-  config: TryItConfig
+  config: TryItConfig;
 
   /** Optional callback when user completes the exercise */
-  onComplete?: (result: any) => void
+  onComplete?: (result: any) => void;
 
   /** Optional CSS class name for the button container */
-  className?: string
+  className?: string;
 }
 
 /**
@@ -58,79 +58,79 @@ export function TryItButton({
   onComplete,
   className = "",
 }: TryItButtonProps) {
-  const [isLoading, setIsLoading] = useState(false)
-  const [isCompleted, setIsCompleted] = useState(false)
-  const [isTryItOpen, setIsTryItOpen] = useState(false)
-  const [currentHintIndex, setCurrentHintIndex] = useState(0)
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [isTryItOpen, setIsTryItOpen] = useState(false);
+  const [currentHintIndex, setCurrentHintIndex] = useState(0);
 
   /**
    * Handle Try It button click
    * Opens the interactive exercise dialog
    */
   const handleTryIt = () => {
-    setIsTryItOpen(true)
-    setIsLoading(true)
+    setIsTryItOpen(true);
+    setIsLoading(true);
 
     // Simulate component loading
     const timer = setTimeout(() => {
-      setIsLoading(false)
-    }, 500)
+      setIsLoading(false);
+    }, 500);
 
-    return () => clearTimeout(timer)
-  }
+    return () => clearTimeout(timer);
+  };
 
   /**
    * Handle exercise completion
    * Called when user finishes the Try It exercise
    */
   const handleExerciseComplete = (result: any) => {
-    setIsCompleted(true)
-    setIsTryItOpen(false)
+    setIsCompleted(true);
+    setIsTryItOpen(false);
 
     // Show success toast
     toast.success("Exercise Completed!", {
       description: `You've successfully completed the "${config.type}" exercise.`,
-    })
+    });
 
     // Call parent callback
     if (onComplete) {
-      onComplete(result)
+      onComplete(result);
     }
-  }
+  };
 
   /**
    * Get button text based on current state
    */
   const getButtonText = (): string => {
-    if (isLoading) return "Loading..."
-    if (isCompleted) return "Completed"
-    return "Try It Yourself"
-  }
+    if (isLoading) return "Loading...";
+    if (isCompleted) return "Completed";
+    return "Try It Yourself";
+  };
 
   /**
    * Handle moving to next hint
    */
   const handleNextHint = () => {
     if (config.hints && currentHintIndex < config.hints.length - 1) {
-      setCurrentHintIndex(currentHintIndex + 1)
+      setCurrentHintIndex(currentHintIndex + 1);
     }
-  }
+  };
 
   /**
    * Handle moving to previous hint
    */
   const handlePreviousHint = () => {
     if (currentHintIndex > 0) {
-      setCurrentHintIndex(currentHintIndex - 1)
+      setCurrentHintIndex(currentHintIndex - 1);
     }
-  }
+  };
 
   /**
    * Render the appropriate component based on try it type
    * This serves as a placeholder for actual component rendering
    */
   const renderTryItComponent = () => {
-    const preloadedData = config.preloadedData || {}
+    const preloadedData = config.preloadedData || {};
 
     // This is a framework for rendering different component types
     // Each type would render the appropriate interactive component
@@ -145,12 +145,16 @@ export function TryItButton({
             {config.type === "configure-automation" && "Configure Automation"}
             {config.type === "test-automation" && "Test Your Automation"}
             {config.type === "debug-pattern" && "Debug the Pattern"}
-            {config.type === "optimize-automation" && "Optimize Your Automation"}
+            {config.type === "optimize-automation" &&
+              "Optimize Your Automation"}
             {config.type === "custom" && "Complete This Exercise"}
           </h3>
 
           <p className="text-gray-600 dark:text-gray-400 mb-8">
-            Interactive component for: <code className="bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-sm">{config.component}</code>
+            Interactive component for:{" "}
+            <code className="bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-sm">
+              {config.component}
+            </code>
           </p>
 
           {/* Show preloaded data if available */}
@@ -187,8 +191,8 @@ export function TryItButton({
           </Button>
         </div>
       </div>
-    )
-  }
+    );
+  };
 
   return (
     <div className={`space-y-4 ${className}`}>
@@ -258,13 +262,15 @@ export function TryItButton({
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-gray-900 dark:text-white">
-              {config.type === "upload-screenshots" && "Upload Your Screenshots"}
+              {config.type === "upload-screenshots" &&
+                "Upload Your Screenshots"}
               {config.type === "identify-element" && "Identify the Element"}
               {config.type === "create-action" && "Create an Action"}
               {config.type === "configure-automation" && "Configure Automation"}
               {config.type === "test-automation" && "Test Your Automation"}
               {config.type === "debug-pattern" && "Debug the Pattern"}
-              {config.type === "optimize-automation" && "Optimize Your Automation"}
+              {config.type === "optimize-automation" &&
+                "Optimize Your Automation"}
               {config.type === "custom" && "Interactive Exercise"}
             </DialogTitle>
             {config.successCriteria && (
@@ -287,7 +293,7 @@ export function TryItButton({
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
 
-export type { TryItButtonProps }
+export type { TryItButtonProps };

@@ -13,14 +13,14 @@
  * - Import/Export templates
  */
 
-import React, { useState, useMemo } from 'react';
-import type { Workflow } from '@/lib/action-schema/action-types';
+import React, { useState, useMemo } from "react";
+import type { Workflow } from "@/lib/action-schema/action-types";
 import {
   workflowTemplates,
   type WorkflowTemplate,
   type TemplateCategory,
-  type TemplateFilter
-} from '@/services/workflow-templates';
+  type TemplateFilter,
+} from "@/services/workflow-templates";
 
 // ============================================================================
 // Types
@@ -36,18 +36,25 @@ export interface TemplateBrowserProps {
 // Template Browser Component
 // ============================================================================
 
-export function TemplateBrowser({ onSelectTemplate, onClose, currentWorkflow }: TemplateBrowserProps) {
-  const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | 'all'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null);
+export function TemplateBrowser({
+  onSelectTemplate,
+  onClose,
+  currentWorkflow,
+}: TemplateBrowserProps) {
+  const [selectedCategory, setSelectedCategory] = useState<
+    TemplateCategory | "all"
+  >("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<WorkflowTemplate | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
 
   // Get templates with filters
   const templates = useMemo(() => {
     const filter: TemplateFilter = {
-      category: selectedCategory === 'all' ? undefined : selectedCategory,
-      search: searchQuery || undefined
+      category: selectedCategory === "all" ? undefined : selectedCategory,
+      search: searchQuery || undefined,
     };
     return workflowTemplates.getTemplates(filter);
   }, [selectedCategory, searchQuery]);
@@ -57,12 +64,16 @@ export function TemplateBrowser({ onSelectTemplate, onClose, currentWorkflow }: 
     const allTemplates = workflowTemplates.getTemplates();
     return {
       all: allTemplates.length,
-      basic: allTemplates.filter(t => t.category === 'basic').length,
-      'control-flow': allTemplates.filter(t => t.category === 'control-flow').length,
-      'data-processing': allTemplates.filter(t => t.category === 'data-processing').length,
-      automation: allTemplates.filter(t => t.category === 'automation').length,
-      advanced: allTemplates.filter(t => t.category === 'advanced').length,
-      custom: allTemplates.filter(t => t.category === 'custom').length
+      basic: allTemplates.filter((t) => t.category === "basic").length,
+      "control-flow": allTemplates.filter((t) => t.category === "control-flow")
+        .length,
+      "data-processing": allTemplates.filter(
+        (t) => t.category === "data-processing"
+      ).length,
+      automation: allTemplates.filter((t) => t.category === "automation")
+        .length,
+      advanced: allTemplates.filter((t) => t.category === "advanced").length,
+      custom: allTemplates.filter((t) => t.category === "custom").length,
     };
   }, []);
 
@@ -78,9 +89,20 @@ export function TemplateBrowser({ onSelectTemplate, onClose, currentWorkflow }: 
     setShowSaveDialog(true);
   };
 
-  const handleSaveTemplate = (name: string, description: string, category: TemplateCategory, tags: string[]) => {
+  const handleSaveTemplate = (
+    name: string,
+    description: string,
+    category: TemplateCategory,
+    tags: string[]
+  ) => {
     if (!currentWorkflow) return;
-    workflowTemplates.saveAsTemplate(currentWorkflow, name, description, category, tags);
+    workflowTemplates.saveAsTemplate(
+      currentWorkflow,
+      name,
+      description,
+      category,
+      tags
+    );
     setShowSaveDialog(false);
   };
 
@@ -109,7 +131,10 @@ export function TemplateBrowser({ onSelectTemplate, onClose, currentWorkflow }: 
         </div>
         <div className="toolbar-actions">
           {currentWorkflow && (
-            <button className="save-template-button" onClick={handleSaveAsTemplate}>
+            <button
+              className="save-template-button"
+              onClick={handleSaveAsTemplate}
+            >
               💾 Save as Template
             </button>
           )}
@@ -119,39 +144,39 @@ export function TemplateBrowser({ onSelectTemplate, onClose, currentWorkflow }: 
       {/* Category Tabs */}
       <div className="category-tabs">
         <button
-          className={selectedCategory === 'all' ? 'active' : ''}
-          onClick={() => setSelectedCategory('all')}
+          className={selectedCategory === "all" ? "active" : ""}
+          onClick={() => setSelectedCategory("all")}
         >
           All ({categoryCounts.all})
         </button>
         <button
-          className={selectedCategory === 'basic' ? 'active' : ''}
-          onClick={() => setSelectedCategory('basic')}
+          className={selectedCategory === "basic" ? "active" : ""}
+          onClick={() => setSelectedCategory("basic")}
         >
           Basic ({categoryCounts.basic})
         </button>
         <button
-          className={selectedCategory === 'control-flow' ? 'active' : ''}
-          onClick={() => setSelectedCategory('control-flow')}
+          className={selectedCategory === "control-flow" ? "active" : ""}
+          onClick={() => setSelectedCategory("control-flow")}
         >
-          Control Flow ({categoryCounts['control-flow']})
+          Control Flow ({categoryCounts["control-flow"]})
         </button>
         <button
-          className={selectedCategory === 'data-processing' ? 'active' : ''}
-          onClick={() => setSelectedCategory('data-processing')}
+          className={selectedCategory === "data-processing" ? "active" : ""}
+          onClick={() => setSelectedCategory("data-processing")}
         >
-          Data ({categoryCounts['data-processing']})
+          Data ({categoryCounts["data-processing"]})
         </button>
         <button
-          className={selectedCategory === 'automation' ? 'active' : ''}
-          onClick={() => setSelectedCategory('automation')}
+          className={selectedCategory === "automation" ? "active" : ""}
+          onClick={() => setSelectedCategory("automation")}
         >
           Automation ({categoryCounts.automation})
         </button>
         {categoryCounts.custom > 0 && (
           <button
-            className={selectedCategory === 'custom' ? 'active' : ''}
-            onClick={() => setSelectedCategory('custom')}
+            className={selectedCategory === "custom" ? "active" : ""}
+            onClick={() => setSelectedCategory("custom")}
           >
             Custom ({categoryCounts.custom})
           </button>
@@ -160,7 +185,7 @@ export function TemplateBrowser({ onSelectTemplate, onClose, currentWorkflow }: 
 
       {/* Template Grid */}
       <div className="template-grid">
-        {templates.map(template => (
+        {templates.map((template) => (
           <TemplateCard
             key={template.id}
             template={template}
@@ -176,9 +201,7 @@ export function TemplateBrowser({ onSelectTemplate, onClose, currentWorkflow }: 
       {templates.length === 0 && (
         <div className="no-templates">
           <p>No templates found</p>
-          {searchQuery && (
-            <p className="hint">Try a different search term</p>
-          )}
+          {searchQuery && <p className="hint">Try a different search term</p>}
         </div>
       )}
 
@@ -237,21 +260,22 @@ function TemplateCard({ template, onUse, onShowDetails }: TemplateCardProps) {
         {/* Badges */}
         <div className="template-badges">
           <span className={`category-badge category-${template.category}`}>
-            {template.category.replace('-', ' ')}
+            {template.category.replace("-", " ")}
           </span>
           <span className="action-count-badge">
-            {template.workflow.actions.length} action{template.workflow.actions.length > 1 ? 's' : ''}
+            {template.workflow.actions.length} action
+            {template.workflow.actions.length > 1 ? "s" : ""}
           </span>
-          {template.builtin && (
-            <span className="builtin-badge">Built-in</span>
-          )}
+          {template.builtin && <span className="builtin-badge">Built-in</span>}
         </div>
 
         {/* Tags */}
         {template.tags.length > 0 && (
           <div className="template-tags">
-            {template.tags.slice(0, 3).map(tag => (
-              <span key={tag} className="tag">{tag}</span>
+            {template.tags.slice(0, 3).map((tag) => (
+              <span key={tag} className="tag">
+                {tag}
+              </span>
             ))}
           </div>
         )}
@@ -281,13 +305,19 @@ interface TemplateDetailsDialogProps {
   onUse: () => void;
 }
 
-function TemplateDetailsDialog({ template, onClose, onUse }: TemplateDetailsDialogProps) {
+function TemplateDetailsDialog({
+  template,
+  onClose,
+  onUse,
+}: TemplateDetailsDialogProps) {
   return (
     <div className="template-details-overlay">
       <div className="template-details-dialog">
         <div className="dialog-header">
           <h2>{template.name}</h2>
-          <button className="close-button" onClick={onClose}>×</button>
+          <button className="close-button" onClick={onClose}>
+            ×
+          </button>
         </div>
 
         <div className="dialog-content">
@@ -306,7 +336,7 @@ function TemplateDetailsDialog({ template, onClose, onUse }: TemplateDetailsDial
           <div className="template-details-grid">
             <div className="detail-item">
               <strong>Category:</strong>
-              <span>{template.category.replace('-', ' ')}</span>
+              <span>{template.category.replace("-", " ")}</span>
             </div>
             <div className="detail-item">
               <strong>Actions:</strong>
@@ -314,7 +344,7 @@ function TemplateDetailsDialog({ template, onClose, onUse }: TemplateDetailsDial
             </div>
             <div className="detail-item">
               <strong>Type:</strong>
-              <span>{template.builtin ? 'Built-in' : 'Custom'}</span>
+              <span>{template.builtin ? "Built-in" : "Custom"}</span>
             </div>
           </div>
 
@@ -323,8 +353,10 @@ function TemplateDetailsDialog({ template, onClose, onUse }: TemplateDetailsDial
             <div className="template-tags-section">
               <h3>Tags</h3>
               <div className="tags-list">
-                {template.tags.map(tag => (
-                  <span key={tag} className="tag">{tag}</span>
+                {template.tags.map((tag) => (
+                  <span key={tag} className="tag">
+                    {tag}
+                  </span>
                 ))}
               </div>
             </div>
@@ -338,7 +370,9 @@ function TemplateDetailsDialog({ template, onClose, onUse }: TemplateDetailsDial
                 <li key={i}>
                   <span className="action-number">{i + 1}.</span>
                   <span className="action-type">{action.type}</span>
-                  {action.name && <span className="action-name">- {action.name}</span>}
+                  {action.name && (
+                    <span className="action-name">- {action.name}</span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -346,8 +380,12 @@ function TemplateDetailsDialog({ template, onClose, onUse }: TemplateDetailsDial
         </div>
 
         <div className="dialog-footer">
-          <button className="cancel-button" onClick={onClose}>Cancel</button>
-          <button className="use-button" onClick={onUse}>Use Template</button>
+          <button className="cancel-button" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="use-button" onClick={onUse}>
+            Use Template
+          </button>
         </div>
       </div>
     </div>
@@ -359,18 +397,26 @@ function TemplateDetailsDialog({ template, onClose, onUse }: TemplateDetailsDial
 // ============================================================================
 
 interface SaveTemplateDialogProps {
-  onSave: (name: string, description: string, category: TemplateCategory, tags: string[]) => void;
+  onSave: (
+    name: string,
+    description: string,
+    category: TemplateCategory,
+    tags: string[]
+  ) => void;
   onClose: () => void;
 }
 
 function SaveTemplateDialog({ onSave, onClose }: SaveTemplateDialogProps) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<TemplateCategory>('custom');
-  const [tagsInput, setTagsInput] = useState('');
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<TemplateCategory>("custom");
+  const [tagsInput, setTagsInput] = useState("");
 
   const handleSave = () => {
-    const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t);
+    const tags = tagsInput
+      .split(",")
+      .map((t) => t.trim())
+      .filter((t) => t);
     onSave(name, description, category, tags);
   };
 
@@ -379,7 +425,9 @@ function SaveTemplateDialog({ onSave, onClose }: SaveTemplateDialogProps) {
       <div className="save-template-dialog">
         <div className="dialog-header">
           <h2>Save as Template</h2>
-          <button className="close-button" onClick={onClose}>×</button>
+          <button className="close-button" onClick={onClose}>
+            ×
+          </button>
         </div>
 
         <div className="dialog-content">
@@ -405,7 +453,10 @@ function SaveTemplateDialog({ onSave, onClose }: SaveTemplateDialogProps) {
 
           <div className="form-group">
             <label>Category</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value as TemplateCategory)}>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value as TemplateCategory)}
+            >
               <option value="custom">Custom</option>
               <option value="basic">Basic</option>
               <option value="control-flow">Control Flow</option>
@@ -427,7 +478,9 @@ function SaveTemplateDialog({ onSave, onClose }: SaveTemplateDialogProps) {
         </div>
 
         <div className="dialog-footer">
-          <button className="cancel-button" onClick={onClose}>Cancel</button>
+          <button className="cancel-button" onClick={onClose}>
+            Cancel
+          </button>
           <button
             className="save-button"
             onClick={handleSave}
@@ -455,39 +508,48 @@ function WorkflowPreview({ workflow, large = false }: WorkflowPreviewProps) {
   const nodeSize = large ? 60 : 20;
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="workflow-preview-svg">
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="workflow-preview-svg"
+    >
       {/* Draw connections */}
       <g className="connections">
-        {Object.entries(workflow.connections).map(([sourceId, connections], i) => {
-          const source = workflow.actions.find(a => a.id === sourceId);
-          if (!source?.position) return null;
+        {Object.entries(workflow.connections).map(
+          ([sourceId, connections], i) => {
+            const source = workflow.actions.find((a) => a.id === sourceId);
+            if (!source?.position) return null;
 
-          return connections.main?.map((conns, j) =>
-            conns.map((conn, k) => {
-              const target = workflow.actions.find(a => a.id === conn.action);
-              if (!target?.position) return null;
+            return connections.main?.map((conns, j) =>
+              conns.map((conn, k) => {
+                const target = workflow.actions.find(
+                  (a) => a.id === conn.action
+                );
+                if (!target?.position) return null;
 
-              const scale = size / 800;
-              const x1 = source.position[0] * scale + nodeSize / 2;
-              const y1 = source.position[1] * scale + nodeSize / 2;
-              const x2 = target.position[0] * scale + nodeSize / 2;
-              const y2 = target.position[1] * scale + nodeSize / 2;
+                const scale = size / 800;
+                const x1 = source.position[0] * scale + nodeSize / 2;
+                const y1 = source.position[1] * scale + nodeSize / 2;
+                const x2 = target.position[0] * scale + nodeSize / 2;
+                const y2 = target.position[1] * scale + nodeSize / 2;
 
-              return (
-                <line
-                  key={`${i}-${j}-${k}`}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke="currentColor"
-                  strokeWidth={large ? 2 : 1}
-                  opacity={0.3}
-                />
-              );
-            })
-          );
-        })}
+                return (
+                  <line
+                    key={`${i}-${j}-${k}`}
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke="currentColor"
+                    strokeWidth={large ? 2 : 1}
+                    opacity={0.3}
+                  />
+                );
+              })
+            );
+          }
+        )}
       </g>
 
       {/* Draw nodes */}

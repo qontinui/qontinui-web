@@ -1,23 +1,29 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
-import { ArrowLeft, Play, Trash2, CheckCircle } from 'lucide-react';
-import { recordingService } from '@/services/service-factory';
-import { ProcessingMonitor } from '@/components/recordings/ProcessingMonitor';
-import { StateStructureReview } from '@/components/recordings/StateStructureReview';
+import { useState, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { ArrowLeft, Play, Trash2, CheckCircle } from "lucide-react";
+import { recordingService } from "@/services/service-factory";
+import { ProcessingMonitor } from "@/components/recordings/ProcessingMonitor";
+import { StateStructureReview } from "@/components/recordings/StateStructureReview";
 import {
   RecordingStatusLabels,
   getConfidenceLevel,
   getConfidenceColor,
-} from '@/types/recording';
-import type { Recording } from '@/types/recording';
-import { formatDistanceToNow } from 'date-fns';
+} from "@/types/recording";
+import type { Recording } from "@/types/recording";
+import { formatDistanceToNow } from "date-fns";
 
 export default function RecordingDetailPage() {
   const params = useParams();
@@ -26,7 +32,7 @@ export default function RecordingDetailPage() {
 
   const [recording, setRecording] = useState<Recording | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
     loadRecording();
@@ -39,14 +45,14 @@ export default function RecordingDetailPage() {
       setRecording(data);
 
       // Auto-select appropriate tab based on status
-      if (data.status === 'processing' || data.status === 'validating') {
-        setActiveTab('processing');
-      } else if (data.status === 'completed') {
-        setActiveTab('review');
+      if (data.status === "processing" || data.status === "validating") {
+        setActiveTab("processing");
+      } else if (data.status === "completed") {
+        setActiveTab("review");
       }
     } catch (error: any) {
-      console.error('Failed to load recording:', error);
-      toast.error('Failed to load recording');
+      console.error("Failed to load recording:", error);
+      toast.error("Failed to load recording");
     } finally {
       setLoading(false);
     }
@@ -57,33 +63,33 @@ export default function RecordingDetailPage() {
 
     try {
       await recordingService.startProcessing(recordingId);
-      toast.success('Processing started');
-      setActiveTab('processing');
+      toast.success("Processing started");
+      setActiveTab("processing");
       loadRecording();
     } catch (error: any) {
-      console.error('Failed to start processing:', error);
-      toast.error('Failed to start processing');
+      console.error("Failed to start processing:", error);
+      toast.error("Failed to start processing");
     }
   };
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this recording?')) {
+    if (!confirm("Are you sure you want to delete this recording?")) {
       return;
     }
 
     try {
       await recordingService.deleteRecording(recordingId);
-      toast.success('Recording deleted');
-      router.push('/recordings');
+      toast.success("Recording deleted");
+      router.push("/recordings");
     } catch (error: any) {
-      console.error('Failed to delete recording:', error);
-      toast.error('Failed to delete recording');
+      console.error("Failed to delete recording:", error);
+      toast.error("Failed to delete recording");
     }
   };
 
   const handleProcessingComplete = () => {
-    toast.success('Processing completed!');
-    setActiveTab('review');
+    toast.success("Processing completed!");
+    setActiveTab("review");
     loadRecording();
   };
 
@@ -108,7 +114,7 @@ export default function RecordingDetailPage() {
       <div className="mb-8">
         <Button
           variant="ghost"
-          onClick={() => router.push('/recordings')}
+          onClick={() => router.push("/recordings")}
           className="mb-4"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -121,19 +127,24 @@ export default function RecordingDetailPage() {
               <h1 className="text-3xl font-bold">{recording.name}</h1>
               <Badge
                 className={
-                  recording.status === 'completed'
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-                    : recording.status === 'failed'
-                    ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
-                    : recording.status === 'processing' || recording.status === 'validating'
-                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
-                    : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100'
+                  recording.status === "completed"
+                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                    : recording.status === "failed"
+                      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
+                      : recording.status === "processing" ||
+                          recording.status === "validating"
+                        ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100"
+                        : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
                 }
               >
                 {RecordingStatusLabels[recording.status]}
               </Badge>
               {recording.confidence && (
-                <Badge className={getConfidenceColor(getConfidenceLevel(recording.confidence))}>
+                <Badge
+                  className={getConfidenceColor(
+                    getConfidenceLevel(recording.confidence)
+                  )}
+                >
                   {Math.round(recording.confidence * 100)}% Confidence
                 </Badge>
               )}
@@ -142,18 +153,25 @@ export default function RecordingDetailPage() {
               <p className="text-muted-foreground">{recording.description}</p>
             )}
             <p className="text-sm text-muted-foreground mt-2">
-              Created {formatDistanceToNow(new Date(recording.created_at), { addSuffix: true })}
+              Created{" "}
+              {formatDistanceToNow(new Date(recording.created_at), {
+                addSuffix: true,
+              })}
             </p>
           </div>
 
           <div className="flex gap-2">
-            {recording.status === 'uploaded' && (
+            {recording.status === "uploaded" && (
               <Button onClick={handleStartProcessing}>
                 <Play className="mr-2 h-4 w-4" />
                 Start Processing
               </Button>
             )}
-            <Button variant="outline" onClick={handleDelete} className="text-red-600">
+            <Button
+              variant="outline"
+              onClick={handleDelete}
+              className="text-red-600"
+            >
               <Trash2 className="mr-2 h-4 w-4" />
               Delete
             </Button>
@@ -168,15 +186,18 @@ export default function RecordingDetailPage() {
           <TabsTrigger
             value="processing"
             disabled={
-              recording.status !== 'processing' &&
-              recording.status !== 'validating' &&
-              recording.status !== 'completed' &&
-              recording.status !== 'failed'
+              recording.status !== "processing" &&
+              recording.status !== "validating" &&
+              recording.status !== "completed" &&
+              recording.status !== "failed"
             }
           >
             Processing
           </TabsTrigger>
-          <TabsTrigger value="review" disabled={recording.status !== 'completed'}>
+          <TabsTrigger
+            value="review"
+            disabled={recording.status !== "completed"}
+          >
             Review Structure
           </TabsTrigger>
         </TabsList>
@@ -191,7 +212,9 @@ export default function RecordingDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold">{recording.stats.total_frames}</p>
+                <p className="text-3xl font-bold">
+                  {recording.stats.total_frames}
+                </p>
               </CardContent>
             </Card>
 
@@ -202,7 +225,9 @@ export default function RecordingDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold">{recording.stats.total_interactions}</p>
+                <p className="text-3xl font-bold">
+                  {recording.stats.total_interactions}
+                </p>
               </CardContent>
             </Card>
 
@@ -213,7 +238,9 @@ export default function RecordingDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold">{recording.stats.duration_seconds}s</p>
+                <p className="text-3xl font-bold">
+                  {recording.stats.duration_seconds}s
+                </p>
               </CardContent>
             </Card>
 
@@ -224,12 +251,14 @@ export default function RecordingDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold">{recording.stats.frame_rate} fps</p>
+                <p className="text-3xl font-bold">
+                  {recording.stats.frame_rate} fps
+                </p>
               </CardContent>
             </Card>
           </div>
 
-          {recording.status === 'completed' && (
+          {recording.status === "completed" && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card>
                 <CardHeader>
@@ -291,7 +320,8 @@ export default function RecordingDetailPage() {
           )}
 
           {/* Validation Issues */}
-          {(recording.validation_errors.length > 0 || recording.validation_warnings.length > 0) && (
+          {(recording.validation_errors.length > 0 ||
+            recording.validation_warnings.length > 0) && (
             <Card>
               <CardHeader>
                 <CardTitle>Validation Issues</CardTitle>
@@ -311,7 +341,9 @@ export default function RecordingDetailPage() {
                 )}
                 {recording.validation_warnings.length > 0 && (
                   <div>
-                    <h4 className="font-medium text-yellow-600 mb-2">Warnings</h4>
+                    <h4 className="font-medium text-yellow-600 mb-2">
+                      Warnings
+                    </h4>
                     <ul className="space-y-1">
                       {recording.validation_warnings.map((warning, idx) => (
                         <li key={idx} className="text-sm text-yellow-600">

@@ -19,10 +19,10 @@ This directory contains a refactored version of `project-optimization-service.ts
 
 ```typescript
 // Change this:
-import { projectOptimizationService } from '@/services/project-optimization-service';
+import { projectOptimizationService } from "@/services/project-optimization-service";
 
 // To this:
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 
 // Everything else stays the same!
 ```
@@ -31,18 +31,22 @@ import { projectOptimizationService } from '@/services/project-optimization';
 
 ```typescript
 // Option 1: Use the singleton service
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 
 // Option 2: Import functions directly
-import { calculateProjectHealth, findUnusedImages } from '@/services/project-optimization';
+import {
+  calculateProjectHealth,
+  findUnusedImages,
+} from "@/services/project-optimization";
 
 // Option 3: Import from specific modules
-import { calculateProjectHealth } from '@/services/project-optimization/health-analyzer';
+import { calculateProjectHealth } from "@/services/project-optimization/health-analyzer";
 ```
 
 ## Documentation Overview
 
 ### 1. README.md (Start Here!)
+
 - Module structure and responsibilities
 - Usage examples
 - Migration guide
@@ -52,6 +56,7 @@ import { calculateProjectHealth } from '@/services/project-optimization/health-a
 **Read this first** to understand the new architecture.
 
 ### 2. MIGRATION.md (For Existing Code)
+
 - Step-by-step migration guide
 - Before/after comparisons
 - Code examples
@@ -60,6 +65,7 @@ import { calculateProjectHealth } from '@/services/project-optimization/health-a
 **Use this** when updating existing code.
 
 ### 3. REFACTORING_SUMMARY.md (Architecture Details)
+
 - Metrics and statistics
 - Before/after comparison
 - Module responsibilities
@@ -69,6 +75,7 @@ import { calculateProjectHealth } from '@/services/project-optimization/health-a
 **Reference this** to understand the refactoring decisions.
 
 ### 4. MODULE_OVERVIEW.md (Technical Analysis)
+
 - Line count distribution
 - Module categories
 - Complexity analysis
@@ -106,37 +113,52 @@ import { calculateProjectHealth } from '@/services/project-optimization/health-a
 ## Common Tasks
 
 ### Calculate Project Health
+
 ```typescript
-import { calculateProjectHealth } from '@/services/project-optimization';
+import { calculateProjectHealth } from "@/services/project-optimization";
 
 const health = calculateProjectHealth(workflows, states, images, transitions);
 ```
 
 ### Find Unused Resources
+
 ```typescript
-import { findUnusedImages, findUnusedStates } from '@/services/project-optimization';
+import {
+  findUnusedImages,
+  findUnusedStates,
+} from "@/services/project-optimization";
 
 const unusedImages = findUnusedImages(images, workflows, states);
 const unusedStates = findUnusedStates(states, transitions);
 ```
 
 ### Validate References
-```typescript
-import { validateAllReferences } from '@/services/project-optimization';
 
-const brokenRefs = validateAllReferences(workflows, states, images, transitions);
+```typescript
+import { validateAllReferences } from "@/services/project-optimization";
+
+const brokenRefs = validateAllReferences(
+  workflows,
+  states,
+  images,
+  transitions
+);
 ```
 
 ### Generate Optimization Suggestions
+
 ```typescript
-import { projectOptimizationService } from '@/services/project-optimization';
+import { projectOptimizationService } from "@/services/project-optimization";
 
 const report = projectOptimizationService.getHealthReport(
-  workflows, states, images, transitions
+  workflows,
+  states,
+  images,
+  transitions
 );
 
-console.log('Suggestions:', report.suggestions);
-console.log('Issues:', report.issues);
+console.log("Suggestions:", report.suggestions);
+console.log("Issues:", report.issues);
 ```
 
 ## Architecture Diagram
@@ -194,6 +216,7 @@ console.log('Issues:', report.issues);
 ## Support
 
 For questions or issues:
+
 1. Check the documentation files
 2. Review code examples
 3. Look at existing usages in the codebase

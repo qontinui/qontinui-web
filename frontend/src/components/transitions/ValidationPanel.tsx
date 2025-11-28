@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
-import { Transition, State } from "@/contexts/automation-context/types"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import React, { useState } from "react";
+import { Transition, State } from "@/contexts/automation-context/types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AlertTriangle,
   RefreshCw,
@@ -10,14 +10,14 @@ import {
   Eye,
   ChevronDown,
   ChevronRight,
-} from "lucide-react"
-import { TransitionValidation } from "./types"
+} from "lucide-react";
+import { TransitionValidation } from "./types";
 
 interface ValidationPanelProps {
-  validation: TransitionValidation
-  states: State[]
-  transitions: Transition[]
-  onIssueClick: (issueType: string, itemId: string) => void
+  validation: TransitionValidation;
+  states: State[];
+  transitions: Transition[];
+  onIssueClick: (issueType: string, itemId: string) => void;
 }
 
 export function ValidationPanel({
@@ -26,25 +26,22 @@ export function ValidationPanel({
   transitions,
   onIssueClick,
 }: ValidationPanelProps) {
-  const [isOpen, setIsOpen] = useState(true)
+  const [isOpen, setIsOpen] = useState(true);
 
   const totalIssues =
     validation.circular.length +
     validation.brokenStateReferences.length +
     validation.missingWorkflows.length +
     validation.unreachableStates.length +
-    validation.deadEndStates.length
+    validation.deadEndStates.length;
 
   if (totalIssues === 0) {
-    return null
+    return null;
   }
 
   return (
     <Card className="border-gray-700 bg-[#27272A]">
-      <CardHeader
-        className="cursor-pointer"
-        onClick={() => setIsOpen(!isOpen)}
-      >
+      <CardHeader className="cursor-pointer" onClick={() => setIsOpen(!isOpen)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-yellow-400" />
@@ -70,7 +67,7 @@ export function ValidationPanel({
               </div>
               <div className="space-y-1 ml-5">
                 {validation.circular.map((id) => {
-                  const transition = transitions.find((t) => t.id === id)
+                  const transition = transitions.find((t) => t.id === id);
                   return (
                     <button
                       key={id}
@@ -88,7 +85,7 @@ export function ValidationPanel({
                             .join(", ")}`
                         : "Unknown transition"}
                     </button>
-                  )
+                  );
                 })}
               </div>
             </div>
@@ -126,7 +123,7 @@ export function ValidationPanel({
               </div>
               <div className="space-y-1 ml-5">
                 {validation.unreachableStates.map((id) => {
-                  const state = states.find((s) => s.id === id)
+                  const state = states.find((s) => s.id === id);
                   return (
                     <button
                       key={id}
@@ -135,7 +132,7 @@ export function ValidationPanel({
                     >
                       {state?.name || "Unknown"}
                     </button>
-                  )
+                  );
                 })}
               </div>
             </div>
@@ -149,7 +146,7 @@ export function ValidationPanel({
               </div>
               <div className="space-y-1 ml-5">
                 {validation.deadEndStates.map((id) => {
-                  const state = states.find((s) => s.id === id)
+                  const state = states.find((s) => s.id === id);
                   return (
                     <button
                       key={id}
@@ -158,7 +155,7 @@ export function ValidationPanel({
                     >
                       {state?.name || "Unknown"}
                     </button>
-                  )
+                  );
                 })}
               </div>
             </div>
@@ -166,5 +163,5 @@ export function ValidationPanel({
         </CardContent>
       )}
     </Card>
-  )
+  );
 }

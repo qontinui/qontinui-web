@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useTestRun } from '@/hooks/useTesting';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, XCircle, Clock, AlertTriangle } from 'lucide-react';
-import { format } from 'date-fns';
-import Image from 'next/image';
+import { useTestRun } from "@/hooks/useTesting";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
+import { format } from "date-fns";
+import Image from "next/image";
 
 interface TestRunDetailsProps {
   runId: string;
@@ -35,9 +35,10 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
     );
   }
 
-  const successRate = run.total_transitions > 0
-    ? ((run.successful_transitions / run.total_transitions) * 100).toFixed(1)
-    : 0;
+  const successRate =
+    run.total_transitions > 0
+      ? ((run.successful_transitions / run.total_transitions) * 100).toFixed(1)
+      : 0;
 
   return (
     <div className="space-y-6">
@@ -46,18 +47,21 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
         <CardHeader>
           <div className="flex items-start justify-between">
             <div>
-              <CardTitle className="text-2xl mb-2">{run.workflow_name}</CardTitle>
+              <CardTitle className="text-2xl mb-2">
+                {run.workflow_name}
+              </CardTitle>
               <div className="text-sm text-gray-400">
-                Run ID: {run.id} • Started {format(new Date(run.start_time), 'MMM dd, yyyy HH:mm')}
+                Run ID: {run.id} • Started{" "}
+                {format(new Date(run.start_time), "MMM dd, yyyy HH:mm")}
               </div>
             </div>
             <Badge
               className={
-                run.status === 'completed'
-                  ? 'bg-green-500/20 text-green-500 border-green-500/30'
-                  : run.status === 'failed'
-                  ? 'bg-red-500/20 text-red-500 border-red-500/30'
-                  : 'bg-blue-500/20 text-blue-500 border-blue-500/30'
+                run.status === "completed"
+                  ? "bg-green-500/20 text-green-500 border-green-500/30"
+                  : run.status === "failed"
+                    ? "bg-red-500/20 text-red-500 border-red-500/30"
+                    : "bg-blue-500/20 text-blue-500 border-blue-500/30"
               }
             >
               {run.status}
@@ -71,7 +75,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
               <div className="text-2xl font-bold">
                 {run.duration_seconds
                   ? `${Math.floor(run.duration_seconds / 60)}m ${run.duration_seconds % 60}s`
-                  : '-'}
+                  : "-"}
               </div>
             </div>
             <div className="space-y-2">
@@ -85,14 +89,18 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
             </div>
             <div className="space-y-2">
               <div className="text-sm text-gray-400">Success Rate</div>
-              <div className="text-2xl font-bold text-green-500">{successRate}%</div>
+              <div className="text-2xl font-bold text-green-500">
+                {successRate}%
+              </div>
               <div className="text-xs text-gray-500">
                 {run.successful_transitions} / {run.total_transitions}
               </div>
             </div>
             <div className="space-y-2">
               <div className="text-sm text-gray-400">Deficiencies</div>
-              <div className="text-2xl font-bold text-red-400">{run.deficiencies_found}</div>
+              <div className="text-2xl font-bold text-red-400">
+                {run.deficiencies_found}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -128,16 +136,22 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium">{transition.from_state}</span>
+                        <span className="font-medium">
+                          {transition.from_state}
+                        </span>
                         <span className="text-gray-500">→</span>
-                        <span className="font-medium">{transition.to_state}</span>
+                        <span className="font-medium">
+                          {transition.to_state}
+                        </span>
                         <Badge variant="outline" className="ml-2 text-xs">
                           {transition.action_type}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-gray-400">
                         <span>{transition.duration_ms}ms</span>
-                        <span>{format(new Date(transition.executed_at), 'HH:mm:ss')}</span>
+                        <span>
+                          {format(new Date(transition.executed_at), "HH:mm:ss")}
+                        </span>
                       </div>
                       {transition.error_message && (
                         <div className="mt-2 text-sm text-red-400 bg-red-500/10 p-2 rounded">
@@ -186,9 +200,7 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div
-                        className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden"
-                      >
+                      <div className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-green-500"
                           style={{
@@ -198,8 +210,12 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                       </div>
                       <span className="text-sm font-medium">
                         {state.times_visited > 0
-                          ? ((state.successful_visits / state.times_visited) * 100).toFixed(0)
-                          : 0}%
+                          ? (
+                              (state.successful_visits / state.times_visited) *
+                              100
+                            ).toFixed(0)
+                          : 0}
+                        %
                       </span>
                     </div>
                   </div>
@@ -230,31 +246,37 @@ export function TestRunDetails({ runId }: TestRunDetailsProps) {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="w-5 h-5 text-red-400" />
-                          <span className="font-medium">{deficiency.title}</span>
+                          <span className="font-medium">
+                            {deficiency.title}
+                          </span>
                         </div>
                         <Badge
                           className={
-                            deficiency.severity === 'critical'
-                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                              : deficiency.severity === 'high'
-                              ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                              : deficiency.severity === 'medium'
-                              ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                              : 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                            deficiency.severity === "critical"
+                              ? "bg-red-500/20 text-red-400 border-red-500/30"
+                              : deficiency.severity === "high"
+                                ? "bg-orange-500/20 text-orange-400 border-orange-500/30"
+                                : deficiency.severity === "medium"
+                                  ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                                  : "bg-blue-500/20 text-blue-400 border-blue-500/30"
                           }
                         >
                           {deficiency.severity}
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-400 mb-2">{deficiency.description}</p>
+                      <p className="text-sm text-gray-400 mb-2">
+                        {deficiency.description}
+                      </p>
                       <div className="text-xs text-gray-500">
                         State: {deficiency.state_name}
-                        {deficiency.transition_from && deficiency.transition_to && (
-                          <span>
-                            {' '}
-                            • Transition: {deficiency.transition_from} → {deficiency.transition_to}
-                          </span>
-                        )}
+                        {deficiency.transition_from &&
+                          deficiency.transition_to && (
+                            <span>
+                              {" "}
+                              • Transition: {deficiency.transition_from} →{" "}
+                              {deficiency.transition_to}
+                            </span>
+                          )}
                       </div>
                     </div>
                   ))}

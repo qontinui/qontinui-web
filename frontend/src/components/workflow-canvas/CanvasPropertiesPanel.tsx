@@ -14,20 +14,20 @@
  * - Multiple positions (right, bottom, floating)
  */
 
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useCanvasStore } from '@/stores/canvas-store';
-import { usePropertiesPanelStore } from '@/stores/properties-panel-store';
-import { PropertyEditorWrapper } from './property-adapter';
-import { WorkflowProperties } from './WorkflowProperties';
-import { MultiSelectProperties } from './MultiSelectProperties';
-import { ConnectionProperties } from './ConnectionProperties';
-import { PropertyHistory } from './PropertyHistory';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import React, { useState, useEffect, useRef } from "react";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { usePropertiesPanelStore } from "@/stores/properties-panel-store";
+import { PropertyEditorWrapper } from "./property-adapter";
+import { WorkflowProperties } from "./WorkflowProperties";
+import { MultiSelectProperties } from "./MultiSelectProperties";
+import { ConnectionProperties } from "./ConnectionProperties";
+import { PropertyHistory } from "./PropertyHistory";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ChevronRight,
   ChevronLeft,
@@ -41,11 +41,11 @@ import {
   AlertCircle,
   Maximize2,
   Minimize2,
-} from 'lucide-react';
-import { actionConfigRegistry } from '@/components/action-properties/ActionConfigRegistry';
+} from "lucide-react";
+import { actionConfigRegistry } from "@/components/action-properties/ActionConfigRegistry";
 
 export interface CanvasPropertiesPanelProps {
-  position?: 'right' | 'bottom' | 'floating';
+  position?: "right" | "bottom" | "floating";
   collapsible?: boolean;
   defaultCollapsed?: boolean;
   className?: string;
@@ -55,7 +55,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
   position: propPosition,
   collapsible = true,
   defaultCollapsed = false,
-  className = '',
+  className = "",
 }) => {
   const selectedNodes = useCanvasStore((state) => state.selectedNodes);
   const selectedEdges = useCanvasStore((state) => state.selectedEdges);
@@ -74,12 +74,15 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
     hasUnsavedChanges,
   } = panelStore;
 
-  const [activeTab, setActiveTab] = useState<string>('properties');
+  const [activeTab, setActiveTab] = useState<string>("properties");
   const [isResizing, setIsResizing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
-  const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(
-    null
-  );
+  const resizeStartRef = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
 
   // Use prop position or store position
   const effectivePosition = propPosition || position;
@@ -113,10 +116,10 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
       const deltaX = e.clientX - resizeStartRef.current.x;
       const deltaY = e.clientY - resizeStartRef.current.y;
 
-      if (effectivePosition === 'right') {
+      if (effectivePosition === "right") {
         const newWidth = resizeStartRef.current.width - deltaX;
         setWidth(newWidth);
-      } else if (effectivePosition === 'bottom') {
+      } else if (effectivePosition === "bottom") {
         const newHeight = resizeStartRef.current.height - deltaY;
         setHeight(newHeight);
       }
@@ -127,12 +130,12 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
       resizeStartRef.current = null;
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isResizing, effectivePosition, setWidth, setHeight]);
 
@@ -145,7 +148,9 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
 
       if (!action) {
         return (
-          <div className="p-4 text-gray-400 text-sm">Action not found: {nodeId}</div>
+          <div className="p-4 text-gray-400 text-sm">
+            Action not found: {nodeId}
+          </div>
         );
       }
 
@@ -161,7 +166,11 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
       }
 
       return (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="flex-1 flex flex-col"
+        >
           <TabsList className="w-full justify-start border-b border-gray-700 rounded-none bg-transparent p-0">
             <TabsTrigger value="properties" className="rounded-none">
               <Settings className="w-3 h-3 mr-1.5" />
@@ -173,12 +182,17 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="properties" className="flex-1 overflow-y-auto m-0 p-4">
+          <TabsContent
+            value="properties"
+            className="flex-1 overflow-y-auto m-0 p-4"
+          >
             <div className="space-y-4">
               {/* Action Type Header */}
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-200">{action.type}</h3>
+                  <h3 className="text-sm font-semibold text-gray-200">
+                    {action.type}
+                  </h3>
                   <p className="text-xs text-gray-500 font-mono">{action.id}</p>
                 </div>
                 <Badge variant="secondary" className="text-xs">
@@ -222,11 +236,11 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
     return (
       <div
         className={`fixed ${
-          effectivePosition === 'right'
-            ? 'right-0 top-1/2 -translate-y-1/2'
-            : effectivePosition === 'bottom'
-            ? 'bottom-0 left-1/2 -translate-x-1/2'
-            : 'right-4 top-4'
+          effectivePosition === "right"
+            ? "right-0 top-1/2 -translate-y-1/2"
+            : effectivePosition === "bottom"
+              ? "bottom-0 left-1/2 -translate-x-1/2"
+              : "right-4 top-4"
         } z-50 ${className}`}
       >
         <Button
@@ -234,7 +248,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
           onClick={toggleOpen}
           className="bg-gray-800 hover:bg-gray-700 border border-gray-700"
         >
-          {effectivePosition === 'right' ? (
+          {effectivePosition === "right" ? (
             <ChevronLeft className="w-4 h-4" />
           ) : (
             <ChevronUp className="w-4 h-4" />
@@ -247,15 +261,15 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
 
   // Panel styles based on position
   const panelStyles: React.CSSProperties = {
-    ...(effectivePosition === 'right' && {
+    ...(effectivePosition === "right" && {
       width: `${width}px`,
-      height: '100%',
-      borderLeft: '1px solid rgb(55, 65, 81)',
+      height: "100%",
+      borderLeft: "1px solid rgb(55, 65, 81)",
     }),
-    ...(effectivePosition === 'bottom' && {
-      width: '100%',
+    ...(effectivePosition === "bottom" && {
+      width: "100%",
       height: `${height}px`,
-      borderTop: '1px solid rgb(55, 65, 81)',
+      borderTop: "1px solid rgb(55, 65, 81)",
     }),
   };
 
@@ -263,27 +277,27 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
     <div
       ref={panelRef}
       className={`bg-[#1e1e1e] flex flex-col ${
-        effectivePosition === 'right'
-          ? 'fixed right-0 top-0'
-          : effectivePosition === 'bottom'
-          ? 'fixed bottom-0 left-0'
-          : 'fixed'
+        effectivePosition === "right"
+          ? "fixed right-0 top-0"
+          : effectivePosition === "bottom"
+            ? "fixed bottom-0 left-0"
+            : "fixed"
       } z-40 ${className}`}
       style={panelStyles}
     >
       {/* Resize Handle */}
-      {effectivePosition === 'right' && (
+      {effectivePosition === "right" && (
         <div
           className={`absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500 ${
-            isResizing ? 'bg-blue-500' : ''
+            isResizing ? "bg-blue-500" : ""
           }`}
           onMouseDown={handleResizeStart}
         />
       )}
-      {effectivePosition === 'bottom' && (
+      {effectivePosition === "bottom" && (
         <div
           className={`absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500 ${
-            isResizing ? 'bg-blue-500' : ''
+            isResizing ? "bg-blue-500" : ""
           }`}
           onMouseDown={handleResizeStart}
         />
@@ -308,17 +322,17 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
             variant="ghost"
             onClick={() => {
               const newPosition =
-                effectivePosition === 'right'
-                  ? 'bottom'
-                  : effectivePosition === 'bottom'
-                  ? 'floating'
-                  : 'right';
+                effectivePosition === "right"
+                  ? "bottom"
+                  : effectivePosition === "bottom"
+                    ? "floating"
+                    : "right";
               setPosition(newPosition);
             }}
             className="h-7 w-7 p-0"
             title="Change position"
           >
-            {effectivePosition === 'floating' ? (
+            {effectivePosition === "floating" ? (
               <Minimize2 className="w-4 h-4" />
             ) : (
               <Maximize2 className="w-4 h-4" />
@@ -334,7 +348,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
               className="h-7 w-7 p-0"
               title="Close panel"
             >
-              {effectivePosition === 'right' ? (
+              {effectivePosition === "right" ? (
                 <ChevronRight className="w-4 h-4" />
               ) : (
                 <ChevronDown className="w-4 h-4" />
@@ -359,7 +373,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => console.log('Discard changes')}
+                onClick={() => console.log("Discard changes")}
                 className="h-7 text-xs"
               >
                 <RotateCcw className="w-3 h-3 mr-1" />
@@ -367,7 +381,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
               </Button>
               <Button
                 size="sm"
-                onClick={() => console.log('Save changes')}
+                onClick={() => console.log("Save changes")}
                 className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
               >
                 <Save className="w-3 h-3 mr-1" />

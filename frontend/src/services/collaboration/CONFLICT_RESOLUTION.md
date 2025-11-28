@@ -164,42 +164,52 @@ function OfflineIndicator() {
 ## Conflict Types
 
 ### ActionModified
+
 Both users modified the same action.
 
 **Resolution Strategies:**
+
 - `KeepLocal` - Use your changes
 - `KeepRemote` - Use their changes
 - `Merge` - Attempt automatic merge
 - `Manual` - Review and choose
 
 ### ActionRemoved
+
 One user removed an action while another modified it.
 
 **Resolution Strategies:**
+
 - `KeepLocal` - Restore the action with your changes
 - `KeepRemote` - Keep it deleted
 - `Manual` - Review the situation
 
 ### PropertyChanged
+
 Both users changed the same property.
 
 **Resolution Strategies:**
+
 - `KeepLocal` - Use your value
 - `KeepRemote` - Use their value
 - `Merge` - Intelligent merge (e.g., numeric values add deltas)
 
 ### ConnectionChanged
+
 Both users modified connections differently.
 
 **Resolution Strategies:**
+
 - `KeepLocal` - Use your connections
 - `KeepRemote` - Use their connections
 - `Manual` - Review and choose
 
 ### StructureChanged
+
 Significant structural changes to the workflow.
 
 **Resolution Strategies:**
+
 - Usually requires `Manual` resolution
 
 ## Operational Transformation
@@ -259,27 +269,27 @@ The system uses Operational Transformation to handle concurrent edits:
 ### Transform Example
 
 ```typescript
-import { operationalTransformService } from '@/services/collaboration'
+import { operationalTransformService } from "@/services/collaboration";
 
 // Two users make concurrent edits
 const op1 = {
-  type: 'update',
-  path: ['actions', '123', 'name'],
-  value: 'User 1 Name'
-}
+  type: "update",
+  path: ["actions", "123", "name"],
+  value: "User 1 Name",
+};
 
 const op2 = {
-  type: 'update',
-  path: ['actions', '456', 'name'],
-  value: 'User 2 Name'
-}
+  type: "update",
+  path: ["actions", "456", "name"],
+  value: "User 2 Name",
+};
 
 // Transform them against each other
-const [op1Prime, op2Prime] = operationalTransformService.transform(op1, op2)
+const [op1Prime, op2Prime] = operationalTransformService.transform(op1, op2);
 
 // Apply both operations
-const result1 = operationalTransformService.apply(document, op1Prime)
-const result2 = operationalTransformService.apply(result1, op2Prime)
+const result1 = operationalTransformService.apply(document, op1Prime);
+const result2 = operationalTransformService.apply(result1, op2Prime);
 ```
 
 ## Three-Way Merge
@@ -287,48 +297,48 @@ const result2 = operationalTransformService.apply(result1, op2Prime)
 The system performs intelligent three-way merges:
 
 ```typescript
-import { conflictResolutionService } from '@/services/collaboration'
+import { conflictResolutionService } from "@/services/collaboration";
 
-const detector = conflictResolutionService.getDetector()
+const detector = conflictResolutionService.getDetector();
 
 const mergeResult = detector.threeWayMerge(
-  localVersion,   // Your changes
-  remoteVersion,  // Their changes
-  baseVersion     // Common ancestor
-)
+  localVersion, // Your changes
+  remoteVersion, // Their changes
+  baseVersion // Common ancestor
+);
 
 if (mergeResult.success) {
   // Merge successful, use mergedVersion
-  await saveWorkflow(mergeResult.mergedVersion)
+  await saveWorkflow(mergeResult.mergedVersion);
 } else {
   // Conflicts require manual resolution
-  setConflicts(mergeResult.conflicts)
+  setConflicts(mergeResult.conflicts);
 }
 ```
 
 ## Sync Service Configuration
 
 ```typescript
-import { SyncService } from '@/services/collaboration'
+import { SyncService } from "@/services/collaboration";
 
 const syncService = new SyncService({
-  wsUrl: 'ws://localhost:8000/ws',
-  syncInterval: 5000,        // Poll every 5 seconds
-  maxRetries: 3,             // Retry failed syncs 3 times
-  retryDelay: 1000,          // Wait 1 second between retries
+  wsUrl: "ws://localhost:8000/ws",
+  syncInterval: 5000, // Poll every 5 seconds
+  maxRetries: 3, // Retry failed syncs 3 times
+  retryDelay: 1000, // Wait 1 second between retries
   enableOptimisticUpdates: true,
   enableOfflineQueue: true,
-  maxQueueSize: 100          // Max 100 operations in queue
-})
+  maxQueueSize: 100, // Max 100 operations in queue
+});
 
 // Connect to real-time updates
-syncService.connectWebSocket(projectId)
+syncService.connectWebSocket(projectId);
 
 // Listen for conflicts
 syncService.onConflictDetected((conflict) => {
-  console.log('Conflict detected:', conflict)
+  console.log("Conflict detected:", conflict);
   // Show notification to user
-})
+});
 ```
 
 ## Advanced Features
@@ -336,32 +346,36 @@ syncService.onConflictDetected((conflict) => {
 ### Custom Conflict Detection
 
 ```typescript
-import { ConflictDetector } from '@/services/collaboration'
+import { ConflictDetector } from "@/services/collaboration";
 
 const detector = new ConflictDetector({
   detectPropertyChanges: true,
   detectStructuralChanges: true,
-  minimumSeverity: 'medium',
+  minimumSeverity: "medium",
   customRules: [
     // Custom rule for workflow name conflicts
     (local, remote, base) => {
-      if (local.name !== remote.name && local.name !== base.name && remote.name !== base.name) {
+      if (
+        local.name !== remote.name &&
+        local.name !== base.name &&
+        remote.name !== base.name
+      ) {
         return {
-          id: 'custom-name-conflict',
-          type: 'PropertyChanged',
-          resourceType: 'workflow',
-          path: ['name'],
+          id: "custom-name-conflict",
+          type: "PropertyChanged",
+          resourceType: "workflow",
+          path: ["name"],
           localVersion: local.name,
           serverVersion: remote.name,
           baseVersion: base.name,
-          severity: 'high',
-          autoResolvable: false
-        }
+          severity: "high",
+          autoResolvable: false,
+        };
       }
-      return null
-    }
-  ]
-})
+      return null;
+    },
+  ],
+});
 ```
 
 ### Manual Conflict Resolution UI
@@ -430,28 +444,28 @@ function ConflictResolutionModal({ conflict, onResolve }) {
 
 ```typescript
 const handleSave = async (changes) => {
-  const result = await checkForConflicts(changes)
+  const result = await checkForConflicts(changes);
 
   if (result.hasConflicts && !result.canSave) {
     // Must resolve conflicts first
-    return
+    return;
   }
 
-  await save(changes)
-}
+  await save(changes);
+};
 ```
 
 ### 2. Use Optimistic Updates for Better UX
 
 ```typescript
 // Apply change immediately in UI
-applyOptimistic(change)
+applyOptimistic(change);
 
 // Send to server asynchronously
 saveToServer(change).catch(() => {
   // Rollback on error
-  rollback(change.id)
-})
+  rollback(change.id);
+});
 ```
 
 ### 3. Handle Offline Gracefully
@@ -459,13 +473,13 @@ saveToServer(change).catch(() => {
 ```typescript
 // Queue changes when offline
 if (!navigator.onLine) {
-  queueOfflineChange(change)
-  showNotification('Change saved locally, will sync when online')
-  return
+  queueOfflineChange(change);
+  showNotification("Change saved locally, will sync when online");
+  return;
 }
 
 // Normal save when online
-await saveToServer(change)
+await saveToServer(change);
 ```
 
 ### 4. Provide Visual Feedback
@@ -492,10 +506,10 @@ function CollaborationIndicators() {
 
 ```typescript
 useConflictResolution(projectId, resourceType, resourceId, {
-  autoResolve: true,  // Enable auto-resolution
-  autoCheck: true,    // Automatically check for conflicts
-  enableRealtimeNotifications: true  // Get real-time conflict alerts
-})
+  autoResolve: true, // Enable auto-resolution
+  autoCheck: true, // Automatically check for conflicts
+  enableRealtimeNotifications: true, // Get real-time conflict alerts
+});
 ```
 
 ## Troubleshooting
@@ -529,6 +543,7 @@ useConflictResolution(projectId, resourceType, resourceId, {
 ## API Reference
 
 See the TypeScript definitions in:
+
 - `/frontend/src/types/collaboration/conflict-types.ts`
 - `/frontend/src/services/collaboration/conflict-resolution-service.ts`
 - `/frontend/src/services/collaboration/sync-service.ts`
@@ -537,36 +552,36 @@ See the TypeScript definitions in:
 ## Testing
 
 ```typescript
-import { conflictResolutionService } from '@/services/collaboration'
+import { conflictResolutionService } from "@/services/collaboration";
 
-describe('Conflict Resolution', () => {
-  it('detects property conflicts', async () => {
-    const detector = conflictResolutionService.getDetector()
+describe("Conflict Resolution", () => {
+  it("detects property conflicts", async () => {
+    const detector = conflictResolutionService.getDetector();
 
     const conflicts = detector.detectConflicts(
-      { name: 'Local' },
-      { name: 'Remote' },
-      { name: 'Base' }
-    )
+      { name: "Local" },
+      { name: "Remote" },
+      { name: "Base" }
+    );
 
-    expect(conflicts).toHaveLength(1)
-    expect(conflicts[0].type).toBe('PropertyChanged')
-  })
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].type).toBe("PropertyChanged");
+  });
 
-  it('auto-resolves numeric conflicts', async () => {
-    const detector = conflictResolutionService.getDetector()
+  it("auto-resolves numeric conflicts", async () => {
+    const detector = conflictResolutionService.getDetector();
 
     const conflict = {
-      type: 'PropertyChanged',
-      localVersion: 15,   // base + 5
-      serverVersion: 12,  // base + 2
-      baseVersion: 10
-    }
+      type: "PropertyChanged",
+      localVersion: 15, // base + 5
+      serverVersion: 12, // base + 2
+      baseVersion: 10,
+    };
 
-    const resolved = detector.resolveConflict(conflict, 'Merge')
-    expect(resolved).toBe(17) // base + 5 + 2
-  })
-})
+    const resolved = detector.resolveConflict(conflict, "Merge");
+    expect(resolved).toBe(17); // base + 5 + 2
+  });
+});
 ```
 
 ## Performance Considerations

@@ -6,10 +6,10 @@
  * Includes navigation buttons and responsive positioning.
  */
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, ArrowRight, ArrowLeft } from 'lucide-react';
-import type { TooltipPosition } from '../../../types/tutorial';
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { X, ArrowRight, ArrowLeft } from "lucide-react";
+import type { TooltipPosition } from "../../../types/tutorial";
 
 export interface TutorialTooltipProps {
   /** Target element selector */
@@ -55,7 +55,7 @@ export interface TutorialTooltipProps {
 interface TooltipRect {
   top: number;
   left: number;
-  arrowPosition: 'top' | 'bottom' | 'left' | 'right';
+  arrowPosition: "top" | "bottom" | "left" | "right";
   arrowOffset: number;
 }
 
@@ -63,7 +63,7 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
   targetSelector,
   title,
   content,
-  position = 'bottom',
+  position = "bottom",
   currentStep,
   totalSteps,
   isFirstStep = false,
@@ -78,11 +78,12 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
   onClose,
   offset = { x: 0, y: 0 },
   isVisible = true,
-  className = '',
+  className = "",
 }) => {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [tooltipRect, setTooltipRect] = useState<TooltipRect | null>(null);
-  const [actualPosition, setActualPosition] = useState<TooltipPosition>(position);
+  const [actualPosition, setActualPosition] =
+    useState<TooltipPosition>(position);
 
   const calculatePosition = useCallback(() => {
     if (!targetSelector || !tooltipRef.current) {
@@ -109,35 +110,39 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
     let top = 0;
     let left = 0;
     let finalPosition: TooltipPosition = position;
-    let arrowPos: 'top' | 'bottom' | 'left' | 'right' = 'top';
+    let arrowPos: "top" | "bottom" | "left" | "right" = "top";
     let arrowOffset = 0;
 
     // Calculate position based on preference
     const positions: Record<TooltipPosition, () => void> = {
       top: () => {
         top = targetRect.top - tooltipHeight - gap + offset.y;
-        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2 + offset.x;
-        arrowPos = 'bottom';
+        left =
+          targetRect.left + targetRect.width / 2 - tooltipWidth / 2 + offset.x;
+        arrowPos = "bottom";
       },
       bottom: () => {
         top = targetRect.bottom + gap + offset.y;
-        left = targetRect.left + targetRect.width / 2 - tooltipWidth / 2 + offset.x;
-        arrowPos = 'top';
+        left =
+          targetRect.left + targetRect.width / 2 - tooltipWidth / 2 + offset.x;
+        arrowPos = "top";
       },
       left: () => {
-        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2 + offset.y;
+        top =
+          targetRect.top + targetRect.height / 2 - tooltipHeight / 2 + offset.y;
         left = targetRect.left - tooltipWidth - gap + offset.x;
-        arrowPos = 'right';
+        arrowPos = "right";
       },
       right: () => {
-        top = targetRect.top + targetRect.height / 2 - tooltipHeight / 2 + offset.y;
+        top =
+          targetRect.top + targetRect.height / 2 - tooltipHeight / 2 + offset.y;
         left = targetRect.right + gap + offset.x;
-        arrowPos = 'left';
+        arrowPos = "left";
       },
       center: () => {
         top = viewportHeight / 2 - tooltipHeight / 2 + offset.y;
         left = viewportWidth / 2 - tooltipWidth / 2 + offset.x;
-        arrowPos = 'top';
+        arrowPos = "top";
       },
     };
 
@@ -146,21 +151,27 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
     finalPosition = position;
 
     // Check if tooltip is off-screen and flip if needed
-    if (position !== 'center') {
+    if (position !== "center") {
       const isOffScreenTop = top < 10;
       const isOffScreenBottom = top + tooltipHeight > viewportHeight - 10;
       const isOffScreenLeft = left < 10;
       const isOffScreenRight = left + tooltipWidth > viewportWidth - 10;
 
       // Flip vertical position
-      if ((position === 'top' && isOffScreenTop) || (position === 'bottom' && isOffScreenBottom)) {
-        finalPosition = position === 'top' ? 'bottom' : 'top';
+      if (
+        (position === "top" && isOffScreenTop) ||
+        (position === "bottom" && isOffScreenBottom)
+      ) {
+        finalPosition = position === "top" ? "bottom" : "top";
         positions[finalPosition]();
       }
 
       // Flip horizontal position
-      if ((position === 'left' && isOffScreenLeft) || (position === 'right' && isOffScreenRight)) {
-        finalPosition = position === 'left' ? 'right' : 'left';
+      if (
+        (position === "left" && isOffScreenLeft) ||
+        (position === "right" && isOffScreenRight)
+      ) {
+        finalPosition = position === "left" ? "right" : "left";
         positions[finalPosition]();
       }
 
@@ -180,11 +191,11 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
     }
 
     // Calculate arrow offset for non-centered positions
-    if (arrowPos === 'top' || arrowPos === 'bottom') {
+    if (arrowPos === "top" || arrowPos === "bottom") {
       const targetCenter = targetRect.left + targetRect.width / 2;
       arrowOffset = targetCenter - left;
       arrowOffset = Math.max(20, Math.min(arrowOffset, tooltipWidth - 20));
-    } else if (arrowPos === 'left' || arrowPos === 'right') {
+    } else if (arrowPos === "left" || arrowPos === "right") {
       const targetCenter = targetRect.top + targetRect.height / 2;
       arrowOffset = targetCenter - top;
       arrowOffset = Math.max(20, Math.min(arrowOffset, tooltipHeight - 20));
@@ -208,12 +219,12 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
       calculatePosition();
     };
 
-    window.addEventListener('scroll', handleUpdate, true);
-    window.addEventListener('resize', handleUpdate);
+    window.addEventListener("scroll", handleUpdate, true);
+    window.addEventListener("resize", handleUpdate);
 
     return () => {
-      window.removeEventListener('scroll', handleUpdate, true);
-      window.removeEventListener('resize', handleUpdate);
+      window.removeEventListener("scroll", handleUpdate, true);
+      window.removeEventListener("resize", handleUpdate);
     };
   }, [calculatePosition]);
 
@@ -222,10 +233,12 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
   }
 
   const arrowClasses = {
-    top: 'bottom-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-t-transparent border-b-white dark:border-b-gray-800',
-    bottom: 'top-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-b-transparent border-t-white dark:border-t-gray-800',
-    left: 'right-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-l-transparent border-r-white dark:border-r-gray-800',
-    right: 'left-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-r-transparent border-l-white dark:border-l-gray-800',
+    top: "bottom-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-t-transparent border-b-white dark:border-b-gray-800",
+    bottom:
+      "top-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-b-transparent border-t-white dark:border-t-gray-800",
+    left: "right-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-l-transparent border-r-white dark:border-r-gray-800",
+    right:
+      "left-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-r-transparent border-l-white dark:border-l-gray-800",
   };
 
   return (
@@ -253,19 +266,25 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
         <div
           className={`absolute w-0 h-0 border-8 ${arrowClasses[tooltipRect.arrowPosition]}`}
           style={{
-            [tooltipRect.arrowPosition === 'top' || tooltipRect.arrowPosition === 'bottom' ? 'left' : 'top']:
-              `${tooltipRect.arrowOffset}px`,
+            [tooltipRect.arrowPosition === "top" ||
+            tooltipRect.arrowPosition === "bottom"
+              ? "left"
+              : "top"]: `${tooltipRect.arrowOffset}px`,
             transform:
-              tooltipRect.arrowPosition === 'top' || tooltipRect.arrowPosition === 'bottom'
-                ? 'translateX(-50%)'
-                : 'translateY(-50%)',
+              tooltipRect.arrowPosition === "top" ||
+              tooltipRect.arrowPosition === "bottom"
+                ? "translateX(-50%)"
+                : "translateY(-50%)",
           }}
         />
 
         {/* Header */}
         <div className="flex items-start justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex-1 pr-2">
-            <h3 id="tooltip-title" className="text-lg font-semibold text-gray-900 dark:text-white">
+            <h3
+              id="tooltip-title"
+              className="text-lg font-semibold text-gray-900 dark:text-white"
+            >
               {title}
             </h3>
             {currentStep !== undefined && totalSteps !== undefined && (
@@ -321,9 +340,9 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
               <button
                 onClick={onNext}
                 className="inline-flex items-center gap-1 px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 rounded transition-colors"
-                aria-label={isLastStep ? 'Finish tutorial' : 'Next step'}
+                aria-label={isLastStep ? "Finish tutorial" : "Next step"}
               >
-                <span>{isLastStep ? 'Finish' : 'Next'}</span>
+                <span>{isLastStep ? "Finish" : "Next"}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             )}

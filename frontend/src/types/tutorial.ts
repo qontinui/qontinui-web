@@ -12,22 +12,22 @@
  * - contextual: Embedded in-page tutorial with tooltips and spotlights
  * - hybrid: Combination of both modes, switching as needed
  */
-export type TutorialMode = 'overlay' | 'contextual' | 'hybrid';
+export type TutorialMode = "overlay" | "contextual" | "hybrid";
 
 /**
  * Highlight types for contextual tutorials
  */
-export type HighlightType = 'spotlight' | 'border' | 'pulse' | 'arrow';
+export type HighlightType = "spotlight" | "border" | "pulse" | "arrow";
 
 /**
  * Tooltip position relative to target element
  */
-export type TooltipPosition = 'top' | 'bottom' | 'left' | 'right' | 'center';
+export type TooltipPosition = "top" | "bottom" | "left" | "right" | "center";
 
 /**
  * Validation types for interactive steps
  */
-export type ValidationType = 'action' | 'state' | 'input' | 'custom';
+export type ValidationType = "action" | "state" | "input" | "custom";
 
 /**
  * Target element configuration for contextual tutorials
@@ -157,7 +157,7 @@ export interface StepActions {
  * // Pulse animation effect
  * { type: 'pulse', x: 200, y: 300, width: 50, height: 50 }
  */
-export type AnnotationType = 'highlight' | 'arrow' | 'pulse' | 'label';
+export type AnnotationType = "highlight" | "arrow" | "pulse" | "label";
 
 /**
  * Annotation for marking up screenshots with visual guides
@@ -209,14 +209,14 @@ export interface Annotation {
  * { type: 'identify-element', component: 'ElementHighlighter', preloadedData: { gameScreenshot: '...' } }
  */
 export type TryItType =
-  | 'upload-screenshots'
-  | 'identify-element'
-  | 'create-action'
-  | 'configure-automation'
-  | 'test-automation'
-  | 'debug-pattern'
-  | 'optimize-automation'
-  | 'custom';
+  | "upload-screenshots"
+  | "identify-element"
+  | "create-action"
+  | "configure-automation"
+  | "test-automation"
+  | "debug-pattern"
+  | "optimize-automation"
+  | "custom";
 
 /**
  * Configuration for interactive "Try It" moments in tutorials
@@ -256,7 +256,7 @@ export interface TryItConfig {
 /**
  * Difficulty levels for tutorials and steps
  */
-export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
+export type DifficultyLevel = "beginner" | "intermediate" | "advanced";
 
 /**
  * Individual step in a tutorial sequence
@@ -302,7 +302,7 @@ export interface TutorialStep {
   resources?: {
     title: string;
     url: string;
-    type?: 'documentation' | 'video' | 'article' | 'api-reference';
+    type?: "documentation" | "video" | "article" | "api-reference";
   }[];
 
   /** Optional target element for contextual tutorials */
@@ -530,7 +530,7 @@ export interface TutorialSystemConfig {
  * Type guard to check if a value is a valid AnnotationType
  */
 export function isAnnotationType(value: any): value is AnnotationType {
-  return ['highlight', 'arrow', 'pulse', 'label'].includes(value);
+  return ["highlight", "arrow", "pulse", "label"].includes(value);
 }
 
 /**
@@ -538,14 +538,14 @@ export function isAnnotationType(value: any): value is AnnotationType {
  */
 export function isTryItType(value: any): value is TryItType {
   return [
-    'upload-screenshots',
-    'identify-element',
-    'create-action',
-    'configure-automation',
-    'test-automation',
-    'debug-pattern',
-    'optimize-automation',
-    'custom',
+    "upload-screenshots",
+    "identify-element",
+    "create-action",
+    "configure-automation",
+    "test-automation",
+    "debug-pattern",
+    "optimize-automation",
+    "custom",
   ].includes(value);
 }
 
@@ -553,5 +553,5 @@ export function isTryItType(value: any): value is TryItType {
  * Type guard to check if a value is a valid DifficultyLevel
  */
 export function isDifficultyLevel(value: any): value is DifficultyLevel {
-  return ['beginner', 'intermediate', 'advanced'].includes(value);
+  return ["beginner", "intermediate", "advanced"].includes(value);
 }

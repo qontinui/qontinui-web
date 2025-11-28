@@ -1,6 +1,6 @@
-import React, { useRef } from 'react';
-import { Upload, X, FolderOpen, ImageIcon } from 'lucide-react';
-import { ScreenshotSelector } from '@/components/screenshot-selector';
+import React, { useRef } from "react";
+import { Upload, X, FolderOpen, ImageIcon } from "lucide-react";
+import { ScreenshotSelector } from "@/components/screenshot-selector";
 
 export interface ScreenshotInfo {
   id: string;
@@ -31,7 +31,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
   showRegionInfo = false,
   regionDimensions,
   additionalInfo,
-  className = '',
+  className = "",
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const screenshotSelectorTriggerRef = useRef<HTMLButtonElement>(null);
@@ -43,7 +43,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
     }
     // Reset file input
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = "";
     }
   };
 
@@ -85,7 +85,10 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
             <div className="p-3 border border-[#00D9FF] bg-[#00D9FF]/10 rounded-lg">
               <div className="flex justify-between items-start mb-2">
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-white truncate" title={currentScreenshot.name}>
+                  <div
+                    className="font-medium text-sm text-white truncate"
+                    title={currentScreenshot.name}
+                  >
                     {currentScreenshot.name}
                   </div>
                 </div>
@@ -99,7 +102,8 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
               </div>
               {showRegionInfo && regionDimensions ? (
                 <div className="text-xs text-[#00FF88] mt-1">
-                  Region: {Math.round(regionDimensions.width)}×{Math.round(regionDimensions.height)}
+                  Region: {Math.round(regionDimensions.width)}×
+                  {Math.round(regionDimensions.height)}
                 </div>
               ) : showRegionInfo ? (
                 <div className="text-xs text-gray-400 mt-1">
@@ -114,7 +118,9 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
           <div className="text-center py-8">
             <ImageIcon className="w-12 h-12 mx-auto mb-2 text-gray-600" />
             <p className="text-sm text-gray-400">No screenshot loaded</p>
-            <p className="text-xs text-gray-500 mt-1">Upload or select from project</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Upload or select from project
+            </p>
           </div>
         )}
       </div>
@@ -128,7 +134,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
         trigger={
           <button
             ref={screenshotSelectorTriggerRef}
-            style={{ display: 'none' }}
+            style={{ display: "none" }}
           />
         }
       />

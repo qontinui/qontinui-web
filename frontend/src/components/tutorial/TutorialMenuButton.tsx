@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { BookOpen } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { TutorialMenu } from './integration/TutorialMenu';
-import { allTutorials } from '@/data/tutorials';
+import { useState } from "react";
+import { BookOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { TutorialMenu } from "./integration/TutorialMenu";
+import { allTutorials } from "@/data/tutorials";
 
 /**
  * Floating tutorial menu button

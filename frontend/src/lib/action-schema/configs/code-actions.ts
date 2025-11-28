@@ -21,7 +21,7 @@ export interface CodeBlockActionConfig {
    * - 'file': Execute code from external .py file (Phase 2)
    * Default: 'inline'
    */
-  codeSource?: 'inline' | 'file';
+  codeSource?: "inline" | "file";
 
   /**
    * Python code to execute (when codeSource='inline')
@@ -142,7 +142,7 @@ export interface CodeBlockActionConfig {
    */
   errorHandling?: {
     /** What to do on error */
-    onError: 'fail' | 'skip' | 'retry' | 'fallback';
+    onError: "fail" | "skip" | "retry" | "fallback";
 
     /** Number of retries (if onError='retry') */
     retries?: number;
@@ -187,7 +187,7 @@ export interface CustomFunctionActionConfig {
 
   /** Error handling */
   errorHandling?: {
-    onError: 'fail' | 'skip' | 'retry';
+    onError: "fail" | "skip" | "retry";
     retries?: number;
   };
 }

@@ -12,9 +12,9 @@
  * - Interactive (pan, zoom in preview)
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import type { Workflow, Action } from '@/lib/action-schema/action-types';
-import type { LayoutComparison } from '@/services/layout-statistics';
+import React, { useState, useRef, useEffect } from "react";
+import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import type { LayoutComparison } from "@/services/layout-statistics";
 
 // ============================================================================
 // Types
@@ -24,7 +24,7 @@ export interface LayoutPreviewProps {
   beforeWorkflow: Workflow;
   afterWorkflow: Workflow;
   comparison: LayoutComparison;
-  mode?: 'side-by-side' | 'overlay' | 'before-only' | 'after-only';
+  mode?: "side-by-side" | "overlay" | "before-only" | "after-only";
   width?: number;
   height?: number;
   showStats?: boolean;
@@ -32,7 +32,7 @@ export interface LayoutPreviewProps {
   interactive?: boolean;
 }
 
-type ViewMode = 'side-by-side' | 'overlay' | 'before-only' | 'after-only';
+type ViewMode = "side-by-side" | "overlay" | "before-only" | "after-only";
 
 interface BoundingBox {
   minX: number;
@@ -51,12 +51,12 @@ export function LayoutPreview({
   beforeWorkflow,
   afterWorkflow,
   comparison,
-  mode = 'side-by-side',
+  mode = "side-by-side",
   width = 600,
   height = 400,
   showStats = true,
   showChangedNodes = true,
-  interactive = true
+  interactive = true,
 }: LayoutPreviewProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(mode);
   const [overlaySlider, setOverlaySlider] = useState(50);
@@ -70,14 +70,20 @@ export function LayoutPreview({
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Calculate bounding boxes
-  const beforeBBox = useMemo(() => calculateBoundingBox(beforeWorkflow.actions), [beforeWorkflow]);
-  const afterBBox = useMemo(() => calculateBoundingBox(afterWorkflow.actions), [afterWorkflow]);
+  const beforeBBox = useMemo(
+    () => calculateBoundingBox(beforeWorkflow.actions),
+    [beforeWorkflow]
+  );
+  const afterBBox = useMemo(
+    () => calculateBoundingBox(afterWorkflow.actions),
+    [afterWorkflow]
+  );
 
   // Identify changed nodes
   const changedNodeIds = useMemo(() => {
     const changed = new Set<string>();
     for (const action of beforeWorkflow.actions) {
-      const afterAction = afterWorkflow.actions.find(a => a.id === action.id);
+      const afterAction = afterWorkflow.actions.find((a) => a.id === action.id);
       if (afterAction && action.position && afterAction.position) {
         const [x1, y1] = action.position;
         const [x2, y2] = afterAction.position;
@@ -92,17 +98,30 @@ export function LayoutPreview({
 
   // Draw workflows
   useEffect(() => {
-    if (viewMode === 'overlay') {
+    if (viewMode === "overlay") {
       drawOverlay();
     } else {
-      if (viewMode !== 'after-only') {
-        drawWorkflow(canvasRefBefore.current, beforeWorkflow, beforeBBox, false);
+      if (viewMode !== "after-only") {
+        drawWorkflow(
+          canvasRefBefore.current,
+          beforeWorkflow,
+          beforeBBox,
+          false
+        );
       }
-      if (viewMode !== 'before-only') {
+      if (viewMode !== "before-only") {
         drawWorkflow(canvasRefAfter.current, afterWorkflow, afterBBox, true);
       }
     }
-  }, [viewMode, beforeWorkflow, afterWorkflow, zoom, pan, overlaySlider, showChangedNodes]);
+  }, [
+    viewMode,
+    beforeWorkflow,
+    afterWorkflow,
+    zoom,
+    pan,
+    overlaySlider,
+    showChangedNodes,
+  ]);
 
   const drawWorkflow = (
     canvas: HTMLCanvasElement | null,
@@ -112,7 +131,7 @@ export function LayoutPreview({
   ) => {
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     // Clear canvas
@@ -125,8 +144,10 @@ export function LayoutPreview({
     const scale = Math.min(scaleX, scaleY, 1) * zoom;
 
     // Center the workflow
-    const offsetX = (canvas.width - bbox.width * scale) / 2 - bbox.minX * scale + pan.x;
-    const offsetY = (canvas.height - bbox.height * scale) / 2 - bbox.minY * scale + pan.y;
+    const offsetX =
+      (canvas.width - bbox.width * scale) / 2 - bbox.minX * scale + pan.x;
+    const offsetY =
+      (canvas.height - bbox.height * scale) / 2 - bbox.minY * scale + pan.y;
 
     // Draw grid (optional)
     drawGrid(ctx, canvas.width, canvas.height, scale, offsetX, offsetY);
@@ -138,7 +159,8 @@ export function LayoutPreview({
     for (const action of workflow.actions) {
       if (!action.position) continue;
 
-      const isChanged = highlightChanges && showChangedNodes && changedNodeIds.has(action.id);
+      const isChanged =
+        highlightChanges && showChangedNodes && changedNodeIds.has(action.id);
       drawNode(ctx, action, scale, offsetX, offsetY, isChanged);
     }
   };
@@ -147,7 +169,7 @@ export function LayoutPreview({
     const canvas = overlayCanvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -159,7 +181,7 @@ export function LayoutPreview({
       minY: Math.min(beforeBBox.minY, afterBBox.minY),
       maxY: Math.max(beforeBBox.maxY, afterBBox.maxY),
       width: Math.max(beforeBBox.width, afterBBox.width),
-      height: Math.max(beforeBBox.height, afterBBox.height)
+      height: Math.max(beforeBBox.height, afterBBox.height),
     };
 
     const padding = 40;
@@ -167,8 +189,10 @@ export function LayoutPreview({
     const scaleY = (canvas.height - padding * 2) / bbox.height;
     const scale = Math.min(scaleX, scaleY, 1) * zoom;
 
-    const offsetX = (canvas.width - bbox.width * scale) / 2 - bbox.minX * scale + pan.x;
-    const offsetY = (canvas.height - bbox.height * scale) / 2 - bbox.minY * scale + pan.y;
+    const offsetX =
+      (canvas.width - bbox.width * scale) / 2 - bbox.minX * scale + pan.x;
+    const offsetY =
+      (canvas.height - bbox.height * scale) / 2 - bbox.minY * scale + pan.y;
 
     // Draw before (with opacity based on slider)
     ctx.save();
@@ -176,7 +200,7 @@ export function LayoutPreview({
     drawConnections(ctx, beforeWorkflow, scale, offsetX, offsetY);
     for (const action of beforeWorkflow.actions) {
       if (action.position) {
-        drawNode(ctx, action, scale, offsetX, offsetY, false, '#3b82f6');
+        drawNode(ctx, action, scale, offsetX, offsetY, false, "#3b82f6");
       }
     }
     ctx.restore();
@@ -187,7 +211,15 @@ export function LayoutPreview({
     drawConnections(ctx, afterWorkflow, scale, offsetX, offsetY);
     for (const action of afterWorkflow.actions) {
       if (action.position) {
-        drawNode(ctx, action, scale, offsetX, offsetY, showChangedNodes && changedNodeIds.has(action.id), '#10b981');
+        drawNode(
+          ctx,
+          action,
+          scale,
+          offsetX,
+          offsetY,
+          showChangedNodes && changedNodeIds.has(action.id),
+          "#10b981"
+        );
       }
     }
     ctx.restore();
@@ -201,7 +233,7 @@ export function LayoutPreview({
     offsetX: number,
     offsetY: number
   ) => {
-    ctx.strokeStyle = '#e5e7eb';
+    ctx.strokeStyle = "#e5e7eb";
     ctx.lineWidth = 0.5;
 
     const gridSize = 50 * scale;
@@ -228,44 +260,57 @@ export function LayoutPreview({
     offsetX: number,
     offsetY: number
   ) => {
-    ctx.strokeStyle = '#9ca3af';
+    ctx.strokeStyle = "#9ca3af";
     ctx.lineWidth = 2 * scale;
 
-    for (const [sourceId, connections] of Object.entries(workflow.connections)) {
-      const source = workflow.actions.find(a => a.id === sourceId);
+    for (const [sourceId, connections] of Object.entries(
+      workflow.connections
+    )) {
+      const source = workflow.actions.find((a) => a.id === sourceId);
       if (!source?.position) continue;
 
       const [x1, y1] = source.position;
 
-      for (const outputType of ['main', 'error', 'success', 'parallel'] as const) {
+      for (const outputType of [
+        "main",
+        "error",
+        "success",
+        "parallel",
+      ] as const) {
         const outputs = connections[outputType];
         if (!outputs) continue;
 
         // Set color based on output type
         switch (outputType) {
-          case 'error':
-            ctx.strokeStyle = '#ef4444';
+          case "error":
+            ctx.strokeStyle = "#ef4444";
             break;
-          case 'success':
-            ctx.strokeStyle = '#10b981';
+          case "success":
+            ctx.strokeStyle = "#10b981";
             break;
-          case 'parallel':
-            ctx.strokeStyle = '#8b5cf6';
+          case "parallel":
+            ctx.strokeStyle = "#8b5cf6";
             break;
           default:
-            ctx.strokeStyle = '#9ca3af';
+            ctx.strokeStyle = "#9ca3af";
         }
 
         for (const conns of outputs) {
           for (const conn of conns) {
-            const target = workflow.actions.find(a => a.id === conn.action);
+            const target = workflow.actions.find((a) => a.id === conn.action);
             if (!target?.position) continue;
 
             const [x2, y2] = target.position;
 
             ctx.beginPath();
-            ctx.moveTo(x1 * scale + offsetX + 90 * scale, y1 * scale + offsetY + 40 * scale);
-            ctx.lineTo(x2 * scale + offsetX + 90 * scale, y2 * scale + offsetY + 40 * scale);
+            ctx.moveTo(
+              x1 * scale + offsetX + 90 * scale,
+              y1 * scale + offsetY + 40 * scale
+            );
+            ctx.lineTo(
+              x2 * scale + offsetX + 90 * scale,
+              y2 * scale + offsetY + 40 * scale
+            );
             ctx.stroke();
           }
         }
@@ -290,13 +335,13 @@ export function LayoutPreview({
 
     // Draw shadow if changed
     if (isChanged) {
-      ctx.shadowColor = 'rgba(251, 191, 36, 0.5)';
+      ctx.shadowColor = "rgba(251, 191, 36, 0.5)";
       ctx.shadowBlur = 10 * scale;
     }
 
     // Draw node background
-    ctx.fillStyle = customColor || (isChanged ? '#fef3c7' : '#ffffff');
-    ctx.strokeStyle = isChanged ? '#f59e0b' : '#d1d5db';
+    ctx.fillStyle = customColor || (isChanged ? "#fef3c7" : "#ffffff");
+    ctx.strokeStyle = isChanged ? "#f59e0b" : "#d1d5db";
     ctx.lineWidth = isChanged ? 3 * scale : 2 * scale;
 
     roundRect(ctx, nodeX, nodeY, nodeWidth, nodeHeight, 8 * scale);
@@ -308,20 +353,27 @@ export function LayoutPreview({
 
     // Draw node type badge
     ctx.fillStyle = getNodeColor(action.type);
-    roundRect(ctx, nodeX + 8 * scale, nodeY + 8 * scale, 60 * scale, 20 * scale, 4 * scale);
+    roundRect(
+      ctx,
+      nodeX + 8 * scale,
+      nodeY + 8 * scale,
+      60 * scale,
+      20 * scale,
+      4 * scale
+    );
     ctx.fill();
 
     // Draw text (if scale is large enough)
     if (scale > 0.3) {
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = "#ffffff";
       ctx.font = `bold ${12 * scale}px sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
       ctx.fillText(action.type, nodeX + 12 * scale, nodeY + 18 * scale);
 
       // Draw name
       if (action.name && scale > 0.5) {
-        ctx.fillStyle = '#374151';
+        ctx.fillStyle = "#374151";
         ctx.font = `${11 * scale}px sans-serif`;
         const maxWidth = nodeWidth - 16 * scale;
         const truncated = truncateText(ctx, action.name, maxWidth);
@@ -332,14 +384,14 @@ export function LayoutPreview({
 
   const getNodeColor = (type: string): string => {
     const colors: Record<string, string> = {
-      CLICK: '#3b82f6',
-      TYPE: '#10b981',
-      WAIT: '#f59e0b',
-      SCREENSHOT: '#8b5cf6',
-      IF: '#ec4899',
-      LOOP: '#f97316',
-      TRY_CATCH: '#ef4444',
-      DEFAULT: '#6b7280'
+      CLICK: "#3b82f6",
+      TYPE: "#10b981",
+      WAIT: "#f59e0b",
+      SCREENSHOT: "#8b5cf6",
+      IF: "#ec4899",
+      LOOP: "#f97316",
+      TRY_CATCH: "#ef4444",
+      DEFAULT: "#6b7280",
     };
     return colors[type] || colors.DEFAULT;
   };
@@ -365,15 +417,22 @@ export function LayoutPreview({
     ctx.closePath();
   };
 
-  const truncateText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string => {
+  const truncateText = (
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    maxWidth: number
+  ): string => {
     const metrics = ctx.measureText(text);
     if (metrics.width <= maxWidth) return text;
 
     let truncated = text;
-    while (ctx.measureText(truncated + '...').width > maxWidth && truncated.length > 0) {
+    while (
+      ctx.measureText(truncated + "...").width > maxWidth &&
+      truncated.length > 0
+    ) {
       truncated = truncated.slice(0, -1);
     }
-    return truncated + '...';
+    return truncated + "...";
   };
 
   // Mouse event handlers
@@ -387,7 +446,7 @@ export function LayoutPreview({
     if (!interactive || !isPanning) return;
     setPan({
       x: e.clientX - panStart.x,
-      y: e.clientY - panStart.y
+      y: e.clientY - panStart.y,
     });
   };
 
@@ -399,17 +458,17 @@ export function LayoutPreview({
     if (!interactive) return;
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(prev => Math.max(0.1, Math.min(5, prev * delta)));
+    setZoom((prev) => Math.max(0.1, Math.min(5, prev * delta)));
   };
 
-  const handleZoomIn = () => setZoom(prev => Math.min(5, prev * 1.2));
-  const handleZoomOut = () => setZoom(prev => Math.max(0.1, prev / 1.2));
+  const handleZoomIn = () => setZoom((prev) => Math.min(5, prev * 1.2));
+  const handleZoomOut = () => setZoom((prev) => Math.max(0.1, prev / 1.2));
   const handleZoomReset = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
   };
 
-  const canvasWidth = viewMode === 'side-by-side' ? width / 2 : width;
+  const canvasWidth = viewMode === "side-by-side" ? width / 2 : width;
 
   return (
     <div className="layout-preview">
@@ -417,26 +476,26 @@ export function LayoutPreview({
       <div className="preview-controls">
         <div className="view-mode-selector">
           <button
-            className={viewMode === 'side-by-side' ? 'active' : ''}
-            onClick={() => setViewMode('side-by-side')}
+            className={viewMode === "side-by-side" ? "active" : ""}
+            onClick={() => setViewMode("side-by-side")}
           >
             Side by Side
           </button>
           <button
-            className={viewMode === 'overlay' ? 'active' : ''}
-            onClick={() => setViewMode('overlay')}
+            className={viewMode === "overlay" ? "active" : ""}
+            onClick={() => setViewMode("overlay")}
           >
             Overlay
           </button>
           <button
-            className={viewMode === 'before-only' ? 'active' : ''}
-            onClick={() => setViewMode('before-only')}
+            className={viewMode === "before-only" ? "active" : ""}
+            onClick={() => setViewMode("before-only")}
           >
             Before Only
           </button>
           <button
-            className={viewMode === 'after-only' ? 'active' : ''}
-            onClick={() => setViewMode('after-only')}
+            className={viewMode === "after-only" ? "active" : ""}
+            onClick={() => setViewMode("after-only")}
           >
             After Only
           </button>
@@ -444,17 +503,23 @@ export function LayoutPreview({
 
         {interactive && (
           <div className="zoom-controls">
-            <button onClick={handleZoomOut} title="Zoom Out">-</button>
+            <button onClick={handleZoomOut} title="Zoom Out">
+              -
+            </button>
             <span>{Math.round(zoom * 100)}%</span>
-            <button onClick={handleZoomIn} title="Zoom In">+</button>
-            <button onClick={handleZoomReset} title="Reset">⟲</button>
+            <button onClick={handleZoomIn} title="Zoom In">
+              +
+            </button>
+            <button onClick={handleZoomReset} title="Reset">
+              ⟲
+            </button>
           </div>
         )}
       </div>
 
       {/* Canvas Area */}
       <div className="preview-canvas-area">
-        {viewMode === 'side-by-side' && (
+        {viewMode === "side-by-side" && (
           <>
             <div className="preview-canvas-container">
               <div className="preview-label">Before</div>
@@ -487,7 +552,7 @@ export function LayoutPreview({
           </>
         )}
 
-        {viewMode === 'overlay' && (
+        {viewMode === "overlay" && (
           <div className="preview-canvas-container overlay-container">
             <canvas
               ref={overlayCanvasRef}
@@ -515,7 +580,7 @@ export function LayoutPreview({
           </div>
         )}
 
-        {viewMode === 'before-only' && (
+        {viewMode === "before-only" && (
           <div className="preview-canvas-container">
             <div className="preview-label">Before</div>
             <canvas
@@ -532,7 +597,7 @@ export function LayoutPreview({
           </div>
         )}
 
-        {viewMode === 'after-only' && (
+        {viewMode === "after-only" && (
           <div className="preview-canvas-container">
             <div className="preview-label">After</div>
             <canvas
@@ -559,8 +624,10 @@ export function LayoutPreview({
           </div>
           <div className="stat-item">
             <span className="stat-label">Improvement:</span>
-            <span className={`stat-value ${comparison.isImprovement ? 'positive' : 'negative'}`}>
-              {comparison.improvementScore > 0 ? '+' : ''}
+            <span
+              className={`stat-value ${comparison.isImprovement ? "positive" : "negative"}`}
+            >
+              {comparison.improvementScore > 0 ? "+" : ""}
               {Math.round(comparison.improvementScore)}
             </span>
           </div>
@@ -599,7 +666,7 @@ function calculateBoundingBox(actions: Action[]): BoundingBox {
     minY,
     maxY,
     width: maxX - minX,
-    height: maxY - minY
+    height: maxY - minY,
   };
 }
 

@@ -1,32 +1,32 @@
-import { Transition, State } from "@/contexts/automation-context/types"
-import { Workflow } from "@/lib/action-schema/action-types"
+import { Transition, State } from "@/contexts/automation-context/types";
+import { Workflow } from "@/lib/action-schema/action-types";
 
-export type ViewMode = "matrix" | "list" | "graph" | "statistics"
+export type ViewMode = "matrix" | "list" | "graph" | "statistics";
 
 export interface TransitionFilters {
-  searchQuery: string
-  fromState: string
-  toState: string
-  actionType: "all" | "with_workflow" | "without_workflow"
-  hasWorkflow: string
-  showCircular: boolean
-  showBroken: boolean
+  searchQuery: string;
+  fromState: string;
+  toState: string;
+  actionType: "all" | "with_workflow" | "without_workflow";
+  hasWorkflow: string;
+  showCircular: boolean;
+  showBroken: boolean;
 }
 
 export interface TransitionValidation {
-  circular: string[]
-  brokenStateReferences: string[]
-  missingWorkflows: string[]
-  unreachableStates: string[]
-  deadEndStates: string[]
+  circular: string[];
+  brokenStateReferences: string[];
+  missingWorkflows: string[];
+  unreachableStates: string[];
+  deadEndStates: string[];
 }
 
 export interface TransitionTemplate {
-  id: string
-  name: string
-  description: string
-  type: "outgoing" | "incoming"
-  config: Partial<Transition>
+  id: string;
+  name: string;
+  description: string;
+  type: "outgoing" | "incoming";
+  config: Partial<Transition>;
 }
 
 export const DEFAULT_FILTERS: TransitionFilters = {
@@ -37,7 +37,7 @@ export const DEFAULT_FILTERS: TransitionFilters = {
   hasWorkflow: "all",
   showCircular: false,
   showBroken: false,
-}
+};
 
 export const BUILT_IN_TEMPLATES: TransitionTemplate[] = [
   {
@@ -73,7 +73,7 @@ export const BUILT_IN_TEMPLATES: TransitionTemplate[] = [
       workflows: [],
     },
   },
-]
+];
 
 export const COLORS = {
   primary: "#00D9FF",
@@ -82,4 +82,4 @@ export const COLORS = {
   danger: "#FF4444",
   purple: "#BD00FF",
   gray: "#666666",
-}
+};

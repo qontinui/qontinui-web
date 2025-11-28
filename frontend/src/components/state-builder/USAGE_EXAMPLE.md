@@ -8,9 +8,9 @@ This document provides practical examples of using the Enhanced State Builder co
 
 ```tsx
 // app/(app)/states/page.tsx
-'use client';
+"use client";
 
-import { EnhancedStateBuilder } from '@/components/state-builder';
+import { EnhancedStateBuilder } from "@/components/state-builder";
 
 export default function StatesPage() {
   return (
@@ -26,8 +26,8 @@ export default function StatesPage() {
 The component automatically integrates with the AutomationContext:
 
 ```tsx
-import { useAutomation } from '@/contexts/automation-context';
-import { EnhancedStateBuilder } from '@/components/state-builder';
+import { useAutomation } from "@/contexts/automation-context";
+import { EnhancedStateBuilder } from "@/components/state-builder";
 
 function MyComponent() {
   const { states, addState, updateState, deleteState } = useAutomation();
@@ -49,8 +49,8 @@ function MyComponent() {
 // Programmatic creation
 const newState: State = {
   id: `state-${Date.now()}`,
-  name: 'My New State',
-  description: 'Description here',
+  name: "My New State",
+  description: "Description here",
   stateImages: [],
   regions: [],
   locations: [],
@@ -68,62 +68,62 @@ Templates speed up state creation for common patterns:
 ```tsx
 // Define a custom template
 const loginTemplate: StateTemplate = {
-  id: 'login-template',
-  name: 'Login Screen',
-  description: 'Standard login form with username and password',
+  id: "login-template",
+  name: "Login Screen",
+  description: "Standard login form with username and password",
   template: {
-    name: 'Login State',
-    description: 'User login screen',
+    name: "Login State",
+    description: "User login screen",
     stateImages: [],
     regions: [
       {
-        id: 'login-form-region',
-        name: 'Login Form',
+        id: "login-form-region",
+        name: "Login Form",
         x: 100,
         y: 100,
         width: 400,
         height: 300,
-      }
+      },
     ],
     locations: [
       {
-        id: 'username-field',
-        name: 'Username Field',
+        id: "username-field",
+        name: "Username Field",
         x: 200,
         y: 150,
         fixed: false,
         anchor: false,
       },
       {
-        id: 'password-field',
-        name: 'Password Field',
+        id: "password-field",
+        name: "Password Field",
         x: 200,
         y: 200,
         fixed: false,
         anchor: false,
       },
       {
-        id: 'login-button',
-        name: 'Login Button',
+        id: "login-button",
+        name: "Login Button",
         x: 200,
         y: 250,
         fixed: false,
         anchor: false,
-      }
+      },
     ],
     strings: [
       {
-        id: 'username-str',
-        name: 'username',
-        value: '',
+        id: "username-str",
+        name: "username",
+        value: "",
         inputText: true,
       },
       {
-        id: 'password-str',
-        name: 'password',
-        value: '',
+        id: "password-str",
+        name: "password",
+        value: "",
         inputText: true,
-      }
+      },
     ],
   },
 };
@@ -139,10 +139,10 @@ const loginTemplate: StateTemplate = {
   placeholder="Search states..."
   value={searchQuery}
   onChange={(e) => setSearchQuery(e.target.value)}
-/>
+/>;
 
 // Filter by criteria
-const filteredStates = states.filter(state => {
+const filteredStates = states.filter((state) => {
   // Has images
   if (filterHasImages) {
     return state.stateImages && state.stateImages.length > 0;
@@ -150,9 +150,10 @@ const filteredStates = states.filter(state => {
 
   // Has transitions
   if (filterHasTransitions) {
-    return transitions.some(t =>
-      (t.type === 'OutgoingTransition' && t.fromState === state.id) ||
-      (t.type === 'IncomingTransition' && t.toState === state.id)
+    return transitions.some(
+      (t) =>
+        (t.type === "OutgoingTransition" && t.fromState === state.id) ||
+        (t.type === "IncomingTransition" && t.toState === state.id)
     );
   }
 
@@ -170,10 +171,12 @@ const filteredStates = states.filter(state => {
 
 ```tsx
 // Select multiple states
-const [selectedStateIds, setSelectedStateIds] = useState<Set<string>>(new Set());
+const [selectedStateIds, setSelectedStateIds] = useState<Set<string>>(
+  new Set()
+);
 
 function handleToggleSelection(stateId: string) {
-  setSelectedStateIds(prev => {
+  setSelectedStateIds((prev) => {
     const next = new Set(prev);
     if (next.has(stateId)) {
       next.delete(stateId);
@@ -187,18 +190,18 @@ function handleToggleSelection(stateId: string) {
 // Bulk delete
 function handleBulkDelete() {
   if (confirm(`Delete ${selectedStateIds.size} states?`)) {
-    selectedStateIds.forEach(id => deleteState(id));
+    selectedStateIds.forEach((id) => deleteState(id));
     setSelectedStateIds(new Set());
   }
 }
 
 // Bulk export
 function handleBulkExport() {
-  const exportData = states.filter(s => selectedStateIds.has(s.id));
+  const exportData = states.filter((s) => selectedStateIds.has(s.id));
   const json = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
   a.download = `states-export-${Date.now()}.json`;
   a.click();
@@ -213,7 +216,7 @@ function handleBulkExport() {
 function handleAddStateImage(state: State) {
   const newStateImage: StateImage = {
     id: `si-${Date.now()}`,
-    name: 'New Image',
+    name: "New Image",
     patterns: [],
     shared: false,
   };
@@ -228,13 +231,17 @@ function handleAddStateImage(state: State) {
 ### Adding Patterns to StateImages
 
 ```tsx
-function handleAddPattern(state: State, stateImageIndex: number, imageId: string) {
+function handleAddPattern(
+  state: State,
+  stateImageIndex: number,
+  imageId: string
+) {
   const stateImages = [...(state.stateImages || [])];
   const stateImage = stateImages[stateImageIndex];
 
   const newPattern: Pattern = {
     id: `pattern-${Date.now()}`,
-    name: 'New Pattern',
+    name: "New Pattern",
     imageId: imageId,
     searchRegions: [],
     fixed: false,
@@ -251,7 +258,7 @@ function handleAddPattern(state: State, stateImageIndex: number, imageId: string
 ### Validate a State
 
 ```tsx
-import { validateState } from '@/components/state-builder/state-utils';
+import { validateState } from "@/components/state-builder/state-utils";
 
 function MyComponent({ state }: { state: State }) {
   const issues = validateState(state);
@@ -259,7 +266,11 @@ function MyComponent({ state }: { state: State }) {
   return (
     <div>
       {issues.length > 0 && (
-        <Alert variant={issues.some(i => i.type === 'error') ? 'destructive' : 'default'}>
+        <Alert
+          variant={
+            issues.some((i) => i.type === "error") ? "destructive" : "default"
+          }
+        >
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Validation Issues</AlertTitle>
           <AlertDescription>
@@ -268,7 +279,9 @@ function MyComponent({ state }: { state: State }) {
                 <li key={idx}>
                   [{issue.type.toUpperCase()}] {issue.message}
                   {issue.suggestion && (
-                    <div className="text-xs mt-1">Suggestion: {issue.suggestion}</div>
+                    <div className="text-xs mt-1">
+                      Suggestion: {issue.suggestion}
+                    </div>
                   )}
                 </li>
               ))}
@@ -289,8 +302,8 @@ function MyComponent({ state }: { state: State }) {
 import {
   generateStateAnalytics,
   calculateStateComplexity,
-  generateStateStatistics
-} from '@/components/state-builder/state-utils';
+  generateStateStatistics,
+} from "@/components/state-builder/state-utils";
 
 function StateAnalyticsDashboard({ states, workflows, transitions }) {
   const overallStats = generateStateStatistics(states);
@@ -320,7 +333,9 @@ function StateAnalyticsDashboard({ states, workflows, transitions }) {
           <CardTitle>Total StateImages</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-bold">{overallStats.totalStateImages}</div>
+          <div className="text-3xl font-bold">
+            {overallStats.totalStateImages}
+          </div>
         </CardContent>
       </Card>
 
@@ -366,7 +381,7 @@ function StateAnalyticsDashboard({ states, workflows, transitions }) {
 ### Find Similar States
 
 ```tsx
-import { findSimilarStates } from '@/components/state-builder/state-utils';
+import { findSimilarStates } from "@/components/state-builder/state-utils";
 
 function SimilarStatesPanel({ targetState, allStates }) {
   const similarStates = findSimilarStates(targetState, allStates, 0.5);
@@ -398,7 +413,7 @@ function SimilarStatesPanel({ targetState, allStates }) {
 ### Compare Two States
 
 ```tsx
-import { compareStates } from '@/components/state-builder/state-utils';
+import { compareStates } from "@/components/state-builder/state-utils";
 
 function StateComparisonView({ state1, state2 }) {
   const comparison = compareStates(state1, state2);
@@ -419,7 +434,7 @@ function StateComparisonView({ state1, state2 }) {
               <div>
                 <p className="text-xs font-semibold">Only in {state1.name}:</p>
                 <ul className="text-xs text-muted-foreground">
-                  {comparison.differences.images.only1.map(id => (
+                  {comparison.differences.images.only1.map((id) => (
                     <li key={id}>{id}</li>
                   ))}
                 </ul>
@@ -429,7 +444,7 @@ function StateComparisonView({ state1, state2 }) {
               <div>
                 <p className="text-xs font-semibold">Only in {state2.name}:</p>
                 <ul className="text-xs text-muted-foreground">
-                  {comparison.differences.images.only2.map(id => (
+                  {comparison.differences.images.only2.map((id) => (
                     <li key={id}>{id}</li>
                   ))}
                 </ul>
@@ -448,16 +463,16 @@ function StateComparisonView({ state1, state2 }) {
 ### Export States
 
 ```tsx
-import { exportStatesToJSON } from '@/components/state-builder/state-utils';
+import { exportStatesToJSON } from "@/components/state-builder/state-utils";
 
 function ExportButton({ selectedStateIds, allStates }) {
   function handleExport() {
-    const statesToExport = allStates.filter(s => selectedStateIds.has(s.id));
+    const statesToExport = allStates.filter((s) => selectedStateIds.has(s.id));
     const json = exportStatesToJSON(statesToExport);
 
-    const blob = new Blob([json], { type: 'application/json' });
+    const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `states-${Date.now()}.json`;
     a.click();
@@ -524,13 +539,13 @@ function ImportButton({ onImport }) {
 ### Create Helper Workflow for State
 
 ```tsx
-import { createFindAnyStateImageWorkflow } from '@/lib/workflow-helpers';
+import { createFindAnyStateImageWorkflow } from "@/lib/workflow-helpers";
 
 function CreateHelperWorkflowButton({ state, onWorkflowCreated }) {
   function handleCreate() {
     const helperWorkflow = createFindAnyStateImageWorkflow(state);
     onWorkflowCreated(helperWorkflow);
-    toast.success('Helper workflow created');
+    toast.success("Helper workflow created");
   }
 
   return (
@@ -577,7 +592,7 @@ if (complexity > 30) {
 ```tsx
 function handleSaveState(state: State) {
   const issues = validateState(state);
-  const errors = issues.filter(i => i.type === 'error');
+  const errors = issues.filter((i) => i.type === "error");
 
   if (errors.length > 0) {
     toast.error(`Cannot save: ${errors.length} error(s) found`);
@@ -585,7 +600,7 @@ function handleSaveState(state: State) {
   }
 
   updateState(state);
-  toast.success('State saved');
+  toast.success("State saved");
 }
 ```
 
@@ -595,15 +610,13 @@ function handleSaveState(state: State) {
 // Use batch updates for better performance
 function handleBulkUpdate(stateIds: string[], updates: Partial<State>) {
   // Batch all updates together
-  const updatedStates = states.map(state =>
-    stateIds.includes(state.id)
-      ? { ...state, ...updates }
-      : state
+  const updatedStates = states.map((state) =>
+    stateIds.includes(state.id) ? { ...state, ...updates } : state
   );
 
   // Single update to context
   // (Would need batch update method in context)
-  updatedStates.forEach(state => updateState(state));
+  updatedStates.forEach((state) => updateState(state));
 }
 ```
 
@@ -620,7 +633,7 @@ updateState(state);
 // Good:
 updateState({
   ...state,
-  stateImages: [...state.stateImages, newImage]
+  stateImages: [...state.stateImages, newImage],
 });
 ```
 
@@ -633,11 +646,11 @@ const filteredStates = useMemo(() => {
 }, [states, searchQuery, filters]);
 
 // Use virtualized lists for large datasets
-import { VirtualList } from 'some-virtual-list-library';
+import { VirtualList } from "some-virtual-list-library";
 
 <VirtualList
   items={filteredStates}
   renderItem={(state) => <StateListItem state={state} />}
   itemHeight={60}
-/>
+/>;
 ```

@@ -1,14 +1,19 @@
 // components/integration-testing/SmartSnapshotSelector.tsx
 
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Progress } from '@/components/ui/progress';
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Progress } from "@/components/ui/progress";
 import {
   Loader2,
   Sparkles,
@@ -22,14 +27,14 @@ import {
   ImageIcon,
   Clock,
   Star,
-} from 'lucide-react';
-import { useSnapshotRecommendations } from '@/hooks/useSnapshotRecommendations';
-import { useSnapshotList } from '@/hooks/useSnapshotList';
-import { RecommendationCard } from './RecommendationCard';
-import { SnapshotDetailDialog } from './SnapshotDetailDialog';
-import type { SnapshotRun } from '@/types/snapshots';
-import type { SnapshotRecommendation } from '@/types/snapshot-recommendations';
-import { formatDistanceToNow } from 'date-fns';
+} from "lucide-react";
+import { useSnapshotRecommendations } from "@/hooks/useSnapshotRecommendations";
+import { useSnapshotList } from "@/hooks/useSnapshotList";
+import { RecommendationCard } from "./RecommendationCard";
+import { SnapshotDetailDialog } from "./SnapshotDetailDialog";
+import type { SnapshotRun } from "@/types/snapshots";
+import type { SnapshotRecommendation } from "@/types/snapshot-recommendations";
+import { formatDistanceToNow } from "date-fns";
 
 interface SmartSnapshotSelectorProps {
   selectedSnapshots: SnapshotRun[];
@@ -37,14 +42,14 @@ interface SmartSnapshotSelectorProps {
   processId?: string;
 }
 
-type SelectionMode = 'smart' | 'manual';
+type SelectionMode = "smart" | "manual";
 
 export function SmartSnapshotSelector({
   selectedSnapshots,
   onChange,
   processId,
 }: SmartSnapshotSelectorProps) {
-  const [mode, setMode] = useState<SelectionMode>('smart');
+  const [mode, setMode] = useState<SelectionMode>("smart");
   const [detailSnapshotId, setDetailSnapshotId] = useState<number | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
 
@@ -64,10 +69,16 @@ export function SmartSnapshotSelector({
   });
 
   // Fetch all snapshots for manual mode
-  const { snapshots, loading: snapshotsLoading, error: snapshotsError } = useSnapshotList();
+  const {
+    snapshots,
+    loading: snapshotsLoading,
+    error: snapshotsError,
+  } = useSnapshotList();
 
   // Handle recommendation selection
-  const handleRecommendationSelect = (recommendation: SnapshotRecommendation) => {
+  const handleRecommendationSelect = (
+    recommendation: SnapshotRecommendation
+  ) => {
     setSelectedRecommendation(recommendation);
     onChange(recommendation.snapshots);
   };
@@ -96,29 +107,39 @@ export function SmartSnapshotSelector({
   };
 
   // Calculate metrics for manual mode
-  const totalActions = selectedSnapshots.reduce((sum, s) => sum + s.total_actions, 0);
-  const totalScreenshots = selectedSnapshots.reduce((sum, s) => sum + s.total_screenshots, 0);
+  const totalActions = selectedSnapshots.reduce(
+    (sum, s) => sum + s.total_actions,
+    0
+  );
+  const totalScreenshots = selectedSnapshots.reduce(
+    (sum, s) => sum + s.total_screenshots,
+    0
+  );
 
   // Check if a snapshot is recommended
   const isRecommended = (snapshotId: number): boolean => {
-    return recommendations.some((rec) =>
-      rec.snapshot_ids.includes(snapshotId)
-    );
+    return recommendations.some((rec) => rec.snapshot_ids.includes(snapshotId));
   };
 
   // Get snapshot analysis for manual mode
   const getSnapshotMetrics = (snapshot: SnapshotRun) => {
-    const successRate = snapshot.total_actions > 0
-      ? (snapshot.successful_actions / snapshot.total_actions) * 100
-      : 0;
+    const successRate =
+      snapshot.total_actions > 0
+        ? (snapshot.successful_actions / snapshot.total_actions) * 100
+        : 0;
 
-    const isNew = new Date().getTime() - new Date(snapshot.start_time).getTime() < 24 * 60 * 60 * 1000;
-    const isRecent = new Date().getTime() - new Date(snapshot.start_time).getTime() < 7 * 24 * 60 * 60 * 1000;
+    const isNew =
+      new Date().getTime() - new Date(snapshot.start_time).getTime() <
+      24 * 60 * 60 * 1000;
+    const isRecent =
+      new Date().getTime() - new Date(snapshot.start_time).getTime() <
+      7 * 24 * 60 * 60 * 1000;
 
     return {
       successRate,
-      recency: isNew ? 'new' : isRecent ? 'recent' : 'old',
-      priority: successRate >= 90 ? 'high' : successRate >= 70 ? 'medium' : 'low',
+      recency: isNew ? "new" : isRecent ? "recent" : "old",
+      priority:
+        successRate >= 90 ? "high" : successRate >= 70 ? "medium" : "low",
     };
   };
 
@@ -128,7 +149,7 @@ export function SmartSnapshotSelector({
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              {mode === 'smart' ? (
+              {mode === "smart" ? (
                 <>
                   <Sparkles className="w-4 h-4 text-blue-600" />
                   Smart Recommendations
@@ -155,12 +176,12 @@ export function SmartSnapshotSelector({
               )}
 
               <Button
-                variant={mode === 'manual' ? 'default' : 'outline'}
+                variant={mode === "manual" ? "default" : "outline"}
                 size="sm"
-                onClick={() => setMode(mode === 'smart' ? 'manual' : 'smart')}
+                onClick={() => setMode(mode === "smart" ? "manual" : "smart")}
                 className="h-7 text-xs"
               >
-                {mode === 'smart' ? (
+                {mode === "smart" ? (
                   <>
                     <Settings2 className="w-3 h-3 mr-1" />
                     Manual Selection
@@ -179,7 +200,8 @@ export function SmartSnapshotSelector({
           {selectedSnapshots.length > 0 && (
             <div className="text-xs text-gray-600 mt-2 p-2 bg-blue-50 rounded border border-blue-200">
               <div className="font-medium text-blue-900">
-                {selectedSnapshots.length} snapshot{selectedSnapshots.length > 1 ? 's' : ''} selected
+                {selectedSnapshots.length} snapshot
+                {selectedSnapshots.length > 1 ? "s" : ""} selected
               </div>
               <div className="text-blue-800 mt-0.5">
                 Pool: {totalActions} actions, {totalScreenshots} screenshots
@@ -190,7 +212,7 @@ export function SmartSnapshotSelector({
 
         <CardContent>
           {/* Smart Mode: Show Recommendations */}
-          {mode === 'smart' && (
+          {mode === "smart" && (
             <div className="space-y-4">
               {recommendationsLoading && (
                 <div className="flex items-center justify-center py-8 text-gray-500">
@@ -214,24 +236,31 @@ export function SmartSnapshotSelector({
                 </div>
               )}
 
-              {!recommendationsLoading && !recommendationsError && recommendations.length === 0 && (
-                <div className="text-center py-8 text-gray-500 text-sm">
-                  <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No recommendations available</p>
-                  <p className="text-xs mt-1">
-                    {processId ? 'No snapshots found for this process' : 'Select a process to see recommendations'}
-                  </p>
-                </div>
-              )}
+              {!recommendationsLoading &&
+                !recommendationsError &&
+                recommendations.length === 0 && (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No recommendations available</p>
+                    <p className="text-xs mt-1">
+                      {processId
+                        ? "No snapshots found for this process"
+                        : "Select a process to see recommendations"}
+                    </p>
+                  </div>
+                )}
 
               {!recommendationsLoading && recommendations.length > 0 && (
                 <>
                   <div className="text-sm text-gray-700 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
                     <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="font-medium text-blue-900">Smart recommendations ready</p>
+                      <p className="font-medium text-blue-900">
+                        Smart recommendations ready
+                      </p>
                       <p className="text-xs text-blue-800 mt-1">
-                        Based on state coverage, action variety, and execution efficiency. The top recommendation is pre-selected.
+                        Based on state coverage, action variety, and execution
+                        efficiency. The top recommendation is pre-selected.
                       </p>
                     </div>
                   </div>
@@ -239,10 +268,15 @@ export function SmartSnapshotSelector({
                   <div className="space-y-3">
                     {recommendations.map((recommendation) => (
                       <RecommendationCard
-                        key={recommendation.snapshot_ids.join('-')}
+                        key={recommendation.snapshot_ids.join("-")}
                         recommendation={recommendation}
-                        isSelected={selectedRecommendation?.snapshot_ids.join('-') === recommendation.snapshot_ids.join('-')}
-                        onSelect={() => handleRecommendationSelect(recommendation)}
+                        isSelected={
+                          selectedRecommendation?.snapshot_ids.join("-") ===
+                          recommendation.snapshot_ids.join("-")
+                        }
+                        onSelect={() =>
+                          handleRecommendationSelect(recommendation)
+                        }
                         onViewDetails={handleViewDetails}
                       />
                     ))}
@@ -253,7 +287,7 @@ export function SmartSnapshotSelector({
           )}
 
           {/* Manual Mode: Show Full Snapshot List */}
-          {mode === 'manual' && (
+          {mode === "manual" && (
             <div className="space-y-4">
               {snapshotsLoading && (
                 <div className="flex items-center justify-center py-8 text-gray-500">
@@ -268,29 +302,36 @@ export function SmartSnapshotSelector({
                 </div>
               )}
 
-              {!snapshotsLoading && !snapshotsError && snapshots.length === 0 && (
-                <div className="text-center py-8 text-gray-500 text-sm">
-                  <Database className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No snapshots found</p>
-                  <p className="text-xs mt-1">Import a snapshot to begin</p>
-                </div>
-              )}
+              {!snapshotsLoading &&
+                !snapshotsError &&
+                snapshots.length === 0 && (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    <Database className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No snapshots found</p>
+                    <p className="text-xs mt-1">Import a snapshot to begin</p>
+                  </div>
+                )}
 
               {!snapshotsLoading && snapshots.length > 0 && (
                 <>
                   <div className="text-sm text-gray-700 bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="font-medium text-yellow-900">Manual selection mode</p>
+                      <p className="font-medium text-yellow-900">
+                        Manual selection mode
+                      </p>
                       <p className="text-xs text-yellow-800 mt-1">
-                        Select individual snapshots. Recommended snapshots are marked with a badge.
+                        Select individual snapshots. Recommended snapshots are
+                        marked with a badge.
                       </p>
                     </div>
                   </div>
 
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {snapshots.map((snapshot) => {
-                      const isSelected = selectedSnapshots.some((s) => s.id === snapshot.id);
+                      const isSelected = selectedSnapshots.some(
+                        (s) => s.id === snapshot.id
+                      );
                       const recommended = isRecommended(snapshot.id);
                       const metrics = getSnapshotMetrics(snapshot);
 
@@ -299,9 +340,10 @@ export function SmartSnapshotSelector({
                           key={snapshot.id}
                           className={`
                             p-3 border rounded-lg cursor-pointer transition-all
-                            ${isSelected
-                              ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-300'
-                              : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            ${
+                              isSelected
+                                ? "bg-blue-50 border-blue-300 ring-1 ring-blue-300"
+                                : "bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                             }
                           `}
                           onClick={() => handleToggle(snapshot)}
@@ -328,16 +370,22 @@ export function SmartSnapshotSelector({
                                           </Badge>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                          <p>This snapshot appears in smart recommendations</p>
+                                          <p>
+                                            This snapshot appears in smart
+                                            recommendations
+                                          </p>
                                         </TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
                                   )}
                                 </div>
                                 <div className="text-xs text-gray-500 whitespace-nowrap">
-                                  {formatDistanceToNow(new Date(snapshot.start_time), {
-                                    addSuffix: true,
-                                  })}
+                                  {formatDistanceToNow(
+                                    new Date(snapshot.start_time),
+                                    {
+                                      addSuffix: true,
+                                    }
+                                  )}
                                 </div>
                               </div>
 
@@ -346,15 +394,22 @@ export function SmartSnapshotSelector({
                                 <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger>
-                                      <Badge variant="outline" className="text-xs">
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs"
+                                      >
                                         <Activity className="w-3 h-3 mr-1" />
                                         {snapshot.total_actions} actions
                                       </Badge>
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                      <p>{snapshot.successful_actions} successful actions</p>
+                                      <p>
+                                        {snapshot.successful_actions} successful
+                                        actions
+                                      </p>
                                       <p className="text-xs text-gray-300">
-                                        {Math.round(metrics.successRate)}% success rate
+                                        {Math.round(metrics.successRate)}%
+                                        success rate
                                       </p>
                                     </TooltipContent>
                                   </Tooltip>
@@ -363,7 +418,10 @@ export function SmartSnapshotSelector({
                                 <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger>
-                                      <Badge variant="outline" className="text-xs">
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs"
+                                      >
                                         <ImageIcon className="w-3 h-3 mr-1" />
                                         {snapshot.total_screenshots}
                                       </Badge>
@@ -374,13 +432,13 @@ export function SmartSnapshotSelector({
                                   </Tooltip>
                                 </TooltipProvider>
 
-                                {metrics.recency === 'new' && (
+                                {metrics.recency === "new" && (
                                   <Badge className="bg-green-100 text-green-800 border-green-300 text-xs">
                                     New
                                   </Badge>
                                 )}
 
-                                {metrics.priority === 'high' && (
+                                {metrics.priority === "high" && (
                                   <Badge className="bg-red-100 text-red-800 border-red-300 text-xs">
                                     High Priority
                                   </Badge>
@@ -389,7 +447,8 @@ export function SmartSnapshotSelector({
 
                               {snapshot.duration_seconds !== null && (
                                 <div className="mt-1 text-xs text-gray-500">
-                                  Duration: {Math.round(snapshot.duration_seconds)}s
+                                  Duration:{" "}
+                                  {Math.round(snapshot.duration_seconds)}s
                                 </div>
                               )}
 

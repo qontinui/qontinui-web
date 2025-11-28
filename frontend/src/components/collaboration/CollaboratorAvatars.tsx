@@ -1,36 +1,36 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { Users, Loader2 } from 'lucide-react';
-import { Avatar } from '@/components/ui/avatar';
+import * as React from "react";
+import { Users, Loader2 } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
+} from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export interface Collaborator {
   id: string;
   name: string;
   email?: string;
   avatar_url?: string;
-  status?: 'active' | 'idle' | 'offline';
+  status?: "active" | "idle" | "offline";
 }
 
 interface CollaboratorAvatarsProps {
   collaborators: Collaborator[];
   maxVisible?: number;
-  size?: 'sm' | 'md' | 'lg';
+  size?: "sm" | "md" | "lg";
   showBorder?: boolean;
   showStatus?: boolean;
   loading?: boolean;
@@ -39,27 +39,27 @@ interface CollaboratorAvatarsProps {
 }
 
 const sizeClasses = {
-  sm: 'h-6 w-6',
-  md: 'h-8 w-8',
-  lg: 'h-10 w-10',
+  sm: "h-6 w-6",
+  md: "h-8 w-8",
+  lg: "h-10 w-10",
 };
 
 const statusColors = {
-  active: 'bg-green-500',
-  idle: 'bg-yellow-500',
-  offline: 'bg-gray-500',
+  active: "bg-green-500",
+  idle: "bg-yellow-500",
+  offline: "bg-gray-500",
 };
 
 const statusBorderColors = {
-  active: 'ring-green-500/50',
-  idle: 'ring-yellow-500/50',
-  offline: 'ring-gray-500/50',
+  active: "ring-green-500/50",
+  idle: "ring-yellow-500/50",
+  offline: "ring-gray-500/50",
 };
 
 export function CollaboratorAvatars({
   collaborators,
   maxVisible = 5,
-  size = 'md',
+  size = "md",
   showBorder = true,
   showStatus = true,
   loading = false,
@@ -70,9 +70,9 @@ export function CollaboratorAvatars({
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
+      .split(" ")
       .map((word) => word[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   };
@@ -82,7 +82,7 @@ export function CollaboratorAvatars({
 
   if (loading) {
     return (
-      <div className={cn('flex items-center', className)}>
+      <div className={cn("flex items-center", className)}>
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
@@ -94,7 +94,7 @@ export function CollaboratorAvatars({
 
   return (
     <TooltipProvider>
-      <div className={cn('flex items-center', className)}>
+      <div className={cn("flex items-center", className)}>
         {/* Avatar Stack */}
         <div className="flex -space-x-2">
           {visibleCollaborators.map((collaborator, index) => (
@@ -102,8 +102,9 @@ export function CollaboratorAvatars({
               <TooltipTrigger asChild>
                 <div
                   className={cn(
-                    'relative',
-                    onAvatarClick && 'cursor-pointer hover:z-10 transition-transform hover:scale-110'
+                    "relative",
+                    onAvatarClick &&
+                      "cursor-pointer hover:z-10 transition-transform hover:scale-110"
                   )}
                   onClick={() => onAvatarClick?.(collaborator)}
                   style={{ zIndex: visibleCollaborators.length - index }}
@@ -117,18 +118,20 @@ export function CollaboratorAvatars({
                     }
                     className={cn(
                       sizeClasses[size],
-                      showBorder && 'ring-2 ring-background',
-                      showStatus && collaborator.status && statusBorderColors[collaborator.status]
+                      showBorder && "ring-2 ring-background",
+                      showStatus &&
+                        collaborator.status &&
+                        statusBorderColors[collaborator.status]
                     )}
                   />
                   {showStatus && collaborator.status && (
                     <span
                       className={cn(
-                        'absolute bottom-0 right-0 block rounded-full ring-2 ring-background',
+                        "absolute bottom-0 right-0 block rounded-full ring-2 ring-background",
                         statusColors[collaborator.status],
-                        size === 'sm' && 'h-1.5 w-1.5',
-                        size === 'md' && 'h-2 w-2',
-                        size === 'lg' && 'h-2.5 w-2.5'
+                        size === "sm" && "h-1.5 w-1.5",
+                        size === "md" && "h-2 w-2",
+                        size === "lg" && "h-2.5 w-2.5"
                       )}
                       aria-label={`${collaborator.status} status`}
                     />
@@ -147,13 +150,13 @@ export function CollaboratorAvatars({
                     <Badge
                       variant="outline"
                       className={cn(
-                        'w-fit text-xs',
-                        collaborator.status === 'active' &&
-                          'bg-green-500/10 text-green-500 border-green-500/20',
-                        collaborator.status === 'idle' &&
-                          'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-                        collaborator.status === 'offline' &&
-                          'bg-gray-500/10 text-gray-500 border-gray-500/20'
+                        "w-fit text-xs",
+                        collaborator.status === "active" &&
+                          "bg-green-500/10 text-green-500 border-green-500/20",
+                        collaborator.status === "idle" &&
+                          "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+                        collaborator.status === "offline" &&
+                          "bg-gray-500/10 text-gray-500 border-gray-500/20"
                       )}
                     >
                       {collaborator.status.charAt(0).toUpperCase() +
@@ -173,10 +176,10 @@ export function CollaboratorAvatars({
                   <TooltipTrigger asChild>
                     <button
                       className={cn(
-                        'relative flex items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors',
+                        "relative flex items-center justify-center rounded-full bg-muted hover:bg-muted/80 transition-colors",
                         sizeClasses[size],
-                        showBorder && 'ring-2 ring-background',
-                        'cursor-pointer hover:z-10'
+                        showBorder && "ring-2 ring-background",
+                        "cursor-pointer hover:z-10"
                       )}
                       aria-label={`Show ${remainingCount} more collaborators`}
                     >
@@ -202,8 +205,8 @@ export function CollaboratorAvatars({
                     <div
                       key={collaborator.id}
                       className={cn(
-                        'flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50',
-                        onAvatarClick && 'cursor-pointer'
+                        "flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50",
+                        onAvatarClick && "cursor-pointer"
                       )}
                       onClick={() => {
                         onAvatarClick?.(collaborator);
@@ -223,7 +226,7 @@ export function CollaboratorAvatars({
                         {showStatus && collaborator.status && (
                           <span
                             className={cn(
-                              'absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-background',
+                              "absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-background",
                               statusColors[collaborator.status]
                             )}
                           />
@@ -243,13 +246,13 @@ export function CollaboratorAvatars({
                         <Badge
                           variant="outline"
                           className={cn(
-                            'shrink-0 text-xs',
-                            collaborator.status === 'active' &&
-                              'bg-green-500/10 text-green-500 border-green-500/20',
-                            collaborator.status === 'idle' &&
-                              'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-                            collaborator.status === 'offline' &&
-                              'bg-gray-500/10 text-gray-500 border-gray-500/20'
+                            "shrink-0 text-xs",
+                            collaborator.status === "active" &&
+                              "bg-green-500/10 text-green-500 border-green-500/20",
+                            collaborator.status === "idle" &&
+                              "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+                            collaborator.status === "offline" &&
+                              "bg-gray-500/10 text-gray-500 border-gray-500/20"
                           )}
                         >
                           {collaborator.status}

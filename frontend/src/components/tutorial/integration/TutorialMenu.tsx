@@ -5,7 +5,7 @@
  * Shows completion status and allows launching tutorials.
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from "react";
 import {
   BookOpen,
   Search,
@@ -18,23 +18,29 @@ import {
   Award,
   Zap,
   X,
-} from 'lucide-react';
-import { useTutorial } from './TutorialProvider';
-import { useTutorialStore } from '@/stores/tutorial-store';
-import type { Tutorial, DifficultyLevel } from '@/types/tutorial';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from "lucide-react";
+import { useTutorial } from "./TutorialProvider";
+import { useTutorialStore } from "@/stores/tutorial-store";
+import type { Tutorial, DifficultyLevel } from "@/types/tutorial";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 
 // ============================================================================
 // Types
@@ -53,7 +59,7 @@ interface TutorialMenuProps {
   customFilter?: (tutorial: Tutorial) => boolean;
 }
 
-type CompletionFilter = 'all' | 'completed' | 'in-progress' | 'not-started';
+type CompletionFilter = "all" | "completed" | "in-progress" | "not-started";
 
 // ============================================================================
 // Component
@@ -63,7 +69,7 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
   tutorials,
   isOpen,
   onClose,
-  title = 'Tutorials',
+  title = "Tutorials",
   customFilter,
 }) => {
   const { startTutorial } = useTutorial();
@@ -73,39 +79,39 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
   // State
   // ============================================================================
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [difficultyFilter, setDifficultyFilter] = useState<DifficultyLevel | 'all'>('all');
-  const [completionFilter, setCompletionFilter] = useState<CompletionFilter>('all');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [difficultyFilter, setDifficultyFilter] = useState<
+    DifficultyLevel | "all"
+  >("all");
+  const [completionFilter, setCompletionFilter] =
+    useState<CompletionFilter>("all");
 
   // ============================================================================
   // Helpers
   // ============================================================================
 
   const getTutorialStatus = useCallback(
-    (tutorialId: string): 'completed' | 'in-progress' | 'not-started' => {
+    (tutorialId: string): "completed" | "in-progress" | "not-started" => {
       if (completedTutorials.includes(tutorialId)) {
-        return 'completed';
+        return "completed";
       }
       if (inProgressTutorials.includes(tutorialId)) {
-        return 'in-progress';
+        return "in-progress";
       }
-      return 'not-started';
+      return "not-started";
     },
     [completedTutorials, inProgressTutorials]
   );
 
-  const isNewTutorial = useCallback(
-    (tutorial: Tutorial): boolean => {
-      if (!tutorial.metadata?.createdAt) {
-        return false;
-      }
-      // Consider tutorials created in the last 7 days as "new"
-      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      return tutorial.metadata.createdAt > weekAgo;
-    },
-    []
-  );
+  const isNewTutorial = useCallback((tutorial: Tutorial): boolean => {
+    if (!tutorial.metadata?.createdAt) {
+      return false;
+    }
+    // Consider tutorials created in the last 7 days as "new"
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return tutorial.metadata.createdAt > weekAgo;
+  }, []);
 
   // ============================================================================
   // Get Available Categories
@@ -136,7 +142,9 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchesTitle = tutorial.title.toLowerCase().includes(query);
-        const matchesDescription = tutorial.description?.toLowerCase().includes(query);
+        const matchesDescription = tutorial.description
+          ?.toLowerCase()
+          .includes(query);
         const matchesTags = tutorial.tags?.some((tag) =>
           tag.toLowerCase().includes(query)
         );
@@ -147,18 +155,21 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
       }
 
       // Category filter
-      if (categoryFilter !== 'all' && tutorial.category !== categoryFilter) {
+      if (categoryFilter !== "all" && tutorial.category !== categoryFilter) {
         return false;
       }
 
       // Difficulty filter
-      if (difficultyFilter !== 'all' && tutorial.difficulty !== difficultyFilter) {
+      if (
+        difficultyFilter !== "all" &&
+        tutorial.difficulty !== difficultyFilter
+      ) {
         return false;
       }
 
       // Completion filter
       const status = getTutorialStatus(tutorial.id);
-      if (completionFilter !== 'all' && status !== completionFilter) {
+      if (completionFilter !== "all" && status !== completionFilter) {
         return false;
       }
 
@@ -187,10 +198,10 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
   );
 
   const handleClearFilters = useCallback(() => {
-    setSearchQuery('');
-    setCategoryFilter('all');
-    setDifficultyFilter('all');
-    setCompletionFilter('all');
+    setSearchQuery("");
+    setCategoryFilter("all");
+    setDifficultyFilter("all");
+    setCompletionFilter("all");
   }, []);
 
   // ============================================================================
@@ -198,10 +209,22 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
   // ============================================================================
 
   const renderDifficultyBadge = (difficulty: DifficultyLevel) => {
-    const variants: Record<DifficultyLevel, { icon: React.ReactNode; color: string }> = {
-      beginner: { icon: <Circle className="h-3 w-3" />, color: 'bg-green-500/10 text-green-700' },
-      intermediate: { icon: <Star className="h-3 w-3" />, color: 'bg-yellow-500/10 text-yellow-700' },
-      advanced: { icon: <Zap className="h-3 w-3" />, color: 'bg-red-500/10 text-red-700' },
+    const variants: Record<
+      DifficultyLevel,
+      { icon: React.ReactNode; color: string }
+    > = {
+      beginner: {
+        icon: <Circle className="h-3 w-3" />,
+        color: "bg-green-500/10 text-green-700",
+      },
+      intermediate: {
+        icon: <Star className="h-3 w-3" />,
+        color: "bg-yellow-500/10 text-yellow-700",
+      },
+      advanced: {
+        icon: <Zap className="h-3 w-3" />,
+        color: "bg-red-500/10 text-red-700",
+      },
     };
 
     const { icon, color } = variants[difficulty];
@@ -214,19 +237,27 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
     );
   };
 
-  const renderStatusBadge = (status: 'completed' | 'in-progress' | 'not-started') => {
-    if (status === 'completed') {
+  const renderStatusBadge = (
+    status: "completed" | "in-progress" | "not-started"
+  ) => {
+    if (status === "completed") {
       return (
-        <Badge variant="secondary" className="bg-green-500/10 text-green-700 flex items-center gap-1">
+        <Badge
+          variant="secondary"
+          className="bg-green-500/10 text-green-700 flex items-center gap-1"
+        >
           <CheckCircle2 className="h-3 w-3" />
           Completed
         </Badge>
       );
     }
 
-    if (status === 'in-progress') {
+    if (status === "in-progress") {
       return (
-        <Badge variant="secondary" className="bg-blue-500/10 text-blue-700 flex items-center gap-1">
+        <Badge
+          variant="secondary"
+          className="bg-blue-500/10 text-blue-700 flex items-center gap-1"
+        >
           <PlayCircle className="h-3 w-3" />
           In Progress
         </Badge>
@@ -253,7 +284,10 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
                 <BookOpen className="h-4 w-4" />
                 {tutorial.title}
                 {isNew && (
-                  <Badge variant="secondary" className="bg-blue-500/10 text-blue-700">
+                  <Badge
+                    variant="secondary"
+                    className="bg-blue-500/10 text-blue-700"
+                  >
                     New
                   </Badge>
                 )}
@@ -285,27 +319,31 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
             )}
 
             <Badge variant="outline">
-              {tutorial.steps.length} {tutorial.steps.length === 1 ? 'step' : 'steps'}
+              {tutorial.steps.length}{" "}
+              {tutorial.steps.length === 1 ? "step" : "steps"}
             </Badge>
           </div>
 
-          {tutorial.learningObjectives && tutorial.learningObjectives.length > 0 && (
-            <div className="mt-3 space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">
-                You'll learn:
-              </p>
-              <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                {tutorial.learningObjectives.slice(0, 2).map((objective, idx) => (
-                  <li key={idx}>{objective}</li>
-                ))}
-                {tutorial.learningObjectives.length > 2 && (
-                  <li className="text-muted-foreground/70">
-                    +{tutorial.learningObjectives.length - 2} more...
-                  </li>
-                )}
-              </ul>
-            </div>
-          )}
+          {tutorial.learningObjectives &&
+            tutorial.learningObjectives.length > 0 && (
+              <div className="mt-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  You'll learn:
+                </p>
+                <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                  {tutorial.learningObjectives
+                    .slice(0, 2)
+                    .map((objective, idx) => (
+                      <li key={idx}>{objective}</li>
+                    ))}
+                  {tutorial.learningObjectives.length > 2 && (
+                    <li className="text-muted-foreground/70">
+                      +{tutorial.learningObjectives.length - 2} more...
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
         </CardContent>
       </Card>
     );
@@ -320,10 +358,10 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
   }
 
   const hasActiveFilters =
-    searchQuery !== '' ||
-    categoryFilter !== 'all' ||
-    difficultyFilter !== 'all' ||
-    completionFilter !== 'all';
+    searchQuery !== "" ||
+    categoryFilter !== "all" ||
+    difficultyFilter !== "all" ||
+    completionFilter !== "all";
 
   return (
     <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -373,13 +411,20 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
             </div>
 
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[180px]" aria-label="Filter by category">
+              <SelectTrigger
+                className="w-[180px]"
+                aria-label="Filter by category"
+              >
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
                 {categories.map((category) => (
-                  <SelectItem key={category} value={category} className="capitalize">
+                  <SelectItem
+                    key={category}
+                    value={category}
+                    className="capitalize"
+                  >
                     {category}
                   </SelectItem>
                 ))}
@@ -388,9 +433,14 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
 
             <Select
               value={difficultyFilter}
-              onValueChange={(value) => setDifficultyFilter(value as DifficultyLevel | 'all')}
+              onValueChange={(value) =>
+                setDifficultyFilter(value as DifficultyLevel | "all")
+              }
             >
-              <SelectTrigger className="w-[180px]" aria-label="Filter by difficulty">
+              <SelectTrigger
+                className="w-[180px]"
+                aria-label="Filter by difficulty"
+              >
                 <SelectValue placeholder="Difficulty" />
               </SelectTrigger>
               <SelectContent>
@@ -401,8 +451,14 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
               </SelectContent>
             </Select>
 
-            <Select value={completionFilter} onValueChange={setCompletionFilter}>
-              <SelectTrigger className="w-[180px]" aria-label="Filter by completion status">
+            <Select
+              value={completionFilter}
+              onValueChange={setCompletionFilter}
+            >
+              <SelectTrigger
+                className="w-[180px]"
+                aria-label="Filter by completion status"
+              >
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -440,8 +496,8 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
               <h3 className="text-lg font-semibold mb-2">No tutorials found</h3>
               <p className="text-sm text-muted-foreground max-w-md">
                 {hasActiveFilters
-                  ? 'Try adjusting your filters or search query to find tutorials.'
-                  : 'No tutorials are available at the moment.'}
+                  ? "Try adjusting your filters or search query to find tutorials."
+                  : "No tutorials are available at the moment."}
               </p>
               {hasActiveFilters && (
                 <Button

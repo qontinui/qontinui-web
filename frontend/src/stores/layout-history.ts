@@ -11,12 +11,12 @@
  * - Metadata tracking
  */
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { Workflow } from '@/lib/action-schema/action-types';
-import { LayoutStyle } from '@/lib/workflow-layout/auto-layout';
-import type { LayoutOptions } from '@/services/layout-service';
-import type { LayoutStatistics } from '@/services/layout-statistics';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type { Workflow } from "@/lib/action-schema/action-types";
+import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
+import type { LayoutOptions } from "@/services/layout-service";
+import type { LayoutStatistics } from "@/services/layout-statistics";
 
 // ============================================================================
 // Types
@@ -217,7 +217,7 @@ export const useLayoutHistory = create<LayoutHistoryStore>()(
 
       goToEntry: (id: string) => {
         const state = get();
-        const index = state.history.findIndex(e => e.id === id);
+        const index = state.history.findIndex((e) => e.id === id);
 
         if (index === -1) return null;
 
@@ -266,10 +266,10 @@ export const useLayoutHistory = create<LayoutHistoryStore>()(
 
       removeEntry: (id: string) => {
         set((state) => {
-          const index = state.history.findIndex(e => e.id === id);
+          const index = state.history.findIndex((e) => e.id === id);
           if (index === -1) return state;
 
-          const newHistory = state.history.filter(e => e.id !== id);
+          const newHistory = state.history.filter((e) => e.id !== id);
           let newIndex = state.currentIndex;
 
           // Adjust current index if needed
@@ -297,7 +297,7 @@ export const useLayoutHistory = create<LayoutHistoryStore>()(
       },
     }),
     {
-      name: 'layout-history-storage',
+      name: "layout-history-storage",
       partialize: (state) => ({
         // Only persist recent history (last 5 entries)
         history: state.history.slice(-5),
@@ -328,7 +328,7 @@ export function useLayoutHistoryWithWorkflow(workflow: Workflow | null) {
 
     // Apply positions from history entry
     const historyPositions = new Map(
-      entry.workflow.actions.map(a => [a.id, a.position])
+      entry.workflow.actions.map((a) => [a.id, a.position])
     );
 
     for (const action of workflow.actions) {
@@ -372,24 +372,24 @@ export function formatHistoryTimestamp(date: Date): string {
 
   // Less than 1 minute
   if (diff < 60000) {
-    return 'Just now';
+    return "Just now";
   }
 
   // Less than 1 hour
   if (diff < 3600000) {
     const minutes = Math.floor(diff / 60000);
-    return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
   }
 
   // Less than 1 day
   if (diff < 86400000) {
     const hours = Math.floor(diff / 3600000);
-    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    return `${hours} hour${hours > 1 ? "s" : ""} ago`;
   }
 
   // More than 1 day
   const days = Math.floor(diff / 86400000);
-  return `${days} day${days > 1 ? 's' : ''} ago`;
+  return `${days} day${days > 1 ? "s" : ""} ago`;
 }
 
 /**
@@ -397,11 +397,11 @@ export function formatHistoryTimestamp(date: Date): string {
  */
 export function getLayoutStyleName(style: LayoutStyle): string {
   const names: Record<LayoutStyle, string> = {
-    [LayoutStyle.HIERARCHICAL]: 'Hierarchical',
-    [LayoutStyle.HORIZONTAL]: 'Horizontal',
-    [LayoutStyle.TREE]: 'Tree',
-    [LayoutStyle.FORCE_DIRECTED]: 'Force-Directed',
-    [LayoutStyle.CIRCULAR]: 'Circular',
+    [LayoutStyle.HIERARCHICAL]: "Hierarchical",
+    [LayoutStyle.HORIZONTAL]: "Horizontal",
+    [LayoutStyle.TREE]: "Tree",
+    [LayoutStyle.FORCE_DIRECTED]: "Force-Directed",
+    [LayoutStyle.CIRCULAR]: "Circular",
   };
 
   return names[style] || style;

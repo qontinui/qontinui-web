@@ -2,19 +2,24 @@
  * Control flow action configurations - NEW action types for programming logic
  */
 
-import { TargetConfig } from '../shared/target-config';
+import { TargetConfig } from "../shared/target-config";
 
 /**
  * Condition configuration for control flow
  */
 export interface ConditionConfig {
-  type: 'image_exists' | 'image_vanished' | 'text_exists' | 'variable' | 'expression';
+  type:
+    | "image_exists"
+    | "image_vanished"
+    | "text_exists"
+    | "variable"
+    | "expression";
   imageId?: string;
   text?: string;
   variableName?: string;
   expression?: string; // JavaScript expression
   expectedValue?: any;
-  operator?: '==' | '!=' | '>' | '<' | '>=' | '<=' | 'contains' | 'matches';
+  operator?: "==" | "!=" | ">" | "<" | ">=" | "<=" | "contains" | "matches";
 }
 
 /**
@@ -36,7 +41,7 @@ export interface IfActionConfig {
  */
 export interface LoopActionConfig {
   /** Type of loop */
-  loopType: 'FOR' | 'WHILE' | 'FOREACH';
+  loopType: "FOR" | "WHILE" | "FOREACH";
 
   /** Number of iterations (for FOR loops) */
   iterations?: number;
@@ -46,7 +51,7 @@ export interface LoopActionConfig {
 
   /** Collection to iterate over (for FOREACH loops) */
   collection?: {
-    type: 'variable' | 'range' | 'matches';
+    type: "variable" | "range" | "matches";
     variableName?: string; // Variable containing array
     start?: number; // For range
     end?: number; // For range

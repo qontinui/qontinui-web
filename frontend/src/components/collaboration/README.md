@@ -5,17 +5,20 @@ Comprehensive collaboration components for qontinui-web, including real-time pre
 ## Components Overview
 
 ### 1. OrganizationSwitcher
+
 Dropdown component to switch between organizations.
 
 **Features:**
+
 - Shows current organization with avatar
 - Lists all user's organizations with member counts
 - "Create New Organization" action
 - Keyboard navigation support
 
 **Usage:**
+
 ```tsx
-import { OrganizationSwitcher } from '@/components/collaboration';
+import { OrganizationSwitcher } from "@/components/collaboration";
 
 <OrganizationSwitcher
   organizations={organizations}
@@ -23,13 +26,15 @@ import { OrganizationSwitcher } from '@/components/collaboration';
   onOrganizationChange={(orgId) => switchOrg(orgId)}
   onCreateOrganization={() => openCreateDialog()}
   loading={isLoading}
-/>
+/>;
 ```
 
 ### 2. TeamMemberList
+
 Table view of team members with role management.
 
 **Features:**
+
 - Search and filter members
 - Role management (for admins)
 - Remove members
@@ -38,8 +43,9 @@ Table view of team members with role management.
 - Shows last active time
 
 **Usage:**
+
 ```tsx
-import { TeamMemberList } from '@/components/collaboration';
+import { TeamMemberList } from "@/components/collaboration";
 
 <TeamMemberList
   members={members}
@@ -48,13 +54,15 @@ import { TeamMemberList } from '@/components/collaboration';
   onInvite={() => openInviteDialog()}
   onRoleChange={async (memberId, role) => await updateRole(memberId, role)}
   onRemove={async (memberId) => await removeMember(memberId)}
-/>
+/>;
 ```
 
 ### 3. InviteMemberDialog
+
 Dialog for inviting new team members.
 
 **Features:**
+
 - Email validation
 - Role selection (viewer/member/admin)
 - Pending invitations list
@@ -62,8 +70,9 @@ Dialog for inviting new team members.
 - Loading states
 
 **Usage:**
+
 ```tsx
-import { InviteMemberDialog } from '@/components/collaboration';
+import { InviteMemberDialog } from "@/components/collaboration";
 
 <InviteMemberDialog
   open={isOpen}
@@ -72,13 +81,15 @@ import { InviteMemberDialog } from '@/components/collaboration';
   onInvite={async (email, role) => await sendInvite(email, role)}
   onResend={async (id) => await resendInvite(id)}
   onCancel={async (id) => await cancelInvite(id)}
-/>
+/>;
 ```
 
 ### 4. ProjectSharingDialog
+
 Share projects with users or organizations.
 
 **Features:**
+
 - Share with specific users (email input)
 - Share with organizations
 - Permission levels (view/comment/edit/admin)
@@ -88,8 +99,9 @@ Share projects with users or organizations.
 - Revoke access
 
 **Usage:**
+
 ```tsx
-import { ProjectSharingDialog } from '@/components/collaboration';
+import { ProjectSharingDialog } from "@/components/collaboration";
 
 <ProjectSharingDialog
   open={isOpen}
@@ -98,18 +110,26 @@ import { ProjectSharingDialog } from '@/components/collaboration';
   collaborators={collaborators}
   organizations={organizations}
   shareLink={shareLink}
-  onAddUser={async (email, permission) => await shareWithUser(email, permission)}
-  onAddOrganization={async (orgId, permission) => await shareWithOrg(orgId, permission)}
-  onChangePermission={async (id, permission) => await updatePermission(id, permission)}
+  onAddUser={async (email, permission) =>
+    await shareWithUser(email, permission)
+  }
+  onAddOrganization={async (orgId, permission) =>
+    await shareWithOrg(orgId, permission)
+  }
+  onChangePermission={async (id, permission) =>
+    await updatePermission(id, permission)
+  }
   onRevoke={async (id) => await revokeAccess(id)}
   onGenerateLink={async () => await generateShareLink()}
-/>
+/>;
 ```
 
 ### 5. CollaboratorAvatars
+
 Stack of avatar circles showing active collaborators.
 
 **Features:**
+
 - Shows first 3-5 avatars, "+N more" for rest
 - Hover tooltips with full names
 - Color-coded presence status
@@ -117,8 +137,9 @@ Stack of avatar circles showing active collaborators.
 - Configurable size (sm/md/lg)
 
 **Usage:**
+
 ```tsx
-import { CollaboratorAvatars } from '@/components/collaboration';
+import { CollaboratorAvatars } from "@/components/collaboration";
 
 <CollaboratorAvatars
   collaborators={activeUsers}
@@ -126,13 +147,15 @@ import { CollaboratorAvatars } from '@/components/collaboration';
   size="md"
   showStatus={true}
   onAvatarClick={(user) => focusOnUser(user)}
-/>
+/>;
 ```
 
 ### 6. PresenceIndicator
+
 Real-time presence sidebar showing who's online.
 
 **Features:**
+
 - Shows avatar, name, status (active/viewing/editing)
 - What they're editing
 - Optional cursor indicators
@@ -140,8 +163,9 @@ Real-time presence sidebar showing who's online.
 - Auto-updates
 
 **Usage:**
+
 ```tsx
-import { PresenceIndicator } from '@/components/collaboration';
+import { PresenceIndicator } from "@/components/collaboration";
 
 <PresenceIndicator
   users={presenceData}
@@ -149,13 +173,15 @@ import { PresenceIndicator } from '@/components/collaboration';
   showCursors={true}
   collapsible={true}
   onUserClick={(user) => goToUser(user)}
-/>
+/>;
 ```
 
 ### 7. EditLockBanner
+
 Banner shown when resource is locked by another user.
 
 **Features:**
+
 - Shows who's editing
 - Countdown timer until lock expires
 - Request edit access button
@@ -163,8 +189,9 @@ Banner shown when resource is locked by another user.
 - Different styling for own lock vs others
 
 **Usage:**
+
 ```tsx
-import { EditLockBanner } from '@/components/collaboration';
+import { EditLockBanner } from "@/components/collaboration";
 
 <EditLockBanner
   lock={currentLock}
@@ -172,13 +199,15 @@ import { EditLockBanner } from '@/components/collaboration';
   onRequestAccess={() => requestEditAccess()}
   onOverride={() => overrideLock()}
   canOverride={user.isAdmin}
-/>
+/>;
 ```
 
 ### 8. CommentThread
+
 Threaded comment discussion component.
 
 **Features:**
+
 - Rich text comments
 - Reply to comments
 - Edit/delete own comments
@@ -188,26 +217,31 @@ Threaded comment discussion component.
 - Real-time updates
 
 **Usage:**
+
 ```tsx
-import { CommentThread } from '@/components/collaboration';
+import { CommentThread } from "@/components/collaboration";
 
 <CommentThread
   thread={commentThread}
   currentUserId={user.id}
   currentUserName={user.name}
   availableUsers={teamMembers}
-  onAddComment={async (content, parentId) => await addComment(content, parentId)}
+  onAddComment={async (content, parentId) =>
+    await addComment(content, parentId)
+  }
   onEditComment={async (id, content) => await updateComment(id, content)}
   onDeleteComment={async (id) => await deleteComment(id)}
   onResolve={async () => await resolveThread()}
   onReopen={async () => await reopenThread()}
-/>
+/>;
 ```
 
 ### 9. ActivityFeed
+
 Timeline of project activities with filtering.
 
 **Features:**
+
 - Grouped by date (Today/Yesterday/Date)
 - Filter by user, action type, resource type
 - Real-time updates indicator
@@ -216,8 +250,9 @@ Timeline of project activities with filtering.
 - Action icons and colors
 
 **Usage:**
+
 ```tsx
-import { ActivityFeed } from '@/components/collaboration';
+import { ActivityFeed } from "@/components/collaboration";
 
 <ActivityFeed
   activities={activities}
@@ -226,13 +261,15 @@ import { ActivityFeed } from '@/components/collaboration';
   loading={isLoading}
   realtime={true}
   onActivityClick={(activity) => navigateToResource(activity)}
-/>
+/>;
 ```
 
 ### 10. PermissionGate
+
 HOC/wrapper to show content based on permissions.
 
 **Features:**
+
 - Check single or multiple permissions
 - Role-based or permission-based
 - Custom fallback component
@@ -240,6 +277,7 @@ HOC/wrapper to show content based on permissions.
 - usePermission hook for programmatic checks
 
 **Usage:**
+
 ```tsx
 import { PermissionGate, usePermission } from '@/components/collaboration';
 
@@ -265,9 +303,11 @@ if (hasPermission('edit')) {
 ```
 
 ### 11. ConflictResolutionDialog
+
 Resolve conflicts when multiple users edit simultaneously.
 
 **Features:**
+
 - Side-by-side or unified diff view
 - Keep Mine / Keep Theirs / Merge options
 - Field-by-field conflict resolution
@@ -276,8 +316,9 @@ Resolve conflicts when multiple users edit simultaneously.
 - Resolve all conflicts at once
 
 **Usage:**
+
 ```tsx
-import { ConflictResolutionDialog } from '@/components/collaboration';
+import { ConflictResolutionDialog } from "@/components/collaboration";
 
 <ConflictResolutionDialog
   open={hasConflicts}
@@ -287,16 +328,16 @@ import { ConflictResolutionDialog } from '@/components/collaboration';
   onResolve={async (id, resolution, mergedData) =>
     await resolveConflict(id, resolution, mergedData)
   }
-  onResolveAll={async (resolution) =>
-    await resolveAllConflicts(resolution)
-  }
-/>
+  onResolveAll={async (resolution) => await resolveAllConflicts(resolution)}
+/>;
 ```
 
 ### 12. ReviewRequestPanel
+
 Create and manage review requests.
 
 **Features:**
+
 - Create review request with multiple reviewers
 - Submit review with approve/request changes
 - Review comments and decisions
@@ -305,8 +346,9 @@ Create and manage review requests.
 - Shows all reviewer statuses
 
 **Usage:**
+
 ```tsx
-import { ReviewRequestPanel } from '@/components/collaboration';
+import { ReviewRequestPanel } from "@/components/collaboration";
 
 <ReviewRequestPanel
   reviewRequest={currentReview}
@@ -317,12 +359,13 @@ import { ReviewRequestPanel } from '@/components/collaboration';
   onCreateReview={async (data) => await createReview(data)}
   onSubmitReview={async (data) => await submitReview(data)}
   onCancelReview={async () => await cancelReview()}
-/>
+/>;
 ```
 
 ## Installation Requirements
 
 These components use:
+
 - **shadcn/ui** components (Button, Dialog, Input, Select, etc.)
 - **lucide-react** icons
 - **date-fns** for date formatting
@@ -336,6 +379,7 @@ All components support dark mode through Tailwind CSS classes and `next-themes`.
 ## Accessibility
 
 All components include:
+
 - ARIA labels and roles
 - Keyboard navigation
 - Screen reader support
@@ -345,6 +389,7 @@ All components include:
 ## Responsive Design
 
 Components are fully responsive with:
+
 - Mobile-first design
 - Flexible layouts
 - Touch-friendly targets
@@ -353,6 +398,7 @@ Components are fully responsive with:
 ## TypeScript
 
 Full TypeScript support with:
+
 - Exported types and interfaces
 - Generic components
 - Type-safe props
@@ -361,9 +407,9 @@ Full TypeScript support with:
 ## Example Integration
 
 ```tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   OrganizationSwitcher,
   TeamMemberList,
@@ -371,7 +417,7 @@ import {
   PresenceIndicator,
   ActivityFeed,
   PermissionGate,
-} from '@/components/collaboration';
+} from "@/components/collaboration";
 
 export function CollaborationDashboard() {
   const [currentOrg, setCurrentOrg] = useState(null);

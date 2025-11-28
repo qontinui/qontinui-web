@@ -10,12 +10,16 @@ export function HighlightVisualization({
   location,
 }: HighlightVisualizationProps) {
   // Prefer region over location
-  const region = actionRegion || (location ? {
-    x: location[0] - 50,
-    y: location[1] - 50,
-    w: 100,
-    h: 100,
-  } : null);
+  const region =
+    actionRegion ||
+    (location
+      ? {
+          x: location[0] - 50,
+          y: location[1] - 50,
+          w: 100,
+          h: 100,
+        }
+      : null);
 
   if (!region) return null;
 

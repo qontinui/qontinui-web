@@ -1,16 +1,16 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useCallback } from "react"
-import { ImageAsset } from "@/contexts/automation-context/types"
-import { apiClient } from "@/lib/api-client"
-import { toast } from "sonner"
+import { useState, useEffect, useCallback } from "react";
+import { ImageAsset } from "@/contexts/automation-context/types";
+import { apiClient } from "@/lib/api-client";
+import { toast } from "sonner";
 
 interface ImageWithRefreshProps {
-  imageAsset: ImageAsset
-  projectId: number
-  alt: string
-  className?: string
-  onRefresh?: (newUrl: string) => void
+  imageAsset: ImageAsset;
+  projectId: number;
+  alt: string;
+  className?: string;
+  onRefresh?: (newUrl: string) => void;
 }
 
 /**
@@ -29,82 +29,87 @@ export function ImageWithRefresh({
   className = "",
   onRefresh,
 }: ImageWithRefreshProps) {
-  const [currentUrl, setCurrentUrl] = useState(imageAsset.url)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [imageError, setImageError] = useState(false)
+  const [currentUrl, setCurrentUrl] = useState(imageAsset.url);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   // Check if URL is expiring within 1 hour (3600000ms)
   const isUrlExpiringSoon = useCallback(() => {
-    if (!imageAsset.url_expires_at) return false
+    if (!imageAsset.url_expires_at) return false;
 
-    const expiresAt = new Date(imageAsset.url_expires_at).getTime()
-    const now = Date.now()
-    const oneHour = 60 * 60 * 1000 // 1 hour in milliseconds
+    const expiresAt = new Date(imageAsset.url_expires_at).getTime();
+    const now = Date.now();
+    const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
 
-    return (expiresAt - now) < oneHour
-  }, [imageAsset.url_expires_at])
+    return expiresAt - now < oneHour;
+  }, [imageAsset.url_expires_at]);
 
   // Refresh the presigned URL
   const refreshUrl = useCallback(async () => {
-    if (isRefreshing) return
+    if (isRefreshing) return;
 
-    setIsRefreshing(true)
-    setImageError(false)
+    setIsRefreshing(true);
+    setImageError(false);
 
     try {
       const response = await apiClient.refreshPresignedUrl(
         projectId,
         imageAsset.s3_key
-      )
+      );
 
-      setCurrentUrl(response.url)
+      setCurrentUrl(response.url);
 
       // Notify parent component
       if (onRefresh) {
-        onRefresh(response.url)
+        onRefresh(response.url);
       }
 
-      console.log(`[ImageWithRefresh] Refreshed URL for ${imageAsset.name}`)
+      console.log(`[ImageWithRefresh] Refreshed URL for ${imageAsset.name}`);
     } catch (error) {
-      console.error('[ImageWithRefresh] Failed to refresh URL:', error)
-      toast.error('Failed to refresh image URL', {
-        description: 'Please try reloading the page.',
-      })
-      setImageError(true)
+      console.error("[ImageWithRefresh] Failed to refresh URL:", error);
+      toast.error("Failed to refresh image URL", {
+        description: "Please try reloading the page.",
+      });
+      setImageError(true);
     } finally {
-      setIsRefreshing(false)
+      setIsRefreshing(false);
     }
-  }, [projectId, imageAsset.s3_key, imageAsset.name, onRefresh, isRefreshing])
+  }, [projectId, imageAsset.s3_key, imageAsset.name, onRefresh, isRefreshing]);
 
   // Check URL expiry on mount and periodically
   useEffect(() => {
     // Check immediately on mount
     if (isUrlExpiringSoon()) {
-      refreshUrl()
+      refreshUrl();
     }
 
     // Check every 30 minutes
-    const interval = setInterval(() => {
-      if (isUrlExpiringSoon()) {
-        refreshUrl()
-      }
-    }, 30 * 60 * 1000) // 30 minutes
+    const interval = setInterval(
+      () => {
+        if (isUrlExpiringSoon()) {
+          refreshUrl();
+        }
+      },
+      30 * 60 * 1000
+    ); // 30 minutes
 
-    return () => clearInterval(interval)
-  }, [isUrlExpiringSoon, refreshUrl])
+    return () => clearInterval(interval);
+  }, [isUrlExpiringSoon, refreshUrl]);
 
   // Handle image load error
   const handleImageError = useCallback(() => {
-    console.warn(`[ImageWithRefresh] Image load error for ${imageAsset.name}, attempting refresh...`)
-    setImageError(true)
-    refreshUrl()
-  }, [imageAsset.name, refreshUrl])
+    console.warn(
+      `[ImageWithRefresh] Image load error for ${imageAsset.name}, attempting refresh...`
+    );
+    setImageError(true);
+    refreshUrl();
+  }, [imageAsset.name, refreshUrl]);
 
   // Update current URL when imageAsset changes
   useEffect(() => {
-    setCurrentUrl(imageAsset.url)
-    setImageError(false)
-  }, [imageAsset.url])
+    setCurrentUrl(imageAsset.url);
+    setImageError(false);
+  }, [imageAsset.url]);
 
   if (isRefreshing && imageError) {
     return (
@@ -119,7 +124,7 @@ export function ImageWithRefresh({
           <p className="text-xs text-gray-400">Refreshing...</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (imageError && !isRefreshing) {
@@ -140,7 +145,7 @@ export function ImageWithRefresh({
           </button>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -151,5 +156,5 @@ export function ImageWithRefresh({
       onError={handleImageError}
       loading="lazy"
     />
-  )
+  );
 }

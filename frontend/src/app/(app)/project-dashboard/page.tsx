@@ -1,15 +1,21 @@
-'use client';
+"use client";
 
-import { useState, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+import { useState, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   Download,
   Upload,
@@ -62,7 +68,7 @@ import {
   Info,
   CheckCircle,
   Save,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -87,7 +93,7 @@ import {
   PolarAngleAxis,
   PolarRadiusAxis,
   Radar,
-} from 'recharts';
+} from "recharts";
 
 // ============================================================================
 // Types
@@ -119,7 +125,7 @@ interface HealthFactors {
 
 interface HealthIssue {
   id: string;
-  type: 'error' | 'warning' | 'info';
+  type: "error" | "warning" | "info";
   category: string;
   title: string;
   description: string;
@@ -129,7 +135,7 @@ interface HealthIssue {
 }
 
 interface ResourceUsage {
-  type: 'workflow' | 'state' | 'image' | 'transition';
+  type: "workflow" | "state" | "image" | "transition";
   id: string;
   name: string;
   usageCount: number;
@@ -139,8 +145,8 @@ interface ResourceUsage {
 
 interface ActivityEvent {
   id: string;
-  type: 'created' | 'modified' | 'deleted' | 'imported' | 'exported' | 'tested';
-  resourceType: 'workflow' | 'state' | 'image' | 'transition';
+  type: "created" | "modified" | "deleted" | "imported" | "exported" | "tested";
+  resourceType: "workflow" | "state" | "image" | "transition";
   resourceName: string;
   timestamp: Date;
   user?: string;
@@ -149,13 +155,13 @@ interface ActivityEvent {
 
 interface DependencyNode {
   id: string;
-  type: 'workflow' | 'state' | 'image';
+  type: "workflow" | "state" | "image";
   name: string;
   dependencies: string[];
 }
 
 interface SearchResult {
-  type: 'workflow' | 'state' | 'image' | 'transition';
+  type: "workflow" | "state" | "image" | "transition";
   id: string;
   name: string;
   description?: string;
@@ -207,133 +213,146 @@ function generateMockProjectData() {
   // Health issues
   const healthIssues: HealthIssue[] = [
     {
-      id: '1',
-      type: 'error',
-      category: 'Broken References',
-      title: 'Missing Image References',
-      description: '8 workflows reference images that no longer exist',
+      id: "1",
+      type: "error",
+      category: "Broken References",
+      title: "Missing Image References",
+      description: "8 workflows reference images that no longer exist",
       count: 8,
-      affectedResources: ['LoginFlow', 'CheckoutProcess', 'UserProfile'],
-      link: '/automation-builder?filter=broken-refs',
+      affectedResources: ["LoginFlow", "CheckoutProcess", "UserProfile"],
+      link: "/automation-builder?filter=broken-refs",
     },
     {
-      id: '2',
-      type: 'error',
-      category: 'Circular Dependencies',
-      title: 'Circular Workflow Dependencies',
-      description: '3 workflows have circular dependencies',
+      id: "2",
+      type: "error",
+      category: "Circular Dependencies",
+      title: "Circular Workflow Dependencies",
+      description: "3 workflows have circular dependencies",
       count: 3,
-      affectedResources: ['MainFlow', 'SubFlow', 'HelperFlow'],
-      link: '/automation-builder/dependencies?filter=circular',
+      affectedResources: ["MainFlow", "SubFlow", "HelperFlow"],
+      link: "/automation-builder/dependencies?filter=circular",
     },
     {
-      id: '3',
-      type: 'warning',
-      category: 'Missing Tests',
-      title: 'Workflows Without Tests',
-      description: '42 workflows have no test cases',
+      id: "3",
+      type: "warning",
+      category: "Missing Tests",
+      title: "Workflows Without Tests",
+      description: "42 workflows have no test cases",
       count: 42,
       affectedResources: [],
-      link: '/automation-builder/testing?filter=no-tests',
+      link: "/automation-builder/testing?filter=no-tests",
     },
     {
-      id: '4',
-      type: 'warning',
-      category: 'High Complexity',
-      title: 'High Complexity Workflows',
-      description: '7 workflows exceed complexity threshold (15+ actions)',
+      id: "4",
+      type: "warning",
+      category: "High Complexity",
+      title: "High Complexity Workflows",
+      description: "7 workflows exceed complexity threshold (15+ actions)",
       count: 7,
-      affectedResources: ['MasterWorkflow', 'FullIntegration'],
-      link: '/automation-builder?filter=complex',
+      affectedResources: ["MasterWorkflow", "FullIntegration"],
+      link: "/automation-builder?filter=complex",
     },
     {
-      id: '5',
-      type: 'warning',
-      category: 'Unused Resources',
-      title: 'Unused Images',
-      description: '156 images are not used in any workflow or state',
+      id: "5",
+      type: "warning",
+      category: "Unused Resources",
+      title: "Unused Images",
+      description: "156 images are not used in any workflow or state",
       count: 156,
       affectedResources: [],
-      link: '/project-dashboard?tab=cleanup',
+      link: "/project-dashboard?tab=cleanup",
     },
     {
-      id: '6',
-      type: 'warning',
-      category: 'Orphaned States',
-      title: 'Orphaned States',
-      description: '12 states are not referenced by any workflow',
+      id: "6",
+      type: "warning",
+      category: "Orphaned States",
+      title: "Orphaned States",
+      description: "12 states are not referenced by any workflow",
       count: 12,
       affectedResources: [],
-      link: '/project-dashboard?tab=cleanup',
+      link: "/project-dashboard?tab=cleanup",
     },
     {
-      id: '7',
-      type: 'info',
-      category: 'Documentation',
-      title: 'Missing Documentation',
-      description: '58 workflows have no description',
+      id: "7",
+      type: "info",
+      category: "Documentation",
+      title: "Missing Documentation",
+      description: "58 workflows have no description",
       count: 58,
       affectedResources: [],
-      link: '/automation-builder/documentation',
+      link: "/automation-builder/documentation",
     },
     {
-      id: '8',
-      type: 'info',
-      category: 'Duplicate Detection',
-      title: 'Potential Duplicate Images',
-      description: '23 images may be duplicates based on visual similarity',
+      id: "8",
+      type: "info",
+      category: "Duplicate Detection",
+      title: "Potential Duplicate Images",
+      description: "23 images may be duplicates based on visual similarity",
       count: 23,
       affectedResources: [],
-      link: '/project-dashboard?tab=duplicates',
+      link: "/project-dashboard?tab=duplicates",
     },
   ];
 
   // Resource usage
   const resourceUsage: ResourceUsage[] = [
     {
-      type: 'workflow',
-      id: 'wf-1',
-      name: 'User Login Flow',
+      type: "workflow",
+      id: "wf-1",
+      name: "User Login Flow",
       usageCount: 1247,
-      lastUsed: '2 hours ago',
+      lastUsed: "2 hours ago",
     },
     {
-      type: 'state',
-      id: 'st-1',
-      name: 'LoginPage',
+      type: "state",
+      id: "st-1",
+      name: "LoginPage",
       usageCount: 892,
-      lastUsed: '5 hours ago',
+      lastUsed: "5 hours ago",
     },
     {
-      type: 'image',
-      id: 'img-1',
-      name: 'login_button.png',
+      type: "image",
+      id: "img-1",
+      name: "login_button.png",
       usageCount: 743,
-      lastUsed: '1 day ago',
+      lastUsed: "1 day ago",
       size: 45678,
     },
     {
-      type: 'workflow',
-      id: 'wf-2',
-      name: 'Form Validation',
+      type: "workflow",
+      id: "wf-2",
+      name: "Form Validation",
       usageCount: 621,
-      lastUsed: '3 days ago',
+      lastUsed: "3 days ago",
     },
     {
-      type: 'state',
-      id: 'st-2',
-      name: 'Dashboard',
+      type: "state",
+      id: "st-2",
+      name: "Dashboard",
       usageCount: 534,
-      lastUsed: '1 week ago',
+      lastUsed: "1 week ago",
     },
   ];
 
   // Activity events
   const activities: ActivityEvent[] = Array.from({ length: 50 }, (_, i) => {
-    const types: ActivityEvent['type'][] = ['created', 'modified', 'deleted', 'imported', 'exported', 'tested'];
-    const resourceTypes: ActivityEvent['resourceType'][] = ['workflow', 'state', 'image', 'transition'];
+    const types: ActivityEvent["type"][] = [
+      "created",
+      "modified",
+      "deleted",
+      "imported",
+      "exported",
+      "tested",
+    ];
+    const resourceTypes: ActivityEvent["resourceType"][] = [
+      "workflow",
+      "state",
+      "image",
+      "transition",
+    ];
     const type = types[Math.floor(Math.random() * types.length)];
-    const resourceType = resourceTypes[Math.floor(Math.random() * resourceTypes.length)];
+    const resourceType =
+      resourceTypes[Math.floor(Math.random() * resourceTypes.length)];
 
     return {
       id: `event-${i}`,
@@ -341,15 +360,17 @@ function generateMockProjectData() {
       resourceType,
       resourceName: `${resourceType}-${i}`,
       timestamp: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
-      user: Math.random() > 0.5 ? 'John Doe' : 'Jane Smith',
+      user: Math.random() > 0.5 ? "John Doe" : "Jane Smith",
     };
   }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
   // Timeline data (last 30 days)
   const timelineData = Array.from({ length: 30 }, (_, i) => ({
-    date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
+    date: new Date(
+      Date.now() - (29 - i) * 24 * 60 * 60 * 1000
+    ).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
     }),
     workflows: Math.floor(Math.random() * 5 + 2),
     states: Math.floor(Math.random() * 10 + 5),
@@ -359,85 +380,85 @@ function generateMockProjectData() {
 
   // Workflow statistics
   const workflowsByComplexity = [
-    { range: 'Simple (1-5)', count: 58, fill: '#00FF88' },
-    { range: 'Medium (6-10)', count: 47, fill: '#00D9FF' },
-    { range: 'Complex (11-15)', count: 30, fill: '#FFD700' },
-    { range: 'Very Complex (16+)', count: 7, fill: '#FF6B6B' },
+    { range: "Simple (1-5)", count: 58, fill: "#00FF88" },
+    { range: "Medium (6-10)", count: 47, fill: "#00D9FF" },
+    { range: "Complex (11-15)", count: 30, fill: "#FFD700" },
+    { range: "Very Complex (16+)", count: 7, fill: "#FF6B6B" },
   ];
 
   const workflowsByFolder = [
-    { name: 'Authentication', count: 35, fill: '#00D9FF' },
-    { name: 'Navigation', count: 28, fill: '#BD00FF' },
-    { name: 'Forms', count: 24, fill: '#00FF88' },
-    { name: 'Testing', count: 21, fill: '#FFD700' },
-    { name: 'API', count: 18, fill: '#FF6B6B' },
-    { name: 'Uncategorized', count: 16, fill: '#888888' },
+    { name: "Authentication", count: 35, fill: "#00D9FF" },
+    { name: "Navigation", count: 28, fill: "#BD00FF" },
+    { name: "Forms", count: 24, fill: "#00FF88" },
+    { name: "Testing", count: 21, fill: "#FFD700" },
+    { name: "API", count: 18, fill: "#FF6B6B" },
+    { name: "Uncategorized", count: 16, fill: "#888888" },
   ];
 
   const statesByGroup = [
-    { name: 'Login States', count: 45, fill: '#00D9FF' },
-    { name: 'Dashboard States', count: 67, fill: '#BD00FF' },
-    { name: 'Form States', count: 89, fill: '#00FF88' },
-    { name: 'Error States', count: 34, fill: '#FF6B6B' },
-    { name: 'Loading States', count: 56, fill: '#FFD700' },
-    { name: 'Other', count: 96, fill: '#888888' },
+    { name: "Login States", count: 45, fill: "#00D9FF" },
+    { name: "Dashboard States", count: 67, fill: "#BD00FF" },
+    { name: "Form States", count: 89, fill: "#00FF88" },
+    { name: "Error States", count: 34, fill: "#FF6B6B" },
+    { name: "Loading States", count: 56, fill: "#FFD700" },
+    { name: "Other", count: 96, fill: "#888888" },
   ];
 
   const imagesByFolder = [
-    { name: 'buttons', size: 234, fill: '#00D9FF', count: 234 },
-    { name: 'icons', size: 189, fill: '#BD00FF', count: 189 },
-    { name: 'backgrounds', size: 156, fill: '#00FF88', count: 156 },
-    { name: 'forms', size: 143, fill: '#FFD700', count: 143 },
-    { name: 'navigation', size: 128, fill: '#FF6B6B', count: 128 },
-    { name: 'misc', size: 393, fill: '#888888', count: 393 },
+    { name: "buttons", size: 234, fill: "#00D9FF", count: 234 },
+    { name: "icons", size: 189, fill: "#BD00FF", count: 189 },
+    { name: "backgrounds", size: 156, fill: "#00FF88", count: 156 },
+    { name: "forms", size: 143, fill: "#FFD700", count: 143 },
+    { name: "navigation", size: 128, fill: "#FF6B6B", count: 128 },
+    { name: "misc", size: 393, fill: "#888888", count: 393 },
   ];
 
   const transitionsByType = [
-    { name: 'Outgoing', count: 312, fill: '#00D9FF' },
-    { name: 'Incoming', count: 212, fill: '#BD00FF' },
+    { name: "Outgoing", count: 312, fill: "#00D9FF" },
+    { name: "Incoming", count: 212, fill: "#BD00FF" },
   ];
 
   // Storage statistics
   const storageStats = {
     totalSize: 847.5, // MB
     byType: [
-      { type: 'Images', size: 723.2, count: 1243, fill: '#00D9FF' },
-      { type: 'Workflows', size: 45.8, count: 142, fill: '#BD00FF' },
-      { type: 'States', size: 52.3, count: 387, fill: '#00FF88' },
-      { type: 'Other', size: 26.2, count: 524, fill: '#888888' },
+      { type: "Images", size: 723.2, count: 1243, fill: "#00D9FF" },
+      { type: "Workflows", size: 45.8, count: 142, fill: "#BD00FF" },
+      { type: "States", size: 52.3, count: 387, fill: "#00FF88" },
+      { type: "Other", size: 26.2, count: 524, fill: "#888888" },
     ],
   };
 
   // Dependency data
   const dependencyData: DependencyNode[] = [
     {
-      id: 'wf-1',
-      type: 'workflow',
-      name: 'Main Login',
-      dependencies: ['st-1', 'st-2', 'img-1'],
+      id: "wf-1",
+      type: "workflow",
+      name: "Main Login",
+      dependencies: ["st-1", "st-2", "img-1"],
     },
     {
-      id: 'st-1',
-      type: 'state',
-      name: 'LoginPage',
-      dependencies: ['img-1', 'img-2', 'img-3'],
+      id: "st-1",
+      type: "state",
+      name: "LoginPage",
+      dependencies: ["img-1", "img-2", "img-3"],
     },
     {
-      id: 'st-2',
-      type: 'state',
-      name: 'Dashboard',
-      dependencies: ['img-4', 'img-5'],
+      id: "st-2",
+      type: "state",
+      name: "Dashboard",
+      dependencies: ["img-4", "img-5"],
     },
     {
-      id: 'img-1',
-      type: 'image',
-      name: 'login_button.png',
+      id: "img-1",
+      type: "image",
+      name: "login_button.png",
       dependencies: [],
     },
     {
-      id: 'img-2',
-      type: 'image',
-      name: 'username_field.png',
+      id: "img-2",
+      type: "image",
+      name: "username_field.png",
       dependencies: [],
     },
   ];
@@ -478,14 +499,17 @@ function MetricCard({
   trend?: number;
 }) {
   const TrendIcon = trend && trend > 0 ? TrendingUp : TrendingDown;
-  const trendColor = trend && trend > 0 ? '#00FF88' : '#FF6B6B';
+  const trendColor = trend && trend > 0 ? "#00FF88" : "#FF6B6B";
 
   return (
     <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm hover:border-gray-700 transition-all">
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3 flex-1">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${color}20` }}>
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: `${color}20` }}
+            >
               <Icon className="w-5 h-5" style={{ color }} />
             </div>
             <div>
@@ -506,7 +530,7 @@ function MetricCard({
               }}
             >
               <TrendIcon className="w-3 h-3 mr-1" />
-              {trend > 0 ? '+' : ''}
+              {trend > 0 ? "+" : ""}
               {trend.toFixed(1)}%
             </Badge>
           )}
@@ -516,19 +540,25 @@ function MetricCard({
   );
 }
 
-function HealthScoreGauge({ score, factors }: { score: number; factors: HealthFactors }) {
+function HealthScoreGauge({
+  score,
+  factors,
+}: {
+  score: number;
+  factors: HealthFactors;
+}) {
   const getScoreColor = (score: number) => {
-    if (score >= 80) return '#00FF88';
-    if (score >= 60) return '#FFD700';
-    return '#FF6B6B';
+    if (score >= 80) return "#00FF88";
+    if (score >= 60) return "#FFD700";
+    return "#FF6B6B";
   };
 
   const getScoreLabel = (score: number) => {
-    if (score >= 90) return 'Excellent';
-    if (score >= 75) return 'Good';
-    if (score >= 60) return 'Fair';
-    if (score >= 40) return 'Poor';
-    return 'Critical';
+    if (score >= 90) return "Excellent";
+    if (score >= 75) return "Good";
+    if (score >= 60) return "Fair";
+    if (score >= 40) return "Poor";
+    return "Critical";
   };
 
   const color = getScoreColor(score);
@@ -536,12 +566,12 @@ function HealthScoreGauge({ score, factors }: { score: number; factors: HealthFa
 
   // Prepare radar chart data
   const radarData = [
-    { factor: 'Tests', value: factors.testCoverage, fullMark: 100 },
-    { factor: 'Docs', value: factors.docCoverage, fullMark: 100 },
-    { factor: 'Organized', value: factors.organization, fullMark: 100 },
-    { factor: 'Complexity', value: factors.complexity, fullMark: 100 },
-    { factor: 'Unused', value: factors.unusedResources, fullMark: 100 },
-    { factor: 'References', value: factors.brokenReferences, fullMark: 100 },
+    { factor: "Tests", value: factors.testCoverage, fullMark: 100 },
+    { factor: "Docs", value: factors.docCoverage, fullMark: 100 },
+    { factor: "Organized", value: factors.organization, fullMark: 100 },
+    { factor: "Complexity", value: factors.complexity, fullMark: 100 },
+    { factor: "Unused", value: factors.unusedResources, fullMark: 100 },
+    { factor: "References", value: factors.brokenReferences, fullMark: 100 },
   ];
 
   return (
@@ -549,7 +579,14 @@ function HealthScoreGauge({ score, factors }: { score: number; factors: HealthFa
       <div className="flex flex-col items-center justify-center">
         <div className="relative w-40 h-40">
           <svg className="w-full h-full transform -rotate-90">
-            <circle cx="80" cy="80" r="70" stroke="#2A2A2B" strokeWidth="12" fill="none" />
+            <circle
+              cx="80"
+              cy="80"
+              r="70"
+              stroke="#2A2A2B"
+              strokeWidth="12"
+              fill="none"
+            />
             <circle
               cx="80"
               cy="80"
@@ -577,9 +614,24 @@ function HealthScoreGauge({ score, factors }: { score: number; factors: HealthFa
         <ResponsiveContainer width="100%" height={200}>
           <RadarChart data={radarData}>
             <PolarGrid stroke="#333" />
-            <PolarAngleAxis dataKey="factor" stroke="#888" style={{ fontSize: '11px' }} />
-            <PolarRadiusAxis angle={90} domain={[0, 100]} stroke="#666" style={{ fontSize: '10px' }} />
-            <Radar name="Score" dataKey="value" stroke={color} fill={color} fillOpacity={0.3} />
+            <PolarAngleAxis
+              dataKey="factor"
+              stroke="#888"
+              style={{ fontSize: "11px" }}
+            />
+            <PolarRadiusAxis
+              angle={90}
+              domain={[0, 100]}
+              stroke="#666"
+              style={{ fontSize: "10px" }}
+            />
+            <Radar
+              name="Score"
+              dataKey="value"
+              stroke={color}
+              fill={color}
+              fillOpacity={0.3}
+            />
           </RadarChart>
         </ResponsiveContainer>
       </div>
@@ -587,7 +639,9 @@ function HealthScoreGauge({ score, factors }: { score: number; factors: HealthFa
       <div className="space-y-2 text-sm">
         <div className="flex items-center justify-between">
           <span className="text-gray-400">Test Coverage</span>
-          <span className="font-medium">{factors.testCoverage.toFixed(1)}%</span>
+          <span className="font-medium">
+            {factors.testCoverage.toFixed(1)}%
+          </span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-gray-400">Documentation</span>
@@ -595,7 +649,9 @@ function HealthScoreGauge({ score, factors }: { score: number; factors: HealthFa
         </div>
         <div className="flex items-center justify-between">
           <span className="text-gray-400">Organization</span>
-          <span className="font-medium">{factors.organization.toFixed(1)}%</span>
+          <span className="font-medium">
+            {factors.organization.toFixed(1)}%
+          </span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-gray-400">Complexity</span>
@@ -603,11 +659,15 @@ function HealthScoreGauge({ score, factors }: { score: number; factors: HealthFa
         </div>
         <div className="flex items-center justify-between">
           <span className="text-gray-400">Clean Resources</span>
-          <span className="font-medium">{factors.unusedResources.toFixed(1)}%</span>
+          <span className="font-medium">
+            {factors.unusedResources.toFixed(1)}%
+          </span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-gray-400">Valid References</span>
-          <span className="font-medium">{factors.brokenReferences.toFixed(1)}%</span>
+          <span className="font-medium">
+            {factors.brokenReferences.toFixed(1)}%
+          </span>
         </div>
       </div>
     </div>
@@ -617,25 +677,25 @@ function HealthScoreGauge({ score, factors }: { score: number; factors: HealthFa
 function HealthIssuesList({ issues }: { issues: HealthIssue[] }) {
   const router = useRouter();
 
-  const getIssueIcon = (type: HealthIssue['type']) => {
+  const getIssueIcon = (type: HealthIssue["type"]) => {
     switch (type) {
-      case 'error':
+      case "error":
         return XCircle;
-      case 'warning':
+      case "warning":
         return AlertTriangle;
-      case 'info':
+      case "info":
         return Info;
     }
   };
 
-  const getIssueColor = (type: HealthIssue['type']) => {
+  const getIssueColor = (type: HealthIssue["type"]) => {
     switch (type) {
-      case 'error':
-        return '#FF6B6B';
-      case 'warning':
-        return '#FFD700';
-      case 'info':
-        return '#00D9FF';
+      case "error":
+        return "#FF6B6B";
+      case "warning":
+        return "#FFD700";
+      case "info":
+        return "#00D9FF";
     }
   };
 
@@ -653,7 +713,10 @@ function HealthIssuesList({ issues }: { issues: HealthIssue[] }) {
             onClick={() => router.push(issue.link)}
           >
             <div className="flex items-start gap-3">
-              <Icon className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color }} />
+              <Icon
+                className="w-4 h-4 mt-0.5 flex-shrink-0"
+                style={{ color }}
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <p className="text-sm font-medium">{issue.title}</p>
@@ -668,16 +731,25 @@ function HealthIssuesList({ issues }: { issues: HealthIssue[] }) {
                     {issue.count}
                   </Badge>
                 </div>
-                <p className="text-xs text-gray-400 mb-2">{issue.description}</p>
+                <p className="text-xs text-gray-400 mb-2">
+                  {issue.description}
+                </p>
                 {issue.affectedResources.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
                     {issue.affectedResources.slice(0, 3).map((resource) => (
-                      <Badge key={resource} variant="outline" className="text-xs bg-gray-800/50 border-gray-700">
+                      <Badge
+                        key={resource}
+                        variant="outline"
+                        className="text-xs bg-gray-800/50 border-gray-700"
+                      >
                         {resource}
                       </Badge>
                     ))}
                     {issue.affectedResources.length > 3 && (
-                      <Badge variant="outline" className="text-xs bg-gray-800/50 border-gray-700">
+                      <Badge
+                        variant="outline"
+                        className="text-xs bg-gray-800/50 border-gray-700"
+                      >
                         +{issue.affectedResources.length - 3} more
                       </Badge>
                     )}
@@ -692,7 +764,11 @@ function HealthIssuesList({ issues }: { issues: HealthIssue[] }) {
   );
 }
 
-function ResourceOverviewTabs({ data }: { data: ReturnType<typeof generateMockProjectData> }) {
+function ResourceOverviewTabs({
+  data,
+}: {
+  data: ReturnType<typeof generateMockProjectData>;
+}) {
   return (
     <Tabs defaultValue="workflows" className="w-full">
       <TabsList className="grid w-full grid-cols-4 bg-gray-800/30">
@@ -726,18 +802,24 @@ function ResourceOverviewTabs({ data }: { data: ReturnType<typeof generateMockPr
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#1A1A1B',
-                      border: '1px solid #333',
-                      borderRadius: '8px',
+                      backgroundColor: "#1A1A1B",
+                      border: "1px solid #333",
+                      borderRadius: "8px",
                     }}
                   />
                 </RechartsPieChart>
               </ResponsiveContainer>
               <div className="mt-4 space-y-1 text-xs">
                 {data.workflowsByComplexity.map((item) => (
-                  <div key={item.range} className="flex items-center justify-between">
+                  <div
+                    key={item.range}
+                    className="flex items-center justify-between"
+                  >
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded" style={{ backgroundColor: item.fill }} />
+                      <div
+                        className="w-3 h-3 rounded"
+                        style={{ backgroundColor: item.fill }}
+                      />
                       <span className="text-gray-400">{item.range}</span>
                     </div>
                     <span className="font-medium">{item.count}</span>
@@ -755,13 +837,20 @@ function ResourceOverviewTabs({ data }: { data: ReturnType<typeof generateMockPr
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={data.workflowsByFolder}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis dataKey="name" stroke="#666" style={{ fontSize: '10px' }} angle={-45} textAnchor="end" height={80} />
-                  <YAxis stroke="#666" style={{ fontSize: '10px' }} />
+                  <XAxis
+                    dataKey="name"
+                    stroke="#666"
+                    style={{ fontSize: "10px" }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={80}
+                  />
+                  <YAxis stroke="#666" style={{ fontSize: "10px" }} />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#1A1A1B',
-                      border: '1px solid #333',
-                      borderRadius: '8px',
+                      backgroundColor: "#1A1A1B",
+                      border: "1px solid #333",
+                      borderRadius: "8px",
                     }}
                   />
                   <Bar dataKey="count" radius={[4, 4, 0, 0]}>
@@ -800,18 +889,24 @@ function ResourceOverviewTabs({ data }: { data: ReturnType<typeof generateMockPr
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#1A1A1B',
-                      border: '1px solid #333',
-                      borderRadius: '8px',
+                      backgroundColor: "#1A1A1B",
+                      border: "1px solid #333",
+                      borderRadius: "8px",
                     }}
                   />
                 </RechartsPieChart>
               </ResponsiveContainer>
               <div className="mt-4 space-y-1 text-xs">
                 {data.statesByGroup.map((item) => (
-                  <div key={item.name} className="flex items-center justify-between">
+                  <div
+                    key={item.name}
+                    className="flex items-center justify-between"
+                  >
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded" style={{ backgroundColor: item.fill }} />
+                      <div
+                        className="w-3 h-3 rounded"
+                        style={{ backgroundColor: item.fill }}
+                      />
                       <span className="text-gray-400">{item.name}</span>
                     </div>
                     <span className="font-medium">{item.count}</span>
@@ -835,7 +930,9 @@ function ResourceOverviewTabs({ data }: { data: ReturnType<typeof generateMockPr
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2 text-sm">
-                  <span className="text-gray-400">Avg Transitions per State</span>
+                  <span className="text-gray-400">
+                    Avg Transitions per State
+                  </span>
                   <span className="font-medium">1.4</span>
                 </div>
                 <Progress value={28} className="h-2" />
@@ -871,9 +968,24 @@ function ResourceOverviewTabs({ data }: { data: ReturnType<typeof generateMockPr
                   data={data.imagesByFolder}
                   dataKey="size"
                   stroke="#1A1A1B"
-                  content={({ x, y, width, height, index, name, count }: any) => {
+                  content={({
+                    x,
+                    y,
+                    width,
+                    height,
+                    index,
+                    name,
+                    count,
+                  }: any) => {
                     if (!x || !y || !width || !height) return null;
-                    const colors = ['#00D9FF', '#BD00FF', '#00FF88', '#FFD700', '#FF6B6B', '#888888'];
+                    const colors = [
+                      "#00D9FF",
+                      "#BD00FF",
+                      "#00FF88",
+                      "#FFD700",
+                      "#FF6B6B",
+                      "#888888",
+                    ];
                     return (
                       <g>
                         <rect
@@ -884,16 +996,29 @@ function ResourceOverviewTabs({ data }: { data: ReturnType<typeof generateMockPr
                           style={{
                             fill: colors[index % colors.length],
                             fillOpacity: 0.9,
-                            stroke: '#1A1A1B',
+                            stroke: "#1A1A1B",
                             strokeWidth: 2,
                           }}
                         />
                         {width > 60 && height > 30 && (
                           <>
-                            <text x={x + width / 2} y={y + height / 2 - 6} textAnchor="middle" fill="#000" fontSize={12} fontWeight="600">
+                            <text
+                              x={x + width / 2}
+                              y={y + height / 2 - 6}
+                              textAnchor="middle"
+                              fill="#000"
+                              fontSize={12}
+                              fontWeight="600"
+                            >
                               {name}
                             </text>
-                            <text x={x + width / 2} y={y + height / 2 + 10} textAnchor="middle" fill="#000" fontSize={10}>
+                            <text
+                              x={x + width / 2}
+                              y={y + height / 2 + 10}
+                              textAnchor="middle"
+                              fill="#000"
+                              fontSize={10}
+                            >
                               {count} images
                             </text>
                           </>
@@ -976,18 +1101,24 @@ function ResourceOverviewTabs({ data }: { data: ReturnType<typeof generateMockPr
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#1A1A1B',
-                      border: '1px solid #333',
-                      borderRadius: '8px',
+                      backgroundColor: "#1A1A1B",
+                      border: "1px solid #333",
+                      borderRadius: "8px",
                     }}
                   />
                 </RechartsPieChart>
               </ResponsiveContainer>
               <div className="mt-4 space-y-1 text-xs">
                 {data.transitionsByType.map((item) => (
-                  <div key={item.name} className="flex items-center justify-between">
+                  <div
+                    key={item.name}
+                    className="flex items-center justify-between"
+                  >
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded" style={{ backgroundColor: item.fill }} />
+                      <div
+                        className="w-3 h-3 rounded"
+                        style={{ backgroundColor: item.fill }}
+                      />
                       <span className="text-gray-400">{item.name}</span>
                     </div>
                     <span className="font-medium">{item.count}</span>
@@ -1043,58 +1174,60 @@ function ResourceOverviewTabs({ data }: { data: ReturnType<typeof generateMockPr
 }
 
 function ActivityTimeline({ activities }: { activities: ActivityEvent[] }) {
-  const getActivityIcon = (type: ActivityEvent['type']) => {
+  const getActivityIcon = (type: ActivityEvent["type"]) => {
     switch (type) {
-      case 'created':
+      case "created":
         return Plus;
-      case 'modified':
+      case "modified":
         return FileText;
-      case 'deleted':
+      case "deleted":
         return Trash2;
-      case 'imported':
+      case "imported":
         return Upload;
-      case 'exported':
+      case "exported":
         return Download;
-      case 'tested':
+      case "tested":
         return TestTube;
     }
   };
 
-  const getActivityColor = (type: ActivityEvent['type']) => {
+  const getActivityColor = (type: ActivityEvent["type"]) => {
     switch (type) {
-      case 'created':
-        return '#00FF88';
-      case 'modified':
-        return '#00D9FF';
-      case 'deleted':
-        return '#FF6B6B';
-      case 'imported':
-        return '#FFD700';
-      case 'exported':
-        return '#BD00FF';
-      case 'tested':
-        return '#888888';
+      case "created":
+        return "#00FF88";
+      case "modified":
+        return "#00D9FF";
+      case "deleted":
+        return "#FF6B6B";
+      case "imported":
+        return "#FFD700";
+      case "exported":
+        return "#BD00FF";
+      case "tested":
+        return "#888888";
     }
   };
 
-  const getResourceTypeIcon = (type: ActivityEvent['resourceType']) => {
+  const getResourceTypeIcon = (type: ActivityEvent["resourceType"]) => {
     switch (type) {
-      case 'workflow':
+      case "workflow":
         return FileCode;
-      case 'state':
+      case "state":
         return Layers;
-      case 'image':
+      case "image":
         return ImageIcon;
-      case 'transition':
+      case "transition":
         return GitBranch;
     }
   };
 
   const getRelativeTime = (date: Date) => {
     const now = new Date();
-    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    const diffInMinutes = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60)
+    );
 
-    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 1) return "Just now";
     if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) return `${diffInHours}h ago`;
@@ -1116,23 +1249,35 @@ function ActivityTimeline({ activities }: { activities: ActivityEvent[] }) {
               key={activity.id}
               className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-800/30 transition-colors cursor-pointer"
             >
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${color}20` }}>
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: `${color}20` }}
+              >
                 <Icon className="w-4 h-4" style={{ color }} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">
-                  {activity.type.charAt(0).toUpperCase() + activity.type.slice(1)}{' '}
-                  <span className="text-[#00D9FF]">{activity.resourceName}</span>
+                  {activity.type.charAt(0).toUpperCase() +
+                    activity.type.slice(1)}{" "}
+                  <span className="text-[#00D9FF]">
+                    {activity.resourceName}
+                  </span>
                 </p>
                 <div className="flex items-center gap-2 mt-1">
                   <ResourceIcon className="w-3 h-3 text-gray-500" />
-                  <span className="text-xs text-gray-500">{activity.resourceType}</span>
+                  <span className="text-xs text-gray-500">
+                    {activity.resourceType}
+                  </span>
                   <span className="text-gray-600">•</span>
-                  <span className="text-xs text-gray-500">{getRelativeTime(activity.timestamp)}</span>
+                  <span className="text-xs text-gray-500">
+                    {getRelativeTime(activity.timestamp)}
+                  </span>
                   {activity.user && (
                     <>
                       <span className="text-gray-600">•</span>
-                      <span className="text-xs text-gray-500">{activity.user}</span>
+                      <span className="text-xs text-gray-500">
+                        {activity.user}
+                      </span>
                     </>
                   )}
                 </div>
@@ -1145,26 +1290,40 @@ function ActivityTimeline({ activities }: { activities: ActivityEvent[] }) {
   );
 }
 
-function StorageAnalysis({ stats }: { stats: ReturnType<typeof generateMockProjectData>['storageStats'] }) {
+function StorageAnalysis({
+  stats,
+}: {
+  stats: ReturnType<typeof generateMockProjectData>["storageStats"];
+}) {
   return (
     <div className="space-y-6">
       <div className="text-center">
         <p className="text-sm text-gray-400 mb-1">Total Storage Used</p>
-        <p className="text-3xl font-bold text-[#00D9FF]">{stats.totalSize.toFixed(1)} MB</p>
+        <p className="text-3xl font-bold text-[#00D9FF]">
+          {stats.totalSize.toFixed(1)} MB
+        </p>
       </div>
 
       <ResponsiveContainer width="100%" height={200}>
         <RechartsPieChart>
-          <Pie data={stats.byType} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="size">
+          <Pie
+            data={stats.byType}
+            cx="50%"
+            cy="50%"
+            innerRadius={50}
+            outerRadius={80}
+            paddingAngle={3}
+            dataKey="size"
+          >
             {stats.byType.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={entry.fill} />
             ))}
           </Pie>
           <Tooltip
             contentStyle={{
-              backgroundColor: '#1A1A1B',
-              border: '1px solid #333',
-              borderRadius: '8px',
+              backgroundColor: "#1A1A1B",
+              border: "1px solid #333",
+              borderRadius: "8px",
             }}
             formatter={(value: number) => `${value.toFixed(1)} MB`}
           />
@@ -1176,15 +1335,23 @@ function StorageAnalysis({ stats }: { stats: ReturnType<typeof generateMockProje
           <div key={item.type}>
             <div className="flex items-center justify-between mb-2 text-sm">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: item.fill }} />
+                <div
+                  className="w-3 h-3 rounded"
+                  style={{ backgroundColor: item.fill }}
+                />
                 <span className="text-gray-400">{item.type}</span>
               </div>
               <div className="text-right">
                 <span className="font-medium">{item.size.toFixed(1)} MB</span>
-                <span className="text-xs text-gray-500 ml-2">({item.count})</span>
+                <span className="text-xs text-gray-500 ml-2">
+                  ({item.count})
+                </span>
               </div>
             </div>
-            <Progress value={(item.size / stats.totalSize) * 100} className="h-2" />
+            <Progress
+              value={(item.size / stats.totalSize) * 100}
+              className="h-2"
+            />
           </div>
         ))}
       </div>
@@ -1197,57 +1364,57 @@ function BulkOptimizationTools() {
 
   const tools = [
     {
-      id: 'unused-images',
-      title: 'Remove Unused Images',
-      description: 'Find and remove 156 images not used anywhere',
+      id: "unused-images",
+      title: "Remove Unused Images",
+      description: "Find and remove 156 images not used anywhere",
       icon: ImageIcon,
-      color: '#FF6B6B',
-      action: 'Clean Up',
+      color: "#FF6B6B",
+      action: "Clean Up",
       count: 156,
     },
     {
-      id: 'orphaned-states',
-      title: 'Remove Orphaned States',
-      description: 'Delete 12 states not referenced by any workflow',
+      id: "orphaned-states",
+      title: "Remove Orphaned States",
+      description: "Delete 12 states not referenced by any workflow",
       icon: Layers,
-      color: '#FFD700',
-      action: 'Remove',
+      color: "#FFD700",
+      action: "Remove",
       count: 12,
     },
     {
-      id: 'duplicate-states',
-      title: 'Consolidate Duplicate States',
-      description: 'Merge 8 potentially duplicate states',
+      id: "duplicate-states",
+      title: "Consolidate Duplicate States",
+      description: "Merge 8 potentially duplicate states",
       icon: Copy,
-      color: '#00D9FF',
-      action: 'Consolidate',
+      color: "#00D9FF",
+      action: "Consolidate",
       count: 8,
     },
     {
-      id: 'optimize-complexity',
-      title: 'Optimize Workflow Complexity',
-      description: 'Suggest optimizations for 7 complex workflows',
+      id: "optimize-complexity",
+      title: "Optimize Workflow Complexity",
+      description: "Suggest optimizations for 7 complex workflows",
       icon: Target,
-      color: '#BD00FF',
-      action: 'Optimize',
+      color: "#BD00FF",
+      action: "Optimize",
       count: 7,
     },
     {
-      id: 'fix-references',
-      title: 'Fix Broken References',
-      description: 'Repair 8 broken image references',
+      id: "fix-references",
+      title: "Fix Broken References",
+      description: "Repair 8 broken image references",
       icon: Link2,
-      color: '#00FF88',
-      action: 'Fix',
+      color: "#00FF88",
+      action: "Fix",
       count: 8,
     },
     {
-      id: 'compress-images',
-      title: 'Compress Large Images',
-      description: 'Reduce size of 34 large images (>1MB)',
+      id: "compress-images",
+      title: "Compress Large Images",
+      description: "Reduce size of 34 large images (>1MB)",
       icon: Archive,
-      color: '#888888',
-      action: 'Compress',
+      color: "#888888",
+      action: "Compress",
       count: 34,
     },
   ];
@@ -1265,10 +1432,16 @@ function BulkOptimizationTools() {
       {tools.map((tool) => {
         const Icon = tool.icon;
         return (
-          <Card key={tool.id} className="bg-[#1A1A1B]/50 border-gray-800/50 hover:border-gray-700 transition-all">
+          <Card
+            key={tool.id}
+            className="bg-[#1A1A1B]/50 border-gray-800/50 hover:border-gray-700 transition-all"
+          >
             <CardContent className="p-4">
               <div className="flex items-start gap-3 mb-3">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${tool.color}20` }}>
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center"
+                  style={{ backgroundColor: `${tool.color}20` }}
+                >
                   <Icon className="w-5 h-5" style={{ color: tool.color }} />
                 </div>
                 <div className="flex-1">
@@ -1318,16 +1491,18 @@ function ExportImportPanel() {
       setIsExporting(false);
       // Trigger download
       const data = {
-        version: '1.0.0',
+        version: "1.0.0",
         exportedAt: new Date().toISOString(),
         workflows: [],
         states: [],
         images: [],
         transitions: [],
       };
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `project-backup-${Date.now()}.json`;
       a.click();
@@ -1349,25 +1524,37 @@ function ExportImportPanel() {
           <div className="space-y-3 text-sm">
             <div className="flex items-center justify-between p-2 rounded bg-gray-800/30">
               <span className="text-gray-400">Workflows</span>
-              <Badge variant="outline" className="bg-gray-800/50 border-gray-700">
+              <Badge
+                variant="outline"
+                className="bg-gray-800/50 border-gray-700"
+              >
                 142
               </Badge>
             </div>
             <div className="flex items-center justify-between p-2 rounded bg-gray-800/30">
               <span className="text-gray-400">States</span>
-              <Badge variant="outline" className="bg-gray-800/50 border-gray-700">
+              <Badge
+                variant="outline"
+                className="bg-gray-800/50 border-gray-700"
+              >
                 387
               </Badge>
             </div>
             <div className="flex items-center justify-between p-2 rounded bg-gray-800/30">
               <span className="text-gray-400">Images</span>
-              <Badge variant="outline" className="bg-gray-800/50 border-gray-700">
+              <Badge
+                variant="outline"
+                className="bg-gray-800/50 border-gray-700"
+              >
                 1,243
               </Badge>
             </div>
             <div className="flex items-center justify-between p-2 rounded bg-gray-800/30">
               <span className="text-gray-400">Transitions</span>
-              <Badge variant="outline" className="bg-gray-800/50 border-gray-700">
+              <Badge
+                variant="outline"
+                className="bg-gray-800/50 border-gray-700"
+              >
                 524
               </Badge>
             </div>
@@ -1383,7 +1570,11 @@ function ExportImportPanel() {
               <li>Folder organization</li>
             </ul>
           </div>
-          <Button className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black" onClick={handleExport} disabled={isExporting}>
+          <Button
+            className="w-full bg-[#00D9FF] hover:bg-[#00D9FF]/80 text-black"
+            onClick={handleExport}
+            disabled={isExporting}
+          >
             {isExporting ? (
               <>
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -1405,20 +1596,31 @@ function ExportImportPanel() {
             <Upload className="w-5 h-5 text-[#BD00FF]" />
             Import Project
           </CardTitle>
-          <CardDescription>Restore from backup or merge projects</CardDescription>
+          <CardDescription>
+            Restore from backup or merge projects
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="border-2 border-dashed border-gray-700 rounded-lg p-8 text-center hover:border-gray-600 transition-colors cursor-pointer">
             <Upload className="w-8 h-8 mx-auto mb-3 text-gray-500" />
-            <p className="text-sm text-gray-400 mb-1">Drop backup file here or click to browse</p>
-            <p className="text-xs text-gray-500">Supports .json and .zip formats</p>
+            <p className="text-sm text-gray-400 mb-1">
+              Drop backup file here or click to browse
+            </p>
+            <p className="text-xs text-gray-500">
+              Supports .json and .zip formats
+            </p>
           </div>
           <Separator />
           <div className="space-y-2">
             <label className="text-sm font-medium">Import Options</label>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
-                <input type="checkbox" id="merge" defaultChecked className="rounded" />
+                <input
+                  type="checkbox"
+                  id="merge"
+                  defaultChecked
+                  className="rounded"
+                />
                 <label htmlFor="merge" className="text-gray-400">
                   Merge with existing data
                 </label>
@@ -1430,7 +1632,12 @@ function ExportImportPanel() {
                 </label>
               </div>
               <div className="flex items-center gap-2">
-                <input type="checkbox" id="backup-before" defaultChecked className="rounded" />
+                <input
+                  type="checkbox"
+                  id="backup-before"
+                  defaultChecked
+                  className="rounded"
+                />
                 <label htmlFor="backup-before" className="text-gray-400">
                   Create backup before import
                 </label>
@@ -1466,17 +1673,17 @@ function ExportImportPanel() {
 
 export default function ProjectDashboardPage() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTab, setSelectedTab] = useState('overview');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTab, setSelectedTab] = useState("overview");
 
   const data = useMemo(() => generateMockProjectData(), []);
 
   const handleExportProject = useCallback(() => {
-    console.log('Exporting project...');
+    console.log("Exporting project...");
   }, []);
 
   const handleImportProject = useCallback(() => {
-    console.log('Importing project...');
+    console.log("Importing project...");
   }, []);
 
   return (
@@ -1488,13 +1695,20 @@ export default function ProjectDashboardPage() {
             <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-[#00D9FF] via-[#BD00FF] to-[#00FF88] bg-clip-text text-transparent">
               Project Dashboard
             </h1>
-            <p className="text-gray-400 text-lg">Complete project resource management and health monitoring</p>
+            <p className="text-gray-400 text-lg">
+              Complete project resource management and health monitoring
+            </p>
             <div className="flex items-center gap-4 mt-3">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-gray-500" />
-                <span className="text-sm text-gray-500">Last updated: Just now</span>
+                <span className="text-sm text-gray-500">
+                  Last updated: Just now
+                </span>
               </div>
-              <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30">
+              <Badge
+                variant="outline"
+                className="bg-green-500/20 text-green-400 border-green-500/30"
+              >
                 <CheckCircle className="w-3 h-3 mr-1" />
                 Auto-sync enabled
               </Badge>
@@ -1519,7 +1733,7 @@ export default function ProjectDashboardPage() {
               Import
             </Button>
             <Button
-              onClick={() => router.push('/automation-builder/settings')}
+              onClick={() => router.push("/automation-builder/settings")}
               variant="outline"
               className="border-gray-700 hover:border-[#FFD700] hover:text-[#FFD700] bg-transparent"
             >
@@ -1590,7 +1804,11 @@ export default function ProjectDashboardPage() {
         </Card>
 
         {/* Main Content */}
-        <Tabs defaultValue="overview" className="w-full" onValueChange={setSelectedTab}>
+        <Tabs
+          defaultValue="overview"
+          className="w-full"
+          onValueChange={setSelectedTab}
+        >
           <TabsList className="grid w-full grid-cols-6 bg-gray-800/30 p-1">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="resources">Resources</TabsTrigger>
@@ -1612,44 +1830,130 @@ export default function ProjectDashboardPage() {
                       <Activity className="w-5 h-5 text-[#00D9FF]" />
                       Project Activity Timeline
                     </CardTitle>
-                    <CardDescription>Resource changes over the last 30 days</CardDescription>
+                    <CardDescription>
+                      Resource changes over the last 30 days
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
                       <AreaChart data={data.timelineData}>
                         <defs>
-                          <linearGradient id="colorWorkflows" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#00D9FF" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#00D9FF" stopOpacity={0} />
+                          <linearGradient
+                            id="colorWorkflows"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="5%"
+                              stopColor="#00D9FF"
+                              stopOpacity={0.3}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#00D9FF"
+                              stopOpacity={0}
+                            />
                           </linearGradient>
-                          <linearGradient id="colorStates" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#BD00FF" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#BD00FF" stopOpacity={0} />
+                          <linearGradient
+                            id="colorStates"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="5%"
+                              stopColor="#BD00FF"
+                              stopOpacity={0.3}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#BD00FF"
+                              stopOpacity={0}
+                            />
                           </linearGradient>
-                          <linearGradient id="colorImages" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#00FF88" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#00FF88" stopOpacity={0} />
+                          <linearGradient
+                            id="colorImages"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="5%"
+                              stopColor="#00FF88"
+                              stopOpacity={0.3}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#00FF88"
+                              stopOpacity={0}
+                            />
                           </linearGradient>
-                          <linearGradient id="colorTransitions" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#FFD700" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#FFD700" stopOpacity={0} />
+                          <linearGradient
+                            id="colorTransitions"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="5%"
+                              stopColor="#FFD700"
+                              stopOpacity={0.3}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#FFD700"
+                              stopOpacity={0}
+                            />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                        <XAxis dataKey="date" stroke="#666" style={{ fontSize: '10px' }} />
-                        <YAxis stroke="#666" style={{ fontSize: '10px' }} />
+                        <XAxis
+                          dataKey="date"
+                          stroke="#666"
+                          style={{ fontSize: "10px" }}
+                        />
+                        <YAxis stroke="#666" style={{ fontSize: "10px" }} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: '#1A1A1B',
-                            border: '1px solid #333',
-                            borderRadius: '8px',
+                            backgroundColor: "#1A1A1B",
+                            border: "1px solid #333",
+                            borderRadius: "8px",
                           }}
                         />
                         <Legend />
-                        <Area type="monotone" dataKey="workflows" stroke="#00D9FF" fill="url(#colorWorkflows)" strokeWidth={2} />
-                        <Area type="monotone" dataKey="states" stroke="#BD00FF" fill="url(#colorStates)" strokeWidth={2} />
-                        <Area type="monotone" dataKey="images" stroke="#00FF88" fill="url(#colorImages)" strokeWidth={2} />
-                        <Area type="monotone" dataKey="transitions" stroke="#FFD700" fill="url(#colorTransitions)" strokeWidth={2} />
+                        <Area
+                          type="monotone"
+                          dataKey="workflows"
+                          stroke="#00D9FF"
+                          fill="url(#colorWorkflows)"
+                          strokeWidth={2}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="states"
+                          stroke="#BD00FF"
+                          fill="url(#colorStates)"
+                          strokeWidth={2}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="images"
+                          stroke="#00FF88"
+                          fill="url(#colorImages)"
+                          strokeWidth={2}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="transitions"
+                          stroke="#FFD700"
+                          fill="url(#colorTransitions)"
+                          strokeWidth={2}
+                        />
                       </AreaChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -1662,7 +1966,9 @@ export default function ProjectDashboardPage() {
                       <BarChart3 className="w-5 h-5 text-[#BD00FF]" />
                       Resource Overview
                     </CardTitle>
-                    <CardDescription>Detailed statistics by resource type</CardDescription>
+                    <CardDescription>
+                      Detailed statistics by resource type
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResourceOverviewTabs data={data} />
@@ -1676,7 +1982,9 @@ export default function ProjectDashboardPage() {
                       <TrendingUp className="w-5 h-5 text-[#00FF88]" />
                       Most Used Resources
                     </CardTitle>
-                    <CardDescription>Top 5 resources by usage count</CardDescription>
+                    <CardDescription>
+                      Top 5 resources by usage count
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
@@ -1688,10 +1996,10 @@ export default function ProjectDashboardPage() {
                           transition: GitBranch,
                         };
                         const colors = {
-                          workflow: '#00D9FF',
-                          state: '#BD00FF',
-                          image: '#00FF88',
-                          transition: '#FFD700',
+                          workflow: "#00D9FF",
+                          state: "#BD00FF",
+                          image: "#00FF88",
+                          transition: "#FFD700",
                         };
                         const Icon = icons[resource.type];
                         const color = colors[resource.type];
@@ -1702,25 +2010,38 @@ export default function ProjectDashboardPage() {
                             className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-800/30 transition-colors cursor-pointer"
                           >
                             <div className="flex items-center gap-3 flex-1">
-                              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${color}20` }}>
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ backgroundColor: `${color}20` }}
+                              >
                                 <Icon className="w-4 h-4" style={{ color }} />
                               </div>
                               <div>
-                                <p className="font-medium text-sm" style={{ color }}>
+                                <p
+                                  className="font-medium text-sm"
+                                  style={{ color }}
+                                >
                                   {resource.name}
                                 </p>
                                 <div className="flex items-center gap-2 mt-1">
-                                  <Badge variant="outline" className="text-xs bg-gray-800/50 border-gray-700">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs bg-gray-800/50 border-gray-700"
+                                  >
                                     {resource.type}
                                   </Badge>
                                   {resource.lastUsed && (
-                                    <span className="text-xs text-gray-500">Last used: {resource.lastUsed}</span>
+                                    <span className="text-xs text-gray-500">
+                                      Last used: {resource.lastUsed}
+                                    </span>
                                   )}
                                 </div>
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className="font-semibold text-sm">{resource.usageCount.toLocaleString()}</p>
+                              <p className="font-semibold text-sm">
+                                {resource.usageCount.toLocaleString()}
+                              </p>
                               <p className="text-xs text-gray-500">uses</p>
                             </div>
                           </div>
@@ -1740,10 +2061,15 @@ export default function ProjectDashboardPage() {
                       <Activity className="w-5 h-5 text-[#00FF88]" />
                       Project Health Score
                     </CardTitle>
-                    <CardDescription>Overall project quality metrics</CardDescription>
+                    <CardDescription>
+                      Overall project quality metrics
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <HealthScoreGauge score={data.healthScore} factors={data.healthFactors} />
+                    <HealthScoreGauge
+                      score={data.healthScore}
+                      factors={data.healthFactors}
+                    />
                   </CardContent>
                 </Card>
 
@@ -1754,7 +2080,9 @@ export default function ProjectDashboardPage() {
                       <HardDrive className="w-5 h-5 text-[#FFD700]" />
                       Storage Analysis
                     </CardTitle>
-                    <CardDescription>Resource storage breakdown</CardDescription>
+                    <CardDescription>
+                      Resource storage breakdown
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <StorageAnalysis stats={data.storageStats} />
@@ -1769,28 +2097,32 @@ export default function ProjectDashboardPage() {
                   <CardContent className="space-y-2">
                     <Button
                       className="w-full justify-start bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30"
-                      onClick={() => router.push('/automation-builder')}
+                      onClick={() => router.push("/automation-builder")}
                     >
                       <FileCode className="w-4 h-4 mr-2" />
                       Browse Workflows
                     </Button>
                     <Button
                       className="w-full justify-start bg-[#BD00FF]/10 hover:bg-[#BD00FF]/20 text-[#BD00FF] border border-[#BD00FF]/30"
-                      onClick={() => router.push('/automation-builder/dependencies')}
+                      onClick={() =>
+                        router.push("/automation-builder/dependencies")
+                      }
                     >
                       <GitBranch className="w-4 h-4 mr-2" />
                       View Dependencies
                     </Button>
                     <Button
                       className="w-full justify-start bg-[#00FF88]/10 hover:bg-[#00FF88]/20 text-[#00FF88] border border-[#00FF88]/30"
-                      onClick={() => router.push('/automation-builder/testing')}
+                      onClick={() => router.push("/automation-builder/testing")}
                     >
                       <TestTube className="w-4 h-4 mr-2" />
                       Run Tests
                     </Button>
                     <Button
                       className="w-full justify-start bg-[#FFD700]/10 hover:bg-[#FFD700]/20 text-[#FFD700] border border-[#FFD700]/30"
-                      onClick={() => router.push('/automation-builder/analytics')}
+                      onClick={() =>
+                        router.push("/automation-builder/analytics")
+                      }
                     >
                       <BarChart3 className="w-4 h-4 mr-2" />
                       View Analytics
@@ -1806,7 +2138,9 @@ export default function ProjectDashboardPage() {
             <Card className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle>Resource Statistics</CardTitle>
-                <CardDescription>Detailed breakdown of all project resources</CardDescription>
+                <CardDescription>
+                  Detailed breakdown of all project resources
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <ResourceOverviewTabs data={data} />
@@ -1822,7 +2156,10 @@ export default function ProjectDashboardPage() {
                   <CardTitle>Health Score</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <HealthScoreGauge score={data.healthScore} factors={data.healthFactors} />
+                  <HealthScoreGauge
+                    score={data.healthScore}
+                    factors={data.healthFactors}
+                  />
                 </CardContent>
               </Card>
 
@@ -1833,7 +2170,9 @@ export default function ProjectDashboardPage() {
                       <AlertTriangle className="w-5 h-5 text-[#FF6B6B]" />
                       Health Issues
                     </CardTitle>
-                    <CardDescription>Issues requiring attention</CardDescription>
+                    <CardDescription>
+                      Issues requiring attention
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ScrollArea className="h-[600px] pr-4">
@@ -1854,7 +2193,9 @@ export default function ProjectDashboardPage() {
                     <Activity className="w-5 h-5 text-[#00D9FF]" />
                     Activity Timeline
                   </CardTitle>
-                  <CardDescription>Recent project activity (last 7 days)</CardDescription>
+                  <CardDescription>
+                    Recent project activity (last 7 days)
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ActivityTimeline activities={data.activities} />
@@ -1873,20 +2214,44 @@ export default function ProjectDashboardPage() {
                   <ResponsiveContainer width="100%" height={350}>
                     <LineChart data={data.timelineData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                      <XAxis dataKey="date" stroke="#666" style={{ fontSize: '10px' }} />
-                      <YAxis stroke="#666" style={{ fontSize: '10px' }} />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#666"
+                        style={{ fontSize: "10px" }}
+                      />
+                      <YAxis stroke="#666" style={{ fontSize: "10px" }} />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: '#1A1A1B',
-                          border: '1px solid #333',
-                          borderRadius: '8px',
+                          backgroundColor: "#1A1A1B",
+                          border: "1px solid #333",
+                          borderRadius: "8px",
                         }}
                       />
                       <Legend />
-                      <Line type="monotone" dataKey="workflows" stroke="#00D9FF" strokeWidth={2} />
-                      <Line type="monotone" dataKey="states" stroke="#BD00FF" strokeWidth={2} />
-                      <Line type="monotone" dataKey="images" stroke="#00FF88" strokeWidth={2} />
-                      <Line type="monotone" dataKey="transitions" stroke="#FFD700" strokeWidth={2} />
+                      <Line
+                        type="monotone"
+                        dataKey="workflows"
+                        stroke="#00D9FF"
+                        strokeWidth={2}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="states"
+                        stroke="#BD00FF"
+                        strokeWidth={2}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="images"
+                        stroke="#00FF88"
+                        strokeWidth={2}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="transitions"
+                        stroke="#FFD700"
+                        strokeWidth={2}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -1902,7 +2267,9 @@ export default function ProjectDashboardPage() {
                   <Zap className="w-5 h-5 text-[#FFD700]" />
                   Bulk Optimization Tools
                 </CardTitle>
-                <CardDescription>Clean up and optimize your project resources</CardDescription>
+                <CardDescription>
+                  Clean up and optimize your project resources
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <BulkOptimizationTools />
@@ -1920,15 +2287,17 @@ export default function ProjectDashboardPage() {
                   <Archive className="w-5 h-5 text-[#888888]" />
                   Recent Backups
                 </CardTitle>
-                <CardDescription>Automatically saved project backups</CardDescription>
+                <CardDescription>
+                  Automatically saved project backups
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   {[
-                    { date: '2 hours ago', size: '847.5 MB', type: 'Auto' },
-                    { date: '1 day ago', size: '832.1 MB', type: 'Manual' },
-                    { date: '3 days ago', size: '798.3 MB', type: 'Auto' },
-                    { date: '1 week ago', size: '756.7 MB', type: 'Manual' },
+                    { date: "2 hours ago", size: "847.5 MB", type: "Auto" },
+                    { date: "1 day ago", size: "832.1 MB", type: "Manual" },
+                    { date: "3 days ago", size: "798.3 MB", type: "Auto" },
+                    { date: "1 week ago", size: "756.7 MB", type: "Manual" },
                   ].map((backup, index) => (
                     <div
                       key={index}
@@ -1939,21 +2308,36 @@ export default function ProjectDashboardPage() {
                           <Archive className="w-5 h-5 text-gray-500" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium">Backup - {backup.date}</p>
+                          <p className="text-sm font-medium">
+                            Backup - {backup.date}
+                          </p>
                           <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs bg-gray-800/50 border-gray-700">
+                            <Badge
+                              variant="outline"
+                              className="text-xs bg-gray-800/50 border-gray-700"
+                            >
                               {backup.type}
                             </Badge>
-                            <span className="text-xs text-gray-500">{backup.size}</span>
+                            <span className="text-xs text-gray-500">
+                              {backup.size}
+                            </span>
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline" className="border-gray-700 hover:border-[#00D9FF]">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-gray-700 hover:border-[#00D9FF]"
+                        >
                           <Download className="w-3 h-3 mr-1" />
                           Download
                         </Button>
-                        <Button size="sm" variant="outline" className="border-gray-700 hover:border-[#00FF88]">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-gray-700 hover:border-[#00FF88]"
+                        >
                           <RefreshCw className="w-3 h-3 mr-1" />
                           Restore
                         </Button>

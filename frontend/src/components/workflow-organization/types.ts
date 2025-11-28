@@ -48,15 +48,15 @@ export interface FolderTreeNode extends WorkflowFolder {
 }
 
 export type ContextMenuAction =
-  | 'new-subfolder'
-  | 'rename'
-  | 'change-color'
-  | 'change-icon'
-  | 'delete'
-  | 'move';
+  | "new-subfolder"
+  | "rename"
+  | "change-color"
+  | "change-icon"
+  | "delete"
+  | "move";
 
 export interface DragItem {
-  type: 'folder' | 'workflow';
+  type: "folder" | "workflow";
   id: string;
   parentId: string | null;
 }
@@ -65,9 +65,9 @@ export interface DragItem {
 // Search & Filter Types
 // ============================================================================
 
-export type ComplexityLevel = 'low' | 'medium' | 'high' | 'very-high';
+export type ComplexityLevel = "low" | "medium" | "high" | "very-high";
 
-export type SearchOperator = 'AND' | 'OR' | 'NOT';
+export type SearchOperator = "AND" | "OR" | "NOT";
 
 export interface DateRange {
   from?: Date;
@@ -85,7 +85,7 @@ export interface SearchFilter {
   tags?: string[];
 
   /** Tag matching mode */
-  tagOperator?: 'AND' | 'OR';
+  tagOperator?: "AND" | "OR";
 
   /** Created date range */
   createdDateRange?: DateRange;

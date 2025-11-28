@@ -1,1 +1,3428 @@
-{"openapi":"3.1.0","info":{"title":"Qontinui API","version":"1.0.0"},"paths":{"/api/v1/auth/jwt/login":{"post":{"tags":["auth","auth"],"summary":"Auth:Jwt.Login","operationId":"auth_jwt_login_api_v1_auth_jwt_login_post","requestBody":{"content":{"application/x-www-form-urlencoded":{"schema":{"$ref":"#/components/schemas/Body_auth_jwt_login_api_v1_auth_jwt_login_post"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/BearerResponse"},"example":{"access_token":"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoiOTIyMWZmYzktNjQwZi00MzcyLTg2ZDMtY2U2NDJjYmE1NjAzIiwiYXVkIjoiZmFzdGFwaS11c2VyczphdXRoIiwiZXhwIjoxNTcxNTA0MTkzfQ.M10bjOe45I5Ncu_uXvOmVV8QxnL-nZfcH96U90JaocI","token_type":"bearer"}}}},"400":{"description":"Bad Request","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ErrorModel"},"examples":{"LOGIN_BAD_CREDENTIALS":{"summary":"Bad credentials or the user is inactive.","value":{"detail":"LOGIN_BAD_CREDENTIALS"}},"LOGIN_USER_NOT_VERIFIED":{"summary":"The user is not verified.","value":{"detail":"LOGIN_USER_NOT_VERIFIED"}}}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/auth/jwt/logout":{"post":{"tags":["auth","auth"],"summary":"Auth:Jwt.Logout","operationId":"auth_jwt_logout_api_v1_auth_jwt_logout_post","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"401":{"description":"Missing token or inactive user."}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/auth/register":{"post":{"tags":["auth","auth"],"summary":"Register:Register","operationId":"register_register_api_v1_auth_register_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserCreate"}}},"required":true},"responses":{"201":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}},"400":{"description":"Bad Request","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ErrorModel"},"examples":{"REGISTER_USER_ALREADY_EXISTS":{"summary":"A user with this email already exists.","value":{"detail":"REGISTER_USER_ALREADY_EXISTS"}},"REGISTER_INVALID_PASSWORD":{"summary":"Password validation failed.","value":{"detail":{"code":"REGISTER_INVALID_PASSWORD","reason":"Password should beat least 3 characters"}}}}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/auth/forgot-password":{"post":{"tags":["auth","auth"],"summary":"Reset:Forgot Password","operationId":"reset_forgot_password_api_v1_auth_forgot_password_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Body_reset_forgot_password_api_v1_auth_forgot_password_post"}}},"required":true},"responses":{"202":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/auth/reset-password":{"post":{"tags":["auth","auth"],"summary":"Reset:Reset Password","operationId":"reset_reset_password_api_v1_auth_reset_password_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Body_reset_reset_password_api_v1_auth_reset_password_post"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"400":{"description":"Bad Request","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ErrorModel"},"examples":{"RESET_PASSWORD_BAD_TOKEN":{"summary":"Bad or expired token.","value":{"detail":"RESET_PASSWORD_BAD_TOKEN"}},"RESET_PASSWORD_INVALID_PASSWORD":{"summary":"Password validation failed.","value":{"detail":{"code":"RESET_PASSWORD_INVALID_PASSWORD","reason":"Password should be at least 3 characters"}}}}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/auth/request-verify-token":{"post":{"tags":["auth","auth"],"summary":"Verify:Request-Token","operationId":"verify_request_token_api_v1_auth_request_verify_token_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Body_verify_request_token_api_v1_auth_request_verify_token_post"}}},"required":true},"responses":{"202":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/auth/verify":{"post":{"tags":["auth","auth"],"summary":"Verify:Verify","operationId":"verify_verify_api_v1_auth_verify_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Body_verify_verify_api_v1_auth_verify_post"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}},"400":{"description":"Bad Request","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ErrorModel"},"examples":{"VERIFY_USER_BAD_TOKEN":{"summary":"Bad token, not existing user ornot the e-mail currently set for the user.","value":{"detail":"VERIFY_USER_BAD_TOKEN"}},"VERIFY_USER_ALREADY_VERIFIED":{"summary":"The user is already verified.","value":{"detail":"VERIFY_USER_ALREADY_VERIFIED"}}}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/auth/users/me":{"get":{"tags":["auth","users"],"summary":"Users:Current User","operationId":"users_current_user_api_v1_auth_users_me_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}},"401":{"description":"Missing token or inactive user."}},"security":[{"OAuth2PasswordBearer":[]}]},"patch":{"tags":["auth","users"],"summary":"Users:Patch Current User","operationId":"users_patch_current_user_api_v1_auth_users_me_patch","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserUpdate"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}},"401":{"description":"Missing token or inactive user."},"400":{"description":"Bad Request","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ErrorModel"},"examples":{"UPDATE_USER_EMAIL_ALREADY_EXISTS":{"summary":"A user with this email already exists.","value":{"detail":"UPDATE_USER_EMAIL_ALREADY_EXISTS"}},"UPDATE_USER_INVALID_PASSWORD":{"summary":"Password validation failed.","value":{"detail":{"code":"UPDATE_USER_INVALID_PASSWORD","reason":"Password should beat least 3 characters"}}}}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/auth/users/{id}":{"get":{"tags":["auth","users"],"summary":"Users:User","operationId":"users_user_api_v1_auth_users__id__get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string","title":"Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}},"401":{"description":"Missing token or inactive user."},"403":{"description":"Not a superuser."},"404":{"description":"The user does not exist."},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"patch":{"tags":["auth","users"],"summary":"Users:Patch User","operationId":"users_patch_user_api_v1_auth_users__id__patch","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string","title":"Id"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserUpdate"}}}},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}},"401":{"description":"Missing token or inactive user."},"403":{"description":"Not a superuser."},"404":{"description":"The user does not exist."},"400":{"content":{"application/json":{"examples":{"UPDATE_USER_EMAIL_ALREADY_EXISTS":{"summary":"A user with this email already exists.","value":{"detail":"UPDATE_USER_EMAIL_ALREADY_EXISTS"}},"UPDATE_USER_INVALID_PASSWORD":{"summary":"Password validation failed.","value":{"detail":{"code":"UPDATE_USER_INVALID_PASSWORD","reason":"Password should beat least 3 characters"}}}},"schema":{"$ref":"#/components/schemas/ErrorModel"}}},"description":"Bad Request"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"delete":{"tags":["auth","users"],"summary":"Users:Delete User","operationId":"users_delete_user_api_v1_auth_users__id__delete","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string","title":"Id"}}],"responses":{"204":{"description":"Successful Response"},"401":{"description":"Missing token or inactive user."},"403":{"description":"Not a superuser."},"404":{"description":"The user does not exist."},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/auth/beta-signup":{"post":{"tags":["auth"],"summary":"Beta Signup","description":"Custom beta signup endpoint for creating beta users with temporary passwords.\n\nThis endpoint:\n1. Creates a user with a temporary password\n2. Auto-verifies their email\n3. Sends welcome email with credentials","operationId":"beta_signup_api_v1_auth_beta_signup_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/BetaSignupRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/BetaSignupResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/users/me":{"get":{"tags":["users"],"summary":"Read User Me","operationId":"read_user_me_api_v1_users_me_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}}},"security":[{"OAuth2PasswordBearer":[]}]},"put":{"tags":["users"],"summary":"Update User Me","operationId":"update_user_me_api_v1_users_me_put","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserUpdate"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/users/me/claim-admin":{"post":{"tags":["users"],"summary":"Claim Admin","description":"Allow user to claim admin if no admin exists. Remove after first use!","operationId":"claim_admin_api_v1_users_me_claim_admin_post","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Claim Admin Api V1 Users Me Claim Admin Post"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/users/":{"get":{"tags":["users"],"summary":"Read Users","operationId":"read_users_api_v1_users__get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"skip","in":"query","required":false,"schema":{"type":"integer","default":0,"title":"Skip"}},{"name":"limit","in":"query","required":false,"schema":{"type":"integer","default":100,"title":"Limit"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/UserRead"},"title":"Response Read Users Api V1 Users  Get"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/users/{user_id}":{"get":{"tags":["users"],"summary":"Read User","operationId":"read_user_api_v1_users__user_id__get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"user_id","in":"path","required":true,"schema":{"type":"integer","title":"User Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"put":{"tags":["users"],"summary":"Update User By Id","operationId":"update_user_by_id_api_v1_users__user_id__put","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"user_id","in":"path","required":true,"schema":{"type":"integer","title":"User Id"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserUpdate"}}}},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserRead"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"delete":{"tags":["users"],"summary":"Delete User By Id","operationId":"delete_user_by_id_api_v1_users__user_id__delete","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"user_id","in":"path","required":true,"schema":{"type":"integer","title":"User Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Delete User By Id Api V1 Users  User Id  Delete"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/users/me/storage":{"get":{"tags":["users"],"summary":"Get User Storage","description":"Get current user's storage usage and quota information.\n\nReturns:\n    - used_bytes: Total storage used in bytes\n    - quota_bytes: Total storage quota in bytes (based on subscription tier)\n    - percentage_used: Percentage of quota used\n    - files_count: Total number of files stored","operationId":"get_user_storage_api_v1_users_me_storage_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StorageQuotaResponse"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/users/me/profile":{"get":{"tags":["users"],"summary":"Get User Profile","description":"Get full user profile with all fields","operationId":"get_user_profile_api_v1_users_me_profile_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserProfileResponse"}}}}},"security":[{"OAuth2PasswordBearer":[]}]},"put":{"tags":["users"],"summary":"Update Profile","description":"Update user profile (company, phone, full_name)","operationId":"update_profile_api_v1_users_me_profile_put","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserProfileUpdate"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserProfileResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/users/me/avatar":{"post":{"tags":["users"],"summary":"Upload Avatar","description":"Upload user avatar image\n\n- Validates image type (jpg, png, webp)\n- Max size: 2MB\n- Resizes to 200x200\n- Returns updated profile with new avatar URL\n- Tracks storage usage and enforces quotas","operationId":"upload_avatar_api_v1_users_me_avatar_post","requestBody":{"content":{"multipart/form-data":{"schema":{"$ref":"#/components/schemas/Body_upload_avatar_api_v1_users_me_avatar_post"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserProfileResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}},"security":[{"OAuth2PasswordBearer":[]}]},"delete":{"tags":["users"],"summary":"Remove Avatar","description":"Remove user avatar and free up storage","operationId":"remove_avatar_api_v1_users_me_avatar_delete","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/UserProfileResponse"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/users/me/activity":{"get":{"tags":["users"],"summary":"Get Activity","description":"Get recent user activity from audit logs","operationId":"get_activity_api_v1_users_me_activity_get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"skip","in":"query","required":false,"schema":{"type":"integer","default":0,"title":"Skip"}},{"name":"limit","in":"query","required":false,"schema":{"type":"integer","default":20,"title":"Limit"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/ActivityLogResponse"},"title":"Response Get Activity Api V1 Users Me Activity Get"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/projects/":{"get":{"tags":["projects"],"summary":"Read Projects","operationId":"read_projects_api_v1_projects__get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"skip","in":"query","required":false,"schema":{"type":"integer","default":0,"title":"Skip"}},{"name":"limit","in":"query","required":false,"schema":{"type":"integer","default":100,"title":"Limit"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/Project"},"title":"Response Read Projects Api V1 Projects  Get"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"post":{"tags":["projects"],"summary":"Create New Project","operationId":"create_new_project_api_v1_projects__post","security":[{"OAuth2PasswordBearer":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectCreate"}}}},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Project"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/projects/{project_id}":{"get":{"tags":["projects"],"summary":"Read Project","operationId":"read_project_api_v1_projects__project_id__get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"project_id","in":"path","required":true,"schema":{"type":"integer","title":"Project Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Project"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"put":{"tags":["projects"],"summary":"Update Existing Project","operationId":"update_existing_project_api_v1_projects__project_id__put","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"project_id","in":"path","required":true,"schema":{"type":"integer","title":"Project Id"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectUpdate"}}}},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Project"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"delete":{"tags":["projects"],"summary":"Delete Existing Project","operationId":"delete_existing_project_api_v1_projects__project_id__delete","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"project_id","in":"path","required":true,"schema":{"type":"integer","title":"Project Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Delete Existing Project Api V1 Projects  Project Id  Delete"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/projects/{project_id}/export":{"get":{"tags":["export"],"summary":"Export Project Configuration","description":"Export a project configuration as JSON.\nReturns the configuration in the response with appropriate headers for file download.","operationId":"export_project_configuration_api_v1_projects__project_id__export_get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"project_id","in":"path","required":true,"schema":{"type":"integer","title":"Project Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Export Project Configuration Api V1 Projects  Project Id  Export Get"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/projects/{project_id}/import":{"post":{"tags":["export"],"summary":"Import Project Configuration","description":"Import a JSON configuration into a project.\n\nArgs:\n    configuration: The JSON configuration to import\n    merge: If true, merge with existing configuration. If false, replace.","operationId":"import_project_configuration_api_v1_projects__project_id__import_post","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"project_id","in":"path","required":true,"schema":{"type":"integer","title":"Project Id"}},{"name":"merge","in":"query","required":false,"schema":{"type":"boolean","default":false,"title":"Merge"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":true,"title":"Configuration"}}}},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Import Project Configuration Api V1 Projects  Project Id  Import Post"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/projects/{project_id}/validate":{"post":{"tags":["export"],"summary":"Validate Configuration","description":"Validate a JSON configuration without importing it.\nUseful for pre-import validation on the client side.","operationId":"validate_configuration_api_v1_projects__project_id__validate_post","requestBody":{"content":{"application/json":{"schema":{"additionalProperties":true,"type":"object","title":"Configuration"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ValidationResult"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/projects/{project_id}/configuration":{"get":{"tags":["export"],"summary":"Get Project Configuration","description":"Get the raw configuration JSON for a project.\nThis is useful for the runner to fetch configurations.","operationId":"get_project_configuration_api_v1_projects__project_id__configuration_get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"project_id","in":"path","required":true,"schema":{"type":"integer","title":"Project Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Get Project Configuration Api V1 Projects  Project Id  Configuration Get"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/optimize-pattern":{"post":{"tags":["pattern-optimization"],"summary":"Optimize Pattern","description":"Analyze patterns from screenshots and return optimization results.\n\nThis endpoint:\n1. Extracts patterns from screenshots at specified regions\n2. Calculates similarity between all pattern pairs\n3. Computes statistics (mean, variance, outliers)\n4. Evaluates different matching strategies\n\nArgs:\n    request: Pattern optimization request with screenshots and regions\n\nReturns:\n    Optimization results including patterns, similarity matrix, and evaluations\n\nRaises:\n    HTTPException: If image processing fails or invalid data provided","operationId":"optimize_pattern_api_v1_optimize_pattern_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/OptimizePatternRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/OptimizePatternResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/create-state-image":{"post":{"tags":["pattern-optimization"],"summary":"Create State Image","description":"Create a StateImage from optimized patterns.","operationId":"create_state_image_api_v1_create_state_image_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateStateImageRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/remove-background":{"post":{"tags":["background-removal"],"summary":"Remove Background","description":"Remove backgrounds from screenshots for State Discovery.\n\nThis endpoint:\n1. Accepts base64 encoded screenshots\n2. Applies background removal using configured strategies\n3. Returns RGBA images with transparent backgrounds\n4. Provides statistics about the removal\n\nArgs:\n    request: Background removal request with screenshots and config\n\nReturns:\n    Masked screenshots with statistics\n\nRaises:\n    HTTPException: If processing fails or invalid data provided","operationId":"remove_background_api_v1_remove_background_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RemoveBackgroundRequest"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RemoveBackgroundResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/background-removal/presets":{"get":{"tags":["background-removal"],"summary":"Get Presets","description":"Get available background removal preset configurations.\n\nReturns:\n    Dictionary of preset names and their configurations","operationId":"get_presets_api_v1_background_removal_presets_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/api/v1/analytics/download":{"post":{"tags":["analytics"],"summary":"Track Download","description":"Track runner download events (public endpoint, no auth required)\n\nPrivacy-friendly: No PII collected, only platform and version info","operationId":"track_download_api_v1_analytics_download_post","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/api/v1/analytics/usage":{"get":{"tags":["analytics"],"summary":"Get Usage Analytics","description":"Get current user's usage analytics\n\nReturns:\n    - api_calls_today: Number of API calls made today\n    - projects_count: Total number of projects\n    - storage_used: Total storage used in bytes\n    - last_active: Timestamp of last activity","operationId":"get_usage_analytics_api_v1_analytics_usage_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/analytics/metrics":{"get":{"tags":["analytics"],"summary":"Get User Metrics","description":"Get detailed metrics for the current user\n\nQuery params:\n    - metric_type: Filter by metric type (api_call, project_created, etc.)\n    - days: Number of days to look back (default 7)\n\nReturns:\n    List of metrics with timestamps and values","operationId":"get_user_metrics_api_v1_analytics_metrics_get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"metric_type","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Metric Type"}},{"name":"days","in":"query","required":false,"schema":{"type":"integer","default":7,"title":"Days"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/analytics/summary":{"get":{"tags":["analytics"],"summary":"Get Analytics Summary","description":"Get a comprehensive analytics summary for the current user\n\nQuery params:\n    - days: Number of days to look back (default 30)\n\nReturns:\n    Summary of all metrics including API calls, projects, states, images, etc.","operationId":"get_analytics_summary_api_v1_analytics_summary_get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"days","in":"query","required":false,"schema":{"type":"integer","default":30,"title":"Days"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/settings/":{"get":{"tags":["settings"],"summary":"Get Settings","description":"Get current Qontinui settings.\n\nReturns the settings from the database or default settings if none exist.","operationId":"get_settings_api_v1_settings__get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/QontinuiSettings"}}}}},"security":[{"OAuth2PasswordBearer":[]}]},"put":{"tags":["settings"],"summary":"Update Settings","description":"Update Qontinui settings.\n\nUpdates the application settings and persists them to storage.","operationId":"update_settings_api_v1_settings__put","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/QontinuiSettingsUpdate"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/QontinuiSettings"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/settings/reset":{"post":{"tags":["settings"],"summary":"Reset Settings","description":"Reset settings to default values.","operationId":"reset_settings_api_v1_settings_reset_post","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/QontinuiSettings"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/settings/export":{"get":{"tags":["settings"],"summary":"Export Settings","description":"Export settings to YAML or JSON format.","operationId":"export_settings_api_v1_settings_export_get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"format","in":"query","required":false,"schema":{"type":"string","default":"yaml","title":"Format"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Export Settings Api V1 Settings Export Get"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/settings/import":{"post":{"tags":["settings"],"summary":"Import Settings","description":"Import settings from YAML or JSON format.","operationId":"import_settings_api_v1_settings_import_post","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"content","in":"query","required":true,"schema":{"type":"string","title":"Content"}},{"name":"format","in":"query","required":false,"schema":{"type":"string","default":"yaml","title":"Format"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Import Settings Api V1 Settings Import Post"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/billing/subscription":{"get":{"tags":["billing"],"summary":"Get Subscription","description":"Get current user's subscription details","operationId":"get_subscription_api_v1_billing_subscription_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/SubscriptionResponse"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/billing/checkout":{"post":{"tags":["billing"],"summary":"Create Checkout Session","description":"Create a Stripe checkout session for subscription purchase","operationId":"create_checkout_session_api_v1_billing_checkout_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CheckoutSessionRequest"}}},"required":true},"responses":{"201":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CheckoutSessionResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/billing/portal":{"post":{"tags":["billing"],"summary":"Create Billing Portal Session","description":"Create a Stripe billing portal session for subscription management","operationId":"create_billing_portal_session_api_v1_billing_portal_post","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/BillingPortalResponse"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/billing/limits":{"get":{"tags":["billing"],"summary":"Get Tier Limits","description":"Get storage and resource limits for current user's tier","operationId":"get_tier_limits_api_v1_billing_limits_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TierLimitsResponse"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/billing/usage":{"get":{"tags":["billing"],"summary":"Get Usage Summary","description":"Get detailed usage summary with limits and percentages","operationId":"get_usage_summary_api_v1_billing_usage_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"additionalProperties":true,"type":"object","title":"Response Get Usage Summary Api V1 Billing Usage Get"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/billing/read-only-status":{"get":{"tags":["billing"],"summary":"Get Read Only Status","description":"Check if user is in read-only mode","operationId":"get_read_only_status_api_v1_billing_read_only_status_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"additionalProperties":true,"type":"object","title":"Response Get Read Only Status Api V1 Billing Read Only Status Get"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/billing/webhook":{"post":{"tags":["billing"],"summary":"Stripe Webhook","description":"Handle Stripe webhook events","operationId":"stripe_webhook_api_v1_billing_webhook_post","parameters":[{"name":"stripe-signature","in":"header","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Stripe-Signature"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/admin/bootstrap-first-admin":{"post":{"tags":["admin"],"summary":"Bootstrap First Admin","description":"One-time endpoint to create the first admin. Remove after use!","operationId":"bootstrap_first_admin_api_v1_admin_bootstrap_first_admin_post","parameters":[{"name":"email","in":"query","required":true,"schema":{"type":"string","title":"Email"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Bootstrap First Admin Api V1 Admin Bootstrap First Admin Post"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/admin/stats":{"get":{"tags":["admin"],"summary":"Get Admin Stats","description":"Get overall platform statistics.","operationId":"get_admin_stats_api_v1_admin_stats_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Get Admin Stats Api V1 Admin Stats Get"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/admin/users":{"get":{"tags":["admin"],"summary":"Get Users List","description":"Get list of users with basic info.","operationId":"get_users_list_api_v1_admin_users_get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"skip","in":"query","required":false,"schema":{"type":"integer","default":0,"title":"Skip"}},{"name":"limit","in":"query","required":false,"schema":{"type":"integer","default":50,"title":"Limit"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Get Users List Api V1 Admin Users Get"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/admin/users/{user_id}":{"get":{"tags":["admin"],"summary":"Get User Details","description":"Get detailed info about a specific user.","operationId":"get_user_details_api_v1_admin_users__user_id__get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"user_id","in":"path","required":true,"schema":{"type":"string","format":"uuid","title":"User Id"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Get User Details Api V1 Admin Users  User Id  Get"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/admin/projects":{"get":{"tags":["admin"],"summary":"Get All Projects","description":"Get all projects across all users.","operationId":"get_all_projects_api_v1_admin_projects_get","security":[{"OAuth2PasswordBearer":[]}],"parameters":[{"name":"skip","in":"query","required":false,"schema":{"type":"integer","default":0,"title":"Skip"}},{"name":"limit","in":"query","required":false,"schema":{"type":"integer","default":1000,"title":"Limit"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Get All Projects Api V1 Admin Projects Get"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/api/v1/admin/analytics":{"get":{"tags":["admin"],"summary":"Get Analytics","description":"Get analytics metrics.","operationId":"get_analytics_api_v1_admin_analytics_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Get Analytics Api V1 Admin Analytics Get"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/api/v1/admin/system/health":{"get":{"tags":["admin"],"summary":"Get System Health","description":"Get system health metrics.","operationId":"get_system_health_api_v1_admin_system_health_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"title":"Response Get System Health Api V1 Admin System Health Get"}}}}},"security":[{"OAuth2PasswordBearer":[]}]}},"/":{"get":{"summary":"Root","operationId":"root__get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/health":{"get":{"summary":"Health Check","description":"Health check endpoint with database connectivity check","operationId":"health_check_health_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}},"/favicon.ico":{"get":{"summary":"Favicon","description":"Return 204 No Content for favicon requests","operationId":"favicon_favicon_ico_get","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}}}}}},"components":{"schemas":{"ActivityLogResponse":{"properties":{"id":{"type":"integer","title":"Id"},"action":{"type":"string","title":"Action"},"resource_type":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Resource Type"},"resource_id":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Resource Id"},"ip_address":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Ip Address"},"log_metadata":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Log Metadata"},"created_at":{"type":"string","format":"date-time","title":"Created At"}},"type":"object","required":["id","action","created_at"],"title":"ActivityLogResponse","description":"Activity log entry for user feed"},"AnalysisSettingsSchema":{"properties":{"kmeans_clusters":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Kmeans Clusters"},"color_tolerance":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Color Tolerance"},"hsv_bins":{"anyOf":[{"items":{"type":"integer"},"type":"array"},{"type":"null"}],"title":"Hsv Bins"},"min_contour_area":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Min Contour Area"},"max_contour_area":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Max Contour Area"}},"type":"object","title":"AnalysisSettingsSchema","description":"Color analysis settings schema."},"BackgroundRemovalConfig":{"properties":{"use_temporal_variance":{"type":"boolean","title":"Use Temporal Variance","default":true},"use_edge_density":{"type":"boolean","title":"Use Edge Density","default":true},"use_uniformity":{"type":"boolean","title":"Use Uniformity","default":true},"variance_threshold":{"type":"number","title":"Variance Threshold","default":20.0},"min_screenshots_for_variance":{"type":"integer","title":"Min Screenshots For Variance","default":3},"edge_density_threshold":{"type":"number","title":"Edge Density Threshold","default":0.05},"edge_kernel_size":{"type":"integer","title":"Edge Kernel Size","default":3},"uniformity_threshold":{"type":"number","title":"Uniformity Threshold","default":15.0},"uniformity_region_size":{"type":"integer","title":"Uniformity Region Size","default":20},"apply_morphology":{"type":"boolean","title":"Apply Morphology","default":true},"morphology_kernel_size":{"type":"integer","title":"Morphology Kernel Size","default":3},"min_foreground_region_size":{"type":"integer","title":"Min Foreground Region Size","default":50},"foreground_alpha":{"type":"integer","title":"Foreground Alpha","default":255},"background_alpha":{"type":"integer","title":"Background Alpha","default":0}},"type":"object","title":"BackgroundRemovalConfig","description":"Configuration for background removal."},"BackgroundRemovalStatistics":{"properties":{"total_pixels":{"type":"integer","title":"Total Pixels"},"background_pixels":{"type":"integer","title":"Background Pixels"},"foreground_pixels":{"type":"integer","title":"Foreground Pixels"},"background_percentage":{"type":"number","title":"Background Percentage"},"foreground_percentage":{"type":"number","title":"Foreground Percentage"},"num_screenshots":{"type":"integer","title":"Num Screenshots"},"image_size":{"prefixItems":[{"type":"integer"},{"type":"integer"}],"type":"array","maxItems":2,"minItems":2,"title":"Image Size"}},"type":"object","required":["total_pixels","background_pixels","foreground_pixels","background_percentage","foreground_percentage","num_screenshots","image_size"],"title":"BackgroundRemovalStatistics","description":"Statistics from background removal."},"BearerResponse":{"properties":{"access_token":{"type":"string","title":"Access Token"},"token_type":{"type":"string","title":"Token Type"}},"type":"object","required":["access_token","token_type"],"title":"BearerResponse"},"BetaSignupRequest":{"properties":{"email":{"type":"string","format":"email","title":"Email"}},"type":"object","required":["email"],"title":"BetaSignupRequest"},"BetaSignupResponse":{"properties":{"success":{"type":"boolean","title":"Success"},"message":{"type":"string","title":"Message"},"temp_password":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Temp Password"}},"type":"object","required":["success","message"],"title":"BetaSignupResponse"},"BillingPortalResponse":{"properties":{"url":{"type":"string","title":"Url","description":"Stripe billing portal URL"}},"type":"object","required":["url"],"title":"BillingPortalResponse","description":"Response schema for billing portal session"},"Body_auth_jwt_login_api_v1_auth_jwt_login_post":{"properties":{"grant_type":{"anyOf":[{"type":"string","pattern":"^password$"},{"type":"null"}],"title":"Grant Type"},"username":{"type":"string","title":"Username"},"password":{"type":"string","format":"password","title":"Password"},"scope":{"type":"string","title":"Scope","default":""},"client_id":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Client Id"},"client_secret":{"anyOf":[{"type":"string"},{"type":"null"}],"format":"password","title":"Client Secret"}},"type":"object","required":["username","password"],"title":"Body_auth_jwt_login_api_v1_auth_jwt_login_post"},"Body_reset_forgot_password_api_v1_auth_forgot_password_post":{"properties":{"email":{"type":"string","format":"email","title":"Email"}},"type":"object","required":["email"],"title":"Body_reset_forgot_password_api_v1_auth_forgot_password_post"},"Body_reset_reset_password_api_v1_auth_reset_password_post":{"properties":{"token":{"type":"string","title":"Token"},"password":{"type":"string","title":"Password"}},"type":"object","required":["token","password"],"title":"Body_reset_reset_password_api_v1_auth_reset_password_post"},"Body_upload_avatar_api_v1_users_me_avatar_post":{"properties":{"file":{"type":"string","format":"binary","title":"File"}},"type":"object","required":["file"],"title":"Body_upload_avatar_api_v1_users_me_avatar_post"},"Body_verify_request_token_api_v1_auth_request_verify_token_post":{"properties":{"email":{"type":"string","format":"email","title":"Email"}},"type":"object","required":["email"],"title":"Body_verify_request_token_api_v1_auth_request_verify_token_post"},"Body_verify_verify_api_v1_auth_verify_post":{"properties":{"token":{"type":"string","title":"Token"}},"type":"object","required":["token"],"title":"Body_verify_verify_api_v1_auth_verify_post"},"CheckoutSessionRequest":{"properties":{"tier":{"type":"string","title":"Tier","description":"Subscription tier to purchase (hobby or pro)"}},"type":"object","required":["tier"],"title":"CheckoutSessionRequest","description":"Request schema for creating checkout session"},"CheckoutSessionResponse":{"properties":{"session_id":{"type":"string","title":"Session Id","description":"Stripe checkout session ID"},"url":{"type":"string","title":"Url","description":"Stripe checkout URL"}},"type":"object","required":["session_id","url"],"title":"CheckoutSessionResponse","description":"Response schema for checkout session"},"CoreSettingsSchema":{"properties":{"image_path":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Image Path"},"mock":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Mock"},"headless":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Headless"},"sikuli_jar_path":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Sikuli Jar Path"},"tesseract_path":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Tesseract Path"},"image_cache_size":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Image Cache Size"},"auto_wait_timeout":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Auto Wait Timeout"}},"type":"object","title":"CoreSettingsSchema","description":"Core framework settings schema."},"CreateStateImageRequest":{"properties":{"name":{"type":"string","title":"Name"},"patterns":{"items":{"additionalProperties":true,"type":"object"},"type":"array","title":"Patterns"},"strategy_type":{"type":"string","title":"Strategy Type"},"similarity_threshold":{"type":"number","title":"Similarity Threshold","default":0.8}},"type":"object","required":["name","patterns","strategy_type"],"title":"CreateStateImageRequest"},"DatasetSettingsSchema":{"properties":{"collect":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Collect"},"path":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Path"},"include_screenshots":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Include Screenshots"},"include_actions":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Include Actions"},"include_timing":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Include Timing"},"include_results":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Include Results"},"format":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Format"},"compression":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Compression"}},"type":"object","title":"DatasetSettingsSchema","description":"AI dataset generation settings schema."},"ErrorModel":{"properties":{"detail":{"anyOf":[{"type":"string"},{"additionalProperties":{"type":"string"},"type":"object"}],"title":"Detail"}},"type":"object","required":["detail"],"title":"ErrorModel"},"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"type":"array","title":"Detail"}},"type":"object","title":"HTTPValidationError"},"IllustrationSettingsSchema":{"properties":{"enabled":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Enabled"},"show_click":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Show Click"},"show_drag":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Show Drag"},"show_type":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Show Type"},"show_find":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Show Find"},"highlight_color":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Highlight Color"},"highlight_thickness":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Highlight Thickness"},"annotation_font_size":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Annotation Font Size"}},"type":"object","title":"IllustrationSettingsSchema","description":"Action illustration settings schema."},"MockSettingsSchema":{"properties":{"click_duration":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Click Duration"},"type_duration":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Type Duration"},"find_duration":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Find Duration"},"drag_duration":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Drag Duration"},"scroll_duration":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Scroll Duration"},"wait_duration":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Wait Duration"},"vanish_duration":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Vanish Duration"},"exists_duration":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Exists Duration"}},"type":"object","title":"MockSettingsSchema","description":"Mock mode timing configuration schema."},"MonitorSettingsSchema":{"properties":{"default_screen_index":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Default Screen Index"},"multi_monitor_enabled":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Multi Monitor Enabled"},"search_all_monitors":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Search All Monitors"},"log_monitor_info":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Log Monitor Info"},"operation_monitor_map":{"anyOf":[{"additionalProperties":{"type":"integer"},"type":"object"},{"type":"null"}],"title":"Operation Monitor Map"}},"type":"object","title":"MonitorSettingsSchema","description":"Monitor configuration settings schema."},"MouseSettingsSchema":{"properties":{"move_delay":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Move Delay"},"pause_before_down":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Pause Before Down"},"pause_after_down":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Pause After Down"},"pause_before_up":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Pause Before Up"},"pause_after_up":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Pause After Up"},"click_delay":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Click Delay"},"drag_delay":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Drag Delay"}},"type":"object","title":"MouseSettingsSchema","description":"Mouse action configuration schema."},"OptimizePatternRequest":{"properties":{"screenshots":{"items":{"type":"string"},"type":"array","title":"Screenshots"},"negative_screenshots":{"anyOf":[{"items":{"type":"string"},"type":"array"},{"type":"null"}],"title":"Negative Screenshots","default":[]},"regions":{"items":{"$ref":"#/components/schemas/Region"},"type":"array","title":"Regions"},"strategies":{"anyOf":[{"items":{"type":"string"},"type":"array"},{"type":"null"}],"title":"Strategies","default":["multi-pattern","consensus","feature-based","differential"]}},"type":"object","required":["screenshots","regions"],"title":"OptimizePatternRequest","description":"Request model for pattern optimization."},"OptimizePatternResponse":{"properties":{"extractedPatterns":{"items":{"additionalProperties":true,"type":"object"},"type":"array","title":"Extractedpatterns"},"similarityMatrix":{"additionalProperties":true,"type":"object","title":"Similaritymatrix"},"statistics":{"additionalProperties":true,"type":"object","title":"Statistics"},"evaluations":{"items":{"additionalProperties":true,"type":"object"},"type":"array","title":"Evaluations"}},"type":"object","required":["extractedPatterns","similarityMatrix","statistics","evaluations"],"title":"OptimizePatternResponse","description":"Response model for pattern optimization."},"Project":{"properties":{"name":{"type":"string","title":"Name"},"description":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Description"},"configuration":{"additionalProperties":true,"type":"object","title":"Configuration","default":{}},"id":{"type":"integer","title":"Id"},"owner_id":{"type":"integer","title":"Owner Id"},"created_at":{"type":"string","format":"date-time","title":"Created At"},"updated_at":{"type":"string","format":"date-time","title":"Updated At"}},"type":"object","required":["name","id","owner_id","created_at","updated_at"],"title":"Project"},"ProjectCreate":{"properties":{"name":{"type":"string","title":"Name"},"description":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Description"},"configuration":{"additionalProperties":true,"type":"object","title":"Configuration","default":{}}},"type":"object","required":["name"],"title":"ProjectCreate"},"ProjectUpdate":{"properties":{"name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Name"},"description":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Description"},"configuration":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Configuration"}},"type":"object","title":"ProjectUpdate"},"QontinuiSettings":{"properties":{"core":{"$ref":"#/components/schemas/CoreSettingsSchema"},"mouse":{"$ref":"#/components/schemas/MouseSettingsSchema"},"mock":{"$ref":"#/components/schemas/MockSettingsSchema"},"screenshot":{"$ref":"#/components/schemas/ScreenshotSettingsSchema"},"illustration":{"$ref":"#/components/schemas/IllustrationSettingsSchema"},"analysis":{"$ref":"#/components/schemas/AnalysisSettingsSchema"},"recording":{"$ref":"#/components/schemas/RecordingSettingsSchema"},"dataset":{"$ref":"#/components/schemas/DatasetSettingsSchema"},"testing":{"$ref":"#/components/schemas/TestingSettingsSchema"},"monitor":{"$ref":"#/components/schemas/MonitorSettingsSchema"}},"type":"object","title":"QontinuiSettings","description":"Complete Qontinui settings."},"QontinuiSettingsUpdate":{"properties":{"core":{"anyOf":[{"$ref":"#/components/schemas/CoreSettingsSchema"},{"type":"null"}]},"mouse":{"anyOf":[{"$ref":"#/components/schemas/MouseSettingsSchema"},{"type":"null"}]},"mock":{"anyOf":[{"$ref":"#/components/schemas/MockSettingsSchema"},{"type":"null"}]},"screenshot":{"anyOf":[{"$ref":"#/components/schemas/ScreenshotSettingsSchema"},{"type":"null"}]},"illustration":{"anyOf":[{"$ref":"#/components/schemas/IllustrationSettingsSchema"},{"type":"null"}]},"analysis":{"anyOf":[{"$ref":"#/components/schemas/AnalysisSettingsSchema"},{"type":"null"}]},"recording":{"anyOf":[{"$ref":"#/components/schemas/RecordingSettingsSchema"},{"type":"null"}]},"dataset":{"anyOf":[{"$ref":"#/components/schemas/DatasetSettingsSchema"},{"type":"null"}]},"testing":{"anyOf":[{"$ref":"#/components/schemas/TestingSettingsSchema"},{"type":"null"}]},"monitor":{"anyOf":[{"$ref":"#/components/schemas/MonitorSettingsSchema"},{"type":"null"}]}},"type":"object","title":"QontinuiSettingsUpdate","description":"Update schema for Qontinui settings."},"RecordingSettingsSchema":{"properties":{"enabled":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Enabled"},"path":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Path"},"fps":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Fps"},"codec":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Codec"},"quality":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Quality"},"include_audio":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Include Audio"},"max_duration_minutes":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Max Duration Minutes"}},"type":"object","title":"RecordingSettingsSchema","description":"Screen recording settings schema."},"Region":{"properties":{"x":{"type":"integer","title":"X"},"y":{"type":"integer","title":"Y"},"width":{"type":"integer","title":"Width"},"height":{"type":"integer","title":"Height"}},"type":"object","required":["x","y","width","height"],"title":"Region","description":"Region coordinates for pattern extraction."},"RemoveBackgroundRequest":{"properties":{"screenshots":{"items":{"type":"string"},"type":"array","title":"Screenshots"},"config":{"$ref":"#/components/schemas/BackgroundRemovalConfig"},"debug":{"type":"boolean","title":"Debug","default":false}},"type":"object","required":["screenshots","config"],"title":"RemoveBackgroundRequest","description":"Request model for background removal."},"RemoveBackgroundResponse":{"properties":{"masked_screenshots":{"items":{"type":"string"},"type":"array","title":"Masked Screenshots"},"statistics":{"$ref":"#/components/schemas/BackgroundRemovalStatistics"},"background_mask":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Background Mask"}},"type":"object","required":["masked_screenshots","statistics"],"title":"RemoveBackgroundResponse","description":"Response model for background removal."},"ScreenshotSettingsSchema":{"properties":{"save_snapshots":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Save Snapshots"},"path":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Path"},"max_history":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Max History"},"format":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Format"},"quality":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Quality"},"include_timestamp":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Include Timestamp"},"capture_on_error":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Capture On Error"}},"type":"object","title":"ScreenshotSettingsSchema","description":"Screenshot and history settings schema."},"StorageQuotaResponse":{"properties":{"used_bytes":{"type":"integer","title":"Used Bytes"},"quota_bytes":{"type":"integer","title":"Quota Bytes"},"percentage_used":{"type":"number","title":"Percentage Used"},"files_count":{"type":"integer","title":"Files Count"}},"type":"object","required":["used_bytes","quota_bytes","percentage_used","files_count"],"title":"StorageQuotaResponse","description":"Schema for storage quota information."},"SubscriptionResponse":{"properties":{"tier":{"type":"string","title":"Tier","description":"Subscription tier (free, hobby, pro)"},"status":{"type":"string","title":"Status","description":"Subscription status"},"cancel_at_period_end":{"type":"boolean","title":"Cancel At Period End","description":"Whether subscription will cancel at period end","default":false},"current_period_end":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Current Period End","description":"ISO timestamp of when current period ends"},"stripe_status":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Stripe Status","description":"Live Stripe subscription status"}},"type":"object","required":["tier","status"],"title":"SubscriptionResponse","description":"Response schema for subscription details"},"TestingSettingsSchema":{"properties":{"timeout_multiplier":{"anyOf":[{"type":"number"},{"type":"null"}],"title":"Timeout Multiplier"},"retry_failed":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Retry Failed"},"max_retries":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Max Retries"},"screenshot_on_failure":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Screenshot On Failure"},"verbose_logging":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Verbose Logging"},"parallel_execution":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Parallel Execution"},"random_seed":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Random Seed"},"iteration":{"anyOf":[{"type":"integer"},{"type":"null"}],"title":"Iteration"},"send_logs":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Send Logs"}},"type":"object","title":"TestingSettingsSchema","description":"Test execution settings schema."},"TierLimitsResponse":{"properties":{"tier":{"type":"string","title":"Tier","description":"Subscription tier"},"max_configs":{"type":"integer","title":"Max Configs","description":"Maximum number of configs (-1 = unlimited)"},"max_images":{"type":"integer","title":"Max Images","description":"Maximum number of images"},"max_storage_mb":{"type":"integer","title":"Max Storage Mb","description":"Maximum storage in MB"}},"type":"object","required":["tier","max_configs","max_images","max_storage_mb"],"title":"TierLimitsResponse","description":"Response schema for tier limits"},"UserCreate":{"properties":{"email":{"type":"string","format":"email","title":"Email"},"password":{"type":"string","title":"Password"},"is_active":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Is Active","default":true},"is_superuser":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Is Superuser","default":false},"is_verified":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Is Verified","default":false},"username":{"type":"string","title":"Username"},"full_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Full Name"},"company":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Company"}},"type":"object","required":["email","password","username"],"title":"UserCreate","description":"Schema for creating users (fastapi-users compatible)."},"UserProfileResponse":{"properties":{"id":{"type":"string","format":"uuid","title":"Id"},"email":{"type":"string","format":"email","title":"Email"},"username":{"type":"string","title":"Username"},"full_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Full Name"},"company":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Company"},"phone":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Phone"},"avatar_url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Avatar Url"},"is_verified":{"type":"boolean","title":"Is Verified","default":false},"subscription_tier":{"type":"string","title":"Subscription Tier","default":"free"},"is_active":{"type":"boolean","title":"Is Active","default":true},"created_at":{"type":"string","format":"date-time","title":"Created At"},"updated_at":{"type":"string","format":"date-time","title":"Updated At"}},"type":"object","required":["id","email","username","created_at","updated_at"],"title":"UserProfileResponse","description":"Full user profile with all fields"},"UserProfileUpdate":{"properties":{"full_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Full Name"},"company":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Company"},"phone":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Phone"}},"type":"object","title":"UserProfileUpdate","description":"Fields that can be updated by the user"},"UserRead":{"properties":{"id":{"type":"string","format":"uuid","title":"Id"},"email":{"type":"string","format":"email","title":"Email"},"is_active":{"type":"boolean","title":"Is Active","default":true},"is_superuser":{"type":"boolean","title":"Is Superuser","default":false},"is_verified":{"type":"boolean","title":"Is Verified","default":false},"username":{"type":"string","title":"Username"},"full_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Full Name"},"company":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Company"},"phone":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Phone"},"avatar_url":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Avatar Url"},"subscription_tier":{"type":"string","title":"Subscription Tier"},"is_beta":{"type":"boolean","title":"Is Beta","default":false},"created_at":{"type":"string","format":"date-time","title":"Created At"},"updated_at":{"type":"string","format":"date-time","title":"Updated At"}},"type":"object","required":["id","email","username","subscription_tier","created_at","updated_at"],"title":"UserRead","description":"Schema for reading user data (fastapi-users compatible with UUID)."},"UserUpdate":{"properties":{"password":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Password"},"email":{"anyOf":[{"type":"string","format":"email"},{"type":"null"}],"title":"Email"},"is_active":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Is Active"},"is_superuser":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Is Superuser"},"is_verified":{"anyOf":[{"type":"boolean"},{"type":"null"}],"title":"Is Verified"},"username":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Username"},"full_name":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Full Name"},"company":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Company"},"phone":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Phone"}},"type":"object","title":"UserUpdate","description":"Schema for updating users (fastapi-users compatible)."},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"type":"array","title":"Location"},"msg":{"type":"string","title":"Message"},"type":{"type":"string","title":"Error Type"}},"type":"object","required":["loc","msg","type"],"title":"ValidationError"},"ValidationResult":{"properties":{"valid":{"type":"boolean","title":"Valid"},"errors":{"items":{"type":"string"},"type":"array","title":"Errors"},"warnings":{"items":{"type":"string"},"type":"array","title":"Warnings"}},"type":"object","required":["valid"],"title":"ValidationResult"}},"securitySchemes":{"OAuth2PasswordBearer":{"type":"oauth2","flows":{"password":{"scopes":{},"tokenUrl":"api/v1/auth/jwt/login"}}}}}}
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Qontinui API", "version": "1.0.0" },
+  "paths": {
+    "/api/v1/auth/jwt/login": {
+      "post": {
+        "tags": ["auth", "auth"],
+        "summary": "Auth:Jwt.Login",
+        "operationId": "auth_jwt_login_api_v1_auth_jwt_login_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_auth_jwt_login_api_v1_auth_jwt_login_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BearerResponse" },
+                "example": {
+                  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoiOTIyMWZmYzktNjQwZi00MzcyLTg2ZDMtY2U2NDJjYmE1NjAzIiwiYXVkIjoiZmFzdGFwaS11c2VyczphdXRoIiwiZXhwIjoxNTcxNTA0MTkzfQ.M10bjOe45I5Ncu_uXvOmVV8QxnL-nZfcH96U90JaocI",
+                  "token_type": "bearer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorModel" },
+                "examples": {
+                  "LOGIN_BAD_CREDENTIALS": {
+                    "summary": "Bad credentials or the user is inactive.",
+                    "value": { "detail": "LOGIN_BAD_CREDENTIALS" }
+                  },
+                  "LOGIN_USER_NOT_VERIFIED": {
+                    "summary": "The user is not verified.",
+                    "value": { "detail": "LOGIN_USER_NOT_VERIFIED" }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/jwt/logout": {
+      "post": {
+        "tags": ["auth", "auth"],
+        "summary": "Auth:Jwt.Logout",
+        "operationId": "auth_jwt_logout_api_v1_auth_jwt_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "401": { "description": "Missing token or inactive user." }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": ["auth", "auth"],
+        "summary": "Register:Register",
+        "operationId": "register_register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserCreate" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorModel" },
+                "examples": {
+                  "REGISTER_USER_ALREADY_EXISTS": {
+                    "summary": "A user with this email already exists.",
+                    "value": { "detail": "REGISTER_USER_ALREADY_EXISTS" }
+                  },
+                  "REGISTER_INVALID_PASSWORD": {
+                    "summary": "Password validation failed.",
+                    "value": {
+                      "detail": {
+                        "code": "REGISTER_INVALID_PASSWORD",
+                        "reason": "Password should beat least 3 characters"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/forgot-password": {
+      "post": {
+        "tags": ["auth", "auth"],
+        "summary": "Reset:Forgot Password",
+        "operationId": "reset_forgot_password_api_v1_auth_forgot_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_reset_forgot_password_api_v1_auth_forgot_password_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/reset-password": {
+      "post": {
+        "tags": ["auth", "auth"],
+        "summary": "Reset:Reset Password",
+        "operationId": "reset_reset_password_api_v1_auth_reset_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_reset_reset_password_api_v1_auth_reset_password_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorModel" },
+                "examples": {
+                  "RESET_PASSWORD_BAD_TOKEN": {
+                    "summary": "Bad or expired token.",
+                    "value": { "detail": "RESET_PASSWORD_BAD_TOKEN" }
+                  },
+                  "RESET_PASSWORD_INVALID_PASSWORD": {
+                    "summary": "Password validation failed.",
+                    "value": {
+                      "detail": {
+                        "code": "RESET_PASSWORD_INVALID_PASSWORD",
+                        "reason": "Password should be at least 3 characters"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/request-verify-token": {
+      "post": {
+        "tags": ["auth", "auth"],
+        "summary": "Verify:Request-Token",
+        "operationId": "verify_request_token_api_v1_auth_request_verify_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_verify_request_token_api_v1_auth_request_verify_token_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/verify": {
+      "post": {
+        "tags": ["auth", "auth"],
+        "summary": "Verify:Verify",
+        "operationId": "verify_verify_api_v1_auth_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_verify_verify_api_v1_auth_verify_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorModel" },
+                "examples": {
+                  "VERIFY_USER_BAD_TOKEN": {
+                    "summary": "Bad token, not existing user ornot the e-mail currently set for the user.",
+                    "value": { "detail": "VERIFY_USER_BAD_TOKEN" }
+                  },
+                  "VERIFY_USER_ALREADY_VERIFIED": {
+                    "summary": "The user is already verified.",
+                    "value": { "detail": "VERIFY_USER_ALREADY_VERIFIED" }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/users/me": {
+      "get": {
+        "tags": ["auth", "users"],
+        "summary": "Users:Current User",
+        "operationId": "users_current_user_api_v1_auth_users_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          },
+          "401": { "description": "Missing token or inactive user." }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      },
+      "patch": {
+        "tags": ["auth", "users"],
+        "summary": "Users:Patch Current User",
+        "operationId": "users_patch_current_user_api_v1_auth_users_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserUpdate" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          },
+          "401": { "description": "Missing token or inactive user." },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorModel" },
+                "examples": {
+                  "UPDATE_USER_EMAIL_ALREADY_EXISTS": {
+                    "summary": "A user with this email already exists.",
+                    "value": { "detail": "UPDATE_USER_EMAIL_ALREADY_EXISTS" }
+                  },
+                  "UPDATE_USER_INVALID_PASSWORD": {
+                    "summary": "Password validation failed.",
+                    "value": {
+                      "detail": {
+                        "code": "UPDATE_USER_INVALID_PASSWORD",
+                        "reason": "Password should beat least 3 characters"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/auth/users/{id}": {
+      "get": {
+        "tags": ["auth", "users"],
+        "summary": "Users:User",
+        "operationId": "users_user_api_v1_auth_users__id__get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "title": "Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          },
+          "401": { "description": "Missing token or inactive user." },
+          "403": { "description": "Not a superuser." },
+          "404": { "description": "The user does not exist." },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["auth", "users"],
+        "summary": "Users:Patch User",
+        "operationId": "users_patch_user_api_v1_auth_users__id__patch",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "title": "Id" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserUpdate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          },
+          "401": { "description": "Missing token or inactive user." },
+          "403": { "description": "Not a superuser." },
+          "404": { "description": "The user does not exist." },
+          "400": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "UPDATE_USER_EMAIL_ALREADY_EXISTS": {
+                    "summary": "A user with this email already exists.",
+                    "value": { "detail": "UPDATE_USER_EMAIL_ALREADY_EXISTS" }
+                  },
+                  "UPDATE_USER_INVALID_PASSWORD": {
+                    "summary": "Password validation failed.",
+                    "value": {
+                      "detail": {
+                        "code": "UPDATE_USER_INVALID_PASSWORD",
+                        "reason": "Password should beat least 3 characters"
+                      }
+                    }
+                  }
+                },
+                "schema": { "$ref": "#/components/schemas/ErrorModel" }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["auth", "users"],
+        "summary": "Users:Delete User",
+        "operationId": "users_delete_user_api_v1_auth_users__id__delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "title": "Id" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Successful Response" },
+          "401": { "description": "Missing token or inactive user." },
+          "403": { "description": "Not a superuser." },
+          "404": { "description": "The user does not exist." },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/beta-signup": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Beta Signup",
+        "description": "Custom beta signup endpoint for creating beta users with temporary passwords.\n\nThis endpoint:\n1. Creates a user with a temporary password\n2. Auto-verifies their email\n3. Sends welcome email with credentials",
+        "operationId": "beta_signup_api_v1_auth_beta_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BetaSignupRequest" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BetaSignupResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me": {
+      "get": {
+        "tags": ["users"],
+        "summary": "Read User Me",
+        "operationId": "read_user_me_api_v1_users_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      },
+      "put": {
+        "tags": ["users"],
+        "summary": "Update User Me",
+        "operationId": "update_user_me_api_v1_users_me_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserUpdate" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/users/me/claim-admin": {
+      "post": {
+        "tags": ["users"],
+        "summary": "Claim Admin",
+        "description": "Allow user to claim admin if no admin exists. Remove after first use!",
+        "operationId": "claim_admin_api_v1_users_me_claim_admin_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Claim Admin Api V1 Users Me Claim Admin Post"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/users/": {
+      "get": {
+        "tags": ["users"],
+        "summary": "Read Users",
+        "operationId": "read_users_api_v1_users__get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 0, "title": "Skip" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 100, "title": "Limit" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/UserRead" },
+                  "title": "Response Read Users Api V1 Users  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "get": {
+        "tags": ["users"],
+        "summary": "Read User",
+        "operationId": "read_user_api_v1_users__user_id__get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "title": "User Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["users"],
+        "summary": "Update User By Id",
+        "operationId": "update_user_by_id_api_v1_users__user_id__put",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "title": "User Id" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserUpdate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserRead" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["users"],
+        "summary": "Delete User By Id",
+        "operationId": "delete_user_by_id_api_v1_users__user_id__delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "title": "User Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete User By Id Api V1 Users  User Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/storage": {
+      "get": {
+        "tags": ["users"],
+        "summary": "Get User Storage",
+        "description": "Get current user's storage usage and quota information.\n\nReturns:\n    - used_bytes: Total storage used in bytes\n    - quota_bytes: Total storage quota in bytes (based on subscription tier)\n    - percentage_used: Percentage of quota used\n    - files_count: Total number of files stored",
+        "operationId": "get_user_storage_api_v1_users_me_storage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageQuotaResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/users/me/profile": {
+      "get": {
+        "tags": ["users"],
+        "summary": "Get User Profile",
+        "description": "Get full user profile with all fields",
+        "operationId": "get_user_profile_api_v1_users_me_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserProfileResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      },
+      "put": {
+        "tags": ["users"],
+        "summary": "Update Profile",
+        "description": "Update user profile (company, phone, full_name)",
+        "operationId": "update_profile_api_v1_users_me_profile_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UserProfileUpdate" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserProfileResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/users/me/avatar": {
+      "post": {
+        "tags": ["users"],
+        "summary": "Upload Avatar",
+        "description": "Upload user avatar image\n\n- Validates image type (jpg, png, webp)\n- Max size: 2MB\n- Resizes to 200x200\n- Returns updated profile with new avatar URL\n- Tracks storage usage and enforces quotas",
+        "operationId": "upload_avatar_api_v1_users_me_avatar_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_avatar_api_v1_users_me_avatar_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserProfileResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      },
+      "delete": {
+        "tags": ["users"],
+        "summary": "Remove Avatar",
+        "description": "Remove user avatar and free up storage",
+        "operationId": "remove_avatar_api_v1_users_me_avatar_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserProfileResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/users/me/activity": {
+      "get": {
+        "tags": ["users"],
+        "summary": "Get Activity",
+        "description": "Get recent user activity from audit logs",
+        "operationId": "get_activity_api_v1_users_me_activity_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 0, "title": "Skip" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 20, "title": "Limit" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActivityLogResponse"
+                  },
+                  "title": "Response Get Activity Api V1 Users Me Activity Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/": {
+      "get": {
+        "tags": ["projects"],
+        "summary": "Read Projects",
+        "operationId": "read_projects_api_v1_projects__get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 0, "title": "Skip" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 100, "title": "Limit" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Project" },
+                  "title": "Response Read Projects Api V1 Projects  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["projects"],
+        "summary": "Create New Project",
+        "operationId": "create_new_project_api_v1_projects__post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ProjectCreate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Project" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}": {
+      "get": {
+        "tags": ["projects"],
+        "summary": "Read Project",
+        "operationId": "read_project_api_v1_projects__project_id__get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "title": "Project Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Project" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["projects"],
+        "summary": "Update Existing Project",
+        "operationId": "update_existing_project_api_v1_projects__project_id__put",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "title": "Project Id" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ProjectUpdate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Project" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["projects"],
+        "summary": "Delete Existing Project",
+        "operationId": "delete_existing_project_api_v1_projects__project_id__delete",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "title": "Project Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Delete Existing Project Api V1 Projects  Project Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/export": {
+      "get": {
+        "tags": ["export"],
+        "summary": "Export Project Configuration",
+        "description": "Export a project configuration as JSON.\nReturns the configuration in the response with appropriate headers for file download.",
+        "operationId": "export_project_configuration_api_v1_projects__project_id__export_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "title": "Project Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Export Project Configuration Api V1 Projects  Project Id  Export Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/import": {
+      "post": {
+        "tags": ["export"],
+        "summary": "Import Project Configuration",
+        "description": "Import a JSON configuration into a project.\n\nArgs:\n    configuration: The JSON configuration to import\n    merge: If true, merge with existing configuration. If false, replace.",
+        "operationId": "import_project_configuration_api_v1_projects__project_id__import_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "title": "Project Id" }
+          },
+          {
+            "name": "merge",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "boolean", "default": false, "title": "Merge" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Configuration"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Import Project Configuration Api V1 Projects  Project Id  Import Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/validate": {
+      "post": {
+        "tags": ["export"],
+        "summary": "Validate Configuration",
+        "description": "Validate a JSON configuration without importing it.\nUseful for pre-import validation on the client side.",
+        "operationId": "validate_configuration_api_v1_projects__project_id__validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Configuration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ValidationResult" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/projects/{project_id}/configuration": {
+      "get": {
+        "tags": ["export"],
+        "summary": "Get Project Configuration",
+        "description": "Get the raw configuration JSON for a project.\nThis is useful for the runner to fetch configurations.",
+        "operationId": "get_project_configuration_api_v1_projects__project_id__configuration_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "title": "Project Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Project Configuration Api V1 Projects  Project Id  Configuration Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/optimize-pattern": {
+      "post": {
+        "tags": ["pattern-optimization"],
+        "summary": "Optimize Pattern",
+        "description": "Analyze patterns from screenshots and return optimization results.\n\nThis endpoint:\n1. Extracts patterns from screenshots at specified regions\n2. Calculates similarity between all pattern pairs\n3. Computes statistics (mean, variance, outliers)\n4. Evaluates different matching strategies\n\nArgs:\n    request: Pattern optimization request with screenshots and regions\n\nReturns:\n    Optimization results including patterns, similarity matrix, and evaluations\n\nRaises:\n    HTTPException: If image processing fails or invalid data provided",
+        "operationId": "optimize_pattern_api_v1_optimize_pattern_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OptimizePatternRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizePatternResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/create-state-image": {
+      "post": {
+        "tags": ["pattern-optimization"],
+        "summary": "Create State Image",
+        "description": "Create a StateImage from optimized patterns.",
+        "operationId": "create_state_image_api_v1_create_state_image_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStateImageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/remove-background": {
+      "post": {
+        "tags": ["background-removal"],
+        "summary": "Remove Background",
+        "description": "Remove backgrounds from screenshots for State Discovery.\n\nThis endpoint:\n1. Accepts base64 encoded screenshots\n2. Applies background removal using configured strategies\n3. Returns RGBA images with transparent backgrounds\n4. Provides statistics about the removal\n\nArgs:\n    request: Background removal request with screenshots and config\n\nReturns:\n    Masked screenshots with statistics\n\nRaises:\n    HTTPException: If processing fails or invalid data provided",
+        "operationId": "remove_background_api_v1_remove_background_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveBackgroundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveBackgroundResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/background-removal/presets": {
+      "get": {
+        "tags": ["background-removal"],
+        "summary": "Get Presets",
+        "description": "Get available background removal preset configurations.\n\nReturns:\n    Dictionary of preset names and their configurations",
+        "operationId": "get_presets_api_v1_background_removal_presets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/download": {
+      "post": {
+        "tags": ["analytics"],
+        "summary": "Track Download",
+        "description": "Track runner download events (public endpoint, no auth required)\n\nPrivacy-friendly: No PII collected, only platform and version info",
+        "operationId": "track_download_api_v1_analytics_download_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/usage": {
+      "get": {
+        "tags": ["analytics"],
+        "summary": "Get Usage Analytics",
+        "description": "Get current user's usage analytics\n\nReturns:\n    - api_calls_today: Number of API calls made today\n    - projects_count: Total number of projects\n    - storage_used: Total storage used in bytes\n    - last_active: Timestamp of last activity",
+        "operationId": "get_usage_analytics_api_v1_analytics_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/analytics/metrics": {
+      "get": {
+        "tags": ["analytics"],
+        "summary": "Get User Metrics",
+        "description": "Get detailed metrics for the current user\n\nQuery params:\n    - metric_type: Filter by metric type (api_call, project_created, etc.)\n    - days: Number of days to look back (default 7)\n\nReturns:\n    List of metrics with timestamps and values",
+        "operationId": "get_user_metrics_api_v1_analytics_metrics_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "metric_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [{ "type": "string" }, { "type": "null" }],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 7, "title": "Days" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/summary": {
+      "get": {
+        "tags": ["analytics"],
+        "summary": "Get Analytics Summary",
+        "description": "Get a comprehensive analytics summary for the current user\n\nQuery params:\n    - days: Number of days to look back (default 30)\n\nReturns:\n    Summary of all metrics including API calls, projects, states, images, etc.",
+        "operationId": "get_analytics_summary_api_v1_analytics_summary_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 30, "title": "Days" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/": {
+      "get": {
+        "tags": ["settings"],
+        "summary": "Get Settings",
+        "description": "Get current Qontinui settings.\n\nReturns the settings from the database or default settings if none exist.",
+        "operationId": "get_settings_api_v1_settings__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QontinuiSettings" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      },
+      "put": {
+        "tags": ["settings"],
+        "summary": "Update Settings",
+        "description": "Update Qontinui settings.\n\nUpdates the application settings and persists them to storage.",
+        "operationId": "update_settings_api_v1_settings__put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QontinuiSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QontinuiSettings" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/settings/reset": {
+      "post": {
+        "tags": ["settings"],
+        "summary": "Reset Settings",
+        "description": "Reset settings to default values.",
+        "operationId": "reset_settings_api_v1_settings_reset_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QontinuiSettings" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/settings/export": {
+      "get": {
+        "tags": ["settings"],
+        "summary": "Export Settings",
+        "description": "Export settings to YAML or JSON format.",
+        "operationId": "export_settings_api_v1_settings_export_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "default": "yaml", "title": "Format" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Export Settings Api V1 Settings Export Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/import": {
+      "post": {
+        "tags": ["settings"],
+        "summary": "Import Settings",
+        "description": "Import settings from YAML or JSON format.",
+        "operationId": "import_settings_api_v1_settings_import_post",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "content",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Content" }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "default": "yaml", "title": "Format" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Import Settings Api V1 Settings Import Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/billing/subscription": {
+      "get": {
+        "tags": ["billing"],
+        "summary": "Get Subscription",
+        "description": "Get current user's subscription details",
+        "operationId": "get_subscription_api_v1_billing_subscription_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/billing/checkout": {
+      "post": {
+        "tags": ["billing"],
+        "summary": "Create Checkout Session",
+        "description": "Create a Stripe checkout session for subscription purchase",
+        "operationId": "create_checkout_session_api_v1_billing_checkout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/billing/portal": {
+      "post": {
+        "tags": ["billing"],
+        "summary": "Create Billing Portal Session",
+        "description": "Create a Stripe billing portal session for subscription management",
+        "operationId": "create_billing_portal_session_api_v1_billing_portal_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingPortalResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/billing/limits": {
+      "get": {
+        "tags": ["billing"],
+        "summary": "Get Tier Limits",
+        "description": "Get storage and resource limits for current user's tier",
+        "operationId": "get_tier_limits_api_v1_billing_limits_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TierLimitsResponse" }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/billing/usage": {
+      "get": {
+        "tags": ["billing"],
+        "summary": "Get Usage Summary",
+        "description": "Get detailed usage summary with limits and percentages",
+        "operationId": "get_usage_summary_api_v1_billing_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Usage Summary Api V1 Billing Usage Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/billing/read-only-status": {
+      "get": {
+        "tags": ["billing"],
+        "summary": "Get Read Only Status",
+        "description": "Check if user is in read-only mode",
+        "operationId": "get_read_only_status_api_v1_billing_read_only_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Read Only Status Api V1 Billing Read Only Status Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/billing/webhook": {
+      "post": {
+        "tags": ["billing"],
+        "summary": "Stripe Webhook",
+        "description": "Handle Stripe webhook events",
+        "operationId": "stripe_webhook_api_v1_billing_webhook_post",
+        "parameters": [
+          {
+            "name": "stripe-signature",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [{ "type": "string" }, { "type": "null" }],
+              "title": "Stripe-Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/bootstrap-first-admin": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "Bootstrap First Admin",
+        "description": "One-time endpoint to create the first admin. Remove after use!",
+        "operationId": "bootstrap_first_admin_api_v1_admin_bootstrap_first_admin_post",
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "title": "Email" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Bootstrap First Admin Api V1 Admin Bootstrap First Admin Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/stats": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Get Admin Stats",
+        "description": "Get overall platform statistics.",
+        "operationId": "get_admin_stats_api_v1_admin_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Admin Stats Api V1 Admin Stats Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Get Users List",
+        "description": "Get list of users with basic info.",
+        "operationId": "get_users_list_api_v1_admin_users_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 0, "title": "Skip" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 50, "title": "Limit" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Users List Api V1 Admin Users Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Get User Details",
+        "description": "Get detailed info about a specific user.",
+        "operationId": "get_user_details_api_v1_admin_users__user_id__get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid", "title": "User Id" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get User Details Api V1 Admin Users  User Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/projects": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Get All Projects",
+        "description": "Get all projects across all users.",
+        "operationId": "get_all_projects_api_v1_admin_projects_get",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 0, "title": "Skip" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 1000, "title": "Limit" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get All Projects Api V1 Admin Projects Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Get Analytics",
+        "description": "Get analytics metrics.",
+        "operationId": "get_analytics_api_v1_admin_analytics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Analytics Api V1 Admin Analytics Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/api/v1/admin/system/health": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Get System Health",
+        "description": "Get system health metrics.",
+        "operationId": "get_system_health_api_v1_admin_system_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get System Health Api V1 Admin System Health Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "OAuth2PasswordBearer": [] }]
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Health check endpoint with database connectivity check",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    },
+    "/favicon.ico": {
+      "get": {
+        "summary": "Favicon",
+        "description": "Return 204 No Content for favicon requests",
+        "operationId": "favicon_favicon_ico_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActivityLogResponse": {
+        "properties": {
+          "id": { "type": "integer", "title": "Id" },
+          "action": { "type": "string", "title": "Action" },
+          "resource_type": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Resource Type"
+          },
+          "resource_id": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Resource Id"
+          },
+          "ip_address": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Ip Address"
+          },
+          "log_metadata": {
+            "anyOf": [
+              { "additionalProperties": true, "type": "object" },
+              { "type": "null" }
+            ],
+            "title": "Log Metadata"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": ["id", "action", "created_at"],
+        "title": "ActivityLogResponse",
+        "description": "Activity log entry for user feed"
+      },
+      "AnalysisSettingsSchema": {
+        "properties": {
+          "kmeans_clusters": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Kmeans Clusters"
+          },
+          "color_tolerance": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Color Tolerance"
+          },
+          "hsv_bins": {
+            "anyOf": [
+              { "items": { "type": "integer" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Hsv Bins"
+          },
+          "min_contour_area": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Min Contour Area"
+          },
+          "max_contour_area": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Max Contour Area"
+          }
+        },
+        "type": "object",
+        "title": "AnalysisSettingsSchema",
+        "description": "Color analysis settings schema."
+      },
+      "BackgroundRemovalConfig": {
+        "properties": {
+          "use_temporal_variance": {
+            "type": "boolean",
+            "title": "Use Temporal Variance",
+            "default": true
+          },
+          "use_edge_density": {
+            "type": "boolean",
+            "title": "Use Edge Density",
+            "default": true
+          },
+          "use_uniformity": {
+            "type": "boolean",
+            "title": "Use Uniformity",
+            "default": true
+          },
+          "variance_threshold": {
+            "type": "number",
+            "title": "Variance Threshold",
+            "default": 20.0
+          },
+          "min_screenshots_for_variance": {
+            "type": "integer",
+            "title": "Min Screenshots For Variance",
+            "default": 3
+          },
+          "edge_density_threshold": {
+            "type": "number",
+            "title": "Edge Density Threshold",
+            "default": 0.05
+          },
+          "edge_kernel_size": {
+            "type": "integer",
+            "title": "Edge Kernel Size",
+            "default": 3
+          },
+          "uniformity_threshold": {
+            "type": "number",
+            "title": "Uniformity Threshold",
+            "default": 15.0
+          },
+          "uniformity_region_size": {
+            "type": "integer",
+            "title": "Uniformity Region Size",
+            "default": 20
+          },
+          "apply_morphology": {
+            "type": "boolean",
+            "title": "Apply Morphology",
+            "default": true
+          },
+          "morphology_kernel_size": {
+            "type": "integer",
+            "title": "Morphology Kernel Size",
+            "default": 3
+          },
+          "min_foreground_region_size": {
+            "type": "integer",
+            "title": "Min Foreground Region Size",
+            "default": 50
+          },
+          "foreground_alpha": {
+            "type": "integer",
+            "title": "Foreground Alpha",
+            "default": 255
+          },
+          "background_alpha": {
+            "type": "integer",
+            "title": "Background Alpha",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "BackgroundRemovalConfig",
+        "description": "Configuration for background removal."
+      },
+      "BackgroundRemovalStatistics": {
+        "properties": {
+          "total_pixels": { "type": "integer", "title": "Total Pixels" },
+          "background_pixels": {
+            "type": "integer",
+            "title": "Background Pixels"
+          },
+          "foreground_pixels": {
+            "type": "integer",
+            "title": "Foreground Pixels"
+          },
+          "background_percentage": {
+            "type": "number",
+            "title": "Background Percentage"
+          },
+          "foreground_percentage": {
+            "type": "number",
+            "title": "Foreground Percentage"
+          },
+          "num_screenshots": { "type": "integer", "title": "Num Screenshots" },
+          "image_size": {
+            "prefixItems": [{ "type": "integer" }, { "type": "integer" }],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Image Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_pixels",
+          "background_pixels",
+          "foreground_pixels",
+          "background_percentage",
+          "foreground_percentage",
+          "num_screenshots",
+          "image_size"
+        ],
+        "title": "BackgroundRemovalStatistics",
+        "description": "Statistics from background removal."
+      },
+      "BearerResponse": {
+        "properties": {
+          "access_token": { "type": "string", "title": "Access Token" },
+          "token_type": { "type": "string", "title": "Token Type" }
+        },
+        "type": "object",
+        "required": ["access_token", "token_type"],
+        "title": "BearerResponse"
+      },
+      "BetaSignupRequest": {
+        "properties": {
+          "email": { "type": "string", "format": "email", "title": "Email" }
+        },
+        "type": "object",
+        "required": ["email"],
+        "title": "BetaSignupRequest"
+      },
+      "BetaSignupResponse": {
+        "properties": {
+          "success": { "type": "boolean", "title": "Success" },
+          "message": { "type": "string", "title": "Message" },
+          "temp_password": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Temp Password"
+          }
+        },
+        "type": "object",
+        "required": ["success", "message"],
+        "title": "BetaSignupResponse"
+      },
+      "BillingPortalResponse": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Stripe billing portal URL"
+          }
+        },
+        "type": "object",
+        "required": ["url"],
+        "title": "BillingPortalResponse",
+        "description": "Response schema for billing portal session"
+      },
+      "Body_auth_jwt_login_api_v1_auth_jwt_login_post": {
+        "properties": {
+          "grant_type": {
+            "anyOf": [
+              { "type": "string", "pattern": "^password$" },
+              { "type": "null" }
+            ],
+            "title": "Grant Type"
+          },
+          "username": { "type": "string", "title": "Username" },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password"
+          },
+          "scope": { "type": "string", "title": "Scope", "default": "" },
+          "client_id": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "format": "password",
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": ["username", "password"],
+        "title": "Body_auth_jwt_login_api_v1_auth_jwt_login_post"
+      },
+      "Body_reset_forgot_password_api_v1_auth_forgot_password_post": {
+        "properties": {
+          "email": { "type": "string", "format": "email", "title": "Email" }
+        },
+        "type": "object",
+        "required": ["email"],
+        "title": "Body_reset_forgot_password_api_v1_auth_forgot_password_post"
+      },
+      "Body_reset_reset_password_api_v1_auth_reset_password_post": {
+        "properties": {
+          "token": { "type": "string", "title": "Token" },
+          "password": { "type": "string", "title": "Password" }
+        },
+        "type": "object",
+        "required": ["token", "password"],
+        "title": "Body_reset_reset_password_api_v1_auth_reset_password_post"
+      },
+      "Body_upload_avatar_api_v1_users_me_avatar_post": {
+        "properties": {
+          "file": { "type": "string", "format": "binary", "title": "File" }
+        },
+        "type": "object",
+        "required": ["file"],
+        "title": "Body_upload_avatar_api_v1_users_me_avatar_post"
+      },
+      "Body_verify_request_token_api_v1_auth_request_verify_token_post": {
+        "properties": {
+          "email": { "type": "string", "format": "email", "title": "Email" }
+        },
+        "type": "object",
+        "required": ["email"],
+        "title": "Body_verify_request_token_api_v1_auth_request_verify_token_post"
+      },
+      "Body_verify_verify_api_v1_auth_verify_post": {
+        "properties": { "token": { "type": "string", "title": "Token" } },
+        "type": "object",
+        "required": ["token"],
+        "title": "Body_verify_verify_api_v1_auth_verify_post"
+      },
+      "CheckoutSessionRequest": {
+        "properties": {
+          "tier": {
+            "type": "string",
+            "title": "Tier",
+            "description": "Subscription tier to purchase (hobby or pro)"
+          }
+        },
+        "type": "object",
+        "required": ["tier"],
+        "title": "CheckoutSessionRequest",
+        "description": "Request schema for creating checkout session"
+      },
+      "CheckoutSessionResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Stripe checkout session ID"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Stripe checkout URL"
+          }
+        },
+        "type": "object",
+        "required": ["session_id", "url"],
+        "title": "CheckoutSessionResponse",
+        "description": "Response schema for checkout session"
+      },
+      "CoreSettingsSchema": {
+        "properties": {
+          "image_path": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Image Path"
+          },
+          "mock": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Mock"
+          },
+          "headless": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Headless"
+          },
+          "sikuli_jar_path": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Sikuli Jar Path"
+          },
+          "tesseract_path": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Tesseract Path"
+          },
+          "image_cache_size": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Image Cache Size"
+          },
+          "auto_wait_timeout": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Auto Wait Timeout"
+          }
+        },
+        "type": "object",
+        "title": "CoreSettingsSchema",
+        "description": "Core framework settings schema."
+      },
+      "CreateStateImageRequest": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "patterns": {
+            "items": { "additionalProperties": true, "type": "object" },
+            "type": "array",
+            "title": "Patterns"
+          },
+          "strategy_type": { "type": "string", "title": "Strategy Type" },
+          "similarity_threshold": {
+            "type": "number",
+            "title": "Similarity Threshold",
+            "default": 0.8
+          }
+        },
+        "type": "object",
+        "required": ["name", "patterns", "strategy_type"],
+        "title": "CreateStateImageRequest"
+      },
+      "DatasetSettingsSchema": {
+        "properties": {
+          "collect": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Collect"
+          },
+          "path": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Path"
+          },
+          "include_screenshots": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Include Screenshots"
+          },
+          "include_actions": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Include Actions"
+          },
+          "include_timing": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Include Timing"
+          },
+          "include_results": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Include Results"
+          },
+          "format": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Format"
+          },
+          "compression": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Compression"
+          }
+        },
+        "type": "object",
+        "title": "DatasetSettingsSchema",
+        "description": "AI dataset generation settings schema."
+      },
+      "ErrorModel": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              { "type": "string" },
+              { "additionalProperties": { "type": "string" }, "type": "object" }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": ["detail"],
+        "title": "ErrorModel"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": { "$ref": "#/components/schemas/ValidationError" },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IllustrationSettingsSchema": {
+        "properties": {
+          "enabled": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Enabled"
+          },
+          "show_click": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Show Click"
+          },
+          "show_drag": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Show Drag"
+          },
+          "show_type": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Show Type"
+          },
+          "show_find": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Show Find"
+          },
+          "highlight_color": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Highlight Color"
+          },
+          "highlight_thickness": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Highlight Thickness"
+          },
+          "annotation_font_size": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Annotation Font Size"
+          }
+        },
+        "type": "object",
+        "title": "IllustrationSettingsSchema",
+        "description": "Action illustration settings schema."
+      },
+      "MockSettingsSchema": {
+        "properties": {
+          "click_duration": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Click Duration"
+          },
+          "type_duration": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Type Duration"
+          },
+          "find_duration": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Find Duration"
+          },
+          "drag_duration": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Drag Duration"
+          },
+          "scroll_duration": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Scroll Duration"
+          },
+          "wait_duration": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Wait Duration"
+          },
+          "vanish_duration": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Vanish Duration"
+          },
+          "exists_duration": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Exists Duration"
+          }
+        },
+        "type": "object",
+        "title": "MockSettingsSchema",
+        "description": "Mock mode timing configuration schema."
+      },
+      "MonitorSettingsSchema": {
+        "properties": {
+          "default_screen_index": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Default Screen Index"
+          },
+          "multi_monitor_enabled": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Multi Monitor Enabled"
+          },
+          "search_all_monitors": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Search All Monitors"
+          },
+          "log_monitor_info": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Log Monitor Info"
+          },
+          "operation_monitor_map": {
+            "anyOf": [
+              {
+                "additionalProperties": { "type": "integer" },
+                "type": "object"
+              },
+              { "type": "null" }
+            ],
+            "title": "Operation Monitor Map"
+          }
+        },
+        "type": "object",
+        "title": "MonitorSettingsSchema",
+        "description": "Monitor configuration settings schema."
+      },
+      "MouseSettingsSchema": {
+        "properties": {
+          "move_delay": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Move Delay"
+          },
+          "pause_before_down": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Pause Before Down"
+          },
+          "pause_after_down": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Pause After Down"
+          },
+          "pause_before_up": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Pause Before Up"
+          },
+          "pause_after_up": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Pause After Up"
+          },
+          "click_delay": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Click Delay"
+          },
+          "drag_delay": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Drag Delay"
+          }
+        },
+        "type": "object",
+        "title": "MouseSettingsSchema",
+        "description": "Mouse action configuration schema."
+      },
+      "OptimizePatternRequest": {
+        "properties": {
+          "screenshots": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Screenshots"
+          },
+          "negative_screenshots": {
+            "anyOf": [
+              { "items": { "type": "string" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Negative Screenshots",
+            "default": []
+          },
+          "regions": {
+            "items": { "$ref": "#/components/schemas/Region" },
+            "type": "array",
+            "title": "Regions"
+          },
+          "strategies": {
+            "anyOf": [
+              { "items": { "type": "string" }, "type": "array" },
+              { "type": "null" }
+            ],
+            "title": "Strategies",
+            "default": [
+              "multi-pattern",
+              "consensus",
+              "feature-based",
+              "differential"
+            ]
+          }
+        },
+        "type": "object",
+        "required": ["screenshots", "regions"],
+        "title": "OptimizePatternRequest",
+        "description": "Request model for pattern optimization."
+      },
+      "OptimizePatternResponse": {
+        "properties": {
+          "extractedPatterns": {
+            "items": { "additionalProperties": true, "type": "object" },
+            "type": "array",
+            "title": "Extractedpatterns"
+          },
+          "similarityMatrix": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Similaritymatrix"
+          },
+          "statistics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Statistics"
+          },
+          "evaluations": {
+            "items": { "additionalProperties": true, "type": "object" },
+            "type": "array",
+            "title": "Evaluations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "extractedPatterns",
+          "similarityMatrix",
+          "statistics",
+          "evaluations"
+        ],
+        "title": "OptimizePatternResponse",
+        "description": "Response model for pattern optimization."
+      },
+      "Project": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "description": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Description"
+          },
+          "configuration": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Configuration",
+            "default": {}
+          },
+          "id": { "type": "integer", "title": "Id" },
+          "owner_id": { "type": "integer", "title": "Owner Id" },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": ["name", "id", "owner_id", "created_at", "updated_at"],
+        "title": "Project"
+      },
+      "ProjectCreate": {
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "description": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Description"
+          },
+          "configuration": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Configuration",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": ["name"],
+        "title": "ProjectCreate"
+      },
+      "ProjectUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Description"
+          },
+          "configuration": {
+            "anyOf": [
+              { "additionalProperties": true, "type": "object" },
+              { "type": "null" }
+            ],
+            "title": "Configuration"
+          }
+        },
+        "type": "object",
+        "title": "ProjectUpdate"
+      },
+      "QontinuiSettings": {
+        "properties": {
+          "core": { "$ref": "#/components/schemas/CoreSettingsSchema" },
+          "mouse": { "$ref": "#/components/schemas/MouseSettingsSchema" },
+          "mock": { "$ref": "#/components/schemas/MockSettingsSchema" },
+          "screenshot": {
+            "$ref": "#/components/schemas/ScreenshotSettingsSchema"
+          },
+          "illustration": {
+            "$ref": "#/components/schemas/IllustrationSettingsSchema"
+          },
+          "analysis": { "$ref": "#/components/schemas/AnalysisSettingsSchema" },
+          "recording": {
+            "$ref": "#/components/schemas/RecordingSettingsSchema"
+          },
+          "dataset": { "$ref": "#/components/schemas/DatasetSettingsSchema" },
+          "testing": { "$ref": "#/components/schemas/TestingSettingsSchema" },
+          "monitor": { "$ref": "#/components/schemas/MonitorSettingsSchema" }
+        },
+        "type": "object",
+        "title": "QontinuiSettings",
+        "description": "Complete Qontinui settings."
+      },
+      "QontinuiSettingsUpdate": {
+        "properties": {
+          "core": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/CoreSettingsSchema" },
+              { "type": "null" }
+            ]
+          },
+          "mouse": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/MouseSettingsSchema" },
+              { "type": "null" }
+            ]
+          },
+          "mock": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/MockSettingsSchema" },
+              { "type": "null" }
+            ]
+          },
+          "screenshot": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/ScreenshotSettingsSchema" },
+              { "type": "null" }
+            ]
+          },
+          "illustration": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/IllustrationSettingsSchema" },
+              { "type": "null" }
+            ]
+          },
+          "analysis": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/AnalysisSettingsSchema" },
+              { "type": "null" }
+            ]
+          },
+          "recording": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/RecordingSettingsSchema" },
+              { "type": "null" }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/DatasetSettingsSchema" },
+              { "type": "null" }
+            ]
+          },
+          "testing": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/TestingSettingsSchema" },
+              { "type": "null" }
+            ]
+          },
+          "monitor": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/MonitorSettingsSchema" },
+              { "type": "null" }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "QontinuiSettingsUpdate",
+        "description": "Update schema for Qontinui settings."
+      },
+      "RecordingSettingsSchema": {
+        "properties": {
+          "enabled": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Enabled"
+          },
+          "path": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Path"
+          },
+          "fps": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Fps"
+          },
+          "codec": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Codec"
+          },
+          "quality": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Quality"
+          },
+          "include_audio": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Include Audio"
+          },
+          "max_duration_minutes": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Max Duration Minutes"
+          }
+        },
+        "type": "object",
+        "title": "RecordingSettingsSchema",
+        "description": "Screen recording settings schema."
+      },
+      "Region": {
+        "properties": {
+          "x": { "type": "integer", "title": "X" },
+          "y": { "type": "integer", "title": "Y" },
+          "width": { "type": "integer", "title": "Width" },
+          "height": { "type": "integer", "title": "Height" }
+        },
+        "type": "object",
+        "required": ["x", "y", "width", "height"],
+        "title": "Region",
+        "description": "Region coordinates for pattern extraction."
+      },
+      "RemoveBackgroundRequest": {
+        "properties": {
+          "screenshots": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Screenshots"
+          },
+          "config": { "$ref": "#/components/schemas/BackgroundRemovalConfig" },
+          "debug": { "type": "boolean", "title": "Debug", "default": false }
+        },
+        "type": "object",
+        "required": ["screenshots", "config"],
+        "title": "RemoveBackgroundRequest",
+        "description": "Request model for background removal."
+      },
+      "RemoveBackgroundResponse": {
+        "properties": {
+          "masked_screenshots": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Masked Screenshots"
+          },
+          "statistics": {
+            "$ref": "#/components/schemas/BackgroundRemovalStatistics"
+          },
+          "background_mask": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Background Mask"
+          }
+        },
+        "type": "object",
+        "required": ["masked_screenshots", "statistics"],
+        "title": "RemoveBackgroundResponse",
+        "description": "Response model for background removal."
+      },
+      "ScreenshotSettingsSchema": {
+        "properties": {
+          "save_snapshots": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Save Snapshots"
+          },
+          "path": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Path"
+          },
+          "max_history": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Max History"
+          },
+          "format": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Format"
+          },
+          "quality": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Quality"
+          },
+          "include_timestamp": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Include Timestamp"
+          },
+          "capture_on_error": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Capture On Error"
+          }
+        },
+        "type": "object",
+        "title": "ScreenshotSettingsSchema",
+        "description": "Screenshot and history settings schema."
+      },
+      "StorageQuotaResponse": {
+        "properties": {
+          "used_bytes": { "type": "integer", "title": "Used Bytes" },
+          "quota_bytes": { "type": "integer", "title": "Quota Bytes" },
+          "percentage_used": { "type": "number", "title": "Percentage Used" },
+          "files_count": { "type": "integer", "title": "Files Count" }
+        },
+        "type": "object",
+        "required": [
+          "used_bytes",
+          "quota_bytes",
+          "percentage_used",
+          "files_count"
+        ],
+        "title": "StorageQuotaResponse",
+        "description": "Schema for storage quota information."
+      },
+      "SubscriptionResponse": {
+        "properties": {
+          "tier": {
+            "type": "string",
+            "title": "Tier",
+            "description": "Subscription tier (free, hobby, pro)"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Subscription status"
+          },
+          "cancel_at_period_end": {
+            "type": "boolean",
+            "title": "Cancel At Period End",
+            "description": "Whether subscription will cancel at period end",
+            "default": false
+          },
+          "current_period_end": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Current Period End",
+            "description": "ISO timestamp of when current period ends"
+          },
+          "stripe_status": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Stripe Status",
+            "description": "Live Stripe subscription status"
+          }
+        },
+        "type": "object",
+        "required": ["tier", "status"],
+        "title": "SubscriptionResponse",
+        "description": "Response schema for subscription details"
+      },
+      "TestingSettingsSchema": {
+        "properties": {
+          "timeout_multiplier": {
+            "anyOf": [{ "type": "number" }, { "type": "null" }],
+            "title": "Timeout Multiplier"
+          },
+          "retry_failed": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Retry Failed"
+          },
+          "max_retries": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Max Retries"
+          },
+          "screenshot_on_failure": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Screenshot On Failure"
+          },
+          "verbose_logging": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Verbose Logging"
+          },
+          "parallel_execution": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Parallel Execution"
+          },
+          "random_seed": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Random Seed"
+          },
+          "iteration": {
+            "anyOf": [{ "type": "integer" }, { "type": "null" }],
+            "title": "Iteration"
+          },
+          "send_logs": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Send Logs"
+          }
+        },
+        "type": "object",
+        "title": "TestingSettingsSchema",
+        "description": "Test execution settings schema."
+      },
+      "TierLimitsResponse": {
+        "properties": {
+          "tier": {
+            "type": "string",
+            "title": "Tier",
+            "description": "Subscription tier"
+          },
+          "max_configs": {
+            "type": "integer",
+            "title": "Max Configs",
+            "description": "Maximum number of configs (-1 = unlimited)"
+          },
+          "max_images": {
+            "type": "integer",
+            "title": "Max Images",
+            "description": "Maximum number of images"
+          },
+          "max_storage_mb": {
+            "type": "integer",
+            "title": "Max Storage Mb",
+            "description": "Maximum storage in MB"
+          }
+        },
+        "type": "object",
+        "required": ["tier", "max_configs", "max_images", "max_storage_mb"],
+        "title": "TierLimitsResponse",
+        "description": "Response schema for tier limits"
+      },
+      "UserCreate": {
+        "properties": {
+          "email": { "type": "string", "format": "email", "title": "Email" },
+          "password": { "type": "string", "title": "Password" },
+          "is_active": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Is Active",
+            "default": true
+          },
+          "is_superuser": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Is Superuser",
+            "default": false
+          },
+          "is_verified": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Is Verified",
+            "default": false
+          },
+          "username": { "type": "string", "title": "Username" },
+          "full_name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Full Name"
+          },
+          "company": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Company"
+          }
+        },
+        "type": "object",
+        "required": ["email", "password", "username"],
+        "title": "UserCreate",
+        "description": "Schema for creating users (fastapi-users compatible)."
+      },
+      "UserProfileResponse": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "email": { "type": "string", "format": "email", "title": "Email" },
+          "username": { "type": "string", "title": "Username" },
+          "full_name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Full Name"
+          },
+          "company": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Company"
+          },
+          "phone": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Phone"
+          },
+          "avatar_url": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Avatar Url"
+          },
+          "is_verified": {
+            "type": "boolean",
+            "title": "Is Verified",
+            "default": false
+          },
+          "subscription_tier": {
+            "type": "string",
+            "title": "Subscription Tier",
+            "default": "free"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": ["id", "email", "username", "created_at", "updated_at"],
+        "title": "UserProfileResponse",
+        "description": "Full user profile with all fields"
+      },
+      "UserProfileUpdate": {
+        "properties": {
+          "full_name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Full Name"
+          },
+          "company": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Company"
+          },
+          "phone": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Phone"
+          }
+        },
+        "type": "object",
+        "title": "UserProfileUpdate",
+        "description": "Fields that can be updated by the user"
+      },
+      "UserRead": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "email": { "type": "string", "format": "email", "title": "Email" },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "is_superuser": {
+            "type": "boolean",
+            "title": "Is Superuser",
+            "default": false
+          },
+          "is_verified": {
+            "type": "boolean",
+            "title": "Is Verified",
+            "default": false
+          },
+          "username": { "type": "string", "title": "Username" },
+          "full_name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Full Name"
+          },
+          "company": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Company"
+          },
+          "phone": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Phone"
+          },
+          "avatar_url": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Avatar Url"
+          },
+          "subscription_tier": {
+            "type": "string",
+            "title": "Subscription Tier"
+          },
+          "is_beta": {
+            "type": "boolean",
+            "title": "Is Beta",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "username",
+          "subscription_tier",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserRead",
+        "description": "Schema for reading user data (fastapi-users compatible with UUID)."
+      },
+      "UserUpdate": {
+        "properties": {
+          "password": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Password"
+          },
+          "email": {
+            "anyOf": [
+              { "type": "string", "format": "email" },
+              { "type": "null" }
+            ],
+            "title": "Email"
+          },
+          "is_active": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Is Active"
+          },
+          "is_superuser": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Is Superuser"
+          },
+          "is_verified": {
+            "anyOf": [{ "type": "boolean" }, { "type": "null" }],
+            "title": "Is Verified"
+          },
+          "username": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Username"
+          },
+          "full_name": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Full Name"
+          },
+          "company": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Company"
+          },
+          "phone": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Phone"
+          }
+        },
+        "type": "object",
+        "title": "UserUpdate",
+        "description": "Schema for updating users (fastapi-users compatible)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": { "anyOf": [{ "type": "string" }, { "type": "integer" }] },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": { "type": "string", "title": "Message" },
+          "type": { "type": "string", "title": "Error Type" }
+        },
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError"
+      },
+      "ValidationResult": {
+        "properties": {
+          "valid": { "type": "boolean", "title": "Valid" },
+          "errors": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": { "type": "string" },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": ["valid"],
+        "title": "ValidationResult"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": { "scopes": {}, "tokenUrl": "api/v1/auth/jwt/login" }
+        }
+      }
+    }
+  }
+}

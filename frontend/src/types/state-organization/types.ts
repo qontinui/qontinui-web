@@ -5,7 +5,7 @@
  * groups, tags, search, relationships, and complexity analysis.
  */
 
-import type { State } from '@/contexts/automation-context/types';
+import type { State } from "@/contexts/automation-context/types";
 
 // ============================================================================
 // State Template Types
@@ -15,7 +15,7 @@ export interface StateTemplate {
   id: string;
   name: string;
   description: string;
-  category: 'built-in' | 'custom';
+  category: "built-in" | "custom";
   icon?: string;
   config: StateTemplateConfig;
   createdAt: string;
@@ -148,7 +148,7 @@ export interface StateSearchResult {
 }
 
 export interface SearchMatch {
-  field: 'name' | 'description' | 'tag' | 'group';
+  field: "name" | "description" | "tag" | "group";
   value: string;
   matchedText: string;
 }
@@ -186,7 +186,7 @@ export interface StateGraph {
 export interface StateGraphNode {
   id: string;
   name: string;
-  type: 'state' | 'initial';
+  type: "state" | "initial";
   metadata: StateMetadata;
 }
 
@@ -209,7 +209,7 @@ export interface StateComplexity {
   totalPatternCount: number;
   searchRegionCount: number;
   complexityScore: number; // 0-100
-  level: 'simple' | 'moderate' | 'complex' | 'very-complex';
+  level: "simple" | "moderate" | "complex" | "very-complex";
 }
 
 export interface StateAnalysis {
@@ -240,8 +240,13 @@ export interface StateSimilarity {
 }
 
 export interface StateIssue {
-  type: 'warning' | 'error' | 'info';
-  category: 'orphaned' | 'dead-end' | 'no-images' | 'no-transitions' | 'high-complexity';
+  type: "warning" | "error" | "info";
+  category:
+    | "orphaned"
+    | "dead-end"
+    | "no-images"
+    | "no-transitions"
+    | "high-complexity";
   message: string;
   suggestion?: string;
 }
@@ -374,28 +379,28 @@ export const STATE_COMPLEXITY_WEIGHTS = {
 };
 
 export const DEFAULT_COLORS = [
-  '#ef4444', // red
-  '#f59e0b', // amber
-  '#10b981', // green
-  '#3b82f6', // blue
-  '#8b5cf6', // purple
-  '#ec4899', // pink
-  '#6b7280', // gray
-  '#14b8a6', // teal
+  "#ef4444", // red
+  "#f59e0b", // amber
+  "#10b981", // green
+  "#3b82f6", // blue
+  "#8b5cf6", // purple
+  "#ec4899", // pink
+  "#6b7280", // gray
+  "#14b8a6", // teal
 ];
 
 export const DEFAULT_ICONS = [
-  'folder',
-  'folder-open',
-  'briefcase',
-  'archive',
-  'bookmark',
-  'star',
-  'tag',
-  'collection',
-  'cube',
-  'puzzle',
+  "folder",
+  "folder-open",
+  "briefcase",
+  "archive",
+  "bookmark",
+  "star",
+  "tag",
+  "collection",
+  "cube",
+  "puzzle",
 ];
 
-export const STORAGE_VERSION = '1.0.0';
-export const STORAGE_KEY = 'state-organization';
+export const STORAGE_VERSION = "1.0.0";
+export const STORAGE_KEY = "state-organization";

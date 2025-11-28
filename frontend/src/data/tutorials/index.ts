@@ -6,10 +6,10 @@
  * specific automation workflows and features.
  */
 
-export { civ6EarlyGameTutorial } from './civ6-early-game';
-export { default as firstAutomationTutorial } from './workflow-builder/first-automation';
-export { default as visualWorkflowTutorial } from './workflow-builder/visual-workflow';
-export { default as annotationBasicsTutorial } from './image-annotation/annotation-basics';
+export { civ6EarlyGameTutorial } from "./civ6-early-game";
+export { default as firstAutomationTutorial } from "./workflow-builder/first-automation";
+export { default as visualWorkflowTutorial } from "./workflow-builder/visual-workflow";
+export { default as annotationBasicsTutorial } from "./image-annotation/annotation-basics";
 
 /**
  * Array of all available tutorials

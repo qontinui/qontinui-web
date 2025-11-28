@@ -415,13 +415,13 @@ handleDeleteImage = useCallback(...)
 
 ```typescript
 // For 1000+ images, implement:
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 const virtualizer = useVirtualizer({
   count: filteredImages.length,
   getScrollElement: () => scrollRef.current,
   estimateSize: () => cardSize,
-})
+});
 ```
 
 ## Type Safety
@@ -468,35 +468,35 @@ All components are fully typed with TypeScript:
 
 ```typescript
 // useImageOrganization.test.ts
-test('createFolder adds folder to state')
-test('deleteFolder moves images to parent')
-test('buildFolderTree creates correct hierarchy')
+test("createFolder adds folder to state");
+test("deleteFolder moves images to parent");
+test("buildFolderTree creates correct hierarchy");
 
 // filtering.test.ts
-test('filters images by query')
-test('filters images by source')
-test('filters images by tags with AND')
+test("filters images by query");
+test("filters images by source");
+test("filters images by tags with AND");
 ```
 
 ### Integration Tests (Future)
 
 ```typescript
 // EnhancedImageLibrary.test.tsx
-test('renders all sections')
-test('uploads image successfully')
-test('creates folder and moves image')
-test('deletes image with confirmation')
-test('bulk operations work correctly')
+test("renders all sections");
+test("uploads image successfully");
+test("creates folder and moves image");
+test("deletes image with confirmation");
+test("bulk operations work correctly");
 ```
 
 ### E2E Tests (Future)
 
 ```typescript
 // e2e/image-library.spec.ts
-test('user can organize images in folders')
-test('user can create collections')
-test('user can filter and search images')
-test('user can bulk delete unused images')
+test("user can organize images in folders");
+test("user can create collections");
+test("user can filter and search images");
+test("user can bulk delete unused images");
 ```
 
 ## Accessibility
@@ -529,6 +529,7 @@ test('user can bulk delete unused images')
 ## Future Enhancements
 
 ### Phase 2 (Next 2-4 weeks)
+
 - [ ] Virtual scrolling with @tanstack/react-virtual
 - [ ] Keyboard shortcuts
 - [ ] Advanced search (regex, operators)
@@ -537,6 +538,7 @@ test('user can bulk delete unused images')
 - [ ] Drag-and-drop between folders
 
 ### Phase 3 (1-2 months)
+
 - [ ] Slideshow mode
 - [ ] Image versioning
 - [ ] Duplicate detection
@@ -545,6 +547,7 @@ test('user can bulk delete unused images')
 - [ ] Usage analytics
 
 ### Phase 4 (3+ months)
+
 - [ ] AI-powered tagging
 - [ ] Smart collections (auto-updating)
 - [ ] Image CDN integration
@@ -567,6 +570,7 @@ When modifying this component:
 ## Changelog
 
 ### v1.0.0 (2025-01-14)
+
 - Initial release
 - Folder organization
 - Collections

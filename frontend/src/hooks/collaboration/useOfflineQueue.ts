@@ -5,9 +5,9 @@
  * Handles queueing, processing, and clearing of operations performed while offline.
  */
 
-import { useState, useCallback, useEffect } from 'react'
-import { UseOfflineQueueReturn } from './types'
-import { syncService } from '../../services/collaboration/sync-service'
+import { useState, useCallback, useEffect } from "react";
+import { UseOfflineQueueReturn } from "./types";
+import { syncService } from "../../services/collaboration/sync-service";
 
 /**
  * Hook for offline queue management
@@ -15,39 +15,39 @@ import { syncService } from '../../services/collaboration/sync-service'
  * @returns Offline queue state and methods
  */
 export function useOfflineQueue(): UseOfflineQueueReturn {
-  const [queueState, setQueueState] = useState(syncService.getQueueState())
-  const [isProcessing, setIsProcessing] = useState(false)
+  const [queueState, setQueueState] = useState(syncService.getQueueState());
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const processQueue = useCallback(async () => {
-    setIsProcessing(true)
+    setIsProcessing(true);
     try {
-      await syncService.processOfflineQueue()
-      setQueueState(syncService.getQueueState())
+      await syncService.processOfflineQueue();
+      setQueueState(syncService.getQueueState());
     } catch (error) {
-      console.error('Error processing queue:', error)
+      console.error("Error processing queue:", error);
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }, [])
+  }, []);
 
   const clearQueue = useCallback(() => {
-    syncService.clearQueue()
-    setQueueState(syncService.getQueueState())
-  }, [])
+    syncService.clearQueue();
+    setQueueState(syncService.getQueueState());
+  }, []);
 
   // Refresh queue state periodically
   useEffect(() => {
     const interval = setInterval(() => {
-      setQueueState(syncService.getQueueState())
-    }, 1000)
+      setQueueState(syncService.getQueueState());
+    }, 1000);
 
-    return () => clearInterval(interval)
-  }, [])
+    return () => clearInterval(interval);
+  }, []);
 
   return {
     queueState,
     isProcessing,
     processQueue,
-    clearQueue
-  }
+    clearQueue,
+  };
 }

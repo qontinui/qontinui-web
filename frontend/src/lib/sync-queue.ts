@@ -11,69 +11,69 @@
  * - Any operation that should work offline
  */
 
-const SYNC_DB_NAME = 'qontinui-sync-queue-db';
-const SYNC_STORE_NAME = 'sync_queue';
+const SYNC_DB_NAME = "qontinui-sync-queue-db";
+const SYNC_STORE_NAME = "sync_queue";
 const DB_VERSION = 1;
 
 /**
  * Types of operations that can be queued
  */
 export type SyncOperationType =
-  | 'upload_screenshot'
-  | 'upload_multiple_screenshots'
-  | 'delete_screenshot'
-  | 'update_screenshot'
-  | 'create_pattern'
-  | 'update_pattern'
-  | 'delete_pattern';
+  | "upload_screenshot"
+  | "upload_multiple_screenshots"
+  | "delete_screenshot"
+  | "update_screenshot"
+  | "create_pattern"
+  | "update_pattern"
+  | "delete_pattern";
 
 /**
  * Status of a sync operation
  */
 export type SyncStatus =
-  | 'pending'      // Waiting to be synced
-  | 'syncing'      // Currently being synced
-  | 'completed'    // Successfully synced
-  | 'failed'       // Failed (will retry)
-  | 'cancelled';   // Cancelled by user
+  | "pending" // Waiting to be synced
+  | "syncing" // Currently being synced
+  | "completed" // Successfully synced
+  | "failed" // Failed (will retry)
+  | "cancelled"; // Cancelled by user
 
 /**
  * Item in the sync queue
  */
 export interface SyncQueueItem {
-  id: string;                          // Unique ID
-  type: SyncOperationType;             // Operation type
-  status: SyncStatus;                  // Current status
-  priority: number;                    // Higher = more important (default: 0)
+  id: string; // Unique ID
+  type: SyncOperationType; // Operation type
+  status: SyncStatus; // Current status
+  priority: number; // Higher = more important (default: 0)
 
   // Data
-  data: any;                           // Operation-specific data
-  metadata: Record<string, any>;       // Additional metadata
+  data: any; // Operation-specific data
+  metadata: Record<string, any>; // Additional metadata
 
   // Retry logic
-  retryCount: number;                  // Number of retry attempts
-  maxRetries: number;                  // Max retries before giving up
-  lastError?: string;                  // Last error message
+  retryCount: number; // Number of retry attempts
+  maxRetries: number; // Max retries before giving up
+  lastError?: string; // Last error message
 
   // Timestamps
-  createdAt: Date;                     // When queued
-  updatedAt: Date;                     // Last update
-  syncedAt?: Date;                     // When synced (if completed)
-  nextRetryAt?: Date;                  // When to retry next (if failed)
+  createdAt: Date; // When queued
+  updatedAt: Date; // Last update
+  syncedAt?: Date; // When synced (if completed)
+  nextRetryAt?: Date; // When to retry next (if failed)
 
   // Conflict resolution
-  conflictResolution?: 'server_wins' | 'client_wins' | 'merge';
+  conflictResolution?: "server_wins" | "client_wins" | "merge";
 }
 
 /**
  * Screenshot upload sync item data
  */
 export interface ScreenshotUploadData {
-  file: File;                          // Screenshot file (stored as blob)
-  projectId: number;                   // Project ID
-  name: string;                        // Screenshot name
-  description?: string;                // Optional description
-  tags?: string[];                     // Optional tags
+  file: File; // Screenshot file (stored as blob)
+  projectId: number; // Project ID
+  name: string; // Screenshot name
+  description?: string; // Optional description
+  tags?: string[]; // Optional tags
   onProgress?: (progress: number) => void; // Progress callback (not serialized)
 }
 
@@ -113,8 +113,8 @@ class SyncQueue {
     if (this.dbPromise) return this.dbPromise;
 
     this.dbPromise = new Promise((resolve, reject) => {
-      if (typeof window === 'undefined') {
-        reject(new Error('IndexedDB not available on server'));
+      if (typeof window === "undefined") {
+        reject(new Error("IndexedDB not available on server"));
         return;
       }
 
@@ -138,14 +138,16 @@ class SyncQueue {
 
         // Create object store
         if (!db.objectStoreNames.contains(SYNC_STORE_NAME)) {
-          const store = db.createObjectStore(SYNC_STORE_NAME, { keyPath: 'id' });
+          const store = db.createObjectStore(SYNC_STORE_NAME, {
+            keyPath: "id",
+          });
 
           // Create indexes for efficient queries
-          store.createIndex('status', 'status', { unique: false });
-          store.createIndex('type', 'type', { unique: false });
-          store.createIndex('priority', 'priority', { unique: false });
-          store.createIndex('createdAt', 'createdAt', { unique: false });
-          store.createIndex('nextRetryAt', 'nextRetryAt', { unique: false });
+          store.createIndex("status", "status", { unique: false });
+          store.createIndex("type", "type", { unique: false });
+          store.createIndex("priority", "priority", { unique: false });
+          store.createIndex("createdAt", "createdAt", { unique: false });
+          store.createIndex("nextRetryAt", "nextRetryAt", { unique: false });
         }
       };
     });
@@ -155,7 +157,7 @@ class SyncQueue {
 
   private isConnectionClosed(db: IDBDatabase): boolean {
     try {
-      db.transaction(SYNC_STORE_NAME, 'readonly');
+      db.transaction(SYNC_STORE_NAME, "readonly");
       return false;
     } catch {
       return true;
@@ -172,7 +174,7 @@ class SyncQueue {
       priority?: number;
       maxRetries?: number;
       metadata?: Record<string, any>;
-      conflictResolution?: 'server_wins' | 'client_wins' | 'merge';
+      conflictResolution?: "server_wins" | "client_wins" | "merge";
     } = {}
   ): Promise<SyncQueueItem> {
     const db = await this.getDB();
@@ -180,7 +182,7 @@ class SyncQueue {
     const item: SyncQueueItem = {
       id: this.generateId(),
       type,
-      status: 'pending',
+      status: "pending",
       priority: options.priority ?? 0,
       data,
       metadata: options.metadata ?? {},
@@ -192,7 +194,7 @@ class SyncQueue {
     };
 
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(SYNC_STORE_NAME, 'readwrite');
+      const transaction = db.transaction(SYNC_STORE_NAME, "readwrite");
       const store = transaction.objectStore(SYNC_STORE_NAME);
       const request = store.add(item);
 
@@ -208,20 +210,23 @@ class SyncQueue {
   /**
    * Get all items in queue
    */
-  async getAll(filter?: { status?: SyncStatus; type?: SyncOperationType }): Promise<SyncQueueItem[]> {
+  async getAll(filter?: {
+    status?: SyncStatus;
+    type?: SyncOperationType;
+  }): Promise<SyncQueueItem[]> {
     const db = await this.getDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(SYNC_STORE_NAME, 'readonly');
+      const transaction = db.transaction(SYNC_STORE_NAME, "readonly");
       const store = transaction.objectStore(SYNC_STORE_NAME);
 
       let request: IDBRequest;
 
       if (filter?.status) {
-        const index = store.index('status');
+        const index = store.index("status");
         request = index.getAll(filter.status);
       } else if (filter?.type) {
-        const index = store.index('type');
+        const index = store.index("type");
         request = index.getAll(filter.type);
       } else {
         request = store.getAll();
@@ -233,12 +238,14 @@ class SyncQueue {
           createdAt: new Date(item.createdAt),
           updatedAt: new Date(item.updatedAt),
           syncedAt: item.syncedAt ? new Date(item.syncedAt) : undefined,
-          nextRetryAt: item.nextRetryAt ? new Date(item.nextRetryAt) : undefined,
+          nextRetryAt: item.nextRetryAt
+            ? new Date(item.nextRetryAt)
+            : undefined,
         }));
 
         // Apply additional filters
         if (filter?.type && filter?.status) {
-          items = items.filter(item => item.type === filter.type);
+          items = items.filter((item) => item.type === filter.type);
         }
 
         // Sort by priority (higher first) then createdAt (older first)
@@ -262,7 +269,7 @@ class SyncQueue {
     const db = await this.getDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(SYNC_STORE_NAME, 'readonly');
+      const transaction = db.transaction(SYNC_STORE_NAME, "readonly");
       const store = transaction.objectStore(SYNC_STORE_NAME);
       const request = store.get(id);
 
@@ -274,7 +281,9 @@ class SyncQueue {
             createdAt: new Date(item.createdAt),
             updatedAt: new Date(item.updatedAt),
             syncedAt: item.syncedAt ? new Date(item.syncedAt) : undefined,
-            nextRetryAt: item.nextRetryAt ? new Date(item.nextRetryAt) : undefined,
+            nextRetryAt: item.nextRetryAt
+              ? new Date(item.nextRetryAt)
+              : undefined,
           });
         } else {
           resolve(null);
@@ -291,7 +300,7 @@ class SyncQueue {
     const db = await this.getDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(SYNC_STORE_NAME, 'readwrite');
+      const transaction = db.transaction(SYNC_STORE_NAME, "readwrite");
       const store = transaction.objectStore(SYNC_STORE_NAME);
 
       const updatedItem = {
@@ -316,7 +325,7 @@ class SyncQueue {
     const db = await this.getDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(SYNC_STORE_NAME, 'readwrite');
+      const transaction = db.transaction(SYNC_STORE_NAME, "readwrite");
       const store = transaction.objectStore(SYNC_STORE_NAME);
       const request = store.delete(id);
 
@@ -333,7 +342,7 @@ class SyncQueue {
    * Clear all completed items
    */
   async clearCompleted(): Promise<number> {
-    const completed = await this.getAll({ status: 'completed' });
+    const completed = await this.getAll({ status: "completed" });
 
     for (const item of completed) {
       await this.remove(item.id);
@@ -350,12 +359,12 @@ class SyncQueue {
     const db = await this.getDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(SYNC_STORE_NAME, 'readwrite');
+      const transaction = db.transaction(SYNC_STORE_NAME, "readwrite");
       const store = transaction.objectStore(SYNC_STORE_NAME);
       const request = store.clear();
 
       request.onsuccess = () => {
-        console.log('[SyncQueue] Cleared all items');
+        console.log("[SyncQueue] Cleared all items");
         this.notifyListeners();
         resolve();
       };
@@ -389,10 +398,10 @@ class SyncQueue {
    * Get items that are ready to retry
    */
   async getReadyToRetry(): Promise<SyncQueueItem[]> {
-    const failed = await this.getAll({ status: 'failed' });
+    const failed = await this.getAll({ status: "failed" });
     const now = Date.now();
 
-    return failed.filter(item => {
+    return failed.filter((item) => {
       // Retry if no nextRetryAt set, or if it's past the retry time
       return !item.nextRetryAt || item.nextRetryAt.getTime() <= now;
     });
@@ -415,35 +424,43 @@ class SyncQueue {
 
       await this.update({
         ...item,
-        status: 'failed',
+        status: "failed",
         retryCount,
         lastError: error,
         nextRetryAt,
       });
 
-      console.warn(`[SyncQueue] Item ${id} failed, will retry in ${backoffSeconds}s (attempt ${retryCount}/${item.maxRetries})`);
+      console.warn(
+        `[SyncQueue] Item ${id} failed, will retry in ${backoffSeconds}s (attempt ${retryCount}/${item.maxRetries})`
+      );
     } else {
       await this.update({
         ...item,
-        status: 'failed',
+        status: "failed",
         retryCount,
         lastError: error,
       });
 
-      console.error(`[SyncQueue] Item ${id} failed permanently after ${retryCount} attempts:`, error);
+      console.error(
+        `[SyncQueue] Item ${id} failed permanently after ${retryCount} attempts:`,
+        error
+      );
     }
   }
 
   /**
    * Mark item as completed
    */
-  async markCompleted(id: string, metadata?: Record<string, any>): Promise<void> {
+  async markCompleted(
+    id: string,
+    metadata?: Record<string, any>
+  ): Promise<void> {
     const item = await this.get(id);
     if (!item) return;
 
     await this.update({
       ...item,
-      status: 'completed',
+      status: "completed",
       syncedAt: new Date(),
       metadata: { ...item.metadata, ...metadata },
     });
@@ -472,7 +489,7 @@ class SyncQueue {
       try {
         listener(stats);
       } catch (error) {
-        console.error('[SyncQueue] Error in listener:', error);
+        console.error("[SyncQueue] Error in listener:", error);
       }
     }
   }

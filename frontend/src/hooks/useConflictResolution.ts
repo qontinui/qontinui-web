@@ -4,66 +4,66 @@
  * React hook for managing conflict detection and resolution in components.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Conflict,
   ResolutionStrategy,
   ConflictCheckResult,
   ConflictDetails,
   AutoResolutionResult,
-  ResourceType
-} from '../types/collaboration/conflict-types'
-import { conflictResolutionService } from '../services/collaboration/conflict-resolution-service'
-import { syncService } from '../services/collaboration/sync-service'
+  ResourceType,
+} from "../types/collaboration/conflict-types";
+import { conflictResolutionService } from "../services/collaboration/conflict-resolution-service";
+import { syncService } from "../services/collaboration/sync-service";
 
 interface UseConflictResolutionOptions {
   /** Auto-check for conflicts on changes */
-  autoCheck?: boolean
+  autoCheck?: boolean;
 
   /** Auto-resolve when possible */
-  autoResolve?: boolean
+  autoResolve?: boolean;
 
   /** Polling interval for checking conflicts (ms) */
-  pollingInterval?: number
+  pollingInterval?: number;
 
   /** Enable real-time conflict notifications */
-  enableRealtimeNotifications?: boolean
+  enableRealtimeNotifications?: boolean;
 }
 
 interface UseConflictResolutionReturn {
   /** Current conflicts */
-  conflicts: Conflict[]
+  conflicts: Conflict[];
 
   /** Whether there are any conflicts */
-  hasConflicts: boolean
+  hasConflicts: boolean;
 
   /** Whether currently checking for conflicts */
-  isChecking: boolean
+  isChecking: boolean;
 
   /** Whether currently resolving conflicts */
-  isResolving: boolean
+  isResolving: boolean;
 
   /** Check for conflicts manually */
-  checkForConflicts: (localChanges: any) => Promise<ConflictCheckResult>
+  checkForConflicts: (localChanges: any) => Promise<ConflictCheckResult>;
 
   /** Resolve a specific conflict */
   resolveConflict: (
     conflictId: string,
     strategy: ResolutionStrategy,
     resolution?: any
-  ) => Promise<void>
+  ) => Promise<void>;
 
   /** Auto-resolve all resolvable conflicts */
-  autoResolve: () => Promise<AutoResolutionResult>
+  autoResolve: () => Promise<AutoResolutionResult>;
 
   /** Get detailed information about a conflict */
-  getConflictDetails: (conflictId: string) => Promise<ConflictDetails>
+  getConflictDetails: (conflictId: string) => Promise<ConflictDetails>;
 
   /** Clear all conflicts */
-  clearConflicts: () => void
+  clearConflicts: () => void;
 
   /** Refresh conflict state */
-  refresh: () => Promise<void>
+  refresh: () => Promise<void>;
 }
 
 /**
@@ -79,23 +79,23 @@ export function useConflictResolution(
     autoCheck = false,
     autoResolve: autoResolveEnabled = false,
     pollingInterval = 5000,
-    enableRealtimeNotifications = true
-  } = options
+    enableRealtimeNotifications = true,
+  } = options;
 
-  const [conflicts, setConflicts] = useState<Conflict[]>([])
-  const [hasConflicts, setHasConflicts] = useState(false)
-  const [isChecking, setIsChecking] = useState(false)
-  const [isResolving, setIsResolving] = useState(false)
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [hasConflicts, setHasConflicts] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
 
-  const pollingIntervalRef = useRef<number | null>(null)
-  const lastCheckRef = useRef<Date>(new Date())
+  const pollingIntervalRef = useRef<number | null>(null);
+  const lastCheckRef = useRef<Date>(new Date());
 
   /**
    * Check for conflicts
    */
   const checkForConflicts = useCallback(
     async (localChanges: any): Promise<ConflictCheckResult> => {
-      setIsChecking(true)
+      setIsChecking(true);
 
       try {
         const result = await conflictResolutionService.checkForConflicts(
@@ -103,32 +103,32 @@ export function useConflictResolution(
           resourceType,
           resourceId,
           localChanges
-        )
+        );
 
         if (result.conflicts.length > 0) {
-          setConflicts(result.conflicts)
-          setHasConflicts(true)
+          setConflicts(result.conflicts);
+          setHasConflicts(true);
 
           // Auto-resolve if enabled and possible
           if (autoResolveEnabled && result.canSave) {
-            await autoResolveConflicts()
+            await autoResolveConflicts();
           }
         } else {
-          setConflicts([])
-          setHasConflicts(false)
+          setConflicts([]);
+          setHasConflicts(false);
         }
 
-        lastCheckRef.current = new Date()
-        return result
+        lastCheckRef.current = new Date();
+        return result;
       } catch (error) {
-        console.error('Error checking for conflicts:', error)
-        throw error
+        console.error("Error checking for conflicts:", error);
+        throw error;
       } finally {
-        setIsChecking(false)
+        setIsChecking(false);
       }
     },
     [projectId, resourceType, resourceId, autoResolveEnabled]
-  )
+  );
 
   /**
    * Resolve a specific conflict
@@ -139,53 +139,54 @@ export function useConflictResolution(
       strategy: ResolutionStrategy,
       resolution?: any
     ): Promise<void> => {
-      setIsResolving(true)
+      setIsResolving(true);
 
       try {
         await conflictResolutionService.resolveConflict(
           conflictId,
           strategy,
           resolution
-        )
+        );
 
         // Remove resolved conflict from state
-        setConflicts(prev => prev.filter(c => c.id !== conflictId))
+        setConflicts((prev) => prev.filter((c) => c.id !== conflictId));
 
         // Update hasConflicts flag
         if (conflicts.length === 1) {
-          setHasConflicts(false)
+          setHasConflicts(false);
         }
       } catch (error) {
-        console.error('Error resolving conflict:', error)
-        throw error
+        console.error("Error resolving conflict:", error);
+        throw error;
       } finally {
-        setIsResolving(false)
+        setIsResolving(false);
       }
     },
     [conflicts.length]
-  )
+  );
 
   /**
    * Auto-resolve all resolvable conflicts
    */
-  const autoResolveConflicts = useCallback(async (): Promise<AutoResolutionResult> => {
-    setIsResolving(true)
+  const autoResolveConflicts =
+    useCallback(async (): Promise<AutoResolutionResult> => {
+      setIsResolving(true);
 
-    try {
-      const result = await conflictResolutionService.autoResolve(conflicts)
+      try {
+        const result = await conflictResolutionService.autoResolve(conflicts);
 
-      // Update conflicts to only show those requiring manual resolution
-      setConflicts(result.requiresManual)
-      setHasConflicts(result.requiresManual.length > 0)
+        // Update conflicts to only show those requiring manual resolution
+        setConflicts(result.requiresManual);
+        setHasConflicts(result.requiresManual.length > 0);
 
-      return result
-    } catch (error) {
-      console.error('Error auto-resolving conflicts:', error)
-      throw error
-    } finally {
-      setIsResolving(false)
-    }
-  }, [conflicts])
+        return result;
+      } catch (error) {
+        console.error("Error auto-resolving conflicts:", error);
+        throw error;
+      } finally {
+        setIsResolving(false);
+      }
+    }, [conflicts]);
 
   /**
    * Get detailed information about a conflict
@@ -193,22 +194,22 @@ export function useConflictResolution(
   const getConflictDetails = useCallback(
     async (conflictId: string): Promise<ConflictDetails> => {
       try {
-        return await conflictResolutionService.getConflictDetails(conflictId)
+        return await conflictResolutionService.getConflictDetails(conflictId);
       } catch (error) {
-        console.error('Error fetching conflict details:', error)
-        throw error
+        console.error("Error fetching conflict details:", error);
+        throw error;
       }
     },
     []
-  )
+  );
 
   /**
    * Clear all conflicts
    */
   const clearConflicts = useCallback(() => {
-    setConflicts([])
-    setHasConflicts(false)
-  }, [])
+    setConflicts([]);
+    setHasConflicts(false);
+  }, []);
 
   /**
    * Refresh conflict state
@@ -216,15 +217,15 @@ export function useConflictResolution(
   const refresh = useCallback(async (): Promise<void> => {
     // Re-check for conflicts by fetching latest server version
     // This would need to be implemented based on current state
-    console.log('Refreshing conflict state...')
-  }, [])
+    console.log("Refreshing conflict state...");
+  }, []);
 
   /**
    * Handle real-time conflict notifications
    */
   useEffect(() => {
     if (!enableRealtimeNotifications) {
-      return
+      return;
     }
 
     const handleConflict = (conflict: Conflict) => {
@@ -233,32 +234,32 @@ export function useConflictResolution(
         conflict.resourceType === resourceType &&
         conflict.resourceId === resourceId
       ) {
-        setConflicts(prev => {
+        setConflicts((prev) => {
           // Check if conflict already exists
-          const exists = prev.some(c => c.id === conflict.id)
+          const exists = prev.some((c) => c.id === conflict.id);
           if (exists) {
-            return prev.map(c => (c.id === conflict.id ? conflict : c))
+            return prev.map((c) => (c.id === conflict.id ? conflict : c));
           }
-          return [...prev, conflict]
-        })
-        setHasConflicts(true)
+          return [...prev, conflict];
+        });
+        setHasConflicts(true);
       }
-    }
+    };
 
     // Register with sync service
-    syncService.onConflictDetected(handleConflict)
+    syncService.onConflictDetected(handleConflict);
 
     return () => {
       // Cleanup would go here if we had an unregister method
-    }
-  }, [resourceType, resourceId, enableRealtimeNotifications])
+    };
+  }, [resourceType, resourceId, enableRealtimeNotifications]);
 
   /**
    * Setup polling for conflict checking
    */
   useEffect(() => {
     if (!autoCheck || pollingInterval <= 0) {
-      return
+      return;
     }
 
     pollingIntervalRef.current = window.setInterval(() => {
@@ -266,17 +267,17 @@ export function useConflictResolution(
       if (!isChecking && !isResolving) {
         // This would need current state to check against
         // For now, we just track that polling is active
-        console.log('Polling for conflicts...')
+        console.log("Polling for conflicts...");
       }
-    }, pollingInterval)
+    }, pollingInterval);
 
     return () => {
       if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-        pollingIntervalRef.current = null
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
-    }
-  }, [autoCheck, pollingInterval, isChecking, isResolving])
+    };
+  }, [autoCheck, pollingInterval, isChecking, isResolving]);
 
   /**
    * Cleanup on unmount
@@ -284,10 +285,10 @@ export function useConflictResolution(
   useEffect(() => {
     return () => {
       if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
+        clearInterval(pollingIntervalRef.current);
       }
-    }
-  }, [])
+    };
+  }, []);
 
   return {
     conflicts,
@@ -299,25 +300,22 @@ export function useConflictResolution(
     autoResolve: autoResolveConflicts,
     getConflictDetails,
     clearConflicts,
-    refresh
-  }
+    refresh,
+  };
 }
 
 /**
  * Hook for managing sync state
  */
-export function useSyncState(
-  resourceType: ResourceType,
-  resourceId: string
-) {
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [lastSynced, setLastSynced] = useState<Date | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
+export function useSyncState(resourceType: ResourceType, resourceId: string) {
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const sync = useCallback(
     async (localVersion: any) => {
-      setIsSyncing(true)
-      setSyncError(null)
+      setIsSyncing(true);
+      setSyncError(null);
 
       try {
         const result = await syncService.syncResource(
@@ -325,32 +323,33 @@ export function useSyncState(
           resourceId,
           localVersion,
           false
-        )
+        );
 
         if (result.success) {
-          setLastSynced(new Date())
+          setLastSynced(new Date());
         } else {
-          setSyncError(result.errors?.[0] || 'Sync failed')
+          setSyncError(result.errors?.[0] || "Sync failed");
         }
 
-        return result
+        return result;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        setSyncError(errorMessage)
-        throw error
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+        setSyncError(errorMessage);
+        throw error;
       } finally {
-        setIsSyncing(false)
+        setIsSyncing(false);
       }
     },
     [resourceType, resourceId]
-  )
+  );
 
   return {
     isSyncing,
     lastSynced,
     syncError,
-    sync
-  }
+    sync,
+  };
 }
 
 /**
@@ -360,98 +359,104 @@ export function useOptimisticUpdate(
   resourceType: ResourceType,
   resourceId: string
 ) {
-  const [optimisticState, setOptimisticState] = useState<any>(null)
-  const [hasOptimistic, setHasOptimistic] = useState(false)
+  const [optimisticState, setOptimisticState] = useState<any>(null);
+  const [hasOptimistic, setHasOptimistic] = useState(false);
 
   const applyOptimistic = useCallback(
     (change: any) => {
-      setOptimisticState(change)
-      setHasOptimistic(true)
+      setOptimisticState(change);
+      setHasOptimistic(true);
 
       syncService.applyOptimisticUpdate({
         id: `optimistic-${Date.now()}`,
-        type: 'update',
+        type: "update",
         resourceType,
         resourceId,
         path: [],
         value: change,
         timestamp: new Date(),
-        userId: 'current-user',
-        optimistic: true
-      })
+        userId: "current-user",
+        optimistic: true,
+      });
     },
     [resourceType, resourceId]
-  )
+  );
 
   const rollback = useCallback((changeId: string) => {
-    syncService.rollbackOptimisticUpdate(changeId)
-    setOptimisticState(null)
-    setHasOptimistic(false)
-  }, [])
+    syncService.rollbackOptimisticUpdate(changeId);
+    setOptimisticState(null);
+    setHasOptimistic(false);
+  }, []);
 
   // Listen for rollback events
   useEffect(() => {
     const handleRollback = (event: CustomEvent) => {
-      if (event.detail.changeId.startsWith('optimistic-')) {
-        setOptimisticState(null)
-        setHasOptimistic(false)
+      if (event.detail.changeId.startsWith("optimistic-")) {
+        setOptimisticState(null);
+        setHasOptimistic(false);
       }
-    }
+    };
 
-    window.addEventListener('optimistic-rollback', handleRollback as EventListener)
+    window.addEventListener(
+      "optimistic-rollback",
+      handleRollback as EventListener
+    );
 
     return () => {
-      window.removeEventListener('optimistic-rollback', handleRollback as EventListener)
-    }
-  }, [])
+      window.removeEventListener(
+        "optimistic-rollback",
+        handleRollback as EventListener
+      );
+    };
+  }, []);
 
   return {
     optimisticState,
     hasOptimistic,
     applyOptimistic,
-    rollback
-  }
+    rollback,
+  };
 }
 
 /**
  * Hook for offline queue management
  */
 export function useOfflineQueue() {
-  const [queueState, setQueueState] = useState(syncService.getQueueState())
-  const [isProcessing, setIsProcessing] = useState(false)
+  const [queueState, setQueueState] = useState(syncService.getQueueState());
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const processQueue = useCallback(async () => {
-    setIsProcessing(true)
+    setIsProcessing(true);
     try {
-      await syncService.processOfflineQueue()
-      setQueueState(syncService.getQueueState())
+      await syncService.processOfflineQueue();
+      setQueueState(syncService.getQueueState());
     } catch (error) {
-      console.error('Error processing queue:', error)
+      console.error("Error processing queue:", error);
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }, [])
+  }, []);
 
   const clearQueue = useCallback(() => {
-    syncService.clearQueue()
-    setQueueState(syncService.getQueueState())
-  }, [])
+    syncService.clearQueue();
+    setQueueState(syncService.getQueueState());
+  }, []);
 
   // Refresh queue state periodically
   useEffect(() => {
     const interval = setInterval(() => {
-      setQueueState(syncService.getQueueState())
-    }, 1000)
+      setQueueState(syncService.getQueueState());
+    }, 1000);
 
-    return () => clearInterval(interval)
-  }, [])
+    return () => clearInterval(interval);
+  }, []);
 
   return {
     queueState,
     isProcessing,
     processQueue,
-    clearQueue
-  }
+    clearQueue,
+  };
 }
 
 /**
@@ -462,13 +467,13 @@ export function useRealtimeCollaboration(
   resourceType: ResourceType,
   resourceId: string
 ) {
-  const [isConnected, setIsConnected] = useState(false)
-  const [remoteChanges, setRemoteChanges] = useState<any[]>([])
+  const [isConnected, setIsConnected] = useState(false);
+  const [remoteChanges, setRemoteChanges] = useState<any[]>([]);
 
   useEffect(() => {
     // Connect to WebSocket
-    syncService.connectWebSocket(projectId)
-    setIsConnected(true)
+    syncService.connectWebSocket(projectId);
+    setIsConnected(true);
 
     // Listen for remote changes
     const handleRemoteChange = (event: CustomEvent) => {
@@ -476,28 +481,34 @@ export function useRealtimeCollaboration(
         event.detail.resourceType === resourceType &&
         event.detail.resourceId === resourceId
       ) {
-        setRemoteChanges(prev => [...prev, event.detail.change])
+        setRemoteChanges((prev) => [...prev, event.detail.change]);
       }
-    }
+    };
 
-    window.addEventListener('remote-change', handleRemoteChange as EventListener)
+    window.addEventListener(
+      "remote-change",
+      handleRemoteChange as EventListener
+    );
 
     return () => {
-      syncService.disconnectWebSocket()
-      setIsConnected(false)
-      window.removeEventListener('remote-change', handleRemoteChange as EventListener)
-    }
-  }, [projectId, resourceType, resourceId])
+      syncService.disconnectWebSocket();
+      setIsConnected(false);
+      window.removeEventListener(
+        "remote-change",
+        handleRemoteChange as EventListener
+      );
+    };
+  }, [projectId, resourceType, resourceId]);
 
   const clearRemoteChanges = useCallback(() => {
-    setRemoteChanges([])
-  }, [])
+    setRemoteChanges([]);
+  }, []);
 
   return {
     isConnected,
     remoteChanges,
-    clearRemoteChanges
-  }
+    clearRemoteChanges,
+  };
 }
 
-export default useConflictResolution
+export default useConflictResolution;

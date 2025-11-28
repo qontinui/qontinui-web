@@ -5,10 +5,13 @@
  * DO NOT import this file in production code - it's for reference only.
  */
 
-import { useState } from "react"
-import { ImageWithRefresh } from "@/components/ImageWithRefresh"
-import { ImageUploadProgress, UploadingImage } from "@/components/ImageUploadProgress"
-import { ImageAsset } from "@/contexts/automation-context/types"
+import { useState } from "react";
+import { ImageWithRefresh } from "@/components/ImageWithRefresh";
+import {
+  ImageUploadProgress,
+  UploadingImage,
+} from "@/components/ImageUploadProgress";
+import { ImageAsset } from "@/contexts/automation-context/types";
 
 // Example 1: Using ImageWithRefresh
 function ExampleImageWithRefresh() {
@@ -22,17 +25,17 @@ function ExampleImageWithRefresh() {
     createdAt: new Date(),
     usageCount: 5,
     source: "uploaded",
-  })
+  });
 
   const handleRefresh = (newUrl: string) => {
-    console.log("URL refreshed:", newUrl)
+    console.log("URL refreshed:", newUrl);
     // Update the imageAsset in your state/context
-    setImageAsset(prev => ({
+    setImageAsset((prev) => ({
       ...prev,
       url: newUrl,
       url_expires_at: new Date(Date.now() + 3600000), // New expiry time
-    }))
-  }
+    }));
+  };
 
   return (
     <div className="p-4">
@@ -45,7 +48,7 @@ function ExampleImageWithRefresh() {
         onRefresh={handleRefresh}
       />
     </div>
-  )
+  );
 }
 
 // Example 2: Using ImageUploadProgress
@@ -54,34 +57,34 @@ function ExampleImageUploadProgress() {
     { name: "screenshot-1.png", progress: 45 },
     { name: "button-icon.png", progress: 78 },
     { name: "background-image.jpg", progress: 12 },
-  ])
+  ]);
 
   const handleCancel = (imageName: string) => {
-    console.log("Cancelling upload:", imageName)
+    console.log("Cancelling upload:", imageName);
     // Remove from uploads or mark as cancelled
-    setUploads(prev => prev.filter(upload => upload.name !== imageName))
-  }
+    setUploads((prev) => prev.filter((upload) => upload.name !== imageName));
+  };
 
   // Simulate progress updates
   const simulateUpload = () => {
     const interval = setInterval(() => {
-      setUploads(prev => {
-        const updated = prev.map(upload => ({
+      setUploads((prev) => {
+        const updated = prev.map((upload) => ({
           ...upload,
           progress: Math.min(upload.progress + 10, 100),
-        }))
+        }));
 
         // Remove completed uploads after a delay
-        const filtered = updated.filter(upload => upload.progress < 100)
+        const filtered = updated.filter((upload) => upload.progress < 100);
 
         if (filtered.length === 0) {
-          clearInterval(interval)
+          clearInterval(interval);
         }
 
-        return updated
-      })
-    }, 500)
-  }
+        return updated;
+      });
+    }, 500);
+  };
 
   return (
     <div className="p-4">
@@ -93,59 +96,58 @@ function ExampleImageUploadProgress() {
         Start Upload Simulation
       </button>
 
-      <ImageUploadProgress
-        uploads={uploads}
-        onCancel={handleCancel}
-      />
+      <ImageUploadProgress uploads={uploads} onCancel={handleCancel} />
     </div>
-  )
+  );
 }
 
 // Example 3: Real-world usage with file upload
 function ExampleRealWorldUpload() {
-  const [uploads, setUploads] = useState<UploadingImage[]>([])
-  const projectId = 123 // Replace with actual project ID
+  const [uploads, setUploads] = useState<UploadingImage[]>([]);
+  const projectId = 123; // Replace with actual project ID
 
   const handleFileUpload = async (files: FileList) => {
     const uploadPromises = Array.from(files).map(async (file) => {
       // Add to uploads state
-      setUploads(prev => [...prev, { name: file.name, progress: 0 }])
+      setUploads((prev) => [...prev, { name: file.name, progress: 0 }]);
 
       try {
         // Use apiClient.uploadProjectImage with progress callback
-        const { apiClient } = await import("@/lib/api-client")
+        const { apiClient } = await import("@/lib/api-client");
 
         const result = await apiClient.uploadProjectImage(
           projectId,
           file,
           (progress) => {
             // Update progress for this specific file
-            setUploads(prev =>
-              prev.map(upload =>
-                upload.name === file.name
-                  ? { ...upload, progress }
-                  : upload
+            setUploads((prev) =>
+              prev.map((upload) =>
+                upload.name === file.name ? { ...upload, progress } : upload
               )
-            )
+            );
           }
-        )
+        );
 
         // Upload complete - remove from list after delay
         setTimeout(() => {
-          setUploads(prev => prev.filter(upload => upload.name !== file.name))
-        }, 2000)
+          setUploads((prev) =>
+            prev.filter((upload) => upload.name !== file.name)
+          );
+        }, 2000);
 
-        return result
+        return result;
       } catch (error) {
-        console.error(`Failed to upload ${file.name}:`, error)
+        console.error(`Failed to upload ${file.name}:`, error);
         // Remove failed upload
-        setUploads(prev => prev.filter(upload => upload.name !== file.name))
-        throw error
+        setUploads((prev) =>
+          prev.filter((upload) => upload.name !== file.name)
+        );
+        throw error;
       }
-    })
+    });
 
-    await Promise.all(uploadPromises)
-  }
+    await Promise.all(uploadPromises);
+  };
 
   return (
     <div className="p-4">
@@ -156,7 +158,7 @@ function ExampleRealWorldUpload() {
         accept="image/*"
         onChange={(e) => {
           if (e.target.files) {
-            handleFileUpload(e.target.files)
+            handleFileUpload(e.target.files);
           }
         }}
         className="mb-4"
@@ -164,15 +166,15 @@ function ExampleRealWorldUpload() {
 
       <ImageUploadProgress uploads={uploads} />
     </div>
-  )
+  );
 }
 
 // Example 4: Using ImageWithRefresh in a gallery
 function ExampleImageGallery() {
-  const projectId = 123
+  const projectId = 123;
   const images: ImageAsset[] = [
     // ... your image assets
-  ]
+  ];
 
   return (
     <div className="grid grid-cols-3 gap-4">
@@ -185,13 +187,13 @@ function ExampleImageGallery() {
             className="w-full h-full object-cover rounded"
             onRefresh={(newUrl) => {
               // Update image in your state/context
-              console.log(`Image ${image.name} URL refreshed`)
+              console.log(`Image ${image.name} URL refreshed`);
             }}
           />
         </div>
       ))}
     </div>
-  )
+  );
 }
 
 export {
@@ -199,4 +201,4 @@ export {
   ExampleImageUploadProgress,
   ExampleRealWorldUpload,
   ExampleImageGallery,
-}
+};

@@ -8,12 +8,12 @@
  * - Select all/invert selection
  */
 
-import type { StateCreator } from 'zustand';
-import type { CanvasStore, SelectionSlice } from './types';
+import type { StateCreator } from "zustand";
+import type { CanvasStore, SelectionSlice } from "./types";
 
 export const createSelectionSlice: StateCreator<
   CanvasStore,
-  [['zustand/immer', never]],
+  [["zustand/immer", never]],
   [],
   SelectionSlice
 > = (set, get) => ({
@@ -26,7 +26,9 @@ export const createSelectionSlice: StateCreator<
     set((state) => {
       if (multi) {
         if (state.selectedNodes.includes(nodeId)) {
-          state.selectedNodes = state.selectedNodes.filter((id) => id !== nodeId);
+          state.selectedNodes = state.selectedNodes.filter(
+            (id) => id !== nodeId
+          );
         } else {
           state.selectedNodes.push(nodeId);
         }
@@ -50,7 +52,9 @@ export const createSelectionSlice: StateCreator<
     set((state) => {
       if (multi) {
         if (state.selectedEdges.includes(edgeId)) {
-          state.selectedEdges = state.selectedEdges.filter((id) => id !== edgeId);
+          state.selectedEdges = state.selectedEdges.filter(
+            (id) => id !== edgeId
+          );
         } else {
           state.selectedEdges.push(edgeId);
         }
@@ -83,7 +87,9 @@ export const createSelectionSlice: StateCreator<
       const allNodeIds = new Set(state.workflow.actions.map((a) => a.id));
       const currentSelection = new Set(state.selectedNodes);
 
-      state.selectedNodes = Array.from(allNodeIds).filter((id) => !currentSelection.has(id));
+      state.selectedNodes = Array.from(allNodeIds).filter(
+        (id) => !currentSelection.has(id)
+      );
     });
   },
 });

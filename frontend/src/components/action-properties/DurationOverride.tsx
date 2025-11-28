@@ -1,33 +1,38 @@
-"use client"
+"use client";
 
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Plus, X } from "lucide-react"
-import { Action } from "./types"
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Plus, X } from "lucide-react";
+import { Action } from "./types";
 
 interface DurationOverrideProps {
-  action: Action
-  updateConfig: (key: string, value: any) => void
+  action: Action;
+  updateConfig: (key: string, value: any) => void;
 }
 
 /**
  * Reusable duration/timeout override component for FIND actions.
  * Controls how long the action will search before giving up.
  */
-export function DurationOverride({ action, updateConfig }: DurationOverrideProps) {
+export function DurationOverride({
+  action,
+  updateConfig,
+}: DurationOverrideProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="text-xs text-gray-400">Find Duration Override (ms)</Label>
+        <Label className="text-xs text-gray-400">
+          Find Duration Override (ms)
+        </Label>
         {action.config.timeout !== undefined ? (
           <Button
             variant="ghost"
             size="sm"
             className="h-5 w-5 p-0 text-gray-500 hover:text-red-400"
             onClick={() => {
-              const { timeout, ...rest } = action.config
-              updateConfig("__reset__", rest)
+              const { timeout, ...rest } = action.config;
+              updateConfig("__reset__", rest);
             }}
             title="Remove override (use project default)"
           >
@@ -44,7 +49,9 @@ export function DurationOverride({ action, updateConfig }: DurationOverrideProps
             min="0"
             step="100"
             value={action.config.timeout}
-            onChange={(e) => updateConfig("timeout", Number.parseInt(e.target.value) || 0)}
+            onChange={(e) =>
+              updateConfig("timeout", Number.parseInt(e.target.value) || 0)
+            }
             className="bg-transparent border-gray-700"
             placeholder="Duration in milliseconds"
           />
@@ -65,5 +72,5 @@ export function DurationOverride({ action, updateConfig }: DurationOverrideProps
         </Button>
       )}
     </div>
-  )
+  );
 }

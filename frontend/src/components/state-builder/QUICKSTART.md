@@ -10,9 +10,9 @@ Create or edit a page file:
 
 ```tsx
 // frontend/src/app/(app)/states/page.tsx
-'use client';
+"use client";
 
-import { EnhancedStateBuilder } from '@/components/state-builder';
+import { EnhancedStateBuilder } from "@/components/state-builder";
 
 export default function StatesPage() {
   return <EnhancedStateBuilder />;
@@ -20,6 +20,7 @@ export default function StatesPage() {
 ```
 
 That's it! The component will automatically:
+
 - Connect to AutomationContext
 - Load all states from the current project
 - Provide full editing capabilities
@@ -45,7 +46,7 @@ That's it! The component will automatically:
 
 ```tsx
 // Type in the search box
-"login"  // Finds all states with "login" in name or description
+"login"; // Finds all states with "login" in name or description
 ```
 
 ### Multi-Select for Bulk Actions
@@ -88,7 +89,7 @@ That's it! The component will automatically:
 ### Validate States
 
 ```tsx
-import { validateState } from '@/components/state-builder/state-utils';
+import { validateState } from "@/components/state-builder/state-utils";
 
 const issues = validateState(myState);
 // Returns array of validation issues
@@ -97,7 +98,7 @@ const issues = validateState(myState);
 ### Calculate Complexity
 
 ```tsx
-import { calculateStateComplexity } from '@/components/state-builder/state-utils';
+import { calculateStateComplexity } from "@/components/state-builder/state-utils";
 
 const score = calculateStateComplexity(myState);
 // Returns numerical complexity score
@@ -106,7 +107,7 @@ const score = calculateStateComplexity(myState);
 ### Compare States
 
 ```tsx
-import { compareStates } from '@/components/state-builder/state-utils';
+import { compareStates } from "@/components/state-builder/state-utils";
 
 const comparison = compareStates(state1, state2);
 console.log(`Similarity: ${comparison.similarity * 100}%`);
@@ -115,7 +116,7 @@ console.log(`Similarity: ${comparison.similarity * 100}%`);
 ### Find Similar States
 
 ```tsx
-import { findSimilarStates } from '@/components/state-builder/state-utils';
+import { findSimilarStates } from "@/components/state-builder/state-utils";
 
 const similar = findSimilarStates(myState, allStates, 0.7);
 // Returns states with >= 70% similarity
@@ -155,8 +156,8 @@ const state = states[0];
 const issues = validateState(state);
 
 if (issues.length > 0) {
-  console.log('Issues found:');
-  issues.forEach(issue => {
+  console.log("Issues found:");
+  issues.forEach((issue) => {
     console.log(`[${issue.type}] ${issue.message}`);
     if (issue.suggestion) {
       console.log(`  → ${issue.suggestion}`);
@@ -167,14 +168,14 @@ if (issues.length > 0) {
 
 ## Keyboard Shortcuts (Coming Soon)
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+N` | New state |
-| `Ctrl+F` | Focus search |
-| `Ctrl+A` | Select all |
-| `Delete` | Delete selected |
+| Shortcut | Action             |
+| -------- | ------------------ |
+| `Ctrl+N` | New state          |
+| `Ctrl+F` | Focus search       |
+| `Ctrl+A` | Select all         |
+| `Delete` | Delete selected    |
 | `Ctrl+D` | Duplicate selected |
-| `Ctrl+E` | Export selected |
+| `Ctrl+E` | Export selected    |
 
 ## Tips & Tricks
 
@@ -188,20 +189,20 @@ if (issues.length > 0) {
 
 ```tsx
 // Good
-name: "LoginScreen_SubmitButton_Highlighted"
+name: "LoginScreen_SubmitButton_Highlighted";
 
 // Bad
-name: "State1"
+name: "State1";
 ```
 
 ### 3. Validate Before Publishing
 
 ```tsx
 const issues = validateState(state);
-const errors = issues.filter(i => i.type === 'error');
+const errors = issues.filter((i) => i.type === "error");
 
 if (errors.length > 0) {
-  console.error('Cannot publish - has errors');
+  console.error("Cannot publish - has errors");
   return;
 }
 ```
@@ -225,6 +226,7 @@ if (errors.length > 0) {
 **Problem**: State list is empty
 
 **Solutions**:
+
 1. Check AutomationContext is initialized
 2. Verify project has states
 3. Clear search filters
@@ -235,6 +237,7 @@ if (errors.length > 0) {
 **Problem**: Changes don't save
 
 **Solutions**:
+
 1. Check state is selected (highlighted in list)
 2. Verify AutomationContext has `updateState` method
 3. Check browser console for errors
@@ -245,6 +248,7 @@ if (errors.length > 0) {
 **Problem**: UI is slow with many states
 
 **Solutions**:
+
 1. Use search to narrow results
 2. Apply filters to reduce visible states
 3. Clear browser cache
@@ -255,6 +259,7 @@ if (errors.length > 0) {
 **Problem**: StateImage thumbnails are blank
 
 **Solutions**:
+
 1. Verify image exists in library
 2. Check pattern has `imageId` set
 3. Ensure `getImageById` returns valid image
@@ -279,6 +284,7 @@ if (errors.length > 0) {
 ### Contribute
 
 Found a bug or have an enhancement?
+
 1. Check existing issues
 2. Create a new issue with details
 3. Submit a pull request

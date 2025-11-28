@@ -1,24 +1,33 @@
-"use client"
+"use client";
 
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ActionPropertiesComponentProps } from "../types"
-import { TimingProperties } from "../TimingProperties"
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ActionPropertiesComponentProps } from "../types";
+import { TimingProperties } from "../TimingProperties";
 
 /**
  * Properties component for SCROLL action.
  */
 export function ScrollActionProperties({
   action,
-  updateConfig
+  updateConfig,
 }: ActionPropertiesComponentProps) {
   return (
     <>
       <div className="space-y-2">
         <Label className="text-xs text-gray-400">Direction</Label>
-        <Select value={action.config.direction} onValueChange={(value) => updateConfig("direction", value)}>
+        <Select
+          value={action.config.direction}
+          onValueChange={(value) => updateConfig("direction", value)}
+        >
           <SelectTrigger className="bg-transparent border-gray-700">
             <SelectValue />
           </SelectTrigger>
@@ -37,7 +46,9 @@ export function ScrollActionProperties({
           type="number"
           min="1"
           value={action.config.amount}
-          onChange={(e) => updateConfig("amount", Number.parseInt(e.target.value))}
+          onChange={(e) =>
+            updateConfig("amount", Number.parseInt(e.target.value))
+          }
           className="bg-transparent border-gray-700"
         />
       </div>
@@ -48,7 +59,9 @@ export function ScrollActionProperties({
           type="number"
           min="0"
           value={action.config.scroll_duration}
-          onChange={(e) => updateConfig("scroll_duration", Number.parseInt(e.target.value))}
+          onChange={(e) =>
+            updateConfig("scroll_duration", Number.parseInt(e.target.value))
+          }
           className="bg-transparent border-gray-700"
         />
       </div>
@@ -66,5 +79,5 @@ export function ScrollActionProperties({
 
       <TimingProperties action={action} updateConfig={updateConfig} />
     </>
-  )
+  );
 }

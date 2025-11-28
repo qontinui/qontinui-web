@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import type { PermissionLevel } from './types';
-import { hasPermission } from '@/lib/permissions';
+import React, { createContext, useContext, useState, ReactNode } from "react";
+import type { PermissionLevel } from "./types";
+import { hasPermission } from "@/lib/permissions";
 
 // ============================================================================
 // Context Types
@@ -47,16 +47,16 @@ export function PermissionsProvider({
   // Permission Helpers
   // ============================================================================
 
-  const canView = hasPermission('view', projectAccess || 'none');
-  const canComment = hasPermission('comment', projectAccess || 'none');
-  const canEdit = hasPermission('edit', projectAccess || 'none');
-  const canAdmin = hasPermission('admin', projectAccess || 'none');
+  const canView = hasPermission("view", projectAccess || "none");
+  const canComment = hasPermission("comment", projectAccess || "none");
+  const canEdit = hasPermission("edit", projectAccess || "none");
+  const canAdmin = hasPermission("admin", projectAccess || "none");
 
   /**
    * Check if user has a specific permission level
    */
   const checkPermission = (required: PermissionLevel): boolean => {
-    return hasPermission(required, projectAccess || 'none');
+    return hasPermission(required, projectAccess || "none");
   };
 
   // ============================================================================
@@ -87,7 +87,7 @@ export function PermissionsProvider({
 export function usePermissions() {
   const context = useContext(PermissionsContext);
   if (context === undefined) {
-    throw new Error('usePermissions must be used within a PermissionsProvider');
+    throw new Error("usePermissions must be used within a PermissionsProvider");
   }
   return context;
 }

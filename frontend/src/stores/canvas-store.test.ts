@@ -12,51 +12,51 @@
  * - Persistence
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useCanvasStore } from './canvas-store';
-import type { Workflow, Action } from '../lib/action-schema/action-types';
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { useCanvasStore } from "./canvas-store";
+import type { Workflow, Action } from "../lib/action-schema/action-types";
 
 // Mock workflow for testing
 const createMockWorkflow = (): Workflow => ({
-  id: 'test-workflow',
-  name: 'Test Workflow',
-  version: '1.0.0',
-  format: 'graph',
+  id: "test-workflow",
+  name: "Test Workflow",
+  version: "1.0.0",
+  format: "graph",
   actions: [
     {
-      id: 'action-1',
-      type: 'CLICK',
+      id: "action-1",
+      type: "CLICK",
       position: [100, 100],
       config: {
-        findBy: 'text',
-        searchString: 'Click Me',
+        findBy: "text",
+        searchString: "Click Me",
       },
     },
     {
-      id: 'action-2',
-      type: 'TYPE',
+      id: "action-2",
+      type: "TYPE",
       position: [100, 200],
       config: {
-        text: 'Hello World',
+        text: "Hello World",
       },
     },
   ],
   connections: {
-    'action-1': {
-      main: [[{ action: 'action-2', type: 'main', index: 0 }]],
+    "action-1": {
+      main: [[{ action: "action-2", type: "main", index: 0 }]],
     },
   },
 });
 
-describe('Canvas Store', () => {
+describe("Canvas Store", () => {
   beforeEach(() => {
     // Reset store before each test
     useCanvasStore.getState().clearWorkflow();
     useCanvasStore.getState().clearHistory();
   });
 
-  describe('Initialization', () => {
-    it('should initialize with empty state', () => {
+  describe("Initialization", () => {
+    it("should initialize with empty state", () => {
       const state = useCanvasStore.getState();
 
       expect(state.workflow).toBeNull();
@@ -67,8 +67,8 @@ describe('Canvas Store', () => {
     });
   });
 
-  describe('Workflow Management', () => {
-    it('should load workflow', () => {
+  describe("Workflow Management", () => {
+    it("should load workflow", () => {
       const workflow = createMockWorkflow();
       const { setWorkflow } = useCanvasStore.getState();
 
@@ -79,7 +79,7 @@ describe('Canvas Store', () => {
       expect(state.isDirty).toBe(false);
     });
 
-    it('should clear workflow', () => {
+    it("should clear workflow", () => {
       const workflow = createMockWorkflow();
       const { setWorkflow, clearWorkflow } = useCanvasStore.getState();
 
@@ -91,16 +91,16 @@ describe('Canvas Store', () => {
     });
   });
 
-  describe('Action CRUD', () => {
+  describe("Action CRUD", () => {
     beforeEach(() => {
       const workflow = createMockWorkflow();
       useCanvasStore.getState().setWorkflow(workflow);
     });
 
-    it('should add action', () => {
+    it("should add action", () => {
       const newAction: Action = {
-        id: 'action-3',
-        type: 'WAIT',
+        id: "action-3",
+        type: "WAIT",
         position: [100, 300],
         config: {
           duration: 1000,
@@ -116,76 +116,76 @@ describe('Canvas Store', () => {
       expect(state.isDirty).toBe(true);
     });
 
-    it('should update action', () => {
+    it("should update action", () => {
       const { updateAction } = useCanvasStore.getState();
 
-      updateAction('action-1', { name: 'Updated Action' });
+      updateAction("action-1", { name: "Updated Action" });
 
       const state = useCanvasStore.getState();
-      const action = state.workflow?.actions.find(a => a.id === 'action-1');
-      expect(action?.name).toBe('Updated Action');
+      const action = state.workflow?.actions.find((a) => a.id === "action-1");
+      expect(action?.name).toBe("Updated Action");
       expect(state.isDirty).toBe(true);
     });
 
-    it('should delete action', () => {
+    it("should delete action", () => {
       const { deleteAction } = useCanvasStore.getState();
 
-      deleteAction('action-1');
+      deleteAction("action-1");
 
       const state = useCanvasStore.getState();
       expect(state.workflow?.actions).toHaveLength(1);
-      expect(state.workflow?.actions[0].id).toBe('action-2');
-      expect(state.workflow?.connections['action-1']).toBeUndefined();
+      expect(state.workflow?.actions[0].id).toBe("action-2");
+      expect(state.workflow?.connections["action-1"]).toBeUndefined();
     });
 
-    it('should delete multiple actions', () => {
+    it("should delete multiple actions", () => {
       const { deleteActions } = useCanvasStore.getState();
 
-      deleteActions(['action-1', 'action-2']);
+      deleteActions(["action-1", "action-2"]);
 
       const state = useCanvasStore.getState();
       expect(state.workflow?.actions).toHaveLength(0);
     });
 
-    it('should move action', () => {
+    it("should move action", () => {
       const { moveAction } = useCanvasStore.getState();
 
-      moveAction('action-1', [200, 200]);
+      moveAction("action-1", [200, 200]);
 
       const state = useCanvasStore.getState();
-      const action = state.workflow?.actions.find(a => a.id === 'action-1');
+      const action = state.workflow?.actions.find((a) => a.id === "action-1");
       expect(action?.position).toEqual([200, 200]);
     });
   });
 
-  describe('Selection', () => {
+  describe("Selection", () => {
     beforeEach(() => {
       const workflow = createMockWorkflow();
       useCanvasStore.getState().setWorkflow(workflow);
     });
 
-    it('should select single node', () => {
+    it("should select single node", () => {
       const { selectNode } = useCanvasStore.getState();
 
-      selectNode('action-1');
+      selectNode("action-1");
 
       const state = useCanvasStore.getState();
-      expect(state.selectedNodes).toEqual(['action-1']);
+      expect(state.selectedNodes).toEqual(["action-1"]);
       expect(state.selectedEdges).toEqual([]);
     });
 
-    it('should multi-select nodes', () => {
+    it("should multi-select nodes", () => {
       const { selectNode } = useCanvasStore.getState();
 
-      selectNode('action-1');
-      selectNode('action-2', true);
+      selectNode("action-1");
+      selectNode("action-2", true);
 
       const state = useCanvasStore.getState();
-      expect(state.selectedNodes).toContain('action-1');
-      expect(state.selectedNodes).toContain('action-2');
+      expect(state.selectedNodes).toContain("action-1");
+      expect(state.selectedNodes).toContain("action-2");
     });
 
-    it('should select all nodes', () => {
+    it("should select all nodes", () => {
       const { selectAll } = useCanvasStore.getState();
 
       selectAll();
@@ -194,10 +194,10 @@ describe('Canvas Store', () => {
       expect(state.selectedNodes).toHaveLength(2);
     });
 
-    it('should clear selection', () => {
+    it("should clear selection", () => {
       const { selectNode, clearSelection } = useCanvasStore.getState();
 
-      selectNode('action-1');
+      selectNode("action-1");
       clearSelection();
 
       const state = useCanvasStore.getState();
@@ -205,27 +205,27 @@ describe('Canvas Store', () => {
     });
   });
 
-  describe('Clipboard', () => {
+  describe("Clipboard", () => {
     beforeEach(() => {
       const workflow = createMockWorkflow();
       useCanvasStore.getState().setWorkflow(workflow);
     });
 
-    it('should copy nodes', () => {
+    it("should copy nodes", () => {
       const { selectNode, copy } = useCanvasStore.getState();
 
-      selectNode('action-1');
+      selectNode("action-1");
       copy();
 
       const state = useCanvasStore.getState();
       expect(state.clipboardNodes).toHaveLength(1);
-      expect(state.clipboardNodes[0].id).toBe('action-1');
+      expect(state.clipboardNodes[0].id).toBe("action-1");
     });
 
-    it('should paste nodes with new IDs', () => {
+    it("should paste nodes with new IDs", () => {
       const { selectNode, copy, paste } = useCanvasStore.getState();
 
-      selectNode('action-1');
+      selectNode("action-1");
       copy();
       paste();
 
@@ -233,14 +233,14 @@ describe('Canvas Store', () => {
       expect(state.workflow?.actions).toHaveLength(3);
 
       const pastedAction = state.workflow?.actions[2];
-      expect(pastedAction?.id).not.toBe('action-1');
-      expect(pastedAction?.type).toBe('CLICK');
+      expect(pastedAction?.id).not.toBe("action-1");
+      expect(pastedAction?.type).toBe("CLICK");
     });
 
-    it('should cut nodes', () => {
+    it("should cut nodes", () => {
       const { selectNode, cut } = useCanvasStore.getState();
 
-      selectNode('action-1');
+      selectNode("action-1");
       cut();
 
       const state = useCanvasStore.getState();
@@ -249,56 +249,56 @@ describe('Canvas Store', () => {
     });
   });
 
-  describe('History', () => {
+  describe("History", () => {
     beforeEach(() => {
       const workflow = createMockWorkflow();
       useCanvasStore.getState().setWorkflow(workflow);
     });
 
-    it('should record history on changes', () => {
+    it("should record history on changes", () => {
       const { updateAction } = useCanvasStore.getState();
 
-      updateAction('action-1', { name: 'Changed' });
+      updateAction("action-1", { name: "Changed" });
 
       const state = useCanvasStore.getState();
       expect(state.history.length).toBeGreaterThan(0);
     });
 
-    it('should undo changes', () => {
+    it("should undo changes", () => {
       const { updateAction, undo } = useCanvasStore.getState();
 
-      updateAction('action-1', { name: 'Changed' });
+      updateAction("action-1", { name: "Changed" });
       undo();
 
       const state = useCanvasStore.getState();
-      const action = state.workflow?.actions.find(a => a.id === 'action-1');
+      const action = state.workflow?.actions.find((a) => a.id === "action-1");
       expect(action?.name).toBeUndefined();
     });
 
-    it('should redo changes', () => {
+    it("should redo changes", () => {
       const { updateAction, undo, redo } = useCanvasStore.getState();
 
-      updateAction('action-1', { name: 'Changed' });
+      updateAction("action-1", { name: "Changed" });
       undo();
       redo();
 
       const state = useCanvasStore.getState();
-      const action = state.workflow?.actions.find(a => a.id === 'action-1');
-      expect(action?.name).toBe('Changed');
+      const action = state.workflow?.actions.find((a) => a.id === "action-1");
+      expect(action?.name).toBe("Changed");
     });
 
-    it('should report canUndo correctly', () => {
+    it("should report canUndo correctly", () => {
       const { canUndo, updateAction } = useCanvasStore.getState();
 
       expect(canUndo()).toBe(true); // Initial state recorded
 
-      updateAction('action-1', { name: 'Changed' });
+      updateAction("action-1", { name: "Changed" });
       expect(canUndo()).toBe(true);
     });
   });
 
-  describe('Viewport', () => {
-    it('should update viewport', () => {
+  describe("Viewport", () => {
+    it("should update viewport", () => {
       const { setViewport } = useCanvasStore.getState();
 
       setViewport({ x: 100, y: 200, zoom: 1.5 });
@@ -307,7 +307,7 @@ describe('Canvas Store', () => {
       expect(state.viewport).toEqual({ x: 100, y: 200, zoom: 1.5 });
     });
 
-    it('should zoom in', () => {
+    it("should zoom in", () => {
       const { zoomIn } = useCanvasStore.getState();
 
       zoomIn();
@@ -316,7 +316,7 @@ describe('Canvas Store', () => {
       expect(state.viewport.zoom).toBeGreaterThan(1);
     });
 
-    it('should zoom out', () => {
+    it("should zoom out", () => {
       const { zoomOut } = useCanvasStore.getState();
 
       zoomOut();
@@ -326,38 +326,38 @@ describe('Canvas Store', () => {
     });
   });
 
-  describe('Connections', () => {
+  describe("Connections", () => {
     beforeEach(() => {
       const workflow = createMockWorkflow();
       useCanvasStore.getState().setWorkflow(workflow);
     });
 
-    it('should add connection', () => {
+    it("should add connection", () => {
       const { addConnection } = useCanvasStore.getState();
 
       // Add action-3
       useCanvasStore.getState().addAction({
-        id: 'action-3',
-        type: 'WAIT',
+        id: "action-3",
+        type: "WAIT",
         position: [100, 300],
         config: { duration: 1000 },
       });
 
-      addConnection('action-2', 'main', 0, 'action-3', 0);
+      addConnection("action-2", "main", 0, "action-3", 0);
 
       const state = useCanvasStore.getState();
-      const connections = state.workflow?.connections['action-2']?.main?.[0];
+      const connections = state.workflow?.connections["action-2"]?.main?.[0];
       expect(connections).toBeDefined();
-      expect(connections?.[0].action).toBe('action-3');
+      expect(connections?.[0].action).toBe("action-3");
     });
 
-    it('should delete connection', () => {
+    it("should delete connection", () => {
       const { deleteConnection } = useCanvasStore.getState();
 
-      deleteConnection('action-1', 'main', 0, 'action-2');
+      deleteConnection("action-1", "main", 0, "action-2");
 
       const state = useCanvasStore.getState();
-      const connections = state.workflow?.connections['action-1']?.main?.[0];
+      const connections = state.workflow?.connections["action-1"]?.main?.[0];
       expect(connections).toEqual([]);
     });
   });

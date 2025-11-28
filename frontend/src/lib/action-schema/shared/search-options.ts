@@ -2,7 +2,7 @@
  * Search options - used by actions that search for targets on screen
  */
 
-import { Region, SearchStrategy, Coordinates } from './common-types';
+import { Region, SearchStrategy, Coordinates } from "./common-types";
 
 export interface SearchOptions {
   /** Similarity threshold (0.0-1.0) for image matching */
@@ -51,7 +51,11 @@ export interface SearchOptions {
  * Advanced pattern matching options
  */
 export interface PatternOptions {
-  matchMethod?: 'CORRELATION' | 'CORRELATION_NORMED' | 'SQUARED_DIFFERENCE' | 'SQUARED_DIFFERENCE_NORMED';
+  matchMethod?:
+    | "CORRELATION"
+    | "CORRELATION_NORMED"
+    | "SQUARED_DIFFERENCE"
+    | "SQUARED_DIFFERENCE_NORMED";
   scaleInvariant?: boolean;
   rotationInvariant?: boolean;
   minScale?: number;

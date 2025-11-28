@@ -4,20 +4,20 @@
  * Tests for automatic positioning of actions in graph workflows.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { AutoLayout, layoutActions } from '../auto-layout';
-import { Action, Connections } from '../../action-schema/action-types';
-import { ClickActionConfig } from '../../action-schema/configs/mouse-actions';
+import { describe, it, expect, beforeEach } from "vitest";
+import { AutoLayout, layoutActions } from "../auto-layout";
+import { Action, Connections } from "../../action-schema/action-types";
+import { ClickActionConfig } from "../../action-schema/configs/mouse-actions";
 
-describe('AutoLayout', () => {
+describe("AutoLayout", () => {
   let layout: AutoLayout;
 
   beforeEach(() => {
     layout = new AutoLayout();
   });
 
-  describe('Basic Layout', () => {
-    it('should layout empty action list', () => {
+  describe("Basic Layout", () => {
+    it("should layout empty action list", () => {
       const actions: Action[] = [];
       const connections: Connections = {};
 
@@ -26,11 +26,11 @@ describe('AutoLayout', () => {
       expect(actions).toHaveLength(0);
     });
 
-    it('should layout single action', () => {
+    it("should layout single action", () => {
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'CLICK',
+          id: "action-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
@@ -44,34 +44,34 @@ describe('AutoLayout', () => {
       expect(actions[0].position[1]).toBeGreaterThanOrEqual(0);
     });
 
-    it('should layout linear workflow horizontally', () => {
+    it("should layout linear workflow horizontally", () => {
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'CLICK',
+          id: "action-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'action-2',
-          type: 'CLICK',
+          id: "action-2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'action-3',
-          type: 'CLICK',
+          id: "action-3",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
       ];
 
       const connections: Connections = {
-        'action-1': {
-          main: [[{ action: 'action-2', type: 'main', index: 0 }]],
+        "action-1": {
+          main: [[{ action: "action-2", type: "main", index: 0 }]],
         },
-        'action-2': {
-          main: [[{ action: 'action-3', type: 'main', index: 0 }]],
+        "action-2": {
+          main: [[{ action: "action-3", type: "main", index: 0 }]],
         },
       };
 
@@ -87,8 +87,8 @@ describe('AutoLayout', () => {
     });
   });
 
-  describe('Custom Options', () => {
-    it('should respect horizontal spacing option', () => {
+  describe("Custom Options", () => {
+    it("should respect horizontal spacing option", () => {
       const layout = new AutoLayout({
         horizontalSpacing: 300,
         startX: 0,
@@ -97,22 +97,22 @@ describe('AutoLayout', () => {
 
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'CLICK',
+          id: "action-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'action-2',
-          type: 'CLICK',
+          id: "action-2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
       ];
 
       const connections: Connections = {
-        'action-1': {
-          main: [[{ action: 'action-2', type: 'main', index: 0 }]],
+        "action-1": {
+          main: [[{ action: "action-2", type: "main", index: 0 }]],
         },
       };
 
@@ -122,7 +122,7 @@ describe('AutoLayout', () => {
       expect(actions[1].position[0]).toBe(300);
     });
 
-    it('should respect vertical spacing option', () => {
+    it("should respect vertical spacing option", () => {
       const layout = new AutoLayout({
         verticalSpacing: 200,
         startX: 0,
@@ -131,20 +131,20 @@ describe('AutoLayout', () => {
 
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'CLICK',
+          id: "action-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'action-2',
-          type: 'CLICK',
+          id: "action-2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'action-3',
-          type: 'CLICK',
+          id: "action-3",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
@@ -156,11 +156,15 @@ describe('AutoLayout', () => {
       layout.layout(actions, connections);
 
       // Should be stacked vertically
-      expect(actions[1].position[1]).toBeGreaterThanOrEqual(actions[0].position[1]);
-      expect(actions[2].position[1]).toBeGreaterThanOrEqual(actions[1].position[1]);
+      expect(actions[1].position[1]).toBeGreaterThanOrEqual(
+        actions[0].position[1]
+      );
+      expect(actions[2].position[1]).toBeGreaterThanOrEqual(
+        actions[1].position[1]
+      );
     });
 
-    it('should respect start position options', () => {
+    it("should respect start position options", () => {
       const layout = new AutoLayout({
         startX: 50,
         startY: 100,
@@ -168,8 +172,8 @@ describe('AutoLayout', () => {
 
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'CLICK',
+          id: "action-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
@@ -184,34 +188,34 @@ describe('AutoLayout', () => {
     });
   });
 
-  describe('Branching Layout', () => {
-    it('should handle branching (IF action)', () => {
+  describe("Branching Layout", () => {
+    it("should handle branching (IF action)", () => {
       const actions: Action[] = [
         {
-          id: 'if-1',
-          type: 'IF',
+          id: "if-1",
+          type: "IF",
           config: {} as any,
           position: [0, 0],
         },
         {
-          id: 'then-action',
-          type: 'CLICK',
+          id: "then-action",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'else-action',
-          type: 'CLICK',
+          id: "else-action",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
       ];
 
       const connections: Connections = {
-        'if-1': {
+        "if-1": {
           main: [
-            [{ action: 'then-action', type: 'main', index: 0 }],
-            [{ action: 'else-action', type: 'main', index: 0 }],
+            [{ action: "then-action", type: "main", index: 0 }],
+            [{ action: "else-action", type: "main", index: 0 }],
           ],
         },
       };
@@ -225,40 +229,40 @@ describe('AutoLayout', () => {
       expect(actions[1].position[1]).not.toBe(actions[2].position[1]);
     });
 
-    it('should handle multiple branches (SWITCH action)', () => {
+    it("should handle multiple branches (SWITCH action)", () => {
       const actions: Action[] = [
         {
-          id: 'switch-1',
-          type: 'SWITCH',
+          id: "switch-1",
+          type: "SWITCH",
           config: {} as any,
           position: [0, 0],
         },
         {
-          id: 'case-1',
-          type: 'CLICK',
+          id: "case-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'case-2',
-          type: 'CLICK',
+          id: "case-2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'case-3',
-          type: 'CLICK',
+          id: "case-3",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
       ];
 
       const connections: Connections = {
-        'switch-1': {
+        "switch-1": {
           main: [
-            [{ action: 'case-1', type: 'main', index: 0 }],
-            [{ action: 'case-2', type: 'main', index: 0 }],
-            [{ action: 'case-3', type: 'main', index: 0 }],
+            [{ action: "case-1", type: "main", index: 0 }],
+            [{ action: "case-2", type: "main", index: 0 }],
+            [{ action: "case-3", type: "main", index: 0 }],
           ],
         },
       };
@@ -275,30 +279,30 @@ describe('AutoLayout', () => {
     });
   });
 
-  describe('Complex Graphs', () => {
-    it('should handle diamond pattern (merge)', () => {
+  describe("Complex Graphs", () => {
+    it("should handle diamond pattern (merge)", () => {
       const actions: Action[] = [
         {
-          id: 'start',
-          type: 'CLICK',
+          id: "start",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'branch-1',
-          type: 'CLICK',
+          id: "branch-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'branch-2',
-          type: 'CLICK',
+          id: "branch-2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'merge',
-          type: 'CLICK',
+          id: "merge",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
@@ -308,16 +312,16 @@ describe('AutoLayout', () => {
         start: {
           main: [
             [
-              { action: 'branch-1', type: 'main', index: 0 },
-              { action: 'branch-2', type: 'main', index: 0 },
+              { action: "branch-1", type: "main", index: 0 },
+              { action: "branch-2", type: "main", index: 0 },
             ],
           ],
         },
-        'branch-1': {
-          main: [[{ action: 'merge', type: 'main', index: 0 }]],
+        "branch-1": {
+          main: [[{ action: "merge", type: "main", index: 0 }]],
         },
-        'branch-2': {
-          main: [[{ action: 'merge', type: 'main', index: 0 }]],
+        "branch-2": {
+          main: [[{ action: "merge", type: "main", index: 0 }]],
         },
       };
 
@@ -334,23 +338,23 @@ describe('AutoLayout', () => {
       expect(actions[3].position[0]).toBeGreaterThan(actions[1].position[0]);
     });
 
-    it('should handle parallel execution', () => {
+    it("should handle parallel execution", () => {
       const actions: Action[] = [
         {
-          id: 'start',
-          type: 'CLICK',
+          id: "start",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'parallel-1',
-          type: 'CLICK',
+          id: "parallel-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'parallel-2',
-          type: 'CLICK',
+          id: "parallel-2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
@@ -360,8 +364,8 @@ describe('AutoLayout', () => {
         start: {
           parallel: [
             [
-              { action: 'parallel-1', type: 'parallel', index: 0 },
-              { action: 'parallel-2', type: 'parallel', index: 0 },
+              { action: "parallel-1", type: "parallel", index: 0 },
+              { action: "parallel-2", type: "parallel", index: 0 },
             ],
           ],
         },
@@ -376,23 +380,23 @@ describe('AutoLayout', () => {
       expect(actions[1].position[1]).not.toBe(actions[2].position[1]);
     });
 
-    it('should handle error paths', () => {
+    it("should handle error paths", () => {
       const actions: Action[] = [
         {
-          id: 'try',
-          type: 'TRY_CATCH',
+          id: "try",
+          type: "TRY_CATCH",
           config: {} as any,
           position: [0, 0],
         },
         {
-          id: 'success',
-          type: 'CLICK',
+          id: "success",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'error',
-          type: 'CLICK',
+          id: "error",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
@@ -400,8 +404,8 @@ describe('AutoLayout', () => {
 
       const connections: Connections = {
         try: {
-          success: [[{ action: 'success', type: 'success', index: 0 }]],
-          error: [[{ action: 'error', type: 'error', index: 0 }]],
+          success: [[{ action: "success", type: "success", index: 0 }]],
+          error: [[{ action: "error", type: "error", index: 0 }]],
         },
       };
 
@@ -415,24 +419,24 @@ describe('AutoLayout', () => {
     });
   });
 
-  describe('Depth Calculation', () => {
-    it('should calculate correct depth for linear workflow', () => {
+  describe("Depth Calculation", () => {
+    it("should calculate correct depth for linear workflow", () => {
       const actions: Action[] = [
         {
-          id: 'a1',
-          type: 'CLICK',
+          id: "a1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'a2',
-          type: 'CLICK',
+          id: "a2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'a3',
-          type: 'CLICK',
+          id: "a3",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
@@ -440,10 +444,10 @@ describe('AutoLayout', () => {
 
       const connections: Connections = {
         a1: {
-          main: [[{ action: 'a2', type: 'main', index: 0 }]],
+          main: [[{ action: "a2", type: "main", index: 0 }]],
         },
         a2: {
-          main: [[{ action: 'a3', type: 'main', index: 0 }]],
+          main: [[{ action: "a3", type: "main", index: 0 }]],
         },
       };
 
@@ -454,17 +458,17 @@ describe('AutoLayout', () => {
       expect(actions[1].position[0]).toBeLessThan(actions[2].position[0]);
     });
 
-    it('should handle nodes with no parents (entry points)', () => {
+    it("should handle nodes with no parents (entry points)", () => {
       const actions: Action[] = [
         {
-          id: 'entry-1',
-          type: 'CLICK',
+          id: "entry-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'entry-2',
-          type: 'CLICK',
+          id: "entry-2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
@@ -479,19 +483,19 @@ describe('AutoLayout', () => {
     });
   });
 
-  describe('findOptimalPosition', () => {
-    it('should return start position for empty action list', () => {
+  describe("findOptimalPosition", () => {
+    it("should return start position for empty action list", () => {
       const position = layout.findOptimalPosition([]);
 
       expect(position[0]).toBeGreaterThanOrEqual(0);
       expect(position[1]).toBeGreaterThanOrEqual(0);
     });
 
-    it('should find position that does not overlap existing actions', () => {
+    it("should find position that does not overlap existing actions", () => {
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'CLICK',
+          id: "action-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [100, 100],
         },
@@ -503,7 +507,7 @@ describe('AutoLayout', () => {
       expect(position[0]).not.toBe(100);
     });
 
-    it('should place new node to the right', () => {
+    it("should place new node to the right", () => {
       const layout = new AutoLayout({
         horizontalSpacing: 200,
         startX: 100,
@@ -511,8 +515,8 @@ describe('AutoLayout', () => {
 
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'CLICK',
+          id: "action-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [100, 100],
         },
@@ -524,26 +528,26 @@ describe('AutoLayout', () => {
     });
   });
 
-  describe('Convenience Function', () => {
-    it('should work with layoutActions function', () => {
+  describe("Convenience Function", () => {
+    it("should work with layoutActions function", () => {
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'CLICK',
+          id: "action-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'action-2',
-          type: 'CLICK',
+          id: "action-2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
       ];
 
       const connections: Connections = {
-        'action-1': {
-          main: [[{ action: 'action-2', type: 'main', index: 0 }]],
+        "action-1": {
+          main: [[{ action: "action-2", type: "main", index: 0 }]],
         },
       };
 
@@ -557,18 +561,18 @@ describe('AutoLayout', () => {
     });
   });
 
-  describe('Edge Cases', () => {
-    it('should handle disconnected actions', () => {
+  describe("Edge Cases", () => {
+    it("should handle disconnected actions", () => {
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'CLICK',
+          id: "action-1",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
         {
-          id: 'action-2',
-          type: 'CLICK',
+          id: "action-2",
+          type: "CLICK",
           config: {} as ClickActionConfig,
           position: [0, 0],
         },
@@ -583,19 +587,19 @@ describe('AutoLayout', () => {
       expect(actions[1].position).toBeDefined();
     });
 
-    it('should handle single action with self-connection', () => {
+    it("should handle single action with self-connection", () => {
       const actions: Action[] = [
         {
-          id: 'action-1',
-          type: 'LOOP',
+          id: "action-1",
+          type: "LOOP",
           config: {} as any,
           position: [0, 0],
         },
       ];
 
       const connections: Connections = {
-        'action-1': {
-          main: [[{ action: 'action-1', type: 'main', index: 0 }]],
+        "action-1": {
+          main: [[{ action: "action-1", type: "main", index: 0 }]],
         },
       };
 

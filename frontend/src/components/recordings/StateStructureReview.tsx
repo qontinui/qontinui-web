@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   ReactFlow,
   Node,
@@ -12,14 +12,20 @@ import {
   useEdgesState,
   MarkerType,
   Panel,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { toast } from 'sonner';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
 import {
   Check,
   X,
@@ -30,29 +36,41 @@ import {
   Trash2,
   CheckSquare,
   Square,
-} from 'lucide-react';
-import { recordingService } from '@/services/service-factory';
-import { getConfidenceLevel, getConfidenceColor } from '@/types/recording';
+} from "lucide-react";
+import { recordingService } from "@/services/service-factory";
+import { getConfidenceLevel, getConfidenceColor } from "@/types/recording";
 import type {
   DiscoveredStateStructure,
   DiscoveredState,
   DiscoveredTransition,
   AcceptanceRequest,
-} from '@/types/recording';
+} from "@/types/recording";
 
 interface StateStructureReviewProps {
   recordingId: string;
 }
 
-export function StateStructureReview({ recordingId }: StateStructureReviewProps) {
+export function StateStructureReview({
+  recordingId,
+}: StateStructureReviewProps) {
   const router = useRouter();
 
-  const [structure, setStructure] = useState<DiscoveredStateStructure | null>(null);
+  const [structure, setStructure] = useState<DiscoveredStateStructure | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
-  const [selectedStateIds, setSelectedStateIds] = useState<Set<string>>(new Set());
-  const [selectedTransitionIds, setSelectedTransitionIds] = useState<Set<string>>(new Set());
-  const [selectedNode, setSelectedNode] = useState<DiscoveredState | null>(null);
-  const [selectedEdge, setSelectedEdge] = useState<DiscoveredTransition | null>(null);
+  const [selectedStateIds, setSelectedStateIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [selectedTransitionIds, setSelectedTransitionIds] = useState<
+    Set<string>
+  >(new Set());
+  const [selectedNode, setSelectedNode] = useState<DiscoveredState | null>(
+    null
+  );
+  const [selectedEdge, setSelectedEdge] = useState<DiscoveredTransition | null>(
+    null
+  );
   const [accepting, setAccepting] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -77,11 +95,11 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
       setEdges(flowEdges);
 
       // Select all by default
-      setSelectedStateIds(new Set(data.states.map(s => s.id)));
-      setSelectedTransitionIds(new Set(data.transitions.map(t => t.id)));
+      setSelectedStateIds(new Set(data.states.map((s) => s.id)));
+      setSelectedTransitionIds(new Set(data.transitions.map((t) => t.id)));
     } catch (error: any) {
-      console.error('Failed to load state structure:', error);
-      toast.error('Failed to load state structure');
+      console.error("Failed to load state structure:", error);
+      toast.error("Failed to load state structure");
     } finally {
       setLoading(false);
     }
@@ -94,10 +112,11 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
 
       return {
         id: state.id,
-        type: 'default',
-        position: state.position_x && state.position_y
-          ? { x: state.position_x, y: state.position_y }
-          : { x: (index % 5) * 250, y: Math.floor(index / 5) * 150 },
+        type: "default",
+        position:
+          state.position_x && state.position_y
+            ? { x: state.position_x, y: state.position_y }
+            : { x: (index % 5) * 250, y: Math.floor(index / 5) * 150 },
         data: {
           label: (
             <div className="flex flex-col items-center p-2">
@@ -127,18 +146,18 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
           ),
         },
         style: {
-          background: selectedStateIds.has(state.id) ? '#e0f2fe' : 'white',
+          background: selectedStateIds.has(state.id) ? "#e0f2fe" : "white",
           border: `2px solid ${
             isApproved
-              ? '#10b981'
-              : confidenceLevel === 'high'
-              ? '#3b82f6'
-              : confidenceLevel === 'medium'
-              ? '#f59e0b'
-              : '#ef4444'
+              ? "#10b981"
+              : confidenceLevel === "high"
+                ? "#3b82f6"
+                : confidenceLevel === "medium"
+                  ? "#f59e0b"
+                  : "#ef4444"
           }`,
-          borderRadius: '8px',
-          padding: '10px',
+          borderRadius: "8px",
+          padding: "10px",
         },
       };
     });
@@ -149,7 +168,7 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
     states: DiscoveredState[]
   ): Edge[] => {
     return transitions
-      .filter(t => t.to_state_id) // Only show transitions with target
+      .filter((t) => t.to_state_id) // Only show transitions with target
       .map((transition) => {
         const confidenceLevel = getConfidenceLevel(transition.confidence);
         const isApproved = transition.user_approved;
@@ -158,33 +177,33 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
           id: transition.id,
           source: transition.from_state_id,
           target: transition.to_state_id!,
-          type: 'default',
+          type: "default",
           animated: selectedTransitionIds.has(transition.id),
           style: {
             stroke: isApproved
-              ? '#10b981'
-              : confidenceLevel === 'high'
-              ? '#3b82f6'
-              : confidenceLevel === 'medium'
-              ? '#f59e0b'
-              : '#ef4444',
+              ? "#10b981"
+              : confidenceLevel === "high"
+                ? "#3b82f6"
+                : confidenceLevel === "medium"
+                  ? "#f59e0b"
+                  : "#ef4444",
             strokeWidth: selectedTransitionIds.has(transition.id) ? 2 : 1,
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
             color: isApproved
-              ? '#10b981'
-              : confidenceLevel === 'high'
-              ? '#3b82f6'
-              : confidenceLevel === 'medium'
-              ? '#f59e0b'
-              : '#ef4444',
+              ? "#10b981"
+              : confidenceLevel === "high"
+                ? "#3b82f6"
+                : confidenceLevel === "medium"
+                  ? "#f59e0b"
+                  : "#ef4444",
           },
           label: transition.trigger_type,
-          labelStyle: { fontSize: 10, fill: '#666' },
+          labelStyle: { fontSize: 10, fill: "#666" },
           labelBgPadding: [4, 2],
           labelBgBorderRadius: 4,
-          labelBgStyle: { fill: 'white', fillOpacity: 0.8 },
+          labelBgStyle: { fill: "white", fillOpacity: 0.8 },
         };
       });
   };
@@ -237,7 +256,7 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
 
   const handleAcceptSelected = async () => {
     if (selectedStateIds.size === 0) {
-      toast.error('Please select at least one state to accept');
+      toast.error("Please select at least one state to accept");
       return;
     }
 
@@ -245,12 +264,15 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
 
     try {
       const request: AcceptanceRequest = {
-        action: 'accept_selected',
+        action: "accept_selected",
         selected_state_ids: Array.from(selectedStateIds),
         selected_transition_ids: Array.from(selectedTransitionIds),
       };
 
-      const response = await recordingService.acceptStateStructure(recordingId, request);
+      const response = await recordingService.acceptStateStructure(
+        recordingId,
+        request
+      );
 
       toast.success(
         `Created ${response.created_states.length} states and ${response.created_transitions.length} transitions`
@@ -262,8 +284,8 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
         router.push(`/dashboard`);
       }, 2000);
     } catch (error: any) {
-      console.error('Failed to accept structure:', error);
-      toast.error(error.message || 'Failed to accept structure');
+      console.error("Failed to accept structure:", error);
+      toast.error(error.message || "Failed to accept structure");
     } finally {
       setAccepting(false);
     }
@@ -274,10 +296,13 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
 
     try {
       const request: AcceptanceRequest = {
-        action: 'accept',
+        action: "accept",
       };
 
-      const response = await recordingService.acceptStateStructure(recordingId, request);
+      const response = await recordingService.acceptStateStructure(
+        recordingId,
+        request
+      );
 
       toast.success(
         `Created ${response.created_states.length} states and ${response.created_transitions.length} transitions`
@@ -287,29 +312,29 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
         router.push(`/dashboard`);
       }, 2000);
     } catch (error: any) {
-      console.error('Failed to accept structure:', error);
-      toast.error(error.message || 'Failed to accept structure');
+      console.error("Failed to accept structure:", error);
+      toast.error(error.message || "Failed to accept structure");
     } finally {
       setAccepting(false);
     }
   };
 
   const handleDiscard = async () => {
-    if (!confirm('Are you sure you want to discard this state structure?')) {
+    if (!confirm("Are you sure you want to discard this state structure?")) {
       return;
     }
 
     try {
       const request: AcceptanceRequest = {
-        action: 'discard',
+        action: "discard",
       };
 
       await recordingService.acceptStateStructure(recordingId, request);
-      toast.success('State structure discarded');
-      router.push('/recordings');
+      toast.success("State structure discarded");
+      router.push("/recordings");
     } catch (error: any) {
-      console.error('Failed to discard structure:', error);
-      toast.error('Failed to discard structure');
+      console.error("Failed to discard structure:", error);
+      toast.error("Failed to discard structure");
     }
   };
 
@@ -339,7 +364,10 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
         >
           <Background />
           <Controls />
-          <Panel position="top-left" className="bg-white p-4 rounded-lg shadow-lg">
+          <Panel
+            position="top-left"
+            className="bg-white p-4 rounded-lg shadow-lg"
+          >
             <div className="space-y-2">
               <h3 className="font-semibold">Legend</h3>
               <div className="flex items-center gap-2 text-sm">
@@ -389,11 +417,17 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Total States</p>
-                <p className="text-2xl font-bold">{structure.stats.total_states}</p>
+                <p className="text-2xl font-bold">
+                  {structure.stats.total_states}
+                </p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Transitions</p>
-                <p className="text-2xl font-bold">{structure.stats.total_transitions}</p>
+                <p className="text-sm text-muted-foreground">
+                  Total Transitions
+                </p>
+                <p className="text-2xl font-bold">
+                  {structure.stats.total_transitions}
+                </p>
               </div>
             </div>
             <Separator />
@@ -441,12 +475,18 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
             </CardHeader>
             <CardContent className="space-y-3">
               {selectedNode.description && (
-                <p className="text-sm text-muted-foreground">{selectedNode.description}</p>
+                <p className="text-sm text-muted-foreground">
+                  {selectedNode.description}
+                </p>
               )}
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Confidence</span>
-                  <Badge className={getConfidenceColor(getConfidenceLevel(selectedNode.confidence))}>
+                  <Badge
+                    className={getConfidenceColor(
+                      getConfidenceLevel(selectedNode.confidence)
+                    )}
+                  >
                     {Math.round((selectedNode.confidence || 0) * 100)}%
                   </Badge>
                 </div>
@@ -502,11 +542,17 @@ export function StateStructureReview({ recordingId }: StateStructureReviewProps)
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Trigger</span>
-                  <Badge variant="outline">{selectedEdge.trigger_type || 'Unknown'}</Badge>
+                  <Badge variant="outline">
+                    {selectedEdge.trigger_type || "Unknown"}
+                  </Badge>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Confidence</span>
-                  <Badge className={getConfidenceColor(getConfidenceLevel(selectedEdge.confidence))}>
+                  <Badge
+                    className={getConfidenceColor(
+                      getConfidenceLevel(selectedEdge.confidence)
+                    )}
+                  >
                     {Math.round((selectedEdge.confidence || 0) * 100)}%
                   </Badge>
                 </div>

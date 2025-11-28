@@ -11,6 +11,7 @@
 These components implement a three-touchpoint strategy to inform users about Qontinui's early access status and encourage regular exports to prevent data loss.
 
 **Key Messages:**
+
 1. Early access is a FEATURE, not a limitation
 2. Full functionality available NOW
 3. Export regularly (like "Save")
@@ -27,6 +28,7 @@ These components implement a three-touchpoint strategy to inform users about Qon
 **Purpose:** Warn users BEFORE account creation
 
 **Features:**
+
 - Prominent blue alert box (non-dismissible)
 - Four key points with icons:
   - ✅ Fully functional
@@ -37,14 +39,16 @@ These components implement a three-touchpoint strategy to inform users about Qon
 - Positive framing ("early access" not "beta")
 
 **Usage:**
+
 ```tsx
-import { EarlyAccessSignupWarning } from '@/components/early-access';
+import { EarlyAccessSignupWarning } from "@/components/early-access";
 
 // In AuthDialog or signup form
-<EarlyAccessSignupWarning />
+<EarlyAccessSignupWarning />;
 ```
 
 **Implementation:**
+
 - Already integrated into `AuthDialog` component (signup tab)
 - Shows automatically in the register tab content
 - No state management needed (always visible in signup)
@@ -58,6 +62,7 @@ import { EarlyAccessSignupWarning } from '@/components/early-access';
 **Purpose:** Persistent reminder on dashboard
 
 **Features:**
+
 - Slim, non-intrusive banner at top of dashboard
 - Shows: "🚀 Early Access | Launches Feb 2026 | Export your work regularly"
 - "Export" button (wire up to export functionality)
@@ -66,16 +71,19 @@ import { EarlyAccessSignupWarning } from '@/components/early-access';
 - Blue gradient styling matching brand
 
 **Usage:**
-```tsx
-import { EarlyAccessBanner } from '@/components/early-access';
 
-<EarlyAccessBanner onExport={handleExportFunction} />
+```tsx
+import { EarlyAccessBanner } from "@/components/early-access";
+
+<EarlyAccessBanner onExport={handleExportFunction} />;
 ```
 
 **Props:**
+
 - `onExport?: () => void` - Callback when Export button clicked
 
 **Implementation:**
+
 - Integrated into dashboard page at the top
 - Currently shows toast message when export clicked
 - TODO: Wire up to actual export functionality when available
@@ -89,6 +97,7 @@ import { EarlyAccessBanner } from '@/components/early-access';
 **Purpose:** One-time welcome for new users
 
 **Features:**
+
 - Full-screen centered modal
 - Shows on first login only (uses `localStorage`)
 - Four key points with visual emphasis:
@@ -103,22 +112,25 @@ import { EarlyAccessBanner } from '@/components/early-access';
 - Beautiful gradient background with glow effects
 
 **Usage:**
+
 ```tsx
-import { EarlyAccessWelcomeModal } from '@/components/early-access';
+import { EarlyAccessWelcomeModal } from "@/components/early-access";
 
 <EarlyAccessWelcomeModal
   open={showModal}
   onClose={() => setShowModal(false)}
   onShowExport={handleShowExportFeature}
-/>
+/>;
 ```
 
 **Props:**
+
 - `open?: boolean` - Controlled open state (optional)
 - `onClose?: () => void` - Callback when modal closed
 - `onShowExport?: () => void` - Callback for "Show Me Export" button
 
 **Implementation:**
+
 - Integrated into dashboard page
 - Auto-shows for new users (created < 5 min ago)
 - Delays 3 seconds if onboarding modal shows first
@@ -131,15 +143,16 @@ import { EarlyAccessWelcomeModal } from '@/components/early-access';
 ### AuthDialog (`/components/auth-dialog.tsx`)
 
 **Changes:**
+
 ```tsx
 // Import added
-import { EarlyAccessSignupWarning } from '@/components/early-access/EarlyAccessSignupWarning';
+import { EarlyAccessSignupWarning } from "@/components/early-access/EarlyAccessSignupWarning";
 
 // Added in register TabsContent
 <TabsContent value="register">
   <EarlyAccessSignupWarning />
   <form>...</form>
-</TabsContent>
+</TabsContent>;
 ```
 
 **Result:** Warning now shows above signup form automatically
@@ -151,41 +164,52 @@ import { EarlyAccessSignupWarning } from '@/components/early-access/EarlyAccessS
 **Changes:**
 
 1. **Imports:**
+
 ```tsx
-import { EarlyAccessBanner, EarlyAccessWelcomeModal } from "@/components/early-access"
+import {
+  EarlyAccessBanner,
+  EarlyAccessWelcomeModal,
+} from "@/components/early-access";
 ```
 
 2. **State:**
+
 ```tsx
-const [showEarlyAccessWelcome, setShowEarlyAccessWelcome] = useState(false)
+const [showEarlyAccessWelcome, setShowEarlyAccessWelcome] = useState(false);
 ```
 
 3. **Logic:**
+
 ```tsx
 // Auto-show welcome modal for new users
 useEffect(() => {
   if (user && !authLoading && isNewUser()) {
-    const timer = setTimeout(() => {
-      setShowEarlyAccessWelcome(true)
-    }, hasCompletedWelcome ? 500 : 3000)
-    return () => clearTimeout(timer)
+    const timer = setTimeout(
+      () => {
+        setShowEarlyAccessWelcome(true);
+      },
+      hasCompletedWelcome ? 500 : 3000
+    );
+    return () => clearTimeout(timer);
   }
-}, [user, authLoading, hasCompletedWelcome])
+}, [user, authLoading, hasCompletedWelcome]);
 ```
 
 4. **Handlers:**
+
 ```tsx
 const handleExport = () => {
-  toast.info('To export your work, open a project and use File → Export')
-}
+  toast.info("To export your work, open a project and use File → Export");
+};
 
 const handleShowExport = () => {
-  setShowEarlyAccessWelcome(false)
-  handleExport()
-}
+  setShowEarlyAccessWelcome(false);
+  handleExport();
+};
 ```
 
 5. **Render:**
+
 ```tsx
 // At top of page (before header)
 <EarlyAccessBanner onExport={handleExport} />
@@ -203,9 +227,11 @@ const handleShowExport = () => {
 ## Storage Keys
 
 ### LocalStorage
+
 - `qontinui-early-access-welcome-shown` - Tracks if welcome modal has been shown
 
 ### SessionStorage
+
 - `qontinui-early-access-banner-dismissed` - Tracks if banner dismissed this session
 
 ---
@@ -213,17 +239,20 @@ const handleShowExport = () => {
 ## Design Principles
 
 ### Colors
+
 - **Primary:** Blue (#3B82F6) - Early access badge, positive messaging
 - **Success:** Green (#10B981) - "Works now", backward compatibility
 - **Warning:** Yellow (#EAB308) - Breaking changes (neutral, not scary)
 - **Danger:** Avoid red - we want positive framing
 
 ### Typography
+
 - **Headers:** Bold, 18-24px
 - **Body:** 14-16px, readable
 - **Icons:** 20-24px (visual anchors)
 
 ### Tone
+
 - ✅ "Early access" (positive, exclusive)
 - ✅ "Join as an early tester" (community)
 - ✅ "Help shape the product" (agency)
@@ -296,6 +325,7 @@ const handleShowExport = () => {
 When launching official version:
 
 1. Remove components from dashboard:
+
 ```tsx
 // Delete these lines
 <EarlyAccessBanner onExport={handleExport} />
@@ -303,6 +333,7 @@ When launching official version:
 ```
 
 2. Remove signup warning from AuthDialog:
+
 ```tsx
 // Delete this line
 <EarlyAccessSignupWarning />

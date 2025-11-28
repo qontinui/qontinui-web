@@ -28,7 +28,7 @@ export interface Dataset {
   export_metadata?: Record<string, unknown>;
 }
 
-export type DatasetSource = 'runner_export' | 'manual_upload' | 'merged';
+export type DatasetSource = "runner_export" | "manual_upload" | "merged";
 
 export interface DatasetImage {
   id: string;
@@ -87,25 +87,25 @@ export interface DatasetAnnotation {
 }
 
 export type AnnotationSource =
-  | 'user_click'
-  | 'template_matching'
-  | 'smart_click_analysis'
-  | 'manual';
+  | "user_click"
+  | "template_matching"
+  | "smart_click_analysis"
+  | "manual";
 
 export type ElementType =
-  | 'button'
-  | 'icon'
-  | 'text'
-  | 'image'
-  | 'checkbox'
-  | 'radio'
-  | 'input_field'
-  | 'link'
-  | 'menu_item'
-  | 'tab'
-  | 'unknown';
+  | "button"
+  | "icon"
+  | "text"
+  | "image"
+  | "checkbox"
+  | "radio"
+  | "input_field"
+  | "link"
+  | "menu_item"
+  | "tab"
+  | "unknown";
 
-export type ReviewStatus = 'pending' | 'approved' | 'rejected' | 'flagged';
+export type ReviewStatus = "pending" | "approved" | "rejected" | "flagged";
 
 export interface InferenceMetadata {
   strategy_used: string;
@@ -191,8 +191,8 @@ export interface DatasetFilters {
   page_size?: number;
 
   // Sorting
-  sort_by?: 'confidence' | 'created_at' | 'category_name' | 'review_status';
-  sort_order?: 'asc' | 'desc';
+  sort_by?: "confidence" | "created_at" | "category_name" | "review_status";
+  sort_order?: "asc" | "desc";
 }
 
 export interface PaginatedResponse<T> {
@@ -228,7 +228,7 @@ export interface DatasetExportRequest {
   include_images: boolean;
 }
 
-export type ExportFormat = 'coco' | 'yolo' | 'pascal_voc' | 'csv' | 'jsonl';
+export type ExportFormat = "coco" | "yolo" | "pascal_voc" | "csv" | "jsonl";
 
 export interface TrainValTestSplit {
   train_percent: number;
@@ -240,7 +240,7 @@ export interface TrainValTestSplit {
 export interface DatasetExportJob {
   id: string;
   dataset_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: "pending" | "processing" | "completed" | "failed";
   progress: number;
   format: ExportFormat;
   download_url?: string;
@@ -280,7 +280,7 @@ export interface DatasetViewerState {
   selectedImage: DatasetImage | null;
   selectedAnnotation: DatasetAnnotation | null;
   filters: DatasetFilters;
-  viewMode: 'grid' | 'list';
+  viewMode: "grid" | "list";
   showStatistics: boolean;
 }
 

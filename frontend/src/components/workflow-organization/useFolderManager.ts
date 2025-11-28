@@ -4,15 +4,15 @@
  * Custom hook for managing folder state and operations
  */
 
-import { useState, useCallback, useMemo } from 'react';
-import { WorkflowFolder } from './types';
+import { useState, useCallback, useMemo } from "react";
+import { WorkflowFolder } from "./types";
 import {
   createFolder,
   validateFolderName,
   wouldCreateCycle,
   reorderFolders,
   getDescendantIds,
-} from './folder-utils';
+} from "./folder-utils";
 
 export interface UseFolderManagerOptions {
   initialFolders?: WorkflowFolder[];
@@ -21,7 +21,10 @@ export interface UseFolderManagerOptions {
 
 export interface UseFolderManagerResult {
   folders: WorkflowFolder[];
-  createNewFolder: (name: string, parentId?: string | null) => WorkflowFolder | null;
+  createNewFolder: (
+    name: string,
+    parentId?: string | null
+  ) => WorkflowFolder | null;
   updateFolder: (id: string, updates: Partial<WorkflowFolder>) => void;
   deleteFolder: (id: string) => void;
   moveFolder: (folderId: string, newParentId: string | null) => void;
@@ -55,13 +58,14 @@ export function useFolderManager(
       // Validate name
       const validation = validateFolderName(name, folders, parentId);
       if (!validation.valid) {
-        console.error('Invalid folder name:', validation.error);
+        console.error("Invalid folder name:", validation.error);
         return null;
       }
 
       // Calculate order (append to end of siblings)
       const siblings = folders.filter((f) => f.parentId === parentId);
-      const maxOrder = siblings.length > 0 ? Math.max(...siblings.map((f) => f.order)) : -1;
+      const maxOrder =
+        siblings.length > 0 ? Math.max(...siblings.map((f) => f.order)) : -1;
 
       // Create folder
       const newFolder = createFolder(name, parentId, { order: maxOrder + 1 });
@@ -86,7 +90,7 @@ export function useFolderManager(
               id
             );
             if (!validation.valid) {
-              console.error('Invalid folder name:', validation.error);
+              console.error("Invalid folder name:", validation.error);
               return folder;
             }
           }
@@ -113,7 +117,9 @@ export function useFolderManager(
       const allIdsToDelete = [id, ...descendantIds];
 
       // Remove folder and all descendants
-      const updatedFolders = folders.filter((f) => !allIdsToDelete.includes(f.id));
+      const updatedFolders = folders.filter(
+        (f) => !allIdsToDelete.includes(f.id)
+      );
 
       notifyChange(updatedFolders);
     },
@@ -125,7 +131,7 @@ export function useFolderManager(
     (folderId: string, newParentId: string | null) => {
       // Check if move would create a cycle
       if (wouldCreateCycle(folderId, newParentId, folders)) {
-        console.error('Cannot move folder: would create a cycle');
+        console.error("Cannot move folder: would create a cycle");
         return;
       }
 
@@ -157,11 +163,15 @@ export function useFolderManager(
       }
 
       // Create duplicate
-      const duplicate = createFolder(duplicateName, folderToDuplicate.parentId, {
-        color: folderToDuplicate.color,
-        icon: folderToDuplicate.icon,
-        order: folderToDuplicate.order + 1,
-      });
+      const duplicate = createFolder(
+        duplicateName,
+        folderToDuplicate.parentId,
+        {
+          color: folderToDuplicate.color,
+          icon: folderToDuplicate.icon,
+          order: folderToDuplicate.order + 1,
+        }
+      );
 
       notifyChange([...folders, duplicate]);
     },

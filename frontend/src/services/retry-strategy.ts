@@ -90,8 +90,10 @@ export class RetryStrategy {
    * @returns RetryResult with wait time from Retry-After header
    */
   private handleRateLimitRetry(response: Response): RetryResult {
-    const retryAfterHeader = response.headers.get('Retry-After');
-    const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader) : 60;
+    const retryAfterHeader = response.headers.get("Retry-After");
+    const retryAfterSeconds = retryAfterHeader
+      ? parseInt(retryAfterHeader)
+      : 60;
     const waitMs = retryAfterSeconds * 1000;
 
     return {

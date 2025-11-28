@@ -8,10 +8,17 @@
  * - Optimization suggestions
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { FileText, Loader2, AlertTriangle, Lightbulb, RefreshCw, Copy } from 'lucide-react';
-import { getMCPClient } from '../../services/mcp-client';
-import type { Workflow } from '../../lib/action-schema/action-types';
+import React, { useState, useCallback, useEffect } from "react";
+import {
+  FileText,
+  Loader2,
+  AlertTriangle,
+  Lightbulb,
+  RefreshCw,
+  Copy,
+} from "lucide-react";
+import { getMCPClient } from "../../services/mcp-client";
+import type { Workflow } from "../../lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -61,8 +68,10 @@ export function WorkflowExplanation({
       const result = await mcpClient.explainWorkflow(workflow);
       setExplanation(result);
     } catch (err) {
-      console.error('Failed to generate explanation:', err);
-      setError(err instanceof Error ? err.message : 'Failed to generate explanation');
+      console.error("Failed to generate explanation:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to generate explanation"
+      );
     } finally {
       setLoading(false);
     }
@@ -80,20 +89,32 @@ ${explanation.summary}
 ${explanation.flowDescription}
 
 ## Step-by-Step Breakdown
-${explanation.steps.map((step, i) => `
+${explanation.steps
+  .map(
+    (step, i) => `
 ${i + 1}. ${step.explanation}
    Purpose: ${step.purpose}
-`).join('\n')}
+`
+  )
+  .join("\n")}
 
-${explanation.potentialIssues && explanation.potentialIssues.length > 0 ? `
+${
+  explanation.potentialIssues && explanation.potentialIssues.length > 0
+    ? `
 ## Potential Issues
-${explanation.potentialIssues.map(issue => `- ${issue}`).join('\n')}
-` : ''}
+${explanation.potentialIssues.map((issue) => `- ${issue}`).join("\n")}
+`
+    : ""
+}
 
-${explanation.recommendations && explanation.recommendations.length > 0 ? `
+${
+  explanation.recommendations && explanation.recommendations.length > 0
+    ? `
 ## Recommendations
-${explanation.recommendations.map(rec => `- ${rec}`).join('\n')}
-` : ''}
+${explanation.recommendations.map((rec) => `- ${rec}`).join("\n")}
+`
+    : ""
+}
     `.trim();
 
     navigator.clipboard.writeText(text);
@@ -116,7 +137,7 @@ ${explanation.recommendations.map(rec => `- ${rec}`).join('\n')}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors disabled:opacity-50"
             title="Refresh"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
           {explanation && (
             <button
@@ -184,7 +205,9 @@ ${explanation.recommendations.map(rec => `- ${rec}`).join('\n')}
               </h4>
               <div className="space-y-3">
                 {explanation.steps.map((step, index) => {
-                  const action = workflow.actions.find(a => a.id === step.actionId);
+                  const action = workflow.actions.find(
+                    (a) => a.id === step.actionId
+                  );
 
                   return (
                     <div
@@ -219,48 +242,50 @@ ${explanation.recommendations.map(rec => `- ${rec}`).join('\n')}
             </div>
 
             {/* Potential Issues */}
-            {explanation.potentialIssues && explanation.potentialIssues.length > 0 && (
-              <div>
-                <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                  Potential Issues
-                </h4>
-                <div className="space-y-2">
-                  {explanation.potentialIssues.map((issue, index) => (
-                    <div
-                      key={index}
-                      className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg"
-                    >
-                      <p className="text-sm text-yellow-900 dark:text-yellow-200">
-                        {issue}
-                      </p>
-                    </div>
-                  ))}
+            {explanation.potentialIssues &&
+              explanation.potentialIssues.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-yellow-500" />
+                    Potential Issues
+                  </h4>
+                  <div className="space-y-2">
+                    {explanation.potentialIssues.map((issue, index) => (
+                      <div
+                        key={index}
+                        className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg"
+                      >
+                        <p className="text-sm text-yellow-900 dark:text-yellow-200">
+                          {issue}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {/* Recommendations */}
-            {explanation.recommendations && explanation.recommendations.length > 0 && (
-              <div>
-                <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                  <Lightbulb className="w-4 h-4 text-green-500" />
-                  Recommendations
-                </h4>
-                <div className="space-y-2">
-                  {explanation.recommendations.map((rec, index) => (
-                    <div
-                      key={index}
-                      className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg"
-                    >
-                      <p className="text-sm text-green-900 dark:text-green-200">
-                        {rec}
-                      </p>
-                    </div>
-                  ))}
+            {explanation.recommendations &&
+              explanation.recommendations.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                    <Lightbulb className="w-4 h-4 text-green-500" />
+                    Recommendations
+                  </h4>
+                  <div className="space-y-2">
+                    {explanation.recommendations.map((rec, index) => (
+                      <div
+                        key={index}
+                        className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg"
+                      >
+                        <p className="text-sm text-green-900 dark:text-green-200">
+                          {rec}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </>
         ) : null}
       </div>

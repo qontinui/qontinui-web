@@ -2,7 +2,12 @@
  * Shared types for Canvas Store slices
  */
 
-import type { Workflow, Action, Connection, Connections } from '../../lib/action-schema/action-types';
+import type {
+  Workflow,
+  Action,
+  Connection,
+  Connections,
+} from "../../lib/action-schema/action-types";
 
 // ============================================================================
 // Core Types
@@ -17,8 +22,13 @@ export interface Viewport {
 export interface ValidationError {
   id: string;
   actionId?: string;
-  type: 'connection' | 'cycle' | 'orphaned' | 'missing_connection' | 'invalid_config';
-  severity: 'error' | 'warning';
+  type:
+    | "connection"
+    | "cycle"
+    | "orphaned"
+    | "missing_connection"
+    | "invalid_config";
+  severity: "error" | "warning";
   message: string;
   details?: any;
 }
@@ -53,7 +63,11 @@ export interface ActionState {
 
 export interface ConnectionState {
   isConnecting: boolean;
-  connectingFrom: { actionId: string; outputType: string; outputIndex: number } | null;
+  connectingFrom: {
+    actionId: string;
+    outputType: string;
+    outputIndex: number;
+  } | null;
 }
 
 export interface SelectionState {
@@ -102,9 +116,14 @@ export interface ActionActions {
   updateAction: (actionId: string, updates: Partial<Action>) => void;
   deleteAction: (actionId: string) => void;
   deleteActions: (actionIds: string[]) => void;
-  duplicateAction: (actionId: string, offset?: { x: number; y: number }) => void;
+  duplicateAction: (
+    actionId: string,
+    offset?: { x: number; y: number }
+  ) => void;
   moveAction: (actionId: string, position: [number, number]) => void;
-  moveActions: (updates: { actionId: string; position: [number, number] }[]) => void;
+  moveActions: (
+    updates: { actionId: string; position: [number, number] }[]
+  ) => void;
   getActionById: (actionId: string) => Action | undefined;
   findActionsByType: (type: string) => Action[];
 }
@@ -112,7 +131,7 @@ export interface ActionActions {
 export interface ConnectionActions {
   addConnection: (
     sourceId: string,
-    outputType: 'main' | 'error' | 'success' | 'parallel',
+    outputType: "main" | "error" | "success" | "parallel",
     outputIndex: number,
     targetId: string,
     targetIndex: number
@@ -124,7 +143,11 @@ export interface ConnectionActions {
     targetId: string
   ) => void;
   deleteConnectionsForAction: (actionId: string) => void;
-  startConnecting: (actionId: string, outputType: string, outputIndex: number) => void;
+  startConnecting: (
+    actionId: string,
+    outputType: string,
+    outputIndex: number
+  ) => void;
   finishConnecting: (targetId: string, targetIndex: number) => void;
   cancelConnecting: () => void;
   getConnectionsForAction: (actionId: string) => Connection[];

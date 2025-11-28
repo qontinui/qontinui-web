@@ -6,8 +6,8 @@
  * when allowInteraction is false.
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export interface SpotlightOverlayProps {
   /** Target element to spotlight (CSS selector) */
@@ -43,9 +43,11 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
   overlayOpacity = 0.75,
   isVisible = true,
   onClick,
-  className = '',
+  className = "",
 }) => {
-  const [spotlightRect, setSpotlightRect] = useState<SpotlightRect | null>(null);
+  const [spotlightRect, setSpotlightRect] = useState<SpotlightRect | null>(
+    null
+  );
 
   const updateSpotlight = useCallback(() => {
     if (!targetSelector) {
@@ -81,8 +83,8 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
       updateSpotlight();
     };
 
-    window.addEventListener('scroll', handleUpdate, true);
-    window.addEventListener('resize', handleUpdate);
+    window.addEventListener("scroll", handleUpdate, true);
+    window.addEventListener("resize", handleUpdate);
 
     // Use ResizeObserver to track target element size changes
     const element = document.querySelector(targetSelector);
@@ -94,8 +96,8 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
     }
 
     return () => {
-      window.removeEventListener('scroll', handleUpdate, true);
-      window.removeEventListener('resize', handleUpdate);
+      window.removeEventListener("scroll", handleUpdate, true);
+      window.removeEventListener("resize", handleUpdate);
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
@@ -112,9 +114,9 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
     const originalZIndex = element.style.zIndex;
     const originalPosition = element.style.position;
 
-    element.style.zIndex = '10001';
-    if (originalPosition === '' || originalPosition === 'static') {
-      element.style.position = 'relative';
+    element.style.zIndex = "10001";
+    if (originalPosition === "" || originalPosition === "static") {
+      element.style.position = "relative";
     }
 
     return () => {
@@ -138,7 +140,7 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
         exit={{ opacity: 0 }}
         transition={{ duration: 0.3 }}
         className={`fixed inset-0 z-[10000] ${className}`}
-        style={{ pointerEvents: allowInteraction ? 'none' : 'auto' }}
+        style={{ pointerEvents: allowInteraction ? "none" : "auto" }}
         onClick={onClick}
         role="presentation"
         aria-hidden="true"
@@ -147,7 +149,7 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
           width="100%"
           height="100%"
           className="absolute inset-0"
-          style={{ pointerEvents: 'none' }}
+          style={{ pointerEvents: "none" }}
         >
           <defs>
             <mask id={maskId}>
@@ -169,7 +171,7 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
                     width: spotlightRect.width,
                     height: spotlightRect.height,
                   }}
-                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                  transition={{ duration: 0.3, ease: "easeInOut" }}
                   rx={borderRadius}
                   ry={borderRadius}
                   fill="black"
@@ -204,7 +206,7 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
                 width: spotlightRect.width,
                 height: spotlightRect.height,
               }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
               rx={borderRadius}
               ry={borderRadius}
               fill="none"
@@ -233,7 +235,7 @@ export const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
             transition={{
               duration: 2,
               repeat: Infinity,
-              ease: 'easeInOut',
+              ease: "easeInOut",
             }}
           />
         )}

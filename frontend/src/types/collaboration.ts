@@ -30,7 +30,7 @@ export interface OrganizationUpdate {
   description?: string;
 }
 
-export type MemberRole = 'owner' | 'admin' | 'member' | 'viewer';
+export type MemberRole = "owner" | "admin" | "member" | "viewer";
 
 export interface TeamMember {
   id: string;
@@ -52,7 +52,7 @@ export interface Invitation {
   invited_at: string;
   expires_at: string;
   token: string;
-  status: 'pending' | 'accepted' | 'expired' | 'revoked';
+  status: "pending" | "accepted" | "expired" | "revoked";
 }
 
 export interface InvitationCreate {
@@ -64,7 +64,13 @@ export interface InvitationCreate {
 // Permission Types
 // ============================================================================
 
-export type PermissionLevel = 'none' | 'view' | 'comment' | 'edit' | 'admin' | 'owner';
+export type PermissionLevel =
+  | "none"
+  | "view"
+  | "comment"
+  | "edit"
+  | "admin"
+  | "owner";
 
 export interface Collaborator {
   id: string;
@@ -84,19 +90,24 @@ export interface ProjectShare {
 }
 
 export type ProjectAction =
-  | 'view'
-  | 'comment'
-  | 'edit'
-  | 'delete'
-  | 'share'
-  | 'manage_permissions'
-  | 'export';
+  | "view"
+  | "comment"
+  | "edit"
+  | "delete"
+  | "share"
+  | "manage_permissions"
+  | "export";
 
 // ============================================================================
 // Lock Types
 // ============================================================================
 
-export type ResourceType = 'workflow' | 'action' | 'state' | 'transition' | 'project';
+export type ResourceType =
+  | "workflow"
+  | "action"
+  | "state"
+  | "transition"
+  | "project";
 
 export interface Lock {
   id: string;
@@ -164,16 +175,16 @@ export interface CommentUpdate {
 // ============================================================================
 
 export type ActivityActionType =
-  | 'create'
-  | 'update'
-  | 'delete'
-  | 'share'
-  | 'comment'
-  | 'lock'
-  | 'unlock'
-  | 'execute'
-  | 'export'
-  | 'import';
+  | "create"
+  | "update"
+  | "delete"
+  | "share"
+  | "comment"
+  | "lock"
+  | "unlock"
+  | "execute"
+  | "export"
+  | "import";
 
 export interface Activity {
   id: string;
@@ -213,7 +224,7 @@ export interface ActivityFeedOptions {
 // Presence Types
 // ============================================================================
 
-export type PresenceStatus = 'active' | 'idle' | 'away';
+export type PresenceStatus = "active" | "idle" | "away";
 
 export interface UserPresence {
   user_id: string;
@@ -237,17 +248,17 @@ export interface CursorPosition {
 // ============================================================================
 
 export type WebSocketMessageType =
-  | 'presence_update'
-  | 'cursor_move'
-  | 'lock_acquired'
-  | 'lock_released'
-  | 'resource_update'
-  | 'comment_added'
-  | 'comment_updated'
-  | 'comment_deleted'
-  | 'activity_update'
-  | 'ping'
-  | 'pong';
+  | "presence_update"
+  | "cursor_move"
+  | "lock_acquired"
+  | "lock_released"
+  | "resource_update"
+  | "comment_added"
+  | "comment_updated"
+  | "comment_deleted"
+  | "activity_update"
+  | "ping"
+  | "pong";
 
 export interface WebSocketMessage {
   type: WebSocketMessageType;
@@ -273,7 +284,7 @@ export interface CursorMoveMessage {
 
 export interface LockUpdateMessage {
   lock: Lock;
-  action: 'acquired' | 'released' | 'expired';
+  action: "acquired" | "released" | "expired";
 }
 
 export interface ResourceUpdateMessage {

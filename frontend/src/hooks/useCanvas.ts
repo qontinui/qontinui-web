@@ -10,10 +10,14 @@
  * - useCanvasViewport() - Viewport management
  */
 
-import { useCallback, useMemo } from 'react';
-import { useCanvasStore } from '../stores/canvas-store';
-import type { Action, Workflow, Connection } from '../lib/action-schema/action-types';
-import type { Viewport, ValidationResult } from '../stores/canvas-store';
+import { useCallback, useMemo } from "react";
+import { useCanvasStore } from "../stores/canvas-store";
+import type {
+  Action,
+  Workflow,
+  Connection,
+} from "../lib/action-schema/action-types";
+import type { Viewport, ValidationResult } from "../stores/canvas-store";
 
 // ============================================================================
 // Main Canvas Hook
@@ -47,17 +51,17 @@ export function useCanvas() {
  * Hook for action CRUD operations
  */
 export function useCanvasActions() {
-  const addAction = useCanvasStore(state => state.addAction);
-  const updateAction = useCanvasStore(state => state.updateAction);
-  const deleteAction = useCanvasStore(state => state.deleteAction);
-  const deleteActions = useCanvasStore(state => state.deleteActions);
-  const duplicateAction = useCanvasStore(state => state.duplicateAction);
-  const moveAction = useCanvasStore(state => state.moveAction);
-  const moveActions = useCanvasStore(state => state.moveActions);
-  const getActionById = useCanvasStore(state => state.getActionById);
-  const findActionsByType = useCanvasStore(state => state.findActionsByType);
+  const addAction = useCanvasStore((state) => state.addAction);
+  const updateAction = useCanvasStore((state) => state.updateAction);
+  const deleteAction = useCanvasStore((state) => state.deleteAction);
+  const deleteActions = useCanvasStore((state) => state.deleteActions);
+  const duplicateAction = useCanvasStore((state) => state.duplicateAction);
+  const moveAction = useCanvasStore((state) => state.moveAction);
+  const moveActions = useCanvasStore((state) => state.moveActions);
+  const getActionById = useCanvasStore((state) => state.getActionById);
+  const findActionsByType = useCanvasStore((state) => state.findActionsByType);
 
-  const workflow = useCanvasStore(state => state.workflow);
+  const workflow = useCanvasStore((state) => state.workflow);
   const actions = useMemo(() => workflow?.actions || [], [workflow]);
 
   return {
@@ -85,14 +89,14 @@ export function useCanvasActions() {
  * Hook for selection state and operations
  */
 export function useCanvasSelection() {
-  const selectedNodes = useCanvasStore(state => state.selectedNodes);
-  const selectedEdges = useCanvasStore(state => state.selectedEdges);
-  const selectNode = useCanvasStore(state => state.selectNode);
-  const selectNodes = useCanvasStore(state => state.selectNodes);
-  const selectEdge = useCanvasStore(state => state.selectEdge);
-  const clearSelection = useCanvasStore(state => state.clearSelection);
-  const selectAll = useCanvasStore(state => state.selectAll);
-  const invertSelection = useCanvasStore(state => state.invertSelection);
+  const selectedNodes = useCanvasStore((state) => state.selectedNodes);
+  const selectedEdges = useCanvasStore((state) => state.selectedEdges);
+  const selectNode = useCanvasStore((state) => state.selectNode);
+  const selectNodes = useCanvasStore((state) => state.selectNodes);
+  const selectEdge = useCanvasStore((state) => state.selectEdge);
+  const clearSelection = useCanvasStore((state) => state.clearSelection);
+  const selectAll = useCanvasStore((state) => state.selectAll);
+  const invertSelection = useCanvasStore((state) => state.invertSelection);
 
   const hasSelection = useMemo(
     () => selectedNodes.length > 0 || selectedEdges.length > 0,
@@ -133,15 +137,15 @@ export function useCanvasSelection() {
  * Hook for undo/redo operations
  */
 export function useCanvasHistory() {
-  const undo = useCanvasStore(state => state.undo);
-  const redo = useCanvasStore(state => state.redo);
-  const canUndo = useCanvasStore(state => state.canUndo);
-  const canRedo = useCanvasStore(state => state.canRedo);
-  const recordHistory = useCanvasStore(state => state.recordHistory);
-  const clearHistory = useCanvasStore(state => state.clearHistory);
+  const undo = useCanvasStore((state) => state.undo);
+  const redo = useCanvasStore((state) => state.redo);
+  const canUndo = useCanvasStore((state) => state.canUndo);
+  const canRedo = useCanvasStore((state) => state.canRedo);
+  const recordHistory = useCanvasStore((state) => state.recordHistory);
+  const clearHistory = useCanvasStore((state) => state.clearHistory);
 
-  const history = useCanvasStore(state => state.history);
-  const historyIndex = useCanvasStore(state => state.historyIndex);
+  const history = useCanvasStore((state) => state.history);
+  const historyIndex = useCanvasStore((state) => state.historyIndex);
 
   const historyInfo = useMemo(
     () => ({
@@ -173,13 +177,16 @@ export function useCanvasHistory() {
  * Hook for clipboard operations
  */
 export function useCanvasClipboard() {
-  const copy = useCanvasStore(state => state.copy);
-  const paste = useCanvasStore(state => state.paste);
-  const cut = useCanvasStore(state => state.cut);
-  const duplicate = useCanvasStore(state => state.duplicate);
-  const clipboardNodes = useCanvasStore(state => state.clipboardNodes);
+  const copy = useCanvasStore((state) => state.copy);
+  const paste = useCanvasStore((state) => state.paste);
+  const cut = useCanvasStore((state) => state.cut);
+  const duplicate = useCanvasStore((state) => state.duplicate);
+  const clipboardNodes = useCanvasStore((state) => state.clipboardNodes);
 
-  const hasClipboard = useMemo(() => clipboardNodes.length > 0, [clipboardNodes]);
+  const hasClipboard = useMemo(
+    () => clipboardNodes.length > 0,
+    [clipboardNodes]
+  );
 
   return {
     // State
@@ -202,12 +209,12 @@ export function useCanvasClipboard() {
  * Hook for viewport management
  */
 export function useCanvasViewport() {
-  const viewport = useCanvasStore(state => state.viewport);
-  const setViewport = useCanvasStore(state => state.setViewport);
-  const fitView = useCanvasStore(state => state.fitView);
-  const zoomIn = useCanvasStore(state => state.zoomIn);
-  const zoomOut = useCanvasStore(state => state.zoomOut);
-  const resetZoom = useCanvasStore(state => state.resetZoom);
+  const viewport = useCanvasStore((state) => state.viewport);
+  const setViewport = useCanvasStore((state) => state.setViewport);
+  const fitView = useCanvasStore((state) => state.fitView);
+  const zoomIn = useCanvasStore((state) => state.zoomIn);
+  const zoomOut = useCanvasStore((state) => state.zoomOut);
+  const resetZoom = useCanvasStore((state) => state.resetZoom);
 
   return {
     // State
@@ -233,18 +240,22 @@ export function useCanvasViewport() {
  * Hook for connection operations
  */
 export function useCanvasConnections() {
-  const addConnection = useCanvasStore(state => state.addConnection);
-  const deleteConnection = useCanvasStore(state => state.deleteConnection);
-  const deleteConnectionsForAction = useCanvasStore(state => state.deleteConnectionsForAction);
-  const startConnecting = useCanvasStore(state => state.startConnecting);
-  const finishConnecting = useCanvasStore(state => state.finishConnecting);
-  const cancelConnecting = useCanvasStore(state => state.cancelConnecting);
-  const getConnectionsForAction = useCanvasStore(state => state.getConnectionsForAction);
+  const addConnection = useCanvasStore((state) => state.addConnection);
+  const deleteConnection = useCanvasStore((state) => state.deleteConnection);
+  const deleteConnectionsForAction = useCanvasStore(
+    (state) => state.deleteConnectionsForAction
+  );
+  const startConnecting = useCanvasStore((state) => state.startConnecting);
+  const finishConnecting = useCanvasStore((state) => state.finishConnecting);
+  const cancelConnecting = useCanvasStore((state) => state.cancelConnecting);
+  const getConnectionsForAction = useCanvasStore(
+    (state) => state.getConnectionsForAction
+  );
 
-  const isConnecting = useCanvasStore(state => state.isConnecting);
-  const connectingFrom = useCanvasStore(state => state.connectingFrom);
+  const isConnecting = useCanvasStore((state) => state.isConnecting);
+  const connectingFrom = useCanvasStore((state) => state.connectingFrom);
 
-  const workflow = useCanvasStore(state => state.workflow);
+  const workflow = useCanvasStore((state) => state.workflow);
   const connections = useMemo(() => workflow?.connections || {}, [workflow]);
 
   return {
@@ -272,10 +283,10 @@ export function useCanvasConnections() {
  * Hook for workflow validation
  */
 export function useCanvasValidation() {
-  const validateWorkflow = useCanvasStore(state => state.validateWorkflow);
-  const clearValidation = useCanvasStore(state => state.clearValidation);
-  const validationResult = useCanvasStore(state => state.validationResult);
-  const isValidating = useCanvasStore(state => state.isValidating);
+  const validateWorkflow = useCanvasStore((state) => state.validateWorkflow);
+  const clearValidation = useCanvasStore((state) => state.clearValidation);
+  const validationResult = useCanvasStore((state) => state.validationResult);
+  const isValidating = useCanvasStore((state) => state.isValidating);
 
   const validate = useCallback(() => {
     return validateWorkflow();
@@ -321,15 +332,15 @@ export function useCanvasValidation() {
  * Hook for UI settings
  */
 export function useCanvasUI() {
-  const showMinimap = useCanvasStore(state => state.showMinimap);
-  const showGrid = useCanvasStore(state => state.showGrid);
-  const snapToGrid = useCanvasStore(state => state.snapToGrid);
-  const gridSize = useCanvasStore(state => state.gridSize);
+  const showMinimap = useCanvasStore((state) => state.showMinimap);
+  const showGrid = useCanvasStore((state) => state.showGrid);
+  const snapToGrid = useCanvasStore((state) => state.snapToGrid);
+  const gridSize = useCanvasStore((state) => state.gridSize);
 
-  const toggleMinimap = useCanvasStore(state => state.toggleMinimap);
-  const toggleGrid = useCanvasStore(state => state.toggleGrid);
-  const toggleSnapToGrid = useCanvasStore(state => state.toggleSnapToGrid);
-  const setGridSize = useCanvasStore(state => state.setGridSize);
+  const toggleMinimap = useCanvasStore((state) => state.toggleMinimap);
+  const toggleGrid = useCanvasStore((state) => state.toggleGrid);
+  const toggleSnapToGrid = useCanvasStore((state) => state.toggleSnapToGrid);
+  const setGridSize = useCanvasStore((state) => state.setGridSize);
 
   return {
     // State
@@ -354,11 +365,11 @@ export function useCanvasUI() {
  * Hook for editing state
  */
 export function useCanvasEditingState() {
-  const isDragging = useCanvasStore(state => state.isDragging);
-  const isConnecting = useCanvasStore(state => state.isConnecting);
-  const isPanning = useCanvasStore(state => state.isPanning);
-  const setDragging = useCanvasStore(state => state.setDragging);
-  const setPanning = useCanvasStore(state => state.setPanning);
+  const isDragging = useCanvasStore((state) => state.isDragging);
+  const isConnecting = useCanvasStore((state) => state.isConnecting);
+  const isPanning = useCanvasStore((state) => state.isPanning);
+  const setDragging = useCanvasStore((state) => state.setDragging);
+  const setPanning = useCanvasStore((state) => state.setPanning);
 
   const isEditing = useMemo(
     () => isDragging || isConnecting || isPanning,
@@ -386,11 +397,11 @@ export function useCanvasEditingState() {
  * Hook for workflow operations
  */
 export function useCanvasWorkflow() {
-  const workflow = useCanvasStore(state => state.workflow);
-  const isDirty = useCanvasStore(state => state.isDirty);
-  const setWorkflow = useCanvasStore(state => state.setWorkflow);
-  const clearWorkflow = useCanvasStore(state => state.clearWorkflow);
-  const saveWorkflow = useCanvasStore(state => state.saveWorkflow);
+  const workflow = useCanvasStore((state) => state.workflow);
+  const isDirty = useCanvasStore((state) => state.isDirty);
+  const setWorkflow = useCanvasStore((state) => state.setWorkflow);
+  const clearWorkflow = useCanvasStore((state) => state.clearWorkflow);
+  const saveWorkflow = useCanvasStore((state) => state.saveWorkflow);
 
   const workflowInfo = useMemo(() => {
     if (!workflow) {
@@ -398,19 +409,25 @@ export function useCanvasWorkflow() {
         hasWorkflow: false,
         actionCount: 0,
         connectionCount: 0,
-        name: '',
-        id: '',
+        name: "",
+        id: "",
       };
     }
 
-    const connectionCount = Object.values(workflow.connections).reduce((count, sourceConn) => {
-      return (
-        count +
-        Object.values(sourceConn).reduce((typeCount, outputs) => {
-          return typeCount + (outputs?.reduce((sum, arr) => sum + arr.length, 0) || 0);
-        }, 0)
-      );
-    }, 0);
+    const connectionCount = Object.values(workflow.connections).reduce(
+      (count, sourceConn) => {
+        return (
+          count +
+          Object.values(sourceConn).reduce((typeCount, outputs) => {
+            return (
+              typeCount +
+              (outputs?.reduce((sum, arr) => sum + arr.length, 0) || 0)
+            );
+          }, 0)
+        );
+      },
+      0
+    );
 
     return {
       hasWorkflow: true,

@@ -10,27 +10,27 @@
  * - Track save status
  */
 
-import { useEffect, useCallback, useRef } from 'react'
-import { useAutomation } from '@/contexts/automation-context'
-import { projectService } from '@/services/service-factory'
-import { projectLogger } from '@/lib/project-logger'
+import { useEffect, useCallback, useRef } from "react";
+import { useAutomation } from "@/contexts/automation-context";
+import { projectService } from "@/services/service-factory";
+import { projectLogger } from "@/lib/project-logger";
 
 interface UseProjectAutoSaveOptions {
   /** Project ID for backend sync (null if no backend project) */
-  projectId: string | null
+  projectId: string | null;
   /** Interval for local saves in ms (default: 2000) */
-  localSaveInterval?: number
+  localSaveInterval?: number;
   /** Interval for backend saves in ms (default: 10000) */
-  backendSaveInterval?: number
+  backendSaveInterval?: number;
   /** Whether auto-save is enabled */
-  enabled?: boolean
+  enabled?: boolean;
 }
 
 interface UseProjectAutoSaveResult {
   /** Manually trigger a save to backend */
-  saveToBackend: () => Promise<void>
+  saveToBackend: () => Promise<void>;
   /** Whether a save is in progress */
-  isSaving: boolean
+  isSaving: boolean;
 }
 
 export function useProjectAutoSave({
@@ -46,64 +46,73 @@ export function useProjectAutoSave({
     states,
     transitions,
     images,
-  } = useAutomation()
+  } = useAutomation();
 
-  const isSavingRef = useRef(false)
+  const isSavingRef = useRef(false);
 
   // Save to backend
   const saveToBackend = useCallback(async () => {
     if (!projectId || isSavingRef.current) {
-      return
+      return;
     }
 
-    isSavingRef.current = true
+    isSavingRef.current = true;
 
     try {
-      const config = getConfiguration()
-      projectLogger.debug('AutoSave', 'Saving to backend', {
+      const config = getConfiguration();
+      projectLogger.debug("AutoSave", "Saving to backend", {
         projectId,
         workflowCount: config.workflows?.length ?? 0,
-      })
+      });
 
       await projectService.updateProject(projectId, {
         configuration: config,
-      })
+      });
 
-      projectLogger.debug('AutoSave', 'Backend save complete', { projectId })
+      projectLogger.debug("AutoSave", "Backend save complete", { projectId });
     } catch (error) {
-      projectLogger.error('AutoSave', 'Backend save failed', {
+      projectLogger.error("AutoSave", "Backend save failed", {
         projectId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      })
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
     } finally {
-      isSavingRef.current = false
+      isSavingRef.current = false;
     }
-  }, [projectId, getConfiguration])
+  }, [projectId, getConfiguration]);
 
   // Auto-save to localStorage
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) return;
 
     const interval = setInterval(() => {
-      triggerSave()
-    }, localSaveInterval)
+      triggerSave();
+    }, localSaveInterval);
 
-    return () => clearInterval(interval)
-  }, [triggerSave, localSaveInterval, enabled])
+    return () => clearInterval(interval);
+  }, [triggerSave, localSaveInterval, enabled]);
 
   // Auto-save to backend
   useEffect(() => {
-    if (!enabled || !projectId) return
+    if (!enabled || !projectId) return;
 
     const interval = setInterval(() => {
-      saveToBackend()
-    }, backendSaveInterval)
+      saveToBackend();
+    }, backendSaveInterval);
 
-    return () => clearInterval(interval)
-  }, [projectId, saveToBackend, backendSaveInterval, enabled, workflows, states, transitions, images])
+    return () => clearInterval(interval);
+  }, [
+    projectId,
+    saveToBackend,
+    backendSaveInterval,
+    enabled,
+    workflows,
+    states,
+    transitions,
+    images,
+  ]);
 
   return {
     saveToBackend,
     isSaving: isSavingRef.current,
-  }
+  };
 }

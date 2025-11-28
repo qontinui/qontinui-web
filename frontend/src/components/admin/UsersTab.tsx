@@ -1,106 +1,142 @@
-"use client"
+"use client";
 
-import { useEffect, useState, useMemo } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Search, Filter, ChevronRight, Mail, Calendar, Activity, FolderOpen, Trash2 } from "lucide-react"
-import { useAdminUsers, type AdminUserData } from "@/hooks/use-admin"
-import { toast } from "sonner"
-import { ApiConfig } from "@/services/api-config"
-import { httpClient } from "@/services/service-factory"
+import { useEffect, useState, useMemo } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import {
+  Search,
+  Filter,
+  ChevronRight,
+  Mail,
+  Calendar,
+  Activity,
+  FolderOpen,
+  Trash2,
+} from "lucide-react";
+import { useAdminUsers, type AdminUserData } from "@/hooks/use-admin";
+import { toast } from "sonner";
+import { ApiConfig } from "@/services/api-config";
+import { httpClient } from "@/services/service-factory";
 
 export default function UsersTab() {
-  const { data: users = [], isLoading: loading, error, refetch } = useAdminUsers({ limit: 1000 })
-  const [searchTerm, setSearchTerm] = useState("")
-  const [tierFilter, setTierFilter] = useState("all")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [selectedUser, setSelectedUser] = useState<AdminUserData | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+  const {
+    data: users = [],
+    isLoading: loading,
+    error,
+    refetch,
+  } = useAdminUsers({ limit: 1000 });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [tierFilter, setTierFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedUser, setSelectedUser] = useState<AdminUserData | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDeleteUser = async (userId: string, username: string) => {
-    if (!confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
-      return
+    if (
+      !confirm(
+        `Are you sure you want to delete user "${username}"? This action cannot be undone.`
+      )
+    ) {
+      return;
     }
 
-    setIsDeleting(true)
+    setIsDeleting(true);
     try {
-      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/${userId}`
+      const url = `${ApiConfig.API_BASE_URL}/api/v1/users/${userId}`;
 
       const response = await httpClient.fetch(url, {
-        method: 'DELETE',
-      })
+        method: "DELETE",
+      });
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => 'No error text')
-        console.error('[UsersTab] Delete failed:', {
+        const errorText = await response.text().catch(() => "No error text");
+        console.error("[UsersTab] Delete failed:", {
           status: response.status,
           statusText: response.statusText,
           errorText,
-        })
-        throw new Error(`Failed to delete user: ${response.status} ${response.statusText}`)
+        });
+        throw new Error(
+          `Failed to delete user: ${response.status} ${response.statusText}`
+        );
       }
 
-      toast.success(`User "${username}" deleted successfully`)
-      setSelectedUser(null)
-      refetch() // Refresh the users list
+      toast.success(`User "${username}" deleted successfully`);
+      setSelectedUser(null);
+      refetch(); // Refresh the users list
     } catch (error) {
-      console.error('[UsersTab] Error deleting user:', error)
-      toast.error('Failed to delete user. Please try again.')
+      console.error("[UsersTab] Error deleting user:", error);
+      toast.error("Failed to delete user. Please try again.");
     } finally {
-      setIsDeleting(false)
+      setIsDeleting(false);
     }
-  }
+  };
 
   const filteredUsers = useMemo(() => {
-    let filtered = [...users]
+    let filtered = [...users];
 
     // Search filter
     if (searchTerm) {
-      const term = searchTerm.toLowerCase()
+      const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
-        user =>
+        (user) =>
           user.email.toLowerCase().includes(term) ||
           user.username.toLowerCase().includes(term) ||
           user.id.toLowerCase().includes(term) || // UUID is already a string
           (user.full_name && user.full_name.toLowerCase().includes(term))
-      )
+      );
     }
 
     // Tier filter
     if (tierFilter !== "all") {
-      filtered = filtered.filter(user => user.subscription_tier === tierFilter)
+      filtered = filtered.filter(
+        (user) => user.subscription_tier === tierFilter
+      );
     }
 
     // Status filter
     if (statusFilter === "active") {
-      filtered = filtered.filter(user => user.is_active)
+      filtered = filtered.filter((user) => user.is_active);
     } else if (statusFilter === "inactive") {
-      filtered = filtered.filter(user => !user.is_active)
+      filtered = filtered.filter((user) => !user.is_active);
     } else if (statusFilter === "verified") {
-      filtered = filtered.filter(user => user.email_verified)
+      filtered = filtered.filter((user) => user.email_verified);
     } else if (statusFilter === "unverified") {
-      filtered = filtered.filter(user => !user.email_verified)
+      filtered = filtered.filter((user) => !user.email_verified);
     }
 
-    return filtered
-  }, [searchTerm, tierFilter, statusFilter, users])
+    return filtered;
+  }, [searchTerm, tierFilter, statusFilter, users]);
 
   const getTierColor = (tier: string) => {
     switch (tier) {
       case "pro":
-        return "bg-purple-500/10 text-purple-500 border-purple-500/20"
+        return "bg-purple-500/10 text-purple-500 border-purple-500/20";
       case "premium":
-        return "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+        return "bg-yellow-500/10 text-yellow-500 border-yellow-500/20";
       default:
-        return "bg-gray-500/10 text-gray-500 border-gray-500/20"
+        return "bg-gray-500/10 text-gray-500 border-gray-500/20";
     }
-  }
+  };
 
   if (loading) {
-    return <div className="text-center text-muted-foreground">Loading users...</div>
+    return (
+      <div className="text-center text-muted-foreground">Loading users...</div>
+    );
   }
 
   if (error) {
@@ -109,7 +145,7 @@ export default function UsersTab() {
         <div>Error loading users</div>
         <div className="text-sm text-muted-foreground">{error.message}</div>
       </div>
-    )
+    );
   }
 
   return (
@@ -118,7 +154,9 @@ export default function UsersTab() {
       <Card className="bg-card border-border">
         <CardHeader>
           <CardTitle>User Management</CardTitle>
-          <CardDescription>Search, filter, and manage user accounts</CardDescription>
+          <CardDescription>
+            Search, filter, and manage user accounts
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col md:flex-row gap-4">
@@ -173,17 +211,25 @@ export default function UsersTab() {
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium truncate">{user.username}</span>
+                    <span className="font-medium truncate">
+                      {user.username}
+                    </span>
                     <Badge className={getTierColor(user.subscription_tier)}>
                       {user.subscription_tier}
                     </Badge>
                     {!user.email_verified && (
-                      <Badge variant="outline" className="text-yellow-600 border-yellow-600/20">
+                      <Badge
+                        variant="outline"
+                        className="text-yellow-600 border-yellow-600/20"
+                      >
                         Unverified
                       </Badge>
                     )}
                     {!user.is_active && (
-                      <Badge variant="outline" className="text-red-600 border-red-600/20">
+                      <Badge
+                        variant="outline"
+                        className="text-red-600 border-red-600/20"
+                      >
                         Inactive
                       </Badge>
                     )}
@@ -223,40 +269,62 @@ export default function UsersTab() {
         <Card className="bg-card border-border">
           <CardHeader>
             <CardTitle>User Details: {selectedUser.username}</CardTitle>
-            <CardDescription>View detailed information and projects</CardDescription>
+            <CardDescription>
+              View detailed information and projects
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div>
-                <div className="text-sm font-medium text-muted-foreground">Email</div>
+                <div className="text-sm font-medium text-muted-foreground">
+                  Email
+                </div>
                 <div>{selectedUser.email}</div>
               </div>
               <div>
-                <div className="text-sm font-medium text-muted-foreground">Full Name</div>
+                <div className="text-sm font-medium text-muted-foreground">
+                  Full Name
+                </div>
                 <div>{selectedUser.full_name || "Not set"}</div>
               </div>
               <div>
-                <div className="text-sm font-medium text-muted-foreground">User ID</div>
+                <div className="text-sm font-medium text-muted-foreground">
+                  User ID
+                </div>
                 <div>{selectedUser.id}</div>
               </div>
               <div>
-                <div className="text-sm font-medium text-muted-foreground">Subscription Tier</div>
+                <div className="text-sm font-medium text-muted-foreground">
+                  Subscription Tier
+                </div>
                 <Badge className={getTierColor(selectedUser.subscription_tier)}>
                   {selectedUser.subscription_tier}
                 </Badge>
               </div>
               <div>
-                <div className="text-sm font-medium text-muted-foreground">Total Projects</div>
+                <div className="text-sm font-medium text-muted-foreground">
+                  Total Projects
+                </div>
                 <div>{selectedUser.project_count}</div>
               </div>
               <div>
-                <div className="text-sm font-medium text-muted-foreground">Member Since</div>
-                <div>{selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleString() : 'Unknown'}</div>
+                <div className="text-sm font-medium text-muted-foreground">
+                  Member Since
+                </div>
+                <div>
+                  {selectedUser.created_at
+                    ? new Date(selectedUser.created_at).toLocaleString()
+                    : "Unknown"}
+                </div>
               </div>
               {selectedUser.last_login && (
                 <div>
-                  <div className="text-sm font-medium text-muted-foreground">Last Login</div>
-                  <div>{new Date(selectedUser.last_login).toLocaleString()}</div>
+                  <div className="text-sm font-medium text-muted-foreground">
+                    Last Login
+                  </div>
+                  <div>
+                    {new Date(selectedUser.last_login).toLocaleString()}
+                  </div>
                 </div>
               )}
               <div className="flex gap-2 mt-4">
@@ -265,12 +333,14 @@ export default function UsersTab() {
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={() => handleDeleteUser(selectedUser.id, selectedUser.username)}
+                  onClick={() =>
+                    handleDeleteUser(selectedUser.id, selectedUser.username)
+                  }
                   disabled={isDeleting}
                   className="ml-auto"
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
-                  {isDeleting ? 'Deleting...' : 'Delete User'}
+                  {isDeleting ? "Deleting..." : "Delete User"}
                 </Button>
               </div>
             </div>
@@ -278,5 +348,5 @@ export default function UsersTab() {
         </Card>
       )}
     </div>
-  )
+  );
 }

@@ -1,12 +1,15 @@
-"use client"
+"use client";
 
-import React, { useState, useEffect } from "react"
-import { PatternOptimizationProvider, usePatternOptimization } from "@/contexts/pattern-optimization-context"
-import { ScreenshotManager } from "./ScreenshotManager"
-import { RegionSelector } from "./RegionSelector"
-import { AnalysisPanel } from "./AnalysisPanel"
-import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import React, { useState, useEffect } from "react";
+import {
+  PatternOptimizationProvider,
+  usePatternOptimization,
+} from "@/contexts/pattern-optimization-context";
+import { ScreenshotManager } from "./ScreenshotManager";
+import { RegionSelector } from "./RegionSelector";
+import { AnalysisPanel } from "./AnalysisPanel";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Plus,
   RotateCcw,
@@ -14,44 +17,47 @@ import {
   Info,
   ChevronRight,
   ChevronLeft,
-} from "lucide-react"
-import { toast } from "sonner"
-import type { OptimizationScreenshot } from "@/types/pattern-optimization"
+} from "lucide-react";
+import { toast } from "sonner";
+import type { OptimizationScreenshot } from "@/types/pattern-optimization";
 
 function PatternOptimizationContent() {
-  const { session, createSession, clearSession } = usePatternOptimization()
-  const [selectedScreenshot, setSelectedScreenshot] = useState<OptimizationScreenshot | null>(null)
-  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false)
-  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false)
+  const { session, createSession, clearSession } = usePatternOptimization();
+  const [selectedScreenshot, setSelectedScreenshot] =
+    useState<OptimizationScreenshot | null>(null);
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
   // Initialize session if needed
   useEffect(() => {
     if (!session) {
-      createSession()
+      createSession();
     }
-  }, [session, createSession])
+  }, [session, createSession]);
 
   // Auto-select first screenshot with positive label
   useEffect(() => {
     if (session?.screenshots.length && !selectedScreenshot) {
-      const firstPositive = session.screenshots.find(s => s.label === 'positive')
-      setSelectedScreenshot(firstPositive || session.screenshots[0])
+      const firstPositive = session.screenshots.find(
+        (s) => s.label === "positive"
+      );
+      setSelectedScreenshot(firstPositive || session.screenshots[0]);
     }
-  }, [session?.screenshots, selectedScreenshot])
+  }, [session?.screenshots, selectedScreenshot]);
 
   const handleNewSession = () => {
     if (session?.screenshots.length) {
       if (confirm("Start a new session? This will clear all current data.")) {
-        clearSession()
-        createSession()
-        setSelectedScreenshot(null)
-        toast.success("New session started")
+        clearSession();
+        createSession();
+        setSelectedScreenshot(null);
+        toast.success("New session started");
       }
     } else {
-      createSession()
-      toast.success("Session created")
+      createSession();
+      toast.success("Session created");
     }
-  }
+  };
 
   return (
     <div className="h-full flex bg-[#0A0A0B]">
@@ -108,19 +114,23 @@ function PatternOptimizationContent() {
       <div className="flex-1 flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-800">
           <h3 className="text-sm font-medium">
-            {selectedScreenshot ? `Region Editor - ${selectedScreenshot.name}` : "Region Editor"}
+            {selectedScreenshot
+              ? `Region Editor - ${selectedScreenshot.name}`
+              : "Region Editor"}
           </h3>
           <div className="flex items-center gap-2">
             <select
               className="h-7 px-2 text-xs bg-transparent border border-gray-700 rounded"
               value={selectedScreenshot?.id || ""}
               onChange={(e) => {
-                const screenshot = session?.screenshots.find(s => s.id === e.target.value)
-                setSelectedScreenshot(screenshot || null)
+                const screenshot = session?.screenshots.find(
+                  (s) => s.id === e.target.value
+                );
+                setSelectedScreenshot(screenshot || null);
               }}
             >
               <option value="">Select Screenshot</option>
-              {session?.screenshots.map(s => (
+              {session?.screenshots.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} ({s.label})
                 </option>
@@ -171,7 +181,7 @@ function PatternOptimizationContent() {
         )}
       </div>
     </div>
-  )
+  );
 }
 
 export function PatternOptimizationTab() {
@@ -179,5 +189,5 @@ export function PatternOptimizationTab() {
     <PatternOptimizationProvider>
       <PatternOptimizationContent />
     </PatternOptimizationProvider>
-  )
+  );
 }

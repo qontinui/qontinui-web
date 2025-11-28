@@ -3,42 +3,52 @@
  * Allows selecting screenshots from imported snapshot runs for pattern creation
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { Loader2, Image as ImageIcon, Search, CheckCircle2, Database, ChevronDown, Info } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useSnapshotList } from '@/hooks/useSnapshotList';
-import { formatDistanceToNow } from 'date-fns';
-import { toast } from 'sonner';
-import type { SnapshotRun } from '@/types/snapshots';
+} from "@/components/ui/tooltip";
+import {
+  Loader2,
+  Image as ImageIcon,
+  Search,
+  CheckCircle2,
+  Database,
+  ChevronDown,
+  Info,
+} from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useSnapshotList } from "@/hooks/useSnapshotList";
+import { formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
+import type { SnapshotRun } from "@/types/snapshots";
 
 interface SnapshotScreenshotSelectorProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (screenshots: Array<{ url: string; name: string; snapshotId: string }>) => void;
+  onSelect: (
+    screenshots: Array<{ url: string; name: string; snapshotId: string }>
+  ) => void;
   stateFilter?: string[];
 }
 
@@ -71,13 +81,21 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
   stateFilter = [],
 }) => {
   const { snapshots, loading: snapshotsLoading } = useSnapshotList();
-  const [selectedSnapshot, setSelectedSnapshot] = useState<SnapshotRun | null>(null);
+  const [selectedSnapshot, setSelectedSnapshot] = useState<SnapshotRun | null>(
+    null
+  );
   const [screenshots, setScreenshots] = useState<SnapshotScreenshot[]>([]);
-  const [selectedScreenshots, setSelectedScreenshots] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedScreenshots, setSelectedScreenshots] = useState<Set<string>>(
+    new Set()
+  );
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [thumbnailCache, setThumbnailCache] = useState<Map<string, ThumbnailData>>(new Map());
-  const [loadingThumbnails, setLoadingThumbnails] = useState<Set<string>>(new Set());
+  const [thumbnailCache, setThumbnailCache] = useState<
+    Map<string, ThumbnailData>
+  >(new Map());
+  const [loadingThumbnails, setLoadingThumbnails] = useState<Set<string>>(
+    new Set()
+  );
 
   // Reset when dialog opens/closes
   useEffect(() => {
@@ -85,7 +103,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
       setSelectedSnapshot(null);
       setScreenshots([]);
       setSelectedScreenshots(new Set());
-      setSearchQuery('');
+      setSearchQuery("");
       setThumbnailCache(new Map());
       setLoadingThumbnails(new Set());
     }
@@ -97,7 +115,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
 
     const loadThumbnails = async () => {
       const snapshotsToLoad = snapshots.filter(
-        (snapshot) => !thumbnailCache.has(snapshot.run_id) && !loadingThumbnails.has(snapshot.run_id)
+        (snapshot) =>
+          !thumbnailCache.has(snapshot.run_id) &&
+          !loadingThumbnails.has(snapshot.run_id)
       );
 
       if (snapshotsToLoad.length === 0) return;
@@ -116,13 +136,16 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
             );
 
             if (!response.ok) {
-              throw new Error('Failed to load thumbnails');
+              throw new Error("Failed to load thumbnails");
             }
 
             const data: ThumbnailData = await response.json();
             return { run_id: snapshot.run_id, data };
           } catch (error) {
-            console.error(`Failed to load thumbnails for ${snapshot.run_id}:`, error);
+            console.error(
+              `Failed to load thumbnails for ${snapshot.run_id}:`,
+              error
+            );
             return null;
           }
         })
@@ -131,7 +154,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
       // Update cache with results
       const newCache = new Map(thumbnailCache);
       results.forEach((result) => {
-        if (result.status === 'fulfilled' && result.value) {
+        if (result.status === "fulfilled" && result.value) {
           newCache.set(result.value.run_id, result.value.data);
         }
       });
@@ -161,24 +184,26 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
         );
 
         if (!response.ok) {
-          throw new Error('Failed to load screenshots');
+          throw new Error("Failed to load screenshots");
         }
 
         const data = await response.json();
 
         // Convert to our format
-        const screenshotList: SnapshotScreenshot[] = data.screenshots.map((s: any) => ({
-          path: s.screenshot_path,
-          url: `/api/integration-testing/snapshots/${selectedSnapshot.run_id}/screenshot/${s.screenshot_path}`,
-          active_states: s.active_states,
-          timestamp: s.timestamp,
-          snapshotRunId: selectedSnapshot.run_id,
-          snapshotName: selectedSnapshot.run_id.substring(0, 8),
-        }));
+        const screenshotList: SnapshotScreenshot[] = data.screenshots.map(
+          (s: any) => ({
+            path: s.screenshot_path,
+            url: `/api/integration-testing/snapshots/${selectedSnapshot.run_id}/screenshot/${s.screenshot_path}`,
+            active_states: s.active_states,
+            timestamp: s.timestamp,
+            snapshotRunId: selectedSnapshot.run_id,
+            snapshotName: selectedSnapshot.run_id.substring(0, 8),
+          })
+        );
 
         setScreenshots(screenshotList);
       } catch (error) {
-        console.error('Failed to load screenshots:', error);
+        console.error("Failed to load screenshots:", error);
         setScreenshots([]);
       } finally {
         setLoading(false);
@@ -191,14 +216,18 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
   // Analyze unique states and counts
   const uniqueStates = useMemo(() => {
     const states = new Set<string>();
-    screenshots.forEach((s) => s.active_states.forEach((state) => states.add(state)));
+    screenshots.forEach((s) =>
+      s.active_states.forEach((state) => states.add(state))
+    );
     return Array.from(states).sort();
   }, [screenshots]);
 
   const stateScreenshotCounts = useMemo(() => {
     const counts = new Map<string, number>();
     uniqueStates.forEach((state) => {
-      const count = screenshots.filter((s) => s.active_states.includes(state)).length;
+      const count = screenshots.filter((s) =>
+        s.active_states.includes(state)
+      ).length;
       counts.set(state, count);
     });
     return counts;
@@ -209,7 +238,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
     return screenshots.filter((screenshot) => {
       // Apply state filter - screenshot must have ALL selected states
       if (stateFilter && stateFilter.length > 0) {
-        const hasAllStates = stateFilter.every(filterState =>
+        const hasAllStates = stateFilter.every((filterState) =>
           screenshot.active_states.includes(filterState)
         );
         if (!hasAllStates) return false;
@@ -220,7 +249,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
         const query = searchQuery.toLowerCase();
         return (
           screenshot.path.toLowerCase().includes(query) ||
-          screenshot.active_states.some((state) => state.toLowerCase().includes(query))
+          screenshot.active_states.some((state) =>
+            state.toLowerCase().includes(query)
+          )
         );
       }
 
@@ -256,7 +287,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
       .filter((s) => s.active_states.includes(stateName))
       .map((s) => s.path);
     setSelectedScreenshots(new Set(screenshotsWithState));
-    toast.success(`Selected ${screenshotsWithState.length} screenshots with ${stateName}`);
+    toast.success(
+      `Selected ${screenshotsWithState.length} screenshots with ${stateName}`
+    );
   };
 
   // Handle selection confirmation
@@ -265,7 +298,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
       .filter((s) => selectedScreenshots.has(s.path))
       .map((s) => ({
         url: s.url,
-        name: `${s.snapshotName}_${s.path.split('/').pop()}`,
+        name: `${s.snapshotName}_${s.path.split("/").pop()}`,
         snapshotId: s.snapshotRunId,
       }));
 
@@ -279,7 +312,8 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
         <DialogHeader>
           <DialogTitle>Select Screenshots from Snapshots</DialogTitle>
           <DialogDescription>
-            Choose screenshots from imported snapshot runs to use for pattern creation
+            Choose screenshots from imported snapshot runs to use for pattern
+            creation
           </DialogDescription>
         </DialogHeader>
 
@@ -288,7 +322,7 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
           <Alert className="mb-2">
             <Info className="h-4 w-4" />
             <AlertDescription className="text-sm">
-              Filtering by states: {stateFilter.join(', ')}
+              Filtering by states: {stateFilter.join(", ")}
               <span className="ml-2 text-gray-500">
                 (Showing screenshots that have all selected states)
               </span>
@@ -321,7 +355,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                 <div className="space-y-2">
                   {snapshots.map((snapshot) => {
                     const thumbnails = thumbnailCache.get(snapshot.run_id);
-                    const isLoadingThumbs = loadingThumbnails.has(snapshot.run_id);
+                    const isLoadingThumbs = loadingThumbnails.has(
+                      snapshot.run_id
+                    );
 
                     return (
                       <div
@@ -331,8 +367,8 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                           p-3 rounded-lg border cursor-pointer transition-all
                           ${
                             selectedSnapshot?.id === snapshot.id
-                              ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-300'
-                              : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                              ? "bg-blue-50 border-blue-300 ring-1 ring-blue-300"
+                              : "bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                           }
                         `}
                       >
@@ -340,7 +376,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                           {snapshot.run_id.substring(0, 12)}...
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
-                          {formatDistanceToNow(new Date(snapshot.start_time), { addSuffix: true })}
+                          {formatDistanceToNow(new Date(snapshot.start_time), {
+                            addSuffix: true,
+                          })}
                         </div>
                         <div className="flex items-center gap-2 mt-2 text-xs text-gray-600">
                           <span>{snapshot.total_screenshots} screenshots</span>
@@ -374,10 +412,13 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                                     </TooltipTrigger>
                                     <TooltipContent>
                                       <div className="text-xs">
-                                        <div className="font-semibold mb-1">Action {thumb.action_number}</div>
+                                        <div className="font-semibold mb-1">
+                                          Action {thumb.action_number}
+                                        </div>
                                         {thumb.active_states.length > 0 && (
                                           <div className="text-gray-600">
-                                            States: {thumb.active_states.join(', ')}
+                                            States:{" "}
+                                            {thumb.active_states.join(", ")}
                                           </div>
                                         )}
                                       </div>
@@ -407,7 +448,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
               <div className="flex items-center justify-center h-full text-gray-500">
                 <div className="text-center">
                   <ImageIcon className="w-16 h-16 mx-auto mb-3 opacity-50" />
-                  <p className="text-sm">Select a snapshot run to view screenshots</p>
+                  <p className="text-sm">
+                    Select a snapshot run to view screenshots
+                  </p>
                 </div>
               </div>
             )}
@@ -417,7 +460,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                 {/* Header with search and actions */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-sm">Screenshots ({screenshots.length})</h3>
+                    <h3 className="font-semibold text-sm">
+                      Screenshots ({screenshots.length})
+                    </h3>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
@@ -438,11 +483,18 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                       {uniqueStates.length > 0 && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button size="sm" variant="outline" disabled={uniqueStates.length === 0}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={uniqueStates.length === 0}
+                            >
                               By State <ChevronDown className="ml-1 h-3 w-3" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="max-h-[300px] overflow-y-auto">
+                          <DropdownMenuContent
+                            align="end"
+                            className="max-h-[300px] overflow-y-auto"
+                          >
                             {uniqueStates.map((state) => (
                               <DropdownMenuItem
                                 key={state}
@@ -451,7 +503,10 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                               >
                                 <span className="flex items-center justify-between w-full">
                                   <span className="truncate">{state}</span>
-                                  <Badge variant="secondary" className="ml-2 text-xs">
+                                  <Badge
+                                    variant="secondary"
+                                    className="ml-2 text-xs"
+                                  >
                                     {stateScreenshotCounts.get(state) || 0}
                                   </Badge>
                                 </span>
@@ -466,7 +521,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                   {/* Active States Chips */}
                   {uniqueStates.length > 0 && (
                     <div className="space-y-1">
-                      <div className="text-xs font-medium text-gray-600">Active States in This Run:</div>
+                      <div className="text-xs font-medium text-gray-600">
+                        Active States in This Run:
+                      </div>
                       <div className="flex flex-wrap gap-1">
                         {uniqueStates.map((state) => (
                           <TooltipProvider key={state}>
@@ -475,13 +532,20 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                                 <Badge
                                   variant="outline"
                                   className="cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-colors"
-                                  onClick={() => handleSelectAllWithState(state)}
+                                  onClick={() =>
+                                    handleSelectAllWithState(state)
+                                  }
                                 >
-                                  {state}: {stateScreenshotCounts.get(state) || 0}
+                                  {state}:{" "}
+                                  {stateScreenshotCounts.get(state) || 0}
                                 </Badge>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p className="text-xs">Click to select all {stateScreenshotCounts.get(state) || 0} screenshots with this state</p>
+                                <p className="text-xs">
+                                  Click to select all{" "}
+                                  {stateScreenshotCounts.get(state) || 0}{" "}
+                                  screenshots with this state
+                                </p>
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
@@ -503,7 +567,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
 
                   {/* Selection count */}
                   {selectedScreenshots.size > 0 && (
-                    <Badge variant="secondary">{selectedScreenshots.size} selected</Badge>
+                    <Badge variant="secondary">
+                      {selectedScreenshots.size} selected
+                    </Badge>
                   )}
                 </div>
 
@@ -525,7 +591,9 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                   <ScrollArea className="flex-1">
                     <div className="grid grid-cols-2 gap-3 pr-4">
                       {filteredScreenshots.map((screenshot) => {
-                        const isSelected = selectedScreenshots.has(screenshot.path);
+                        const isSelected = selectedScreenshots.has(
+                          screenshot.path
+                        );
 
                         return (
                           <div
@@ -535,8 +603,8 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                               relative group cursor-pointer rounded-lg border-2 overflow-hidden transition-all
                               ${
                                 isSelected
-                                  ? 'border-blue-500 ring-2 ring-blue-200'
-                                  : 'border-gray-200 hover:border-gray-300'
+                                  ? "border-blue-500 ring-2 ring-blue-200"
+                                  : "border-gray-200 hover:border-gray-300"
                               }
                             `}
                           >
@@ -553,10 +621,14 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                             {/* Info overlay */}
                             <div className="p-2 bg-white">
                               <div className="flex items-center justify-between">
-                                <p className="text-xs truncate flex-1">{screenshot.path.split('/').pop()}</p>
+                                <p className="text-xs truncate flex-1">
+                                  {screenshot.path.split("/").pop()}
+                                </p>
                                 <Checkbox
                                   checked={isSelected}
-                                  onCheckedChange={() => toggleScreenshot(screenshot.path)}
+                                  onCheckedChange={() =>
+                                    toggleScreenshot(screenshot.path)
+                                  }
                                   onClick={(e) => e.stopPropagation()}
                                 />
                               </div>
@@ -564,13 +636,22 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
                               {/* Active states */}
                               {screenshot.active_states.length > 0 && (
                                 <div className="mt-1 flex flex-wrap gap-1">
-                                  {screenshot.active_states.slice(0, 2).map((state) => (
-                                    <Badge key={state} variant="secondary" className="text-xs px-1 py-0">
-                                      {state}
-                                    </Badge>
-                                  ))}
+                                  {screenshot.active_states
+                                    .slice(0, 2)
+                                    .map((state) => (
+                                      <Badge
+                                        key={state}
+                                        variant="secondary"
+                                        className="text-xs px-1 py-0"
+                                      >
+                                        {state}
+                                      </Badge>
+                                    ))}
                                   {screenshot.active_states.length > 2 && (
-                                    <Badge variant="secondary" className="text-xs px-1 py-0">
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-xs px-1 py-0"
+                                    >
                                       +{screenshot.active_states.length - 2}
                                     </Badge>
                                   )}
@@ -598,13 +679,17 @@ const SnapshotScreenshotSelector: React.FC<SnapshotScreenshotSelectorProps> = ({
         {/* Footer actions */}
         <div className="flex justify-between items-center pt-4 border-t">
           <p className="text-sm text-gray-600">
-            {selectedScreenshots.size} screenshot{selectedScreenshots.size !== 1 ? 's' : ''} selected
+            {selectedScreenshots.size} screenshot
+            {selectedScreenshots.size !== 1 ? "s" : ""} selected
           </p>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button onClick={handleConfirm} disabled={selectedScreenshots.size === 0}>
+            <Button
+              onClick={handleConfirm}
+              disabled={selectedScreenshots.size === 0}
+            >
               Add Selected ({selectedScreenshots.size})
             </Button>
           </div>

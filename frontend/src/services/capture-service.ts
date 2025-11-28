@@ -1,17 +1,17 @@
-import { HttpClient } from './http-client';
-import { ApiConfig } from './api-config';
+import { HttpClient } from "./http-client";
+import { ApiConfig } from "./api-config";
 import type {
   CaptureSession,
   CaptureSessionApi,
   InputEvent,
   InputEventApi,
   CaptureSessionStats,
-} from '@/types/capture';
+} from "@/types/capture";
 import {
   transformCaptureSession,
   transformInputEvent,
   calculateEventStats,
-} from '@/types/capture';
+} from "@/types/capture";
 
 export interface CaptureSessionListResponse {
   sessions: CaptureSession[];
@@ -47,7 +47,7 @@ export class CaptureService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to fetch capture sessions');
+      throw new Error(error.detail || "Failed to fetch capture sessions");
     }
 
     const apiSessions: CaptureSessionApi[] = await response.json();
@@ -71,7 +71,7 @@ export class CaptureService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to fetch capture session');
+      throw new Error(error.detail || "Failed to fetch capture session");
     }
 
     const apiSession: CaptureSessionApi = await response.json();
@@ -94,10 +94,10 @@ export class CaptureService {
     let url = `${this.apiUrl}/api/v1/capture/events/${sessionId}`;
     const params = new URLSearchParams();
 
-    if (startMs !== undefined) params.append('start_ms', startMs.toString());
-    if (endMs !== undefined) params.append('end_ms', endMs.toString());
+    if (startMs !== undefined) params.append("start_ms", startMs.toString());
+    if (endMs !== undefined) params.append("end_ms", endMs.toString());
     if (eventTypes && eventTypes.length > 0) {
-      params.append('event_types', eventTypes.join(','));
+      params.append("event_types", eventTypes.join(","));
     }
 
     const queryString = params.toString();
@@ -109,7 +109,7 @@ export class CaptureService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to fetch session events');
+      throw new Error(error.detail || "Failed to fetch session events");
     }
 
     const apiEvents: InputEventApi[] = await response.json();
@@ -137,7 +137,7 @@ export class CaptureService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to extract frame');
+      throw new Error(error.detail || "Failed to extract frame");
     }
 
     return response.blob();
@@ -158,7 +158,7 @@ export class CaptureService {
       reader.onloadend = () => {
         const base64 = reader.result as string;
         // Remove the data URL prefix to get just the base64 data
-        const base64Data = base64.split(',')[1];
+        const base64Data = base64.split(",")[1];
         resolve(base64Data);
       };
       reader.onerror = reject;
@@ -181,31 +181,31 @@ export class CaptureService {
       byteNumbers[i] = byteCharacters.charCodeAt(i);
     }
     const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: 'image/jpeg' });
+    const blob = new Blob([byteArray], { type: "image/jpeg" });
 
     // Create form data for upload
     const formData = new FormData();
-    formData.append('file', blob, `${request.name}.jpg`);
-    formData.append('project_id', projectId);
-    formData.append('name', request.name);
+    formData.append("file", blob, `${request.name}.jpg`);
+    formData.append("project_id", projectId);
+    formData.append("name", request.name);
     if (request.description) {
-      formData.append('description', request.description);
+      formData.append("description", request.description);
     }
     if (request.tags && request.tags.length > 0) {
-      formData.append('tags', JSON.stringify(request.tags));
+      formData.append("tags", JSON.stringify(request.tags));
     }
 
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/screenshots/upload`,
       {
-        method: 'POST',
+        method: "POST",
         body: formData,
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to save screenshot');
+      throw new Error(error.detail || "Failed to save screenshot");
     }
 
     return response.json();
@@ -217,12 +217,12 @@ export class CaptureService {
   async deleteSession(sessionId: string): Promise<void> {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/capture/sessions/${sessionId}`,
-      { method: 'DELETE' }
+      { method: "DELETE" }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to delete capture session');
+      throw new Error(error.detail || "Failed to delete capture session");
     }
   }
 
@@ -233,15 +233,15 @@ export class CaptureService {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/capture/sessions/${sessionId}/notes`,
       {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes }),
       }
     );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || 'Failed to update session notes');
+      throw new Error(error.detail || "Failed to update session notes");
     }
   }
 }

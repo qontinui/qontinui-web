@@ -10,8 +10,8 @@
  * - Export/import snapshots
  */
 
-import { Workflow } from '../lib/action-schema/action-types';
-import { cloneWorkflow } from '../lib/action-schema/workflow-utils';
+import { Workflow } from "../lib/action-schema/action-types";
+import { cloneWorkflow } from "../lib/action-schema/workflow-utils";
 
 // ============================================================================
 // Types
@@ -116,8 +116,8 @@ export class WorkflowSnapshotsService {
     return this.createSnapshot(
       workflow,
       `Auto-snapshot ${new Date().toLocaleString()}`,
-      'Automatically created snapshot',
-      ['auto']
+      "Automatically created snapshot",
+      ["auto"]
     );
   }
 
@@ -205,7 +205,10 @@ export class WorkflowSnapshotsService {
   /**
    * Create new workflow from snapshot
    */
-  createWorkflowFromSnapshot(snapshotId: string, newName?: string): Workflow | null {
+  createWorkflowFromSnapshot(
+    snapshotId: string,
+    newName?: string
+  ): Workflow | null {
     const snapshot = this.getSnapshot(snapshotId);
     if (!snapshot) {
       return null;
@@ -227,7 +230,10 @@ export class WorkflowSnapshotsService {
   /**
    * Compare two snapshots
    */
-  compareSnapshots(snapshotId1: string, snapshotId2: string): SnapshotComparison | null {
+  compareSnapshots(
+    snapshotId1: string,
+    snapshotId2: string
+  ): SnapshotComparison | null {
     const snapshot1 = this.getSnapshot(snapshotId1);
     const snapshot2 = this.getSnapshot(snapshotId2);
 
@@ -282,11 +288,13 @@ export class WorkflowSnapshotsService {
 
     // Check connections changes
     const connectionsChanged =
-      JSON.stringify(workflow1.connections) !== JSON.stringify(workflow2.connections);
+      JSON.stringify(workflow1.connections) !==
+      JSON.stringify(workflow2.connections);
 
     // Check variables changes
     const variablesChanged =
-      JSON.stringify(workflow1.variables) !== JSON.stringify(workflow2.variables);
+      JSON.stringify(workflow1.variables) !==
+      JSON.stringify(workflow2.variables);
 
     return {
       snapshot1,
@@ -318,9 +326,9 @@ export class WorkflowSnapshotsService {
 
     // Create temporary snapshot for current workflow
     const currentSnapshot: Snapshot = {
-      id: 'temp',
+      id: "temp",
       workflowId: workflow.id,
-      name: 'Current',
+      name: "Current",
       workflow,
       timestamp: new Date().toISOString(),
     };
@@ -430,7 +438,7 @@ export class WorkflowSnapshotsService {
 
       return snapshot;
     } catch (error) {
-      console.error('Failed to import snapshot:', error);
+      console.error("Failed to import snapshot:", error);
       return null;
     }
   }
@@ -445,7 +453,8 @@ export class WorkflowSnapshotsService {
 
       snapshots.forEach((snapshot) => {
         if (snapshot.id && snapshot.workflowId && snapshot.workflow) {
-          const workflowSnapshots = this.snapshots.get(snapshot.workflowId) || [];
+          const workflowSnapshots =
+            this.snapshots.get(snapshot.workflowId) || [];
           workflowSnapshots.push(snapshot);
           this.snapshots.set(snapshot.workflowId, workflowSnapshots);
           imported.push(snapshot);
@@ -458,7 +467,7 @@ export class WorkflowSnapshotsService {
 
       return imported;
     } catch (error) {
-      console.error('Failed to import snapshots:', error);
+      console.error("Failed to import snapshots:", error);
       return [];
     }
   }
@@ -482,7 +491,8 @@ export class WorkflowSnapshotsService {
       const snapshot = snapshots.find((s) => s.id === snapshotId);
       if (snapshot) {
         if (updates.name) snapshot.name = updates.name;
-        if (updates.description !== undefined) snapshot.description = updates.description;
+        if (updates.description !== undefined)
+          snapshot.description = updates.description;
         if (updates.tags) snapshot.tags = updates.tags;
 
         this.saveSnapshots();
@@ -501,13 +511,13 @@ export class WorkflowSnapshotsService {
    */
   private loadSnapshots(): void {
     try {
-      const json = localStorage.getItem('workflow-snapshots');
+      const json = localStorage.getItem("workflow-snapshots");
       if (json) {
         const data = JSON.parse(json);
         this.snapshots = new Map(Object.entries(data));
       }
     } catch (error) {
-      console.error('Failed to load snapshots:', error);
+      console.error("Failed to load snapshots:", error);
       this.snapshots = new Map();
     }
   }
@@ -518,9 +528,9 @@ export class WorkflowSnapshotsService {
   private saveSnapshots(): void {
     try {
       const data = Object.fromEntries(this.snapshots);
-      localStorage.setItem('workflow-snapshots', JSON.stringify(data));
+      localStorage.setItem("workflow-snapshots", JSON.stringify(data));
     } catch (error) {
-      console.error('Failed to save snapshots:', error);
+      console.error("Failed to save snapshots:", error);
     }
   }
 
@@ -529,7 +539,7 @@ export class WorkflowSnapshotsService {
    */
   clearAll(): void {
     this.snapshots.clear();
-    localStorage.removeItem('workflow-snapshots');
+    localStorage.removeItem("workflow-snapshots");
   }
 
   // ==========================================================================
@@ -557,7 +567,10 @@ export class WorkflowSnapshotsService {
   /**
    * Calculate diff between two workflows
    */
-  private calculateDiff(workflow1: Workflow, workflow2: Workflow): SnapshotDiff {
+  private calculateDiff(
+    workflow1: Workflow,
+    workflow2: Workflow
+  ): SnapshotDiff {
     const ids1 = new Set(workflow1.actions.map((a) => a.id));
     const ids2 = new Set(workflow2.actions.map((a) => a.id));
 
@@ -598,7 +611,7 @@ export class WorkflowSnapshotsService {
   private calculateDetails(
     workflow1: Workflow,
     workflow2: Workflow
-  ): SnapshotComparison['details'] {
+  ): SnapshotComparison["details"] {
     const diff = this.calculateDiff(workflow1, workflow2);
 
     return {
@@ -606,9 +619,11 @@ export class WorkflowSnapshotsService {
       actionsRemoved: diff.removed.length,
       actionsModified: diff.modified.length,
       connectionsChanged:
-        JSON.stringify(workflow1.connections) !== JSON.stringify(workflow2.connections),
+        JSON.stringify(workflow1.connections) !==
+        JSON.stringify(workflow2.connections),
       variablesChanged:
-        JSON.stringify(workflow1.variables) !== JSON.stringify(workflow2.variables),
+        JSON.stringify(workflow1.variables) !==
+        JSON.stringify(workflow2.variables),
     };
   }
 

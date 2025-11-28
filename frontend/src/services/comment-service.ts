@@ -12,10 +12,10 @@ import type {
   CreateCommentRequest,
   UpdateCommentRequest,
   CommentStatus,
-} from '@/types/collaboration';
-import { httpClient } from './http-client';
+} from "@/types/collaboration";
+import { httpClient } from "./http-client";
 
-const API_BASE = '/api/comments';
+const API_BASE = "/api/comments";
 
 // ============================================================================
 // Comment Service
@@ -25,10 +25,13 @@ class CommentService {
   /**
    * Get comments for a project
    */
-  async getComments(projectId: string, workflowId?: string): Promise<Comment[]> {
+  async getComments(
+    projectId: string,
+    workflowId?: string
+  ): Promise<Comment[]> {
     const params = new URLSearchParams({ project_id: projectId });
     if (workflowId) {
-      params.append('workflow_id', workflowId);
+      params.append("workflow_id", workflowId);
     }
 
     const comments = await httpClient.get<Comment[]>(`${API_BASE}?${params}`);
@@ -72,7 +75,10 @@ class CommentService {
     commentId: string,
     data: UpdateCommentRequest
   ): Promise<Comment> {
-    const comment = await httpClient.patch<Comment>(`${API_BASE}/${commentId}`, data);
+    const comment = await httpClient.patch<Comment>(
+      `${API_BASE}/${commentId}`,
+      data
+    );
     return comment;
   }
 
@@ -87,14 +93,14 @@ class CommentService {
    * Resolve a comment
    */
   async resolveComment(commentId: string): Promise<Comment> {
-    return this.updateComment(commentId, { status: 'resolved' });
+    return this.updateComment(commentId, { status: "resolved" });
   }
 
   /**
    * Reopen a comment
    */
   async reopenComment(commentId: string): Promise<Comment> {
-    return this.updateComment(commentId, { status: 'open' });
+    return this.updateComment(commentId, { status: "open" });
   }
 
   /**
@@ -140,7 +146,7 @@ class CommentService {
   ): Promise<{ total: number; open: number; resolved: number }> {
     const params = new URLSearchParams({ project_id: projectId });
     if (workflowId) {
-      params.append('workflow_id', workflowId);
+      params.append("workflow_id", workflowId);
     }
 
     const count = await httpClient.get<{

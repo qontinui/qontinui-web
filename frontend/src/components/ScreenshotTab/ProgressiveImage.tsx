@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 
 interface ProgressiveImageProps {
   imageUrl: string;
@@ -33,14 +33,19 @@ export function useProgressiveImage({
 } {
   const [currentSrc, setCurrentSrc] = useState<string>(imageUrl);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadedSizes, setLoadedSizes] = useState<Set<string>>(new Set([imageUrl]));
+  const [loadedSizes, setLoadedSizes] = useState<Set<string>>(
+    new Set([imageUrl])
+  );
 
   // Determine required image size based on zoom
-  const getRequiredSize = useCallback((zoomLevel: number): 'medium' | 'large' | 'original' => {
-    if (zoomLevel > 4) return 'original';
-    if (zoomLevel > 2) return 'large';
-    return 'medium';
-  }, []);
+  const getRequiredSize = useCallback(
+    (zoomLevel: number): "medium" | "large" | "original" => {
+      if (zoomLevel > 4) return "original";
+      if (zoomLevel > 2) return "large";
+      return "medium";
+    },
+    []
+  );
 
   // Load image progressively
   useEffect(() => {

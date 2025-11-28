@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import React, { useEffect, ReactNode } from 'react';
-import { OrganizationProvider } from './OrganizationContext';
-import { PermissionsProvider } from './PermissionsContext';
-import { PresenceProvider, usePresence } from './PresenceContext';
-import { EditLockProvider, useEditLock } from './EditLockContext';
-import { CommentsProvider, useComments } from './CommentsContext';
-import { ActivityProvider, useActivity } from './ActivityContext';
-import { WebSocketProvider, useWebSocket } from './WebSocketContext';
-import type { CollaborationProviderProps } from './types';
+import React, { useEffect, ReactNode } from "react";
+import { OrganizationProvider } from "./OrganizationContext";
+import { PermissionsProvider } from "./PermissionsContext";
+import { PresenceProvider, usePresence } from "./PresenceContext";
+import { EditLockProvider, useEditLock } from "./EditLockContext";
+import { CommentsProvider, useComments } from "./CommentsContext";
+import { ActivityProvider, useActivity } from "./ActivityContext";
+import { WebSocketProvider, useWebSocket } from "./WebSocketContext";
+import type { CollaborationProviderProps } from "./types";
 
 // ============================================================================
 // WebSocket Integration Component
@@ -31,13 +31,13 @@ function WebSocketIntegration({ workflowId }: { workflowId?: string }) {
         setActiveUsers(users);
       },
       onLockAcquired: (lock) => {
-        console.log('[WebSocket] Lock acquired:', lock);
+        console.log("[WebSocket] Lock acquired:", lock);
       },
       onLockReleased: (lock) => {
         // Update lock state if it affects current resource
         if (currentLock && currentLock.id === lock.id) {
           releaseEditLock().catch((error) => {
-            console.error('[WebSocket] Failed to release lock:', error);
+            console.error("[WebSocket] Failed to release lock:", error);
           });
         }
       },

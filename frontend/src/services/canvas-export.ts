@@ -15,14 +15,14 @@
  * - Quality settings
  */
 
-import { Workflow, Action } from '../lib/action-schema/action-types';
-import { workflowFileManager } from './workflow-file-manager';
+import { Workflow, Action } from "../lib/action-schema/action-types";
+import { workflowFileManager } from "./workflow-file-manager";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type ExportFormat = 'png' | 'svg' | 'pdf' | 'json' | 'markdown';
+export type ExportFormat = "png" | "svg" | "pdf" | "json" | "markdown";
 
 export interface ExportOptions {
   format: ExportFormat;
@@ -31,7 +31,7 @@ export interface ExportOptions {
   scale?: number; // Scale factor
   width?: number; // Custom width
   height?: number; // Custom height
-  background?: 'transparent' | 'white' | 'grid' | 'color';
+  background?: "transparent" | "white" | "grid" | "color";
   backgroundColor?: string;
   includeMetadata?: boolean;
   selectionOnly?: boolean;
@@ -80,15 +80,15 @@ export class CanvasExportService {
 
     try {
       switch (format) {
-        case 'png':
+        case "png":
           return await this.exportPNG(workflow, canvasElement, options);
-        case 'svg':
+        case "svg":
           return await this.exportSVG(workflow, canvasElement, options);
-        case 'pdf':
+        case "pdf":
           return await this.exportPDF(workflow, canvasElement, options);
-        case 'json':
+        case "json":
           return this.exportJSON(workflow, options);
-        case 'markdown':
+        case "markdown":
           return this.exportMarkdown(workflow, options);
         default:
           return {
@@ -99,7 +99,7 @@ export class CanvasExportService {
     } catch (error) {
       return {
         success: false,
-        error: `Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -117,7 +117,7 @@ export class CanvasExportService {
     options: ExportOptions
   ): Promise<CanvasExportResult> {
     if (!canvasElement) {
-      return { success: false, error: 'Canvas element not found' };
+      return { success: false, error: "Canvas element not found" };
     }
 
     try {
@@ -127,11 +127,11 @@ export class CanvasExportService {
 
       const quality = options.quality || 0.95;
       const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(resolve, 'image/png', quality);
+        canvas.toBlob(resolve, "image/png", quality);
       });
 
       if (!blob) {
-        return { success: false, error: 'Failed to create PNG blob' };
+        return { success: false, error: "Failed to create PNG blob" };
       }
 
       const filename = options.filename || `${workflow.name}.png`;
@@ -145,7 +145,7 @@ export class CanvasExportService {
     } catch (error) {
       return {
         success: false,
-        error: `PNG export failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `PNG export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -163,12 +163,12 @@ export class CanvasExportService {
     options: ExportOptions
   ): Promise<CanvasExportResult> {
     if (!canvasElement) {
-      return { success: false, error: 'Canvas element not found' };
+      return { success: false, error: "Canvas element not found" };
     }
 
     try {
       const svg = this.createSVG(workflow, options);
-      const blob = new Blob([svg], { type: 'image/svg+xml' });
+      const blob = new Blob([svg], { type: "image/svg+xml" });
       const filename = options.filename || `${workflow.name}.svg`;
 
       this.downloadBlob(blob, filename);
@@ -181,7 +181,7 @@ export class CanvasExportService {
     } catch (error) {
       return {
         success: false,
-        error: `SVG export failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `SVG export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -190,9 +190,12 @@ export class CanvasExportService {
    * Create SVG representation of workflow
    */
   private createSVG(workflow: Workflow, options: ExportOptions): string {
-    const actions = options.selectionOnly && options.selectedActionIds
-      ? workflow.actions.filter((a) => options.selectedActionIds!.includes(a.id))
-      : workflow.actions;
+    const actions =
+      options.selectionOnly && options.selectedActionIds
+        ? workflow.actions.filter((a) =>
+            options.selectedActionIds!.includes(a.id)
+          )
+        : workflow.actions;
 
     // Calculate bounds
     const bounds = this.calculateBounds(actions);
@@ -205,61 +208,72 @@ export class CanvasExportService {
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
 
     // Add background
-    if (options.background && options.background !== 'transparent') {
-      const bgColor = options.background === 'white' ? '#ffffff' : options.backgroundColor || '#f5f5f5';
+    if (options.background && options.background !== "transparent") {
+      const bgColor =
+        options.background === "white"
+          ? "#ffffff"
+          : options.backgroundColor || "#f5f5f5";
       svg += `<rect width="${width}" height="${height}" fill="${bgColor}"/>`;
     }
 
     // Add grid if requested
-    if (options.background === 'grid') {
+    if (options.background === "grid") {
       svg += this.createGridPattern(width, height);
     }
 
     // Add connections
-    Object.entries(workflow.connections || {}).forEach(([sourceId, outputs]) => {
-      if (!sourceId || !outputs) return;
+    Object.entries(workflow.connections || {}).forEach(
+      ([sourceId, outputs]) => {
+        if (!sourceId || !outputs) return;
 
-      const sourceAction = workflow.actions.find((a) => a?.id === sourceId);
-      if (!sourceAction) return;
+        const sourceAction = workflow.actions.find((a) => a?.id === sourceId);
+        if (!sourceAction) return;
 
-      ['main', 'error', 'success', 'parallel'].forEach((type) => {
-        const connections = outputs[type as keyof typeof outputs];
-        if (connections && Array.isArray(connections)) {
-          connections.forEach((outputConnections) => {
-            if (!Array.isArray(outputConnections)) return;
+        ["main", "error", "success", "parallel"].forEach((type) => {
+          const connections = outputs[type as keyof typeof outputs];
+          if (connections && Array.isArray(connections)) {
+            connections.forEach((outputConnections) => {
+              if (!Array.isArray(outputConnections)) return;
 
-            outputConnections.forEach((conn) => {
-              if (!conn || !conn.action) return;
+              outputConnections.forEach((conn) => {
+                if (!conn || !conn.action) return;
 
-              const targetAction = workflow.actions.find((a) => a?.id === conn.action);
-              if (targetAction) {
-                svg += this.createConnectionSVG(
-                  sourceAction,
-                  targetAction,
-                  type,
-                  offsetX,
-                  offsetY
+                const targetAction = workflow.actions.find(
+                  (a) => a?.id === conn.action
                 );
-              }
+                if (targetAction) {
+                  svg += this.createConnectionSVG(
+                    sourceAction,
+                    targetAction,
+                    type,
+                    offsetX,
+                    offsetY
+                  );
+                }
+              });
             });
-          });
-        }
-      });
-    });
+          }
+        });
+      }
+    );
 
     // Add actions
     actions.forEach((action) => {
       svg += this.createActionSVG(action, offsetX, offsetY);
     });
 
-    svg += '</svg>';
+    svg += "</svg>";
     return svg;
   }
 
   /**
    * Create SVG for a single action
    */
-  private createActionSVG(action: Action, offsetX: number, offsetY: number): string {
+  private createActionSVG(
+    action: Action,
+    offsetX: number,
+    offsetY: number
+  ): string {
     const [x, y] = action.position;
     const adjustedX = x - offsetX;
     const adjustedY = y - offsetY;
@@ -293,7 +307,8 @@ export class CanvasExportService {
     const endX = x2 - offsetX + 100;
     const endY = y2 - offsetY;
 
-    const color = type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#3b82f6';
+    const color =
+      type === "error" ? "#ef4444" : type === "success" ? "#10b981" : "#3b82f6";
 
     return `
       <path d="M ${startX} ${startY} Q ${startX} ${(startY + endY) / 2} ${endX} ${endY}"
@@ -331,7 +346,7 @@ export class CanvasExportService {
     // This is a placeholder implementation
     return {
       success: false,
-      error: 'PDF export requires jsPDF library (not yet implemented)',
+      error: "PDF export requires jsPDF library (not yet implemented)",
     };
   }
 
@@ -342,23 +357,26 @@ export class CanvasExportService {
   /**
    * Export workflow as JSON
    */
-  private exportJSON(workflow: Workflow, options: ExportOptions): CanvasExportResult {
+  private exportJSON(
+    workflow: Workflow,
+    options: ExportOptions
+  ): CanvasExportResult {
     try {
-      console.log('[CanvasExport] Starting JSON export', {
+      console.log("[CanvasExport] Starting JSON export", {
         workflowName: workflow?.name,
         workflowId: workflow?.id,
         hasWorkflow: !!workflow,
         workflowKeys: workflow ? Object.keys(workflow) : [],
         actionsCount: workflow?.actions?.length,
-        options
+        options,
       });
 
       if (!workflow) {
-        throw new Error('Workflow is undefined or null');
+        throw new Error("Workflow is undefined or null");
       }
 
       if (!workflow.name) {
-        console.warn('[CanvasExport] Workflow has no name, using default');
+        console.warn("[CanvasExport] Workflow has no name, using default");
       }
 
       workflowFileManager.exportWorkflow(workflow, {
@@ -366,28 +384,30 @@ export class CanvasExportService {
         includeMetadata: options.includeMetadata,
       });
 
-      console.log('[CanvasExport] JSON export successful');
+      console.log("[CanvasExport] JSON export successful");
 
       return {
         success: true,
         filename: options.filename,
       };
     } catch (error) {
-      console.error('[CanvasExport] JSON export error:', {
+      console.error("[CanvasExport] JSON export error:", {
         error,
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
         errorStack: error instanceof Error ? error.stack : undefined,
-        workflow: workflow ? {
-          id: workflow.id,
-          name: workflow.name,
-          hasActions: !!workflow.actions,
-          actionsLength: workflow.actions?.length
-        } : 'undefined'
+        workflow: workflow
+          ? {
+              id: workflow.id,
+              name: workflow.name,
+              hasActions: !!workflow.actions,
+              actionsLength: workflow.actions?.length,
+            }
+          : "undefined",
       });
 
       return {
         success: false,
-        error: `JSON export failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `JSON export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -399,10 +419,13 @@ export class CanvasExportService {
   /**
    * Export workflow as Markdown documentation
    */
-  private exportMarkdown(workflow: Workflow, options: ExportOptions): CanvasExportResult {
+  private exportMarkdown(
+    workflow: Workflow,
+    options: ExportOptions
+  ): CanvasExportResult {
     try {
       const markdown = this.generateMarkdown(workflow);
-      const blob = new Blob([markdown], { type: 'text/markdown' });
+      const blob = new Blob([markdown], { type: "text/markdown" });
       const filename = options.filename || `${workflow.name}.md`;
 
       this.downloadBlob(blob, filename);
@@ -415,7 +438,7 @@ export class CanvasExportService {
     } catch (error) {
       return {
         success: false,
-        error: `Markdown export failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Markdown export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -439,18 +462,18 @@ export class CanvasExportService {
     if (workflow.metadata?.updated) {
       md += `**Updated:** ${new Date(workflow.metadata.updated).toLocaleString()}\n`;
     }
-    md += '\n';
+    md += "\n";
 
     // Tags
     if (workflow.tags && workflow.tags.length > 0) {
-      md += `**Tags:** ${workflow.tags.join(', ')}\n\n`;
+      md += `**Tags:** ${workflow.tags.join(", ")}\n\n`;
     }
 
     // Statistics
     md += `## Statistics\n\n`;
     md += `- **Actions:** ${workflow.actions.length}\n`;
     md += `- **Connections:** ${Object.keys(workflow.connections).length}\n`;
-    md += '\n';
+    md += "\n";
 
     // Actions
     md += `## Actions\n\n`;
@@ -474,7 +497,7 @@ export class CanvasExportService {
         const sourceAction = workflow.actions.find((a) => a?.id === sourceId);
         md += `### From: ${sourceAction?.name || sourceId}\n\n`;
 
-        ['main', 'error', 'success', 'parallel'].forEach((type) => {
+        ["main", "error", "success", "parallel"].forEach((type) => {
           const connections = outputs[type as keyof typeof outputs];
           if (connections && Array.isArray(connections)) {
             md += `**${type} →**\n`;
@@ -484,11 +507,13 @@ export class CanvasExportService {
               outputConnections.forEach((conn) => {
                 if (!conn || !conn.action) return;
 
-                const targetAction = workflow.actions.find((a) => a?.id === conn.action);
+                const targetAction = workflow.actions.find(
+                  (a) => a?.id === conn.action
+                );
                 md += `- ${targetAction?.name || conn.action}\n`;
               });
             });
-            md += '\n';
+            md += "\n";
           }
         });
       });
@@ -520,23 +545,26 @@ export class CanvasExportService {
     element: HTMLElement,
     options: ExportOptions
   ): Promise<HTMLCanvasElement> {
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     const scale = options.scale || 1;
 
     canvas.width = (options.width || element.offsetWidth) * scale;
     canvas.height = (options.height || element.offsetHeight) * scale;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) {
-      throw new Error('Failed to get canvas context');
+      throw new Error("Failed to get canvas context");
     }
 
     // Apply scale
     ctx.scale(scale, scale);
 
     // Apply background
-    if (options.background && options.background !== 'transparent') {
-      ctx.fillStyle = options.background === 'white' ? '#ffffff' : options.backgroundColor || '#f5f5f5';
+    if (options.background && options.background !== "transparent") {
+      ctx.fillStyle =
+        options.background === "white"
+          ? "#ffffff"
+          : options.backgroundColor || "#f5f5f5";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
@@ -558,7 +586,14 @@ export class CanvasExportService {
     height: number;
   } {
     if (actions.length === 0) {
-      return { minX: 0, minY: 0, maxX: 800, maxY: 600, width: 800, height: 600 };
+      return {
+        minX: 0,
+        minY: 0,
+        maxX: 800,
+        maxY: 600,
+        width: 800,
+        height: 600,
+      };
     }
 
     let minX = Infinity;
@@ -567,12 +602,17 @@ export class CanvasExportService {
     let maxY = -Infinity;
 
     actions.forEach((action) => {
-      if (!action || !action.position || !Array.isArray(action.position) || action.position.length < 2) {
+      if (
+        !action ||
+        !action.position ||
+        !Array.isArray(action.position) ||
+        action.position.length < 2
+      ) {
         return;
       }
 
       const [x, y] = action.position;
-      if (typeof x !== 'number' || typeof y !== 'number') {
+      if (typeof x !== "number" || typeof y !== "number") {
         return;
       }
 
@@ -597,7 +637,7 @@ export class CanvasExportService {
    */
   private downloadBlob(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
     link.download = filename;
     link.click();

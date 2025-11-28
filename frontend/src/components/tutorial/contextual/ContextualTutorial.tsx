@@ -6,14 +6,14 @@
  * Handles step navigation, validation, and progression.
  */
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { AnimatePresence } from 'framer-motion';
-import { useTutorialStore } from '../../../stores/tutorial-store';
-import type { Tutorial, TutorialStep } from '../../../types/tutorial';
-import { SpotlightOverlay } from './SpotlightOverlay';
-import { TutorialTooltip } from './TutorialTooltip';
-import { TutorialPanel } from './TutorialPanel';
-import { ValidationFeedback, ValidationStatus } from './ValidationFeedback';
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { AnimatePresence } from "framer-motion";
+import { useTutorialStore } from "../../../stores/tutorial-store";
+import type { Tutorial, TutorialStep } from "../../../types/tutorial";
+import { SpotlightOverlay } from "./SpotlightOverlay";
+import { TutorialTooltip } from "./TutorialTooltip";
+import { TutorialPanel } from "./TutorialPanel";
+import { ValidationFeedback, ValidationStatus } from "./ValidationFeedback";
 
 export interface ContextualTutorialProps {
   /** Tutorial to display */
@@ -23,7 +23,7 @@ export interface ContextualTutorialProps {
   /** Show progress panel */
   showPanel?: boolean;
   /** Panel position */
-  panelPosition?: 'left' | 'right';
+  panelPosition?: "left" | "right";
   /** Allow skipping steps */
   allowSkip?: boolean;
   /** Callback when tutorial completes */
@@ -38,11 +38,11 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
   tutorial,
   isActive = true,
   showPanel = true,
-  panelPosition = 'right',
+  panelPosition = "right",
   allowSkip = true,
   onComplete,
   onClose,
-  className = '',
+  className = "",
 }) => {
   const {
     currentStepIndex,
@@ -56,7 +56,8 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
     isLastStep,
   } = useTutorialStore();
 
-  const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle');
+  const [validationStatus, setValidationStatus] =
+    useState<ValidationStatus>("idle");
   const [completedStepIds, setCompletedStepIds] = useState<string[]>([]);
   const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const currentStep = getCurrentStep();
@@ -65,15 +66,19 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
   useEffect(() => {
     if (!currentStep?.targetElement || !isActive) return;
 
-    const { selector, scrollIntoView = true, delay = 0 } = currentStep.targetElement;
+    const {
+      selector,
+      scrollIntoView = true,
+      delay = 0,
+    } = currentStep.targetElement;
 
     const scrollToElement = () => {
       const element = document.querySelector(selector);
       if (element && scrollIntoView) {
         element.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-          inline: 'center',
+          behavior: "smooth",
+          block: "center",
+          inline: "center",
         });
       }
     };
@@ -95,12 +100,12 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
     // Execute before action
     if (before) {
       try {
-        const beforeFn = new Function('return ' + before)();
-        if (typeof beforeFn === 'function') {
+        const beforeFn = new Function("return " + before)();
+        if (typeof beforeFn === "function") {
           beforeFn();
         }
       } catch (error) {
-        console.error('Error executing step before action:', error);
+        console.error("Error executing step before action:", error);
       }
     }
 
@@ -108,12 +113,12 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
     return () => {
       if (after) {
         try {
-          const afterFn = new Function('return ' + after)();
-          if (typeof afterFn === 'function') {
+          const afterFn = new Function("return " + after)();
+          if (typeof afterFn === "function") {
             afterFn();
           }
         } catch (error) {
-          console.error('Error executing step after action:', error);
+          console.error("Error executing step after action:", error);
         }
       }
     };
@@ -125,25 +130,32 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
       return true;
     }
 
-    setValidationStatus('validating');
+    setValidationStatus("validating");
 
-    const { type, condition, feedback, timeout = 5000, optional = false } = currentStep.validation;
+    const {
+      type,
+      condition,
+      feedback,
+      timeout = 5000,
+      optional = false,
+    } = currentStep.validation;
 
     try {
       // Execute validation function
-      const validationFn = new Function('return ' + condition)();
-      const isValid = typeof validationFn === 'function' ? await validationFn() : false;
+      const validationFn = new Function("return " + condition)();
+      const isValid =
+        typeof validationFn === "function" ? await validationFn() : false;
 
       if (isValid) {
-        setValidationStatus('success');
+        setValidationStatus("success");
         return true;
       } else {
-        setValidationStatus('failure');
+        setValidationStatus("failure");
         return optional;
       }
     } catch (error) {
-      console.error('Validation error:', error);
-      setValidationStatus('failure');
+      console.error("Validation error:", error);
+      setValidationStatus("failure");
       return optional;
     }
   }, [currentStep]);
@@ -164,7 +176,7 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
       );
     }
 
-    setValidationStatus('idle');
+    setValidationStatus("idle");
 
     if (isLastStep()) {
       completeTutorial();
@@ -172,11 +184,18 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
     } else {
       nextStep();
     }
-  }, [currentStep, validateStep, isLastStep, nextStep, completeTutorial, onComplete]);
+  }, [
+    currentStep,
+    validateStep,
+    isLastStep,
+    nextStep,
+    completeTutorial,
+    onComplete,
+  ]);
 
   // Handle previous step
   const handlePrevious = useCallback(() => {
-    setValidationStatus('idle');
+    setValidationStatus("idle");
     previousStep();
   }, [previousStep]);
 
@@ -195,7 +214,7 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
   // Handle step click from panel
   const handleStepClick = useCallback(
     (stepIndex: number) => {
-      setValidationStatus('idle');
+      setValidationStatus("idle");
       goToStep(stepIndex);
     },
     [goToStep]
@@ -207,7 +226,7 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Escape to close
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         handleClose();
         return;
       }
@@ -220,10 +239,10 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
         return;
       }
 
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
         handleNext();
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
         e.preventDefault();
         if (!isFirstStep()) {
           handlePrevious();
@@ -231,8 +250,8 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isActive, handleNext, handlePrevious, handleClose, isFirstStep]);
 
   if (!tutorial || !isActive || !currentStep) {
@@ -241,7 +260,7 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
 
   const targetElement = currentStep.targetElement;
   const targetSelector = targetElement?.selector || null;
-  const tooltipPosition = targetElement?.position || 'bottom';
+  const tooltipPosition = targetElement?.position || "bottom";
   const allowInteraction = targetElement?.allowInteraction ?? false;
 
   return (
@@ -290,14 +309,14 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
         )}
 
         {/* Validation Feedback */}
-        {currentStep.validation && validationStatus !== 'idle' && (
+        {currentStep.validation && validationStatus !== "idle" && (
           <ValidationFeedback
             status={validationStatus}
             successMessage={currentStep.validation.feedback.success}
             failureMessage={currentStep.validation.feedback.failure}
             hint={currentStep.validation.feedback.hint}
             asToast={true}
-            onDismiss={() => setValidationStatus('idle')}
+            onDismiss={() => setValidationStatus("idle")}
           />
         )}
       </AnimatePresence>

@@ -1,9 +1,9 @@
-'use client'
+"use client";
 
-import React, { useState } from 'react'
-import { Star, ThumbsUp } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import React, { useState } from "react";
+import { Star, ThumbsUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -12,21 +12,21 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog'
-import { Avatar } from '@/components/ui/avatar'
-import { cn } from '@/lib/utils'
-import type { PackageRating } from '@/types/code-packages'
-import { formatDistanceToNow } from 'date-fns'
+} from "@/components/ui/dialog";
+import { Avatar } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
+import type { PackageRating } from "@/types/code-packages";
+import { formatDistanceToNow } from "date-fns";
 
 interface PackageRatingsProps {
-  packageId: string
-  ratings: PackageRating[]
-  averageRating: number
-  totalRatings: number
-  userRating?: PackageRating
-  onSubmitRating: (rating: number, review?: string) => void
-  isSubmitting?: boolean
-  className?: string
+  packageId: string;
+  ratings: PackageRating[];
+  averageRating: number;
+  totalRatings: number;
+  userRating?: PackageRating;
+  onSubmitRating: (rating: number, review?: string) => void;
+  isSubmitting?: boolean;
+  className?: string;
 }
 
 export function PackageRatings({
@@ -39,39 +39,39 @@ export function PackageRatings({
   isSubmitting = false,
   className,
 }: PackageRatingsProps) {
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [selectedRating, setSelectedRating] = useState(userRating?.rating || 0)
-  const [hoverRating, setHoverRating] = useState(0)
-  const [review, setReview] = useState(userRating?.review || '')
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedRating, setSelectedRating] = useState(userRating?.rating || 0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [review, setReview] = useState(userRating?.review || "");
 
   const handleSubmit = () => {
     if (selectedRating > 0) {
-      onSubmitRating(selectedRating, review.trim() || undefined)
-      setIsDialogOpen(false)
+      onSubmitRating(selectedRating, review.trim() || undefined);
+      setIsDialogOpen(false);
     }
-  }
+  };
 
   const handleStarClick = (rating: number) => {
-    setSelectedRating(rating)
-  }
+    setSelectedRating(rating);
+  };
 
   const handleStarHover = (rating: number) => {
-    setHoverRating(rating)
-  }
+    setHoverRating(rating);
+  };
 
   const handleStarLeave = () => {
-    setHoverRating(0)
-  }
+    setHoverRating(0);
+  };
 
   // Calculate rating distribution
   const ratingDistribution = [5, 4, 3, 2, 1].map((stars) => {
-    const count = ratings.filter((r) => r.rating === stars).length
-    const percentage = totalRatings > 0 ? (count / totalRatings) * 100 : 0
-    return { stars, count, percentage }
-  })
+    const count = ratings.filter((r) => r.rating === stars).length;
+    const percentage = totalRatings > 0 ? (count / totalRatings) * 100 : 0;
+    return { stars, count, percentage };
+  });
 
   return (
-    <div className={cn('space-y-6', className)}>
+    <div className={cn("space-y-6", className)}>
       {/* Overall Rating */}
       <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
         {/* Average Rating */}
@@ -84,16 +84,16 @@ export function PackageRatings({
               <Star
                 key={star}
                 className={cn(
-                  'w-5 h-5',
+                  "w-5 h-5",
                   star <= Math.round(averageRating)
-                    ? 'fill-amber-500 text-amber-500'
-                    : 'text-gray-600'
+                    ? "fill-amber-500 text-amber-500"
+                    : "text-gray-600"
                 )}
               />
             ))}
           </div>
           <div className="text-sm text-gray-400">
-            {totalRatings} {totalRatings === 1 ? 'rating' : 'ratings'}
+            {totalRatings} {totalRatings === 1 ? "rating" : "ratings"}
           </div>
         </div>
 
@@ -111,7 +111,9 @@ export function PackageRatings({
                   style={{ width: `${percentage}%` }}
                 />
               </div>
-              <div className="w-12 text-sm text-gray-400 text-right">{count}</div>
+              <div className="w-12 text-sm text-gray-400 text-right">
+                {count}
+              </div>
             </div>
           ))}
         </div>
@@ -124,14 +126,15 @@ export function PackageRatings({
               className="bg-gray-900/50 border-cyan-500/50 hover:bg-cyan-950/30"
             >
               <Star className="w-4 h-4 mr-2" />
-              {userRating ? 'Update Rating' : 'Rate Package'}
+              {userRating ? "Update Rating" : "Rate Package"}
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>Rate this package</DialogTitle>
               <DialogDescription>
-                Share your experience with this package to help others make informed decisions.
+                Share your experience with this package to help others make
+                informed decisions.
               </DialogDescription>
             </DialogHeader>
 
@@ -150,10 +153,10 @@ export function PackageRatings({
                     >
                       <Star
                         className={cn(
-                          'w-10 h-10 transition-colors',
+                          "w-10 h-10 transition-colors",
                           star <= (hoverRating || selectedRating)
-                            ? 'fill-amber-500 text-amber-500'
-                            : 'text-gray-600 hover:text-gray-500'
+                            ? "fill-amber-500 text-amber-500"
+                            : "text-gray-600 hover:text-gray-500"
                         )}
                       />
                     </button>
@@ -161,18 +164,21 @@ export function PackageRatings({
                 </div>
                 {selectedRating > 0 && (
                   <div className="text-sm text-gray-400">
-                    {selectedRating === 1 && 'Poor'}
-                    {selectedRating === 2 && 'Fair'}
-                    {selectedRating === 3 && 'Good'}
-                    {selectedRating === 4 && 'Very Good'}
-                    {selectedRating === 5 && 'Excellent'}
+                    {selectedRating === 1 && "Poor"}
+                    {selectedRating === 2 && "Fair"}
+                    {selectedRating === 3 && "Good"}
+                    {selectedRating === 4 && "Very Good"}
+                    {selectedRating === 5 && "Excellent"}
                   </div>
                 )}
               </div>
 
               {/* Review Text */}
               <div className="space-y-2">
-                <label htmlFor="review" className="text-sm font-medium text-gray-300">
+                <label
+                  htmlFor="review"
+                  className="text-sm font-medium text-gray-300"
+                >
                   Review (optional)
                 </label>
                 <Textarea
@@ -199,7 +205,7 @@ export function PackageRatings({
                 disabled={selectedRating === 0 || isSubmitting}
                 className="bg-gradient-to-r from-cyan-500 to-purple-500"
               >
-                {isSubmitting ? 'Submitting...' : 'Submit Rating'}
+                {isSubmitting ? "Submitting..." : "Submit Rating"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -232,10 +238,10 @@ export function PackageRatings({
                           <Star
                             key={star}
                             className={cn(
-                              'w-3 h-3',
+                              "w-3 h-3",
                               star <= rating.rating
-                                ? 'fill-amber-500 text-amber-500'
-                                : 'text-gray-600'
+                                ? "fill-amber-500 text-amber-500"
+                                : "text-gray-600"
                             )}
                           />
                         ))}
@@ -247,7 +253,9 @@ export function PackageRatings({
                       </span>
                     </div>
                     {rating.review && (
-                      <p className="text-sm text-gray-400 mt-2">{rating.review}</p>
+                      <p className="text-sm text-gray-400 mt-2">
+                        {rating.review}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -257,5 +265,5 @@ export function PackageRatings({
         </div>
       )}
     </div>
-  )
+  );
 }

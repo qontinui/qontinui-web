@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Bug,
   ChevronLeft,
@@ -6,13 +6,13 @@ import {
   X,
   Maximize2,
   Minimize2,
-} from 'lucide-react';
-import { useExecutionDebugger } from '../../stores/execution-debugger-store';
-import { ExecutionControls } from './ExecutionControls';
-import { ActionTimeline } from './ActionTimeline';
-import { VariableInspector } from './VariableInspector';
-import { ExecutionLog } from './ExecutionLog';
-import { Action } from '../../contexts/automation-context/types';
+} from "lucide-react";
+import { useExecutionDebugger } from "../../stores/execution-debugger-store";
+import { ExecutionControls } from "./ExecutionControls";
+import { ActionTimeline } from "./ActionTimeline";
+import { VariableInspector } from "./VariableInspector";
+import { ExecutionLog } from "./ExecutionLog";
+import { Action } from "../../contexts/automation-context/types";
 
 interface ExecutionDebuggerProps {
   actions: Action[];
@@ -23,7 +23,7 @@ interface ExecutionDebuggerProps {
   onToggle?: () => void;
 }
 
-type TabType = 'timeline' | 'variables' | 'log';
+type TabType = "timeline" | "variables" | "log";
 
 export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
   actions,
@@ -33,7 +33,7 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
   isOpen = true,
   onToggle,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('timeline');
+  const [activeTab, setActiveTab] = useState<TabType>("timeline");
   const [isExpanded, setIsExpanded] = useState(false);
   const { debugEnabled, setDebugEnabled, state, metrics, currentActionIndex } =
     useExecutionDebugger();
@@ -52,15 +52,16 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
   }
 
   const tabs: { id: TabType; label: string; badge?: number }[] = [
-    { id: 'timeline', label: 'Timeline', badge: actions.length },
+    { id: "timeline", label: "Timeline", badge: actions.length },
     {
-      id: 'variables',
-      label: 'Variables',
-      badge: Object.keys(useExecutionDebugger.getState().context.variables).length,
+      id: "variables",
+      label: "Variables",
+      badge: Object.keys(useExecutionDebugger.getState().context.variables)
+        .length,
     },
     {
-      id: 'log',
-      label: 'Log',
+      id: "log",
+      label: "Log",
       badge: useExecutionDebugger.getState().logs.length,
     },
   ];
@@ -68,9 +69,7 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
   return (
     <div
       className={`fixed ${
-        isExpanded
-          ? 'inset-4'
-          : 'right-0 top-0 bottom-0 w-96'
+        isExpanded ? "inset-4" : "right-0 top-0 bottom-0 w-96"
       } bg-white shadow-2xl border-l flex flex-col z-40 transition-all duration-300`}
     >
       {/* Header */}
@@ -93,7 +92,7 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className="p-1.5 hover:bg-gray-200 rounded transition-colors"
-            title={isExpanded ? 'Minimize' : 'Maximize'}
+            title={isExpanded ? "Minimize" : "Maximize"}
           >
             {isExpanded ? (
               <Minimize2 className="w-4 h-4 text-gray-600" />
@@ -115,16 +114,21 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
 
       {/* Execution Controls */}
       {debugEnabled && (
-        <ExecutionControls onExecute={onExecute} onStop={onStop} onStep={onStep} />
+        <ExecutionControls
+          onExecute={onExecute}
+          onStop={onStop}
+          onStep={onStep}
+        />
       )}
 
       {/* Stats Bar */}
-      {debugEnabled && state !== 'idle' && (
+      {debugEnabled && state !== "idle" && (
         <div className="flex items-center gap-4 px-3 py-2 bg-blue-50 border-b text-xs">
           <div className="flex items-center gap-2">
             <span className="text-gray-600">Progress:</span>
             <span className="font-semibold text-gray-900">
-              {currentActionIndex >= 0 ? currentActionIndex + 1 : 0} / {actions.length}
+              {currentActionIndex >= 0 ? currentActionIndex + 1 : 0} /{" "}
+              {actions.length}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -151,8 +155,8 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 px-4 py-2 text-sm font-medium transition-colors relative ${
                 activeTab === tab.id
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
               }`}
             >
               {tab.label}
@@ -160,8 +164,8 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
                 <span
                   className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
                     activeTab === tab.id
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-gray-100 text-gray-600'
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-gray-100 text-gray-600"
                   }`}
                 >
                   {tab.badge}
@@ -179,8 +183,8 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
             <Bug className="w-16 h-16 mb-4 text-gray-400" />
             <h3 className="text-lg font-semibold mb-2">Debugger Disabled</h3>
             <p className="text-sm">
-              Enable the debugger to track execution state, variables, and logs in
-              real-time.
+              Enable the debugger to track execution state, variables, and logs
+              in real-time.
             </p>
             <button
               onClick={() => setDebugEnabled(true)}
@@ -191,17 +195,17 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
           </div>
         ) : (
           <>
-            {activeTab === 'timeline' && (
+            {activeTab === "timeline" && (
               <ActionTimeline
                 actions={actions}
                 onActionClick={(index) => {
                   // Could implement jump-to-action functionality here
-                  console.log('Clicked action:', index);
+                  console.log("Clicked action:", index);
                 }}
               />
             )}
-            {activeTab === 'variables' && <VariableInspector />}
-            {activeTab === 'log' && <ExecutionLog />}
+            {activeTab === "variables" && <VariableInspector />}
+            {activeTab === "log" && <ExecutionLog />}
           </>
         )}
       </div>
@@ -213,13 +217,16 @@ export const ExecutionDebugger: React.FC<ExecutionDebuggerProps> = ({
             <span>Shortcuts:</span>
             <div className="flex gap-3">
               <span>
-                <kbd className="px-1.5 py-0.5 bg-white border rounded">F5</kbd> Play
+                <kbd className="px-1.5 py-0.5 bg-white border rounded">F5</kbd>{" "}
+                Play
               </span>
               <span>
-                <kbd className="px-1.5 py-0.5 bg-white border rounded">F10</kbd> Step
+                <kbd className="px-1.5 py-0.5 bg-white border rounded">F10</kbd>{" "}
+                Step
               </span>
               <span>
-                <kbd className="px-1.5 py-0.5 bg-white border rounded">F9</kbd> Breakpoint
+                <kbd className="px-1.5 py-0.5 bg-white border rounded">F9</kbd>{" "}
+                Breakpoint
               </span>
             </div>
           </div>

@@ -9,13 +9,13 @@
  * - Success/failure breakdown
  */
 
-'use client';
+"use client";
 
-import React, { useMemo } from 'react';
-import { Workflow } from '@/lib/action-schema/action-types';
-import { WorkflowMetrics } from '@/services/workflow-analytics-service';
-import { ComplexityAnalysis } from '@/services/workflow-complexity-analyzer';
-import { TestResult } from '@/services/workflow-testing-service';
+import React, { useMemo } from "react";
+import { Workflow } from "@/lib/action-schema/action-types";
+import { WorkflowMetrics } from "@/services/workflow-analytics-service";
+import { ComplexityAnalysis } from "@/services/workflow-complexity-analyzer";
+import { TestResult } from "@/services/workflow-testing-service";
 import {
   LineChart,
   Line,
@@ -34,7 +34,7 @@ import {
   Cell,
   RadialBarChart,
   RadialBar,
-} from 'recharts';
+} from "recharts";
 import {
   Activity,
   CheckCircle,
@@ -47,14 +47,20 @@ import {
   AlertCircle,
   Play,
   StopCircle,
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -75,7 +81,7 @@ interface ComplexityMetrics {
   branchingFactor: number;
   cyclomaticComplexity: number;
   complexityScore: number;
-  complexityRating: 'low' | 'medium' | 'high' | 'very-high';
+  complexityRating: "low" | "medium" | "high" | "very-high";
 }
 
 interface MetricCardProps {
@@ -84,7 +90,7 @@ interface MetricCardProps {
   icon: React.ReactNode;
   trend?: number;
   subtitle?: string;
-  variant?: 'default' | 'success' | 'warning' | 'error';
+  variant?: "default" | "success" | "warning" | "error";
 }
 
 // ============================================================================
@@ -92,17 +98,17 @@ interface MetricCardProps {
 // ============================================================================
 
 const COMPLEXITY_COLORS = {
-  low: '#10b981',
-  medium: '#f59e0b',
-  high: '#f97316',
-  'very-high': '#ef4444',
+  low: "#10b981",
+  medium: "#f59e0b",
+  high: "#f97316",
+  "very-high": "#ef4444",
 };
 
 const CHART_COLORS = {
-  primary: '#3b82f6',
-  success: '#10b981',
-  error: '#ef4444',
-  warning: '#f59e0b',
+  primary: "#3b82f6",
+  success: "#10b981",
+  error: "#ef4444",
+  warning: "#f59e0b",
 };
 
 // ============================================================================
@@ -128,7 +134,7 @@ function formatRelativeTime(dateString: string): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return 'Just now';
+  if (diffMins < 1) return "Just now";
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
@@ -136,30 +142,42 @@ function formatRelativeTime(dateString: string): string {
 }
 
 function getComplexityColor(rating: string): string {
-  return COMPLEXITY_COLORS[rating as keyof typeof COMPLEXITY_COLORS] || COMPLEXITY_COLORS.low;
+  return (
+    COMPLEXITY_COLORS[rating as keyof typeof COMPLEXITY_COLORS] ||
+    COMPLEXITY_COLORS.low
+  );
 }
 
 // ============================================================================
 // Metric Card Component
 // ============================================================================
 
-function MetricCard({ title, value, icon, trend, subtitle, variant = 'default' }: MetricCardProps) {
+function MetricCard({
+  title,
+  value,
+  icon,
+  trend,
+  subtitle,
+  variant = "default",
+}: MetricCardProps) {
   const variantStyles = {
-    default: 'border-border',
-    success: 'border-green-500/20 bg-green-500/5',
-    warning: 'border-orange-500/20 bg-orange-500/5',
-    error: 'border-red-500/20 bg-red-500/5',
+    default: "border-border",
+    success: "border-green-500/20 bg-green-500/5",
+    warning: "border-orange-500/20 bg-orange-500/5",
+    error: "border-red-500/20 bg-red-500/5",
   };
 
   return (
-    <Card className={cn('relative overflow-hidden', variantStyles[variant])}>
+    <Card className={cn("relative overflow-hidden", variantStyles[variant])}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <div className="text-muted-foreground">{icon}</div>
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold">{value}</div>
-        {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
+        {subtitle && (
+          <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+        )}
         {trend !== undefined && trend !== 0 && (
           <div className="flex items-center mt-2 text-xs">
             {trend > 0 ? (
@@ -167,8 +185,8 @@ function MetricCard({ title, value, icon, trend, subtitle, variant = 'default' }
             ) : (
               <TrendingDown className="h-3 w-3 text-red-500 mr-1" />
             )}
-            <span className={cn(trend > 0 ? 'text-green-500' : 'text-red-500')}>
-              {trend > 0 ? '+' : ''}
+            <span className={cn(trend > 0 ? "text-green-500" : "text-red-500")}>
+              {trend > 0 ? "+" : ""}
               {trend.toFixed(1)}% vs avg
             </span>
           </div>
@@ -185,7 +203,7 @@ function MetricCard({ title, value, icon, trend, subtitle, variant = 'default' }
 function ComplexityGauge({ score, rating }: { score: number; rating: string }) {
   const data = [
     {
-      name: 'Complexity',
+      name: "Complexity",
       value: score,
       fill: getComplexityColor(rating),
     },
@@ -203,11 +221,7 @@ function ComplexityGauge({ score, rating }: { score: number; rating: string }) {
           startAngle={180}
           endAngle={0}
         >
-          <RadialBar
-            background
-            dataKey="value"
-            cornerRadius={10}
-          />
+          <RadialBar background dataKey="value" cornerRadius={10} />
         </RadialBarChart>
       </ResponsiveContainer>
       <div className="text-center -mt-20">
@@ -240,12 +254,20 @@ export function WorkflowMetricsPanel({
 
   const successRateTrend = useMemo(() => {
     if (!avgMetrics.avgSuccessRate) return 0;
-    return ((metrics.successRate - avgMetrics.avgSuccessRate) / avgMetrics.avgSuccessRate) * 100;
+    return (
+      ((metrics.successRate - avgMetrics.avgSuccessRate) /
+        avgMetrics.avgSuccessRate) *
+      100
+    );
   }, [metrics.successRate, avgMetrics.avgSuccessRate]);
 
   const durationTrend = useMemo(() => {
     if (!avgMetrics.avgDuration) return 0;
-    return ((metrics.avgDuration - avgMetrics.avgDuration) / avgMetrics.avgDuration) * 100;
+    return (
+      ((metrics.avgDuration - avgMetrics.avgDuration) /
+        avgMetrics.avgDuration) *
+      100
+    );
   }, [metrics.avgDuration, avgMetrics.avgDuration]);
 
   // Execution history timeline data
@@ -264,8 +286,16 @@ export function WorkflowMetricsPanel({
   // Success/failure breakdown
   const breakdownData = useMemo(() => {
     return [
-      { name: 'Success', value: metrics.successfulExecutions, color: CHART_COLORS.success },
-      { name: 'Failed', value: metrics.failedExecutions, color: CHART_COLORS.error },
+      {
+        name: "Success",
+        value: metrics.successfulExecutions,
+        color: CHART_COLORS.success,
+      },
+      {
+        name: "Failed",
+        value: metrics.failedExecutions,
+        color: CHART_COLORS.error,
+      },
     ];
   }, [metrics]);
 
@@ -282,11 +312,12 @@ export function WorkflowMetricsPanel({
   // Success rate trend over time
   const successRateTrendData = useMemo(() => {
     const chunkSize = 5; // Calculate success rate for every 5 executions
-    const chunks: Array<{ run: string; successRate: number; total: number }> = [];
+    const chunks: Array<{ run: string; successRate: number; total: number }> =
+      [];
 
     for (let i = 0; i < executionHistory.length; i += chunkSize) {
       const chunk = executionHistory.slice(i, i + chunkSize);
-      const successful = chunk.filter(r => r.passed).length;
+      const successful = chunk.filter((r) => r.passed).length;
       const rate = (successful / chunk.length) * 100;
 
       chunks.push({
@@ -302,12 +333,36 @@ export function WorkflowMetricsPanel({
   // Complexity metrics table data
   const complexityTableData = useMemo(() => {
     return [
-      { metric: 'Actions', value: complexityMetrics.actionCount, description: 'Total number of actions' },
-      { metric: 'Connections', value: complexityMetrics.connectionCount, description: 'Total connections' },
-      { metric: 'Max Depth', value: complexityMetrics.maxDepth, description: 'Longest execution path' },
-      { metric: 'Branching Factor', value: complexityMetrics.branchingFactor.toFixed(2), description: 'Avg branches per node' },
-      { metric: 'Cyclomatic Complexity', value: complexityMetrics.cyclomaticComplexity, description: 'Decision points' },
-      { metric: 'Control Flow Actions', value: complexityMetrics.controlFlowCount || 0, description: 'IF/LOOP/SWITCH actions' },
+      {
+        metric: "Actions",
+        value: complexityMetrics.actionCount,
+        description: "Total number of actions",
+      },
+      {
+        metric: "Connections",
+        value: complexityMetrics.connectionCount,
+        description: "Total connections",
+      },
+      {
+        metric: "Max Depth",
+        value: complexityMetrics.maxDepth,
+        description: "Longest execution path",
+      },
+      {
+        metric: "Branching Factor",
+        value: complexityMetrics.branchingFactor.toFixed(2),
+        description: "Avg branches per node",
+      },
+      {
+        metric: "Cyclomatic Complexity",
+        value: complexityMetrics.cyclomaticComplexity,
+        description: "Decision points",
+      },
+      {
+        metric: "Control Flow Actions",
+        value: complexityMetrics.controlFlowCount || 0,
+        description: "IF/LOOP/SWITCH actions",
+      },
     ];
   }, [complexityMetrics]);
 
@@ -317,12 +372,12 @@ export function WorkflowMetricsPanel({
   }, [executionHistory]);
 
   return (
-    <div className={cn('space-y-6', className)}>
+    <div className={cn("space-y-6", className)}>
       {/* Header */}
       <div>
         <h3 className="text-2xl font-bold">{workflow.name}</h3>
         <p className="text-muted-foreground">
-          {workflow.description || 'Detailed metrics and performance analysis'}
+          {workflow.description || "Detailed metrics and performance analysis"}
         </p>
       </div>
 
@@ -340,7 +395,13 @@ export function WorkflowMetricsPanel({
           icon={<CheckCircle className="h-4 w-4" />}
           trend={successRateTrend}
           subtitle={`${metrics.successfulExecutions} / ${metrics.totalExecutions}`}
-          variant={metrics.successRate > 0.9 ? 'success' : metrics.successRate > 0.7 ? 'warning' : 'error'}
+          variant={
+            metrics.successRate > 0.9
+              ? "success"
+              : metrics.successRate > 0.7
+                ? "warning"
+                : "error"
+          }
         />
         <MetricCard
           title="Avg Duration"
@@ -351,9 +412,17 @@ export function WorkflowMetricsPanel({
         />
         <MetricCard
           title="Last Run"
-          value={metrics.lastExecuted ? formatRelativeTime(metrics.lastExecuted) : 'Never'}
+          value={
+            metrics.lastExecuted
+              ? formatRelativeTime(metrics.lastExecuted)
+              : "Never"
+          }
           icon={<Calendar className="h-4 w-4" />}
-          subtitle={metrics.lastExecuted ? new Date(metrics.lastExecuted).toLocaleString() : 'No executions yet'}
+          subtitle={
+            metrics.lastExecuted
+              ? new Date(metrics.lastExecuted).toLocaleString()
+              : "No executions yet"
+          }
         />
       </div>
 
@@ -376,7 +445,9 @@ export function WorkflowMetricsPanel({
                   <Gauge className="h-5 w-5" />
                   Complexity Score
                 </CardTitle>
-                <CardDescription>Overall workflow complexity rating</CardDescription>
+                <CardDescription>
+                  Overall workflow complexity rating
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <ComplexityGauge
@@ -389,7 +460,11 @@ export function WorkflowMetricsPanel({
                     <span className="text-muted-foreground">Rating:</span>
                     <Badge
                       variant="outline"
-                      style={{ borderColor: getComplexityColor(complexityMetrics.complexityRating) }}
+                      style={{
+                        borderColor: getComplexityColor(
+                          complexityMetrics.complexityRating
+                        ),
+                      }}
                     >
                       {complexityMetrics.complexityRating.toUpperCase()}
                     </Badge>
@@ -403,7 +478,10 @@ export function WorkflowMetricsPanel({
                   {complexityMetrics.disconnectedComponents > 1 && (
                     <div className="flex items-center gap-2 text-orange-500">
                       <AlertCircle className="h-4 w-4" />
-                      <span>{complexityMetrics.disconnectedComponents} disconnected components</span>
+                      <span>
+                        {complexityMetrics.disconnectedComponents} disconnected
+                        components
+                      </span>
                     </div>
                   )}
                 </div>
@@ -422,10 +500,16 @@ export function WorkflowMetricsPanel({
                     {complexityTableData.map((item) => (
                       <div key={item.metric} className="space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">{item.metric}</span>
-                          <span className="text-sm font-bold">{item.value}</span>
+                          <span className="text-sm font-medium">
+                            {item.metric}
+                          </span>
+                          <span className="text-sm font-bold">
+                            {item.value}
+                          </span>
                         </div>
-                        <p className="text-xs text-muted-foreground">{item.description}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.description}
+                        </p>
                         <Separator />
                       </div>
                     ))}
@@ -454,7 +538,7 @@ export function WorkflowMetricsPanel({
                       <YAxis />
                       <Tooltip
                         formatter={(value: number, name: string) => {
-                          if (name === 'duration') return formatDuration(value);
+                          if (name === "duration") return formatDuration(value);
                           return value;
                         }}
                         labelFormatter={(label) => `Run #${label}`}
@@ -503,12 +587,18 @@ export function WorkflowMetricsPanel({
                               <span className="text-sm font-medium">
                                 Run #{executionHistory.length - index}
                               </span>
-                              <Badge variant={result.passed ? 'default' : 'destructive'} className="text-xs">
-                                {result.passed ? 'Success' : 'Failed'}
+                              <Badge
+                                variant={
+                                  result.passed ? "default" : "destructive"
+                                }
+                                className="text-xs"
+                              >
+                                {result.passed ? "Success" : "Failed"}
                               </Badge>
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              {formatRelativeTime(result.startTime)} • {formatDuration(result.duration)}
+                              {formatRelativeTime(result.startTime)} •{" "}
+                              {formatDuration(result.duration)}
                             </div>
                           </div>
                         </div>
@@ -577,7 +667,9 @@ export function WorkflowMetricsPanel({
           <Card>
             <CardHeader>
               <CardTitle>Success Rate Trend</CardTitle>
-              <CardDescription>Success rate over execution batches</CardDescription>
+              <CardDescription>
+                Success rate over execution batches
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {successRateTrendData.length > 0 ? (
@@ -586,7 +678,9 @@ export function WorkflowMetricsPanel({
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="run" />
                     <YAxis domain={[0, 100]} />
-                    <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
+                    <Tooltip
+                      formatter={(value: number) => `${value.toFixed(1)}%`}
+                    />
                     <Legend />
                     <Area
                       type="monotone"
@@ -614,7 +708,9 @@ export function WorkflowMetricsPanel({
             <Card>
               <CardHeader>
                 <CardTitle>Success vs Failure</CardTitle>
-                <CardDescription>Execution outcome distribution</CardDescription>
+                <CardDescription>
+                  Execution outcome distribution
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {metrics.totalExecutions > 0 ? (
@@ -625,7 +721,9 @@ export function WorkflowMetricsPanel({
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                        label={({ name, value, percent }) =>
+                          `${name}: ${value} (${(percent * 100).toFixed(0)}%)`
+                        }
                         outerRadius={80}
                         fill="#8884d8"
                         dataKey="value"
@@ -655,7 +753,9 @@ export function WorkflowMetricsPanel({
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Success Rate</span>
-                    <span className="font-medium">{formatPercentage(metrics.successRate)}</span>
+                    <span className="font-medium">
+                      {formatPercentage(metrics.successRate)}
+                    </span>
                   </div>
                   <Progress value={metrics.successRate * 100} className="h-2" />
                 </div>
@@ -665,15 +765,21 @@ export function WorkflowMetricsPanel({
                 <div className="space-y-3">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Min Duration</span>
-                    <span className="font-medium">{formatDuration(metrics.minDuration)}</span>
+                    <span className="font-medium">
+                      {formatDuration(metrics.minDuration)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Avg Duration</span>
-                    <span className="font-medium">{formatDuration(metrics.avgDuration)}</span>
+                    <span className="font-medium">
+                      {formatDuration(metrics.avgDuration)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Max Duration</span>
-                    <span className="font-medium">{formatDuration(metrics.maxDuration)}</span>
+                    <span className="font-medium">
+                      {formatDuration(metrics.maxDuration)}
+                    </span>
                   </div>
                 </div>
 
@@ -681,16 +787,24 @@ export function WorkflowMetricsPanel({
 
                 <div className="space-y-3">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total Executions</span>
-                    <span className="font-medium">{metrics.totalExecutions}</span>
+                    <span className="text-muted-foreground">
+                      Total Executions
+                    </span>
+                    <span className="font-medium">
+                      {metrics.totalExecutions}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Successful</span>
-                    <span className="font-medium text-green-500">{metrics.successfulExecutions}</span>
+                    <span className="font-medium text-green-500">
+                      {metrics.successfulExecutions}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Failed</span>
-                    <span className="font-medium text-red-500">{metrics.failedExecutions}</span>
+                    <span className="font-medium text-red-500">
+                      {metrics.failedExecutions}
+                    </span>
                   </div>
                 </div>
 
@@ -700,12 +814,16 @@ export function WorkflowMetricsPanel({
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">First Run</span>
-                        <span className="font-medium">{formatRelativeTime(metrics.firstExecuted)}</span>
+                        <span className="font-medium">
+                          {formatRelativeTime(metrics.firstExecuted)}
+                        </span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Last Run</span>
                         <span className="font-medium">
-                          {metrics.lastExecuted ? formatRelativeTime(metrics.lastExecuted) : 'Never'}
+                          {metrics.lastExecuted
+                            ? formatRelativeTime(metrics.lastExecuted)
+                            : "Never"}
                         </span>
                       </div>
                     </div>

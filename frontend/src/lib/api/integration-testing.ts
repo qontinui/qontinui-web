@@ -4,20 +4,20 @@ import type {
   MockExecutionRequest,
   MockExecutionResponse,
   StateScreenshotListResponse,
-} from '@/types/integration-testing';
+} from "@/types/integration-testing";
 
 export async function executeMockProcess(
   request: MockExecutionRequest
 ): Promise<MockExecutionResponse> {
-  const response = await fetch('/api/integration-testing/execute', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const response = await fetch("/api/integration-testing/execute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Mock execution failed');
+    throw new Error(error.detail || "Mock execution failed");
   }
 
   return response.json();
@@ -29,7 +29,7 @@ export async function getStateScreenshots(
 ): Promise<StateScreenshotListResponse> {
   const params = new URLSearchParams();
   if (activeStates && activeStates.length > 0) {
-    params.set('active_states', activeStates.join(','));
+    params.set("active_states", activeStates.join(","));
   }
 
   const response = await fetch(
@@ -37,20 +37,23 @@ export async function getStateScreenshots(
   );
 
   if (!response.ok) {
-    throw new Error('Failed to get screenshots');
+    throw new Error("Failed to get screenshots");
   }
 
   return response.json();
 }
 
-export function getScreenshotUrl(runId: string, screenshotPath: string): string {
+export function getScreenshotUrl(
+  runId: string,
+  screenshotPath: string
+): string {
   return `/api/integration-testing/snapshots/${runId}/screenshot/${screenshotPath}`;
 }
 
 // Video Export Types
 export interface VideoExportOptions {
   frameDuration: number;
-  quality: '480p' | '720p' | '1080p';
+  quality: "480p" | "720p" | "1080p";
   includeOverlays: boolean;
   includeTimeline: boolean;
   includeText: boolean;
@@ -82,9 +85,9 @@ export async function exportExecutionVideo(
   executionData: MockExecutionResponse,
   options: VideoExportOptions
 ): Promise<VideoExportResponse> {
-  const response = await fetch('/api/integration-testing/export/video', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const response = await fetch("/api/integration-testing/export/video", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       execution_data: executionData,
       frame_duration: options.frameDuration,
@@ -98,19 +101,21 @@ export async function exportExecutionVideo(
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Video export failed');
+    throw new Error(error.detail || "Video export failed");
   }
 
   return response.json();
 }
 
-export async function getVideoExportStatus(videoId: string): Promise<VideoExportStatus> {
+export async function getVideoExportStatus(
+  videoId: string
+): Promise<VideoExportStatus> {
   const response = await fetch(
     `/api/integration-testing/export/video/${videoId}/status`
   );
 
   if (!response.ok) {
-    throw new Error('Failed to get video export status');
+    throw new Error("Failed to get video export status");
   }
 
   return response.json();
@@ -122,13 +127,13 @@ export async function downloadVideo(videoId: string): Promise<void> {
   );
 
   if (!response.ok) {
-    throw new Error('Failed to download video');
+    throw new Error("Failed to download video");
   }
 
   // Create download link
   const blob = await response.blob();
   const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
   a.download = `execution_${videoId}.mp4`;
   document.body.appendChild(a);
@@ -141,12 +146,12 @@ export async function deleteVideo(videoId: string): Promise<void> {
   const response = await fetch(
     `/api/integration-testing/export/video/${videoId}`,
     {
-      method: 'DELETE',
+      method: "DELETE",
     }
   );
 
   if (!response.ok) {
-    throw new Error('Failed to delete video');
+    throw new Error("Failed to delete video");
   }
 }
 
@@ -159,8 +164,8 @@ export interface PDFReportOptions {
   includeTimeline?: boolean;
   includeRecommendations?: boolean;
   includeAppendices?: boolean;
-  screenshotQuality?: 'low' | 'medium' | 'high';
-  pageSize?: 'letter' | 'a4';
+  screenshotQuality?: "low" | "medium" | "high";
+  pageSize?: "letter" | "a4";
   title?: string;
 }
 
@@ -168,9 +173,9 @@ export interface PDFReportOptions {
 export async function generatePDFReport(
   options: PDFReportOptions
 ): Promise<Blob> {
-  const response = await fetch('/api/integration-testing/reports/pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const response = await fetch("/api/integration-testing/reports/pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       execution_result: options.executionResult,
       screenshots_dir: options.screenshotsDir,
@@ -179,15 +184,15 @@ export async function generatePDFReport(
       include_timeline: options.includeTimeline ?? true,
       include_recommendations: options.includeRecommendations ?? true,
       include_appendices: options.includeAppendices ?? true,
-      screenshot_quality: options.screenshotQuality ?? 'medium',
-      page_size: options.pageSize ?? 'letter',
+      screenshot_quality: options.screenshotQuality ?? "medium",
+      page_size: options.pageSize ?? "letter",
       title: options.title,
     }),
   });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'PDF generation failed');
+    throw new Error(error.detail || "PDF generation failed");
   }
 
   return response.blob();

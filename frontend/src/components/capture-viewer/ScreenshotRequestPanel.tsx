@@ -1,25 +1,25 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
+} from "@/components/ui/card";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { Camera, ChevronDown, ChevronUp, Info } from 'lucide-react';
-import { toast } from 'sonner';
+} from "@/components/ui/collapsible";
+import { Camera, ChevronDown, ChevronUp, Info } from "lucide-react";
+import { toast } from "sonner";
 
 export interface ScreenshotFilter {
   eventTypes: string[];
@@ -34,16 +34,32 @@ export interface ScreenshotRequestPanelProps {
 }
 
 const EVENT_TYPE_OPTIONS = [
-  { value: 'mouse_click', label: 'Mouse Clicks', description: 'Capture on click events' },
-  { value: 'mouse_drag', label: 'Mouse Drags', description: 'Capture during drag operations' },
-  { value: 'key_press', label: 'Key Presses', description: 'Capture on keyboard input' },
-  { value: 'scroll', label: 'Scrolls', description: 'Capture on scroll events' },
+  {
+    value: "mouse_click",
+    label: "Mouse Clicks",
+    description: "Capture on click events",
+  },
+  {
+    value: "mouse_drag",
+    label: "Mouse Drags",
+    description: "Capture during drag operations",
+  },
+  {
+    value: "key_press",
+    label: "Key Presses",
+    description: "Capture on keyboard input",
+  },
+  {
+    value: "scroll",
+    label: "Scrolls",
+    description: "Capture on scroll events",
+  },
 ];
 
 const BUTTON_OPTIONS = [
-  { value: 'left', label: 'Left Click' },
-  { value: 'right', label: 'Right Click' },
-  { value: 'middle', label: 'Middle Click' },
+  { value: "left", label: "Left Click" },
+  { value: "right", label: "Right Click" },
+  { value: "middle", label: "Middle Click" },
 ];
 
 export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
@@ -51,8 +67,8 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
   onRequest,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [eventTypes, setEventTypes] = useState<string[]>(['mouse_click']);
-  const [buttons, setButtons] = useState<string[]>(['left']);
+  const [eventTypes, setEventTypes] = useState<string[]>(["mouse_click"]);
+  const [buttons, setButtons] = useState<string[]>(["left"]);
   const [maxCount, setMaxCount] = useState(10);
   const [includeAfterDelay, setIncludeAfterDelay] = useState(false);
   const [afterDelayMs, setAfterDelayMs] = useState(500);
@@ -77,18 +93,18 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
   const handleSubmit = async () => {
     // Validation
     if (eventTypes.length === 0) {
-      toast.error('Please select at least one event type');
+      toast.error("Please select at least one event type");
       return;
     }
 
     if (maxCount < 1 || maxCount > 1000) {
-      toast.error('Max count must be between 1 and 1000');
+      toast.error("Max count must be between 1 and 1000");
       return;
     }
 
     // Only validate buttons if mouse_click is selected
-    if (eventTypes.includes('mouse_click') && buttons.length === 0) {
-      toast.error('Please select at least one mouse button');
+    if (eventTypes.includes("mouse_click") && buttons.length === 0) {
+      toast.error("Please select at least one mouse button");
       return;
     }
 
@@ -104,18 +120,18 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
 
       await onRequest(filter);
 
-      toast.success('Screenshot request submitted successfully');
+      toast.success("Screenshot request submitted successfully");
     } catch (error) {
-      console.error('Failed to submit screenshot request:', error);
-      toast.error('Failed to submit screenshot request');
+      console.error("Failed to submit screenshot request:", error);
+      toast.error("Failed to submit screenshot request");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleReset = () => {
-    setEventTypes(['mouse_click']);
-    setButtons(['left']);
+    setEventTypes(["mouse_click"]);
+    setButtons(["left"]);
     setMaxCount(10);
     setIncludeAfterDelay(false);
     setAfterDelayMs(500);
@@ -129,7 +145,9 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Camera className="h-5 w-5 text-blue-600" />
-                <CardTitle className="text-lg">Request Full-Size Screenshots</CardTitle>
+                <CardTitle className="text-lg">
+                  Request Full-Size Screenshots
+                </CardTitle>
               </div>
               {isOpen ? (
                 <ChevronUp className="h-5 w-5 text-gray-500" />
@@ -151,9 +169,9 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
               <div className="text-sm text-blue-900">
                 <p className="font-medium mb-1">About Screenshot Requests</p>
                 <p className="text-blue-800">
-                  Full-size screenshots are generated asynchronously and will be available in the
-                  screenshots tab once processing is complete. This is useful for detailed analysis
-                  or documentation.
+                  Full-size screenshots are generated asynchronously and will be
+                  available in the screenshots tab once processing is complete.
+                  This is useful for detailed analysis or documentation.
                 </p>
               </div>
             </div>
@@ -173,7 +191,9 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                     <Checkbox
                       id={`event-${option.value}`}
                       checked={eventTypes.includes(option.value)}
-                      onCheckedChange={() => handleEventTypeToggle(option.value)}
+                      onCheckedChange={() =>
+                        handleEventTypeToggle(option.value)
+                      }
                     />
                     <div className="flex-1">
                       <label
@@ -182,7 +202,9 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                       >
                         {option.label}
                       </label>
-                      <p className="text-xs text-gray-500">{option.description}</p>
+                      <p className="text-xs text-gray-500">
+                        {option.description}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -190,15 +212,19 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
             </div>
 
             {/* Mouse Buttons (only shown if mouse_click is selected) */}
-            {eventTypes.includes('mouse_click') && (
+            {eventTypes.includes("mouse_click") && (
               <div className="space-y-3">
                 <Label className="text-base font-semibold">Mouse Buttons</Label>
-                <p className="text-sm text-gray-600">Select which mouse buttons to capture</p>
+                <p className="text-sm text-gray-600">
+                  Select which mouse buttons to capture
+                </p>
                 <div className="flex gap-2 flex-wrap">
                   {BUTTON_OPTIONS.map((option) => (
                     <Badge
                       key={option.value}
-                      variant={buttons.includes(option.value) ? 'default' : 'outline'}
+                      variant={
+                        buttons.includes(option.value) ? "default" : "outline"
+                      }
                       className="cursor-pointer px-3 py-2"
                       onClick={() => handleButtonToggle(option.value)}
                     >
@@ -237,11 +263,15 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                   onCheckedChange={(checked) => setIncludeAfterDelay(!!checked)}
                 />
                 <div className="flex-1">
-                  <Label htmlFor="includeAfterDelay" className="text-base font-semibold cursor-pointer">
+                  <Label
+                    htmlFor="includeAfterDelay"
+                    className="text-base font-semibold cursor-pointer"
+                  >
                     Capture After Delay
                   </Label>
                   <p className="text-sm text-gray-600">
-                    Also capture screenshots after a delay (useful for animations or UI updates)
+                    Also capture screenshots after a delay (useful for
+                    animations or UI updates)
                   </p>
                 </div>
               </div>
@@ -258,11 +288,14 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                     max={5000}
                     step={100}
                     value={afterDelayMs}
-                    onChange={(e) => setAfterDelayMs(parseInt(e.target.value) || 500)}
+                    onChange={(e) =>
+                      setAfterDelayMs(parseInt(e.target.value) || 500)
+                    }
                     className="w-32"
                   />
                   <p className="text-xs text-gray-500">
-                    Screenshots will be taken both immediately and after {afterDelayMs}ms
+                    Screenshots will be taken both immediately and after{" "}
+                    {afterDelayMs}ms
                   </p>
                 </div>
               )}
@@ -273,34 +306,39 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
               <h4 className="font-semibold text-sm mb-2">Request Summary</h4>
               <div className="text-sm space-y-1 text-gray-700">
                 <p>
-                  <span className="font-medium">Event Types:</span>{' '}
+                  <span className="font-medium">Event Types:</span>{" "}
                   {eventTypes.length > 0
                     ? eventTypes
                         .map(
                           (t) =>
-                            EVENT_TYPE_OPTIONS.find((o) => o.value === t)?.label || t
+                            EVENT_TYPE_OPTIONS.find((o) => o.value === t)
+                              ?.label || t
                         )
-                        .join(', ')
-                    : 'None'}
+                        .join(", ")
+                    : "None"}
                 </p>
-                {eventTypes.includes('mouse_click') && (
+                {eventTypes.includes("mouse_click") && (
                   <p>
-                    <span className="font-medium">Buttons:</span>{' '}
+                    <span className="font-medium">Buttons:</span>{" "}
                     {buttons.length > 0
                       ? buttons
                           .map(
-                            (b) => BUTTON_OPTIONS.find((o) => o.value === b)?.label || b
+                            (b) =>
+                              BUTTON_OPTIONS.find((o) => o.value === b)
+                                ?.label || b
                           )
-                          .join(', ')
-                      : 'None'}
+                          .join(", ")
+                      : "None"}
                   </p>
                 )}
                 <p>
-                  <span className="font-medium">Max Screenshots:</span> {maxCount}
+                  <span className="font-medium">Max Screenshots:</span>{" "}
+                  {maxCount}
                 </p>
                 {includeAfterDelay && (
                   <p>
-                    <span className="font-medium">After Delay:</span> {afterDelayMs}ms
+                    <span className="font-medium">After Delay:</span>{" "}
+                    {afterDelayMs}ms
                   </p>
                 )}
               </div>
@@ -314,7 +352,7 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
                 className="flex-1"
               >
                 <Camera className="h-4 w-4 mr-2" />
-                {isSubmitting ? 'Submitting...' : 'Request Screenshots'}
+                {isSubmitting ? "Submitting..." : "Request Screenshots"}
               </Button>
               <Button variant="outline" onClick={handleReset}>
                 Reset
@@ -324,12 +362,13 @@ export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
             {/* Additional Info */}
             <div className="text-xs text-gray-500 space-y-1">
               <p>
-                Screenshots are processed in the background and may take several minutes depending
-                on the number of events.
+                Screenshots are processed in the background and may take several
+                minutes depending on the number of events.
               </p>
               <p>
-                You'll receive a notification when processing is complete, and screenshots will be
-                available in the project's screenshots section.
+                You'll receive a notification when processing is complete, and
+                screenshots will be available in the project's screenshots
+                section.
               </p>
             </div>
           </CardContent>

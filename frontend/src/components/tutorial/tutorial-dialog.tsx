@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import React, { useEffect } from "react"
+import React, { useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,13 +8,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
-import { useTutorialStore } from "@/stores/tutorial-store"
-import { TutorialSidebar } from "./tutorial-sidebar"
-import { StepRenderer } from "./step-renderer"
-import { ChevronLeft, ChevronRight, X } from "lucide-react"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { useTutorialStore } from "@/stores/tutorial-store";
+import { TutorialSidebar } from "./tutorial-sidebar";
+import { StepRenderer } from "./step-renderer";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
 /**
  * TutorialDialog Component
@@ -31,54 +31,54 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react"
  */
 export function TutorialDialog() {
   // Get state from tutorial store
-  const isOpen = useTutorialStore((state) => state.isOpen)
-  const currentTutorial = useTutorialStore((state) => state.currentTutorial)
-  const currentStepIndex = useTutorialStore((state) => state.currentStepIndex)
+  const isOpen = useTutorialStore((state) => state.isOpen);
+  const currentTutorial = useTutorialStore((state) => state.currentTutorial);
+  const currentStepIndex = useTutorialStore((state) => state.currentStepIndex);
 
   // Get actions from tutorial store
-  const closeTutorial = useTutorialStore((state) => state.closeTutorial)
-  const nextStep = useTutorialStore((state) => state.nextStep)
-  const previousStep = useTutorialStore((state) => state.previousStep)
-  const isFirstStep = useTutorialStore((state) => state.isFirstStep())
-  const isLastStep = useTutorialStore((state) => state.isLastStep())
-  const completionPercentage = useTutorialStore(
-    (state) => state.getCompletionPercentage()
-  )
-  const completeTutorial = useTutorialStore((state) => state.completeTutorial)
+  const closeTutorial = useTutorialStore((state) => state.closeTutorial);
+  const nextStep = useTutorialStore((state) => state.nextStep);
+  const previousStep = useTutorialStore((state) => state.previousStep);
+  const isFirstStep = useTutorialStore((state) => state.isFirstStep());
+  const isLastStep = useTutorialStore((state) => state.isLastStep());
+  const completionPercentage = useTutorialStore((state) =>
+    state.getCompletionPercentage()
+  );
+  const completeTutorial = useTutorialStore((state) => state.completeTutorial);
 
   // Handle keyboard navigation
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Escape to close
       if (event.key === "Escape") {
-        closeTutorial()
-        return
+        closeTutorial();
+        return;
       }
 
       // Arrow right to next step
       if (event.key === "ArrowRight") {
-        event.preventDefault()
-        nextStep()
-        return
+        event.preventDefault();
+        nextStep();
+        return;
       }
 
       // Arrow left to previous step
       if (event.key === "ArrowLeft") {
-        event.preventDefault()
-        previousStep()
-        return
+        event.preventDefault();
+        previousStep();
+        return;
       }
-    }
+    };
 
-    window.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown)
-    }
-  }, [isOpen, nextStep, previousStep, closeTutorial])
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, nextStep, previousStep, closeTutorial]);
 
-  if (!currentTutorial) return null
+  if (!currentTutorial) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={closeTutorial}>
@@ -139,11 +139,7 @@ export function TutorialDialog() {
         <DialogFooter className="border-t pt-4 flex justify-between gap-2">
           {/* Left buttons */}
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={closeTutorial}
-              className="gap-2"
-            >
+            <Button variant="outline" onClick={closeTutorial} className="gap-2">
               Skip Tutorial
             </Button>
           </div>
@@ -162,9 +158,9 @@ export function TutorialDialog() {
             <Button
               onClick={() => {
                 if (isLastStep) {
-                  completeTutorial()
+                  completeTutorial();
                 } else {
-                  nextStep()
+                  nextStep();
                 }
               }}
               className="gap-2 bg-gradient-to-r from-cyan-600 to-green-600 hover:from-cyan-700 hover:to-green-700"
@@ -185,5 +181,5 @@ export function TutorialDialog() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

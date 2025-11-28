@@ -7,7 +7,7 @@
 
 "use client";
 
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from "react";
 import {
   Upload,
   Search,
@@ -41,27 +41,27 @@ import {
   Link2,
   Layers,
   XCircle,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Slider } from '@/components/ui/slider';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
-import { useAutomation } from '@/contexts/automation-context';
-import { toast } from 'sonner';
-import type { ImageAsset } from '@/contexts/automation-context/types';
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import { useAutomation } from "@/contexts/automation-context";
+import { toast } from "sonner";
+import type { ImageAsset } from "@/contexts/automation-context/types";
 import type {
   ImageFolder,
   ImageFolderTreeNode,
@@ -71,14 +71,20 @@ import type {
   ImageGridSize,
   ImageWithMetadata,
   ImageTag,
-} from './types';
-import { useImageOrganization } from './useImageOrganization';
-import { ImageUploadProgress, type UploadingImage } from '@/components/ImageUploadProgress';
-import { apiClient } from '@/lib/api-client';
-import { uploadScreenshotOffline } from '@/lib/offline-screenshot-upload';
-import { MaskEditor } from '@/components/mask-editor';
-import { ImageDeletionDialog, type ImageUsageInfo } from '@/components/image-deletion-dialog';
-import { LazyImage } from './LazyImage';
+} from "./types";
+import { useImageOrganization } from "./useImageOrganization";
+import {
+  ImageUploadProgress,
+  type UploadingImage,
+} from "@/components/ImageUploadProgress";
+import { apiClient } from "@/lib/api-client";
+import { uploadScreenshotOffline } from "@/lib/offline-screenshot-upload";
+import { MaskEditor } from "@/components/mask-editor";
+import {
+  ImageDeletionDialog,
+  type ImageUsageInfo,
+} from "@/components/image-deletion-dialog";
+import { LazyImage } from "./LazyImage";
 
 // ============================================================================
 // Main Component
@@ -140,12 +146,14 @@ export function EnhancedImageLibrary() {
   } = useImageOrganization({ images, onUpdateImage: updateImage as any });
 
   // View state
-  const [viewMode, setViewMode] = useState<ImageViewMode>('grid');
-  const [gridSize, setGridSize] = useState<ImageGridSize>('medium');
+  const [viewMode, setViewMode] = useState<ImageViewMode>("grid");
+  const [gridSize, setGridSize] = useState<ImageGridSize>("medium");
   const [showFilters, setShowFilters] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'library' | 'collections'>('library');
+  const [activeTab, setActiveTab] = useState<"library" | "collections">(
+    "library"
+  );
 
   // Upload state
   const [dragActive, setDragActive] = useState(false);
@@ -187,7 +195,7 @@ export function EnhancedImageLibrary() {
     if (currentFilter.tags && currentFilter.tags.length > 0) {
       result = result.filter((img) => {
         const imgTags = img.tags || [];
-        if (currentFilter.tagOperator === 'AND') {
+        if (currentFilter.tagOperator === "AND") {
           return currentFilter.tags!.every((tag) => imgTags.includes(tag));
         } else {
           return currentFilter.tags!.some((tag) => imgTags.includes(tag));
@@ -197,24 +205,30 @@ export function EnhancedImageLibrary() {
 
     // Source filter
     if (currentFilter.sources && currentFilter.sources.length > 0) {
-      result = result.filter((img) => currentFilter.sources!.includes(img.source));
+      result = result.filter((img) =>
+        currentFilter.sources!.includes(img.source)
+      );
     }
 
     // Usage filter
     if (currentFilter.usageFilter) {
-      if (currentFilter.usageFilter === 'used') {
+      if (currentFilter.usageFilter === "used") {
         result = result.filter((img) => img.usageCount > 0);
-      } else if (currentFilter.usageFilter === 'unused') {
+      } else if (currentFilter.usageFilter === "unused") {
         result = result.filter((img) => img.usageCount === 0);
       }
     }
 
     // Date range filter
     if (currentFilter.dateRange?.from) {
-      result = result.filter((img) => img.createdAt >= currentFilter.dateRange!.from!);
+      result = result.filter(
+        (img) => img.createdAt >= currentFilter.dateRange!.from!
+      );
     }
     if (currentFilter.dateRange?.to) {
-      result = result.filter((img) => img.createdAt <= currentFilter.dateRange!.to!);
+      result = result.filter(
+        (img) => img.createdAt <= currentFilter.dateRange!.to!
+      );
     }
 
     // Size filter
@@ -235,8 +249,8 @@ export function EnhancedImageLibrary() {
   const handleFiles = useCallback(
     async (files: FileList) => {
       if (!projectId) {
-        toast.error('No project selected', {
-          description: 'Please open a project before uploading images.',
+        toast.error("No project selected", {
+          description: "Please open a project before uploading images.",
         });
         return;
       }
@@ -244,9 +258,11 @@ export function EnhancedImageLibrary() {
       const fileArray = Array.from(files);
 
       // Validate file types
-      const invalidFiles = fileArray.filter((file) => !file.type.startsWith('image/'));
+      const invalidFiles = fileArray.filter(
+        (file) => !file.type.startsWith("image/")
+      );
       if (invalidFiles.length > 0) {
-        toast.error('Invalid file type', {
+        toast.error("Invalid file type", {
           description: `${invalidFiles[0].name} is not an image file.`,
         });
         return;
@@ -269,11 +285,11 @@ export function EnhancedImageLibrary() {
               setUploadingFiles((prev) =>
                 prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
               );
-            }
+            },
           });
 
           // Screenshot available immediately in UI
-          const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, '');
+          const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
           const imageAsset: ImageAsset = {
             id: result.screenshot.id,
             name: nameWithoutExtension,
@@ -282,7 +298,7 @@ export function EnhancedImageLibrary() {
             createdAt: new Date(result.screenshot.createdAt),
             usageCount: 0,
             usedIn: [],
-            source: 'uploaded',
+            source: "uploaded",
             projectName: projectName,
             s3_key: result.screenshot.s3Key,
             url_expires_at: result.screenshot.urlExpiresAt,
@@ -311,15 +327,17 @@ export function EnhancedImageLibrary() {
               addImage(updatedAsset);
             })
             .catch((error) => {
-              console.error('Sync failed for', file.name, error);
-              toast.warning(`${file.name} saved locally, will sync when online`);
+              console.error("Sync failed for", file.name, error);
+              toast.warning(
+                `${file.name} saved locally, will sync when online`
+              );
             });
 
           return { success: true, fileName: file.name };
         } catch (error: any) {
           console.error(`Upload failed for ${file.name}:`, error);
           toast.error(`Failed to save ${file.name}`, {
-            description: error.message || 'Unknown error occurred',
+            description: error.message || "Unknown error occurred",
           });
           setUploadingFiles((prev) => prev.filter((f) => f.name !== file.name));
           return { success: false, fileName: file.name };
@@ -330,7 +348,7 @@ export function EnhancedImageLibrary() {
       const successCount = results.filter((r) => r.success).length;
 
       if (successCount > 0) {
-        toast.success('Upload complete', {
+        toast.success("Upload complete", {
           description: `${successCount} image(s) added to your library.`,
         });
       }
@@ -341,9 +359,9 @@ export function EnhancedImageLibrary() {
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
+    if (e.type === "dragenter" || e.type === "dragover") {
       setDragActive(true);
-    } else if (e.type === 'dragleave') {
+    } else if (e.type === "dragleave") {
       setDragActive(false);
     }
   }, []);
@@ -378,7 +396,7 @@ export function EnhancedImageLibrary() {
     (imageId: string) => {
       const image = images.find((img) => img.id === imageId);
       if (!image) {
-        toast.error('Image not found');
+        toast.error("Image not found");
         return;
       }
 
@@ -404,29 +422,38 @@ export function EnhancedImageLibrary() {
 
       const details = [];
       if (statesAffected > 0) {
-        details.push(`Removed from ${statesAffected} state${statesAffected > 1 ? 's' : ''}`);
+        details.push(
+          `Removed from ${statesAffected} state${statesAffected > 1 ? "s" : ""}`
+        );
       }
       if (processesAffected > 0) {
         details.push(
-          `Marked as removed in ${processesAffected} workflow${processesAffected > 1 ? 's' : ''}`
+          `Marked as removed in ${processesAffected} workflow${processesAffected > 1 ? "s" : ""}`
         );
       }
 
-      toast.success('Image deleted', {
+      toast.success("Image deleted", {
         description:
-          details.length > 0 ? details.join(' and ') : 'The image has been removed from your library.',
+          details.length > 0
+            ? details.join(" and ")
+            : "The image has been removed from your library.",
       });
 
       setImageToDelete(null);
       setDeletionUsageInfo({ states: [], processes: [] });
       setSelectedImageId(null);
     } catch (error) {
-      toast.error('Failed to delete image', {
-        description: 'An error occurred while deleting the image.',
+      toast.error("Failed to delete image", {
+        description: "An error occurred while deleting the image.",
       });
-      console.error('Delete image error:', error);
+      console.error("Delete image error:", error);
     }
-  }, [imageToDelete, removeImageFromStates, markImageAsRemovedInProcesses, deleteImage]);
+  }, [
+    imageToDelete,
+    removeImageFromStates,
+    markImageAsRemovedInProcesses,
+    deleteImage,
+  ]);
 
   const handleEditMask = useCallback((image: ImageAsset) => {
     setEditingImage(image);
@@ -446,8 +473,8 @@ export function EnhancedImageLibrary() {
       updateImage(updatedImage);
       setShowMaskEditor(false);
       setEditingImage(null);
-      toast.success('Mask applied to image', {
-        description: 'The image has been updated with the new mask.',
+      toast.success("Mask applied to image", {
+        description: "The image has been updated with the new mask.",
       });
     },
     [editingImage, updateImage]
@@ -506,7 +533,10 @@ export function EnhancedImageLibrary() {
    * For grid/list view: use thumb for performance
    * For detail view: use original
    */
-  const getImageUrl = (image: ImageAsset, size: 'thumb' | 'medium' | 'original' = 'thumb'): string => {
+  const getImageUrl = (
+    image: ImageAsset,
+    size: "thumb" | "medium" | "original" = "thumb"
+  ): string => {
     // If the image has variants (new format), use them
     if ((image as any).variants) {
       const variants = (image as any).variants as Record<string, string>;
@@ -518,71 +548,75 @@ export function EnhancedImageLibrary() {
   };
 
   const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return "0 Bytes";
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return (
+      Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+    );
   };
 
   const getSourceLabel = (source: string) => {
     switch (source) {
-      case 'uploaded':
-        return 'Uploaded';
-      case 'pattern_optimization':
-        return 'Pattern Opt';
-      case 'image_extraction':
-        return 'Extraction';
-      case 'state_discovery':
-        return 'Discovery';
+      case "uploaded":
+        return "Uploaded";
+      case "pattern_optimization":
+        return "Pattern Opt";
+      case "image_extraction":
+        return "Extraction";
+      case "state_discovery":
+        return "Discovery";
       default:
-        return 'Unknown';
+        return "Unknown";
     }
   };
 
   const getSourceColor = (source: string) => {
     switch (source) {
-      case 'uploaded':
-        return '#00FF88';
-      case 'pattern_optimization':
-        return '#00D9FF';
-      case 'image_extraction':
-        return '#BD00FF';
-      case 'state_discovery':
-        return '#FFB800';
+      case "uploaded":
+        return "#00FF88";
+      case "pattern_optimization":
+        return "#00D9FF";
+      case "image_extraction":
+        return "#BD00FF";
+      case "state_discovery":
+        return "#FFB800";
       default:
-        return '#6B7280';
+        return "#6B7280";
     }
   };
 
   const getGridSizeClass = () => {
     switch (gridSize) {
-      case 'small':
-        return 'grid-cols-8 md:grid-cols-12 lg:grid-cols-16 xl:grid-cols-20';
-      case 'medium':
-        return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10';
-      case 'large':
-        return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
+      case "small":
+        return "grid-cols-8 md:grid-cols-12 lg:grid-cols-16 xl:grid-cols-20";
+      case "medium":
+        return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
+      case "large":
+        return "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
       default:
-        return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10';
+        return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
     }
   };
 
   const getImageCardSize = () => {
     switch (gridSize) {
-      case 'small':
-        return 'w-16 h-16';
-      case 'medium':
-        return 'w-32 h-32';
-      case 'large':
-        return 'w-48 h-48';
+      case "small":
+        return "w-16 h-16";
+      case "medium":
+        return "w-32 h-32";
+      case "large":
+        return "w-48 h-48";
       default:
-        return 'w-32 h-32';
+        return "w-32 h-32";
     }
   };
 
   const selectedImage = useMemo(() => {
-    return selectedImageId ? images.find((img) => img.id === selectedImageId) : null;
+    return selectedImageId
+      ? images.find((img) => img.id === selectedImageId)
+      : null;
   }, [selectedImageId, images]);
 
   const imageUsageDetails = useMemo(() => {
@@ -611,12 +645,14 @@ export function EnhancedImageLibrary() {
     // Check states
     states.forEach((state) => {
       const usesImage = state.stateImages.some((stateImage) =>
-        stateImage.patterns.some((pattern) => pattern.imageId === selectedImage.id)
+        stateImage.patterns.some(
+          (pattern) => pattern.imageId === selectedImage.id
+        )
       );
       if (usesImage) {
         details.push({
-          workflowId: '',
-          workflowName: '',
+          workflowId: "",
+          workflowName: "",
           stateId: state.id,
           stateName: state.name,
         });
@@ -640,7 +676,10 @@ export function EnhancedImageLibrary() {
         <div className="flex items-center gap-4">
           <h2 className="text-2xl font-bold">Image Library</h2>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="bg-[#27272A]/50 border-gray-700">
+            <Badge
+              variant="outline"
+              className="bg-[#27272A]/50 border-gray-700"
+            >
               {filteredImages.length} images
             </Badge>
             {selectedImageIds.size > 0 && (
@@ -657,7 +696,7 @@ export function EnhancedImageLibrary() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input
               placeholder="Search images..."
-              value={currentFilter.query || ''}
+              value={currentFilter.query || ""}
               onChange={(e) =>
                 setCurrentFilter({ ...currentFilter, query: e.target.value })
               }
@@ -668,7 +707,9 @@ export function EnhancedImageLibrary() {
                 variant="ghost"
                 size="sm"
                 className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                onClick={() => setCurrentFilter({ ...currentFilter, query: '' })}
+                onClick={() =>
+                  setCurrentFilter({ ...currentFilter, query: "" })
+                }
               >
                 <X className="w-3 h-3" />
               </Button>
@@ -678,41 +719,45 @@ export function EnhancedImageLibrary() {
           {/* View Controls */}
           <div className="flex items-center gap-1 bg-[#27272A] rounded-lg p-1">
             <Button
-              variant={viewMode === 'grid' ? 'default' : 'ghost'}
+              variant={viewMode === "grid" ? "default" : "ghost"}
               size="sm"
-              onClick={() => setViewMode('grid')}
-              className={cn(viewMode === 'grid' && 'bg-[#00FF88] text-black')}
+              onClick={() => setViewMode("grid")}
+              className={cn(viewMode === "grid" && "bg-[#00FF88] text-black")}
             >
               <Grid3x3 className="w-4 h-4" />
             </Button>
             <Button
-              variant={viewMode === 'list' ? 'default' : 'ghost'}
+              variant={viewMode === "list" ? "default" : "ghost"}
               size="sm"
-              onClick={() => setViewMode('list')}
-              className={cn(viewMode === 'list' && 'bg-[#00FF88] text-black')}
+              onClick={() => setViewMode("list")}
+              className={cn(viewMode === "list" && "bg-[#00FF88] text-black")}
             >
               <List className="w-4 h-4" />
             </Button>
             <Button
-              variant={viewMode === 'slideshow' ? 'default' : 'ghost'}
+              variant={viewMode === "slideshow" ? "default" : "ghost"}
               size="sm"
-              onClick={() => setViewMode('slideshow')}
-              className={cn(viewMode === 'slideshow' && 'bg-[#00FF88] text-black')}
+              onClick={() => setViewMode("slideshow")}
+              className={cn(
+                viewMode === "slideshow" && "bg-[#00FF88] text-black"
+              )}
             >
               <Play className="w-4 h-4" />
             </Button>
           </div>
 
           {/* Grid Size Slider */}
-          {viewMode === 'grid' && (
+          {viewMode === "grid" && (
             <div className="flex items-center gap-2 bg-[#27272A] rounded-lg px-3 py-2">
               <Minus className="w-3 h-3 text-gray-400" />
               <Slider
-                value={[gridSize === 'small' ? 0 : gridSize === 'medium' ? 50 : 100]}
+                value={[
+                  gridSize === "small" ? 0 : gridSize === "medium" ? 50 : 100,
+                ]}
                 onValueChange={([value]) => {
-                  if (value < 33) setGridSize('small');
-                  else if (value < 67) setGridSize('medium');
-                  else setGridSize('large');
+                  if (value < 33) setGridSize("small");
+                  else if (value < 67) setGridSize("medium");
+                  else setGridSize("large");
                 }}
                 max={100}
                 step={1}
@@ -724,12 +769,12 @@ export function EnhancedImageLibrary() {
 
           {/* Filters */}
           <Button
-            variant={showFilters ? 'default' : 'outline'}
+            variant={showFilters ? "default" : "outline"}
             size="sm"
             onClick={() => setShowFilters(!showFilters)}
             className={cn(
-              showFilters && 'bg-[#00FF88] text-black',
-              'border-gray-700'
+              showFilters && "bg-[#00FF88] text-black",
+              "border-gray-700"
             )}
           >
             <Filter className="w-4 h-4 mr-2" />
@@ -748,13 +793,17 @@ export function EnhancedImageLibrary() {
       </div>
 
       {/* Filter Panel */}
-      {showFilters && <FilterPanel filter={currentFilter} onFilterChange={setCurrentFilter} />}
+      {showFilters && (
+        <FilterPanel filter={currentFilter} onFilterChange={setCurrentFilter} />
+      )}
 
       {/* Bulk Operations Toolbar */}
       {selectedImageIds.size > 0 && (
         <div className="flex items-center justify-between p-3 bg-[#00FF88]/10 border-b border-[#00FF88]/20">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{selectedImageIds.size} selected</span>
+            <span className="text-sm font-medium">
+              {selectedImageIds.size} selected
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <DropdownMenu>
@@ -770,8 +819,14 @@ export function EnhancedImageLibrary() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {folders.map((folder) => (
-                  <DropdownMenuItem key={folder.id} onClick={() => handleBulkMove(folder.id)}>
-                    <Folder className="w-4 h-4 mr-2" style={{ color: folder.color }} />
+                  <DropdownMenuItem
+                    key={folder.id}
+                    onClick={() => handleBulkMove(folder.id)}
+                  >
+                    <Folder
+                      className="w-4 h-4 mr-2"
+                      style={{ color: folder.color }}
+                    />
                     {folder.name}
                   </DropdownMenuItem>
                 ))}
@@ -837,25 +892,37 @@ export function EnhancedImageLibrary() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Folders & Collections */}
         <div className="w-64 border-r border-gray-800 flex flex-col">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col">
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as any)}
+            className="flex-1 flex flex-col"
+          >
             <TabsList className="grid w-full grid-cols-2 bg-[#27272A] m-2">
               <TabsTrigger value="library">Library</TabsTrigger>
               <TabsTrigger value="collections">Collections</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="library" className="flex-1 overflow-hidden mt-0">
+            <TabsContent
+              value="library"
+              className="flex-1 overflow-hidden mt-0"
+            >
               <FolderTreeSidebar
                 folders={folderTree}
                 selectedFolderId={selectedFolderId}
                 onSelectFolder={setSelectedFolderId}
-                onCreateFolder={(name, parentId) => createFolder(name, parentId)}
+                onCreateFolder={(name, parentId) =>
+                  createFolder(name, parentId)
+                }
                 onUpdateFolder={updateFolder}
                 onDeleteFolder={deleteFolder}
                 onToggleExpanded={toggleFolderExpanded}
               />
             </TabsContent>
 
-            <TabsContent value="collections" className="flex-1 overflow-hidden mt-0">
+            <TabsContent
+              value="collections"
+              className="flex-1 overflow-hidden mt-0"
+            >
               <CollectionsSidebar
                 collections={collections}
                 onCreateCollection={createCollection}
@@ -869,7 +936,7 @@ export function EnhancedImageLibrary() {
 
         {/* Center - Image Grid */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {viewMode === 'grid' && (
+          {viewMode === "grid" && (
             <ImageGrid
               images={filteredImages}
               gridSize={gridSize}
@@ -889,7 +956,7 @@ export function EnhancedImageLibrary() {
             />
           )}
 
-          {viewMode === 'list' && (
+          {viewMode === "list" && (
             <ImageList
               images={filteredImages}
               selectedImageIds={selectedImageIds}
@@ -942,7 +1009,7 @@ export function EnhancedImageLibrary() {
       <ImageDeletionDialog
         open={showDeletionDialog}
         onOpenChange={setShowDeletionDialog}
-        imageName={imageToDelete?.name || ''}
+        imageName={imageToDelete?.name || ""}
         usageInfo={deletionUsageInfo}
         onConfirmDelete={confirmDelete}
       />
@@ -967,15 +1034,20 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
         <div>
           <label className="text-xs text-gray-400 mb-2 block">Source</label>
           <div className="flex flex-wrap gap-1">
-            {['uploaded', 'pattern_optimization', 'image_extraction', 'state_discovery'].map((source) => (
+            {[
+              "uploaded",
+              "pattern_optimization",
+              "image_extraction",
+              "state_discovery",
+            ].map((source) => (
               <Badge
                 key={source}
                 variant="outline"
                 className={cn(
-                  'cursor-pointer transition-all',
+                  "cursor-pointer transition-all",
                   filter.sources?.includes(source as any)
-                    ? 'bg-[#00FF88] text-black border-[#00FF88]'
-                    : 'border-gray-700 hover:border-gray-600'
+                    ? "bg-[#00FF88] text-black border-[#00FF88]"
+                    : "border-gray-700 hover:border-gray-600"
                 )}
                 onClick={() => {
                   const sources = filter.sources || [];
@@ -985,10 +1057,10 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
                   onFilterChange({ ...filter, sources: newSources });
                 }}
               >
-                {source === 'uploaded' && 'Uploaded'}
-                {source === 'pattern_optimization' && 'Pattern Opt'}
-                {source === 'image_extraction' && 'Extraction'}
-                {source === 'state_discovery' && 'Discovery'}
+                {source === "uploaded" && "Uploaded"}
+                {source === "pattern_optimization" && "Pattern Opt"}
+                {source === "image_extraction" && "Extraction"}
+                {source === "state_discovery" && "Discovery"}
               </Badge>
             ))}
           </div>
@@ -998,17 +1070,19 @@ function FilterPanel({ filter, onFilterChange }: FilterPanelProps) {
         <div>
           <label className="text-xs text-gray-400 mb-2 block">Usage</label>
           <div className="flex gap-1">
-            {['all', 'used', 'unused'].map((usage) => (
+            {["all", "used", "unused"].map((usage) => (
               <Badge
                 key={usage}
                 variant="outline"
                 className={cn(
-                  'cursor-pointer transition-all',
+                  "cursor-pointer transition-all",
                   filter.usageFilter === usage
-                    ? 'bg-[#00FF88] text-black border-[#00FF88]'
-                    : 'border-gray-700 hover:border-gray-600'
+                    ? "bg-[#00FF88] text-black border-[#00FF88]"
+                    : "border-gray-700 hover:border-gray-600"
                 )}
-                onClick={() => onFilterChange({ ...filter, usageFilter: usage as any })}
+                onClick={() =>
+                  onFilterChange({ ...filter, usageFilter: usage as any })
+                }
               >
                 {usage.charAt(0).toUpperCase() + usage.slice(1)}
               </Badge>
@@ -1053,13 +1127,13 @@ function FolderTreeSidebar({
   onDeleteFolder,
   onToggleExpanded,
 }: FolderTreeSidebarProps) {
-  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderName, setNewFolderName] = useState("");
   const [showNewFolder, setShowNewFolder] = useState(false);
 
   const handleCreateFolder = () => {
     if (newFolderName.trim()) {
       onCreateFolder(newFolderName, null);
-      setNewFolderName('');
+      setNewFolderName("");
       setShowNewFolder(false);
     }
   };
@@ -1083,11 +1157,15 @@ function FolderTreeSidebar({
               placeholder="Folder name..."
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+              onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
               className="text-sm bg-transparent border-gray-700"
               autoFocus
             />
-            <Button size="sm" onClick={handleCreateFolder} className="bg-[#00FF88] text-black">
+            <Button
+              size="sm"
+              onClick={handleCreateFolder}
+              className="bg-[#00FF88] text-black"
+            >
               <Check className="w-4 h-4" />
             </Button>
           </div>
@@ -1099,10 +1177,10 @@ function FolderTreeSidebar({
           {/* All Images */}
           <div
             className={cn(
-              'flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors mb-1',
+              "flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors mb-1",
               selectedFolderId === null
-                ? 'bg-[#00FF88]/20 text-[#00FF88]'
-                : 'hover:bg-[#27272A]'
+                ? "bg-[#00FF88]/20 text-[#00FF88]"
+                : "hover:bg-[#27272A]"
             )}
             onClick={() => onSelectFolder(null)}
           >
@@ -1160,10 +1238,10 @@ function FolderTreeNode({
     <div style={{ marginLeft: `${folder.depth * 12}px` }}>
       <div
         className={cn(
-          'flex items-center gap-2 px-3 py-2 rounded-lg transition-colors group',
+          "flex items-center gap-2 px-3 py-2 rounded-lg transition-colors group",
           selectedFolderId === folder.id
-            ? 'bg-[#00FF88]/20 text-[#00FF88]'
-            : 'hover:bg-[#27272A]'
+            ? "bg-[#00FF88]/20 text-[#00FF88]"
+            : "hover:bg-[#27272A]"
         )}
       >
         {folder.children.length > 0 && (
@@ -1191,8 +1269,8 @@ function FolderTreeNode({
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveEdit();
-                if (e.key === 'Escape') {
+                if (e.key === "Enter") handleSaveEdit();
+                if (e.key === "Escape") {
                   setIsEditing(false);
                   setEditName(folder.name);
                 }
@@ -1273,12 +1351,12 @@ function CollectionsSidebar({
   images,
 }: CollectionsSidebarProps) {
   const [showNewCollection, setShowNewCollection] = useState(false);
-  const [newCollectionName, setNewCollectionName] = useState('');
+  const [newCollectionName, setNewCollectionName] = useState("");
 
   const handleCreate = () => {
     if (newCollectionName.trim()) {
       onCreateCollection(newCollectionName);
-      setNewCollectionName('');
+      setNewCollectionName("");
       setShowNewCollection(false);
     }
   };
@@ -1302,11 +1380,15 @@ function CollectionsSidebar({
               placeholder="Collection name..."
               value={newCollectionName}
               onChange={(e) => setNewCollectionName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               className="text-sm bg-transparent border-gray-700"
               autoFocus
             />
-            <Button size="sm" onClick={handleCreate} className="bg-[#00FF88] text-black">
+            <Button
+              size="sm"
+              onClick={handleCreate}
+              className="bg-[#00FF88] text-black"
+            >
               <Check className="w-4 h-4" />
             </Button>
           </div>
@@ -1346,10 +1428,13 @@ function CollectionsSidebar({
                   {collection.thumbnailIds.slice(0, 4).map((imageId) => {
                     const image = images.find((img) => img.id === imageId);
                     return (
-                      <div key={imageId} className="aspect-square bg-gray-800 rounded overflow-hidden">
+                      <div
+                        key={imageId}
+                        className="aspect-square bg-gray-800 rounded overflow-hidden"
+                      >
                         {image && (
                           <LazyImage
-                            src={getImageUrl(image, 'thumb')}
+                            src={getImageUrl(image, "thumb")}
                             alt={image.name}
                             className="w-full h-full object-cover"
                           />
@@ -1360,7 +1445,8 @@ function CollectionsSidebar({
                 </div>
 
                 <div className="text-xs text-gray-400">
-                  {collection.imageIds.length} image{collection.imageIds.length !== 1 && 's'}
+                  {collection.imageIds.length} image
+                  {collection.imageIds.length !== 1 && "s"}
                 </div>
               </CardContent>
             </Card>
@@ -1384,7 +1470,10 @@ interface ImageGridProps {
   formatFileSize: (bytes: number) => string;
   getSourceLabel: (source: string) => string;
   getSourceColor: (source: string) => string;
-  getImageUrl: (image: ImageAsset, size?: 'thumb' | 'medium' | 'original') => string;
+  getImageUrl: (
+    image: ImageAsset,
+    size?: "thumb" | "medium" | "original"
+  ) => string;
   dragActive: boolean;
   onDrag: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
@@ -1409,14 +1498,14 @@ function ImageGrid({
 }: ImageGridProps) {
   const getGridSizeClass = () => {
     switch (gridSize) {
-      case 'small':
-        return 'grid-cols-8 md:grid-cols-12 lg:grid-cols-16 xl:grid-cols-20';
-      case 'medium':
-        return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10';
-      case 'large':
-        return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
+      case "small":
+        return "grid-cols-8 md:grid-cols-12 lg:grid-cols-16 xl:grid-cols-20";
+      case "medium":
+        return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
+      case "large":
+        return "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
       default:
-        return 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10';
+        return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
     }
   };
 
@@ -1424,8 +1513,8 @@ function ImageGrid({
     return (
       <div
         className={cn(
-          'flex-1 flex items-center justify-center border-2 border-dashed m-4 rounded-lg transition-colors',
-          dragActive ? 'border-[#00FF88] bg-[#00FF88]/10' : 'border-gray-700'
+          "flex-1 flex items-center justify-center border-2 border-dashed m-4 rounded-lg transition-colors",
+          dragActive ? "border-[#00FF88] bg-[#00FF88]/10" : "border-gray-700"
         )}
         onDragEnter={onDrag}
         onDragLeave={onDrag}
@@ -1433,7 +1522,12 @@ function ImageGrid({
         onDrop={onDrop}
       >
         <div className="text-center">
-          <Upload className={cn('w-16 h-16 mx-auto mb-4', dragActive ? 'text-[#00FF88]' : 'text-gray-500')} />
+          <Upload
+            className={cn(
+              "w-16 h-16 mx-auto mb-4",
+              dragActive ? "text-[#00FF88]" : "text-gray-500"
+            )}
+          />
           <p className="text-lg mb-2">No images found</p>
           <p className="text-sm text-gray-400">
             Drag & drop images here or click Upload to add images
@@ -1445,14 +1539,14 @@ function ImageGrid({
 
   return (
     <ScrollArea className="flex-1">
-      <div className={cn('grid gap-2 p-4', getGridSizeClass())}>
+      <div className={cn("grid gap-2 p-4", getGridSizeClass())}>
         {images.map((image) => (
           <Card
             key={image.id}
             className={cn(
-              'border-gray-700 bg-[#27272A] transition-all group cursor-pointer relative',
-              selectedImageId === image.id && 'ring-2 ring-[#00FF88]',
-              selectedImageIds.has(image.id) && 'ring-2 ring-blue-500'
+              "border-gray-700 bg-[#27272A] transition-all group cursor-pointer relative",
+              selectedImageId === image.id && "ring-2 ring-[#00FF88]",
+              selectedImageIds.has(image.id) && "ring-2 ring-blue-500"
             )}
             onClick={() => onSelectImage(image.id)}
           >
@@ -1470,7 +1564,7 @@ function ImageGrid({
               {/* Image Preview */}
               <div className="aspect-square bg-gray-800 rounded overflow-hidden relative mb-2">
                 <LazyImage
-                  src={getImageUrl(image, 'thumb')}
+                  src={getImageUrl(image, "thumb")}
                   alt={image.name}
                   className="w-full h-full object-contain"
                 />
@@ -1505,9 +1599,12 @@ function ImageGrid({
               </div>
 
               {/* Image Info */}
-              {gridSize !== 'small' && (
+              {gridSize !== "small" && (
                 <div className="space-y-1">
-                  <h4 className="font-medium text-xs truncate" title={image.name}>
+                  <h4
+                    className="font-medium text-xs truncate"
+                    title={image.name}
+                  >
                     {image.name}
                   </h4>
 
@@ -1517,10 +1614,12 @@ function ImageGrid({
 
                   <div className="flex items-center justify-between gap-1">
                     <Badge
-                      variant={image.usageCount > 0 ? 'default' : 'secondary'}
+                      variant={image.usageCount > 0 ? "default" : "secondary"}
                       className={cn(
-                        'text-xs px-1 py-0 h-4',
-                        image.usageCount > 0 ? 'bg-[#00FF88] text-black' : 'bg-gray-700 text-gray-300'
+                        "text-xs px-1 py-0 h-4",
+                        image.usageCount > 0
+                          ? "bg-[#00FF88] text-black"
+                          : "bg-gray-700 text-gray-300"
                       )}
                     >
                       {image.usageCount}x
@@ -1529,7 +1628,7 @@ function ImageGrid({
                       className="text-xs px-1 py-0 h-4"
                       style={{
                         backgroundColor: getSourceColor(image.source),
-                        color: 'black',
+                        color: "black",
                       }}
                     >
                       {getSourceLabel(image.source)}
@@ -1556,7 +1655,10 @@ interface ImageListProps {
   formatFileSize: (bytes: number) => string;
   getSourceLabel: (source: string) => string;
   getSourceColor: (source: string) => string;
-  getImageUrl: (image: ImageAsset, size?: 'thumb' | 'medium' | 'original') => string;
+  getImageUrl: (
+    image: ImageAsset,
+    size?: "thumb" | "medium" | "original"
+  ) => string;
 }
 
 function ImageList({
@@ -1592,8 +1694,8 @@ function ImageList({
               <tr
                 key={image.id}
                 className={cn(
-                  'border-b border-gray-800 hover:bg-[#27272A] cursor-pointer transition-colors',
-                  selectedImageId === image.id && 'bg-[#00FF88]/10'
+                  "border-b border-gray-800 hover:bg-[#27272A] cursor-pointer transition-colors",
+                  selectedImageId === image.id && "bg-[#00FF88]/10"
                 )}
                 onClick={() => onSelectImage(image.id)}
               >
@@ -1607,7 +1709,7 @@ function ImageList({
                 <td className="py-2">
                   <div className="w-10 h-10 bg-gray-800 rounded overflow-hidden">
                     <LazyImage
-                      src={getImageUrl(image, 'thumb')}
+                      src={getImageUrl(image, "thumb")}
                       alt={image.name}
                       className="w-full h-full object-cover"
                     />
@@ -1619,15 +1721,20 @@ function ImageList({
                     className="text-xs"
                     style={{
                       backgroundColor: getSourceColor(image.source),
-                      color: 'black',
+                      color: "black",
                     }}
                   >
                     {getSourceLabel(image.source)}
                   </Badge>
                 </td>
-                <td className="py-2 text-sm text-gray-400">{formatFileSize(image.size)}</td>
+                <td className="py-2 text-sm text-gray-400">
+                  {formatFileSize(image.size)}
+                </td>
                 <td className="py-2">
-                  <Badge variant={image.usageCount > 0 ? 'default' : 'secondary'} className="text-xs">
+                  <Badge
+                    variant={image.usageCount > 0 ? "default" : "secondary"}
+                    className="text-xs"
+                  >
                     {image.usageCount}x
                   </Badge>
                 </td>
@@ -1671,7 +1778,10 @@ interface ImageDetailsPanelProps {
   formatFileSize: (bytes: number) => string;
   getSourceLabel: (source: string) => string;
   getSourceColor: (source: string) => string;
-  getImageUrl: (image: ImageAsset, size?: 'thumb' | 'medium' | 'original') => string;
+  getImageUrl: (
+    image: ImageAsset,
+    size?: "thumb" | "medium" | "original"
+  ) => string;
 }
 
 function ImageDetailsPanel({
@@ -1690,7 +1800,12 @@ function ImageDetailsPanel({
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-800">
         <h3 className="font-bold">Image Details</h3>
-        <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          className="h-8 w-8 p-0"
+        >
           <X className="w-4 h-4" />
         </Button>
       </div>
@@ -1700,7 +1815,7 @@ function ImageDetailsPanel({
           {/* Preview */}
           <div className="aspect-square bg-gray-800 rounded-lg overflow-hidden">
             <LazyImage
-              src={getImageUrl(image, 'original')}
+              src={getImageUrl(image, "original")}
               alt={image.name}
               className="w-full h-full object-contain"
             />
@@ -1737,7 +1852,7 @@ function ImageDetailsPanel({
               <Badge
                 style={{
                   backgroundColor: getSourceColor(image.source),
-                  color: 'black',
+                  color: "black",
                 }}
               >
                 {getSourceLabel(image.source)}
@@ -1749,7 +1864,7 @@ function ImageDetailsPanel({
                 <Link2 className="w-4 h-4" />
                 Usage
               </span>
-              <Badge variant={image.usageCount > 0 ? 'default' : 'secondary'}>
+              <Badge variant={image.usageCount > 0 ? "default" : "secondary"}>
                 {image.usageCount}x
               </Badge>
             </div>

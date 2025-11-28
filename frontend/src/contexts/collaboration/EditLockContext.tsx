@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, {
   createContext,
@@ -6,9 +6,9 @@ import React, {
   useState,
   useEffect,
   ReactNode,
-} from 'react';
-import type { Lock, ResourceType } from './types';
-import { lockService } from '@/services/service-factory';
+} from "react";
+import type { Lock, ResourceType } from "./types";
+import { lockService } from "@/services/service-factory";
 
 // ============================================================================
 // Context Types
@@ -16,7 +16,10 @@ import { lockService } from '@/services/service-factory';
 
 interface EditLockContextValue {
   currentLock: Lock | null;
-  acquireEditLock: (resourceType: ResourceType, resourceId: string) => Promise<void>;
+  acquireEditLock: (
+    resourceType: ResourceType,
+    resourceId: string
+  ) => Promise<void>;
   releaseEditLock: () => Promise<void>;
   hasLock: (resourceType: ResourceType, resourceId: string) => boolean;
 }
@@ -38,14 +41,20 @@ interface EditLockProviderProps {
 // Provider Component
 // ============================================================================
 
-export function EditLockProvider({ children, projectId }: EditLockProviderProps) {
+export function EditLockProvider({
+  children,
+  projectId,
+}: EditLockProviderProps) {
   const [currentLock, setCurrentLock] = useState<Lock | null>(null);
 
   // ============================================================================
   // Methods
   // ============================================================================
 
-  const acquireEditLock = async (resourceType: ResourceType, resourceId: string) => {
+  const acquireEditLock = async (
+    resourceType: ResourceType,
+    resourceId: string
+  ) => {
     try {
       const lock = await lockService.acquireLock(
         projectId,
@@ -55,7 +64,7 @@ export function EditLockProvider({ children, projectId }: EditLockProviderProps)
       );
       setCurrentLock(lock);
     } catch (error) {
-      console.error('[EditLock] Failed to acquire lock:', error);
+      console.error("[EditLock] Failed to acquire lock:", error);
       throw error;
     }
   };
@@ -67,7 +76,7 @@ export function EditLockProvider({ children, projectId }: EditLockProviderProps)
       await lockService.releaseLock(currentLock.id);
       setCurrentLock(null);
     } catch (error) {
-      console.error('[EditLock] Failed to release lock:', error);
+      console.error("[EditLock] Failed to release lock:", error);
       throw error;
     }
   };
@@ -89,7 +98,7 @@ export function EditLockProvider({ children, projectId }: EditLockProviderProps)
       // Release lock on unmount
       if (currentLock) {
         lockService.releaseLock(currentLock.id).catch((error) => {
-          console.error('[EditLock] Failed to release lock on unmount:', error);
+          console.error("[EditLock] Failed to release lock on unmount:", error);
         });
       }
     };
@@ -120,7 +129,7 @@ export function EditLockProvider({ children, projectId }: EditLockProviderProps)
 export function useEditLock() {
   const context = useContext(EditLockContext);
   if (context === undefined) {
-    throw new Error('useEditLock must be used within an EditLockProvider');
+    throw new Error("useEditLock must be used within an EditLockProvider");
   }
   return context;
 }

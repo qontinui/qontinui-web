@@ -29,7 +29,9 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.automation_session import AutomationSession
     from app.models.recording import Recording
-    from app.models.state_transition import StateTransition  # type: ignore[import-untyped]
+    from app.models.state_transition import (
+        StateTransition,  # type: ignore[import-untyped]
+    )
 
 
 class DiscoveredState(Base):

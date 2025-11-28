@@ -1,4 +1,4 @@
-import { Tutorial } from '@/types/tutorial';
+import { Tutorial } from "@/types/tutorial";
 
 /**
  * First Automation Tutorial
@@ -14,24 +14,24 @@ import { Tutorial } from '@/types/tutorial';
  * Target: New users on their first visit to /automation-builder
  */
 const firstAutomationTutorial: Tutorial = {
-  id: 'first-automation',
-  title: 'Create Your First Automation',
+  id: "first-automation",
+  title: "Create Your First Automation",
   description:
-    'Learn the fundamentals of building automation workflows in Qontinui. This hands-on tutorial walks you through creating, configuring, testing, and saving your first automation step-by-step.',
-  duration: '10 minutes',
-  difficulty: 'beginner',
-  mode: 'contextual',
-  targetPage: '/automation-builder',
+    "Learn the fundamentals of building automation workflows in Qontinui. This hands-on tutorial walks you through creating, configuring, testing, and saving your first automation step-by-step.",
+  duration: "10 minutes",
+  difficulty: "beginner",
+  mode: "contextual",
+  targetPage: "/automation-builder",
 
-  category: 'Workflow Builder',
-  tags: ['automation', 'beginner', 'workflow', 'getting-started', 'basics'],
+  category: "Workflow Builder",
+  tags: ["automation", "beginner", "workflow", "getting-started", "basics"],
 
   learningObjectives: [
-    'Understand the basic structure of an automation workflow',
-    'Learn how to name and configure workflow settings',
-    'Master adding and configuring actions',
-    'Practice testing workflows before deployment',
-    'Save and manage your automation projects',
+    "Understand the basic structure of an automation workflow",
+    "Learn how to name and configure workflow settings",
+    "Master adding and configuring actions",
+    "Practice testing workflows before deployment",
+    "Save and manage your automation projects",
   ],
 
   triggers: {
@@ -39,12 +39,13 @@ const firstAutomationTutorial: Tutorial = {
     manual: true,
     contextual: [
       {
-        event: 'page_load',
-        condition: 'user.visitCount === 1 && page.route === "/automation-builder"',
+        event: "page_load",
+        condition:
+          'user.visitCount === 1 && page.route === "/automation-builder"',
       },
       {
-        event: 'workflow_created',
-        condition: 'user.workflows.length === 0',
+        event: "workflow_created",
+        condition: "user.workflows.length === 0",
       },
     ],
   },
@@ -57,21 +58,21 @@ const firstAutomationTutorial: Tutorial = {
   },
 
   author: {
-    name: 'Qontinui Team',
+    name: "Qontinui Team",
   },
 
   metadata: {
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    version: '1.0.0',
+    version: "1.0.0",
   },
 
   isPublished: true,
 
   steps: [
     {
-      id: 'step-1-welcome',
-      title: 'Welcome to Automation Builder',
+      id: "step-1-welcome",
+      title: "Welcome to Automation Builder",
       content: `
 # Welcome to Your First Automation! 🎉
 
@@ -105,41 +106,41 @@ This is an **interactive tutorial** that guides you through the actual Automatio
 **Ready to get started?** Click "Next" to begin!
 `,
       estimatedDuration: 1,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand the purpose of the Automation Builder',
-        'Learn what makes Qontinui unique',
-        'Get familiar with the tutorial format',
+        "Understand the purpose of the Automation Builder",
+        "Learn what makes Qontinui unique",
+        "Get familiar with the tutorial format",
       ],
       tips: [
-        'Take your time - you can pause the tutorial at any point',
-        'You can always restart if you make a mistake',
-        'Your progress is automatically saved',
+        "Take your time - you can pause the tutorial at any point",
+        "You can always restart if you make a mistake",
+        "Your progress is automatically saved",
       ],
       targetElement: {
-        selector: 'body',
-        highlightType: 'spotlight',
-        position: 'center',
+        selector: "body",
+        highlightType: "spotlight",
+        position: "center",
         allowInteraction: false,
         scrollIntoView: false,
       },
       resources: [
         {
-          title: 'Qontinui Documentation',
-          url: 'https://docs.qontinui.io',
-          type: 'documentation',
+          title: "Qontinui Documentation",
+          url: "https://docs.qontinui.io",
+          type: "documentation",
         },
         {
-          title: 'Automation Best Practices',
-          url: 'https://docs.qontinui.io/guides/best-practices',
-          type: 'article',
+          title: "Automation Best Practices",
+          url: "https://docs.qontinui.io/guides/best-practices",
+          type: "article",
         },
       ],
     },
 
     {
-      id: 'step-2-name-workflow',
-      title: 'Name Your Workflow',
+      id: "step-2-name-workflow",
+      title: "Name Your Workflow",
       content: `
 # Give Your Automation a Descriptive Name
 
@@ -174,31 +175,32 @@ Click on the **Workflow Name** input field (highlighted above) and enter a descr
 *Don't worry - you can always rename it later!*
 `,
       estimatedDuration: 1,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand the importance of descriptive naming',
-        'Learn naming best practices',
-        'Practice using the workflow name input',
+        "Understand the importance of descriptive naming",
+        "Learn naming best practices",
+        "Practice using the workflow name input",
       ],
       tips: [
         'If you\'re unsure what to name it, "My First Workflow" is perfectly fine for practice',
-        'You can rename workflows later from the workflow management page',
-        'Use consistent naming patterns if you plan to create many workflows',
+        "You can rename workflows later from the workflow management page",
+        "Use consistent naming patterns if you plan to create many workflows",
       ],
       targetElement: {
         selector: '[data-tutorial-id="workflow-name-input"]',
-        highlightType: 'spotlight',
-        position: 'bottom',
+        highlightType: "spotlight",
+        position: "bottom",
         allowInteraction: true,
         scrollIntoView: true,
         offset: { x: 0, y: 10 },
       },
       validation: {
-        type: 'input',
-        condition: 'document.querySelector("[data-tutorial-id=workflow-name-input]").value.length >= 3',
+        type: "input",
+        condition:
+          'document.querySelector("[data-tutorial-id=workflow-name-input]").value.length >= 3',
         feedback: {
-          success: 'Great name! Your workflow is now properly identified.',
-          failure: 'Please enter a name with at least 3 characters.',
+          success: "Great name! Your workflow is now properly identified.",
+          failure: "Please enter a name with at least 3 characters.",
           hint: 'Try something like "My First Workflow" or "Practice Automation"',
         },
         timeout: 30000,
@@ -208,8 +210,8 @@ Click on the **Workflow Name** input field (highlighted above) and enter a descr
     },
 
     {
-      id: 'step-3-mode-selector',
-      title: 'Choose Sequential Mode',
+      id: "step-3-mode-selector",
+      title: "Choose Sequential Mode",
       content: `
 # Understanding Workflow Execution Modes
 
@@ -252,30 +254,32 @@ Click the **Mode Selector** dropdown (highlighted) and choose **"Sequential"** m
 *This tells Qontinui to run your actions in the order you add them.*
 `,
       estimatedDuration: 1,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand different workflow execution modes',
-        'Learn when to use Sequential mode',
-        'Practice using the mode selector',
+        "Understand different workflow execution modes",
+        "Learn when to use Sequential mode",
+        "Practice using the mode selector",
       ],
       tips: [
-        'Sequential mode is the default for good reason - it\'s simple and powerful',
-        'You can change the mode later if your workflow needs parallel execution',
-        'Most automation workflows use Sequential mode',
+        "Sequential mode is the default for good reason - it's simple and powerful",
+        "You can change the mode later if your workflow needs parallel execution",
+        "Most automation workflows use Sequential mode",
       ],
       targetElement: {
         selector: '[data-tutorial-id="mode-selector"]',
-        highlightType: 'pulse',
-        position: 'bottom',
+        highlightType: "pulse",
+        position: "bottom",
         allowInteraction: true,
         scrollIntoView: true,
         delay: 300,
       },
       validation: {
-        type: 'state',
-        condition: 'document.querySelector("[data-tutorial-id=mode-selector]").value === "sequential"',
+        type: "state",
+        condition:
+          'document.querySelector("[data-tutorial-id=mode-selector]").value === "sequential"',
         feedback: {
-          success: 'Perfect! Sequential mode is set. Your actions will run in order.',
+          success:
+            "Perfect! Sequential mode is set. Your actions will run in order.",
           failure: 'Please select "Sequential" from the mode dropdown.',
           hint: 'Look for "Sequential" in the dropdown options',
         },
@@ -286,8 +290,8 @@ Click the **Mode Selector** dropdown (highlighted) and choose **"Sequential"** m
     },
 
     {
-      id: 'step-4-add-action',
-      title: 'Add Your First Action',
+      id: "step-4-add-action",
+      title: "Add Your First Action",
       content: `
 # Building Your Automation with Actions
 
@@ -328,31 +332,34 @@ After clicking "Add Action":
 **Click the button to continue!**
 `,
       estimatedDuration: 1,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand what actions are in automation workflows',
-        'Learn how actions are executed',
-        'Practice adding actions to a workflow',
+        "Understand what actions are in automation workflows",
+        "Learn how actions are executed",
+        "Practice adding actions to a workflow",
       ],
       tips: [
-        'You can add as many actions as you need - there\'s no limit',
-        'Actions can be reordered by dragging and dropping',
-        'Each action can be edited or deleted after adding it',
+        "You can add as many actions as you need - there's no limit",
+        "Actions can be reordered by dragging and dropping",
+        "Each action can be edited or deleted after adding it",
       ],
       targetElement: {
         selector: '[data-tutorial-id="add-action-button"]',
-        highlightType: 'pulse',
-        position: 'left',
+        highlightType: "pulse",
+        position: "left",
         allowInteraction: true,
         scrollIntoView: true,
         offset: { x: -10, y: 0 },
       },
       validation: {
-        type: 'state',
-        condition: 'document.querySelectorAll(".action-card, [data-action-item]").length > 0',
+        type: "state",
+        condition:
+          'document.querySelectorAll(".action-card, [data-action-item]").length > 0',
         feedback: {
-          success: 'Excellent! You\'ve added your first action. Let\'s configure it next.',
-          failure: 'Click the "Add Action" button to add an action to your workflow.',
+          success:
+            "Excellent! You've added your first action. Let's configure it next.",
+          failure:
+            'Click the "Add Action" button to add an action to your workflow.',
           hint: 'Look for the button labeled "Add Action" or with a plus (+) icon',
         },
         timeout: 45000,
@@ -362,8 +369,8 @@ After clicking "Add Action":
     },
 
     {
-      id: 'step-5-configure-action',
-      title: 'Configure Action Properties',
+      id: "step-5-configure-action",
+      title: "Configure Action Properties",
       content: `
 # Configuring Action Details
 
@@ -416,33 +423,34 @@ For your first action, you can:
 **Tip:** For practice, try changing the action description to something like "My first test action"
 `,
       estimatedDuration: 2,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand action configuration options',
-        'Learn about common action properties',
-        'Practice using the properties panel',
-        'Understand error handling in actions',
+        "Understand action configuration options",
+        "Learn about common action properties",
+        "Practice using the properties panel",
+        "Understand error handling in actions",
       ],
       tips: [
-        'The Properties Panel shows different options depending on action type',
-        'You can collapse/expand the panel to see more of the workflow',
-        'Action descriptions help you understand your workflow when reviewing it later',
-        'Required fields are usually marked with an asterisk (*)',
+        "The Properties Panel shows different options depending on action type",
+        "You can collapse/expand the panel to see more of the workflow",
+        "Action descriptions help you understand your workflow when reviewing it later",
+        "Required fields are usually marked with an asterisk (*)",
       ],
       targetElement: {
         selector: '[data-tutorial-id="properties-panel"]',
-        highlightType: 'spotlight',
-        position: 'left',
+        highlightType: "spotlight",
+        position: "left",
         allowInteraction: true,
         scrollIntoView: true,
         offset: { x: -15, y: 0 },
       },
       validation: {
-        type: 'state',
-        condition: 'true', // Auto-advance - no specific validation needed
+        type: "state",
+        condition: "true", // Auto-advance - no specific validation needed
         feedback: {
-          success: 'Great! You\'ve explored the properties panel. Ready to test?',
-          failure: 'Review the properties panel settings.',
+          success:
+            "Great! You've explored the properties panel. Ready to test?",
+          failure: "Review the properties panel settings.",
         },
         timeout: 60000,
         optional: true,
@@ -450,8 +458,8 @@ For your first action, you can:
     },
 
     {
-      id: 'step-6-test-workflow',
-      title: 'Test Your Workflow',
+      id: "step-6-test-workflow",
+      title: "Test Your Workflow",
       content: `
 # Testing Before Deployment
 
@@ -493,32 +501,34 @@ Watch as Qontinui executes your action(s) and provides feedback. This is a safe 
 **Don't worry if something doesn't work perfectly!** That's what testing is for. You can adjust and test again.
 `,
       estimatedDuration: 2,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand the importance of testing workflows',
-        'Learn how to run workflow tests',
-        'Interpret test results and feedback',
-        'Practice iterative testing and refinement',
+        "Understand the importance of testing workflows",
+        "Learn how to run workflow tests",
+        "Interpret test results and feedback",
+        "Practice iterative testing and refinement",
       ],
       tips: [
-        'Always test workflows before deploying them to production',
-        'If a test fails, check the error message for hints on what went wrong',
-        'You can test individual actions or the entire workflow',
-        'Test with different data inputs to ensure robustness',
+        "Always test workflows before deploying them to production",
+        "If a test fails, check the error message for hints on what went wrong",
+        "You can test individual actions or the entire workflow",
+        "Test with different data inputs to ensure robustness",
       ],
       targetElement: {
         selector: '[data-tutorial-id="run-workflow"]',
-        highlightType: 'pulse',
-        position: 'bottom',
+        highlightType: "pulse",
+        position: "bottom",
         allowInteraction: true,
         scrollIntoView: true,
         delay: 200,
       },
       validation: {
-        type: 'action',
-        condition: 'window.workflowTestRun === true || document.querySelector(".test-results, [data-test-results]")',
+        type: "action",
+        condition:
+          'window.workflowTestRun === true || document.querySelector(".test-results, [data-test-results]")',
         feedback: {
-          success: 'Excellent! You\'ve run your first workflow test. Check the results!',
+          success:
+            "Excellent! You've run your first workflow test. Check the results!",
           failure: 'Click the "Run Workflow" button to test your automation.',
           hint: 'Look for a button with "Run", "Test", or a play icon (▶)',
         },
@@ -528,21 +538,21 @@ Watch as Qontinui executes your action(s) and provides feedback. This is a safe 
       waitForUserAction: true,
       resources: [
         {
-          title: 'Debugging Workflows',
-          url: 'https://docs.qontinui.io/guides/debugging',
-          type: 'documentation',
+          title: "Debugging Workflows",
+          url: "https://docs.qontinui.io/guides/debugging",
+          type: "documentation",
         },
         {
-          title: 'Testing Best Practices',
-          url: 'https://docs.qontinui.io/guides/testing',
-          type: 'article',
+          title: "Testing Best Practices",
+          url: "https://docs.qontinui.io/guides/testing",
+          type: "article",
         },
       ],
     },
 
     {
-      id: 'step-7-save-workflow',
-      title: 'Save Your Work',
+      id: "step-7-save-workflow",
+      title: "Save Your Work",
       content: `
 # Saving Your Automation
 
@@ -584,32 +594,33 @@ You'll be prompted to confirm the save. Once saved, your workflow will appear in
 **Congratulations!** You're about to complete your first automation workflow! 🎉
 `,
       estimatedDuration: 1,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Understand workflow persistence',
-        'Learn how to save workflows',
-        'Know what data is stored when saving',
-        'Practice workflow management',
+        "Understand workflow persistence",
+        "Learn how to save workflows",
+        "Know what data is stored when saving",
+        "Practice workflow management",
       ],
       tips: [
-        'Save early and save often - especially when making significant changes',
-        'Use descriptive names to make workflows easy to find later',
-        'Consider exporting important workflows as backups',
-        'You can create copies of workflows to experiment without affecting originals',
+        "Save early and save often - especially when making significant changes",
+        "Use descriptive names to make workflows easy to find later",
+        "Consider exporting important workflows as backups",
+        "You can create copies of workflows to experiment without affecting originals",
       ],
       targetElement: {
         selector: '[data-tutorial-id="save-workflow"]',
-        highlightType: 'pulse',
-        position: 'bottom',
+        highlightType: "pulse",
+        position: "bottom",
         allowInteraction: true,
         scrollIntoView: true,
         offset: { x: 0, y: 10 },
       },
       validation: {
-        type: 'action',
-        condition: 'window.workflowSaved === true || localStorage.getItem("workflowSaved") === "true"',
+        type: "action",
+        condition:
+          'window.workflowSaved === true || localStorage.getItem("workflowSaved") === "true"',
         feedback: {
-          success: 'Perfect! Your workflow is saved and ready to use!',
+          success: "Perfect! Your workflow is saved and ready to use!",
           failure: 'Click the "Save Workflow" button to save your automation.',
           hint: 'Look for a "Save" button, often with a disk or floppy icon',
         },
@@ -620,8 +631,8 @@ You'll be prompted to confirm the save. Once saved, your workflow will appear in
     },
 
     {
-      id: 'step-8-completion',
-      title: 'Congratulations! 🎉',
+      id: "step-8-completion",
+      title: "Congratulations! 🎉",
       content: `
 # You've Created Your First Automation!
 
@@ -689,68 +700,69 @@ You can **replay this tutorial** anytime from the Help menu. Feel free to practi
 *Now go build something amazing!*
 `,
       estimatedDuration: 2,
-      difficulty: 'beginner',
+      difficulty: "beginner",
       learningObjectives: [
-        'Celebrate completing the first automation',
-        'Understand next learning steps',
-        'Know where to find additional resources',
-        'Feel confident building more workflows',
+        "Celebrate completing the first automation",
+        "Understand next learning steps",
+        "Know where to find additional resources",
+        "Feel confident building more workflows",
       ],
       tips: [
-        'Bookmark the documentation for quick reference',
-        'Start with simple automations that solve real problems for you',
-        'Don\'t be afraid to experiment - you can always undo changes',
-        'Share your success with the community - beginners helping beginners!',
+        "Bookmark the documentation for quick reference",
+        "Start with simple automations that solve real problems for you",
+        "Don't be afraid to experiment - you can always undo changes",
+        "Share your success with the community - beginners helping beginners!",
       ],
       targetElement: {
-        selector: 'body',
-        highlightType: 'spotlight',
-        position: 'center',
+        selector: "body",
+        highlightType: "spotlight",
+        position: "center",
         allowInteraction: false,
         scrollIntoView: false,
       },
       resources: [
         {
-          title: 'Complete Documentation',
-          url: 'https://docs.qontinui.io',
-          type: 'documentation',
+          title: "Complete Documentation",
+          url: "https://docs.qontinui.io",
+          type: "documentation",
         },
         {
-          title: 'Tutorial Library',
-          url: 'https://docs.qontinui.io/tutorials',
-          type: 'documentation',
+          title: "Tutorial Library",
+          url: "https://docs.qontinui.io/tutorials",
+          type: "documentation",
         },
         {
-          title: 'Community Forum',
-          url: 'https://community.qontinui.io',
-          type: 'article',
+          title: "Community Forum",
+          url: "https://community.qontinui.io",
+          type: "article",
         },
         {
-          title: 'Video Tutorials',
-          url: 'https://youtube.com/qontinui',
-          type: 'video',
+          title: "Video Tutorials",
+          url: "https://youtube.com/qontinui",
+          type: "video",
         },
         {
-          title: 'API Reference',
-          url: 'https://docs.qontinui.io/api',
-          type: 'api-reference',
+          title: "API Reference",
+          url: "https://docs.qontinui.io/api",
+          type: "api-reference",
         },
       ],
     },
   ],
 
   finalProject: {
-    name: 'My First Workflow',
-    description: 'A complete beginner automation workflow created in the Automation Builder',
+    name: "My First Workflow",
+    description:
+      "A complete beginner automation workflow created in the Automation Builder",
     components: [
-      'Workflow configuration (name, mode)',
-      'At least one configured action',
-      'Testing validation',
-      'Saved workflow',
+      "Workflow configuration (name, mode)",
+      "At least one configured action",
+      "Testing validation",
+      "Saved workflow",
     ],
     expectedOutcome:
-      'A working automation workflow that demonstrates understanding of the Automation Builder interface and basic workflow concepts',
-    timeToAutomate: 'Foundation for building any automation workflow',
+      "A working automation workflow that demonstrates understanding of the Automation Builder interface and basic workflow concepts",
+    timeToAutomate: "Foundation for building any automation workflow",
   },
 
   prerequisites: [],

@@ -1,58 +1,75 @@
-"use client"
+"use client";
 
-import React, { useState, useRef, useEffect, CSSProperties } from "react"
-import { cn } from "@/lib/utils"
+import React, { useState, useRef, useEffect, CSSProperties } from "react";
+import { cn } from "@/lib/utils";
 
 /**
  * Supported annotation types for AnnotatedImage
  */
-export type AnnotationType = "highlight" | "arrow" | "pulse" | "label"
+export type AnnotationType = "highlight" | "arrow" | "pulse" | "label";
 
 /**
  * Color options for annotations
  * Uses Qontinui brand colors by default
  */
-export type AnnotationColor = "cyan" | "green" | "purple" | "red" | "yellow" | "blue"
+export type AnnotationColor =
+  | "cyan"
+  | "green"
+  | "purple"
+  | "red"
+  | "yellow"
+  | "blue";
 
 /**
  * Arrow direction for arrow annotations
  */
-export type ArrowDirection = "up" | "down" | "left" | "right" | "up-left" | "up-right" | "down-left" | "down-right"
+export type ArrowDirection =
+  | "up"
+  | "down"
+  | "left"
+  | "right"
+  | "up-left"
+  | "up-right"
+  | "down-left"
+  | "down-right";
 
 /**
  * Individual annotation configuration
  */
 export interface Annotation {
-  type: AnnotationType
-  x: number // x position in pixels
-  y: number // y position in pixels
-  width?: number // width for highlight/arrow
-  height?: number // height for highlight/arrow
-  color?: AnnotationColor // color for annotation (default: cyan)
-  label?: string // text label for label type
-  size?: "sm" | "md" | "lg" // size for pulse/arrow
-  direction?: ArrowDirection // direction for arrow type
-  opacity?: number // opacity for highlight (0-1)
-  duration?: number // animation duration in ms
-  delay?: number // animation delay in ms
+  type: AnnotationType;
+  x: number; // x position in pixels
+  y: number; // y position in pixels
+  width?: number; // width for highlight/arrow
+  height?: number; // height for highlight/arrow
+  color?: AnnotationColor; // color for annotation (default: cyan)
+  label?: string; // text label for label type
+  size?: "sm" | "md" | "lg"; // size for pulse/arrow
+  direction?: ArrowDirection; // direction for arrow type
+  opacity?: number; // opacity for highlight (0-1)
+  duration?: number; // animation duration in ms
+  delay?: number; // animation delay in ms
 }
 
 /**
  * Props for AnnotatedImage component
  */
 export interface AnnotatedImageProps {
-  src: string
-  alt: string
-  annotations: Annotation[]
-  className?: string
-  imageClassName?: string
-  containerClassName?: string
+  src: string;
+  alt: string;
+  annotations: Annotation[];
+  className?: string;
+  imageClassName?: string;
+  containerClassName?: string;
 }
 
 /**
  * Color mapping to Qontinui and Tailwind classes
  */
-const COLOR_MAP: Record<AnnotationColor, { bg: string; text: string; border: string; ring: string }> = {
+const COLOR_MAP: Record<
+  AnnotationColor,
+  { bg: string; text: string; border: string; ring: string }
+> = {
   cyan: {
     bg: "bg-qontinui-cyan/20",
     text: "text-qontinui-cyan",
@@ -89,16 +106,19 @@ const COLOR_MAP: Record<AnnotationColor, { bg: string; text: string; border: str
     border: "border-blue-500",
     ring: "ring-blue-500",
   },
-}
+};
 
 /**
  * Size mapping for pulse and arrow annotations
  */
-const SIZE_MAP: Record<string, { pulse: number; arrow: number; label: string }> = {
+const SIZE_MAP: Record<
+  string,
+  { pulse: number; arrow: number; label: string }
+> = {
   sm: { pulse: 16, arrow: 24, label: "text-xs" },
   md: { pulse: 24, arrow: 32, label: "text-sm" },
   lg: { pulse: 32, arrow: 40, label: "text-base" },
-}
+};
 
 /**
  * Arrow direction to rotation angle mapping
@@ -112,7 +132,7 @@ const ARROW_ROTATION_MAP: Record<ArrowDirection, number> = {
   "down-left": 225,
   left: 270,
   "up-left": 315,
-}
+};
 
 /**
  * Pulse animation styles injected into global scope
@@ -147,7 +167,7 @@ const PULSE_ANIMATION_STYLES = `
   .annotated-image-pulse-ring {
     animation: annotated-image-pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
-`
+`;
 
 /**
  * Highlight annotation component
@@ -156,15 +176,18 @@ function HighlightAnnotation({
   annotation,
   color,
 }: {
-  annotation: Annotation
-  color: AnnotationColor
+  annotation: Annotation;
+  color: AnnotationColor;
 }) {
-  const opacity = annotation.opacity ?? 0.3
-  const colors = COLOR_MAP[color]
+  const opacity = annotation.opacity ?? 0.3;
+  const colors = COLOR_MAP[color];
 
   return (
     <div
-      className={cn("absolute border-2 rounded-lg pointer-events-none", colors.border)}
+      className={cn(
+        "absolute border-2 rounded-lg pointer-events-none",
+        colors.border
+      )}
       style={{
         left: `${annotation.x}px`,
         top: `${annotation.y}px`,
@@ -175,7 +198,7 @@ function HighlightAnnotation({
       role="img"
       aria-label={`Highlighted area at ${annotation.x}, ${annotation.y}`}
     />
-  )
+  );
 }
 
 /**
@@ -185,17 +208,19 @@ function ArrowAnnotation({
   annotation,
   color,
 }: {
-  annotation: Annotation
-  color: AnnotationColor
+  annotation: Annotation;
+  color: AnnotationColor;
 }) {
-  const size = SIZE_MAP[annotation.size || "md"].arrow
-  const direction = annotation.direction || "down"
-  const rotation = ARROW_ROTATION_MAP[direction]
-  const colors = COLOR_MAP[color]
+  const size = SIZE_MAP[annotation.size || "md"].arrow;
+  const direction = annotation.direction || "down";
+  const rotation = ARROW_ROTATION_MAP[direction];
+  const colors = COLOR_MAP[color];
 
   return (
     <div
-      className={cn("absolute pointer-events-none flex items-center justify-center")}
+      className={cn(
+        "absolute pointer-events-none flex items-center justify-center"
+      )}
       style={{
         left: `${annotation.x}px`,
         top: `${annotation.y}px`,
@@ -235,7 +260,7 @@ function ArrowAnnotation({
         />
       </svg>
     </div>
-  )
+  );
 }
 
 /**
@@ -245,13 +270,13 @@ function PulseAnnotation({
   annotation,
   color,
 }: {
-  annotation: Annotation
-  color: AnnotationColor
+  annotation: Annotation;
+  color: AnnotationColor;
 }) {
-  const size = SIZE_MAP[annotation.size || "md"].pulse
-  const duration = annotation.duration ?? 2000
-  const delay = annotation.delay ?? 0
-  const colors = COLOR_MAP[color]
+  const size = SIZE_MAP[annotation.size || "md"].pulse;
+  const duration = annotation.duration ?? 2000;
+  const delay = annotation.delay ?? 0;
+  const colors = COLOR_MAP[color];
 
   return (
     <div
@@ -280,7 +305,12 @@ function PulseAnnotation({
 
       {/* Pulsing dot */}
       <div
-        className={cn("absolute rounded-full annotated-image-pulse", colors.bg, colors.border, "border-2")}
+        className={cn(
+          "absolute rounded-full annotated-image-pulse",
+          colors.bg,
+          colors.border,
+          "border-2"
+        )}
         style={{
           width: `${size * 0.6}px`,
           height: `${size * 0.6}px`,
@@ -291,14 +321,19 @@ function PulseAnnotation({
 
       {/* Static center dot */}
       <div
-        className={cn("absolute rounded-full", colors.bg, colors.border, "border-2")}
+        className={cn(
+          "absolute rounded-full",
+          colors.bg,
+          colors.border,
+          "border-2"
+        )}
         style={{
           width: `${size * 0.3}px`,
           height: `${size * 0.3}px`,
         }}
       />
     </div>
-  )
+  );
 }
 
 /**
@@ -308,14 +343,14 @@ function LabelAnnotation({
   annotation,
   color,
 }: {
-  annotation: Annotation
-  color: AnnotationColor
+  annotation: Annotation;
+  color: AnnotationColor;
 }) {
-  const size = annotation.size || "md"
-  const colors = COLOR_MAP[color]
-  const sizeClass = SIZE_MAP[size].label
-  const offsetX = annotation.width ? annotation.width / 2 : 0
-  const offsetY = annotation.height ? annotation.height / 2 : 0
+  const size = annotation.size || "md";
+  const colors = COLOR_MAP[color];
+  const sizeClass = SIZE_MAP[size].label;
+  const offsetX = annotation.width ? annotation.width / 2 : 0;
+  const offsetY = annotation.height ? annotation.height / 2 : 0;
 
   return (
     <div
@@ -335,7 +370,7 @@ function LabelAnnotation({
     >
       <span className={colors.text}>{annotation.label}</span>
     </div>
-  )
+  );
 }
 
 /**
@@ -380,52 +415,45 @@ export const AnnotatedImage = React.forwardRef<
   HTMLDivElement,
   AnnotatedImageProps
 >(function AnnotatedImage(
-  {
-    src,
-    alt,
-    annotations,
-    className,
-    imageClassName,
-    containerClassName,
-  },
+  { src, alt, annotations, className, imageClassName, containerClassName },
   ref
 ) {
-  const [scale, setScale] = useState(1)
-  const imgRef = useRef<HTMLImageElement>(null)
+  const [scale, setScale] = useState(1);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   // Inject animation styles on mount
   useEffect(() => {
-    const styleId = "annotated-image-styles"
+    const styleId = "annotated-image-styles";
     if (!document.getElementById(styleId)) {
-      const style = document.createElement("style")
-      style.id = styleId
-      style.textContent = PULSE_ANIMATION_STYLES
-      document.head.appendChild(style)
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = PULSE_ANIMATION_STYLES;
+      document.head.appendChild(style);
     }
-  }, [])
+  }, []);
 
   // Calculate scale based on actual image dimensions
   useEffect(() => {
     const handleImageLoad = () => {
       if (imgRef.current) {
-        const naturalWidth = imgRef.current.naturalWidth
-        const displayWidth = imgRef.current.offsetWidth
+        const naturalWidth = imgRef.current.naturalWidth;
+        const displayWidth = imgRef.current.offsetWidth;
         if (displayWidth > 0) {
-          setScale(displayWidth / naturalWidth)
+          setScale(displayWidth / naturalWidth);
         }
       }
-    }
+    };
 
-    const img = imgRef.current
+    const img = imgRef.current;
     if (img) {
       if (img.complete) {
-        handleImageLoad()
+        handleImageLoad();
       } else {
-        img.addEventListener("load", handleImageLoad)
-        return () => img.removeEventListener("load", handleImageLoad)
+        img.addEventListener("load", handleImageLoad);
+        return () => img.removeEventListener("load", handleImageLoad);
       }
     }
-  }, [])
+  }, []);
 
   return (
     <div
@@ -457,13 +485,17 @@ export const AnnotatedImage = React.forwardRef<
         aria-hidden="false"
       >
         {annotations.map((annotation, index) => {
-          const color = annotation.color || "cyan"
+          const color = annotation.color || "cyan";
 
           // Scaled positions for responsive rendering
-          const scaledX = annotation.x * scale
-          const scaledY = annotation.y * scale
-          const scaledWidth = annotation.width ? annotation.width * scale : undefined
-          const scaledHeight = annotation.height ? annotation.height * scale : undefined
+          const scaledX = annotation.x * scale;
+          const scaledY = annotation.y * scale;
+          const scaledWidth = annotation.width
+            ? annotation.width * scale
+            : undefined;
+          const scaledHeight = annotation.height
+            ? annotation.height * scale
+            : undefined;
 
           const scaledAnnotation = {
             ...annotation,
@@ -471,15 +503,15 @@ export const AnnotatedImage = React.forwardRef<
             y: scaledY,
             width: scaledWidth,
             height: scaledHeight,
-          }
+          };
 
           return (
-            <div
-              key={`annotation-${index}`}
-              className={cn(className)}
-            >
+            <div key={`annotation-${index}`} className={cn(className)}>
               {annotation.type === "highlight" && (
-                <HighlightAnnotation annotation={scaledAnnotation} color={color} />
+                <HighlightAnnotation
+                  annotation={scaledAnnotation}
+                  color={color}
+                />
               )}
 
               {annotation.type === "arrow" && (
@@ -494,11 +526,11 @@ export const AnnotatedImage = React.forwardRef<
                 <LabelAnnotation annotation={scaledAnnotation} color={color} />
               )}
             </div>
-          )
+          );
         })}
       </div>
     </div>
-  )
-})
+  );
+});
 
-AnnotatedImage.displayName = "AnnotatedImage"
+AnnotatedImage.displayName = "AnnotatedImage";

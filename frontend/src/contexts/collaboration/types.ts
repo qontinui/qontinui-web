@@ -5,8 +5,8 @@ import type {
   Comment,
   Activity,
   ResourceType,
-} from '@/types/collaboration';
-import type { PermissionLevel } from '@/lib/permissions';
+} from "@/types/collaboration";
+import type { PermissionLevel } from "@/lib/permissions";
 
 // ============================================================================
 // Shared Provider Props

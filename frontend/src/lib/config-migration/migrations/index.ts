@@ -5,9 +5,9 @@
  * Add new migrations here as they are created.
  */
 
-import type { Migration } from '../migration-types';
-import { migrationV1ToV2 } from './v1.0.0-to-v2.0.0';
-import { migrationV2ToV201 } from './v2.0.0-to-v2.0.1';
+import type { Migration } from "../migration-types";
+import { migrationV1ToV2 } from "./v1.0.0-to-v2.0.0";
+import { migrationV2ToV201 } from "./v2.0.0-to-v2.0.1";
 
 /**
  * Current version of the application
@@ -15,7 +15,7 @@ import { migrationV2ToV201 } from './v2.0.0-to-v2.0.1';
  * Update this when creating new migrations.
  * This should match the version in export-schema.ts
  */
-export const CURRENT_VERSION = '2.0.1';
+export const CURRENT_VERSION = "2.0.1";
 
 /**
  * All registered migrations

@@ -5,11 +5,11 @@
  * Extracted from ActionEditor to be reusable with both Process and Workflow formats.
  */
 
-"use client"
+"use client";
 
-import React, { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,17 +18,21 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "@/components/ui/dropdown-menu"
-import { Plus, GripVertical, Trash2, Copy } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { useAutomation } from "@/contexts/automation-context"
-import type { SequentialEditorProps } from "../types"
-import type { Action } from "@/lib/action-schema/action-types"
+} from "@/components/ui/dropdown-menu";
+import { Plus, GripVertical, Trash2, Copy } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { useAutomation } from "@/contexts/automation-context";
+import type { SequentialEditorProps } from "../types";
+import type { Action } from "@/lib/action-schema/action-types";
 
 const ACTION_GROUPS = {
   Find: [
     { type: "FIND", label: "Find Element", color: "bg-blue-500" },
-    { type: "FIND_STATE_IMAGE", label: "Find State Image", color: "bg-cyan-500" },
+    {
+      type: "FIND_STATE_IMAGE",
+      label: "Find State Image",
+      color: "bg-cyan-500",
+    },
   ],
   Mouse: [
     { type: "CLICK", label: "Click", color: "bg-green-500" },
@@ -55,10 +59,10 @@ const ACTION_GROUPS = {
   Verification: [
     { type: "VANISH", label: "Wait for Vanish", color: "bg-red-500" },
   ],
-} as const
+} as const;
 
 // Flat list for finding action types by type
-const ACTION_TYPES = Object.values(ACTION_GROUPS).flat()
+const ACTION_TYPES = Object.values(ACTION_GROUPS).flat();
 
 export function SequentialEditor({
   actions,
@@ -66,9 +70,9 @@ export function SequentialEditor({
   onSelectAction,
   onUpdateActions,
 }: SequentialEditorProps) {
-  const { states, workflows, images } = useAutomation()
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
-  const [insertAtIndex, setInsertAtIndex] = useState<number | null>(null)
+  const { states, workflows, images } = useAutomation();
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [insertAtIndex, setInsertAtIndex] = useState<number | null>(null);
 
   const addAction = (type: Action["type"], insertAfterIndex?: number) => {
     const newAction: Action = {
@@ -76,68 +80,68 @@ export function SequentialEditor({
       type,
       config: getDefaultConfig(type),
       position: [100, 100 + actions.length * 150], // Auto-position vertically
-    }
+    };
 
     if (insertAfterIndex !== undefined && insertAfterIndex >= -1) {
       // Insert at specific position
-      const updatedActions = [...actions]
-      updatedActions.splice(insertAfterIndex + 1, 0, newAction)
-      onUpdateActions(updatedActions)
+      const updatedActions = [...actions];
+      updatedActions.splice(insertAfterIndex + 1, 0, newAction);
+      onUpdateActions(updatedActions);
     } else {
       // Add to end
-      onUpdateActions([...actions, newAction])
+      onUpdateActions([...actions, newAction]);
     }
 
-    onSelectAction(newAction)
-    setInsertAtIndex(null)
-  }
+    onSelectAction(newAction);
+    setInsertAtIndex(null);
+  };
 
   const deleteAction = (actionId: string) => {
-    const updatedActions = actions.filter((a) => a.id !== actionId)
-    onUpdateActions(updatedActions)
+    const updatedActions = actions.filter((a) => a.id !== actionId);
+    onUpdateActions(updatedActions);
 
     if (selectedAction?.id === actionId) {
-      onSelectAction(updatedActions[0] || null)
+      onSelectAction(updatedActions[0] || null);
     }
-  }
+  };
 
   const duplicateAction = (action: Action) => {
     const newAction: Action = {
       ...action,
       id: `action-${Date.now()}`,
-    }
+    };
 
-    const actionIndex = actions.findIndex((a) => a.id === action.id)
-    const updatedActions = [...actions]
-    updatedActions.splice(actionIndex + 1, 0, newAction)
+    const actionIndex = actions.findIndex((a) => a.id === action.id);
+    const updatedActions = [...actions];
+    updatedActions.splice(actionIndex + 1, 0, newAction);
 
-    onUpdateActions(updatedActions)
-  }
+    onUpdateActions(updatedActions);
+  };
 
   const handleDragStart = (index: number) => {
-    setDraggedIndex(index)
-  }
+    setDraggedIndex(index);
+  };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault()
+    e.preventDefault();
 
-    if (draggedIndex === null || draggedIndex === index) return
+    if (draggedIndex === null || draggedIndex === index) return;
 
-    const updatedActions = [...actions]
-    const draggedAction = updatedActions[draggedIndex]
+    const updatedActions = [...actions];
+    const draggedAction = updatedActions[draggedIndex];
 
     // Remove from old position
-    updatedActions.splice(draggedIndex, 1)
+    updatedActions.splice(draggedIndex, 1);
     // Insert at new position
-    updatedActions.splice(index, 0, draggedAction)
+    updatedActions.splice(index, 0, draggedAction);
 
-    onUpdateActions(updatedActions)
-    setDraggedIndex(index)
-  }
+    onUpdateActions(updatedActions);
+    setDraggedIndex(index);
+  };
 
   const handleDragEnd = () => {
-    setDraggedIndex(null)
-  }
+    setDraggedIndex(null);
+  };
 
   return (
     <div className="p-6 min-h-full flex flex-col items-center">
@@ -147,7 +151,11 @@ export function SequentialEditor({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" data-tutorial-id="add-action-button" className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white">
+            <Button
+              size="sm"
+              data-tutorial-id="add-action-button"
+              className="bg-[#BD00FF] hover:bg-[#BD00FF]/80 text-white"
+            >
               <Plus className="w-4 h-4 mr-2" />
               Add Action
             </Button>
@@ -186,13 +194,20 @@ export function SequentialEditor({
         ) : (
           <>
             {actions.map((action, index) => {
-              const actionType = ACTION_TYPES.find((t) => t.type === action.type)
+              const actionType = ACTION_TYPES.find(
+                (t) => t.type === action.type
+              );
               return (
                 <React.Fragment key={action.id}>
                   {/* Compact Insert Button */}
                   <div className="relative h-4 group">
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <DropdownMenu open={insertAtIndex === index - 1} onOpenChange={(open) => setInsertAtIndex(open ? index - 1 : null)}>
+                      <DropdownMenu
+                        open={insertAtIndex === index - 1}
+                        onOpenChange={(open) =>
+                          setInsertAtIndex(open ? index - 1 : null)
+                        }
+                      >
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
@@ -204,24 +219,31 @@ export function SequentialEditor({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent className="bg-[#27272A] border-gray-700">
-                          {Object.entries(ACTION_GROUPS).map(([groupName, actions]) => (
-                            <DropdownMenuSub key={groupName}>
-                              <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
-                                {groupName}
-                              </DropdownMenuSubTrigger>
-                              <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
-                                {actions.map(({ type, label }) => (
-                                  <DropdownMenuItem
-                                    key={type}
-                                    onClick={() => addAction(type as Action["type"], index - 1)}
-                                    className="hover:bg-gray-700 focus:bg-gray-700"
-                                  >
-                                    {label}
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuSubContent>
-                            </DropdownMenuSub>
-                          ))}
+                          {Object.entries(ACTION_GROUPS).map(
+                            ([groupName, actions]) => (
+                              <DropdownMenuSub key={groupName}>
+                                <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
+                                  {groupName}
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
+                                  {actions.map(({ type, label }) => (
+                                    <DropdownMenuItem
+                                      key={type}
+                                      onClick={() =>
+                                        addAction(
+                                          type as Action["type"],
+                                          index - 1
+                                        )
+                                      }
+                                      className="hover:bg-gray-700 focus:bg-gray-700"
+                                    >
+                                      {label}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            )
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -248,7 +270,9 @@ export function SequentialEditor({
                         {/* Drag Handle & Number */}
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <GripVertical className="w-3.5 h-3.5 text-gray-500 cursor-grab active:cursor-grabbing" />
-                          <Badge className={`${actionType?.color} text-white text-xs px-1.5 py-0 h-5 min-w-[1.5rem] flex items-center justify-center`}>
+                          <Badge
+                            className={`${actionType?.color} text-white text-xs px-1.5 py-0 h-5 min-w-[1.5rem] flex items-center justify-center`}
+                          >
                             {index + 1}
                           </Badge>
                         </div>
@@ -256,15 +280,26 @@ export function SequentialEditor({
                         {/* Action Content */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-medium text-sm truncate">{actionType?.label}</span>
-                            {action.type !== "GO_TO_STATE" && action.type !== "RUN_WORKFLOW" && (
-                              <Badge variant="outline" className="text-xs px-1 py-0 h-4">
-                                {action.type}
-                              </Badge>
-                            )}
+                            <span className="font-medium text-sm truncate">
+                              {actionType?.label}
+                            </span>
+                            {action.type !== "GO_TO_STATE" &&
+                              action.type !== "RUN_WORKFLOW" && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs px-1 py-0 h-4"
+                                >
+                                  {action.type}
+                                </Badge>
+                              )}
                           </div>
                           <div className="text-xs text-gray-400 truncate">
-                            {getActionSummary(action, states, workflows, images)}
+                            {getActionSummary(
+                              action,
+                              states,
+                              workflows,
+                              images
+                            )}
                           </div>
                         </div>
 
@@ -275,8 +310,8 @@ export function SequentialEditor({
                             size="sm"
                             className="h-6 w-6 p-0 text-gray-500 hover:text-[#00D9FF] hover:bg-[#00D9FF]/10"
                             onClick={(e) => {
-                              e.stopPropagation()
-                              duplicateAction(action)
+                              e.stopPropagation();
+                              duplicateAction(action);
                             }}
                           >
                             <Copy className="w-3 h-3" />
@@ -286,8 +321,8 @@ export function SequentialEditor({
                             size="sm"
                             className="h-6 w-6 p-0 text-gray-500 hover:text-red-400 hover:bg-red-400/10"
                             onClick={(e) => {
-                              e.stopPropagation()
-                              deleteAction(action.id)
+                              e.stopPropagation();
+                              deleteAction(action.id);
                             }}
                           >
                             <Trash2 className="w-3 h-3" />
@@ -297,13 +332,18 @@ export function SequentialEditor({
                     </CardContent>
                   </Card>
                 </React.Fragment>
-              )
+              );
             })}
 
             {/* Insert button after last action */}
             <div className="relative h-4 group">
               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <DropdownMenu open={insertAtIndex === actions.length - 1} onOpenChange={(open) => setInsertAtIndex(open ? actions.length - 1 : null)}>
+                <DropdownMenu
+                  open={insertAtIndex === actions.length - 1}
+                  onOpenChange={(open) =>
+                    setInsertAtIndex(open ? actions.length - 1 : null)
+                  }
+                >
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
@@ -315,24 +355,31 @@ export function SequentialEditor({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="bg-[#27272A] border-gray-700">
-                    {Object.entries(ACTION_GROUPS).map(([groupName, actions]) => (
-                      <DropdownMenuSub key={groupName}>
-                        <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
-                          {groupName}
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
-                          {actions.map(({ type, label }) => (
-                            <DropdownMenuItem
-                              key={type}
-                              onClick={() => addAction(type as Action["type"], actions.length - 1)}
-                              className="hover:bg-gray-700 focus:bg-gray-700"
-                            >
-                              {label}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    ))}
+                    {Object.entries(ACTION_GROUPS).map(
+                      ([groupName, actions]) => (
+                        <DropdownMenuSub key={groupName}>
+                          <DropdownMenuSubTrigger className="hover:bg-gray-700 focus:bg-gray-700">
+                            {groupName}
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
+                            {actions.map(({ type, label }) => (
+                              <DropdownMenuItem
+                                key={type}
+                                onClick={() =>
+                                  addAction(
+                                    type as Action["type"],
+                                    actions.length - 1
+                                  )
+                                }
+                                className="hover:bg-gray-700 focus:bg-gray-700"
+                              >
+                                {label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      )
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -344,7 +391,7 @@ export function SequentialEditor({
         )}
       </div>
     </div>
-  )
+  );
 }
 
 // Helper functions (copied from action-editor.tsx)
@@ -354,13 +401,18 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
       return {
         target: {
           type: "image",
-          imageId: null
-        }
-      }
+          imageId: null,
+        },
+      };
     case "FIND_STATE_IMAGE":
-      return { state: null }
+      return { state: null };
     case "CLICK":
-      return { target: "Last Find Result", mouseButton: "LEFT", numberOfClicks: 1, hold_duration: 0 }
+      return {
+        target: "Last Find Result",
+        mouseButton: "LEFT",
+        numberOfClicks: 1,
+        hold_duration: 0,
+      };
     case "TYPE":
       return {
         text: "",
@@ -370,58 +422,84 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         typing_delay: 50,
         clear_before: false,
         press_enter: false,
-      }
+      };
     case "DRAG":
-      return { from: "Last Find Result", to: null, drag_duration: 1000, smooth_movement: true }
+      return {
+        from: "Last Find Result",
+        to: null,
+        drag_duration: 1000,
+        smooth_movement: true,
+      };
     case "SCROLL":
-      return { direction: "down", amount: 3, scroll_duration: 500, smooth_scroll: true }
+      return {
+        direction: "down",
+        amount: 3,
+        scroll_duration: 500,
+        smooth_scroll: true,
+      };
     case "VANISH":
       return {
         target: {
           type: "image",
-          imageId: null
+          imageId: null,
         },
         maxWaitTime: 5000,
-        pollInterval: 500
-      }
+        pollInterval: 500,
+      };
     case "GO_TO_STATE":
-      return { states: [] }  // Array of state IDs for multi-target pathfinding
+      return { states: [] }; // Array of state IDs for multi-target pathfinding
     case "RUN_WORKFLOW":
-      return { workflowId: "" }
+      return { workflowId: "" };
     case "IF":
       return {
-        condition: { type: "variable", variableName: "", operator: "==", expectedValue: "" },
+        condition: {
+          type: "variable",
+          variableName: "",
+          operator: "==",
+          expectedValue: "",
+        },
         thenActions: [],
-      }
+      };
     case "LOOP":
-      return { loopType: "FOR", iterations: 10, actions: [], maxIterations: 1000, breakOnError: false }
+      return {
+        loopType: "FOR",
+        iterations: 10,
+        actions: [],
+        maxIterations: 1000,
+        breakOnError: false,
+      };
     case "MOUSE_MOVE":
-      return { target: "Last Find Result", x: 0, y: 0, duration: 0 }
+      return { target: "Last Find Result", x: 0, y: 0, duration: 0 };
     case "MOUSE_DOWN":
-      return { button: "left", target: null }
+      return { button: "left", target: null };
     case "MOUSE_UP":
-      return { button: "left", target: null }
+      return { button: "left", target: null };
     case "DOUBLE_CLICK":
-      return { target: "Last Find Result", mouseButton: "LEFT" }
+      return { target: "Last Find Result", mouseButton: "LEFT" };
     case "RIGHT_CLICK":
-      return { target: "Last Find Result" }
+      return { target: "Last Find Result" };
     case "KEY_PRESS":
-      return { key: "" }
+      return { key: "" };
     case "KEY_DOWN":
-      return { key: "" }
+      return { key: "" };
     case "KEY_UP":
-      return { key: "" }
+      return { key: "" };
     default:
-      return {}
+      return {};
   }
 }
 
-function renderActionSummary(action: Action, states: any[], workflows: any[], images: any[]) {
-  const summary = getActionSummary(action, states, workflows, images)
-  const hasRemovedImage = summary.includes("[REMOVED:")
+function renderActionSummary(
+  action: Action,
+  states: any[],
+  workflows: any[],
+  images: any[]
+) {
+  const summary = getActionSummary(action, states, workflows, images);
+  const hasRemovedImage = summary.includes("[REMOVED:");
 
   if (hasRemovedImage) {
-    const parts = summary.split(/(\[REMOVED:[^\]]+\])/)
+    const parts = summary.split(/(\[REMOVED:[^\]]+\])/);
     return (
       <p className="text-xs mt-1">
         {parts.map((part, index) => {
@@ -430,114 +508,149 @@ function renderActionSummary(action: Action, states: any[], workflows: any[], im
               <span key={index} className="text-red-400 font-medium">
                 {part}
               </span>
-            )
+            );
           }
           return (
             <span key={index} className="text-gray-400">
               {part}
             </span>
-          )
+          );
         })}
       </p>
-    )
+    );
   }
 
-  return <p className="text-xs text-gray-400 mt-1">{summary}</p>
+  return <p className="text-xs text-gray-400 mt-1">{summary}</p>;
 }
 
-function getActionSummary(action: Action, states: any[], workflows: any[], images: any[]): string {
+function getActionSummary(
+  action: Action,
+  states: any[],
+  workflows: any[],
+  images: any[]
+): string {
   switch (action.type) {
     case "FIND":
       if (action.config.removedImage) {
-        return `[REMOVED: ${action.config.removedImage}]`
+        return `[REMOVED: ${action.config.removedImage}]`;
       }
       // Handle new target structure with imageIds array
-      const imageIds = action.config.target?.type === 'image' ? action.config.target.imageIds : null
-      const imageId = imageIds?.[0] || action.config.target?.imageId || action.config.image
+      const imageIds =
+        action.config.target?.type === "image"
+          ? action.config.target.imageIds
+          : null;
+      const imageId =
+        imageIds?.[0] || action.config.target?.imageId || action.config.image;
 
       if (imageId) {
-        let stateImageName = null
+        let stateImageName = null;
         for (const state of states) {
-          const stateImage = state.stateImages?.find((si: any) => si.id === imageId)
+          const stateImage = state.stateImages?.find(
+            (si: any) => si.id === imageId
+          );
           if (stateImage) {
-            stateImageName = stateImage.name
-            break
+            stateImageName = stateImage.name;
+            break;
           }
         }
         if (stateImageName) {
-          const nameWithoutExtension = stateImageName.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
-          const suffix = imageIds && imageIds.length > 1 ? ` +${imageIds.length - 1} more` : ""
-          return `Find ${nameWithoutExtension}${suffix}`
+          const nameWithoutExtension = stateImageName.replace(
+            /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+            ""
+          );
+          const suffix =
+            imageIds && imageIds.length > 1
+              ? ` +${imageIds.length - 1} more`
+              : "";
+          return `Find ${nameWithoutExtension}${suffix}`;
         }
-        const image = images.find((img) => img.id === imageId)
+        const image = images.find((img) => img.id === imageId);
         if (image) {
-          const nameWithoutExtension = image.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
-          const suffix = imageIds && imageIds.length > 1 ? ` +${imageIds.length - 1} more` : ""
-          return `Find ${nameWithoutExtension}${suffix}`
+          const nameWithoutExtension = image.name.replace(
+            /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+            ""
+          );
+          const suffix =
+            imageIds && imageIds.length > 1
+              ? ` +${imageIds.length - 1} more`
+              : "";
+          return `Find ${nameWithoutExtension}${suffix}`;
         }
-        return "Image not found"
+        return "Image not found";
       }
-      return "No image selected"
+      return "No image selected";
     case "FIND_STATE_IMAGE":
       if (action.config.state) {
-        const state = states.find((s) => s.id === action.config.state)
-        return state ? `Find any image from ${state.name}` : "State not found"
+        const state = states.find((s) => s.id === action.config.state);
+        return state ? `Find any image from ${state.name}` : "State not found";
       }
-      return "No state selected"
+      return "No state selected";
     case "CLICK":
-      return `${action.config.mouseButton?.toLowerCase() || 'left'} click on ${action.config.target}`
+      return `${action.config.mouseButton?.toLowerCase() || "left"} click on ${action.config.target}`;
     case "DOUBLE_CLICK":
-      return `Double click on ${action.config.target || "Last Find Result"}`
+      return `Double click on ${action.config.target || "Last Find Result"}`;
     case "RIGHT_CLICK":
-      return `Right click on ${action.config.target || "Last Find Result"}`
+      return `Right click on ${action.config.target || "Last Find Result"}`;
     case "TYPE":
       if (action.config.textSource === "stateString") {
-        if (!action.config.selectedState) return "No state selected"
-        const state = states.find((s) => s.id === action.config.selectedState)
-        if (!state) return "Invalid state"
+        if (!action.config.selectedState) return "No state selected";
+        const state = states.find((s) => s.id === action.config.selectedState);
+        if (!state) return "Invalid state";
         if (action.config.selectedStateStrings?.length > 0 && state.strings) {
           const selectedStrings = state.strings
-            .filter((s: any) => action.config.selectedStateStrings.includes(s.id))
+            .filter((s: any) =>
+              action.config.selectedStateStrings.includes(s.id)
+            )
             .map((s: any) => s.value)
-            .filter((v: any) => v)
+            .filter((v: any) => v);
           if (selectedStrings.length === 0) {
-            return `No strings selected from ${state.name || state.id}`
+            return `No strings selected from ${state.name || state.id}`;
           }
-          const combinedText = selectedStrings.join(" | ")
+          const combinedText = selectedStrings.join(" | ");
           const displayText =
-            combinedText.length > 40 ? combinedText.substring(0, 40) + "..." : combinedText
-          return `Type "${displayText.replace(/\n/g, "↵").replace(/\t/g, "→")}" (${state.name || state.id})`
+            combinedText.length > 40
+              ? combinedText.substring(0, 40) + "..."
+              : combinedText;
+          return `Type "${displayText.replace(/\n/g, "↵").replace(/\t/g, "→")}" (${state.name || state.id})`;
         } else {
-          return `No strings selected from ${state.name || state.id}`
+          return `No strings selected from ${state.name || state.id}`;
         }
       } else {
-        if (!action.config.text) return "No text specified"
+        if (!action.config.text) return "No text specified";
         const displayText =
-          action.config.text.length > 30 ? action.config.text.substring(0, 30) + "..." : action.config.text
-        return `Type "${displayText.replace(/\n/g, "↵").replace(/\t/g, "→")}"`
+          action.config.text.length > 30
+            ? action.config.text.substring(0, 30) + "..."
+            : action.config.text;
+        return `Type "${displayText.replace(/\n/g, "↵").replace(/\t/g, "→")}"`;
       }
     case "DRAG":
       if (action.config.removedImageTo) {
-        return `Drag from ${action.config.from} to [REMOVED: ${action.config.removedImageTo}]`
+        return `Drag from ${action.config.from} to [REMOVED: ${action.config.removedImageTo}]`;
       }
-      return `Drag from ${action.config.from} to ${action.config.to || "target"}`
+      return `Drag from ${action.config.from} to ${action.config.to || "target"}`;
     case "SCROLL":
-      return `Scroll ${action.config.direction} ${action.config.amount} units`
+      return `Scroll ${action.config.direction} ${action.config.amount} units`;
     case "VANISH":
       if (action.config.removedImage) {
-        return `Wait for [REMOVED: ${action.config.removedImage}] to vanish`
+        return `Wait for [REMOVED: ${action.config.removedImage}] to vanish`;
       }
       // Handle new target structure
-      const vanishImageId = action.config.target?.type === 'image' ? action.config.target.imageId : action.config.image
+      const vanishImageId =
+        action.config.target?.type === "image"
+          ? action.config.target.imageId
+          : action.config.image;
       if (vanishImageId) {
-        const vanishImage = images.find((img) => img.id === vanishImageId)
+        const vanishImage = images.find((img) => img.id === vanishImageId);
         if (vanishImage) {
-          const nameWithoutExtension = vanishImage.name.replace(/\.(png|jpg|jpeg|gif|webp|svg)$/i, "")
-          return `Wait for ${nameWithoutExtension} to vanish`
+          const nameWithoutExtension = vanishImage.name.replace(
+            /\.(png|jpg|jpeg|gif|webp|svg)$/i,
+            ""
+          );
+          return `Wait for ${nameWithoutExtension} to vanish`;
         }
-        return `Wait for ${vanishImageId} to vanish`
+        return `Wait for ${vanishImageId} to vanish`;
       }
-      return "No image selected"
+      return "No image selected";
     case "GO_TO_STATE":
       const targetStates = (action.config.states as string[]) || [];
       if (targetStates.length > 0) {
@@ -548,58 +661,66 @@ function getActionSummary(action: Action, states: any[], workflows: any[], image
         if (stateNames.length === 1) {
           return `Target: ${stateNames[0]}`;
         } else {
-          return `Targets: ${stateNames.join(', ')} (${stateNames.length} states)`;
+          return `Targets: ${stateNames.join(", ")} (${stateNames.length} states)`;
         }
       }
-      return "No states selected"
+      return "No states selected";
     case "RUN_WORKFLOW":
       if (action.config.workflowId) {
-        const workflow = workflows.find((w: any) => w.id === action.config.workflowId)
-        return workflow ? workflow.name : action.config.workflowId
+        const workflow = workflows.find(
+          (w: any) => w.id === action.config.workflowId
+        );
+        return workflow ? workflow.name : action.config.workflowId;
       }
-      return "No workflow selected"
+      return "No workflow selected";
     case "IF":
-      const thenCount = action.config.thenActions?.length || 0
-      const elseCount = action.config.elseActions?.length || 0
-      const conditionType = action.config.condition?.type || "not configured"
+      const thenCount = action.config.thenActions?.length || 0;
+      const elseCount = action.config.elseActions?.length || 0;
+      const conditionType = action.config.condition?.type || "not configured";
       if (elseCount > 0) {
-        return `${conditionType} condition: ${thenCount} then-actions, ${elseCount} else-actions`
+        return `${conditionType} condition: ${thenCount} then-actions, ${elseCount} else-actions`;
       } else {
-        return `${conditionType} condition: ${thenCount} then-actions`
+        return `${conditionType} condition: ${thenCount} then-actions`;
       }
     case "LOOP":
-      const loopType = action.config.loopType || "FOR"
-      const actionCount = action.config.actions?.length || 0
+      const loopType = action.config.loopType || "FOR";
+      const actionCount = action.config.actions?.length || 0;
       if (loopType === "FOR") {
-        const iterations = action.config.iterations || 0
-        return `FOR loop: ${iterations} iterations, ${actionCount} actions`
+        const iterations = action.config.iterations || 0;
+        return `FOR loop: ${iterations} iterations, ${actionCount} actions`;
       } else if (loopType === "WHILE") {
-        return `WHILE loop: ${actionCount} actions`
+        return `WHILE loop: ${actionCount} actions`;
       } else {
-        return `FOREACH loop: ${actionCount} actions`
+        return `FOREACH loop: ${actionCount} actions`;
       }
     case "MOUSE_MOVE":
       if (action.config.target === "Coordinates") {
-        return `Move mouse to (${action.config.x}, ${action.config.y})`
+        return `Move mouse to (${action.config.x}, ${action.config.y})`;
       }
-      return `Move mouse to ${action.config.target}`
+      return `Move mouse to ${action.config.target}`;
     case "MOUSE_DOWN":
       if (action.config.target === "Coordinates") {
-        return `Press ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`
+        return `Press ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`;
       }
-      return `Press ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`
+      return `Press ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`;
     case "MOUSE_UP":
       if (action.config.target === "Coordinates") {
-        return `Release ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`
+        return `Release ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`;
       }
-      return `Release ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`
+      return `Release ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`;
     case "KEY_PRESS":
-      return action.config.key ? `Press key: ${action.config.key}` : "No key selected"
+      return action.config.key
+        ? `Press key: ${action.config.key}`
+        : "No key selected";
     case "KEY_DOWN":
-      return action.config.key ? `Hold key down: ${action.config.key}` : "No key selected"
+      return action.config.key
+        ? `Hold key down: ${action.config.key}`
+        : "No key selected";
     case "KEY_UP":
-      return action.config.key ? `Release key: ${action.config.key}` : "No key selected"
+      return action.config.key
+        ? `Release key: ${action.config.key}`
+        : "No key selected";
     default:
-      return "Configure action"
+      return "Configure action";
   }
 }

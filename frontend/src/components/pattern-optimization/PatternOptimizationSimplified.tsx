@@ -1,14 +1,36 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { PatternOptimizationProvider, usePatternOptimization } from '@/contexts/pattern-optimization-context-simplified';
-import { ExtractionConfig, PatternQuality, Region } from '@/types/pattern-optimization';
-import { AdvancedRegionSelector } from './AdvancedRegionSelector';
-import { Upload, X, Sliders, AlertCircle, Check, ImageIcon, MousePointer, Edit2, Eraser, Plus, FolderOpen } from 'lucide-react';
-import { useAutomation } from '@/contexts/automation-context';
-import type { StateImage } from '@/contexts/automation-context/types';
-import { ScreenshotSelector } from '../screenshot-selector';
-import { prepareStateImageCreation } from '@/lib/state-image-creator';
-import { createImageAsset, imageExistsInLibrary } from '@/lib/image-library-utils';
-import { toast } from 'sonner';
+import React, { useState, useEffect, useRef } from "react";
+import {
+  PatternOptimizationProvider,
+  usePatternOptimization,
+} from "@/contexts/pattern-optimization-context-simplified";
+import {
+  ExtractionConfig,
+  PatternQuality,
+  Region,
+} from "@/types/pattern-optimization";
+import { AdvancedRegionSelector } from "./AdvancedRegionSelector";
+import {
+  Upload,
+  X,
+  Sliders,
+  AlertCircle,
+  Check,
+  ImageIcon,
+  MousePointer,
+  Edit2,
+  Eraser,
+  Plus,
+  FolderOpen,
+} from "lucide-react";
+import { useAutomation } from "@/contexts/automation-context";
+import type { StateImage } from "@/contexts/automation-context/types";
+import { ScreenshotSelector } from "../screenshot-selector";
+import { prepareStateImageCreation } from "@/lib/state-image-creator";
+import {
+  createImageAsset,
+  imageExistsInLibrary,
+} from "@/lib/image-library-utils";
+import { toast } from "sonner";
 
 /**
  * Pattern Optimization Component - Simplified
@@ -31,7 +53,7 @@ const PatternOptimizationContent: React.FC = () => {
 
   const [config, setConfig] = useState<ExtractionConfig>({
     similarityThreshold: 0.85,
-    colorAveraging: 'weighted',
+    colorAveraging: "weighted",
     morphologicalOps: {
       enabled: true,
       erosionSize: 1,
@@ -40,23 +62,36 @@ const PatternOptimizationContent: React.FC = () => {
     minActivePixels: 100,
   });
 
-  const [selectedScreenshotId, setSelectedScreenshotId] = useState<string | null>(null);
-  const [patternQuality, setPatternQuality] = useState<PatternQuality | null>(null);
-  const [editMode, setEditMode] = useState<'none' | 'add' | 'remove'>('none');
+  const [selectedScreenshotId, setSelectedScreenshotId] = useState<
+    string | null
+  >(null);
+  const [patternQuality, setPatternQuality] = useState<PatternQuality | null>(
+    null
+  );
+  const [editMode, setEditMode] = useState<"none" | "add" | "remove">("none");
   const [editedPattern, setEditedPattern] = useState<string | null>(null);
   const [showStateImageDialog, setShowStateImageDialog] = useState(false);
   const [showScreenshotSelector, setShowScreenshotSelector] = useState(false);
-  const [stateImageName, setStateImageName] = useState('');
-  const [selectedStateId, setSelectedStateId] = useState<string>('');
-  const [newStateName, setNewStateName] = useState('');
+  const [stateImageName, setStateImageName] = useState("");
+  const [selectedStateId, setSelectedStateId] = useState<string>("");
+  const [newStateName, setNewStateName] = useState("");
   const [fixedLocation, setFixedLocation] = useState(true);
-  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(
+    null
+  );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const patternCanvasRef = useRef<HTMLCanvasElement>(null);
   const cursorCanvasRef = useRef<HTMLCanvasElement>(null);
   const screenshotSelectorTriggerRef = useRef<HTMLButtonElement>(null);
-  const { states, addState, updateState, screenshots: projectScreenshots, images, addImage } = useAutomation();
+  const {
+    states,
+    addState,
+    updateState,
+    screenshots: projectScreenshots,
+    images,
+    addImage,
+  } = useAutomation();
 
   const BRUSH_RADIUS = 5; // Smaller brush size
 
@@ -89,7 +124,7 @@ const PatternOptimizationContent: React.FC = () => {
       }, 100);
     }
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = "";
     }
   };
 
@@ -97,9 +132,14 @@ const PatternOptimizationContent: React.FC = () => {
     // Convert all selected screenshots
     const files: File[] = [];
     for (const screenshotId of screenshotIds) {
-      const projectScreenshot = projectScreenshots.find(s => s.id === screenshotId);
+      const projectScreenshot = projectScreenshots.find(
+        (s) => s.id === screenshotId
+      );
       if (projectScreenshot) {
-        const file = await urlToFile(projectScreenshot.url, projectScreenshot.name);
+        const file = await urlToFile(
+          projectScreenshot.url,
+          projectScreenshot.name
+        );
         files.push(file);
       }
     }
@@ -110,7 +150,9 @@ const PatternOptimizationContent: React.FC = () => {
       // Select the first newly added screenshot
       setTimeout(() => {
         if (session?.screenshots.length > 0) {
-          setSelectedScreenshotId(session.screenshots[session.screenshots.length - files.length].id);
+          setSelectedScreenshotId(
+            session.screenshots[session.screenshots.length - files.length].id
+          );
         }
       }, 100);
     }
@@ -126,69 +168,86 @@ const PatternOptimizationContent: React.FC = () => {
   };
 
   const handleExtract = async () => {
-    console.log('[PatternOptimization] Extract clicked');
-    console.log('[PatternOptimization] Session:', session);
-    console.log('[PatternOptimization] Screenshots with regions:', session?.screenshots.filter(s => s.region));
-    console.log('[PatternOptimization] Can extract?', canExtract);
+    console.log("[PatternOptimization] Extract clicked");
+    console.log("[PatternOptimization] Session:", session);
+    console.log(
+      "[PatternOptimization] Screenshots with regions:",
+      session?.screenshots.filter((s) => s.region)
+    );
+    console.log("[PatternOptimization] Can extract?", canExtract);
 
     if (!canExtract) {
-      console.log('[PatternOptimization] Cannot extract - missing requirements');
+      console.log(
+        "[PatternOptimization] Cannot extract - missing requirements"
+      );
       return;
     }
 
     try {
       await extractPattern(config);
     } catch (error) {
-      console.error('Pattern extraction failed:', error);
+      console.error("Pattern extraction failed:", error);
       // Don't show alert, let the error be handled gracefully
     }
   };
 
   const handleRegionChange = (region: Region) => {
-    console.log('[PatternOptimization] Region changed:', region);
+    console.log("[PatternOptimization] Region changed:", region);
     // Apply region to all screenshots automatically using batch update
     setAllScreenshotRegions(region);
 
     // Force a re-render to update canExtract
     setTimeout(() => {
-      console.log('[PatternOptimization] After region update - checking state');
-      console.log('[PatternOptimization] Session screenshots:', session?.screenshots);
+      console.log("[PatternOptimization] After region update - checking state");
+      console.log(
+        "[PatternOptimization] Session screenshots:",
+        session?.screenshots
+      );
     }, 100);
   };
 
-  const selectedScreenshot = session?.screenshots.find(s => s.id === selectedScreenshotId);
+  const selectedScreenshot = session?.screenshots.find(
+    (s) => s.id === selectedScreenshotId
+  );
 
   // Check if we can extract - need at least one screenshot with a region
-  const hasRegions = session?.screenshots?.some(s => s.region) || false;
-  const hasRequirements = session &&
-    session.screenshots.length > 0 &&
-    hasRegions;
+  const hasRegions = session?.screenshots?.some((s) => s.region) || false;
+  const hasRequirements =
+    session && session.screenshots.length > 0 && hasRegions;
 
   const canExtract = hasRequirements && !isExtracting;
 
   // Debug logging
   useEffect(() => {
     if (session) {
-      console.log('[PatternOptimization] Session updated, checking regions:');
-      session.screenshots.forEach(s => {
-        console.log(`  - ${s.id}: ${s.region ? 'has region' : 'no region'}`, s.region);
+      console.log("[PatternOptimization] Session updated, checking regions:");
+      session.screenshots.forEach((s) => {
+        console.log(
+          `  - ${s.id}: ${s.region ? "has region" : "no region"}`,
+          s.region
+        );
       });
-      console.log('[PatternOptimization] Can extract?', canExtract);
+      console.log("[PatternOptimization] Can extract?", canExtract);
     }
   }, [session, canExtract]);
 
   // Initialize pattern canvas when entering edit mode
   useEffect(() => {
-    if (editMode !== 'none' && extractedPattern?.patternImage && patternCanvasRef.current) {
+    if (
+      editMode !== "none" &&
+      extractedPattern?.patternImage &&
+      patternCanvasRef.current
+    ) {
       const canvas = patternCanvasRef.current;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
       // Draw checkerboard background for transparency
       const checkSize = 5;
       for (let y = 0; y < canvas.height; y += checkSize) {
         for (let x = 0; x < canvas.width; x += checkSize) {
-          ctx.fillStyle = ((x / checkSize + y / checkSize) % 2 === 0) ? '#f3f4f6' : '#ffffff';
+          ctx.fillStyle =
+            (x / checkSize + y / checkSize) % 2 === 0 ? "#f3f4f6" : "#ffffff";
           ctx.fillRect(x, y, checkSize, checkSize);
         }
       }
@@ -202,16 +261,22 @@ const PatternOptimizationContent: React.FC = () => {
     }
   }, [editMode, extractedPattern, editedPattern]);
 
-  const getQualityColor = (rating: PatternQuality['rating']) => {
+  const getQualityColor = (rating: PatternQuality["rating"]) => {
     switch (rating) {
-      case 'excellent': return 'text-green-600 bg-green-50 border-green-200';
-      case 'good': return 'text-blue-600 bg-blue-50 border-blue-200';
-      case 'fair': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-      case 'poor': return 'text-red-600 bg-red-50 border-red-200';
+      case "excellent":
+        return "text-green-600 bg-green-50 border-green-200";
+      case "good":
+        return "text-blue-600 bg-blue-50 border-blue-200";
+      case "fair":
+        return "text-yellow-600 bg-yellow-50 border-yellow-200";
+      case "poor":
+        return "text-red-600 bg-red-50 border-red-200";
     }
   };
 
-  const handlePatternMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
+  const handlePatternMouseMove = (
+    event: React.MouseEvent<HTMLCanvasElement>
+  ) => {
     if (!patternCanvasRef.current) return;
 
     const canvas = patternCanvasRef.current;
@@ -222,7 +287,7 @@ const PatternOptimizationContent: React.FC = () => {
     setCursorPos({ x, y });
 
     // Handle dragging
-    if (event.buttons === 1 && editMode !== 'none') {
+    if (event.buttons === 1 && editMode !== "none") {
       handlePatternEdit(event);
     }
   };
@@ -232,14 +297,19 @@ const PatternOptimizationContent: React.FC = () => {
   };
 
   const handlePatternEdit = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (editMode === 'none' || !patternCanvasRef.current || !extractedPattern) return;
+    if (editMode === "none" || !patternCanvasRef.current || !extractedPattern)
+      return;
 
     const canvas = patternCanvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width));
-    const y = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height));
+    const x = Math.floor(
+      (event.clientX - rect.left) * (canvas.width / rect.width)
+    );
+    const y = Math.floor(
+      (event.clientY - rect.top) * (canvas.height / rect.height)
+    );
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     // Get the current image data
@@ -255,15 +325,15 @@ const PatternOptimizationContent: React.FC = () => {
           if (px >= 0 && px < canvas.width && py >= 0 && py < canvas.height) {
             const index = (py * canvas.width + px) * 4;
 
-            if (editMode === 'add') {
+            if (editMode === "add") {
               // Add transparency (make pixels transparent)
               imageData.data[index + 3] = 0; // Set alpha to 0
-            } else if (editMode === 'remove') {
+            } else if (editMode === "remove") {
               // Remove transparency (make pixels opaque)
               // Restore pixels from original pattern if available
               if (imageData.data[index + 3] === 0) {
                 // Only fill if currently transparent
-                imageData.data[index] = 128;     // R
+                imageData.data[index] = 128; // R
                 imageData.data[index + 1] = 128; // G
                 imageData.data[index + 2] = 128; // B
                 imageData.data[index + 3] = 255; // A
@@ -283,31 +353,40 @@ const PatternOptimizationContent: React.FC = () => {
 
   const handleCreateStateImage = async () => {
     if (!extractedPattern || !stateImageName) {
-      toast.error('Missing required fields');
+      toast.error("Missing required fields");
       return;
     }
 
     // Validate new state name when creating a new state
-    if (selectedStateId === 'new' && !newStateName.trim()) {
-      toast.error('Please enter a name for the new state');
+    if (selectedStateId === "new" && !newStateName.trim()) {
+      toast.error("Please enter a name for the new state");
       return;
     }
 
     try {
-      const imageData = editedPattern || extractedPattern.patternImage || '';
+      const imageData = editedPattern || extractedPattern.patternImage || "";
 
       // If fixed location is enabled, get the first screenshot's region as the search region
-      let searchRegion: { id: string; name: string; x: number; y: number; width: number; height: number } | undefined;
+      let searchRegion:
+        | {
+            id: string;
+            name: string;
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+          }
+        | undefined;
       if (fixedLocation && session && session.screenshots.length > 0) {
         const firstScreenshot = session.screenshots[0];
         if (firstScreenshot.region) {
           searchRegion = {
             id: `search_region_${Date.now()}`,
-            name: 'Pattern Region',
+            name: "Pattern Region",
             x: firstScreenshot.region.x,
             y: firstScreenshot.region.y,
             width: firstScreenshot.region.width,
-            height: firstScreenshot.region.height
+            height: firstScreenshot.region.height,
           };
         }
       }
@@ -317,7 +396,7 @@ const PatternOptimizationContent: React.FC = () => {
           name: stateImageName,
           image: imageData,
           mask: extractedPattern.maskImage,
-          source: 'pattern-optimization',
+          source: "pattern-optimization",
           fixed: fixedLocation,
           searchRegion: searchRegion,
         },
@@ -326,10 +405,10 @@ const PatternOptimizationContent: React.FC = () => {
         newStateName.trim() || undefined
       );
 
-      if (result.action === 'create-state' && result.targetState) {
+      if (result.action === "create-state" && result.targetState) {
         addState(result.targetState);
         toast.success(`Created new state: ${result.targetState.name}`);
-      } else if (result.action === 'update-state' && result.targetState) {
+      } else if (result.action === "update-state" && result.targetState) {
         updateState(result.targetState);
         toast.success(`Added StateImage to ${result.targetState.name}`);
       }
@@ -339,20 +418,20 @@ const PatternOptimizationContent: React.FC = () => {
         const imageAsset = createImageAsset(
           imageData,
           stateImageName,
-          'pattern_optimization'
+          "pattern_optimization"
         );
         addImage(imageAsset);
-        toast.success('Added to Image Library');
+        toast.success("Added to Image Library");
       }
 
       // Reset dialog
       setShowStateImageDialog(false);
-      setStateImageName('');
-      setSelectedStateId('');
-      setNewStateName('');
+      setStateImageName("");
+      setSelectedStateId("");
+      setNewStateName("");
     } catch (error) {
-      console.error('Error creating StateImage:', error);
-      toast.error('Failed to create StateImage');
+      console.error("Error creating StateImage:", error);
+      toast.error("Failed to create StateImage");
     }
   };
 
@@ -362,7 +441,8 @@ const PatternOptimizationContent: React.FC = () => {
       <div className="bg-[#27272A] border-b border-gray-800 px-6 py-4">
         <h1 className="text-2xl font-bold text-white">Pattern Extraction</h1>
         <p className="text-gray-500 mt-1">
-          Upload screenshots, select regions, and extract robust patterns for UI automation
+          Upload screenshots, select regions, and extract robust patterns for UI
+          automation
         </p>
       </div>
 
@@ -413,13 +493,13 @@ const PatternOptimizationContent: React.FC = () => {
           {/* Screenshot List */}
           <div className="flex-1 overflow-y-auto p-4">
             <div className="space-y-2">
-              {session?.screenshots.map(screenshot => (
+              {session?.screenshots.map((screenshot) => (
                 <div
                   key={screenshot.id}
                   className={`p-3 border rounded-lg cursor-pointer transition-all ${
                     selectedScreenshotId === screenshot.id
-                      ? 'border-[#00D9FF] bg-[#00D9FF]/10 shadow-sm'
-                      : 'border-gray-700 hover:bg-[#27272A]/80'
+                      ? "border-[#00D9FF] bg-[#00D9FF]/10 shadow-sm"
+                      : "border-gray-700 hover:bg-[#27272A]/80"
                   }`}
                 >
                   <div className="flex justify-between items-start">
@@ -435,7 +515,8 @@ const PatternOptimizationContent: React.FC = () => {
                       {screenshot.region ? (
                         <div className="text-xs text-[#00FF88] mt-1 flex items-center gap-1">
                           <Check className="w-3 h-3" />
-                          Region: {Math.round(screenshot.region.width)}×{Math.round(screenshot.region.height)}
+                          Region: {Math.round(screenshot.region.width)}×
+                          {Math.round(screenshot.region.height)}
                         </div>
                       ) : (
                         <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
@@ -462,7 +543,9 @@ const PatternOptimizationContent: React.FC = () => {
               <div className="text-center py-8">
                 <ImageIcon className="w-12 h-12 mx-auto mb-2 text-gray-500" />
                 <p className="text-sm text-gray-500">No screenshots uploaded</p>
-                <p className="text-xs text-gray-500 mt-1">Click "Add" to upload screenshots</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Click "Add" to upload screenshots
+                </p>
               </div>
             )}
           </div>
@@ -481,7 +564,9 @@ const PatternOptimizationContent: React.FC = () => {
               {/* Similarity Threshold */}
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-medium text-gray-300">Similarity Threshold</label>
+                  <label className="text-sm font-medium text-gray-300">
+                    Similarity Threshold
+                  </label>
                   <span className="text-sm font-mono bg-[#0A0A0B] px-2 py-1 rounded text-gray-300">
                     {(config.similarityThreshold * 100).toFixed(0)}%
                   </span>
@@ -491,10 +576,12 @@ const PatternOptimizationContent: React.FC = () => {
                   min="50"
                   max="100"
                   value={config.similarityThreshold * 100}
-                  onChange={(e) => setConfig(prev => ({
-                    ...prev,
-                    similarityThreshold: Number(e.target.value) / 100
-                  }))}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      similarityThreshold: Number(e.target.value) / 100,
+                    }))
+                  }
                   className="w-full"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
@@ -508,13 +595,17 @@ const PatternOptimizationContent: React.FC = () => {
 
               {/* Color Averaging */}
               <div>
-                <label className="text-sm font-medium text-gray-300 block mb-2">Color Averaging Method</label>
+                <label className="text-sm font-medium text-gray-300 block mb-2">
+                  Color Averaging Method
+                </label>
                 <select
                   value={config.colorAveraging}
-                  onChange={(e) => setConfig(prev => ({
-                    ...prev,
-                    colorAveraging: e.target.value as any
-                  }))}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      colorAveraging: e.target.value as any,
+                    }))
+                  }
                   className="w-full bg-[#0A0A0B] border border-gray-700 rounded-md px-3 py-2 text-sm text-white"
                 >
                   <option value="mean">Mean (Simple Average)</option>
@@ -522,11 +613,11 @@ const PatternOptimizationContent: React.FC = () => {
                   <option value="weighted">Weighted by Confidence</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-2">
-                  {config.colorAveraging === 'weighted'
-                    ? 'Pixels are weighted by their stability across screenshots'
-                    : config.colorAveraging === 'median'
-                    ? 'Uses the middle value, ignoring extreme variations'
-                    : 'Simple average of all pixel values'}
+                  {config.colorAveraging === "weighted"
+                    ? "Pixels are weighted by their stability across screenshots"
+                    : config.colorAveraging === "median"
+                      ? "Uses the middle value, ignoring extreme variations"
+                      : "Simple average of all pixel values"}
                 </p>
               </div>
 
@@ -536,13 +627,15 @@ const PatternOptimizationContent: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={config.morphologicalOps.enabled}
-                    onChange={(e) => setConfig(prev => ({
-                      ...prev,
-                      morphologicalOps: {
-                        ...prev.morphologicalOps,
-                        enabled: e.target.checked
-                      }
-                    }))}
+                    onChange={(e) =>
+                      setConfig((prev) => ({
+                        ...prev,
+                        morphologicalOps: {
+                          ...prev.morphologicalOps,
+                          enabled: e.target.checked,
+                        },
+                      }))
+                    }
                     className="mr-2"
                   />
                   Clean Mask
@@ -550,36 +643,44 @@ const PatternOptimizationContent: React.FC = () => {
                 {config.morphologicalOps.enabled && (
                   <div className="mt-3 ml-6 space-y-3">
                     <div>
-                      <label className="text-xs text-gray-500">Erosion (remove noise)</label>
+                      <label className="text-xs text-gray-500">
+                        Erosion (remove noise)
+                      </label>
                       <input
                         type="range"
                         min="0"
                         max="5"
                         value={config.morphologicalOps.erosionSize}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          morphologicalOps: {
-                            ...prev.morphologicalOps,
-                            erosionSize: Number(e.target.value)
-                          }
-                        }))}
+                        onChange={(e) =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            morphologicalOps: {
+                              ...prev.morphologicalOps,
+                              erosionSize: Number(e.target.value),
+                            },
+                          }))
+                        }
                         className="w-full"
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500">Dilation (fill gaps)</label>
+                      <label className="text-xs text-gray-500">
+                        Dilation (fill gaps)
+                      </label>
                       <input
                         type="range"
                         min="0"
                         max="5"
                         value={config.morphologicalOps.dilationSize}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          morphologicalOps: {
-                            ...prev.morphologicalOps,
-                            dilationSize: Number(e.target.value)
-                          }
-                        }))}
+                        onChange={(e) =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            morphologicalOps: {
+                              ...prev.morphologicalOps,
+                              dilationSize: Number(e.target.value),
+                            },
+                          }))
+                        }
                         className="w-full"
                       />
                     </div>
@@ -597,19 +698,22 @@ const PatternOptimizationContent: React.FC = () => {
                   disabled={!canExtract}
                   className={`w-full py-2.5 rounded-md font-medium transition-colors ${
                     canExtract
-                      ? 'bg-[#00FF88] hover:bg-[#00FF88]/90 text-black'
-                      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      ? "bg-[#00FF88] hover:bg-[#00FF88]/90 text-black"
+                      : "bg-gray-200 text-gray-500 cursor-not-allowed"
                   }`}
                 >
-                  {isExtracting ? 'Extracting...' : 'Extract Pattern'}
+                  {isExtracting ? "Extracting..." : "Extract Pattern"}
                 </button>
 
-                {!hasRequirements && session?.screenshots.length > 0 && !isExtracting && (
-                  <p className="text-xs text-amber-500 flex items-start gap-1 mt-2">
-                    <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                    Draw a selection box on the screenshot to define the pattern region
-                  </p>
-                )}
+                {!hasRequirements &&
+                  session?.screenshots.length > 0 &&
+                  !isExtracting && (
+                    <p className="text-xs text-amber-500 flex items-start gap-1 mt-2">
+                      <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                      Draw a selection box on the screenshot to define the
+                      pattern region
+                    </p>
+                  )}
               </div>
             </div>
           </div>
@@ -646,7 +750,9 @@ const PatternOptimizationContent: React.FC = () => {
                 {/* Pattern Info */}
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className="font-medium text-white">{extractedPattern.name}</h3>
+                    <h3 className="font-medium text-white">
+                      {extractedPattern.name}
+                    </h3>
                     <p className="text-sm text-gray-500">
                       {extractedPattern.width}×{extractedPattern.height} pixels
                     </p>
@@ -663,8 +769,11 @@ const PatternOptimizationContent: React.FC = () => {
 
                 {/* Quality Badge */}
                 {patternQuality && (
-                  <div className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium border ${getQualityColor(patternQuality.rating)}`}>
-                    {patternQuality.rating.toUpperCase()} ({patternQuality.score}/100)
+                  <div
+                    className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium border ${getQualityColor(patternQuality.rating)}`}
+                  >
+                    {patternQuality.rating.toUpperCase()} (
+                    {patternQuality.score}/100)
                   </div>
                 )}
 
@@ -672,14 +781,18 @@ const PatternOptimizationContent: React.FC = () => {
                 <div className="space-y-3">
                   {/* Pattern Editing Tools - Moved above Pattern */}
                   <div className="bg-[#27272A] rounded-lg p-3 border border-gray-700">
-                    <h4 className="text-xs font-medium text-gray-300 mb-2">Edit Transparency</h4>
+                    <h4 className="text-xs font-medium text-gray-300 mb-2">
+                      Edit Transparency
+                    </h4>
                     <div className="flex gap-2 mb-2">
                       <button
-                        onClick={() => setEditMode(editMode === 'add' ? 'none' : 'add')}
+                        onClick={() =>
+                          setEditMode(editMode === "add" ? "none" : "add")
+                        }
                         className={`px-2 py-1 text-xs rounded ${
-                          editMode === 'add'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          editMode === "add"
+                            ? "bg-blue-500 text-white"
+                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                         }`}
                         title="Add transparency (make pixels transparent)"
                       >
@@ -687,11 +800,13 @@ const PatternOptimizationContent: React.FC = () => {
                         Add
                       </button>
                       <button
-                        onClick={() => setEditMode(editMode === 'remove' ? 'none' : 'remove')}
+                        onClick={() =>
+                          setEditMode(editMode === "remove" ? "none" : "remove")
+                        }
                         className={`px-2 py-1 text-xs rounded ${
-                          editMode === 'remove'
-                            ? 'bg-green-500 text-white'
-                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          editMode === "remove"
+                            ? "bg-green-500 text-white"
+                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                         }`}
                         title="Remove transparency (make pixels opaque)"
                       >
@@ -709,9 +824,12 @@ const PatternOptimizationContent: React.FC = () => {
                       )}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {editMode === 'add' && 'Click or drag on the pattern below to add transparency (make areas transparent)'}
-                      {editMode === 'remove' && 'Click or drag on the pattern below to remove transparency (make areas opaque)'}
-                      {editMode === 'none' && 'Select Add or Remove to edit transparency in the pattern below'}
+                      {editMode === "add" &&
+                        "Click or drag on the pattern below to add transparency (make areas transparent)"}
+                      {editMode === "remove" &&
+                        "Click or drag on the pattern below to remove transparency (make areas opaque)"}
+                      {editMode === "none" &&
+                        "Select Add or Remove to edit transparency in the pattern below"}
                     </div>
                   </div>
 
@@ -723,7 +841,7 @@ const PatternOptimizationContent: React.FC = () => {
                       Pattern
                     </h4>
                     <div className="relative">
-                      {editMode !== 'none' ? (
+                      {editMode !== "none" ? (
                         // Show editable canvas when in edit mode
                         <>
                           <canvas
@@ -735,26 +853,29 @@ const PatternOptimizationContent: React.FC = () => {
                             onMouseMove={handlePatternMouseMove}
                             onMouseLeave={handlePatternMouseLeave}
                             style={{
-                              imageRendering: 'pixelated',
-                              maxHeight: '300px',
-                              objectFit: 'contain'
+                              imageRendering: "pixelated",
+                              maxHeight: "300px",
+                              objectFit: "contain",
                             }}
                           />
                           {/* Cursor indicator overlay */}
-                          {cursorPos && editMode !== 'none' && patternCanvasRef.current && (
-                            <div
-                              className="absolute pointer-events-none border-2 rounded-full"
-                              style={{
-                                left: `${(cursorPos.x / extractedPattern.width) * 100}%`,
-                                top: `${(cursorPos.y / extractedPattern.height) * 100}%`,
-                                width: `${(BRUSH_RADIUS * 2 + 1) * (patternCanvasRef.current.getBoundingClientRect().width / extractedPattern.width)}px`,
-                                height: `${(BRUSH_RADIUS * 2 + 1) * (patternCanvasRef.current.getBoundingClientRect().height / extractedPattern.height)}px`,
-                                transform: 'translate(-50%, -50%)',
-                                borderColor: editMode === 'add' ? '#3b82f6' : '#10b981',
-                                opacity: 0.8
-                              }}
-                            />
-                          )}
+                          {cursorPos &&
+                            editMode !== "none" &&
+                            patternCanvasRef.current && (
+                              <div
+                                className="absolute pointer-events-none border-2 rounded-full"
+                                style={{
+                                  left: `${(cursorPos.x / extractedPattern.width) * 100}%`,
+                                  top: `${(cursorPos.y / extractedPattern.height) * 100}%`,
+                                  width: `${(BRUSH_RADIUS * 2 + 1) * (patternCanvasRef.current.getBoundingClientRect().width / extractedPattern.width)}px`,
+                                  height: `${(BRUSH_RADIUS * 2 + 1) * (patternCanvasRef.current.getBoundingClientRect().height / extractedPattern.height)}px`,
+                                  transform: "translate(-50%, -50%)",
+                                  borderColor:
+                                    editMode === "add" ? "#3b82f6" : "#10b981",
+                                  opacity: 0.8,
+                                }}
+                              />
+                            )}
                         </>
                       ) : (
                         // Show static pattern when not editing
@@ -767,17 +888,23 @@ const PatternOptimizationContent: React.FC = () => {
                               linear-gradient(45deg, transparent 75%, #f3f4f6 75%),
                               linear-gradient(-45deg, transparent 75%, #f3f4f6 75%)
                             `,
-                            backgroundSize: '10px 10px',
-                            backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
-                            backgroundColor: '#ffffff'
+                            backgroundSize: "10px 10px",
+                            backgroundPosition:
+                              "0 0, 0 5px, 5px -5px, -5px 0px",
+                            backgroundColor: "#ffffff",
                           }}
                         >
-                          {(editedPattern || extractedPattern.patternImage) ? (
+                          {editedPattern || extractedPattern.patternImage ? (
                             <img
-                              src={editedPattern || extractedPattern.patternImage}
+                              src={
+                                editedPattern || extractedPattern.patternImage
+                              }
                               alt="Pattern"
                               className="w-full h-auto"
-                              style={{ maxHeight: '300px', objectFit: 'contain' }}
+                              style={{
+                                maxHeight: "300px",
+                                objectFit: "contain",
+                              }}
                             />
                           ) : (
                             <div className="h-24 flex items-center justify-center text-gray-500 text-xs bg-gray-50 rounded">
@@ -799,7 +926,11 @@ const PatternOptimizationContent: React.FC = () => {
                       </h4>
                       <div className="border rounded bg-gray-50 p-2">
                         {extractedPattern.confidenceMap ? (
-                          <img src={extractedPattern.confidenceMap} alt="Confidence" className="w-full h-auto" />
+                          <img
+                            src={extractedPattern.confidenceMap}
+                            alt="Confidence"
+                            className="w-full h-auto"
+                          />
                         ) : (
                           <div className="h-20 flex items-center justify-center text-gray-500 text-xs">
                             No image
@@ -816,7 +947,11 @@ const PatternOptimizationContent: React.FC = () => {
                       </h4>
                       <div className="border rounded bg-gray-50 p-2">
                         {extractedPattern.maskImage ? (
-                          <img src={extractedPattern.maskImage} alt="Mask" className="w-full h-auto" />
+                          <img
+                            src={extractedPattern.maskImage}
+                            alt="Mask"
+                            className="w-full h-auto"
+                          />
                         ) : (
                           <div className="h-20 flex items-center justify-center text-gray-500 text-xs">
                             No image
@@ -845,33 +980,44 @@ const PatternOptimizationContent: React.FC = () => {
 
                   {/* Statistics */}
                   <div className="bg-[#27272A] rounded-lg p-3 border border-gray-700">
-                    <h4 className="text-xs font-medium text-gray-300 mb-2">Statistics</h4>
+                    <h4 className="text-xs font-medium text-gray-300 mb-2">
+                      Statistics
+                    </h4>
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600">Mask Density:</span>
-                        <span className="font-mono text-gray-900">{(extractedPattern.maskDensity * 100).toFixed(1)}%</span>
+                        <span className="font-mono text-gray-900">
+                          {(extractedPattern.maskDensity * 100).toFixed(1)}%
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Active Pixels:</span>
-                        <span className="font-mono text-gray-900">{extractedPattern.activePixels.toLocaleString()}</span>
+                        <span className="font-mono text-gray-900">
+                          {extractedPattern.activePixels.toLocaleString()}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Min Confidence:</span>
-                        <span className="font-mono text-gray-900">{(extractedPattern.minConfidence * 100).toFixed(1)}%</span>
+                        <span className="font-mono text-gray-900">
+                          {(extractedPattern.minConfidence * 100).toFixed(1)}%
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Avg Confidence:</span>
-                        <span className="font-mono text-gray-900">{(extractedPattern.avgConfidence * 100).toFixed(1)}%</span>
+                        <span className="font-mono text-gray-900">
+                          {(extractedPattern.avgConfidence * 100).toFixed(1)}%
+                        </span>
                       </div>
                     </div>
                   </div>
-
                 </div>
 
                 {/* Recommendations */}
                 {patternQuality?.recommendations.length > 0 && (
                   <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
-                    <h4 className="text-sm font-medium text-white mb-1">Recommendations</h4>
+                    <h4 className="text-sm font-medium text-white mb-1">
+                      Recommendations
+                    </h4>
                     <ul className="text-xs text-amber-800 space-y-1">
                       {patternQuality.recommendations.map((rec, i) => (
                         <li key={i} className="flex items-start gap-1">
@@ -904,7 +1050,9 @@ const PatternOptimizationContent: React.FC = () => {
       {showStateImageDialog && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-[#27272A] border border-gray-700 rounded-lg p-6 w-96 max-w-full">
-            <h3 className="text-lg font-semibold text-white mb-4">Create StateImage</h3>
+            <h3 className="text-lg font-semibold text-white mb-4">
+              Create StateImage
+            </h3>
 
             <div className="space-y-4">
               <div>
@@ -939,7 +1087,7 @@ const PatternOptimizationContent: React.FC = () => {
                 </select>
               </div>
 
-              {selectedStateId === 'new' && (
+              {selectedStateId === "new" && (
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">
                     New State Name
@@ -962,7 +1110,10 @@ const PatternOptimizationContent: React.FC = () => {
                   onChange={(e) => setFixedLocation(e.target.checked)}
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
-                <label htmlFor="fixed-location-pattern" className="ml-2 block text-sm text-gray-700">
+                <label
+                  htmlFor="fixed-location-pattern"
+                  className="ml-2 block text-sm text-gray-700"
+                >
                   Fixed location pattern (saves pattern region as search region)
                 </label>
               </div>
@@ -978,9 +1129,9 @@ const PatternOptimizationContent: React.FC = () => {
               <button
                 onClick={() => {
                   setShowStateImageDialog(false);
-                  setStateImageName('');
-                  setSelectedStateId('');
-                  setNewStateName('');
+                  setStateImageName("");
+                  setSelectedStateId("");
+                  setNewStateName("");
                 }}
                 className="px-4 py-2 text-sm text-gray-300 bg-gray-700 rounded-md hover:bg-gray-600"
               >
@@ -988,7 +1139,11 @@ const PatternOptimizationContent: React.FC = () => {
               </button>
               <button
                 onClick={handleCreateStateImage}
-                disabled={!stateImageName || !selectedStateId || (selectedStateId === 'new' && !newStateName.trim())}
+                disabled={
+                  !stateImageName ||
+                  !selectedStateId ||
+                  (selectedStateId === "new" && !newStateName.trim())
+                }
                 className="px-4 py-2 text-sm text-black bg-[#00FF88] rounded-md hover:bg-[#00FF88]/90 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
               >
                 Create StateImage
@@ -1009,7 +1164,7 @@ const PatternOptimizationContent: React.FC = () => {
         trigger={
           <button
             ref={screenshotSelectorTriggerRef}
-            style={{ display: 'none' }}
+            style={{ display: "none" }}
           />
         }
       />

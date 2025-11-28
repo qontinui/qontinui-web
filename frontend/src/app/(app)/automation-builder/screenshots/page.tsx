@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 /**
  * Screenshot Upload Page
@@ -13,16 +13,16 @@
  * - Associate screenshots with states
  */
 
-import { useAutomation } from '@/contexts/automation-context'
-import ScreenshotUploadTab from '@/components/ScreenshotTab/ScreenshotUploadTab'
-import { RequireProject } from '@/components/require-project'
+import { useAutomation } from "@/contexts/automation-context";
+import ScreenshotUploadTab from "@/components/ScreenshotTab/ScreenshotUploadTab";
+import { RequireProject } from "@/components/require-project";
 
 export default function ScreenshotsPage() {
-  const { states } = useAutomation()
+  const { states } = useAutomation();
 
   return (
     <RequireProject pageName="Screenshots">
       <ScreenshotUploadTab states={states} onExport={() => {}} />
     </RequireProject>
-  )
+  );
 }

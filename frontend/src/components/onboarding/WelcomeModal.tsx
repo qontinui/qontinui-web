@@ -1,19 +1,19 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Brain, Target, Zap, HelpCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
+import React, { useState, useEffect } from "react";
+import { Brain, Target, Zap, HelpCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { useOnboardingStore } from '@/stores/onboarding-store';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dialog";
+import { useOnboardingStore } from "@/stores/onboarding-store";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -33,21 +33,23 @@ interface Benefit {
 const BENEFITS: Benefit[] = [
   {
     icon: Brain,
-    title: 'Intelligent Automation',
-    description: 'AI-powered visual recognition that understands your applications',
-    color: 'text-[#00D9FF]',
+    title: "Intelligent Automation",
+    description:
+      "AI-powered visual recognition that understands your applications",
+    color: "text-[#00D9FF]",
   },
   {
     icon: Target,
-    title: 'Adaptive Precision',
-    description: 'Automatically adapts to UI changes without breaking workflows',
-    color: 'text-[#BD00FF]',
+    title: "Adaptive Precision",
+    description:
+      "Automatically adapts to UI changes without breaking workflows",
+    color: "text-[#BD00FF]",
   },
   {
     icon: Zap,
-    title: 'Lightning Fast',
-    description: 'Build complex automations in minutes with our visual editor',
-    color: 'text-[#00FF88]',
+    title: "Lightning Fast",
+    description: "Build complex automations in minutes with our visual editor",
+    color: "text-[#00FF88]",
   },
 ];
 
@@ -109,13 +111,13 @@ export function WelcomeModal() {
   // Handle Escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showWelcomeModal) {
+      if (e.key === "Escape" && showWelcomeModal) {
         handleSkipToDashboard();
       }
     };
 
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
   }, [showWelcomeModal, dontShowAgain]);
 
   return (
@@ -131,7 +133,10 @@ export function WelcomeModal() {
         {/* Neon Glow Background Effects */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute top-0 right-0 w-96 h-96 bg-[#00D9FF]/10 rounded-full blur-[120px] animate-pulse" />
-          <div className="absolute bottom-0 left-0 w-96 h-96 bg-[#BD00FF]/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '1s' }} />
+          <div
+            className="absolute bottom-0 left-0 w-96 h-96 bg-[#BD00FF]/10 rounded-full blur-[120px] animate-pulse"
+            style={{ animationDelay: "1s" }}
+          />
         </div>
 
         {/* Content */}
@@ -158,11 +163,13 @@ export function WelcomeModal() {
                     animationDelay: `${index * 100 + 400}ms`,
                   }}
                 >
-                  <div className={cn(
-                    "flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center",
-                    "bg-gradient-to-br from-gray-900 to-gray-800/50 border border-gray-700/50",
-                    "group-hover:border-gray-600/50 transition-all duration-300"
-                  )}>
+                  <div
+                    className={cn(
+                      "flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center",
+                      "bg-gradient-to-br from-gray-900 to-gray-800/50 border border-gray-700/50",
+                      "group-hover:border-gray-600/50 transition-all duration-300"
+                    )}
+                  >
                     <Icon className={cn("w-6 h-6", benefit.color)} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -229,7 +236,9 @@ export function WelcomeModal() {
           {/* Footer */}
           <div className="flex items-center justify-center gap-2 text-xs text-gray-500 animate-in fade-in-0 duration-700 delay-1000">
             <HelpCircle className="w-4 h-4" />
-            <span>You can always access help and tutorials from the dashboard</span>
+            <span>
+              You can always access help and tutorials from the dashboard
+            </span>
           </div>
         </div>
       </DialogContent>

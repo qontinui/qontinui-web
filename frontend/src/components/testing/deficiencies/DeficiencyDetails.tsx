@@ -1,18 +1,18 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertCircle,
   Calendar,
@@ -21,21 +21,21 @@ import {
   Copy,
   Share2,
   Download,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   Deficiency,
   DeficiencyComment,
   DeficiencyActivity,
   SEVERITY_CONFIG,
   STATUS_CONFIG,
-} from '@/types/deficiency';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
-import { DeficiencyWorkflow } from './DeficiencyWorkflow';
-import { DeficiencyComments } from './DeficiencyComments';
-import { DeficiencyAssignment } from './DeficiencyAssignment';
-import { ScreenshotGallery } from './ScreenshotGallery';
-import { ReproductionPathViewer } from './ReproductionPathViewer';
+} from "@/types/deficiency";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { DeficiencyWorkflow } from "./DeficiencyWorkflow";
+import { DeficiencyComments } from "./DeficiencyComments";
+import { DeficiencyAssignment } from "./DeficiencyAssignment";
+import { ScreenshotGallery } from "./ScreenshotGallery";
+import { ReproductionPathViewer } from "./ReproductionPathViewer";
 
 interface DeficiencyDetailsProps {
   deficiency: Deficiency;
@@ -45,7 +45,11 @@ interface DeficiencyDetailsProps {
   onOpenChange: (open: boolean) => void;
   onStatusChange?: (newStatus: any) => Promise<void>;
   onAssignmentChange?: (userId: string | null) => Promise<void>;
-  onCommentAdd?: (content: string, mentions: string[], attachments: File[]) => Promise<void>;
+  onCommentAdd?: (
+    content: string,
+    mentions: string[],
+    attachments: File[]
+  ) => Promise<void>;
   onExport?: () => void;
 }
 
@@ -72,20 +76,20 @@ export function DeficiencyDetails({
   onCommentAdd,
   onExport,
 }: DeficiencyDetailsProps) {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState("overview");
 
   const severityConfig = SEVERITY_CONFIG[deficiency.severity];
   const statusConfig = STATUS_CONFIG[deficiency.status];
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(deficiency.id);
-    toast.success('Deficiency ID copied to clipboard');
+    toast.success("Deficiency ID copied to clipboard");
   };
 
   const handleShare = () => {
     const url = `${window.location.origin}/deficiencies/${deficiency.id}`;
     navigator.clipboard.writeText(url);
-    toast.success('Link copied to clipboard');
+    toast.success("Link copied to clipboard");
   };
 
   return (
@@ -145,14 +149,26 @@ export function DeficiencyDetails({
 
               {/* Status and Severity Badges */}
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge className={cn('border', statusConfig.bgColor, statusConfig.color)}>
+                <Badge
+                  className={cn(
+                    "border",
+                    statusConfig.bgColor,
+                    statusConfig.color
+                  )}
+                >
                   {statusConfig.label}
                 </Badge>
-                <Badge className={cn('border', severityConfig.bgColor, severityConfig.color)}>
+                <Badge
+                  className={cn(
+                    "border",
+                    severityConfig.bgColor,
+                    severityConfig.color
+                  )}
+                >
                   {severityConfig.label}
                 </Badge>
                 <Badge variant="outline">
-                  {deficiency.deficiency_type.replace('_', ' ')}
+                  {deficiency.deficiency_type.replace("_", " ")}
                 </Badge>
                 {deficiency.category && (
                   <Badge variant="outline">
@@ -166,7 +182,11 @@ export function DeficiencyDetails({
             <Separator className="my-6" />
 
             {/* Tabbed Content */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <Tabs
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="w-full"
+            >
               <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="workflow">Workflow</TabsTrigger>
@@ -192,7 +212,9 @@ export function DeficiencyDetails({
                 {deficiency.screenshot_urls.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="text-sm font-medium">Screenshots</h3>
-                    <ScreenshotGallery screenshots={deficiency.screenshot_urls} />
+                    <ScreenshotGallery
+                      screenshots={deficiency.screenshot_urls}
+                    />
                   </div>
                 )}
 
@@ -200,7 +222,9 @@ export function DeficiencyDetails({
                 {deficiency.reproduction_steps.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="text-sm font-medium">Reproduction Steps</h3>
-                    <ReproductionPathViewer steps={deficiency.reproduction_steps} />
+                    <ReproductionPathViewer
+                      steps={deficiency.reproduction_steps}
+                    />
                   </div>
                 )}
 
@@ -209,14 +233,19 @@ export function DeficiencyDetails({
                   <div className="space-y-2">
                     <h3 className="text-sm font-medium">Environment</h3>
                     <div className="grid grid-cols-2 gap-2 text-sm">
-                      {Object.entries(deficiency.environment_info).map(([key, value]) => (
-                        <div key={key} className="flex justify-between p-2 rounded bg-muted/50">
-                          <span className="text-muted-foreground capitalize">
-                            {key.replace(/_/g, ' ')}:
-                          </span>
-                          <span className="font-medium">{String(value)}</span>
-                        </div>
-                      ))}
+                      {Object.entries(deficiency.environment_info).map(
+                        ([key, value]) => (
+                          <div
+                            key={key}
+                            className="flex justify-between p-2 rounded bg-muted/50"
+                          >
+                            <span className="text-muted-foreground capitalize">
+                              {key.replace(/_/g, " ")}:
+                            </span>
+                            <span className="font-medium">{String(value)}</span>
+                          </div>
+                        )
+                      )}
                     </div>
                   </div>
                 )}
@@ -226,8 +255,9 @@ export function DeficiencyDetails({
                   <div className="space-y-1">
                     <span className="text-muted-foreground">Reproducible</span>
                     <p className="font-medium">
-                      {deficiency.reproducible ? 'Yes' : 'No'}
-                      {deficiency.reproduction_rate && ` (${deficiency.reproduction_rate}%)`}
+                      {deficiency.reproducible ? "Yes" : "No"}
+                      {deficiency.reproduction_rate &&
+                        ` (${deficiency.reproduction_rate}%)`}
                     </p>
                   </div>
                   <div className="space-y-1">
@@ -319,18 +349,18 @@ export function DeficiencyDetails({
                       >
                         <div className="flex-1 min-w-0">
                           <div className="font-medium">
-                            {activity.user_name}{' '}
+                            {activity.user_name}{" "}
                             <span className="text-muted-foreground font-normal">
-                              {activity.action.replace(/_/g, ' ')}
+                              {activity.action.replace(/_/g, " ")}
                             </span>
                           </div>
                           {activity.details.field && (
                             <div className="text-xs text-muted-foreground mt-1">
-                              Changed {activity.details.field} from{' '}
+                              Changed {activity.details.field} from{" "}
                               <span className="font-medium">
                                 {String(activity.details.old_value)}
-                              </span>{' '}
-                              to{' '}
+                              </span>{" "}
+                              to{" "}
                               <span className="font-medium">
                                 {String(activity.details.new_value)}
                               </span>

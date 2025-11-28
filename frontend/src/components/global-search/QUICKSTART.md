@@ -8,7 +8,7 @@ Create a demo page to test immediately:
 
 ```tsx
 // app/demo/search/page.tsx
-import { GlobalSearchDemo } from '@/components/global-search/GlobalSearch.demo';
+import { GlobalSearchDemo } from "@/components/global-search/GlobalSearch.demo";
 
 export default function Page() {
   return <GlobalSearchDemo />;
@@ -23,10 +23,10 @@ Visit `/demo/search` and press `Cmd/Ctrl + K` to test!
 
 ```tsx
 // app/layout.tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { GlobalSearch } from '@/components/global-search';
+import { useState } from "react";
+import { GlobalSearch } from "@/components/global-search";
 
 export default function RootLayout({ children }) {
   return (
@@ -49,11 +49,11 @@ function GlobalSearchProvider() {
 
 ```tsx
 // components/Header.tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { GlobalSearch } from '@/components/global-search';
-import { Search } from 'lucide-react';
+import { useState } from "react";
+import { GlobalSearch } from "@/components/global-search";
+import { Search } from "lucide-react";
 
 export function Header() {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -70,7 +70,9 @@ export function Header() {
           >
             <Search className="w-4 h-4" />
             <span>Search...</span>
-            <kbd className="px-1.5 py-0.5 text-xs bg-background rounded">⌘K</kbd>
+            <kbd className="px-1.5 py-0.5 text-xs bg-background rounded">
+              ⌘K
+            </kbd>
           </button>
         </div>
       </header>
@@ -87,9 +89,9 @@ Create a hook to load data into the search index:
 
 ```tsx
 // hooks/useSearchIndex.ts
-import { useEffect } from 'react';
-import { globalSearchService } from '@/services/global-search-service';
-import { projectDB } from '@/lib/project-db';
+import { useEffect } from "react";
+import { globalSearchService } from "@/services/global-search-service";
+import { projectDB } from "@/lib/project-db";
 
 export function useSearchIndex() {
   useEffect(() => {
@@ -109,9 +111,9 @@ export function useSearchIndex() {
           transitions,
         });
 
-        console.log('✓ Search index loaded');
+        console.log("✓ Search index loaded");
       } catch (error) {
-        console.error('Failed to load search index:', error);
+        console.error("Failed to load search index:", error);
       }
     }
 
@@ -164,14 +166,17 @@ Press `Cmd/Ctrl + K` anywhere in your app to search!
 ## Common Issues
 
 **Search not working?**
+
 - Check if index is loaded: `console.log(globalSearchService.getAllWorkflows())`
 - Verify data structure matches types
 
 **Shortcut not working?**
+
 - Check for conflicts with browser/OS shortcuts
 - Verify component is mounted
 
 **Results not navigating?**
+
 - Check routes exist in your app
 - Verify `handleResultClick` function
 

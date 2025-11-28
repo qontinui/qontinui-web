@@ -12,10 +12,10 @@ import type {
   LockResourceType,
   LockStatus,
   AcquireLockRequest,
-} from '@/types/collaboration';
-import { httpClient } from './http-client';
+} from "@/types/collaboration";
+import { httpClient } from "./http-client";
 
-const API_BASE = '/api/locks';
+const API_BASE = "/api/locks";
 
 // ============================================================================
 // Lock Service
@@ -83,7 +83,9 @@ class LockService {
       resource_id: resourceId,
     });
 
-    const status = await httpClient.get<LockStatus>(`${API_BASE}/status?${params}`);
+    const status = await httpClient.get<LockStatus>(
+      `${API_BASE}/status?${params}`
+    );
     return status;
   }
 
@@ -91,7 +93,9 @@ class LockService {
    * Get all locks for a project
    */
   async getProjectLocks(projectId: string): Promise<Lock[]> {
-    const locks = await httpClient.get<Lock[]>(`${API_BASE}/project/${projectId}`);
+    const locks = await httpClient.get<Lock[]>(
+      `${API_BASE}/project/${projectId}`
+    );
     return locks;
   }
 
@@ -123,7 +127,10 @@ class LockService {
         await this.refreshLock(lockId);
         console.log(`[LockService] Auto-refreshed lock ${lockId}`);
       } catch (error) {
-        console.error(`[LockService] Failed to auto-refresh lock ${lockId}:`, error);
+        console.error(
+          `[LockService] Failed to auto-refresh lock ${lockId}:`,
+          error
+        );
         this.stopAutoRefresh(lockId);
       }
     }, this.REFRESH_INTERVAL);

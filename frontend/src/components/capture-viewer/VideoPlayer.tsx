@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
+import React, { useRef, useEffect, useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import {
   Play,
   Pause,
@@ -12,7 +12,7 @@ import {
   VolumeX,
   Maximize,
   Minimize,
-} from 'lucide-react';
+} from "lucide-react";
 
 export interface VideoPlayerProps {
   videoUrl: string;
@@ -85,13 +85,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Handle skip backward (10 seconds)
   const handleSkipBackward = () => {
     if (!videoRef.current) return;
-    videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10);
+    videoRef.current.currentTime = Math.max(
+      0,
+      videoRef.current.currentTime - 10
+    );
   };
 
   // Handle skip forward (10 seconds)
   const handleSkipForward = () => {
     if (!videoRef.current) return;
-    videoRef.current.currentTime = Math.min(duration, videoRef.current.currentTime + 10);
+    videoRef.current.currentTime = Math.min(
+      duration,
+      videoRef.current.currentTime + 10
+    );
   };
 
   // Handle timeline scrubbing
@@ -153,9 +159,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setIsFullscreen(!!document.fullscreenElement);
     };
 
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
 
@@ -163,50 +169,56 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       // Only handle if not typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
         return;
       }
 
       switch (e.key) {
-        case ' ':
+        case " ":
           e.preventDefault();
           handlePlayPause();
           break;
-        case 'ArrowLeft':
+        case "ArrowLeft":
           e.preventDefault();
           handleSkipBackward();
           break;
-        case 'ArrowRight':
+        case "ArrowRight":
           e.preventDefault();
           handleSkipForward();
           break;
-        case 'm':
+        case "m":
           e.preventDefault();
           handleMuteToggle();
           break;
-        case 'f':
+        case "f":
           e.preventDefault();
           handleFullscreenToggle();
           break;
       }
     };
 
-    window.addEventListener('keydown', handleKeyPress);
+    window.addEventListener("keydown", handleKeyPress);
     return () => {
-      window.removeEventListener('keydown', handleKeyPress);
+      window.removeEventListener("keydown", handleKeyPress);
     };
   }, [isPlaying, isMuted, isFullscreen]);
 
   const formatTime = (seconds: number): string => {
-    if (!isFinite(seconds)) return '0:00.0';
+    if (!isFinite(seconds)) return "0:00.0";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     const ms = Math.floor((seconds % 1) * 10);
-    return `${mins}:${secs.toString().padStart(2, '0')}.${ms}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}.${ms}`;
   };
 
   return (
-    <div ref={containerRef} className="w-full bg-black rounded-lg overflow-hidden">
+    <div
+      ref={containerRef}
+      className="w-full bg-black rounded-lg overflow-hidden"
+    >
       {/* Video Element */}
       <div className="relative aspect-video bg-black">
         <video
@@ -254,7 +266,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   onClick={handlePlayPause}
                   className="text-white hover:bg-white/20"
                 >
-                  {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                  {isPlaying ? (
+                    <Pause className="h-5 w-5" />
+                  ) : (
+                    <Play className="h-5 w-5" />
+                  )}
                 </Button>
 
                 {/* Skip Controls */}

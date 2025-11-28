@@ -1,6 +1,6 @@
 "use client";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import dynamicImport from "next/dynamic";
@@ -18,21 +18,53 @@ import {
 import { toast } from "sonner";
 
 // Dynamic imports for analytics components (charts/visualizations)
-const MetricCard = dynamicImport(() => import("@/components/analytics/metric-card").then(mod => ({ default: mod.MetricCard })), {
-  loading: () => <div className="h-32 bg-gray-800/50 rounded-lg animate-pulse" />
-});
+const MetricCard = dynamicImport(
+  () =>
+    import("@/components/analytics/metric-card").then((mod) => ({
+      default: mod.MetricCard,
+    })),
+  {
+    loading: () => (
+      <div className="h-32 bg-gray-800/50 rounded-lg animate-pulse" />
+    ),
+  }
+);
 
-const UsageChart = dynamicImport(() => import("@/components/analytics/usage-chart").then(mod => ({ default: mod.UsageChart })), {
-  loading: () => <div className="h-64 bg-gray-800/50 rounded-lg animate-pulse" />
-});
+const UsageChart = dynamicImport(
+  () =>
+    import("@/components/analytics/usage-chart").then((mod) => ({
+      default: mod.UsageChart,
+    })),
+  {
+    loading: () => (
+      <div className="h-64 bg-gray-800/50 rounded-lg animate-pulse" />
+    ),
+  }
+);
 
-const StorageBreakdown = dynamicImport(() => import("@/components/analytics/storage-breakdown").then(mod => ({ default: mod.StorageBreakdown })), {
-  loading: () => <div className="h-64 bg-gray-800/50 rounded-lg animate-pulse" />
-});
+const StorageBreakdown = dynamicImport(
+  () =>
+    import("@/components/analytics/storage-breakdown").then((mod) => ({
+      default: mod.StorageBreakdown,
+    })),
+  {
+    loading: () => (
+      <div className="h-64 bg-gray-800/50 rounded-lg animate-pulse" />
+    ),
+  }
+);
 
-const ActivityTimeline = dynamicImport(() => import("@/components/analytics/activity-timeline").then(mod => ({ default: mod.ActivityTimeline })), {
-  loading: () => <div className="h-96 bg-gray-800/50 rounded-lg animate-pulse" />
-});
+const ActivityTimeline = dynamicImport(
+  () =>
+    import("@/components/analytics/activity-timeline").then((mod) => ({
+      default: mod.ActivityTimeline,
+    })),
+  {
+    loading: () => (
+      <div className="h-96 bg-gray-800/50 rounded-lg animate-pulse" />
+    ),
+  }
+);
 
 export default function AnalyticsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -44,7 +76,9 @@ export default function AnalyticsPage() {
     storage_used: 0,
     last_active: new Date().toISOString(),
   });
-  const [metrics, setMetrics] = useState<Array<{ date: string; api_calls: number }>>([]);
+  const [metrics, setMetrics] = useState<
+    Array<{ date: string; api_calls: number }>
+  >([]);
   const [storageBreakdown, setStorageBreakdown] = useState({
     avatars: 0,
     images: 0,
@@ -77,12 +111,13 @@ export default function AnalyticsPage() {
       setLoading(true);
 
       // Load all analytics data in parallel
-      const [usageData, metricsData, storageData, activityData] = await Promise.allSettled([
-        analyticsService.getUsageSummary(),
-        analyticsService.getMetrics(7),
-        analyticsService.getStorageBreakdown(),
-        analyticsService.getActivityTimeline(10),
-      ]);
+      const [usageData, metricsData, storageData, activityData] =
+        await Promise.allSettled([
+          analyticsService.getUsageSummary(),
+          analyticsService.getMetrics(7),
+          analyticsService.getStorageBreakdown(),
+          analyticsService.getActivityTimeline(10),
+        ]);
 
       // Handle usage summary
       if (usageData.status === "fulfilled") {
@@ -105,7 +140,9 @@ export default function AnalyticsPage() {
         console.warn("Failed to load metrics:", metricsData.reason);
         // Use mock data for development
         const mockMetrics = Array.from({ length: 7 }, (_, i) => ({
-          date: new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000).toISOString(),
+          date: new Date(
+            Date.now() - (6 - i) * 24 * 60 * 60 * 1000
+          ).toISOString(),
           api_calls: Math.floor(Math.random() * 200) + 50,
         }));
         setMetrics(mockMetrics);
@@ -188,7 +225,9 @@ export default function AnalyticsPage() {
   const getRelativeTime = (timestamp: string) => {
     const date = new Date(timestamp);
     const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+    const diffInHours = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+    );
 
     if (diffInHours < 1) return "Just now";
     if (diffInHours < 24) return `${diffInHours}h ago`;
@@ -231,7 +270,9 @@ export default function AnalyticsPage() {
             </h1>
           </div>
           <div className="text-right">
-            <p className="text-sm font-medium">{user.full_name || user.username}</p>
+            <p className="text-sm font-medium">
+              {user.full_name || user.username}
+            </p>
             <p className="text-xs text-gray-400">{user.email}</p>
           </div>
         </div>
@@ -240,7 +281,9 @@ export default function AnalyticsPage() {
       {/* Main Content */}
       <main className="p-6 max-w-7xl mx-auto">
         {loading ? (
-          <div className="text-center py-12 text-gray-400">Loading analytics...</div>
+          <div className="text-center py-12 text-gray-400">
+            Loading analytics...
+          </div>
         ) : (
           <>
             {/* Metric Cards Row */}

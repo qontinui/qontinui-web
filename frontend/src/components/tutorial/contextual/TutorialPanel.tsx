@@ -5,10 +5,16 @@
  * Allows jumping to specific steps and shows completion status.
  */
 
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, CheckCircle, Circle, PlayCircle } from 'lucide-react';
-import type { TutorialStep } from '../../../types/tutorial';
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle,
+  Circle,
+  PlayCircle,
+} from "lucide-react";
+import type { TutorialStep } from "../../../types/tutorial";
 
 export interface TutorialPanelProps {
   /** Tutorial steps */
@@ -22,7 +28,7 @@ export interface TutorialPanelProps {
   /** Initial collapsed state */
   initialCollapsed?: boolean;
   /** Panel position */
-  position?: 'left' | 'right';
+  position?: "left" | "right";
   /** Custom class name */
   className?: string;
 }
@@ -33,8 +39,8 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
   completedStepIds = [],
   onStepClick,
   initialCollapsed = false,
-  position = 'right',
-  className = '',
+  position = "right",
+  className = "",
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
 
@@ -55,12 +61,17 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
     return <Circle className="w-5 h-5 text-gray-400 dark:text-gray-600" />;
   };
 
-  const panelPosition = position === 'left' ? 'left-0' : 'right-0';
-  const togglePosition = position === 'left' ? 'right-0 translate-x-full' : 'left-0 -translate-x-full';
-  const collapseDirection = position === 'left' ? -1 : 1;
+  const panelPosition = position === "left" ? "left-0" : "right-0";
+  const togglePosition =
+    position === "left"
+      ? "right-0 translate-x-full"
+      : "left-0 -translate-x-full";
+  const collapseDirection = position === "left" ? -1 : 1;
 
   return (
-    <div className={`fixed top-0 ${panelPosition} h-full z-[10003] ${className}`}>
+    <div
+      className={`fixed top-0 ${panelPosition} h-full z-[10003] ${className}`}
+    >
       <AnimatePresence mode="wait">
         {!isCollapsed ? (
           <motion.div
@@ -68,7 +79,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
             initial={{ x: collapseDirection * 100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: collapseDirection * 100, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
             className="h-full w-80 bg-white dark:bg-gray-800 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col"
           >
             {/* Header */}
@@ -82,7 +93,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                   aria-label="Collapse panel"
                 >
-                  {position === 'left' ? (
+                  {position === "left" ? (
                     <ChevronLeft className="w-5 h-5" />
                   ) : (
                     <ChevronRight className="w-5 h-5" />
@@ -105,7 +116,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                     className="h-full bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-400 dark:to-blue-500"
                     initial={{ width: 0 }}
                     animate={{ width: `${progressPercentage}%` }}
-                    transition={{ duration: 0.5, ease: 'easeOut' }}
+                    transition={{ duration: 0.5, ease: "easeOut" }}
                   />
                 </div>
               </div>
@@ -127,12 +138,12 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                       w-full text-left p-3 rounded-lg border transition-all
                       ${
                         isCurrent
-                          ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
+                          ? "bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700"
                           : isCompleted
-                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                          : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600'
+                            ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+                            : "bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600"
                       }
-                      ${isClickable ? 'hover:shadow-md cursor-pointer' : 'cursor-default'}
+                      ${isClickable ? "hover:shadow-md cursor-pointer" : "cursor-default"}
                     `}
                     whileHover={isClickable ? { scale: 1.02 } : {}}
                     whileTap={isClickable ? { scale: 0.98 } : {}}
@@ -155,10 +166,10 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
                         <h4
                           className={`text-sm font-medium line-clamp-2 ${
                             isCurrent
-                              ? 'text-blue-900 dark:text-blue-100'
+                              ? "text-blue-900 dark:text-blue-100"
                               : isCompleted
-                              ? 'text-green-900 dark:text-green-100'
-                              : 'text-gray-700 dark:text-gray-300'
+                                ? "text-green-900 dark:text-green-100"
+                                : "text-gray-700 dark:text-gray-300"
                           }`}
                         >
                           {step.title}
@@ -183,7 +194,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
             initial={{ x: collapseDirection * -40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: collapseDirection * -40, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
             onClick={() => setIsCollapsed(false)}
             className={`
               absolute top-1/2 ${togglePosition} -translate-y-1/2
@@ -194,7 +205,7 @@ export const TutorialPanel: React.FC<TutorialPanelProps> = ({
             aria-label="Expand panel"
           >
             <div className="relative">
-              {position === 'left' ? (
+              {position === "left" ? (
                 <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               ) : (
                 <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />

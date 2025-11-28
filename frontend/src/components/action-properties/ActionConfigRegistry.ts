@@ -5,17 +5,19 @@
  * large switch statements in the main ActionProperties component.
  */
 
-import { Action, ActionPropertiesComponentProps } from "./types"
+import { Action, ActionPropertiesComponentProps } from "./types";
 
-export type ActionPropertiesComponent = (props: ActionPropertiesComponentProps) => JSX.Element
+export type ActionPropertiesComponent = (
+  props: ActionPropertiesComponentProps
+) => JSX.Element;
 
 interface ActionConfig {
-  component: ActionPropertiesComponent
-  displayName: string
+  component: ActionPropertiesComponent;
+  displayName: string;
 }
 
 class ActionConfigRegistry {
-  private registry: Map<Action["type"], ActionConfig> = new Map()
+  private registry: Map<Action["type"], ActionConfig> = new Map();
 
   /**
    * Register a component for a specific action type.
@@ -25,7 +27,7 @@ class ActionConfigRegistry {
     component: ActionPropertiesComponent,
     displayName: string
   ): void {
-    this.registry.set(actionType, { component, displayName })
+    this.registry.set(actionType, { component, displayName });
   }
 
   /**
@@ -36,39 +38,39 @@ class ActionConfigRegistry {
     component: ActionPropertiesComponent,
     displayName: string
   ): void {
-    actionTypes.forEach(type => {
-      this.registry.set(type, { component, displayName })
-    })
+    actionTypes.forEach((type) => {
+      this.registry.set(type, { component, displayName });
+    });
   }
 
   /**
    * Get the component for a given action type.
    */
   getComponent(actionType: Action["type"]): ActionPropertiesComponent | null {
-    return this.registry.get(actionType)?.component || null
+    return this.registry.get(actionType)?.component || null;
   }
 
   /**
    * Get the display name for a given action type.
    */
   getDisplayName(actionType: Action["type"]): string {
-    return this.registry.get(actionType)?.displayName || actionType
+    return this.registry.get(actionType)?.displayName || actionType;
   }
 
   /**
    * Check if an action type has a registered component.
    */
   hasComponent(actionType: Action["type"]): boolean {
-    return this.registry.has(actionType)
+    return this.registry.has(actionType);
   }
 
   /**
    * Get all registered action types.
    */
   getRegisteredTypes(): Action["type"][] {
-    return Array.from(this.registry.keys())
+    return Array.from(this.registry.keys());
   }
 }
 
 // Export singleton instance
-export const actionConfigRegistry = new ActionConfigRegistry()
+export const actionConfigRegistry = new ActionConfigRegistry();
