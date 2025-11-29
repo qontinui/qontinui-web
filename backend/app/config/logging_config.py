@@ -17,6 +17,7 @@ import logging
 import logging.handlers
 import sys
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -84,7 +85,7 @@ def configure_logging(environment: str = "development") -> None:
 
     # Pre-chain processors (before stdlib ProcessorFormatter)
     # These run for ALL output, preparing the event dict
-    pre_chain = [
+    pre_chain: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,

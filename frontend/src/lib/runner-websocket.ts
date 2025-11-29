@@ -339,39 +339,70 @@ export class RunnerWebSocket {
 
       // Web extraction events
       case "extraction_started":
-        this.config.onExtractionStarted?.(
-          message as unknown as ExtractionStartedEvent
-        );
+        // Data may be wrapped in a 'data' field by the Python websocket handler
+        {
+          const startedData = (message as { data?: ExtractionStartedEvent }).data || message;
+          console.log("[RunnerWebSocket] Extraction started event data:", startedData);
+          this.config.onExtractionStarted?.(
+            startedData as ExtractionStartedEvent
+          );
+        }
         break;
 
       case "extraction_progress":
-        this.config.onExtractionProgress?.(
-          message as unknown as ExtractionProgressEvent
-        );
+        // Data may be wrapped in a 'data' field by the Python websocket handler
+        {
+          const progressData = (message as { data?: ExtractionProgressEvent }).data || message;
+          this.config.onExtractionProgress?.(
+            progressData as ExtractionProgressEvent
+          );
+        }
         break;
 
       case "extraction_state_detected":
-        this.config.onExtractionStateDetected?.(
-          message as unknown as ExtractionStateDetectedEvent
-        );
+      case "state_detected": // Raw event name from qontinui library
+        // Data may be wrapped in a 'data' field by the Python websocket handler
+        {
+          const stateData = (message as { data?: ExtractionStateDetectedEvent }).data || message;
+          console.log("[RunnerWebSocket] State detected event data:", stateData);
+          this.config.onExtractionStateDetected?.(
+            stateData as ExtractionStateDetectedEvent
+          );
+        }
         break;
 
       case "extraction_element_detected":
-        this.config.onExtractionElementDetected?.(
-          message as unknown as ExtractionElementDetectedEvent
-        );
+      case "element_detected": // Raw event name from qontinui library
+        // Data may be wrapped in a 'data' field by the Python websocket handler
+        {
+          const elementData = (message as { data?: ExtractionElementDetectedEvent }).data || message;
+          console.log("[RunnerWebSocket] Element detected event data:", elementData);
+          this.config.onExtractionElementDetected?.(
+            elementData as ExtractionElementDetectedEvent
+          );
+        }
         break;
 
       case "extraction_complete":
-        this.config.onExtractionComplete?.(
-          message as unknown as ExtractionCompleteEvent
-        );
+        // Data may be wrapped in a 'data' field by the Python websocket handler
+        {
+          const completeData = (message as { data?: ExtractionCompleteEvent }).data || message;
+          console.log("[RunnerWebSocket] Extraction complete event data:", completeData);
+          this.config.onExtractionComplete?.(
+            completeData as ExtractionCompleteEvent
+          );
+        }
         break;
 
       case "extraction_error":
-        this.config.onExtractionError?.(
-          message as unknown as ExtractionErrorEvent
-        );
+        // Data may be wrapped in a 'data' field by the Python websocket handler
+        {
+          const errorData = (message as { data?: ExtractionErrorEvent }).data || message;
+          console.log("[RunnerWebSocket] Extraction error event data:", errorData);
+          this.config.onExtractionError?.(
+            errorData as ExtractionErrorEvent
+          );
+        }
         break;
 
       case "response":
@@ -396,17 +427,41 @@ export class RunnerWebSocket {
         // Response from runner after processing a command
         console.log("[RunnerWebSocket] Command response received:", message);
 
-        const responseData = (
-          message as { data?: { command?: string; result?: unknown } }
-        ).data;
+        // Handle various response formats from different runners
+        const responseMsg = message as {
+          data?: {
+            command?: string;
+            result?: { success?: boolean; extraction_id?: string; error?: string; [key: string]: unknown };
+            response_type?: string;
+            [key: string]: unknown;
+          };
+          timestamp?: string;
+        };
+        const responseData = responseMsg.data;
+
         if (responseData) {
+          // Try to extract command name from various possible fields
+          const command =
+            responseData.command ||
+            responseData.response_type ||
+            "unknown";
+
+          // Build result object, handling cases where result is nested or flat
+          const result = responseData.result || {
+            success: !responseData.error,
+            extraction_id: responseData.extraction_id as string | undefined,
+            error: responseData.error as string | undefined,
+          };
+
+          console.log("[RunnerWebSocket] Parsed command response - command:", command, "result:", result);
+
           this.config.onCommandResponse?.({
-            command: responseData.command || "unknown",
-            result: responseData.result as CommandResponseEvent["result"],
-            timestamp:
-              (message as { timestamp?: string }).timestamp ||
-              new Date().toISOString(),
+            command,
+            result: result as CommandResponseEvent["result"],
+            timestamp: responseMsg.timestamp || new Date().toISOString(),
           });
+        } else {
+          console.warn("[RunnerWebSocket] Command response has no data:", message);
         }
         break;
 

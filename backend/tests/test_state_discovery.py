@@ -2,12 +2,12 @@
 Tests for state discovery service and endpoints.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 
-from app.models.automation import AutomationInputEvent
+from app.models.automation import AutomationInputEvent, InputEventType
 from app.models.automation_screenshot import AutomationScreenshot
 from app.models.automation_session import AutomationSession
 from app.models.user import User
@@ -33,9 +33,10 @@ async def test_discover_states_empty_session(async_db_session):
     session = AutomationSession(
         id=uuid4(),
         user_id=user.id,
-        workflow_name="Test Workflow",
+        runner_version="1.0.0",
+        runner_os="test-os",
+        runner_hostname="test-host",
         status="completed",
-        started_at=datetime.utcnow(),
     )
     async_db_session.add(session)
     await async_db_session.commit()
@@ -73,22 +74,25 @@ async def test_discover_states_single_state(async_db_session):
     session = AutomationSession(
         id=uuid4(),
         user_id=user.id,
-        workflow_name="Test Workflow",
+        runner_version="1.0.0",
+        runner_os="test-os",
+        runner_hostname="test-host",
         status="completed",
-        started_at=datetime.utcnow(),
     )
     async_db_session.add(session)
     await async_db_session.commit()
 
     # Create screenshots with small time gaps (< 2 seconds)
-    base_time = datetime.utcnow()
+    base_time = datetime.now(UTC)
     screenshots = []
     for i in range(5):
         screenshot = AutomationScreenshot(
             session_id=session.id,
-            s3_key=f"test/screenshot_{i}.png",
+            name=f"screenshot_{i}.png",
+            storage_path=f"test/screenshot_{i}.png",
+            width=1920,
+            height=1080,
             timestamp=base_time + timedelta(seconds=i * 0.5),  # 0.5 second gaps
-            metadata={},
         )
         screenshots.append(screenshot)
         async_db_session.add(screenshot)
@@ -132,23 +136,26 @@ async def test_discover_states_multiple_states(async_db_session):
     session = AutomationSession(
         id=uuid4(),
         user_id=user.id,
-        workflow_name="Test Workflow",
+        runner_version="1.0.0",
+        runner_os="test-os",
+        runner_hostname="test-host",
         status="completed",
-        started_at=datetime.utcnow(),
     )
     async_db_session.add(session)
     await async_db_session.commit()
 
     # Create screenshots in 3 distinct states
-    base_time = datetime.utcnow()
+    base_time = datetime.now(UTC)
 
     # State 0: 3 screenshots
     for i in range(3):
         screenshot = AutomationScreenshot(
             session_id=session.id,
-            s3_key=f"test/state0_{i}.png",
+            name=f"state0_{i}.png",
+            storage_path=f"test/state0_{i}.png",
+            width=1920,
+            height=1080,
             timestamp=base_time + timedelta(seconds=i * 0.5),
-            metadata={},
         )
         async_db_session.add(screenshot)
 
@@ -158,9 +165,11 @@ async def test_discover_states_multiple_states(async_db_session):
     for i in range(2):
         screenshot = AutomationScreenshot(
             session_id=session.id,
-            s3_key=f"test/state1_{i}.png",
+            name=f"state1_{i}.png",
+            storage_path=f"test/state1_{i}.png",
+            width=1920,
+            height=1080,
             timestamp=base_time + timedelta(seconds=10 + i * 0.5),
-            metadata={},
         )
         async_db_session.add(screenshot)
 
@@ -170,9 +179,11 @@ async def test_discover_states_multiple_states(async_db_session):
     for i in range(4):
         screenshot = AutomationScreenshot(
             session_id=session.id,
-            s3_key=f"test/state2_{i}.png",
+            name=f"state2_{i}.png",
+            storage_path=f"test/state2_{i}.png",
+            width=1920,
+            height=1080,
             timestamp=base_time + timedelta(seconds=20 + i * 0.5),
-            metadata={},
         )
         async_db_session.add(screenshot)
 
@@ -223,31 +234,36 @@ async def test_discover_states_with_input_events(async_db_session):
     session = AutomationSession(
         id=uuid4(),
         user_id=user.id,
-        workflow_name="Test Workflow",
+        runner_version="1.0.0",
+        runner_os="test-os",
+        runner_hostname="test-host",
         status="completed",
-        started_at=datetime.utcnow(),
     )
     async_db_session.add(session)
     await async_db_session.commit()
 
-    base_time = datetime.utcnow()
+    base_time = datetime.now(UTC)
 
     # State 0: Screenshot at t=0
     screenshot_0 = AutomationScreenshot(
         session_id=session.id,
-        s3_key="test/state0.png",
+        name="state0.png",
+        storage_path="test/state0.png",
+        width=1920,
+        height=1080,
         timestamp=base_time,
-        metadata={},
     )
     async_db_session.add(screenshot_0)
     await async_db_session.commit()
     await async_db_session.refresh(screenshot_0)
 
     # Input event at t=1 (within state 0)
+    # Note: AutomationInputEvent uses naive timestamps (part of partition key)
+    naive_base_time = base_time.replace(tzinfo=None)
     input_event = AutomationInputEvent(
         session_id=session.id,
-        event_type="mouse.clicked",
-        timestamp=base_time + timedelta(seconds=1),
+        event_type=InputEventType.MOUSE_CLICKED,
+        timestamp=naive_base_time + timedelta(seconds=1),
         mouse_x=100,
         mouse_y=200,
         mouse_button="left",
@@ -259,9 +275,11 @@ async def test_discover_states_with_input_events(async_db_session):
     # State 1: Screenshot at t=5 (after gap)
     screenshot_1 = AutomationScreenshot(
         session_id=session.id,
-        s3_key="test/state1.png",
+        name="state1.png",
+        storage_path="test/state1.png",
+        width=1920,
+        height=1080,
         timestamp=base_time + timedelta(seconds=5),
-        metadata={},
     )
     async_db_session.add(screenshot_1)
     await async_db_session.commit()
@@ -309,22 +327,25 @@ async def test_discover_states_custom_parameters(async_db_session):
     session = AutomationSession(
         id=uuid4(),
         user_id=user.id,
-        workflow_name="Test Workflow",
+        runner_version="1.0.0",
+        runner_os="test-os",
+        runner_hostname="test-host",
         status="completed",
-        started_at=datetime.utcnow(),
     )
     async_db_session.add(session)
     await async_db_session.commit()
 
-    base_time = datetime.utcnow()
+    base_time = datetime.now(UTC)
 
     # Create screenshots with 1.5 second gaps
     for i in range(4):
         screenshot = AutomationScreenshot(
             session_id=session.id,
-            s3_key=f"test/screenshot_{i}.png",
+            name=f"screenshot_{i}.png",
+            storage_path=f"test/screenshot_{i}.png",
+            width=1920,
+            height=1080,
             timestamp=base_time + timedelta(seconds=i * 1.5),
-            metadata={},
         )
         async_db_session.add(screenshot)
 
@@ -378,9 +399,10 @@ async def test_discover_states_processing_time(async_db_session):
     session = AutomationSession(
         id=uuid4(),
         user_id=user.id,
-        workflow_name="Test Workflow",
+        runner_version="1.0.0",
+        runner_os="test-os",
+        runner_hostname="test-host",
         status="completed",
-        started_at=datetime.utcnow(),
     )
     async_db_session.add(session)
     await async_db_session.commit()

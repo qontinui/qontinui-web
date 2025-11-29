@@ -88,11 +88,9 @@ class StateDiscoveryFacade:
     def _get_simple_service(self) -> Any:
         """Lazy load simple algorithm service"""
         if self._service is None:
-            # TODO: These services don't exist yet - using FrameStateDiscoveryService as fallback
-            # from app.services.automated_state_discovery_service import get_automated_state_discovery_service
-            # from app.services.computer_vision_service import get_cv_service
-            # cv = get_cv_service()
-            # self._service = get_automated_state_discovery_service(cv)
+            # Note: AutomatedStateDiscoveryService and ComputerVisionService are planned
+            # for future integration with the qontinui library. For now, using
+            # FrameStateDiscoveryService which provides basic state discovery.
             from app.services.frame_state_discovery_service import (
                 FrameStateDiscoveryService,
             )
@@ -257,15 +255,13 @@ class StateDiscoveryFacade:
             }
             frames_data.append(frame_data)
 
-        # TODO [ARCHITECTURE]: This clustering logic should be delegated to qontinui library
-        # - Instead of performing perceptual hashing here, submit frames to library
-        # - Library's DifferentialConsistencyDetector should handle clustering
-        # - Web service should just coordinate and store results
+        # Note [ARCHITECTURE]: In future, this clustering logic should be delegated to
+        # qontinui library's DifferentialConsistencyDetector for perceptual hashing.
+        # Currently using simplified clustering until library integration is complete.
 
-        # Cluster frames using simple perceptual hashing (reuse from simple algorithm)
-        # TODO: computer_vision_service doesn't exist yet
-        # from app.services.computer_vision_service import get_cv_service
-        # cv_service = get_cv_service()
+        # Cluster frames using simple approach
+        # Note: Future integration with ComputerVisionService will provide
+        # perceptual hashing and more sophisticated clustering.
 
         # Generate hashes and cluster
         clusters: dict[int, list[dict[str, Any]]] = {}
@@ -280,10 +276,9 @@ class StateDiscoveryFacade:
                 clusters[cluster_id] = []
             clusters[cluster_id].append(frame)
 
-        # TODO [ARCHITECTURE]: State identification should be delegated to qontinui library
-        # - Pass cluster data to library's StateBuilder
-        # - Library performs OCR, region detection, state construction
-        # - Web service receives and stores the resulting state objects
+        # Note [ARCHITECTURE]: In future, state identification should be delegated to
+        # qontinui library's StateBuilder for OCR, region detection, and state construction.
+        # For now, using the local advanced algorithm implementation.
 
         # Run advanced algorithm
         states = await service.identify_states_from_clusters(clusters, frames_data)

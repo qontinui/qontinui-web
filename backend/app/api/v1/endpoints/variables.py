@@ -56,15 +56,35 @@ async def get_project_or_404(db: AsyncSession, project_id: str) -> Project:
     return project
 
 
-def verify_workflow_ownership(project: Project, workflow_id: str) -> None:
+async def verify_workflow_ownership(
+    project: Project, workflow_id: str, db: AsyncSession
+) -> None:
     """
     Verify that a workflow belongs to the project.
 
-    For now, we assume workflow_id is valid if provided.
-    In a full implementation, this would query a Workflow model.
+    Workflows are stored in the project's configuration JSON.
+    This checks if the workflow_id exists in the project's workflows list.
     """
-    # TODO: Add proper workflow validation when Workflow model exists
-    pass
+    # Workflows are stored in project.configuration as a JSON field
+    # Expected structure: {"workflows": [{"id": "uuid", ...}, ...]}
+    if not project.configuration:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project has no workflows configured",
+        )
+
+    workflows = project.configuration.get("workflows", [])
+
+    # Check if workflow_id exists in the project's workflows
+    workflow_exists = any(
+        str(w.get("id")) == workflow_id for w in workflows if isinstance(w, dict)
+    )
+
+    if not workflow_exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow '{workflow_id}' not found in project",
+        )
 
 
 # ============================================================================
@@ -343,7 +363,7 @@ async def list_workflow_variables(
     verify_project_access(project, current_user, "view variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # List workflow variables
     project_uuid = UUID(project_id)
@@ -394,7 +414,7 @@ async def create_workflow_variable(
     verify_project_access(project, current_user, "create variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Force scope to WORKFLOW
     variable_data.scope = VariableScope.WORKFLOW
@@ -448,7 +468,7 @@ async def get_workflow_variable(
     verify_project_access(project, current_user, "view variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Get variable
     project_uuid = UUID(project_id)
@@ -497,7 +517,7 @@ async def update_workflow_variable(
     verify_project_access(project, current_user, "update variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Get variable
     project_uuid = UUID(project_id)
@@ -561,7 +581,7 @@ async def delete_workflow_variable(
     verify_project_access(project, current_user, "delete variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Get variable
     project_uuid = UUID(project_id)
@@ -669,7 +689,7 @@ async def get_run_variables_snapshot(
     verify_project_access(project, current_user, "view variables")
 
     # Verify workflow belongs to project
-    verify_workflow_ownership(project, workflow_id)
+    await verify_workflow_ownership(project, workflow_id, db)
 
     # Get all applicable variables
     project_uuid = UUID(project_id)

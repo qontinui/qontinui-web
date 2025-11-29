@@ -510,7 +510,7 @@ class RunnerConnectionManager:
         """
         active_key = f"runner:connection:{connection_id}:active"
         exists = await self.redis.exists(active_key)
-        return exists > 0
+        return bool(exists > 0)
 
     def get_connected_runner_ids(self) -> list[int]:
         """
@@ -603,7 +603,8 @@ class RunnerConnectionManager:
         try:
             metadata_json = await self.redis.get(metadata_key)
             if metadata_json:
-                return json.loads(metadata_json)
+                result: dict[str, Any] = json.loads(metadata_json)
+                return result
             return None
         except Exception as e:
             logger.error(

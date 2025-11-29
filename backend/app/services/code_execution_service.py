@@ -252,9 +252,28 @@ def time_limit(seconds: int):
         finally:
             signal.alarm(0)
     else:
-        # Fallback for Windows: no timeout enforcement
-        # TODO: Implement threading-based timeout for Windows
-        yield
+        # Fallback for Windows: use threading-based timeout
+        import threading
+
+        # Create a flag to indicate timeout
+        timed_out = threading.Event()
+
+        def check_timeout():
+            if not timed_out.wait(seconds):
+                # Signal that we've timed out (though Python can't actually
+                # interrupt the thread, this at least lets us track it)
+                pass
+
+        # Start timeout watcher
+        timer = threading.Timer(seconds, lambda: timed_out.set())
+        timer.start()
+
+        try:
+            yield
+            if timed_out.is_set():
+                raise TimeoutError(f"Execution timed out after {seconds} seconds")
+        finally:
+            timer.cancel()
 
 
 # ============================================================================
@@ -396,11 +415,24 @@ class CodeExecutionService:
             safe_locals: dict[str, Any] = {}
 
             # Capture stdout/stderr
-            # TODO: Implement stdout/stderr capture
+            import io
+            import sys
+
+            stdout_capture = io.StringIO()
+            stderr_capture = io.StringIO()
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
 
             # Execute with timeout
             result = None
+            stdout_output = ""
+            stderr_output = ""
+
             try:
+                # Redirect stdout/stderr
+                sys.stdout = stdout_capture
+                sys.stderr = stderr_capture
+
                 with time_limit(request.timeout):
                     # Execute code
                     exec(request.code, safe_globals, safe_locals)
@@ -419,12 +451,23 @@ class CodeExecutionService:
 
             except TimeoutError as e:
                 execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                # Capture any output before timeout
+                stdout_output = stdout_capture.getvalue()
+                stderr_output = stderr_capture.getvalue()
                 return CodeExecutionResult(
                     success=False,
                     error=str(e),
                     error_type="TimeoutError",
                     execution_time_ms=execution_time,
+                    stdout=stdout_output,
+                    stderr=stderr_output,
                 )
+            finally:
+                # Restore stdout/stderr
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                stdout_output = stdout_capture.getvalue()
+                stderr_output = stderr_capture.getvalue()
 
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
 
@@ -432,6 +475,8 @@ class CodeExecutionService:
                 success=True,
                 result=result,
                 execution_time_ms=execution_time,
+                stdout=stdout_output,
+                stderr=stderr_output,
             )
 
         except ValueError as e:

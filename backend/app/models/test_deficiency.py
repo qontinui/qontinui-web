@@ -19,6 +19,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -77,7 +78,7 @@ class TestDeficiency(Base):
         PGUUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
-        server_default="gen_random_uuid()",
+        server_default=text("gen_random_uuid()"),
     )
 
     # Foreign keys

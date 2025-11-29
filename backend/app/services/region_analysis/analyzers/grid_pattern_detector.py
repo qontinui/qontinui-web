@@ -12,7 +12,7 @@ from typing import Any
 import cv2
 import numpy as np
 from PIL import Image
-from scipy.ndimage import maximum_filter  # type: ignore
+from scipy.ndimage import maximum_filter  # type: ignore[import-untyped]
 
 from ..base import (
     BaseRegionAnalyzer,

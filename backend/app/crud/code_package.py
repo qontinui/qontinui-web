@@ -343,7 +343,7 @@ async def search_packages(
             conditions.append(CodePackage.tags.contains([tag.lower()]))
 
     if verified_only:
-        conditions.append(CodePackage.is_verified is True)
+        conditions.append(CodePackage.is_verified == True)
 
     if min_rating is not None:
         conditions.append(CodePackage.avg_rating >= min_rating)

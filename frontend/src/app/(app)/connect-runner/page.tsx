@@ -133,11 +133,9 @@ export default function ConnectRunnerPage() {
     name?: string,
     expiry?: string
   ): Promise<ConnectionInfo> => {
-    // Call the backend directly to ensure cookies are sent properly
-    // The access_token HttpOnly cookie is scoped to the domain, so it's sent
-    // to both frontend (3001) and backend (8000) on localhost
-    const backendUrl =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    // Use the Next.js proxy to avoid CORS issues
+    // The proxy forwards /api/* to http://localhost:8000/api/*
+    // HttpOnly cookies are sent automatically with credentials: 'include'
 
     // Build URL with query parameters
     const params = new URLSearchParams();
@@ -154,7 +152,7 @@ export default function ConnectRunnerPage() {
     }
 
     const queryString = params.toString();
-    const url = `${backendUrl}/api/v1/users/me/connection-info${queryString ? `?${queryString}` : ""}`;
+    const url = `/api/v1/users/me/connection-info${queryString ? `?${queryString}` : ""}`;
 
     const response = await fetch(url, {
       method: "GET",

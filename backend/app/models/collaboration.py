@@ -21,6 +21,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from sqlalchemy.dialects.postgresql import UUID
@@ -66,7 +67,7 @@ class ProjectLock(Base):
     __tablename__ = "project_locks"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
         UUID(as_uuid=True),
@@ -89,7 +90,7 @@ class ProjectLock(Base):
             "action",
             "project",
             name="resourcetype",
-            create_type=False,
+            create_type=True,
         ),
         nullable=False,
     )
@@ -133,7 +134,7 @@ class ProjectComment(Base):
     __tablename__ = "project_comments"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
         UUID(as_uuid=True),
@@ -213,7 +214,7 @@ class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
         UUID(as_uuid=True),
@@ -240,7 +241,7 @@ class ActivityLog(Base):
             "exported",
             "imported",
             name="actiontype",
-            create_type=False,
+            create_type=True,
         ),
         nullable=False,
         index=True,
@@ -254,7 +255,7 @@ class ActivityLog(Base):
             "action",
             "project",
             name="resourcetype",
-            create_type=False,
+            create_type=True,
         ),
         nullable=False,
     )
@@ -327,7 +328,7 @@ class ConflictLog(Base):
     __tablename__ = "conflict_logs"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     resource_type: Mapped[str] = mapped_column(String, nullable=False)
     resource_id: Mapped[str] = mapped_column(String, nullable=False, index=True)

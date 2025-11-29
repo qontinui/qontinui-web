@@ -33,7 +33,7 @@ async def read_public_projects(
     # Query for public projects
     stmt = (
         select(ProjectModel)
-        .where(ProjectModel.is_public is True)
+        .where(ProjectModel.is_public == True)
         .offset(skip)
         .limit(limit)
         .order_by(ProjectModel.updated_at.desc())
@@ -62,7 +62,7 @@ async def read_public_project(
     # Query for specific public project
     stmt = select(ProjectModel).where(
         ProjectModel.id == project_id,
-        ProjectModel.is_public is True,
+        ProjectModel.is_public == True,
     )
 
     result = await db.execute(stmt)

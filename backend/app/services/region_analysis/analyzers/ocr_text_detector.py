@@ -26,7 +26,7 @@ from ..base import (
 )
 
 try:
-    import pytesseract  # type: ignore
+    import pytesseract  # type: ignore[import-untyped]
 
     TESSERACT_AVAILABLE = True
 except ImportError:

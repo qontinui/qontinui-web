@@ -25,7 +25,7 @@ class ExtractionSession(Base):
     )
 
     # Source configuration
-    source_urls = Column(ARRAY(String), nullable=False, default=list)
+    source_urls = Column(ARRAY(String), nullable=False, default=list)  # type: ignore[var-annotated]
     config = Column(JSON, nullable=False, default=dict)
 
     # Status

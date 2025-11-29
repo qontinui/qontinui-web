@@ -62,6 +62,13 @@ if settings.RATE_LIMIT_ENABLED:
 # Add trusted host middleware for production
 # TEMPORARILY DISABLED: TrustedHostMiddleware blocks ELB health checks from internal IPs
 # TODO: Re-enable with proper configuration after fixing health check Host headers
+# DESIGN DECISION NEEDED:
+# 1. Configure ELB to send proper Host header in health checks OR
+# 2. Create a separate /health endpoint that bypasses TrustedHostMiddleware OR
+# 3. Configure TrustedHostMiddleware to allow internal AWS IP ranges OR
+# 4. Use AWS ALB target health checks with proper headers
+# Current issue: ELB health checks use internal IPs as Host header, which TrustedHostMiddleware rejects
+# Security consideration: Disabling TrustedHostMiddleware opens potential Host header injection vulnerabilities
 # if settings.ENVIRONMENT == "production":
 #     app.add_middleware(
 #         TrustedHostMiddleware,

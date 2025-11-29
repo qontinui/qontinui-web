@@ -312,9 +312,9 @@ class WorkflowGenerationService:
             List of LearnedWorkflow records
         """
         # Verify session access
-        from app.services.capture_session_service import CaptureSessionService
+        from app.services.session_repository import SessionRepository
 
-        await CaptureSessionService.get_session(db, session_id, user_id)
+        await SessionRepository.get_by_id(db, session_id, user_id)
 
         # Get workflows
         result = await db.execute(

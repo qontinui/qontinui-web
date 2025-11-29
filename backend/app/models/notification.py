@@ -9,7 +9,17 @@ Includes:
 from datetime import datetime
 from enum import Enum as PyEnum
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,7 +51,7 @@ class Notification(Base):
     __tablename__ = "notifications"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id = Column(
         UUID(as_uuid=True),
@@ -102,7 +112,7 @@ class NotificationPreferences(Base):
     __tablename__ = "notification_preferences"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     user_id = Column(
         UUID(as_uuid=True),

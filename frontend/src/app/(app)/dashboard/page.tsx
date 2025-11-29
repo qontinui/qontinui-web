@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { useAutomation } from "@/contexts/automation-context";
 import {
   useProjects,
   useCreateProject,
@@ -34,6 +35,7 @@ import {
   BookOpen,
   Shield,
   Cable,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
@@ -66,8 +68,13 @@ interface Activity {
 
 export default function Dashboard() {
   const { user, logout, loading: authLoading } = useAuth();
+  const { projectId: contextProjectId, setProjectId } = useAutomation();
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Get currently selected project ID from URL or context
+  const selectedProjectId =
+    searchParams.get("project") ?? contextProjectId ?? null;
   const { data: apiProjects = [], isLoading: projectsLoading } = useProjects();
   const createProject = useCreateProject();
   const deleteProject = useDeleteProject();
@@ -197,8 +204,10 @@ export default function Dashboard() {
 
       console.log("Project created:", newProject);
 
-      // Navigate to automation builder with the new project ID
-      router.push(`/automation-builder?project=${newProject.id}`);
+      // Select the newly created project (stays on dashboard)
+      setProjectId(newProject.id);
+      router.push(`/dashboard?project=${newProject.id}`);
+      toast.success("Project created and selected");
     } catch (error: any) {
       console.error("Failed to create project:", error);
       console.error("Error details:", error.message, error.response);
@@ -281,7 +290,12 @@ export default function Dashboard() {
   };
 
   const handleOpenProject = (projectId: string) => {
-    router.push(`/automation-builder?project=${projectId}`);
+    // Select the project without navigating away from the dashboard
+    // The project will appear in the sidebar's project switcher
+    setProjectId(projectId);
+    // Update URL to include project parameter (stays on dashboard)
+    router.push(`/dashboard?project=${projectId}`);
+    toast.success("Project selected");
   };
 
   const lastActivity = activities.length > 0 ? activities[0] : null;
@@ -522,55 +536,88 @@ export default function Dashboard() {
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {projects.map((project) => (
-                  <Card
-                    key={project.id}
-                    className="bg-[#1A1A1B]/50 border-gray-800/50 backdrop-blur-sm hover:border-[#00D9FF]/30 hover:shadow-[0_0_20px_rgba(0,217,255,0.05)] transition-all duration-300 group"
-                  >
-                    <CardContent className="p-6">
-                      <div className="mb-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <h4 className="font-semibold text-lg group-hover:text-[#00D9FF] transition-colors line-clamp-1">
-                            {project.name}
-                          </h4>
-                          <Badge
-                            className={`${getStatusColor(project.status)} text-xs`}
-                          >
-                            {project.status}
-                          </Badge>
+                {projects.map((project) => {
+                  const isSelected = selectedProjectId === project.id;
+                  return (
+                    <Card
+                      key={project.id}
+                      className={`bg-[#1A1A1B]/50 backdrop-blur-sm transition-all duration-300 group ${
+                        isSelected
+                          ? "border-[#00D9FF] shadow-[0_0_20px_rgba(0,217,255,0.2)] ring-1 ring-[#00D9FF]/50"
+                          : "border-gray-800/50 hover:border-[#00D9FF]/30 hover:shadow-[0_0_20px_rgba(0,217,255,0.05)]"
+                      }`}
+                    >
+                      <CardContent className="p-6">
+                        <div className="mb-4">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              {isSelected && (
+                                <div className="w-5 h-5 rounded-full bg-[#00D9FF] flex items-center justify-center flex-shrink-0">
+                                  <Check className="w-3 h-3 text-black" />
+                                </div>
+                              )}
+                              <h4
+                                className={`font-semibold text-lg transition-colors line-clamp-1 ${
+                                  isSelected
+                                    ? "text-[#00D9FF]"
+                                    : "group-hover:text-[#00D9FF]"
+                                }`}
+                              >
+                                {project.name}
+                              </h4>
+                            </div>
+                            <Badge
+                              className={`${getStatusColor(project.status)} text-xs`}
+                            >
+                              {project.status}
+                            </Badge>
+                          </div>
+                          <p className="text-gray-400 text-sm mb-3 line-clamp-2">
+                            {project.description}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Modified {getRelativeTime(project.updated_at)}
+                          </p>
                         </div>
-                        <p className="text-gray-400 text-sm mb-3 line-clamp-2">
-                          {project.description}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Modified {getRelativeTime(project.updated_at)}
-                        </p>
-                      </div>
 
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => handleOpenProject(project.id)}
-                          className="flex-1 bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30 hover:border-[#00D9FF]/50"
-                        >
-                          <Play className="w-4 h-4 mr-1" />
-                          Open
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteProject(project);
-                          }}
-                          className="border-gray-700 hover:border-red-500 hover:text-red-400 bg-transparent"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleOpenProject(project.id)}
+                            className={`flex-1 ${
+                              isSelected
+                                ? "bg-[#00D9FF]/30 text-[#00D9FF] border border-[#00D9FF]/50"
+                                : "bg-[#00D9FF]/10 hover:bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30 hover:border-[#00D9FF]/50"
+                            }`}
+                          >
+                            {isSelected ? (
+                              <>
+                                <Check className="w-4 h-4 mr-1" />
+                                Selected
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-4 h-4 mr-1" />
+                                Select
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteProject(project);
+                            }}
+                            className="border-gray-700 hover:border-red-500 hover:text-red-400 bg-transparent"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </div>
