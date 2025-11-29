@@ -69,6 +69,13 @@ class RunnerConnection(Base):
         String(500), nullable=True, comment="User agent string from the client"
     )
 
+    # Custom runner name (user-defined in the runner app)
+    runner_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Custom user-defined name for this runner (e.g., 'My Laptop')",
+    )
+
     # Session metadata
     project_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),

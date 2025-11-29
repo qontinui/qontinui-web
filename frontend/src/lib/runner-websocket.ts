@@ -22,6 +22,19 @@ export interface RunnerWebSocketConfig {
   onExtractionElementDetected?: (data: ExtractionElementDetectedEvent) => void;
   onExtractionComplete?: (data: ExtractionCompleteEvent) => void;
   onExtractionError?: (data: ExtractionErrorEvent) => void;
+  // Command response callback
+  onCommandResponse?: (data: CommandResponseEvent) => void;
+}
+
+export interface CommandResponseEvent {
+  command: string;
+  result: {
+    success: boolean;
+    extraction_id?: string;
+    error?: string;
+    [key: string]: unknown;
+  };
+  timestamp: string;
 }
 
 export interface SessionStartEvent {
@@ -191,7 +204,13 @@ export class RunnerWebSocket {
       };
 
       this.ws.onclose = (event) => {
-        console.log("Runner WebSocket disconnected", event.code, event.reason);
+        console.log(
+          "Runner WebSocket disconnected",
+          event.code,
+          event.reason,
+          "isIntentionallyClosed:",
+          this.isIntentionallyClosed
+        );
         this.config.onDisconnect?.();
 
         // Attempt to reconnect if not intentionally closed
@@ -222,11 +241,21 @@ export class RunnerWebSocket {
       };
 
       this.ws.onmessage = (event) => {
+        console.log(
+          "[RunnerWebSocket] onmessage received, data length:",
+          event.data?.length
+        );
         try {
           const message: WSMessage = JSON.parse(event.data);
+          console.log("[RunnerWebSocket] Parsed message type:", message.type);
           this.handleMessage(message);
         } catch (error) {
-          console.error("Failed to parse WebSocket message:", error);
+          console.error(
+            "Failed to parse WebSocket message:",
+            error,
+            "raw data:",
+            event.data
+          );
         }
       };
     } catch (error) {
@@ -239,6 +268,7 @@ export class RunnerWebSocket {
    * Disconnect from the WebSocket server
    */
   disconnect(): void {
+    console.log("[RunnerWebSocket] disconnect() called", new Error().stack);
     this.isIntentionallyClosed = true;
 
     if (this.ws) {
@@ -258,13 +288,29 @@ export class RunnerWebSocket {
    * Send a message to the server
    */
   send(message: Record<string, any>): void {
+    console.log(
+      "[RunnerWebSocket] send() called, isConnected:",
+      this.isConnected(),
+      "readyState:",
+      this.ws?.readyState
+    );
     if (!this.isConnected()) {
-      console.error("Cannot send message: WebSocket is not connected");
+      console.error(
+        "Cannot send message: WebSocket is not connected, readyState:",
+        this.ws?.readyState
+      );
       return;
     }
 
     try {
-      this.ws?.send(JSON.stringify(message));
+      const jsonMessage = JSON.stringify(message);
+      console.log(
+        "[RunnerWebSocket] Sending message:",
+        message.type,
+        message.command
+      );
+      this.ws?.send(jsonMessage);
+      console.log("[RunnerWebSocket] Message sent successfully");
     } catch (error) {
       console.error("Failed to send WebSocket message:", error);
     }
@@ -337,8 +383,51 @@ export class RunnerWebSocket {
         console.error("Server error:", message);
         break;
 
+      // Command WebSocket messages
+      case "connected":
+        console.log("[RunnerWebSocket] Connected acknowledgment:", message);
+        break;
+
+      case "command_sent":
+        console.log("[RunnerWebSocket] Command sent acknowledgment:", message);
+        break;
+
+      case "command_response":
+        // Response from runner after processing a command
+        console.log("[RunnerWebSocket] Command response received:", message);
+
+        const responseData = (
+          message as { data?: { command?: string; result?: unknown } }
+        ).data;
+        if (responseData) {
+          this.config.onCommandResponse?.({
+            command: responseData.command || "unknown",
+            result: responseData.result as CommandResponseEvent["result"],
+            timestamp:
+              (message as { timestamp?: string }).timestamp ||
+              new Date().toISOString(),
+          });
+        }
+        break;
+
+      case "warning":
+        console.warn("[RunnerWebSocket] Server warning:", message);
+        break;
+
+      case "pong":
+        console.debug("[RunnerWebSocket] Pong received");
+        break;
+
+      case "ping":
+        console.debug("[RunnerWebSocket] Ping received");
+        break;
+
       default:
-        console.warn("Unknown message type:", message.type);
+        console.warn(
+          "[RunnerWebSocket] Unknown message type:",
+          message.type,
+          message
+        );
     }
   }
 }

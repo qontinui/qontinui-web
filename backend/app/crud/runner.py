@@ -319,6 +319,7 @@ async def create_connection_record(
     user_agent: str | None = None,
     project_id: UUID | None = None,
     session_id: str | None = None,
+    runner_name: str | None = None,
 ) -> RunnerConnection:
     """
     Log the start of a runner connection.
@@ -331,6 +332,7 @@ async def create_connection_record(
         user_agent: Optional user agent
         project_id: Optional project ID
         session_id: Optional WebSocket session ID
+        runner_name: Optional custom name for the runner
 
     Returns:
         Created RunnerConnection record
@@ -342,6 +344,7 @@ async def create_connection_record(
         user_agent=user_agent,
         project_id=project_id,
         session_id=session_id,
+        runner_name=runner_name,
     )
 
     db.add(connection)
@@ -351,6 +354,36 @@ async def create_connection_record(
     # Also update token's last_used_at if using runner token
     if token_id:
         await update_token_last_used(db, token_id, ip_address, user_agent)
+
+    return connection
+
+
+async def update_connection_runner_name(
+    db: AsyncSession,
+    connection_id: int,
+    runner_name: str,
+) -> RunnerConnection | None:
+    """
+    Update the runner_name for a connection record.
+
+    Args:
+        db: Database session
+        connection_id: ID of the connection record
+        runner_name: Custom name for the runner
+
+    Returns:
+        Updated RunnerConnection or None if not found
+    """
+    query = select(RunnerConnection).where(RunnerConnection.id == connection_id)
+    result = await db.execute(query)
+    connection = result.scalar_one_or_none()
+
+    if not connection:
+        return None
+
+    connection.runner_name = runner_name
+    await db.commit()
+    await db.refresh(connection)
 
     return connection
 

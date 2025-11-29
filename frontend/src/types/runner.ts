@@ -28,6 +28,7 @@ export interface RunnerConnection {
   ip_address: string | null;
   project_id: number | null;
   project_name?: string | null;
+  ws_connected: boolean; // Whether the runner is WebSocket-connected and can receive commands
 }
 
 export interface ConnectionHistoryParams {

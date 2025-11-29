@@ -33,6 +33,8 @@ from app.api.v1.endpoints import (
     public,
     recordings,
     region_analysis,
+    runner_command_ws,
+    runner_status_ws,
     runners,
     security,
     settings,
@@ -119,3 +121,7 @@ api_router.include_router(
 )
 api_router.include_router(recordings.router, prefix="/recordings", tags=["recordings"])
 api_router.include_router(extraction.router, tags=["extraction"])
+api_router.include_router(
+    runner_command_ws.router, prefix="/automation", tags=["runner-command-websockets"]
+)
+api_router.include_router(runner_status_ws.router, tags=["runner-status-websockets"])

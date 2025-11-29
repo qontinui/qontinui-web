@@ -23,20 +23,17 @@ import {
   RefreshCw,
   WifiOff,
 } from "lucide-react";
-import { useActiveConnections, useDisconnectRunner } from "@/hooks/useRunners";
+import { useDisconnectRunner } from "@/hooks/useRunners";
+import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { formatRelativeTime } from "@/utils/formatDuration";
 import { StatusIndicator } from "./StatusIndicator";
 
 export function ActiveConnectionsList() {
-  const {
-    data: connections,
-    isLoading,
-    error,
-    refetch,
-    isRefetching,
-  } = useActiveConnections(5000); // Auto-refresh every 5s
+  const { connections, isLoading, isConnected, refetch } =
+    useRealtimeConnections();
   const disconnectMutation = useDisconnectRunner();
   const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
+  const [error, setError] = useState<Error | null>(null);
 
   const handleDisconnect = async (connectionId: number) => {
     try {
@@ -80,21 +77,14 @@ export function ActiveConnectionsList() {
                 "An unexpected error occurred while loading active connections."}
           </p>
           <Button
-            onClick={() => refetch()}
-            disabled={isRefetching}
+            onClick={() => {
+              setError(null);
+              refetch();
+            }}
             className="bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
           >
-            {isRefetching ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Retrying...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Try Again
-              </>
-            )}
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Try Again
           </Button>
         </div>
       </Card>

@@ -36,13 +36,14 @@ export class CaptureService {
 
   /**
    * Get capture sessions for a project
+   * Uses the qontinui-web backend endpoint which supports UUID project IDs
    */
   async getSessionsForProject(
     projectId: string,
     limit: number = 100
   ): Promise<CaptureSessionListResponse> {
     const response = await this.httpClient.fetch(
-      `${this.apiUrl}/api/v1/capture/sessions/project/${projectId}?limit=${limit}`
+      `${this.apiUrl}/api/v1/capture-sessions?project_id=${projectId}&limit=${limit}`
     );
 
     if (!response.ok) {
@@ -50,14 +51,45 @@ export class CaptureService {
       throw new Error(error.detail || "Failed to fetch capture sessions");
     }
 
-    const apiSessions: CaptureSessionApi[] = await response.json();
+    const data = await response.json();
+    // Backend returns { items: [...], total, limit, offset }
+    const items = data.items || [];
 
-    // Transform to frontend format
-    const sessions = apiSessions.map((s) => transformCaptureSession(s));
+    // Transform web backend capture sessions to frontend format
+    // These are screenshot-based sessions, not video capture sessions
+    const sessions: CaptureSession[] = items.map((item: any) => ({
+      id: 0, // UUID-based, using 0 as placeholder
+      sessionId: item.id, // UUID
+      projectId: undefined,
+      workflowId: undefined,
+      name: item.name || `Capture Session`,
+      description: item.description,
+      videoUrl: "", // Screenshot sessions don't have video
+      duration: 0,
+      durationMs: 0,
+      videoWidth: 0,
+      videoHeight: 0,
+      videoFps: 0,
+      totalFrames: item.screenshot_count || 0,
+      isComplete: item.status === "completed",
+      isProcessed: item.status === "completed",
+      createdAt: item.created_at,
+      endedAt: item.completed_at,
+      notes: item.description,
+      tags: [],
+      stats: {
+        totalEvents: 0,
+        mouseClicks: 0,
+        mouseMoves: 0,
+        keyPresses: 0,
+        scrolls: 0,
+        dragOperations: 0,
+      },
+    }));
 
     return {
       sessions,
-      total: sessions.length,
+      total: data.total || sessions.length,
     };
   }
 

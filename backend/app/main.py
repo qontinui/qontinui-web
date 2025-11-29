@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 from fastapi import FastAPI
@@ -172,6 +173,9 @@ uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
+# Background task handle for cleanup
+_cleanup_task: asyncio.Task | None = None
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -253,10 +257,42 @@ async def startup_event():
     else:
         logger.info("arq_pool_disabled", note="Task queue disabled (Redis not enabled)")
 
+    # Start background cleanup task for stale runner connections
+    if settings.REDIS_ENABLED:
+        try:
+            from app.tasks.connection_cleanup import run_cleanup_loop
+
+            global _cleanup_task
+            _cleanup_task = asyncio.create_task(run_cleanup_loop(interval_seconds=60))
+            logger.info(
+                "connection_cleanup_task_started",
+                interval_seconds=60,
+            )
+        except Exception as e:
+            logger.warning(
+                "connection_cleanup_task_failed",
+                error=str(e),
+                note="Continuing without cleanup task",
+            )
+    else:
+        logger.info(
+            "connection_cleanup_disabled",
+            note="Cleanup task disabled (Redis not enabled)",
+        )
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("application_shutting_down")
+
+    # Cancel background cleanup task
+    global _cleanup_task
+    if _cleanup_task is not None:
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            logger.info("connection_cleanup_task_cancelled")
 
     # Close Redis connection
     if settings.REDIS_ENABLED:

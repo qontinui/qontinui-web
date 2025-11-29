@@ -88,6 +88,10 @@ class RunnerConnectionResponse(BaseModel):
     duration_seconds: int | None
     ip_address: str | None
     project_id: int | None
+    ws_connected: bool = Field(
+        default=False,
+        description="Whether the runner is currently WebSocket-connected and can receive commands",
+    )
 
 
 class RunnerConnectionHistory(BaseModel):
@@ -151,3 +155,16 @@ class TestConnectionResponse(BaseModel):
     tested_at: IsoDatetime = Field(
         ..., description="Timestamp when the test was performed"
     )
+
+
+class ConnectionCleanupResponse(BaseModel):
+    """Schema for connection cleanup response."""
+
+    total_active: int = Field(
+        ..., description="Total number of active connections found in database"
+    )
+    stale_found: int = Field(..., description="Number of stale connections identified")
+    cleaned: int = Field(
+        ..., description="Number of connections successfully cleaned up"
+    )
+    message: str = Field(..., description="Human-readable status message")
