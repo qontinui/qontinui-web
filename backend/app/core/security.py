@@ -1,4 +1,3 @@
-import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Any, cast
@@ -281,20 +280,26 @@ def generate_runner_token() -> str:
 
 def hash_runner_token(token: str) -> str:
     """
-    Hash a runner token for secure storage using SHA-256.
+    Hash a runner token for secure storage using Argon2/bcrypt.
+
+    Runner tokens are API credentials and should be treated with the same
+    security as passwords - using slow, salted hashing algorithms that are
+    resistant to rainbow table and brute force attacks.
 
     Args:
         token: The plain text token to hash
 
     Returns:
-        The SHA-256 hash of the token as a hex string (64 characters)
+        The secure hash of the token (Argon2/bcrypt format)
     """
-    return hashlib.sha256(token.encode()).hexdigest()
+    return pwd_context.hash(token)
 
 
 def verify_runner_token(token: str, token_hash: str) -> bool:
     """
     Verify a runner token against its stored hash.
+
+    Uses constant-time comparison to prevent timing attacks.
 
     Args:
         token: The plain text token to verify
@@ -303,4 +308,8 @@ def verify_runner_token(token: str, token_hash: str) -> bool:
     Returns:
         True if the token matches the hash, False otherwise
     """
-    return hash_runner_token(token) == token_hash
+    try:
+        return pwd_context.verify(token, token_hash)
+    except Exception:
+        # Handle malformed hashes gracefully
+        return False
