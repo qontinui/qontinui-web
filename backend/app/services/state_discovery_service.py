@@ -299,7 +299,7 @@ class StateDiscoveryService:
         sorted_screenshots = sorted(screenshots, key=lambda s: s.timestamp)
 
         # For each input event, find transitions
-        for i, input_event in enumerate(input_events):
+        for _i, input_event in enumerate(input_events):
             # Find the state containing this input event
             source_state = None
             for state in states:

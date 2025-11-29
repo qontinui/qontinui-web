@@ -529,7 +529,7 @@ class GraphNeuralDetector(BaseAnalyzer):
 
         Similar elements should have similar confidence
         """
-        for iteration in range(params["propagation_iterations"]):
+        for _iteration in range(params["propagation_iterations"]):
             new_confidences = {}
 
             for node in nodes:

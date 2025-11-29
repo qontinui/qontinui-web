@@ -585,7 +585,7 @@ class CaptureSessionService:
             HTTPException: If session not found or user doesn't have access
         """
         # Verify session access
-        session = await CaptureSessionService.get_session(db, session_id, user_id)
+        await CaptureSessionService.get_session(db, session_id, user_id)
 
         # Get all screenshots for the session
         screenshots = await CaptureSessionService.get_session_screenshots(

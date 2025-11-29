@@ -330,8 +330,8 @@ class TextureUniformityDetector(BaseRegionAnalyzer):
         positions = [(w["x"], w["y"]) for w in windows]
 
         # Compute horizontal and vertical spacings
-        x_positions = sorted(set(x for x, y in positions))
-        y_positions = sorted(set(y for x, y in positions))
+        x_positions = sorted({x for x, y in positions})
+        y_positions = sorted({y for x, y in positions})
 
         if (
             len(x_positions) < params["min_grid_cols"]

@@ -124,7 +124,7 @@ class ElementDetectionService:
                 "elements_detected",
                 screenshot_id=str(screenshot_id),
                 element_count=len(db_elements),
-                element_types=list(set(e.element_type for e in db_elements)),
+                element_types=list({e.element_type for e in db_elements}),
             )
         else:
             screenshot.analysis_status = "no_elements_found"
@@ -154,7 +154,7 @@ class ElementDetectionService:
         from app.services.capture_session_service import CaptureSessionService
 
         # Verify session access
-        session = await CaptureSessionService.get_session(db, session_id, user_id)
+        await CaptureSessionService.get_session(db, session_id, user_id)
 
         # Get all screenshots
         screenshots = await CaptureSessionService.get_session_screenshots(

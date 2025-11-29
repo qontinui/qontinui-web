@@ -223,7 +223,7 @@ class WeightedVotingFusion(FusionStrategy):
 
         # Merge metadata
         merged_metadata = {}
-        for elem, result in group:
+        for elem, _result in group:
             merged_metadata.update(elem.metadata)
 
         return FusedElement(

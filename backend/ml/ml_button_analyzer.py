@@ -140,12 +140,12 @@ class MLButtonAnalyzer(BaseAnalyzer):
         )
 
         # Process each screenshot
-        for idx, (screenshot_meta, screenshot_bytes) in enumerate(
+        for idx, (_screenshot_meta, screenshot_bytes) in enumerate(
             zip(input_data.screenshots, input_data.screenshot_data, strict=False)
         ):
             # Load image
             image = Image.open(io.BytesIO(screenshot_bytes)).convert("RGB")
-            image_np = np.array(image)
+            np.array(image)
 
             # Run inference based on mode
             if self.mode == "detection" and isinstance(

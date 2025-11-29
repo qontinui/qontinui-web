@@ -510,7 +510,7 @@ class TestReliabilityStatisticsWorkflow:
     ):
         """Test calculating transition success rate across runs."""
         # Create multiple runs with transition data
-        runs = await create_test_runs(
+        await create_test_runs(
             db_session,
             test_project,
             test_runner_connection,

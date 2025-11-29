@@ -269,7 +269,7 @@ class TestDuplicateDetection:
 
         # Verify patterns are organized by state
         assert len(patterns_by_state) > 0
-        for state, patterns in patterns_by_state.items():
+        for _state, patterns in patterns_by_state.items():
             assert len(patterns) > 0
 
 

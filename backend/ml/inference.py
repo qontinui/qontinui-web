@@ -127,7 +127,7 @@ class ButtonDetectorInference:
             Preprocessed image tensor
         """
         # Load image if path
-        if isinstance(image, (str, Path)):
+        if isinstance(image, str | Path):
             image = Image.open(image).convert("RGB")
         elif isinstance(image, np.ndarray):
             image = Image.fromarray(image).convert("RGB")

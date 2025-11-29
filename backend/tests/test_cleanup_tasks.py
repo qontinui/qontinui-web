@@ -185,7 +185,7 @@ async def test_run_all_cleanup_tasks(async_session, test_user):
     assert "token_blacklist" in results["tasks"]
 
     # Verify all tasks completed successfully
-    for task_name, task_result in results["tasks"].items():
+    for _task_name, task_result in results["tasks"].items():
         assert task_result["status"] == "success"
 
 

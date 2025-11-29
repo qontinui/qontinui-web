@@ -312,7 +312,7 @@ async def get_project_tags(db: AsyncSession, project_id: UUID) -> list[str]:
         if tag_list:
             unique_tags.update(tag_list)
 
-    return sorted(list(unique_tags))
+    return sorted(unique_tags)
 
 
 async def get_functions_by_file(

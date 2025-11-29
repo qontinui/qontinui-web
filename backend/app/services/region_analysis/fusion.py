@@ -239,7 +239,7 @@ class WeightedVotingRegionFusion(RegionFusionStrategy):
 
         # Merge metadata
         merged_metadata = {}
-        for region, result in group:
+        for region, _result in group:
             merged_metadata.update(region.metadata)
 
         return FusedRegion(
