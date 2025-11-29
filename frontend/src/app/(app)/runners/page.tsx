@@ -23,10 +23,10 @@ import { ActiveConnectionsList } from "@/components/runners/ActiveConnectionsLis
 import { ConnectionHistoryTable } from "@/components/runners/ConnectionHistoryTable";
 import {
   useRunnerTokens,
-  useActiveConnections,
   useRevokeRunnerToken,
   useDeleteRunnerToken,
 } from "@/hooks/useRunners";
+import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { toast } from "sonner";
 
 export default function RunnersPage() {
@@ -41,7 +41,7 @@ export default function RunnersPage() {
     refetch: refetchTokens,
     isRefetching: isRefetchingTokens,
   } = useRunnerTokens();
-  const { data: activeConnections } = useActiveConnections(5000);
+  const { connections: activeConnections } = useRealtimeConnections();
   const revokeMutation = useRevokeRunnerToken();
   const deleteMutation = useDeleteRunnerToken();
 
@@ -176,8 +176,7 @@ export default function RunnersPage() {
               <div>
                 <h3 className="text-xl font-semibold">Active Connections</h3>
                 <p className="text-sm text-gray-400">
-                  Real-time view of currently connected runners (auto-refreshes
-                  every 5 seconds)
+                  Real-time view of currently connected runners
                 </p>
               </div>
             </div>

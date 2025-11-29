@@ -51,8 +51,8 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
 
 # Magic bytes for file type validation
 MAGIC_BYTES = {
-    "image/png": b"\x89\x50\x4E\x47",  # PNG signature
-    "image/jpeg": b"\xFF\xD8\xFF",  # JPEG signature
+    "image/png": b"\x89\x50\x4e\x47",  # PNG signature
+    "image/jpeg": b"\xff\xd8\xff",  # JPEG signature
     "image/gif": b"\x47\x49\x46",  # GIF signature
     "image/webp": b"\x52\x49\x46\x46",  # RIFF (WebP container)
 }

@@ -15,7 +15,6 @@ Features:
 
 import logging
 import logging.handlers
-import os
 import sys
 from pathlib import Path
 

@@ -15,12 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     authenticate_runner,
+    current_superuser,
     get_async_db,
     get_current_active_user_async,
 )
+from app.config.redis_config import get_redis
 from app.crud import runner as runner_crud
 from app.models.user import User as UserModel
 from app.schemas.runner import (
+    ConnectionCleanupResponse,
     RunnerConnectionHistory,
     RunnerConnectionResponse,
     RunnerTokenCreate,
@@ -30,6 +33,7 @@ from app.schemas.runner import (
     RunnerTokenWithSecret,
     TestConnectionResponse,
 )
+from app.services.runner_connection_manager import get_runner_connection_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -350,9 +354,13 @@ async def get_connection_history(
                 id=conn.id,
                 runner_token_id=conn.runner_token_id,
                 runner_name=(
-                    token_names.get(conn.runner_token_id, "Unknown")
-                    if conn.runner_token_id
-                    else "Browser Session"
+                    # Priority: custom runner_name > token name > fallback
+                    conn.runner_name
+                    or (
+                        token_names.get(conn.runner_token_id, "Unknown")
+                        if conn.runner_token_id
+                        else "Browser Session"
+                    )
                 ),
                 connected_at=conn.connected_at,
                 disconnected_at=conn.disconnected_at,
@@ -379,7 +387,7 @@ async def get_active_connections(
     Get currently active runner connections.
 
     Returns:
-        List of active connections
+        List of active connections with WebSocket connection status
     """
     active_connections = await runner_crud.get_active_connections(
         db=db,
@@ -394,20 +402,31 @@ async def get_active_connections(
     )
     token_names = {token.id: token.name for token, _ in tokens_with_counts}
 
+    # Get WebSocket connection status from runner connection manager
+    # Use Redis-backed method to get connections across all processes
+    redis_client = await get_redis()
+    runner_manager = await get_runner_connection_manager(redis_client)
+    ws_connected_ids = set(await runner_manager.get_all_connected_runner_ids_redis())
+
     return [
         RunnerConnectionResponse(
             id=conn.id,
             runner_token_id=conn.runner_token_id,
             runner_name=(
-                token_names.get(conn.runner_token_id, "Unknown")
-                if conn.runner_token_id
-                else "Browser Session"
+                # Priority: custom runner_name > token name > fallback
+                conn.runner_name
+                or (
+                    token_names.get(conn.runner_token_id, "Unknown")
+                    if conn.runner_token_id
+                    else "Browser Session"
+                )
             ),
             connected_at=conn.connected_at,
             disconnected_at=conn.disconnected_at,
             duration_seconds=conn.duration_seconds,
             ip_address=conn.ip_address,
             project_id=conn.project_id,  # type: ignore[arg-type]
+            ws_connected=conn.id in ws_connected_ids,
         )
         for conn in active_connections
     ]
@@ -499,3 +518,67 @@ async def test_runner_connection(
         connection_id=connection.id,
         tested_at=datetime.utcnow(),
     )
+
+
+@router.post("/connections/cleanup", response_model=ConnectionCleanupResponse)
+async def cleanup_stale_connections(
+    *,
+    current_user: UserModel = Depends(current_superuser),
+) -> Any:
+    """
+    Manually trigger cleanup of stale runner connections.
+
+    This endpoint allows administrators to manually trigger the cleanup process
+    that normally runs automatically every 60 seconds in the background.
+
+    The cleanup process:
+    1. Queries all connections where disconnected_at IS NULL
+    2. Checks if each connection_id is in the RunnerConnectionManager (WebSocket connected)
+    3. If NOT in memory but in DB as "active", marks it as disconnected
+
+    **Admin only**: This endpoint requires superuser privileges.
+
+    Returns:
+        Cleanup statistics including total active connections, stale found, and cleaned
+    """
+    from app.tasks.connection_cleanup import cleanup_stale_connections
+
+    logger.info(
+        "manual_cleanup_triggered",
+        user_id=str(current_user.id),
+        username=current_user.username,
+    )
+
+    try:
+        stats = await cleanup_stale_connections()
+
+        message = (
+            f"Cleanup completed successfully. "
+            f"Found {stats['total_active']} active connections, "
+            f"identified {stats['stale_found']} stale connections, "
+            f"cleaned up {stats['cleaned']} connections."
+        )
+
+        logger.info(
+            "manual_cleanup_completed",
+            user_id=str(current_user.id),
+            stats=stats,
+        )
+
+        return ConnectionCleanupResponse(
+            total_active=stats["total_active"],
+            stale_found=stats["stale_found"],
+            cleaned=stats["cleaned"],
+            message=message,
+        )
+    except Exception as e:
+        logger.error(
+            "manual_cleanup_error",
+            user_id=str(current_user.id),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Cleanup failed: {str(e)}",
+        )

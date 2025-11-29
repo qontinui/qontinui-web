@@ -1,6 +1,5 @@
 """API endpoints for web extraction."""
 
-
 from typing import Any
 from uuid import UUID
 

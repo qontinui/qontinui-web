@@ -29,7 +29,7 @@ class RedisConfig:
             redis_url = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
 
             cls._client = await aioredis.from_url(
-                redis_url, encoding="utf-8", decode_responses=True, max_connections=10
+                redis_url, encoding="utf-8", decode_responses=True, max_connections=100
             )
             logger.info("redis_client_initialized", redis_url=redis_url)
 

@@ -24,7 +24,7 @@ import {
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import { ConnectionString } from "@/components/runners/ConnectionString";
-import { useActiveConnections } from "@/hooks/useRunners";
+import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import type { Project } from "@/services/project-service";
 import { AutomationStreamingCard } from "@/components/profile/automation-streaming-card";
 
@@ -37,6 +37,7 @@ interface ConnectionInfo {
   createdAt: string;
   backendUrl: string;
   runnerTokenId?: string;
+  tokenExpiresAt?: string | null;
 }
 
 export default function ConnectRunnerPage() {
@@ -55,7 +56,7 @@ export default function ConnectRunnerPage() {
   const [tokenName, setTokenName] = useState("");
   const [expiresInDays, setExpiresInDays] = useState("30");
 
-  const { data: activeConnections } = useActiveConnections(5000);
+  const { connections: activeConnections } = useRealtimeConnections();
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -72,67 +73,96 @@ export default function ConnectRunnerPage() {
     try {
       setLoading(true);
 
-      console.log("[ConnectRunner] Loading data...");
+      console.log("[ConnectRunner] Loading projects...");
 
-      // Load connection info and projects independently so one failure doesn't block the other
-      const [connInfoResult, projectsResult] = await Promise.allSettled([
-        fetchConnectionInfo(),
-        projectService.getProjects(),
-      ]);
-
-      // Handle connection info
-      if (connInfoResult.status === "fulfilled") {
-        console.log("[ConnectRunner] Connection info:", connInfoResult.value);
-        setConnectionInfo(connInfoResult.value);
-      } else {
-        console.error(
-          "[ConnectRunner] Failed to load connection info:",
-          connInfoResult.reason
-        );
-        toast.error("Failed to load connection information");
-      }
-
-      // Handle projects - always try to set projects even if connection info fails
-      if (projectsResult.status === "fulfilled") {
-        const projectsList = projectsResult.value;
-        console.log(
-          "[ConnectRunner] Projects loaded:",
-          projectsList?.length || 0,
-          projectsList
-        );
-        setProjects(projectsList);
-        // Don't auto-select - let user choose a project
-      } else {
-        console.error(
-          "[ConnectRunner] Failed to load projects:",
-          projectsResult.reason
-        );
-        toast.error("Failed to load projects");
-      }
+      // Only load projects on initial load - connection info is generated on demand
+      const projectsList = await projectService.getProjects();
+      console.log(
+        "[ConnectRunner] Projects loaded:",
+        projectsList?.length || 0,
+        projectsList
+      );
+      setProjects(projectsList);
     } catch (error) {
-      console.error("[ConnectRunner] Unexpected error:", error);
-      toast.error("An unexpected error occurred");
+      console.error("[ConnectRunner] Failed to load projects:", error);
+      toast.error("Failed to load projects");
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchConnectionInfo = async (): Promise<ConnectionInfo> => {
+  const [generating, setGenerating] = useState(false);
+
+  const generateConnectionString = async () => {
+    try {
+      setGenerating(true);
+      console.log("[ConnectRunner] Generating connection info...", {
+        useDedicatedToken,
+        tokenName,
+        expiresInDays,
+      });
+
+      const expiryValue = expiresInDays === "never" ? "0" : expiresInDays;
+      const connInfo = await fetchConnectionInfo(
+        useDedicatedToken,
+        tokenName || undefined,
+        expiryValue
+      );
+
+      console.log("[ConnectRunner] Connection info generated:", connInfo);
+      setConnectionInfo(connInfo);
+
+      if (useDedicatedToken && connInfo.runnerTokenId) {
+        toast.success("Runner token created successfully!");
+      } else {
+        toast.success("Connection string generated!");
+      }
+    } catch (error) {
+      console.error(
+        "[ConnectRunner] Failed to generate connection info:",
+        error
+      );
+      toast.error("Failed to generate connection string");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const fetchConnectionInfo = async (
+    useDedicated: boolean = false,
+    name?: string,
+    expiry?: string
+  ): Promise<ConnectionInfo> => {
     // Call the backend directly to ensure cookies are sent properly
     // The access_token HttpOnly cookie is scoped to the domain, so it's sent
     // to both frontend (3001) and backend (8000) on localhost
     const backendUrl =
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const response = await fetch(
-      `${backendUrl}/api/v1/users/me/connection-info`,
-      {
-        method: "GET",
-        credentials: "include", // Send cookies
-        headers: {
-          "Content-Type": "application/json",
-        },
+
+    // Build URL with query parameters
+    const params = new URLSearchParams();
+    if (useDedicated) {
+      params.set("use_dedicated_token", "true");
+      if (name) {
+        params.set("token_name", name);
       }
-    );
+      if (expiry) {
+        const days = parseInt(expiry, 10);
+        // 0 means never expires
+        params.set("expires_in_days", days === 0 ? "0" : expiry);
+      }
+    }
+
+    const queryString = params.toString();
+    const url = `${backendUrl}/api/v1/users/me/connection-info${queryString ? `?${queryString}` : ""}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      credentials: "include", // Send cookies
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
     if (!response.ok) {
       const error = await response.text();
       console.error(
@@ -184,8 +214,9 @@ export default function ConnectRunnerPage() {
   };
 
   const handleRefresh = async () => {
-    await loadData();
-    toast.success("Connection information refreshed!");
+    // Clear existing connection info and regenerate
+    setConnectionInfo(null);
+    await generateConnectionString();
   };
 
   const handleBackToDashboard = () => {
@@ -355,9 +386,10 @@ export default function ConnectRunnerPage() {
                       <Checkbox
                         id="dedicated-token"
                         checked={useDedicatedToken}
-                        onCheckedChange={(checked) =>
-                          setUseDedicatedToken(checked as boolean)
-                        }
+                        onCheckedChange={(checked) => {
+                          setUseDedicatedToken(checked as boolean);
+                          setConnectionInfo(null); // Clear connection info when options change
+                        }}
                         className="mt-1"
                       />
                       <div className="flex-1">
@@ -369,7 +401,8 @@ export default function ConnectRunnerPage() {
                         </Label>
                         <p className="text-sm text-gray-400 mt-1">
                           A dedicated token can be revoked independently and
-                          provides better security than using your JWT
+                          supports long-running automations (JWT expires in 1
+                          hour)
                         </p>
                       </div>
                     </div>
@@ -384,7 +417,10 @@ export default function ConnectRunnerPage() {
                             id="token-name"
                             placeholder="e.g., My Laptop, Work Desktop"
                             value={tokenName}
-                            onChange={(e) => setTokenName(e.target.value)}
+                            onChange={(e) => {
+                              setTokenName(e.target.value);
+                              setConnectionInfo(null); // Clear connection info when options change
+                            }}
                             className="mt-2 bg-[#0A0A0B] border-gray-700"
                           />
                         </div>
@@ -396,7 +432,10 @@ export default function ConnectRunnerPage() {
                           <select
                             id="expiration"
                             value={expiresInDays}
-                            onChange={(e) => setExpiresInDays(e.target.value)}
+                            onChange={(e) => {
+                              setExpiresInDays(e.target.value);
+                              setConnectionInfo(null); // Clear connection info when options change
+                            }}
                             className="mt-2 w-full px-3 py-2 bg-[#0A0A0B] border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#00D9FF]"
                           >
                             <option value="7">7 days</option>
@@ -407,6 +446,35 @@ export default function ConnectRunnerPage() {
                           </select>
                         </div>
                       </div>
+                    )}
+
+                    <Button
+                      onClick={generateConnectionString}
+                      disabled={generating}
+                      className="w-full mt-4 bg-gradient-to-r from-[#00D9FF] to-[#BD00FF] hover:from-[#00B8DB] hover:to-[#9E00D9] text-white"
+                    >
+                      {generating ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Generating...
+                        </>
+                      ) : connectionInfo ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Regenerate Connection String
+                        </>
+                      ) : (
+                        "Generate Connection String"
+                      )}
+                    </Button>
+
+                    {connectionInfo?.runnerTokenId && (
+                      <p className="text-sm text-green-400 text-center">
+                        ✓ Dedicated token created
+                        {connectionInfo.tokenExpiresAt
+                          ? ` (expires ${new Date(connectionInfo.tokenExpiresAt).toLocaleDateString()})`
+                          : " (never expires)"}
+                      </p>
                     )}
                   </div>
                 </Card>
@@ -453,52 +521,71 @@ export default function ConnectRunnerPage() {
                 <Card className="bg-[#1A1A1B] border-gray-800 p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xl font-semibold">Connection String</h3>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleRefresh}
-                      className="text-gray-400 hover:text-white"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </Button>
+                    {connectionInfo && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRefresh}
+                        className="text-gray-400 hover:text-white"
+                        disabled={generating}
+                      >
+                        <RefreshCw
+                          className={`w-4 h-4 ${generating ? "animate-spin" : ""}`}
+                        />
+                      </Button>
+                    )}
                   </div>
                   <div className="space-y-4">
-                    <div className="relative">
-                      <pre className="bg-[#0A0A0B] border border-gray-700 rounded-lg p-4 text-sm overflow-x-auto max-h-80 overflow-y-auto">
-                        <code className="text-gray-300">
-                          {getConnectionString()}
-                        </code>
-                      </pre>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleCopyConnectionString}
-                        className="flex-1 bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
-                        disabled={!selectedProjectId}
-                      >
-                        {copied ? (
-                          <>Copy Succeeded!</>
-                        ) : (
-                          <>
-                            <Copy className="w-4 h-4 mr-2" />
-                            Copy Connection String
-                          </>
+                    {connectionInfo ? (
+                      <>
+                        <div className="relative">
+                          <pre className="bg-[#0A0A0B] border border-gray-700 rounded-lg p-4 text-sm overflow-x-auto max-h-80 overflow-y-auto">
+                            <code className="text-gray-300">
+                              {getConnectionString()}
+                            </code>
+                          </pre>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleCopyConnectionString}
+                            className="flex-1 bg-[#00D9FF] hover:bg-[#00B8DB] text-black"
+                            disabled={!selectedProjectId}
+                          >
+                            {copied ? (
+                              <>Copy Succeeded!</>
+                            ) : (
+                              <>
+                                <Copy className="w-4 h-4 mr-2" />
+                                Copy Connection String
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            onClick={handleDownloadConfig}
+                            variant="outline"
+                            className="border-gray-700 hover:bg-[#1A1A1B]"
+                            disabled={!selectedProjectId}
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            Download
+                          </Button>
+                        </div>
+                        {!selectedProjectId && (
+                          <p className="text-sm text-amber-400">
+                            Please select a project to enable copy and download
+                          </p>
                         )}
-                      </Button>
-                      <Button
-                        onClick={handleDownloadConfig}
-                        variant="outline"
-                        className="border-gray-700 hover:bg-[#1A1A1B]"
-                        disabled={!selectedProjectId}
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Download
-                      </Button>
-                    </div>
-                    {!selectedProjectId && (
-                      <p className="text-sm text-amber-400">
-                        Please select a project to enable copy and download
-                      </p>
+                      </>
+                    ) : (
+                      <div className="bg-[#0A0A0B] border border-gray-700 border-dashed rounded-lg p-8 text-center">
+                        <p className="text-gray-400 mb-2">
+                          No connection string generated yet
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Configure your options above and click "Generate
+                          Connection String"
+                        </p>
+                      </div>
                     )}
                   </div>
                 </Card>
@@ -525,9 +612,11 @@ export default function ConnectRunnerPage() {
                         </p>
                       </>
                     ) : (
-                      <div className="bg-[#0A0A0B] border border-gray-700 rounded-lg p-12 text-center">
+                      <div className="bg-[#0A0A0B] border border-gray-700 border-dashed rounded-lg p-12 text-center">
                         <p className="text-gray-400">
-                          Select a project to generate QR code
+                          {!connectionInfo
+                            ? "Generate a connection string first"
+                            : "Select a project to show QR code"}
                         </p>
                       </div>
                     )}
