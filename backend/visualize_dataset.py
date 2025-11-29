@@ -51,7 +51,7 @@ def visualize_sample(dataset_dir: str, split: str = "train", num_samples: int = 
             font = ImageFont.truetype(
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12
             )
-        except:
+        except OSError:
             font = ImageFont.load_default()
 
         # Draw bounding boxes
