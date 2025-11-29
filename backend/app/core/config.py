@@ -274,7 +274,8 @@ class Settings(BaseSettings):
             if secret_key:
                 warnings.warn(
                     f"{info.field_name} not set, using SECRET_KEY as fallback. "
-                    "Consider setting unique secrets for production.", stacklevel=2
+                    "Consider setting unique secrets for production.",
+                    stacklevel=2,
                 )
                 return cast(str, secret_key)
             raise ValueError(f"{info.field_name} or SECRET_KEY must be set")

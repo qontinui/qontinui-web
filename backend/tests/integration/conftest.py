@@ -19,7 +19,9 @@ from sqlalchemy.pool import NullPool
 
 # Set test environment
 os.environ["TESTING"] = "1"
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+os.environ["DATABASE_URL"] = (
+    "postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test"
+)
 
 from app.db.base import Base
 from app.models.project import Project
@@ -38,11 +40,11 @@ from app.models.user import User
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     Create an async database session for testing.
-    Uses in-memory SQLite for fast, isolated tests.
+    Uses PostgreSQL for full compatibility with production.
     """
-    # Create async engine with in-memory SQLite
+    # Create async engine with PostgreSQL
     engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
+        "postgresql+asyncpg://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test",
         poolclass=NullPool,
         echo=False,
     )

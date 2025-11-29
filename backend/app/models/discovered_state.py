@@ -20,6 +20,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -46,7 +47,7 @@ class DiscoveredState(Base):
     __tablename__ = "discovered_states"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
 
     # Source type - identifies where this state was discovered from

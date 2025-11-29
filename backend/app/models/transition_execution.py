@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -42,7 +42,7 @@ class TransitionExecution(Base):
         PGUUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
-        server_default="gen_random_uuid()",
+        server_default=text("gen_random_uuid()"),
     )
 
     # Foreign key

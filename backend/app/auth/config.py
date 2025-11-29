@@ -196,7 +196,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     ):
         """Called after a user requests a password reset."""
         logger.info("password_reset_requested", user_id=str(user.id), email=user.email)
-        # TODO: Send password reset email via background task
+        # Send password reset email via background task
         from app.worker.queue import task_queue
 
         job_id = await task_queue.send_password_reset_email(
@@ -216,7 +216,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     ):
         """Called after a user requests email verification."""
         logger.info("verification_requested", user_id=str(user.id), email=user.email)
-        # TODO: Send verification email via background task
+        # Send verification email via background task
         from app.worker.queue import task_queue
 
         job_id = await task_queue.send_verification_email(

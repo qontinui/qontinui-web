@@ -1,14 +1,17 @@
 """
 Element detection service for capture sessions.
 
-Uses qontinui-api's computer vision capabilities to detect UI elements
-in captured screenshots.
+Facade that coordinates multiple specialized services to detect UI elements
+in captured screenshots. Delegates to:
+- TemplateMatcherService: API-based element detection
+- RegionAnalyzer: Fallback region detection
+- OCRService: Text extraction
+- ColorAnalyzer: Color-based analysis
 """
 
 import io
 from uuid import UUID
 
-import httpx
 import structlog
 from fastapi import HTTPException, status
 from PIL import Image
@@ -16,9 +19,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
 from app.models.capture import CaptureDetectedElement, CaptureScreenshot, CaptureSession
 from app.services.object_storage import object_storage
+from app.services.region_analyzer import RegionAnalyzer
+from app.services.template_matcher_service import TemplateMatcherService
 
 logger = structlog.get_logger(__name__)
 
@@ -86,8 +90,8 @@ class ElementDetectionService:
                 detail="Failed to load screenshot",
             )
 
-        # Call qontinui-api for element detection
-        detected_elements = await ElementDetectionService._detect_with_api(
+        # Try API-based detection first, fallback to basic detection
+        detected_elements = await ElementDetectionService._detect_elements(
             image, detection_config or {}
         )
 
@@ -151,13 +155,14 @@ class ElementDetectionService:
         Returns:
             Dictionary with detection statistics
         """
-        from app.services.capture_session_service import CaptureSessionService
+        from app.services.screenshot_storage_service import ScreenshotStorageService
+        from app.services.session_repository import SessionRepository
 
         # Verify session access
-        await CaptureSessionService.get_session(db, session_id, user_id)
+        await SessionRepository.get_by_id(db, session_id, user_id)
 
         # Get all screenshots
-        screenshots = await CaptureSessionService.get_session_screenshots(
+        screenshots = await ScreenshotStorageService.get_session_screenshots(
             db, session_id, user_id
         )
 
@@ -229,9 +234,11 @@ class ElementDetectionService:
         }
 
     @staticmethod
-    async def _detect_with_api(image: Image.Image, config: dict) -> list[dict]:
+    async def _detect_elements(image: Image.Image, config: dict) -> list[dict]:
         """
-        Detect elements using qontinui-api.
+        Detect elements using API with fallback to basic detection.
+
+        Coordinates between TemplateMatcherService and RegionAnalyzer.
 
         Args:
             image: PIL Image of the screenshot
@@ -240,149 +247,17 @@ class ElementDetectionService:
         Returns:
             List of detected element dictionaries
         """
-        try:
-            # Save image to bytes
-            image_buffer = io.BytesIO()
-            image.save(image_buffer, format="PNG")
-            image_buffer.seek(0)
+        # Try API-based detection first
+        elements, success = await TemplateMatcherService.detect_with_api(image, config)
 
-            # Call qontinui-api semantic analysis endpoint
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{settings.QONTINUI_API_URL}/api/semantic/analyze",
-                    files={"image": ("screenshot.png", image_buffer, "image/png")},
-                    data={
-                        "extract_text": config.get("extract_text", True),
-                        "detect_elements": config.get("detect_elements", True),
-                        "segment_regions": config.get("segment_regions", False),
-                    },
-                )
+        if success and elements:
+            return elements
 
-                if response.status_code == 200:
-                    result = response.json()
-                    return ElementDetectionService._parse_api_response(result)
-                else:
-                    logger.warning(
-                        "qontinui_api_detection_failed",
-                        status=response.status_code,
-                        response=response.text[:500],
-                    )
-                    # Fallback to basic detection
-                    return ElementDetectionService._basic_detection(image)
-
-        except httpx.TimeoutException:
-            logger.error("api_detection_timeout")
-            return ElementDetectionService._basic_detection(image)
-        except Exception as e:
-            logger.error("api_detection_error", error=str(e))
-            return ElementDetectionService._basic_detection(image)
-
-    @staticmethod
-    def _parse_api_response(api_result: dict) -> list[dict]:
-        """
-        Parse qontinui-api response into element format.
-
-        Args:
-            api_result: Response from qontinui-api
-
-        Returns:
-            List of element dictionaries
-        """
-        elements = []
-
-        # Parse detected regions
-        if "regions" in api_result:
-            for region in api_result["regions"]:
-                element = {
-                    "element_type": region.get("type", "unknown"),
-                    "x": region.get("x", 0),
-                    "y": region.get("y", 0),
-                    "width": region.get("width", 0),
-                    "height": region.get("height", 0),
-                    "text_content": region.get("text"),
-                    "confidence": region.get("confidence", 0.5),
-                    "properties": {
-                        "color": region.get("color"),
-                        "background": region.get("background"),
-                        "semantic_label": region.get("label"),
-                    },
-                    "visual_hash": region.get("hash"),
-                }
-                elements.append(element)
-
-        # Parse text detections
-        if "text_regions" in api_result:
-            for text_region in api_result["text_regions"]:
-                element = {
-                    "element_type": "text",
-                    "x": text_region.get("bbox", [0, 0, 0, 0])[0],
-                    "y": text_region.get("bbox", [0, 0, 0, 0])[1],
-                    "width": text_region.get("bbox", [0, 0, 0, 0])[2],
-                    "height": text_region.get("bbox", [0, 0, 0, 0])[3],
-                    "text_content": text_region.get("text"),
-                    "confidence": text_region.get("confidence", 0.8),
-                    "properties": {"font_size": text_region.get("font_size")},
-                }
-                elements.append(element)
-
-        return elements
-
-    @staticmethod
-    def _basic_detection(image: Image.Image) -> list[dict]:
-        """
-        Basic fallback element detection without API.
-
-        Performs simple image analysis to detect potential UI elements.
-
-        Args:
-            image: PIL Image of the screenshot
-
-        Returns:
-            List of basic detected elements
-        """
-        import numpy as np
-
-        try:
-            # Convert to numpy array
-            img_array = np.array(image.convert("RGB"))
-            height, width = img_array.shape[:2]
-
-            # Simple edge detection to find UI boundaries
-            # This is a very basic placeholder - real detection would be more sophisticated
-            elements = []
-
-            # Detect uniform regions that might be buttons/inputs
-            # Split image into grid and check for color uniformity
-            grid_size = 50
-            for y in range(0, height - grid_size, grid_size):
-                for x in range(0, width - grid_size, grid_size):
-                    region = img_array[y : y + grid_size, x : x + grid_size]
-
-                    # Check if region has low variance (uniform color)
-                    variance = np.var(region)
-                    if variance < 100:  # Threshold for "uniform" region
-                        element = {
-                            "element_type": "region",
-                            "x": x,
-                            "y": y,
-                            "width": grid_size,
-                            "height": grid_size,
-                            "text_content": None,
-                            "confidence": 0.3,  # Low confidence for basic detection
-                            "properties": {
-                                "detection_method": "basic_grid",
-                                "color_variance": float(variance),
-                            },
-                        }
-                        elements.append(element)
-
-            logger.info(
-                "basic_detection_completed",
-                element_count=len(elements),
-            )
-
-            return elements[:50]  # Limit to 50 elements
-
-        except Exception as e:
-            logger.error("basic_detection_failed", error=str(e))
-            return []
+        # Fallback to basic region detection
+        logger.info("using_fallback_detection", reason="api_detection_failed")
+        return RegionAnalyzer.detect_uniform_regions(
+            image=image,
+            grid_size=50,
+            variance_threshold=100.0,
+            max_regions=50,
+        )

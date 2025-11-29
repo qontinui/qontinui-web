@@ -23,6 +23,7 @@ import {
   type ExtractionElementDetectedEvent,
   type ExtractionCompleteEvent,
   type ExtractionErrorEvent,
+  type CommandResponseEvent,
 } from "@/lib/runner-websocket";
 import { toast } from "sonner";
 
@@ -177,6 +178,66 @@ export function WebExtractionPage() {
     [setError]
   );
 
+  // Handle command response from runner
+  const handleCommandResponse = useCallback(
+    (data: CommandResponseEvent) => {
+      console.log("[WebExtraction] Command response received:", data);
+      console.log("[WebExtraction] Command:", data.command, "Result:", data.result);
+
+      // Handle start_web_extraction command response
+      if (data.command === "start_web_extraction" || data.command === "unknown") {
+        // Check for success - handle both explicit success and implicit (no error)
+        const isSuccess = data.result?.success === true ||
+          (data.result && !data.result.error && data.result.success !== false);
+
+        if (isSuccess) {
+          // Extraction started successfully
+          const extractionId = data.result?.extraction_id || `extraction-${Date.now()}`;
+          console.log("[WebExtraction] Extraction started with ID:", extractionId);
+
+          // Initialize session with the extraction ID
+          setSession({
+            id: extractionId,
+            projectId: "",
+            sourceUrls: [],
+            config: {
+              urls: [],
+              viewports: [[1920, 1080]],
+              captureHoverStates: true,
+              captureFocusStates: true,
+              maxDepth: 5,
+              maxPages: 100,
+              authCookies: {},
+            },
+            status: "running",
+            stats: {
+              pagesVisited: 0,
+              statesFound: 0,
+              elementsFound: 0,
+              transitionsFound: 0,
+            },
+            errorMessage: null,
+            createdAt: data.timestamp,
+            startedAt: data.timestamp,
+            completedAt: null,
+          });
+          setStatus("running");
+          toast.success("Web extraction started on runner");
+        } else if (data.result?.error || data.result?.success === false) {
+          // Extraction failed to start
+          const errorMessage = data.result?.error || "Failed to start extraction";
+          console.error("[WebExtraction] Failed to start:", errorMessage);
+          setError(errorMessage);
+          toast.error(`Failed to start extraction: ${errorMessage}`);
+          // Reset connecting ref before disconnect
+          isConnectingRef.current = false;
+          wsRef.current?.disconnect();
+        }
+      }
+    },
+    [setSession, setStatus, setError]
+  );
+
   // Start extraction with a runner
   const startExtraction = useCallback(
     async (
@@ -279,6 +340,7 @@ export function WebExtractionPage() {
           onExtractionElementDetected: handleExtractionElementDetected,
           onExtractionComplete: handleExtractionComplete,
           onExtractionError: handleExtractionError,
+          onCommandResponse: handleCommandResponse,
         });
 
         wsRef.current.connect();
@@ -295,6 +357,7 @@ export function WebExtractionPage() {
       handleExtractionElementDetected,
       handleExtractionComplete,
       handleExtractionError,
+      handleCommandResponse,
       setError,
     ]
   );

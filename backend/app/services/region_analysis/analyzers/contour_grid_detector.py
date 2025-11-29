@@ -12,7 +12,7 @@ from typing import Any
 import cv2
 import numpy as np
 from PIL import Image
-from sklearn.cluster import DBSCAN, KMeans  # type: ignore
+from sklearn.cluster import DBSCAN, KMeans  # type: ignore[import-untyped]
 
 from ..base import (
     BaseRegionAnalyzer,

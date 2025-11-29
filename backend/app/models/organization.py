@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -49,7 +50,7 @@ class Organization(Base):
     __tablename__ = "organizations"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     name = Column(String, nullable=False, index=True)
     slug = Column(String, unique=True, nullable=False, index=True)
@@ -100,7 +101,7 @@ class TeamMember(Base):
     __tablename__ = "team_members"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     organization_id = Column(
         UUID(as_uuid=True),
@@ -154,7 +155,7 @@ class OrganizationInvitation(Base):
     __tablename__ = "organization_invitations"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     organization_id = Column(
         UUID(as_uuid=True),
@@ -226,7 +227,7 @@ class ProjectAccessControl(Base):
     __tablename__ = "project_access_control"
 
     id = Column(
-        UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()"
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
     project_id = Column(
         UUID(as_uuid=True),

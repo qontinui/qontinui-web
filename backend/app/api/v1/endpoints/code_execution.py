@@ -303,7 +303,12 @@ async def list_python_files(
     from app.services.file_loader import PythonFileLoader
 
     # TODO: Get project root from project_id when project model is available
-    # For now, use a default project directory
+    # DESIGN DECISION NEEDED:
+    # 1. Add a 'project_root_path' field to the Project model to store filesystem path
+    # 2. Define project directory structure convention (e.g., /workspace/{project_id}/)
+    # 3. Implement project workspace initialization during project creation
+    # 4. Add validation to ensure project_root exists and is accessible
+    # Current implementation: Uses user_projects/{project_id} directory
     # Support TEST_PROJECT_ROOT for testing
     test_project_root = os.getenv("TEST_PROJECT_ROOT")
     if test_project_root:
@@ -361,6 +366,7 @@ async def validate_file_path(
     from app.services.file_loader import FilePathValidator
 
     # TODO: Get project root from project_id
+    # See design notes in list_python_files endpoint above
     # Support TEST_PROJECT_ROOT for testing
     test_project_root = os.getenv("TEST_PROJECT_ROOT")
     if test_project_root:
@@ -418,6 +424,7 @@ async def load_file_content(
     from app.services.file_loader import PythonFileLoader
 
     # TODO: Get project root from project_id
+    # See design notes in list_python_files endpoint above
     # Support TEST_PROJECT_ROOT for testing
     test_project_root = os.getenv("TEST_PROJECT_ROOT")
     if test_project_root:
@@ -480,6 +487,7 @@ async def execute_file_code(
     from app.services.file_loader import PythonFileLoader
 
     # TODO: Get project root from project_id
+    # See design notes in list_python_files endpoint above
     # Support TEST_PROJECT_ROOT for testing
     test_project_root = os.getenv("TEST_PROJECT_ROOT")
     if test_project_root:

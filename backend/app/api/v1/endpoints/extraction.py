@@ -309,12 +309,22 @@ async def import_to_state_structure(
 
     # TODO: Implement state import logic
     # This would create State objects in the target workflow
+    # DESIGN DECISION NEEDED:
+    # 1. State model needs to be created (currently only DiscoveredState exists)
+    # 2. Determine if workflows should have a dedicated Workflow model or remain in project.configuration JSON
+    # 3. Define the relationship between ExtractionAnnotation states and formal State objects
+    # 4. Implement state conversion logic that:
+    #    - Validates state data from extraction annotations
+    #    - Creates State objects in the workflow's state machine
+    #    - Optionally creates Transition objects between states
+    #    - Handles duplicate state detection and merging
 
     logger.info(
         "import_states_requested",
         extraction_id=extraction_id,
         state_ids=data.state_ids,
         workflow_id=data.target_workflow_id,
+        note="State import not yet implemented - awaiting State/Workflow model design",
     )
 
     return ImportResult(

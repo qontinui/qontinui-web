@@ -41,11 +41,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsedMenuPopover } from "./collapsed-menu-popover";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 import { OrganizationSwitcher } from "@/components/collaboration/OrganizationSwitcher";
 import { CreateOrganizationDialog } from "@/components/collaboration/CreateOrganizationDialog";
 import { useOrganization } from "@/contexts/organization-context";
 import { useSidebar } from "@/contexts/sidebar-context";
 import { useAuth } from "@/contexts/auth-context";
+import { useAutomation } from "@/contexts/automation-context";
+import { useProjects, useCreateProject } from "@/hooks/use-projects";
+import { toast } from "sonner";
 import type { Organization } from "@/types/collaboration";
 
 interface NavItem {
@@ -434,8 +438,44 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
   const { currentOrganization, organizations, loading, switchOrganization } =
     useOrganization();
 
-  // Get project ID from prop or URL params - this ensures navigation preserves the project context
-  const projectId = propProjectId ?? searchParams?.get("project") ?? null;
+  // Project management
+  const { projectId: contextProjectId, setProjectId: setContextProjectId } =
+    useAutomation();
+  const { data: projects = [], isLoading: projectsLoading } = useProjects();
+  const createProject = useCreateProject();
+
+  // Get project ID from prop, URL params, or context - prioritize in that order
+  const projectId =
+    propProjectId ?? searchParams?.get("project") ?? contextProjectId ?? null;
+
+  // Find the current project from the projects list
+  const currentProject = projects.find((p) => p.id === projectId) ?? null;
+
+  // Handle project selection - updates context only, no navigation
+  const handleProjectChange = (newProjectId: string) => {
+    setContextProjectId(newProjectId);
+    // Update URL to include project parameter (preserves current page)
+    const url = new URL(window.location.href);
+    url.searchParams.set("project", newProjectId);
+    router.push(url.pathname + url.search);
+  };
+
+  // Handle creating a new project
+  const handleCreateProject = async () => {
+    try {
+      const newProject = await createProject.mutateAsync({
+        name: `New Automation ${new Date().toLocaleDateString()}`,
+        description: "A new automation workflow",
+        configuration: {},
+      });
+      // Select the newly created project
+      handleProjectChange(newProject.id);
+      toast.success("Project created successfully");
+    } catch (error: any) {
+      console.error("Failed to create project:", error);
+      toast.error(error.message || "Failed to create project");
+    }
+  };
 
   // Filter nav items based on admin status
   const filterNavItems = (items: NavItem[]): NavItem[] => {
@@ -602,6 +642,20 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
             onOrganizationChange={handleOrganizationChange}
             onCreateOrganization={handleCreateOrganization}
             loading={loading}
+            className="bg-gray-900/50 border-gray-700 hover:bg-gray-900 hover:border-gray-600"
+          />
+        </div>
+      )}
+
+      {/* Project Switcher */}
+      {!isCollapsed && (
+        <div className="px-3 pt-2 pb-2 border-b border-gray-800/50">
+          <ProjectSwitcher
+            projects={projects}
+            currentProject={currentProject}
+            onProjectChange={handleProjectChange}
+            onCreateProject={handleCreateProject}
+            loading={projectsLoading}
             className="bg-gray-900/50 border-gray-700 hover:bg-gray-900 hover:border-gray-600"
           />
         </div>

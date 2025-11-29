@@ -116,7 +116,8 @@ export class HttpClient {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    // 60 second timeout to handle backend cold starts (can take 10-15 seconds)
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     try {
       const response = await fetch(url, {
@@ -141,7 +142,9 @@ export class HttpClient {
       clearTimeout(timeoutId);
 
       if (error.name === "AbortError") {
-        throw new Error("Request timeout");
+        throw new Error(
+          "Request timeout - backend may be starting up. Please try again."
+        );
       }
 
       if (typeof navigator !== "undefined" && !navigator.onLine) {

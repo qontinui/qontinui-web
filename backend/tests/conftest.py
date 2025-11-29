@@ -18,9 +18,9 @@ from sqlalchemy.pool import NullPool
 os.environ["TESTING"] = "1"
 os.environ["ENVIRONMENT"] = "development"  # Use development for tests
 
-# Set required configuration for tests
+# Set required configuration for tests - use PostgreSQL test database
 os.environ["DATABASE_URL"] = (
-    "postgresql://test_user:test_password@localhost:5432/test_db"
+    "postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test"
 )
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-minimum-32-chars-required"
 os.environ["ACCESS_SECRET_KEY"] = (
@@ -109,40 +109,64 @@ def pytest_collection_modifyitems(config, items):
 
 # ===== ASYNC DATABASE FIXTURES =====
 
+# PostgreSQL test database URL
+TEST_DATABASE_URL = "postgresql+asyncpg://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test"
 
-@pytest_asyncio.fixture(scope="function")
-async def async_db_session() -> AsyncGenerator[AsyncSession, None]:
+# Session-scoped engine for reuse across tests
+_test_engine = None
+
+
+@pytest_asyncio.fixture(scope="session")
+async def test_engine():
     """
-    Create an async database session for testing.
-    Uses in-memory SQLite for fast, isolated tests.
+    Create a shared async engine for the test session.
+    Creates all tables once at start of test session.
     """
+    global _test_engine
     from app.db.base import Base
 
-    # Create async engine with in-memory SQLite
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
+    _test_engine = create_async_engine(
+        TEST_DATABASE_URL,
         poolclass=NullPool,
         echo=False,
     )
 
-    # Create tables
-    async with engine.begin() as conn:
+    # Create all tables at start of test session
+    async with _test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Create session factory
-    async_session_maker = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    yield _test_engine
 
-    # Yield session
-    async with async_session_maker() as session:
-        yield session
-
-    # Cleanup
-    async with engine.begin() as conn:
+    # Drop all tables at end of test session
+    async with _test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
-    await engine.dispose()
+    await _test_engine.dispose()
+    _test_engine = None
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Create an async database session for testing.
+    Uses PostgreSQL for full compatibility with production.
+    Each test runs in a transaction that is rolled back after the test.
+    """
+    # Create session factory
+    async_session_maker = sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    # Start a transaction for the test
+    async with test_engine.connect() as connection:
+        transaction = await connection.begin()
+
+        # Create session bound to the connection
+        async with async_session_maker(bind=connection) as session:
+            yield session
+
+        # Rollback the transaction to clean up test data
+        await transaction.rollback()
 
 
 @pytest_asyncio.fixture(scope="function")

@@ -102,6 +102,256 @@ def validate_recording_metadata(metadata: dict) -> tuple[bool, list[str], list[s
     return len(errors) == 0, errors, warnings
 
 
+async def extract_json_recording(
+    json_file: UploadFile,
+    project_id: str,
+    user_id: str,
+    db: AsyncSession,
+) -> tuple[Recording, dict]:
+    """
+    Extract and process JSON format recording
+    Returns: (Recording object, metadata dict)
+
+    Expected JSON structure:
+    {
+        "metadata": {...},
+        "interactions": [...],
+        "contextEvents": [...],
+        "frames": [
+            {
+                "frameNumber": 0,
+                "imageData": "base64-encoded-image-data",
+                "format": "png"
+            },
+            ...
+        ]
+    }
+    """
+    storage = object_storage
+
+    # Read and parse JSON file
+    json_content = await json_file.read()
+    try:
+        data = json.loads(json_content.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}")
+
+    # Extract components
+    if "metadata" not in data:
+        raise HTTPException(status_code=400, detail="metadata field not found in JSON")
+
+    metadata = data["metadata"]
+    interactions = data.get("interactions", [])
+    context_events = data.get("contextEvents", [])
+    frames_data = data.get("frames", [])
+
+    # Validate metadata
+    is_valid, errors, warnings = validate_recording_metadata(metadata)
+    if not is_valid:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid metadata: {', '.join(errors)}"
+        )
+
+    # Create recording object
+    recording_id = str(uuid.uuid4())
+    s3_prefix = f"recordings/{project_id}/{recording_id}"
+
+    # Parse times
+    start_time = datetime.fromisoformat(
+        metadata["recordingStartTime"].replace("Z", "+00:00")
+    )
+    end_time = datetime.fromisoformat(
+        metadata["recordingEndTime"].replace("Z", "+00:00")
+    )
+
+    recording = Recording(
+        id=recording_id,
+        project_id=project_id,
+        created_by_id=user_id,
+        name=metadata.get("annotations", {}).get(
+            "description", f"Recording {recording_id[:8]}"
+        ),
+        description=metadata.get("annotations", {}).get("description"),
+        tags=metadata.get("annotations", {}).get("tags", []),
+        recording_start_time=start_time,
+        recording_end_time=end_time,
+        duration_ms=metadata["duration"],
+        recorder_name=metadata["recorder"]["name"],
+        recorder_version=metadata["recorder"].get("version"),
+        recorder_platform=metadata["recorder"]["platform"],
+        screen_width=metadata["system"]["screenResolution"]["width"],
+        screen_height=metadata["system"]["screenResolution"]["height"],
+        screen_dpi=metadata["system"].get("dpi"),
+        os_name=metadata["system"].get("os"),
+        os_version=metadata["system"].get("osVersion"),
+        locale=metadata["system"].get("locale"),
+        app_name=metadata["targetApplication"]["name"],
+        app_version=metadata["targetApplication"].get("version"),
+        app_type=metadata["targetApplication"]["type"],
+        app_url=metadata["targetApplication"].get("url"),
+        frame_rate=metadata["frameRate"],
+        total_frames=metadata["totalFrames"],
+        total_interactions=len(interactions),
+        total_context_events=len(context_events),
+        s3_bucket=(
+            storage.backend.bucket_name
+            if hasattr(storage.backend, "bucket_name")
+            else None
+        ),
+        s3_prefix=s3_prefix,
+        upload_size_bytes=len(json_content),
+        status=RecordingStatus.UPLOADED,
+        validation_warnings=warnings,
+    )
+
+    db.add(recording)
+
+    # Process frames if provided
+    import base64
+
+    for frame_data in frames_data:
+        frame_number = frame_data.get("frameNumber")
+        if frame_number is None:
+            logger.warning("Frame missing frameNumber, skipping")
+            continue
+
+        # Decode base64 image data
+        image_data_b64 = frame_data.get("imageData")
+        if not image_data_b64:
+            logger.warning(f"Frame {frame_number} missing imageData, skipping")
+            continue
+
+        try:
+            image_bytes = base64.b64decode(image_data_b64)
+        except Exception as e:
+            logger.warning(f"Failed to decode frame {frame_number}: {str(e)}")
+            continue
+
+        # Get format or default to png
+        format_ext = frame_data.get("format", "png")
+        filename = f"frame_{frame_number:04d}.{format_ext}"
+        frame_key = f"{s3_prefix}/frames/{filename}"
+
+        # Upload to S3
+        storage.backend.upload_file(
+            io.BytesIO(image_bytes),
+            frame_key,
+            content_type=mimetypes.guess_type(filename)[0] or "image/png",
+        )
+
+        # Generate presigned URL
+        presigned_url = storage.generate_presigned_url(
+            frame_key, expiration=3600 * 24 * 7
+        )  # 7 days
+
+        # Calculate relative time
+        relative_time_ms = int((frame_number / metadata["frameRate"]) * 1000)
+        timestamp = start_time + timedelta(milliseconds=relative_time_ms)
+
+        # Create frame record
+        frame = RecordingFrame(
+            id=str(uuid.uuid4()),
+            recording_id=recording_id,
+            frame_number=frame_number,
+            timestamp=timestamp,
+            relative_time_ms=relative_time_ms,
+            s3_key=frame_key,
+            image_url=presigned_url,
+            url_expires_at=datetime.utcnow() + timedelta(days=7),
+            width=recording.screen_width,
+            height=recording.screen_height,
+            size_bytes=len(image_bytes),
+            format=format_ext,
+        )
+        db.add(frame)
+
+    # Create interaction records (same as ZIP format)
+    for interaction_data in interactions:
+        timestamp = datetime.fromisoformat(
+            interaction_data["timestamp"].replace("Z", "+00:00")
+        )
+
+        interaction = RecordingInteraction(
+            id=str(uuid.uuid4()),
+            recording_id=recording_id,
+            timestamp=timestamp,
+            relative_time_ms=interaction_data["relativeTime"],
+            frame_number=interaction_data.get("frameNumber"),
+            interaction_type=interaction_data["type"],
+            action=interaction_data.get("action"),
+            x=interaction_data.get("coordinates", {}).get("x"),
+            y=interaction_data.get("coordinates", {}).get("y"),
+            button=interaction_data.get("button"),
+            click_count=interaction_data.get("clickCount", 1),
+            start_x=interaction_data.get("startCoordinates", {}).get("x"),
+            start_y=interaction_data.get("startCoordinates", {}).get("y"),
+            end_x=interaction_data.get("endCoordinates", {}).get("x"),
+            end_y=interaction_data.get("endCoordinates", {}).get("y"),
+            drag_path=interaction_data.get("path"),
+            key=interaction_data.get("key"),
+            key_code=interaction_data.get("keyCode"),
+            char=interaction_data.get("char"),
+            text=interaction_data.get("text"),
+            modifiers=interaction_data.get("metadata", {}).get("modifiers", []),
+            is_combo=interaction_data.get("metadata", {}).get("isCombo", False),
+            scroll_delta_x=interaction_data.get("delta", {}).get("x"),
+            scroll_delta_y=interaction_data.get("delta", {}).get("y"),
+            scroll_direction=interaction_data.get("direction"),
+            hover_duration_ms=interaction_data.get("hoverDuration"),
+            hover_triggered=interaction_data.get("hoverTriggered"),
+            target_element=interaction_data.get("targetElement"),
+            duration_ms=interaction_data.get("metadata", {}).get("duration"),
+            metadata=interaction_data.get("metadata"),
+        )
+        db.add(interaction)
+
+    # Create context event records (same as ZIP format)
+    for context_data in context_events:
+        timestamp = datetime.fromisoformat(
+            context_data["timestamp"].replace("Z", "+00:00")
+        )
+
+        context = RecordingContext(
+            id=str(uuid.uuid4()),
+            recording_id=recording_id,
+            timestamp=timestamp,
+            relative_time_ms=context_data["relativeTime"],
+            frame_number=context_data.get("frameNumber"),
+            event_type=context_data["eventType"],
+            window_title=context_data.get("windowInfo", {}).get("title"),
+            process_name=context_data.get("windowInfo", {}).get("processName"),
+            process_id=context_data.get("windowInfo", {}).get("processId"),
+            window_bounds=context_data.get("windowInfo", {}).get("bounds"),
+            window_state=context_data.get("windowInfo", {}).get("state"),
+            window_z_index=context_data.get("windowInfo", {}).get("zIndex"),
+            is_modal=context_data.get("windowInfo", {}).get("isModal"),
+            previous_window=context_data.get("previousWindow"),
+            url=context_data.get("webContext", {}).get("url"),
+            previous_url=context_data.get("webContext", {}).get("previousUrl"),
+            page_title=context_data.get("webContext", {}).get("title"),
+            domain=context_data.get("webContext", {}).get("domain"),
+            pathname=context_data.get("webContext", {}).get("pathname"),
+            navigation_type=context_data.get("webContext", {}).get("navigation"),
+            load_time_ms=context_data.get("webContext", {}).get("loadTime"),
+            load_complete=context_data.get("webContext", {}).get("loadComplete"),
+            focused_element=context_data.get("focusedElement"),
+            previous_focus=context_data.get("previousFocus"),
+            app_state=context_data.get("appState"),
+            cpu_usage=context_data.get("performance", {}).get("cpuUsage"),
+            memory_usage=context_data.get("performance", {}).get("memoryUsage"),
+            network_activity=context_data.get("performance", {}).get("networkActivity"),
+            is_loading=context_data.get("performance", {}).get("isLoading"),
+            metadata=context_data.get("metadata"),
+            description=context_data.get("description"),
+        )
+        db.add(context)
+
+    await db.commit()
+    await db.refresh(recording)
+
+    return recording, metadata
+
+
 async def extract_zip_recording(
     zip_file: UploadFile,
     project_id: str,
@@ -388,10 +638,8 @@ async def upload_recording(
                 file, project_id, str(current_user.id), db
             )
         elif file.filename.endswith(".json"):
-            # TODO: Implement JSON format support
-            raise HTTPException(
-                status_code=400,
-                detail="JSON format not yet implemented. Please use ZIP format.",
+            recording, metadata = await extract_json_recording(
+                file, project_id, str(current_user.id), db
             )
         else:
             raise HTTPException(
@@ -828,7 +1076,52 @@ async def delete_recording(
         raise HTTPException(status_code=404, detail="Recording not found")
 
     # Delete S3 files
-    # TODO: Implement S3 cleanup
+    storage = object_storage
+    if recording.s3_prefix and isinstance(storage.backend, type(storage.backend)):
+        try:
+            # Only S3Backend supports list_objects_v2 for bulk deletion
+            from app.services.object_storage import S3Backend
+
+            if isinstance(storage.backend, S3Backend):
+                # List all objects with the recording's prefix
+                response = storage.backend.client.list_objects_v2(
+                    Bucket=storage.backend.bucket_name, Prefix=recording.s3_prefix
+                )
+
+                # Delete all objects if any found
+                if "Contents" in response:
+                    deleted_count = 0
+                    for obj in response["Contents"]:
+                        key = obj["Key"]
+                        if storage.delete_file(key):
+                            deleted_count += 1
+
+                    logger.info(
+                        "recording_s3_files_deleted",
+                        recording_id=recording_id,
+                        prefix=recording.s3_prefix,
+                        deleted_count=deleted_count,
+                    )
+                else:
+                    logger.info(
+                        "no_s3_files_found",
+                        recording_id=recording_id,
+                        prefix=recording.s3_prefix,
+                    )
+            else:
+                logger.warning(
+                    "s3_cleanup_skipped",
+                    backend_type=type(storage.backend).__name__,
+                    message="Bulk delete not supported for this backend",
+                )
+        except Exception as e:
+            # Log error but don't fail the deletion - database cleanup is more important
+            logger.error(
+                "s3_cleanup_failed",
+                recording_id=recording_id,
+                error=str(e),
+                note="Continuing with database deletion",
+            )
 
     # Delete database record (cascades to all related records)
     await db.delete(recording)

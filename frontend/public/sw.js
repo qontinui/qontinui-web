@@ -7,7 +7,7 @@
  * - Push notifications (future)
  */
 
-const CACHE_NAME = 'qontinui-v1';
+const CACHE_NAME = 'qontinui-v2';
 const SYNC_TAG = 'sync-screenshots';
 
 // Assets to cache for offline use

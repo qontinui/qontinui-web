@@ -62,7 +62,7 @@ class AutomationInputEvent(Base):
         Enum(InputEventType, name="input_event_type_enum", native_enum=True),
         nullable=False,
     )  # PostgreSQL enum: mouse.clicked, mouse.moved, mouse.dragged, keyboard.text_typed
-    timestamp = Column(TIMESTAMP, nullable=False)
+    timestamp = Column(TIMESTAMP, nullable=False)  # No timezone - part of partition key
 
     # Mouse event fields
     mouse_x = Column(Integer, nullable=True)
