@@ -93,7 +93,7 @@ def get_month_boundaries(year: int, month: int) -> tuple[datetime, datetime]:
     """
     start_date = datetime(year, month, 1)
     # Get last day of the month
-    last_day = calendar.monthrange(year, month)[1]
+    calendar.monthrange(year, month)[1]
     # End date is the first day of next month for range partitioning
     if month == 12:
         end_date = datetime(year + 1, 1, 1)

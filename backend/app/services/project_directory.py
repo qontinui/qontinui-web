@@ -398,7 +398,7 @@ class ProjectDirectoryManager:
             return 0
 
         total_size = 0
-        for dirpath, dirnames, filenames in os.walk(project_root):
+        for dirpath, _dirnames, filenames in os.walk(project_root):
             for filename in filenames:
                 filepath = Path(dirpath) / filename
                 try:
@@ -425,7 +425,7 @@ class ProjectDirectoryManager:
             return 0
 
         file_count = 0
-        for dirpath, dirnames, filenames in os.walk(project_root):
+        for _dirpath, _dirnames, filenames in os.walk(project_root):
             file_count += len(filenames)
 
         return file_count

@@ -141,7 +141,7 @@ class ExportImportService:
 
             for action in workflow["actions"]:
                 if (
-                    not isinstance(action.get("position"), (list, tuple))
+                    not isinstance(action.get("position"), list | tuple)
                     or len(action.get("position", [])) != 2
                 ):
                     action["position"] = [0, 0]
@@ -180,7 +180,7 @@ class ExportImportService:
 
         existing_categories = set(existing.get("categories", []))
         new_categories = set(new.get("categories", []))
-        merged["categories"] = sorted(list(existing_categories | new_categories))
+        merged["categories"] = sorted(existing_categories | new_categories)
 
         merged["settings"] = self._deep_merge_dicts(
             existing.get("settings", {}), new.get("settings", {})

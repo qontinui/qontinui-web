@@ -347,7 +347,7 @@ class WebSocketManager:
         logger.info("websocket_manager_shutdown_started")
 
         # Cancel all listener tasks
-        for session_id, task in list(self.listeners.items()):
+        for _session_id, task in list(self.listeners.items()):
             task.cancel()
             try:
                 await task
@@ -356,7 +356,7 @@ class WebSocketManager:
 
         # Close all WebSocket connections
         total_closed = 0
-        for session_id, connections in list(self.connections.items()):
+        for _session_id, connections in list(self.connections.items()):
             for websocket in list(connections):
                 try:
                     await websocket.close(code=1001, reason="Server shutdown")

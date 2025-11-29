@@ -196,7 +196,7 @@ class StrokeWidthTextDetector(BaseRegionAnalyzer):
             curr_x, curr_y = float(x), float(y)
             max_steps = self.max_stroke_width
 
-            for step in range(max_steps):
+            for _step in range(max_steps):
                 curr_x += step_x
                 curr_y += step_y
 

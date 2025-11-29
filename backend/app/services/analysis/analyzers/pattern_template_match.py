@@ -247,7 +247,7 @@ class PatternTemplateMatchAnalyzer(BaseAnalyzer):
         result = []
 
         # Apply NMS to each screenshot separately
-        for screenshot_idx, elems in by_screenshot.items():
+        for _screenshot_idx, elems in by_screenshot.items():
             if not elems:
                 continue
 

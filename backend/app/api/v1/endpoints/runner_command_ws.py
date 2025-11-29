@@ -153,7 +153,7 @@ async def websocket_runner_command_endpoint(
 
         # Connect frontend to runner
         runner_connected = manager.is_runner_connected(connection_id)
-        connected = await manager.connect_frontend(connection_id, websocket, user.id)
+        await manager.connect_frontend(connection_id, websocket, user.id)
 
         logger.info(
             "frontend_runner_command_ws_connected",

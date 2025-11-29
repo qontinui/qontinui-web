@@ -195,7 +195,7 @@ class DatasetManager:
                 issues.append(f"Missing {len(missing_images)} image files")
 
             # Check for orphaned annotations
-            image_ids = set(img["id"] for img in dataset["images"])
+            image_ids = {img["id"] for img in dataset["images"]}
             orphaned_anns = []
             for ann in dataset["annotations"]:
                 if ann["image_id"] not in image_ids:
@@ -218,7 +218,7 @@ class DatasetManager:
 
             # Check for images without annotations
             images_without_anns = []
-            ann_image_ids = set(ann["image_id"] for ann in dataset["annotations"])
+            ann_image_ids = {ann["image_id"] for ann in dataset["annotations"]}
             for img in dataset["images"]:
                 if img["id"] not in ann_image_ids:
                     images_without_anns.append(img["id"])
@@ -296,7 +296,7 @@ class DatasetManager:
         num_images = len(images)
         num_train = int(num_images * train_ratio)
         num_val = int(num_images * val_ratio)
-        num_test = num_images - num_train - num_val
+        num_images - num_train - num_val
 
         # Split images
         train_images = images[:num_train]
@@ -350,7 +350,7 @@ class DatasetManager:
 
     def _create_split_dataset(self, source_dataset: dict, images: list[dict]) -> dict:
         """Create a dataset for a specific split."""
-        image_ids = set(img["id"] for img in images)
+        image_ids = {img["id"] for img in images}
 
         # Filter annotations
         annotations = [

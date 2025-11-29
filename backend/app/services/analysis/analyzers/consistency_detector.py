@@ -305,7 +305,7 @@ class ConsistencyDetector(BaseAnalyzer):
             pattern_template = self._create_pattern_template(cluster)
 
             # Count unique screenshots
-            screenshot_indices = set(c[2] for c in cluster)
+            screenshot_indices = {c[2] for c in cluster}
 
             patterns.append(
                 {

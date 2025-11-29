@@ -252,7 +252,7 @@ class ButtonDatasetGenerator:
 
         elif style == "ghost":
             # Subtle background with border
-            bg_color = tuple(int(c * 0.15) for c in button_color) + (50,)
+            tuple(int(c * 0.15) for c in button_color) + (50,)
             self._draw_rounded_rectangle(
                 draw, x, y, x + width, y + height, radius, fill=button_color + (30,)
             )
@@ -401,7 +401,7 @@ class ButtonDatasetGenerator:
         annotations = []
         placed_buttons = []
 
-        for i in range(num_buttons):
+        for _i in range(num_buttons):
             # Button properties
             size_name = random.choice(list(self.SIZES.keys()))
             width, height = self.SIZES[size_name]
@@ -418,7 +418,7 @@ class ButtonDatasetGenerator:
 
             # Find non-overlapping position
             max_attempts = 50
-            for attempt in range(max_attempts):
+            for _attempt in range(max_attempts):
                 x = random.randint(20, img_width - width - 20)
                 y = random.randint(20, img_height - height - 20)
 

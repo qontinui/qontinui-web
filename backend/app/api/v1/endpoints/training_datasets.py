@@ -103,7 +103,7 @@ async def update_dataset_stats(db: AsyncSession, dataset_id: uuid.UUID) -> None:
         .where(
             and_(
                 TrainingDatasetImage.dataset_id == dataset_id,
-                TrainingDatasetImage.reviewed == True,
+                TrainingDatasetImage.reviewed is True,
             )
         )
     )
@@ -280,9 +280,9 @@ async def get_dataset_images(
     # Apply filters
     if review_status:
         if "reviewed" in review_status:
-            query = query.where(TrainingDatasetImage.reviewed == True)
+            query = query.where(TrainingDatasetImage.reviewed is True)
         elif "pending" in review_status:
-            query = query.where(TrainingDatasetImage.reviewed == False)
+            query = query.where(TrainingDatasetImage.reviewed is False)
 
     if search:
         query = query.where(

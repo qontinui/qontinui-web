@@ -259,7 +259,7 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "SECRET_KEY must be at least 32 characters in production"
                 )
-            warnings.warn("Using weak SECRET_KEY in development mode")
+            warnings.warn("Using weak SECRET_KEY in development mode", stacklevel=2)
         return v
 
     @field_validator(
@@ -274,7 +274,7 @@ class Settings(BaseSettings):
             if secret_key:
                 warnings.warn(
                     f"{info.field_name} not set, using SECRET_KEY as fallback. "
-                    "Consider setting unique secrets for production."
+                    "Consider setting unique secrets for production.", stacklevel=2
                 )
                 return cast(str, secret_key)
             raise ValueError(f"{info.field_name} or SECRET_KEY must be set")

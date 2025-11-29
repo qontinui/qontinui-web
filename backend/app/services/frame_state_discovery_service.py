@@ -233,7 +233,7 @@ class FrameStateDiscoveryService:
             try:
                 # Crop region from representative image
                 x, y, w, h = region["x"], region["y"], region["width"], region["height"]
-                cropped = representative_image.crop((x, y, x + w, y + h))
+                representative_image.crop((x, y, x + w, y + h))
 
                 # Calculate if this element appears in other clusters (shared)
                 is_shared = self._is_shared_element(region, all_frames, cluster_frames)
@@ -283,7 +283,7 @@ class FrameStateDiscoveryService:
         """Check if a region appears in frames outside this cluster"""
         # Simplified: assume element is shared if it's in top-left corner
         # (like logos, headers)
-        x, y = region["x"], region["y"]
+        _x, y = region["x"], region["y"]
         if y < 100:  # Top 100 pixels
             return True
         return False
@@ -554,8 +554,8 @@ class FrameStateDiscoveryService:
     ) -> float:
         """Calculate similarity between two states"""
         # Compare state images
-        images1 = set(img["name"] for img in state1.get("state_images", []))
-        images2 = set(img["name"] for img in state2.get("state_images", []))
+        images1 = {img["name"] for img in state1.get("state_images", [])}
+        images2 = {img["name"] for img in state2.get("state_images", [])}
 
         if not images1 and not images2:
             return 0.0

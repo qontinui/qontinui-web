@@ -243,7 +243,7 @@ class StateDiscoveryFacade:
 
         # Convert screenshots to frames format expected by advanced algorithm
         frames_data = []
-        for idx, screenshot in enumerate(screenshots):
+        for _idx, screenshot in enumerate(screenshots):
             frame_data = {
                 "id": str(screenshot.id),
                 "s3_key": screenshot.storage_path,
@@ -270,7 +270,7 @@ class StateDiscoveryFacade:
         # Generate hashes and cluster
         clusters: dict[int, list[dict[str, Any]]] = {}
         cluster_id = 0
-        threshold = config.get("similarity_threshold", 0.85)
+        config.get("similarity_threshold", 0.85)
 
         for frame in frames_data:
             # Simple clustering: each significant visual change is a new cluster

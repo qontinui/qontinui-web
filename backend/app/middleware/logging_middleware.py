@@ -41,7 +41,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         # Extract request context
         method = request.method
         path = request.url.path
-        query_params = str(request.url.query) if request.url.query else None
+        str(request.url.query) if request.url.query else None
         ip_address = self._get_client_ip(request)
 
         # Skip health check logging (too noisy)

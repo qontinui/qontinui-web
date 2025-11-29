@@ -174,7 +174,7 @@ class StateMatchingService:
                 "state_matches_created",
                 screenshot_id=str(screenshot_id),
                 match_count=len(matches),
-                unique_states=len(set(m.state_identifier for m in matches)),
+                unique_states=len({m.state_identifier for m in matches}),
             )
 
         return matches

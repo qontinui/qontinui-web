@@ -24,7 +24,7 @@ class ConvBlock(nn.Module):
         stride: int = 1,
         padding: int = 1,
     ):
-        super(ConvBlock, self).__init__()
+        super().__init__()
         self.conv = nn.Conv2d(
             in_channels,
             out_channels,
@@ -72,7 +72,7 @@ class ButtonCNN(nn.Module):
             pretrained: Use pretrained ImageNet weights (for backbone)
             dropout: Dropout rate for regularization
         """
-        super(ButtonCNN, self).__init__()
+        super().__init__()
 
         self.num_button_types = num_button_types
         self.architecture = architecture

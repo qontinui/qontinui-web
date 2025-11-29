@@ -502,7 +502,7 @@ async def upload_screenshot(
 
     try:
         metadata_dict = json.loads(metadata)
-        screenshot_metadata = ScreenshotMetadata(**metadata_dict)
+        ScreenshotMetadata(**metadata_dict)
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -158,7 +158,7 @@ class PackageInstaller:
             await self._write_package_files(install_path, version, package)
 
             # 6. Record installation in database
-            installation = await self._record_installation(
+            await self._record_installation(
                 project_id, package_id, version_id, user_id, str(install_path)
             )
 

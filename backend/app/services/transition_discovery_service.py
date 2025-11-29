@@ -427,8 +427,8 @@ class TransitionDiscoveryService:
         Returns:
             Dict with multi-state info
         """
-        from_images = set(img["name"] for img in from_state.get("state_images", []))
-        to_images = set(img["name"] for img in to_state.get("state_images", []))
+        from_images = {img["name"] for img in from_state.get("state_images", [])}
+        to_images = {img["name"] for img in to_state.get("state_images", [])}
 
         # Check if to_state contains all from_state images + new ones
         if from_images and to_images and from_images.issubset(to_images):
@@ -516,8 +516,8 @@ class TransitionDiscoveryService:
         from_state = change["from_state"]
         to_state = change["to_state"]
 
-        from_images = set(img["name"] for img in from_state.get("state_images", []))
-        to_images = set(img["name"] for img in to_state.get("state_images", []))
+        from_images = {img["name"] for img in from_state.get("state_images", [])}
+        to_images = {img["name"] for img in to_state.get("state_images", [])}
 
         if from_images and to_images:
             overlap = len(from_images & to_images)

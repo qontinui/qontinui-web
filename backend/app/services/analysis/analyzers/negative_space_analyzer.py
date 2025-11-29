@@ -235,7 +235,7 @@ class NegativeSpaceAnalyzer(BaseAnalyzer):
             y = stats[label, cv2.CC_STAT_TOP]
             w = stats[label, cv2.CC_STAT_WIDTH]
             h = stats[label, cv2.CC_STAT_HEIGHT]
-            area = stats[label, cv2.CC_STAT_AREA]
+            stats[label, cv2.CC_STAT_AREA]
 
             # Size filter
             if not (params["min_area"] <= w * h <= params["max_area"]):

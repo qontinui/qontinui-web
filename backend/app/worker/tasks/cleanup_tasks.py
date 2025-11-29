@@ -500,7 +500,6 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
                 parquet_buffer.seek(0)
 
                 # Upload with retry
-                uploaded = False
                 for attempt in range(max_retries):
                     try:
                         object_storage.backend.upload_file(
@@ -525,7 +524,6 @@ async def cleanup_old_automation_data(ctx: dict[str, Any]) -> dict[str, Any]:
                             record_count=len(df),
                             attempt=attempt + 1,
                         )
-                        uploaded = True
                         break
                     except Exception as e:
                         logger.warning(
@@ -784,7 +782,6 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
                 parquet_buffer.seek(0)
 
                 # Upload with retry
-                uploaded = False
                 for attempt in range(max_retries):
                     try:
                         object_storage.backend.upload_file(
@@ -809,7 +806,6 @@ async def archive_old_analytics_to_s3(ctx: dict[str, Any]) -> dict[str, Any]:
                             record_count=len(df),
                             attempt=attempt + 1,
                         )
-                        uploaded = True
                         break
                     except Exception as e:
                         logger.warning(

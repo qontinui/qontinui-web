@@ -218,7 +218,7 @@ async def list_project_collaborators(
 ) -> Any:
     """List project collaborators."""
     # Verify access
-    project = await get_project_or_404(db, project_id)
+    await get_project_or_404(db, project_id)
     await verify_project_permission(db, project_id, current_user, "view")
 
     # Get all access entries with joined data

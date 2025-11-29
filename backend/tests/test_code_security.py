@@ -470,7 +470,7 @@ def obfuscated():
 def obfuscated():
     return chr(72) + chr(101) + chr(108) + chr(108) + chr(111)
 """
-        result = scanner.scan_code(code)
+        scanner.scan_code(code)
 
         # chr is not in blocked functions, but might be detected in obfuscation
         # This is a legitimate use case, so we don't strictly require obfuscation detection

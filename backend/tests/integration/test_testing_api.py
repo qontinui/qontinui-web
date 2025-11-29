@@ -393,7 +393,7 @@ class TestCoverageAPI:
     ):
         """Test retrieving coverage trends over time."""
         # Create multiple completed runs with different coverage
-        runs = await create_test_runs(
+        await create_test_runs(
             db_session,
             test_project,
             test_runner_connection,
