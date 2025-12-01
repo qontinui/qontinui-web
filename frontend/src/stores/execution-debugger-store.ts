@@ -473,8 +473,50 @@ export const useExecutionDebugger = create<ExecutionDebuggerStore>(
 
       if (!breakpoint) return false;
 
-      // TODO: Implement condition evaluation if condition is set
-      return true;
+      // If no condition is set, always break
+      if (!breakpoint.condition || breakpoint.condition.trim() === "") {
+        return true;
+      }
+
+      // Evaluate the condition with current variables
+      try {
+        const variables = get().context.variables;
+        const variableValues: Record<string, any> = {};
+
+        // Extract raw values from VariableValue objects
+        for (const [name, varValue] of Object.entries(variables)) {
+          variableValues[name] = varValue.value;
+        }
+
+        // Create a function that evaluates the condition
+        // The condition expression has access to all variables by name
+        const conditionFn = new Function(
+          ...Object.keys(variableValues),
+          `return (${breakpoint.condition});`
+        );
+
+        const result = conditionFn(...Object.values(variableValues));
+
+        get().addLog(
+          "debug",
+          "system",
+          `Breakpoint condition evaluated: ${breakpoint.condition} = ${result}`,
+          actionIndex,
+          { condition: breakpoint.condition, variables: variableValues, result }
+        );
+
+        return Boolean(result);
+      } catch (error) {
+        // If condition evaluation fails, log the error and don't break
+        get().addLog(
+          "error",
+          "system",
+          `Failed to evaluate breakpoint condition: ${error instanceof Error ? error.message : String(error)}`,
+          actionIndex,
+          { condition: breakpoint.condition, error }
+        );
+        return false;
+      }
     },
 
     play: () => {
