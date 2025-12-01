@@ -150,10 +150,6 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> dict[str, Any]:
     """
     Clean up old analytics events older than configured days.
 
-    Note: Since AnalyticsEvent model doesn't exist yet, this is a placeholder
-    that will return success with 0 deletions. Update this function when the
-    AnalyticsEvent model is implemented.
-
     Args:
         ctx: ARQ context
 
@@ -164,28 +160,31 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> dict[str, Any]:
     logger.info("cleanup_old_analytics_events_started")
 
     try:
-        # TODO: Implement when AnalyticsEvent model exists
-        # from sqlalchemy import delete
-        # from app.models.analytics_event import AnalyticsEvent
-        #
-        # days_to_keep = settings.CLEANUP_ANALYTICS_DAYS
-        # cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
-        #
-        # async with AsyncSessionLocal() as db:
-        #     delete_stmt = delete(AnalyticsEvent).where(
-        #         AnalyticsEvent.created_at < cutoff_date
-        #     )
-        #     result = await db.execute(delete_stmt)
-        #     deleted_count = result.rowcount
-        #     await db.commit()
+        from sqlalchemy import delete
 
-        deleted_count = 0
+        from app.db.session import AsyncSessionLocal
+        from app.models.analytics_event import AnalyticsEvent
+
+        # Use configured cleanup days
+        days_to_keep = settings.CLEANUP_ANALYTICS_DAYS
+        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+
+        async with AsyncSessionLocal() as db:
+            # Delete analytics events older than cutoff date
+            delete_stmt = delete(AnalyticsEvent).where(
+                AnalyticsEvent.timestamp < cutoff_date
+            )
+            result = await db.execute(delete_stmt)
+            deleted_count = result.rowcount or 0  # type: ignore[attr-defined]
+
+            await db.commit()
+
         execution_time = time.time() - start_time
 
         logger.info(
             "cleanup_old_analytics_events_completed",
             deleted_count=deleted_count,
-            note="AnalyticsEvent model not yet implemented",
+            days_to_keep=days_to_keep,
             execution_time_seconds=round(execution_time, 2),
         )
 
@@ -193,7 +192,7 @@ async def cleanup_old_analytics_events(ctx: dict[str, Any]) -> dict[str, Any]:
             "status": "success",
             "task": "cleanup_old_analytics_events",
             "deleted_count": deleted_count,
-            "note": "AnalyticsEvent model not yet implemented",
+            "days_to_keep": days_to_keep,
             "execution_time_seconds": round(execution_time, 2),
             "timestamp": datetime.utcnow().isoformat(),
         }
