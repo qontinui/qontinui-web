@@ -374,13 +374,24 @@ export class CodePackageService {
   /**
    * Uninstall a package from a project
    */
-  async uninstallPackage(installationId: string): Promise<void> {
-    // Extract package_id and project_id from installation
-    // This is a limitation - we need to pass both to the API
-    // For now, we'll need to change the signature or store this info
-    throw new Error(
-      "Uninstall requires package_id and project_id - API limitation"
+  async uninstallPackage(
+    packageId: string,
+    projectId: string
+  ): Promise<void> {
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/marketplace/packages/${packageId}/uninstall`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          package_id: projectId, // API expects project_id here (naming issue in backend)
+        }),
+      }
     );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || "Failed to uninstall package");
+    }
   }
 
   /**
