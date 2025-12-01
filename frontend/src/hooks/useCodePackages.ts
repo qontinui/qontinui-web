@@ -109,8 +109,11 @@ const packageApi = {
     return codePackageService.installPackage(data);
   },
 
-  async uninstallPackage(installationId: string): Promise<void> {
-    return codePackageService.uninstallPackage(installationId);
+  async uninstallPackage(
+    packageId: string,
+    projectId: string
+  ): Promise<void> {
+    return codePackageService.uninstallPackage(packageId, projectId);
   },
 
   async getRatings(packageId: string): Promise<PackageRating[]> {
@@ -368,11 +371,22 @@ export function useUninstallPackage() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (installationId: string) =>
-      packageApi.uninstallPackage(installationId),
-    onSuccess: (_data, _variables, context: any) => {
-      // Invalidate all installed package queries
-      queryClient.invalidateQueries({ queryKey: packageKeys.all });
+    mutationFn: ({
+      packageId,
+      projectId,
+    }: {
+      packageId: string;
+      projectId: string;
+    }) => packageApi.uninstallPackage(packageId, projectId),
+    onSuccess: (_data, variables) => {
+      // Invalidate installed packages for this project
+      queryClient.invalidateQueries({
+        queryKey: packageKeys.installed(variables.projectId),
+      });
+      // Also invalidate package details to update install count if shown
+      queryClient.invalidateQueries({
+        queryKey: packageKeys.detail(variables.packageId),
+      });
     },
   });
 }
