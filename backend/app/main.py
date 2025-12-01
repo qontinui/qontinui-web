@@ -60,29 +60,34 @@ if settings.RATE_LIMIT_ENABLED:
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore
 
 # Add trusted host middleware for production
-# TEMPORARILY DISABLED: TrustedHostMiddleware blocks ELB health checks from internal IPs
-# TODO: Re-enable with proper configuration after fixing health check Host headers
-# DESIGN DECISION NEEDED:
-# 1. Configure ELB to send proper Host header in health checks OR
-# 2. Create a separate /health endpoint that bypasses TrustedHostMiddleware OR
-# 3. Configure TrustedHostMiddleware to allow internal AWS IP ranges OR
-# 4. Use AWS ALB target health checks with proper headers
-# Current issue: ELB health checks use internal IPs as Host header, which TrustedHostMiddleware rejects
-# Security consideration: Disabling TrustedHostMiddleware opens potential Host header injection vulnerabilities
-# if settings.ENVIRONMENT == "production":
-#     app.add_middleware(
-#         TrustedHostMiddleware,
-#         allowed_hosts=[
-#             "qontinui.io",
-#             "www.qontinui.io",
-#             "api.qontinui.io",  # API subdomain for backend
-#             "qontinui.com",
-#             "www.qontinui.com",
-#             "app.qontinui.com",
-#             "qontinui-prod-py.eba-km2u4s23.eu-central-1.elasticbeanstalk.com",  # ELB hostname
-#             "*.elasticbeanstalk.com",  # ELB health checks
-#         ],
-#     )
+# Custom implementation that exempts health check endpoints from host validation
+# This allows AWS ELB health checks (which use internal IPs) to pass while still
+# protecting against Host header injection attacks on all other endpoints
+if settings.ENVIRONMENT == "production":
+    from app.middleware.trusted_host import TrustedHostMiddleware
+
+    # Default production hosts if not configured via environment variable
+    allowed_hosts = settings.ALLOWED_HOSTS or [
+        "qontinui.io",
+        "www.qontinui.io",
+        "api.qontinui.io",
+        "qontinui.com",
+        "www.qontinui.com",
+        "app.qontinui.com",
+        "qontinui-prod-py.eba-km2u4s23.eu-central-1.elasticbeanstalk.com",
+        "*.elasticbeanstalk.com",
+    ]
+
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=allowed_hosts,
+        exempt_paths=["/health"],  # Allow health checks without host validation
+    )
+    logger.info(
+        "trusted_host_middleware_enabled",
+        allowed_hosts=allowed_hosts,
+        exempt_paths=["/health"],
+    )
 
 # Set up CORS
 # TEMPORARY FIX: Hardcode for production while debugging env var parsing

@@ -248,6 +248,26 @@ class Settings(BaseSettings):
         description="Maximum number of queries per request before warning (N+1 detection)",
     )
 
+    # Allowed hosts for TrustedHostMiddleware
+    ALLOWED_HOSTS: list[str] = Field(
+        default=[],
+        description="Allowed hosts for TrustedHostMiddleware in production. Empty list uses defaults.",
+    )
+
+    @field_validator("ALLOWED_HOSTS", mode="before")
+    @classmethod
+    def parse_allowed_hosts(cls, v: str | list[str]) -> list[str]:
+        """Parse allowed hosts from string or list format."""
+        if isinstance(v, str) and not v:
+            return []
+        if isinstance(v, str) and v.startswith("["):
+            return cast(list[str], json.loads(v))
+        if isinstance(v, str):
+            return [h.strip() for h in v.split(",")]
+        if isinstance(v, list):
+            return v
+        return []
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str, info: Any) -> str:
