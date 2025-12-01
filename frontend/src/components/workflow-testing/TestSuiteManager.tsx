@@ -150,11 +150,30 @@ export function TestSuiteManager({
         suite.testCaseIds.includes(tc.id)
       );
 
-      // TODO: Get actual pass rate from test results
-      // For now, return mock data
+      // Calculate actual pass rate from test results
+      let passedCount = 0;
+      let totalWithResults = 0;
+
+      suiteTestCases.forEach((testCase) => {
+        // Get the most recent test result for each test case
+        const testResults = testCase.metadata?.testResults as any[] | undefined;
+        if (testResults && testResults.length > 0) {
+          const latestResult = testResults[0]; // Results are stored most recent first
+          totalWithResults++;
+          if (latestResult.passed) {
+            passedCount++;
+          }
+        }
+      });
+
+      // Calculate pass rate (0 if no test results exist)
+      const passRate = totalWithResults > 0
+        ? (passedCount / totalWithResults) * 100
+        : 0;
+
       return {
         totalTests: suiteTestCases.length,
-        passRate: 0,
+        passRate,
         lastRun: suite.metadata?.lastRun,
       };
     },
