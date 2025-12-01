@@ -8,3 +8,9 @@ user_projects/
 
 # Development logs (for Claude Code access)
 logs/
+
+# Dangerous utility scripts with credentials
+make_me_admin.py
+reset_my_password.py
+test_db.py
+*.credentials.py

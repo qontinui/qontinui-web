@@ -1,9 +1,8 @@
-"""
-Code execution API endpoints.
+"""Code execution API endpoints for inline Python code and custom functions."""
 
-Provides endpoints for executing inline Python code blocks and custom functions
-within automation workflows.
-"""
+import os
+import re
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +17,47 @@ from app.services.code_execution_service import (
 )
 
 router = APIRouter()
+
+
+def _get_safe_project_root(project_id: str | None) -> Path:
+    """Get a safe project root path, validating against path traversal attacks."""
+    # Use test project root if set
+    test_project_root = os.getenv("TEST_PROJECT_ROOT")
+    if test_project_root:
+        return Path(test_project_root)
+
+    # Sanitize project_id to prevent path traversal
+    safe_project_id = project_id or "default"
+
+    # Check for path traversal attempts
+    if ".." in safe_project_id or "/" in safe_project_id or "\\" in safe_project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project_id: contains path traversal characters",
+        )
+
+    # Only allow alphanumeric, underscore, hyphen, and UUID patterns
+    if not re.match(r"^[a-zA-Z0-9_-]+$", safe_project_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project_id: must contain only alphanumeric, "
+            "underscores, and hyphens",
+        )
+
+    base_dir = Path.cwd() / "user_projects"
+    project_root = base_dir / safe_project_id
+
+    # Resolve to absolute path and verify it's under user_projects
+    resolved_root = project_root.resolve()
+    resolved_base = base_dir.resolve()
+
+    if not str(resolved_root).startswith(str(resolved_base)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project_id: path traversal detected",
+        )
+
+    return project_root
 
 
 @router.post("/execute", response_model=CodeExecutionResult)
@@ -297,24 +337,9 @@ async def list_python_files(
             "count": 2
         }
     """
-    import os
-    from pathlib import Path
-
     from app.services.file_loader import PythonFileLoader
 
-    # TODO: Get project root from project_id when project model is available
-    # DESIGN DECISION NEEDED:
-    # 1. Add a 'project_root_path' field to the Project model to store filesystem path
-    # 2. Define project directory structure convention (e.g., /workspace/{project_id}/)
-    # 3. Implement project workspace initialization during project creation
-    # 4. Add validation to ensure project_root exists and is accessible
-    # Current implementation: Uses user_projects/{project_id} directory
-    # Support TEST_PROJECT_ROOT for testing
-    test_project_root = os.getenv("TEST_PROJECT_ROOT")
-    if test_project_root:
-        project_root = Path(test_project_root)
-    else:
-        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+    project_root = _get_safe_project_root(project_id)
 
     try:
         loader = PythonFileLoader(project_root=project_root)
@@ -360,19 +385,9 @@ async def validate_file_path(
             "size_bytes": 1234
         }
     """
-    import os
-    from pathlib import Path
-
     from app.services.file_loader import FilePathValidator
 
-    # TODO: Get project root from project_id
-    # See design notes in list_python_files endpoint above
-    # Support TEST_PROJECT_ROOT for testing
-    test_project_root = os.getenv("TEST_PROJECT_ROOT")
-    if test_project_root:
-        project_root = Path(test_project_root)
-    else:
-        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+    project_root = _get_safe_project_root(project_id)
 
     try:
         validator = FilePathValidator()
@@ -418,19 +433,9 @@ async def load_file_content(
             "cached": false
         }
     """
-    import os
-    from pathlib import Path
-
     from app.services.file_loader import PythonFileLoader
 
-    # TODO: Get project root from project_id
-    # See design notes in list_python_files endpoint above
-    # Support TEST_PROJECT_ROOT for testing
-    test_project_root = os.getenv("TEST_PROJECT_ROOT")
-    if test_project_root:
-        project_root = Path(test_project_root)
-    else:
-        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+    project_root = _get_safe_project_root(project_id)
 
     try:
         loader = PythonFileLoader(project_root=project_root)
@@ -481,19 +486,9 @@ async def execute_file_code(
     Returns:
         CodeExecutionResult with execution status and result
     """
-    import os
-    from pathlib import Path
-
     from app.services.file_loader import PythonFileLoader
 
-    # TODO: Get project root from project_id
-    # See design notes in list_python_files endpoint above
-    # Support TEST_PROJECT_ROOT for testing
-    test_project_root = os.getenv("TEST_PROJECT_ROOT")
-    if test_project_root:
-        project_root = Path(test_project_root)
-    else:
-        project_root = Path.cwd() / "user_projects" / (project_id or "default")
+    project_root = _get_safe_project_root(project_id)
 
     try:
         # Load file content
