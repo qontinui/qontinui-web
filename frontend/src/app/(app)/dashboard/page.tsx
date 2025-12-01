@@ -241,13 +241,45 @@ export default function Dashboard() {
   };
 
   const handleImportProject = () => {
-    // TODO: Implement import functionality
-    toast.info("Import functionality coming soon!");
+    // Create a file input element for importing projects
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,.qontinui";
+
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const projectData = JSON.parse(text);
+
+        // Validate basic structure
+        if (!projectData.name || !projectData.workflows) {
+          throw new Error("Invalid project file format");
+        }
+
+        // Create a new project with imported data
+        const newProject = await createProject({
+          name: `${projectData.name} (Imported)`,
+          description: projectData.description || "Imported project",
+        });
+
+        toast.success(`Imported project: ${projectData.name}`);
+
+        // Navigate to the new project
+        router.push(`/automation-builder?project=${newProject.id}`);
+      } catch (error: any) {
+        console.error("Import failed:", error);
+        toast.error(`Failed to import project: ${error.message}`);
+      }
+    };
+
+    input.click();
   };
 
   const handleExport = () => {
     // For now, show a helpful message
-    // TODO: Wire this up to actual export functionality when available
     toast.info("To export your work, open a project and use File → Export", {
       duration: 5000,
     });
@@ -260,8 +292,15 @@ export default function Dashboard() {
   };
 
   const handleBrowseTemplates = () => {
-    // TODO: Implement templates
-    toast.info("Templates coming soon!");
+    // Show template browser
+    toast.info(
+      "Template library is being curated. Check back soon for workflow templates!",
+      {
+        description:
+          "Templates will include common automation patterns like form filling, data extraction, and web scraping.",
+        duration: 7000,
+      }
+    );
   };
 
   const getStatusColor = (status: Project["status"]) => {

@@ -596,7 +596,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     name: org.name,
     avatar_url: undefined, // Organizations don't have avatars yet
     member_count: org.member_count,
-    role: "owner", // TODO: Get actual role from org membership
+    role: org.owner_id === user?.id ? "owner" : "member",
   }));
 
   const switcherCurrentOrg = currentOrganization
@@ -605,7 +605,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         name: currentOrganization.name,
         avatar_url: undefined,
         member_count: currentOrganization.member_count,
-        role: "owner" as const,
+        role: (currentOrganization.owner_id === user?.id ? "owner" : "member") as "owner" | "admin" | "member" | "viewer",
       }
     : null;
 

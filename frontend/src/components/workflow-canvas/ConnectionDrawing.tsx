@@ -163,7 +163,7 @@ export function useConnectionDrawing() {
     validTargets: new Set(),
   });
 
-  const { startConnecting, cancelConnecting, finishConnecting } =
+  const { startConnecting, cancelConnecting, finishConnecting, workflow } =
     useCanvasStore();
 
   const startConnection = useCallback(
@@ -174,6 +174,17 @@ export function useConnectionDrawing() {
       outputType: "main" | "error" | "success" | "parallel" = "main",
       outputIndex: number = 0
     ) => {
+      // Calculate valid targets: all actions except the source itself
+      const validTargets = new Set<string>();
+      if (workflow) {
+        workflow.actions.forEach((action) => {
+          // Don't allow connecting to itself
+          if (action.id !== nodeId) {
+            validTargets.add(action.id);
+          }
+        });
+      }
+
       setState({
         active: true,
         sourceNodeId: nodeId,
@@ -182,12 +193,12 @@ export function useConnectionDrawing() {
         currentPosition: position,
         outputType,
         outputIndex,
-        validTargets: new Set(), // TODO: Calculate valid targets
+        validTargets,
       });
 
       startConnecting(nodeId, outputType, outputIndex);
     },
-    [startConnecting]
+    [startConnecting, workflow]
   );
 
   const updateConnection = useCallback((position: { x: number; y: number }) => {
