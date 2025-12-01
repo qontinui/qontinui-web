@@ -36,7 +36,7 @@ from app.api.v1.endpoints import (
     runner_command_ws,
     runner_status_ws,
     runners,
-    security,
+    security_endpoints,
     settings,
     snapshots,
     state_discovery,
@@ -108,7 +108,9 @@ api_router.include_router(
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(runners.router, prefix="/runners", tags=["runners"])
 api_router.include_router(versions.router, prefix="/projects", tags=["versions"])
-api_router.include_router(security.router, prefix="/security", tags=["security"])
+api_router.include_router(
+    security_endpoints.router, prefix="/security", tags=["security"]
+)
 api_router.include_router(variables.router, tags=["variables"])
 api_router.include_router(
     code_packages.router, prefix="/code-packages", tags=["code-packages"]

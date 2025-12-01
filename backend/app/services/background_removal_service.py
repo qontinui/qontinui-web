@@ -2,9 +2,12 @@
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
+
+if TYPE_CHECKING:
+    from qontinui.discovery.background_removal import BackgroundRemovalConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -21,6 +24,8 @@ else:
 
 class BackgroundRemovalService:
     """Service for removing backgrounds from screenshots using base64 strings."""
+
+    config: "BackgroundRemovalConfig | None"
 
     def __init__(self, config_dict: dict[str, Any] | None = None):
         """Initialize the background removal service."""
