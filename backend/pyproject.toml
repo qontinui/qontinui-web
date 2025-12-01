@@ -46,6 +46,7 @@ scikit-learn = "^1.7.2"
 pytesseract = "^0.3.13"
 scipy = "^1.11.0"
 imagehash = "^4.3.0"
+scikit-image = "^0.25.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
@@ -100,10 +101,12 @@ check_untyped_defs = true
 strict_equality = true
 ignore_missing_imports = true
 exclude = ["alembic", "migrations", "tests"]
-# Use package mode to properly resolve module names - run with: poetry run mypy --package app
+# Use package mode to properly resolve module names
+# Run with: MYPYPATH=stubs poetry run mypy app
 packages = ["app"]
 # Disable some noisy checks for gradual adoption
 warn_unreachable = false
+mypy_path = "stubs"
 
 [tool.ruff]
 line-length = 88

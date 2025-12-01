@@ -68,9 +68,7 @@ async def get_settings(
 
     Returns the settings from Redis or default settings if none exist.
     """
-    from qontinui.config.qontinui_properties import (
-        QontinuiProperties,  # type: ignore[import-not-found]
-    )
+    from qontinui.config.qontinui_properties import QontinuiProperties
 
     # Try to load from Redis
     try:
