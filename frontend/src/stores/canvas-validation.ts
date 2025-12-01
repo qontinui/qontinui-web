@@ -537,9 +537,58 @@ function detectUnreachableActions(workflow: Workflow): ValidationError[] {
 function validateVariableReferences(workflow: Workflow): ValidationError[] {
   const warnings: ValidationError[] = [];
 
-  // TODO: Implement variable reference validation
-  // This would require parsing action configs for variable references
-  // and checking against workflow.variables
+  // Build set of all available variables
+  const availableVariables = new Set<string>();
+
+  if (workflow.variables) {
+    if (workflow.variables.local) {
+      Object.keys(workflow.variables.local).forEach((v) =>
+        availableVariables.add(v)
+      );
+    }
+    if (workflow.variables.process) {
+      Object.keys(workflow.variables.process).forEach((v) =>
+        availableVariables.add(v)
+      );
+    }
+    if (workflow.variables.global) {
+      Object.keys(workflow.variables.global).forEach((v) =>
+        availableVariables.add(v)
+      );
+    }
+  }
+
+  // Regular expression to find variable references like ${variableName}
+  const variablePattern = /\$\{([^}]+)\}/g;
+
+  // Check each action's config for variable references
+  for (const action of workflow.actions) {
+    if (!action.config) continue;
+
+    // Convert config to JSON string to search for variable references
+    const configStr = JSON.stringify(action.config);
+    const matches = configStr.matchAll(variablePattern);
+
+    for (const match of matches) {
+      const varName = match[1];
+
+      // Check if variable exists
+      if (!availableVariables.has(varName)) {
+        warnings.push({
+          id: `undefined-variable-${action.id}-${varName}`,
+          actionId: action.id,
+          type: "variable",
+          severity: "warning",
+          message: `Action "${action.name || action.type}" references undefined variable: ${varName}`,
+          details: {
+            actionId: action.id,
+            variableName: varName,
+            availableVariables: Array.from(availableVariables),
+          },
+        });
+      }
+    }
+  }
 
   return warnings;
 }
@@ -551,9 +600,6 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
   const errors: ValidationError[] = [];
 
   for (const action of workflow.actions) {
-    // TODO: Implement config validation based on action type
-    // This would require schema validation for each action type
-
     // Basic validation: check if config exists
     if (!action.config) {
       errors.push({
@@ -564,6 +610,197 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
         message: `Action "${action.name || action.type}" is missing configuration`,
         details: { actionId: action.id },
       });
+      continue;
+    }
+
+    // Type-specific validation
+    const config = action.config as any;
+
+    switch (action.type) {
+      case "CLICK":
+      case "DOUBLE_CLICK":
+      case "RIGHT_CLICK":
+        if (!config.target && !config.position) {
+          errors.push({
+            id: `missing-target-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `${action.type} action "${action.name || action.id}" must have either a target or position`,
+            details: { actionId: action.id, actionType: action.type },
+          });
+        }
+        break;
+
+      case "TYPE":
+        if (!config.text && !config.variableRef) {
+          errors.push({
+            id: `missing-text-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `TYPE action "${action.name || action.id}" must have text or variableRef`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "WAIT":
+        if (!config.duration && !config.condition) {
+          errors.push({
+            id: `missing-wait-param-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `WAIT action "${action.name || action.id}" must have duration or condition`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "IF":
+        if (!config.condition) {
+          errors.push({
+            id: `missing-condition-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `IF action "${action.name || action.id}" must have a condition`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "SWITCH":
+        if (!config.value) {
+          errors.push({
+            id: `missing-switch-value-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `SWITCH action "${action.name || action.id}" must have a value to switch on`,
+            details: { actionId: action.id },
+          });
+        }
+        if (!config.cases || config.cases.length === 0) {
+          errors.push({
+            id: `missing-switch-cases-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "warning",
+            message: `SWITCH action "${action.name || action.id}" should have at least one case`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "LOOP":
+        if (!config.condition && !config.count && !config.items) {
+          errors.push({
+            id: `missing-loop-param-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `LOOP action "${action.name || action.id}" must have condition, count, or items`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "EXTRACT":
+        if (!config.target && !config.region) {
+          errors.push({
+            id: `missing-extract-target-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `EXTRACT action "${action.name || action.id}" must have target or region`,
+            details: { actionId: action.id },
+          });
+        }
+        if (!config.outputVariable) {
+          errors.push({
+            id: `missing-output-variable-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "warning",
+            message: `EXTRACT action "${action.name || action.id}" should specify outputVariable`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "SET_VARIABLE":
+        if (!config.variableName) {
+          errors.push({
+            id: `missing-variable-name-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `SET_VARIABLE action "${action.name || action.id}" must specify variableName`,
+            details: { actionId: action.id },
+          });
+        }
+        if (config.value === undefined && !config.expression) {
+          errors.push({
+            id: `missing-variable-value-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `SET_VARIABLE action "${action.name || action.id}" must have value or expression`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "ASSERT":
+        if (!config.condition && !config.expected) {
+          errors.push({
+            id: `missing-assertion-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `ASSERT action "${action.name || action.id}" must have condition or expected value`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "EXECUTE_CODE":
+        if (!config.code && !config.function) {
+          errors.push({
+            id: `missing-code-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `EXECUTE_CODE action "${action.name || action.id}" must have code or function`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
+
+      case "API_CALL":
+        if (!config.url) {
+          errors.push({
+            id: `missing-api-url-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "error",
+            message: `API_CALL action "${action.name || action.id}" must have url`,
+            details: { actionId: action.id },
+          });
+        }
+        if (!config.method) {
+          errors.push({
+            id: `missing-http-method-${action.id}`,
+            actionId: action.id,
+            type: "invalid_config",
+            severity: "warning",
+            message: `API_CALL action "${action.name || action.id}" should specify HTTP method (defaults to GET)`,
+            details: { actionId: action.id },
+          });
+        }
+        break;
     }
   }
 

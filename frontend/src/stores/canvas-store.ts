@@ -106,7 +106,7 @@ export interface CanvasActions {
   // Workflow management
   setWorkflow: (workflow: Workflow) => void;
   clearWorkflow: () => void;
-  saveWorkflow: () => Promise<void>;
+  saveWorkflow: (projectId?: string) => Promise<void>;
 
   // Action CRUD
   addAction: (action: Action) => void;
@@ -333,16 +333,44 @@ export const useCanvasStore = create<CanvasStore>()(
             });
           },
 
-          saveWorkflow: async () => {
+          saveWorkflow: async (projectId?: string) => {
             const workflow = get().workflow;
-            if (!workflow) return;
+            if (!workflow) {
+              throw new Error("No workflow to save");
+            }
 
-            // TODO: Implement actual save to backend
-            console.log("Saving workflow:", workflow);
+            if (!projectId) {
+              // If no projectId provided, just mark as clean (for local-only mode)
+              set((state) => {
+                state.isDirty = false;
+              });
+              return;
+            }
 
-            set((state) => {
-              state.isDirty = false;
-            });
+            try {
+              // Import API client dynamically to avoid circular dependencies
+              const { apiClient } = await import("@/lib/api-client");
+
+              // Get current project to merge workflow into configuration
+              const project = await apiClient.getProject(parseInt(projectId));
+
+              // Update project configuration with workflow
+              const updatedConfig = {
+                ...project.configuration,
+                workflow,
+              };
+
+              await apiClient.updateProject(parseInt(projectId), {
+                configuration: updatedConfig,
+              });
+
+              set((state) => {
+                state.isDirty = false;
+              });
+            } catch (error) {
+              console.error("Failed to save workflow:", error);
+              throw error;
+            }
           },
 
           // ========================================================================
@@ -861,9 +889,52 @@ export const useCanvasStore = create<CanvasStore>()(
           },
 
           fitView: () => {
-            // TODO: Implement actual fitView based on action positions
             set((state) => {
-              state.viewport = { x: 0, y: 0, zoom: 1 };
+              const workflow = state.workflow;
+              if (!workflow || workflow.actions.length === 0) {
+                state.viewport = { x: 0, y: 0, zoom: 1 };
+                return;
+              }
+
+              // Calculate bounding box of all actions
+              let minX = Infinity;
+              let minY = Infinity;
+              let maxX = -Infinity;
+              let maxY = -Infinity;
+
+              const NODE_WIDTH = 200;
+              const NODE_HEIGHT = 100;
+              const PADDING = 50;
+
+              for (const action of workflow.actions) {
+                const [x, y] = action.position;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x + NODE_WIDTH);
+                maxY = Math.max(maxY, y + NODE_HEIGHT);
+              }
+
+              // Calculate viewport dimensions (assume standard canvas size)
+              const viewportWidth = (typeof window !== 'undefined') ? window.innerWidth : 1920;
+              const viewportHeight = (typeof window !== 'undefined') ? window.innerHeight : 1080;
+
+              const contentWidth = maxX - minX + 2 * PADDING;
+              const contentHeight = maxY - minY + 2 * PADDING;
+
+              // Calculate zoom to fit content
+              const zoomX = viewportWidth / contentWidth;
+              const zoomY = viewportHeight / contentHeight;
+              const zoom = Math.min(zoomX, zoomY, 1); // Don't zoom in beyond 1x
+
+              // Calculate center position
+              const centerX = (minX + maxX) / 2;
+              const centerY = (minY + maxY) / 2;
+
+              // Calculate viewport offset to center the content
+              const x = viewportWidth / 2 - centerX * zoom;
+              const y = viewportHeight / 2 - centerY * zoom;
+
+              state.viewport = { x, y, zoom };
             });
           },
 
@@ -911,21 +982,19 @@ export const useCanvasStore = create<CanvasStore>()(
               return { valid: true, errors: [], warnings: [] };
             }
 
-            const errors: ValidationError[] = [];
-            const warnings: ValidationError[] = [];
+            // Import validation functions from canvas-validation
+            const { validateWorkflow: validate } = require("./canvas-validation");
 
-            // TODO: Implement comprehensive validation
-            // - Connection validity (output types match)
-            // - Cycle detection
-            // - Orphaned action detection
-            // - Missing connections (IF without true/false)
-            // - Variable references
-
-            const result: ValidationResult = {
-              valid: errors.length === 0,
-              errors,
-              warnings,
-            };
+            // Run comprehensive validation
+            const result = validate(workflow, {
+              checkCycles: true,
+              checkOrphaned: true,
+              checkMissingConnections: true,
+              checkInvalidConnections: true,
+              checkVariables: true,
+              checkConfigs: true,
+              checkUnreachable: true,
+            });
 
             set((state) => {
               state.validationResult = result;

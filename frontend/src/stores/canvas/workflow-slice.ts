@@ -54,16 +54,44 @@ export const createWorkflowSlice: StateCreator<
     });
   },
 
-  saveWorkflow: async () => {
+  saveWorkflow: async (projectId?: string) => {
     const workflow = get().workflow;
-    if (!workflow) return;
+    if (!workflow) {
+      throw new Error("No workflow to save");
+    }
 
-    // TODO: Implement actual save to backend
-    console.log("Saving workflow:", workflow);
+    if (!projectId) {
+      // If no projectId provided, just mark as clean (for local-only mode)
+      set((state) => {
+        state.isDirty = false;
+      });
+      return;
+    }
 
-    set((state) => {
-      state.isDirty = false;
-    });
+    try {
+      // Import API client dynamically to avoid circular dependencies
+      const { apiClient } = await import("@/lib/api-client");
+
+      // Get current project to merge workflow into configuration
+      const project = await apiClient.getProject(parseInt(projectId));
+
+      // Update project configuration with workflow
+      const updatedConfig = {
+        ...project.configuration,
+        workflow,
+      };
+
+      await apiClient.updateProject(parseInt(projectId), {
+        configuration: updatedConfig,
+      });
+
+      set((state) => {
+        state.isDirty = false;
+      });
+    } catch (error) {
+      console.error("Failed to save workflow:", error);
+      throw error;
+    }
   },
 
   validateWorkflow: () => {
@@ -72,21 +100,19 @@ export const createWorkflowSlice: StateCreator<
       return { valid: true, errors: [], warnings: [] };
     }
 
-    const errors: ValidationError[] = [];
-    const warnings: ValidationError[] = [];
+    // Import validation functions from canvas-validation
+    const { validateWorkflow: validate } = require("../../canvas-validation");
 
-    // TODO: Implement comprehensive validation
-    // - Connection validity (output types match)
-    // - Cycle detection
-    // - Orphaned action detection
-    // - Missing connections (IF without true/false)
-    // - Variable references
-
-    const result: ValidationResult = {
-      valid: errors.length === 0,
-      errors,
-      warnings,
-    };
+    // Run comprehensive validation
+    const result = validate(workflow, {
+      checkCycles: true,
+      checkOrphaned: true,
+      checkMissingConnections: true,
+      checkInvalidConnections: true,
+      checkVariables: true,
+      checkConfigs: true,
+      checkUnreachable: true,
+    });
 
     set((state) => {
       state.validationResult = result;
