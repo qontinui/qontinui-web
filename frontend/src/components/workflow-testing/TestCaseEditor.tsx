@@ -220,16 +220,104 @@ export function TestCaseEditor({
     onSave,
   ]);
 
-  const handleRun = React.useCallback(() => {
+  const handleRun = React.useCallback(async () => {
     if (!validate()) {
       return;
     }
     setIsRunning(true);
-    // TODO: Integrate with actual test runner
-    setTimeout(() => {
+
+    try {
+      // Build test case data
+      const testCaseData: TestCase = {
+        id: testCase?.id || `test-${Date.now()}`,
+        name,
+        description: description || undefined,
+        workflowId: workflow.id,
+        enabled,
+        config: {
+          inputs: inputVariables,
+          initialState: {
+            screenshots: initialScreenshots,
+            activeStates: initialStates,
+            variables: expectedVariables,
+          },
+          assertions,
+          expected: {
+            shouldSucceed,
+            finalActionId: expectedFinalAction || undefined,
+            maxDuration,
+          },
+          timeout,
+          tags,
+        },
+        metadata: {
+          ...testCase?.metadata,
+          created: testCase?.metadata?.created || new Date().toISOString(),
+          updated: new Date().toISOString(),
+        },
+      };
+
+      // Import the test runner API
+      const { runWorkflowTest } = await import("@/lib/api/workflow-testing");
+
+      // Get project ID from workflow or default
+      const projectId = (workflow as any).projectId || "default-project";
+
+      // Execute the test
+      const result = await runWorkflowTest(testCaseData, workflow, projectId);
+
+      // Store result in test case metadata
+      const existingResults =
+        (testCase?.metadata?.testResults as any[]) || [];
+      const updatedResults = [result, ...existingResults].slice(0, 100); // Keep last 100 results
+
+      // Update test case with result
+      testCaseData.metadata = {
+        ...testCaseData.metadata,
+        lastRun: result.endTime,
+        testResults: updatedResults,
+      };
+
+      // Show result notification
+      if (result.passed) {
+        console.log("Test passed!", result);
+        alert("Test passed! All assertions succeeded.");
+      } else {
+        console.error("Test failed!", result);
+        alert(
+          `Test failed: ${result.error || "Some assertions failed"}\n\nCheck console for details.`
+        );
+      }
+
+      // Save the updated test case
+      onSave(testCaseData);
+    } catch (error) {
+      console.error("Test execution failed:", error);
+      alert(
+        `Test execution failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    } finally {
       setIsRunning(false);
-    }, 2000);
-  }, [validate]);
+    }
+  }, [
+    validate,
+    testCase,
+    name,
+    description,
+    workflow,
+    enabled,
+    inputVariables,
+    initialScreenshots,
+    initialStates,
+    expectedVariables,
+    assertions,
+    shouldSucceed,
+    expectedFinalAction,
+    maxDuration,
+    timeout,
+    tags,
+    onSave,
+  ]);
 
   // Assertions handlers
   const addAssertion = React.useCallback(() => {
