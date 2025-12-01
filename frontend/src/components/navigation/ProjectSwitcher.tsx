@@ -1,13 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  FolderOpen,
-  Check,
-  ChevronsUpDown,
-  Plus,
-  Loader2,
-} from "lucide-react";
+import { FolderOpen, Check, ChevronsUpDown, Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

@@ -26,7 +26,9 @@ export default function DevResetPage() {
   const router = useRouter();
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [isClearing, setIsClearing] = useState(true);
-  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null); // null = no auto-redirect
+  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(
+    null
+  ); // null = no auto-redirect
 
   useEffect(() => {
     // Only run in development
@@ -54,7 +56,10 @@ export default function DevResetPage() {
         }
       }
 
-      const cookies = document.cookie.split(";").map(c => c.trim()).filter(Boolean);
+      const cookies = document.cookie
+        .split(";")
+        .map((c) => c.trim())
+        .filter(Boolean);
 
       // Clear localStorage
       localStorage.clear();
@@ -70,13 +75,17 @@ export default function DevResetPage() {
           method: "POST",
           credentials: "include",
         });
-        console.log("[DevReset] Logout endpoint called (HttpOnly cookies cleared)");
+        console.log(
+          "[DevReset] Logout endpoint called (HttpOnly cookies cleared)"
+        );
       } catch (e) {
-        console.log("[DevReset] Logout endpoint failed (may already be logged out)");
+        console.log(
+          "[DevReset] Logout endpoint failed (may already be logged out)"
+        );
       }
 
       // Clear any remaining accessible cookies
-      document.cookie.split(";").forEach(cookie => {
+      document.cookie.split(";").forEach((cookie) => {
         const name = cookie.split("=")[0].trim();
         document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       });
@@ -129,7 +138,9 @@ export default function DevResetPage() {
     <div className="min-h-screen bg-[#0A0A0B] text-white p-8">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-bold mb-2 text-[#00D9FF]">Dev Reset</h1>
-        <p className="text-gray-400 mb-8">Browser state cleared for debugging</p>
+        <p className="text-gray-400 mb-8">
+          Browser state cleared for debugging
+        </p>
 
         {isClearing ? (
           <div className="flex items-center gap-3">
@@ -141,10 +152,22 @@ export default function DevResetPage() {
             {/* Status */}
             <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-4 mb-6">
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                <svg
+                  className="w-5 h-5 text-green-500"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
                 </svg>
-                <span className="font-medium text-green-400">All browser state cleared successfully</span>
+                <span className="font-medium text-green-400">
+                  All browser state cleared successfully
+                </span>
               </div>
               <div className="flex items-center gap-3 mt-3">
                 <button
@@ -174,21 +197,26 @@ export default function DevResetPage() {
                 {/* localStorage (before clear) */}
                 <div>
                   <h3 className="text-md font-medium mb-2 text-[#BD00FF]">
-                    localStorage (was {Object.keys(debugInfo.localStorage).length} items)
+                    localStorage (was{" "}
+                    {Object.keys(debugInfo.localStorage).length} items)
                   </h3>
                   <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-48 overflow-y-auto">
                     {Object.keys(debugInfo.localStorage).length === 0 ? (
                       <span className="text-gray-500">Empty</span>
                     ) : (
                       <pre className="text-xs text-gray-300">
-                        {Object.entries(debugInfo.localStorage).map(([key, value]) => (
-                          <div key={key} className="mb-1">
-                            <span className="text-[#00D9FF]">{key}:</span>{" "}
-                            <span className="text-gray-400">
-                              {value.length > 100 ? value.substring(0, 100) + "..." : value}
-                            </span>
-                          </div>
-                        ))}
+                        {Object.entries(debugInfo.localStorage).map(
+                          ([key, value]) => (
+                            <div key={key} className="mb-1">
+                              <span className="text-[#00D9FF]">{key}:</span>{" "}
+                              <span className="text-gray-400">
+                                {value.length > 100
+                                  ? value.substring(0, 100) + "..."
+                                  : value}
+                              </span>
+                            </div>
+                          )
+                        )}
                       </pre>
                     )}
                   </div>
@@ -197,21 +225,26 @@ export default function DevResetPage() {
                 {/* sessionStorage (before clear) */}
                 <div>
                   <h3 className="text-md font-medium mb-2 text-[#BD00FF]">
-                    sessionStorage (was {Object.keys(debugInfo.sessionStorage).length} items)
+                    sessionStorage (was{" "}
+                    {Object.keys(debugInfo.sessionStorage).length} items)
                   </h3>
                   <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-32 overflow-y-auto">
                     {Object.keys(debugInfo.sessionStorage).length === 0 ? (
                       <span className="text-gray-500">Empty</span>
                     ) : (
                       <pre className="text-xs text-gray-300">
-                        {Object.entries(debugInfo.sessionStorage).map(([key, value]) => (
-                          <div key={key} className="mb-1">
-                            <span className="text-[#00D9FF]">{key}:</span>{" "}
-                            <span className="text-gray-400">
-                              {value.length > 100 ? value.substring(0, 100) + "..." : value}
-                            </span>
-                          </div>
-                        ))}
+                        {Object.entries(debugInfo.sessionStorage).map(
+                          ([key, value]) => (
+                            <div key={key} className="mb-1">
+                              <span className="text-[#00D9FF]">{key}:</span>{" "}
+                              <span className="text-gray-400">
+                                {value.length > 100
+                                  ? value.substring(0, 100) + "..."
+                                  : value}
+                              </span>
+                            </div>
+                          )
+                        )}
                       </pre>
                     )}
                   </div>
@@ -224,27 +257,36 @@ export default function DevResetPage() {
                   </h3>
                   <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-32 overflow-y-auto">
                     {debugInfo.cookies.length === 0 ? (
-                      <span className="text-gray-500">No accessible cookies (HttpOnly cookies not visible)</span>
+                      <span className="text-gray-500">
+                        No accessible cookies (HttpOnly cookies not visible)
+                      </span>
                     ) : (
                       <pre className="text-xs text-gray-300">
                         {debugInfo.cookies.map((cookie, i) => (
-                          <div key={i} className="mb-1">{cookie}</div>
+                          <div key={i} className="mb-1">
+                            {cookie}
+                          </div>
                         ))}
                       </pre>
                     )}
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    Note: HttpOnly cookies (auth tokens) are cleared via logout endpoint
+                    Note: HttpOnly cookies (auth tokens) are cleared via logout
+                    endpoint
                   </p>
                 </div>
 
                 {/* What was cleared */}
                 <div className="bg-gray-800/50 rounded-lg p-4">
-                  <h3 className="text-md font-medium mb-2 text-white">Actions Taken:</h3>
+                  <h3 className="text-md font-medium mb-2 text-white">
+                    Actions Taken:
+                  </h3>
                   <ul className="text-sm text-gray-400 space-y-1">
                     <li>✓ localStorage.clear()</li>
                     <li>✓ sessionStorage.clear()</li>
-                    <li>✓ Called /api/v1/auth/jwt/logout (clears HttpOnly cookies)</li>
+                    <li>
+                      ✓ Called /api/v1/auth/jwt/logout (clears HttpOnly cookies)
+                    </li>
                     <li>✓ Cleared accessible document.cookie entries</li>
                     <li>✓ Deleted IndexedDB databases (project data)</li>
                   </ul>

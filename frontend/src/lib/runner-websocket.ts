@@ -20,6 +20,9 @@ export interface RunnerWebSocketConfig {
   onExtractionProgress?: (data: ExtractionProgressEvent) => void;
   onExtractionStateDetected?: (data: ExtractionStateDetectedEvent) => void;
   onExtractionElementDetected?: (data: ExtractionElementDetectedEvent) => void;
+  onExtractionTransitionDetected?: (
+    data: ExtractionTransitionDetectedEvent
+  ) => void;
   onExtractionComplete?: (data: ExtractionCompleteEvent) => void;
   onExtractionError?: (data: ExtractionErrorEvent) => void;
   // Command response callback
@@ -102,6 +105,11 @@ export interface ExtractionStartedEvent {
     urls: string[];
     viewports: [number, number][];
   };
+  // New architecture fields
+  mode?: "static_only" | "black_box" | "white_box";
+  framework?: string;
+  app_id?: string;
+  app_name?: string;
   timestamp: string;
 }
 
@@ -111,6 +119,9 @@ export interface ExtractionProgressEvent {
   pages_visited: number;
   states_found: number;
   elements_found: number;
+  // New architecture fields
+  phase?: "static_analysis" | "runtime_extraction" | "correlation";
+  phase_progress?: number; // 0-100
   timestamp: string;
 }
 
@@ -123,6 +134,19 @@ export interface ExtractionStateDetectedEvent {
     bbox: { x: number; y: number; width: number; height: number };
     screenshot_id: string;
     element_ids: string[];
+    // New architecture fields (correlated state)
+    source_component?: string;
+    controlling_variables?: string[];
+    conditions?: string[];
+    source_file?: string;
+    source_line?: number;
+    route?: string;
+    confidence?: number;
+    match_evidence?: Array<{
+      evidence_type: string;
+      description: string;
+      strength: number;
+    }>;
   };
   thumbnail: string; // base64
   timestamp: string;
@@ -136,6 +160,31 @@ export interface ExtractionElementDetectedEvent {
     bbox: { x: number; y: number; width: number; height: number };
     text?: string;
     tag_name: string;
+    // New architecture fields
+    selector?: string;
+    is_interactive?: boolean;
+    is_enabled?: boolean;
+    is_visible?: boolean;
+    semantic_role?: string;
+    aria_label?: string;
+  };
+  timestamp: string;
+}
+
+export interface ExtractionTransitionDetectedEvent {
+  extraction_id: string;
+  transition: {
+    id: string;
+    trigger_handler?: string;
+    action_type?: string;
+    state_before?: string;
+    state_after?: string;
+    causes_appear?: string[];
+    causes_disappear?: string[];
+    confidence: number;
+    verified?: boolean;
+    trigger_element?: string;
+    trigger_selector?: string;
   };
   timestamp: string;
 }
@@ -148,12 +197,32 @@ export interface ExtractionCompleteEvent {
     total_elements: number;
     total_transitions: number;
   };
+  // New architecture fields
+  mode?: "static_only" | "black_box" | "white_box";
+  framework?: string;
+  application_state?: {
+    app_id: string;
+    app_name: string;
+    app_type: string;
+    framework: string;
+    states: unknown[];
+    transitions: unknown[];
+    elements: unknown[];
+  };
+  composite_state?: {
+    id: string;
+    name: string;
+    applications: Record<string, unknown>;
+  };
   timestamp: string;
 }
 
 export interface ExtractionErrorEvent {
   extraction_id: string;
   error: string;
+  // New architecture fields
+  phase?: "static_analysis" | "runtime_extraction" | "correlation";
+  recoverable?: boolean;
   timestamp: string;
 }
 
@@ -341,8 +410,12 @@ export class RunnerWebSocket {
       case "extraction_started":
         // Data may be wrapped in a 'data' field by the Python websocket handler
         {
-          const startedData = (message as { data?: ExtractionStartedEvent }).data || message;
-          console.log("[RunnerWebSocket] Extraction started event data:", startedData);
+          const startedData =
+            (message as { data?: ExtractionStartedEvent }).data || message;
+          console.log(
+            "[RunnerWebSocket] Extraction started event data:",
+            startedData
+          );
           this.config.onExtractionStarted?.(
             startedData as ExtractionStartedEvent
           );
@@ -352,7 +425,8 @@ export class RunnerWebSocket {
       case "extraction_progress":
         // Data may be wrapped in a 'data' field by the Python websocket handler
         {
-          const progressData = (message as { data?: ExtractionProgressEvent }).data || message;
+          const progressData =
+            (message as { data?: ExtractionProgressEvent }).data || message;
           this.config.onExtractionProgress?.(
             progressData as ExtractionProgressEvent
           );
@@ -363,8 +437,13 @@ export class RunnerWebSocket {
       case "state_detected": // Raw event name from qontinui library
         // Data may be wrapped in a 'data' field by the Python websocket handler
         {
-          const stateData = (message as { data?: ExtractionStateDetectedEvent }).data || message;
-          console.log("[RunnerWebSocket] State detected event data:", stateData);
+          const stateData =
+            (message as { data?: ExtractionStateDetectedEvent }).data ||
+            message;
+          console.log(
+            "[RunnerWebSocket] State detected event data:",
+            stateData
+          );
           this.config.onExtractionStateDetected?.(
             stateData as ExtractionStateDetectedEvent
           );
@@ -375,10 +454,32 @@ export class RunnerWebSocket {
       case "element_detected": // Raw event name from qontinui library
         // Data may be wrapped in a 'data' field by the Python websocket handler
         {
-          const elementData = (message as { data?: ExtractionElementDetectedEvent }).data || message;
-          console.log("[RunnerWebSocket] Element detected event data:", elementData);
+          const elementData =
+            (message as { data?: ExtractionElementDetectedEvent }).data ||
+            message;
+          console.log(
+            "[RunnerWebSocket] Element detected event data:",
+            elementData
+          );
           this.config.onExtractionElementDetected?.(
             elementData as ExtractionElementDetectedEvent
+          );
+        }
+        break;
+
+      case "extraction_transition_detected":
+      case "transition_detected": // Raw event name from qontinui library
+        // Data may be wrapped in a 'data' field by the Python websocket handler
+        {
+          const transitionData =
+            (message as { data?: ExtractionTransitionDetectedEvent }).data ||
+            message;
+          console.log(
+            "[RunnerWebSocket] Transition detected event data:",
+            transitionData
+          );
+          this.config.onExtractionTransitionDetected?.(
+            transitionData as ExtractionTransitionDetectedEvent
           );
         }
         break;
@@ -386,8 +487,12 @@ export class RunnerWebSocket {
       case "extraction_complete":
         // Data may be wrapped in a 'data' field by the Python websocket handler
         {
-          const completeData = (message as { data?: ExtractionCompleteEvent }).data || message;
-          console.log("[RunnerWebSocket] Extraction complete event data:", completeData);
+          const completeData =
+            (message as { data?: ExtractionCompleteEvent }).data || message;
+          console.log(
+            "[RunnerWebSocket] Extraction complete event data:",
+            completeData
+          );
           this.config.onExtractionComplete?.(
             completeData as ExtractionCompleteEvent
           );
@@ -397,11 +502,13 @@ export class RunnerWebSocket {
       case "extraction_error":
         // Data may be wrapped in a 'data' field by the Python websocket handler
         {
-          const errorData = (message as { data?: ExtractionErrorEvent }).data || message;
-          console.log("[RunnerWebSocket] Extraction error event data:", errorData);
-          this.config.onExtractionError?.(
-            errorData as ExtractionErrorEvent
+          const errorData =
+            (message as { data?: ExtractionErrorEvent }).data || message;
+          console.log(
+            "[RunnerWebSocket] Extraction error event data:",
+            errorData
           );
+          this.config.onExtractionError?.(errorData as ExtractionErrorEvent);
         }
         break;
 
@@ -431,7 +538,12 @@ export class RunnerWebSocket {
         const responseMsg = message as {
           data?: {
             command?: string;
-            result?: { success?: boolean; extraction_id?: string; error?: string; [key: string]: unknown };
+            result?: {
+              success?: boolean;
+              extraction_id?: string;
+              error?: string;
+              [key: string]: unknown;
+            };
             response_type?: string;
             [key: string]: unknown;
           };
@@ -442,9 +554,7 @@ export class RunnerWebSocket {
         if (responseData) {
           // Try to extract command name from various possible fields
           const command =
-            responseData.command ||
-            responseData.response_type ||
-            "unknown";
+            responseData.command || responseData.response_type || "unknown";
 
           // Build result object, handling cases where result is nested or flat
           const result = responseData.result || {
@@ -453,7 +563,12 @@ export class RunnerWebSocket {
             error: responseData.error as string | undefined,
           };
 
-          console.log("[RunnerWebSocket] Parsed command response - command:", command, "result:", result);
+          console.log(
+            "[RunnerWebSocket] Parsed command response - command:",
+            command,
+            "result:",
+            result
+          );
 
           this.config.onCommandResponse?.({
             command,
@@ -461,7 +576,10 @@ export class RunnerWebSocket {
             timestamp: responseMsg.timestamp || new Date().toISOString(),
           });
         } else {
-          console.warn("[RunnerWebSocket] Command response has no data:", message);
+          console.warn(
+            "[RunnerWebSocket] Command response has no data:",
+            message
+          );
         }
         break;
 

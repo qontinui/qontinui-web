@@ -182,18 +182,31 @@ export function WebExtractionPage() {
   const handleCommandResponse = useCallback(
     (data: CommandResponseEvent) => {
       console.log("[WebExtraction] Command response received:", data);
-      console.log("[WebExtraction] Command:", data.command, "Result:", data.result);
+      console.log(
+        "[WebExtraction] Command:",
+        data.command,
+        "Result:",
+        data.result
+      );
 
       // Handle start_web_extraction command response
-      if (data.command === "start_web_extraction" || data.command === "unknown") {
+      if (
+        data.command === "start_web_extraction" ||
+        data.command === "unknown"
+      ) {
         // Check for success - handle both explicit success and implicit (no error)
-        const isSuccess = data.result?.success === true ||
+        const isSuccess =
+          data.result?.success === true ||
           (data.result && !data.result.error && data.result.success !== false);
 
         if (isSuccess) {
           // Extraction started successfully
-          const extractionId = data.result?.extraction_id || `extraction-${Date.now()}`;
-          console.log("[WebExtraction] Extraction started with ID:", extractionId);
+          const extractionId =
+            data.result?.extraction_id || `extraction-${Date.now()}`;
+          console.log(
+            "[WebExtraction] Extraction started with ID:",
+            extractionId
+          );
 
           // Initialize session with the extraction ID
           setSession({
@@ -225,7 +238,8 @@ export function WebExtractionPage() {
           toast.success("Web extraction started on runner");
         } else if (data.result?.error || data.result?.success === false) {
           // Extraction failed to start
-          const errorMessage = data.result?.error || "Failed to start extraction";
+          const errorMessage =
+            data.result?.error || "Failed to start extraction";
           console.error("[WebExtraction] Failed to start:", errorMessage);
           setError(errorMessage);
           toast.error(`Failed to start extraction: ${errorMessage}`);
