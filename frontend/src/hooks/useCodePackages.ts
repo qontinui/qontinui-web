@@ -30,6 +30,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { codePackageService } from "@/services/service-factory";
 import type {
   CodePackage,
   SearchFilters,
@@ -60,96 +61,72 @@ export const packageKeys = {
     [...packageKeys.all, "ratings", packageId] as const,
 };
 
-// Mock API service - Replace with actual API calls
+// API service adapter - uses CodePackageService
 const packageApi = {
   async searchPackages(filters?: SearchFilters): Promise<PackageSearchResult> {
-    // TODO: Replace with actual API call
-    // const response = await fetch('/api/v1/marketplace/packages', { ... })
-    // return response.json()
-
-    // Mock data for development
-    return {
-      packages: [],
-      total: 0,
-      page: filters?.page || 1,
-      limit: filters?.limit || 20,
-      total_pages: 0,
-    };
+    return codePackageService.searchPackages(filters);
   },
 
   async getPackage(id: string): Promise<CodePackage> {
-    // TODO: Replace with actual API call
-    // const response = await fetch(`/api/v1/marketplace/packages/${id}`)
-    // return response.json()
-
-    throw new Error("Package not found");
+    return codePackageService.getPackage(id);
   },
 
   async getPopularPackages(): Promise<CodePackage[]> {
-    // TODO: Replace with actual API call
-    return [];
+    return codePackageService.getPopularPackages();
   },
 
   async getMyPackages(): Promise<CodePackage[]> {
-    // TODO: Replace with actual API call
-    return [];
+    return codePackageService.getMyPackages();
   },
 
   async getInstalledPackages(
     projectId: string
   ): Promise<PackageInstallation[]> {
-    // TODO: Replace with actual API call
-    return [];
+    return codePackageService.getInstalledPackages(projectId);
   },
 
   async createPackage(data: CreatePackageRequest): Promise<CodePackage> {
-    // TODO: Replace with actual API call
-    throw new Error("Not implemented");
+    return codePackageService.createPackage(data);
   },
 
   async updatePackage(
     id: string,
     data: UpdatePackageRequest
   ): Promise<CodePackage> {
-    // TODO: Replace with actual API call
-    throw new Error("Not implemented");
+    return codePackageService.updatePackage(id, data);
   },
 
   async publishVersion(
     packageId: string,
     data: PublishVersionRequest
   ): Promise<CodePackage> {
-    // TODO: Replace with actual API call
-    throw new Error("Not implemented");
+    return codePackageService.publishVersion(packageId, data);
   },
 
   async installPackage(
     data: InstallPackageRequest
   ): Promise<PackageInstallation> {
-    // TODO: Replace with actual API call
-    throw new Error("Not implemented");
+    return codePackageService.installPackage(data);
   },
 
   async uninstallPackage(installationId: string): Promise<void> {
-    // TODO: Replace with actual API call
+    return codePackageService.uninstallPackage(installationId);
   },
 
   async getRatings(packageId: string): Promise<PackageRating[]> {
-    // TODO: Replace with actual API call
-    return [];
+    return codePackageService.getRatings(packageId);
   },
 
   async ratePackage(data: RatePackageRequest): Promise<PackageRating> {
-    // TODO: Replace with actual API call
-    throw new Error("Not implemented");
+    return codePackageService.ratePackage(data);
   },
 
   async reportPackage(data: ReportPackageRequest): Promise<void> {
-    // TODO: Replace with actual API call
+    return codePackageService.reportPackage(data);
   },
 
   async deletePackage(id: string): Promise<void> {
-    // TODO: Replace with actual API call
+    return codePackageService.deletePackage(id);
   },
 };
 
