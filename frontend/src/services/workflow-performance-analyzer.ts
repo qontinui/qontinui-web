@@ -856,20 +856,92 @@ export class WorkflowPerformanceAnalyzer {
 
   /**
    * Get critical path (slowest path through workflow)
+   * Uses a dynamic programming approach to find the longest path by execution time
    */
   getCriticalPath(executionData: ExecutionData): string[] {
     if (executionData.criticalPath) {
       return executionData.criticalPath;
     }
 
-    // If not provided, derive from execution order and timings
+    // If no execution order provided, return empty
     if (!executionData.executionOrder) {
       return [];
     }
 
-    // For now, return the full execution order
-    // TODO: Implement actual critical path algorithm
-    return executionData.executionOrder;
+    // Get action timings
+    const timings = this.getActionTimings(executionData);
+
+    // If no timing data available, return execution order
+    if (Object.keys(timings).length === 0) {
+      return executionData.executionOrder;
+    }
+
+    // Build adjacency list from execution order (simplified graph)
+    // This creates a sequential graph based on execution order
+    const actionIds = executionData.executionOrder;
+    const graph = new Map<string, string[]>();
+
+    // Create edges between consecutive actions
+    for (let i = 0; i < actionIds.length - 1; i++) {
+      const current = actionIds[i];
+      const next = actionIds[i + 1];
+
+      if (!graph.has(current)) {
+        graph.set(current, []);
+      }
+      graph.get(current)!.push(next);
+    }
+
+    // Find the path with maximum total duration
+    // Use dynamic programming: maxTime[action] = max time to reach this action
+    const maxTime = new Map<string, number>();
+    const parent = new Map<string, string | null>();
+
+    // Initialize first action
+    const startAction = actionIds[0];
+    maxTime.set(startAction, timings[startAction] || 0);
+    parent.set(startAction, null);
+
+    // Process actions in execution order
+    for (const actionId of actionIds) {
+      const currentTime = maxTime.get(actionId) || 0;
+      const neighbors = graph.get(actionId) || [];
+
+      for (const neighbor of neighbors) {
+        const neighborDuration = timings[neighbor] || 0;
+        const newTime = currentTime + neighborDuration;
+        const existingTime = maxTime.get(neighbor) || 0;
+
+        // Update if this path is longer
+        if (newTime > existingTime) {
+          maxTime.set(neighbor, newTime);
+          parent.set(neighbor, actionId);
+        }
+      }
+    }
+
+    // Find the action with maximum total time
+    let endAction = actionIds[actionIds.length - 1];
+    let maxTotalTime = maxTime.get(endAction) || 0;
+
+    for (const actionId of actionIds) {
+      const time = maxTime.get(actionId) || 0;
+      if (time > maxTotalTime) {
+        maxTotalTime = time;
+        endAction = actionId;
+      }
+    }
+
+    // Reconstruct the critical path by backtracking
+    const criticalPath: string[] = [];
+    let current: string | null = endAction;
+
+    while (current !== null) {
+      criticalPath.unshift(current);
+      current = parent.get(current) || null;
+    }
+
+    return criticalPath;
   }
 
   /**

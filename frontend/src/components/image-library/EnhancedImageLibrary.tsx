@@ -632,8 +632,10 @@ export function EnhancedImageLibrary() {
     // Check workflows
     workflows.forEach((workflow) => {
       // Check if image is used in any action in the workflow
-      // This is simplified - you may need to traverse the workflow graph
-      const usesImage = false; // TODO: Implement proper check
+      const usesImage = workflow.actions.some((action) => {
+        const config = action.config as any;
+        return config.imageId === selectedImage.id;
+      });
       if (usesImage) {
         details.push({
           workflowId: workflow.id,

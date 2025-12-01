@@ -321,10 +321,29 @@ export class FormatConverter {
       };
 
       // Calculate statistics
+      // Count modified actions by comparing configs
+      let actionsModified = 0;
+      const originalActionMap = new Map(workflow.actions.map(a => [a.id, a]));
+
+      for (const newAction of actions) {
+        const originalAction = originalActionMap.get(newAction.id);
+        if (originalAction) {
+          // Check if action was modified (comparing configs, excluding position)
+          const originalConfig = JSON.stringify(originalAction.config);
+          const newConfig = JSON.stringify(newAction.config);
+          const originalName = originalAction.name;
+          const newName = newAction.name;
+
+          if (originalConfig !== newConfig || originalName !== newName) {
+            actionsModified++;
+          }
+        }
+      }
+
       const statistics: ConversionStatistics = {
         actionsAdded: Math.max(0, actions.length - workflow.actions.length),
         actionsRemoved: Math.max(0, workflow.actions.length - actions.length),
-        actionsModified: 0, // TODO: Calculate actual modifications
+        actionsModified,
         connectionsChanged: Object.keys(workflow.connections || {}).length,
         estimatedExecutionDiff: 0,
         conversionTime: Date.now() - startTime,

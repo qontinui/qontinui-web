@@ -1009,6 +1009,98 @@ export function FolderTree({
         </div>
       )}
 
+      {/* Move folder dialog */}
+      <Dialog
+        open={!!movingFolderId}
+        onOpenChange={(open) => !open && setMovingFolderId(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Move "{movingFolder?.name}" to...</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search folders..."
+                value={moveDialogSearchQuery}
+                onChange={(e) => setMoveDialogSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
+            {/* Folder list */}
+            <ScrollArea className="h-96">
+              <div className="space-y-1 pr-4">
+                {/* Root option */}
+                <button
+                  onClick={() => handleMoveFolder(null)}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2 rounded-md transition-colors hover:bg-accent"
+                  )}
+                >
+                  <FolderTreeIcon className="h-4 w-4" />
+                  <span>Root (Top Level)</span>
+                </button>
+
+                {/* Folder tree */}
+                {flatMoveDialogTree.map((node) => {
+                  const hasChildren = node.children.length > 0;
+                  const FolderIcon = node.expanded ? FolderOpen : Folder;
+
+                  return (
+                    <div
+                      key={node.id}
+                      className="flex items-center gap-1 px-3 py-2 rounded-md transition-colors hover:bg-accent"
+                      style={{ paddingLeft: `${node.depth * 20 + 12}px` }}
+                    >
+                      {/* Expand/collapse */}
+                      {hasChildren ? (
+                        <button
+                          onClick={() => handleMoveDialogToggle(node.id)}
+                          className="flex-shrink-0 p-0.5 hover:bg-accent rounded"
+                        >
+                          {node.expanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : (
+                        <div className="w-5" />
+                      )}
+
+                      {/* Folder button */}
+                      <button
+                        onClick={() => handleMoveFolder(node.id)}
+                        className="flex-1 flex items-center gap-2 text-left"
+                      >
+                        <FolderIcon
+                          className="h-4 w-4 flex-shrink-0"
+                          style={{ color: node.color || undefined }}
+                        />
+                        <span className="truncate">{node.name}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {/* Empty state */}
+                {flatMoveDialogTree.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground text-sm">
+                    {moveDialogSearchQuery
+                      ? "No folders found"
+                      : "No folders available"}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Breadcrumb / Info footer */}
       <div className="p-2 border-t text-xs text-muted-foreground">
         {selectedFolderId && selectedFolderId !== "uncategorized" && (
