@@ -37,6 +37,7 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { toast } from "sonner";
 
 import { Workflow, Action, Connection } from "@/lib/action-schema/action-types";
 import {
@@ -355,7 +356,9 @@ function WorkflowCanvasInner({
 
       if (!validation.valid) {
         console.warn("Invalid connection:", validation.message);
-        // TODO: Show toast notification
+        toast.error("Invalid Connection", {
+          description: validation.message,
+        });
         return;
       }
 
@@ -525,7 +528,9 @@ function WorkflowCanvasInner({
 
       if (!validation.valid) {
         console.warn("Invalid reconnection:", validation.message);
-        // TODO: Show toast notification
+        toast.error("Invalid Reconnection", {
+          description: validation.message,
+        });
         return;
       }
 
