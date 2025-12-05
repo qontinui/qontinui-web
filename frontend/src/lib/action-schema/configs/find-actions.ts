@@ -4,7 +4,6 @@
 
 import { TargetConfig } from "../shared/target-config";
 import { SearchOptions } from "../shared/search-options";
-import { VerificationConfig } from "../shared/verification-config";
 
 /**
  * FIND - Search for a target on screen

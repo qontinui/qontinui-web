@@ -16,13 +16,11 @@ import { ApiConfig } from "../api-config";
 import type {
   PresenceStatus,
   WebSocketMessage,
-  WebSocketMessageType,
   PresenceUpdateMessage,
   CursorMoveMessage,
   LockUpdateMessage,
   ResourceUpdateMessage,
   Lock,
-  ResourceType,
   Comment,
   Activity,
   UserPresence,

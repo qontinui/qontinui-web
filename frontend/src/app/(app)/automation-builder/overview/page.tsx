@@ -136,7 +136,7 @@ export default function OverviewPage() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {statesWithElements.map((state, index) => {
+                      {statesWithElements.map((state) => {
                         const isSelected = selectedStateIds.includes(state.id);
                         const isHighlighted = highlightedStateId === state.id;
                         const imageCount =

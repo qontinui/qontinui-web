@@ -7,15 +7,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { testingService } from "@/services/service-factory";
 import type {
-  TestRun,
-  TestRunDetail,
   Deficiency,
-  CoverageTrend,
-  ReliabilityStats,
-  StateGraphData,
   TestRunFilters,
   DeficiencyFilters,
-  PaginatedResponse,
 } from "@/services/testing-service";
 
 // Query keys for organizing cache
@@ -118,7 +112,7 @@ export function useUpdateDeficiency() {
     }) => {
       return await testingService.updateDeficiency(id, data);
     },
-    onSuccess: (updatedDeficiency) => {
+    onSuccess: () => {
       // Invalidate deficiency lists to refetch
       queryClient.invalidateQueries({ queryKey: testingKeys.deficiencies() });
 

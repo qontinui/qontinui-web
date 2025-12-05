@@ -14,7 +14,6 @@ import {
   Filter,
   FileText,
   Download,
-  Upload,
 } from "lucide-react";
 import { useAutomation } from "../../contexts/automation-context";
 import { ActionSnapshot } from "../../lib/integration-testing-framework";
@@ -91,7 +90,7 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
     });
 
     // Build scenarios from chains
-    screenshotChains.forEach((snapshots, startScreenshotId) => {
+    screenshotChains.forEach((_, startScreenshotId) => {
       // Follow the chain through transitions
       const scenarioSnapshots: ActionSnapshot[] = [];
       const visitedScreenshots = new Set<string>();

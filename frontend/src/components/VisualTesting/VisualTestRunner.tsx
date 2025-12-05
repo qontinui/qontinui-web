@@ -329,7 +329,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
 
       {/* Test Cases List */}
       <div className="space-y-2">
-        {testCases.map((testCase, index) => {
+        {testCases.map((testCase) => {
           const status = getTestStatus(testCase.id);
           const result = testResults.find((r) => r.testId === testCase.id);
 

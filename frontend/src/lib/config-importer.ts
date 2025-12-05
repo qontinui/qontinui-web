@@ -3,7 +3,7 @@ import {
   ImageAsset as ExportImageAsset,
   Workflow as ExportWorkflow,
 } from "./export-schema";
-import { Action as NewFormatAction, Workflow } from "./action-schema";
+import { Workflow } from "./action-schema";
 import { migrateConfigToLatest, needsMigration } from "./config-migration";
 
 // Types that match the automation context
@@ -15,12 +15,6 @@ interface ImageAsset {
   uploadedAt: Date;
   usageCount: number;
   usedIn: Array<{ type: "workflow" | "state"; id: string; name: string }>;
-}
-
-interface Action {
-  id: string;
-  type: string;
-  config: Record<string, any>;
 }
 
 interface State {

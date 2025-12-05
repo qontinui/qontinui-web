@@ -25,7 +25,6 @@ import type {
   ImageAnalysis,
   TransitionAnalysis,
   ProjectIssue,
-  OptimizationSuggestion,
   ProjectMetrics,
   MetricsTrend,
   HealthAlert,
@@ -392,8 +391,7 @@ function calculateBrokenReferencesFactor(
 function collectIssues(
   workflows: WorkflowAnalysis[],
   states: StateAnalysis[],
-  images: ImageAnalysis[],
-  transitions: TransitionAnalysis[]
+  images: ImageAnalysis[]
 ): ProjectIssue[] {
   const issues: ProjectIssue[] = [];
   let issueId = 1;

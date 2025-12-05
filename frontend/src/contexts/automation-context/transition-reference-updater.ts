@@ -1,4 +1,4 @@
-import { Transition, OutgoingTransition, IncomingTransition } from "./types";
+import { Transition } from "./types";
 
 /**
  * Updates transition references when state IDs change.

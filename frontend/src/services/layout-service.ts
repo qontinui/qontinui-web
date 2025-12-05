@@ -17,7 +17,7 @@ import {
   LayoutStyle,
   LayoutConfig,
 } from "@/lib/workflow-layout/auto-layout";
-import type { Workflow, Action } from "@/lib/action-schema/action-types";
+import type { Workflow } from "@/lib/action-schema/action-types";
 import { calculateLayoutStatistics, compareLayouts } from "./layout-statistics";
 import type { LayoutStatistics, LayoutComparison } from "./layout-statistics";
 
@@ -163,9 +163,6 @@ export class LayoutService {
   ): LayoutPreviewResult {
     // Deep clone workflow
     const clonedWorkflow = this.cloneWorkflow(workflow);
-
-    // Calculate statistics before layout
-    const beforeStats = calculateLayoutStatistics(workflow);
 
     // Apply layout to clone
     this.applyLayout(clonedWorkflow, style, options);

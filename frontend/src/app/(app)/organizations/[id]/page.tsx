@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -21,7 +20,6 @@ import {
   Building2,
   Settings,
   Activity,
-  Calendar,
   Loader2,
   UserPlus,
   FolderOpen,
@@ -40,9 +38,7 @@ export default function OrganizationDetailsPage() {
   const { user, loading: authLoading } = useAuth();
   const {
     switchOrg,
-    currentOrg,
     members,
-    loading: orgLoading,
     getMembers,
   } = useOrganization();
 
@@ -53,7 +49,7 @@ export default function OrganizationDetailsPage() {
     active_users_today: number;
     total_workflows: number;
   } | null>(null);
-  const [activities, setActivities] = useState<ActivityType[]>([]);
+  const [, setActivities] = useState<ActivityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 

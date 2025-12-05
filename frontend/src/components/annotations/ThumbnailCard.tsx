@@ -30,7 +30,6 @@ export interface ThumbnailCardProps {
 }
 
 export function ThumbnailCard({
-  id,
   url,
   index,
   annotationCount,

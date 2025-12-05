@@ -63,7 +63,6 @@ const BUTTON_OPTIONS = [
 ];
 
 export const ScreenshotRequestPanel: React.FC<ScreenshotRequestPanelProps> = ({
-  sessionId,
   onRequest,
 }) => {
   const [isOpen, setIsOpen] = useState(false);

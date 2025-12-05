@@ -39,14 +39,11 @@ import {
   TestTube,
   BookOpen,
   Clock,
-  CheckCircle2,
   XCircle,
   AlertTriangle,
   Zap,
   Target,
   Activity,
-  FolderTree,
-  Tags,
   FileText,
   Trash2,
   RefreshCw,
@@ -54,20 +51,11 @@ import {
   Copy,
   Link2,
   BarChart3,
-  PieChart,
-  Database,
   HardDrive,
-  Users,
   Calendar,
-  Filter,
-  ArrowUpDown,
-  ExternalLink,
   Plus,
-  Minus,
-  AlertCircle,
   Info,
   CheckCircle,
-  Save,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -80,8 +68,6 @@ import {
   Cell,
   LineChart,
   Line,
-  ScatterChart,
-  Scatter,
   Treemap,
   XAxis,
   YAxis,
@@ -158,15 +144,6 @@ interface DependencyNode {
   type: "workflow" | "state" | "image";
   name: string;
   dependencies: string[];
-}
-
-interface SearchResult {
-  type: "workflow" | "state" | "image" | "transition";
-  id: string;
-  name: string;
-  description?: string;
-  matches: string[];
-  relevance: number;
 }
 
 // ============================================================================
@@ -1419,7 +1396,7 @@ function BulkOptimizationTools() {
     },
   ];
 
-  const handleToolAction = useCallback((toolId: string) => {
+  const handleToolAction = useCallback(() => {
     setIsProcessing(true);
     // Simulate processing
     setTimeout(() => {
@@ -1674,7 +1651,7 @@ function ExportImportPanel() {
 export default function ProjectDashboardPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTab, setSelectedTab] = useState("overview");
+  const [, setSelectedTab] = useState("overview");
 
   const data = useMemo(() => generateMockProjectData(), []);
 

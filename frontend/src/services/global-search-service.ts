@@ -223,22 +223,22 @@ class GlobalSearchService {
 
       switch (type) {
         case "workflow":
-          results = await this.searchWorkflows(cleanQuery, mergedFilters);
+          results = await this.searchWorkflows(cleanQuery);
           break;
         case "state":
-          results = await this.searchStates(cleanQuery, mergedFilters);
+          results = await this.searchStates(cleanQuery);
           break;
         case "image":
-          results = await this.searchImages(cleanQuery, mergedFilters);
+          results = await this.searchImages(cleanQuery);
           break;
         case "transition":
-          results = await this.searchTransitions(cleanQuery, mergedFilters);
+          results = await this.searchTransitions(cleanQuery);
           break;
         case "folder":
-          results = await this.searchFolders(cleanQuery, mergedFilters);
+          results = await this.searchFolders(cleanQuery);
           break;
         case "action":
-          results = await this.searchActions(cleanQuery, mergedFilters);
+          results = await this.searchActions(cleanQuery);
           break;
       }
 
@@ -259,8 +259,7 @@ class GlobalSearchService {
   }
 
   async searchWorkflows(
-    query: string,
-    filters: SearchFilter = {}
+    query: string
   ): Promise<SearchResultItem[]> {
     const workflows = this.index.getAllWorkflows();
     const results: SearchResultItem[] = [];
@@ -362,8 +361,7 @@ class GlobalSearchService {
   }
 
   async searchStates(
-    query: string,
-    filters: SearchFilter = {}
+    query: string
   ): Promise<SearchResultItem[]> {
     const states = this.index.getAllStates();
     const results: SearchResultItem[] = [];
@@ -433,8 +431,7 @@ class GlobalSearchService {
   }
 
   async searchImages(
-    query: string,
-    filters: SearchFilter = {}
+    query: string
   ): Promise<SearchResultItem[]> {
     const images = this.index.getAllImages();
     const results: SearchResultItem[] = [];
@@ -504,8 +501,7 @@ class GlobalSearchService {
   }
 
   async searchTransitions(
-    query: string,
-    filters: SearchFilter = {}
+    query: string
   ): Promise<SearchResultItem[]> {
     const transitions = this.index.getAllTransitions();
     const results: SearchResultItem[] = [];
@@ -590,8 +586,7 @@ class GlobalSearchService {
   }
 
   async searchFolders(
-    query: string,
-    filters: SearchFilter = {}
+    query: string
   ): Promise<SearchResultItem[]> {
     const folders = this.index.getAllFolders();
     const results: SearchResultItem[] = [];
@@ -650,8 +645,7 @@ class GlobalSearchService {
   }
 
   async searchActions(
-    query: string,
-    filters: SearchFilter = {}
+    query: string
   ): Promise<SearchResultItem[]> {
     const workflows = this.index.getAllWorkflows();
     const results: SearchResultItem[] = [];
@@ -955,7 +949,7 @@ class GlobalSearchService {
   // Search Aliases
   // ============================================================================
 
-  private expandAlias(query: string): string {
+  private expandAlias(): string {
     const aliases: Record<string, string> = {
       wf: "workflow",
       st: "state",

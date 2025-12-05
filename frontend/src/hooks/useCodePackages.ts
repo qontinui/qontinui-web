@@ -343,7 +343,7 @@ export function useInstallPackage() {
   return useMutation({
     mutationFn: (data: InstallPackageRequest) =>
       packageApi.installPackage(data),
-    onSuccess: (installation, variables) => {
+    onSuccess: (_installation, variables) => {
       // Update installed packages list
       queryClient.invalidateQueries({
         queryKey: packageKeys.installed(variables.project_id),
@@ -400,7 +400,7 @@ export function useRatePackage() {
 
   return useMutation({
     mutationFn: (data: RatePackageRequest) => packageApi.ratePackage(data),
-    onSuccess: (newRating, variables) => {
+    onSuccess: (_newRating, variables) => {
       // Invalidate ratings list
       queryClient.invalidateQueries({
         queryKey: packageKeys.ratings(variables.package_id),

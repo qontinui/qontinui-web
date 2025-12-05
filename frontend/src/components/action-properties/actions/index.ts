@@ -11,7 +11,6 @@ export { ClickActionProperties } from "./ClickActionProperties";
 export {
   MouseMoveProperties,
   MouseButtonProperties,
-  SimpleClickProperties,
 } from "./MouseActionProperties";
 export { KeyboardActionProperties } from "./KeyboardActionProperties";
 export { DragActionProperties } from "./DragActionProperties";
@@ -38,7 +37,6 @@ import { ClickActionProperties } from "./ClickActionProperties";
 import {
   MouseMoveProperties,
   MouseButtonProperties,
-  SimpleClickProperties,
 } from "./MouseActionProperties";
 import { KeyboardActionProperties } from "./KeyboardActionProperties";
 import { DragActionProperties } from "./DragActionProperties";

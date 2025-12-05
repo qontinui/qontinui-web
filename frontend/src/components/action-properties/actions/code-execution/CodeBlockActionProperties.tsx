@@ -5,7 +5,7 @@
  * Allows users to configure Python code execution with inline code or external files.
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,7 +29,6 @@ import { useAutomation } from "@/contexts/automation-context";
 import {
   FileCode,
   Code,
-  AlertCircle,
   Info,
   Plus,
   X,

@@ -24,7 +24,6 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Legend,
 } from "recharts";
 import type { SessionStats } from "@/services/admin/health-service";
 

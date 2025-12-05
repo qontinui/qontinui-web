@@ -5,13 +5,9 @@
 
 import {
   State,
-  StateImage,
-  SearchRegion,
 } from "../contexts/automation-context/types";
 import {
   Screenshot,
-  ScreenshotRegion,
-  ScreenshotLocation,
 } from "../types/Screenshot";
 
 interface QontinuiStateExport {

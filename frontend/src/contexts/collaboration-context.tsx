@@ -18,10 +18,6 @@ import type {
 import type { PermissionLevel } from "@/lib/permissions";
 import {
   hasPermission,
-  canUserView,
-  canUserComment,
-  canUserEdit,
-  canUserAdmin,
 } from "@/lib/permissions";
 import {
   organizationService,
@@ -30,7 +26,6 @@ import {
   activityService,
 } from "@/services/service-factory";
 import { websocketCollaborationService } from "@/services/websocket-collaboration-service";
-import { useAuth } from "@/contexts/auth-context";
 
 // ============================================================================
 // Context Types
@@ -110,7 +105,7 @@ export function CollaborationProvider({
   const [organizations, setOrganizations] = useState<Organization[]>([]);
 
   // Permission state
-  const [projectAccess, setProjectAccess] = useState<PermissionLevel | null>(
+  const [projectAccess] = useState<PermissionLevel | null>(
     null
   );
 

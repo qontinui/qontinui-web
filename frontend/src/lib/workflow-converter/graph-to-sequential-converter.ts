@@ -5,17 +5,16 @@
  * Detects if a graph can be linearized and produces sequential action lists.
  */
 
-import { Workflow, Action, Connections } from "../action-schema/action-types";
+import { Workflow, Action } from "../action-schema/action-types";
 import {
   getTopologicalOrder,
   getActionById,
-  getNextActions,
 } from "../action-schema/workflow-utils";
 import {
   LinearizabilityChecker,
   LinearizabilityResult,
 } from "./linearizability-checker";
-import { PatternDetector, IfPattern, LoopPattern } from "./pattern-detector";
+import { PatternDetector } from "./pattern-detector";
 import { NonLinearWorkflowError, WorkflowValidationError } from "./errors";
 
 /**
@@ -147,7 +146,7 @@ export class GraphToSequentialConverter {
    */
   private rebuildControlFlow(
     actions: Action[],
-    connections: Connections,
+    _connections: Connections,
     workflow: Workflow
   ): Action[] {
     const result: Action[] = [];

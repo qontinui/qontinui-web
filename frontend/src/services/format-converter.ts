@@ -5,11 +5,10 @@
  * Handles conversion, validation, preview, and integration with stores.
  */
 
-import type { Workflow, Action } from "../lib/action-schema/action-types";
+import type { Workflow } from "../lib/action-schema/action-types";
 import {
   SequentialToGraphConverter,
   type ConverterOptions as SeqToGraphOptions,
-  type ConversionResult as SeqToGraphResult,
 } from "../lib/workflow-converter/sequential-to-graph-converter";
 import {
   GraphToSequentialConverter,
@@ -22,7 +21,6 @@ import {
 import {
   validateConversion,
   type ConversionValidationResult,
-  type ValidationIssue,
 } from "./conversion-validation";
 
 // ============================================================================
@@ -181,16 +179,6 @@ export class FormatConverter {
       }
 
       // Convert sequential to graph
-      const converterOptions: SeqToGraphOptions = {
-        workflowName: workflow.name,
-        workflowId: workflow.id,
-        version: workflow.version,
-        preserveActionIds: options.preserveIds ?? true,
-        layout: {
-          horizontalSpacing: 200,
-          verticalSpacing: 150,
-        },
-      };
 
       const result = this.seqToGraphConverter.convert(workflow.actions);
 
@@ -408,8 +396,6 @@ export class FormatConverter {
     workflow: Workflow,
     toFormat: "sequential" | "graph"
   ): ConversionPreview {
-    const fromFormat = workflow.format === "graph" ? "graph" : "sequential";
-
     if (toFormat === "graph") {
       return this.previewToGraph(workflow);
     } else {

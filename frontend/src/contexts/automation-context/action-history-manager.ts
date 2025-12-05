@@ -1,8 +1,5 @@
 import {
   State,
-  StateImage,
-  StateLocation,
-  StateRegion,
   ActionHistory,
 } from "./types";
 import { ActionSnapshot } from "../../lib/integration-testing-framework";
@@ -110,7 +107,7 @@ export class ActionHistoryManager {
   /**
    * Clear all snapshots from ActionHistory
    */
-  static clearHistory(actionHistory: ActionHistory | undefined): ActionHistory {
+  static clearHistory(): ActionHistory {
     return {
       snapshots: [],
       lastUpdated: new Date(),

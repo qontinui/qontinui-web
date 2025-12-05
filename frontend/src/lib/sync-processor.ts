@@ -5,7 +5,7 @@
  * Supports retry logic, error handling, and progress tracking.
  */
 
-import { syncQueue, SyncQueueItem, SyncOperationType } from "./sync-queue";
+import { syncQueue, SyncQueueItem } from "./sync-queue";
 import { apiClient } from "./api-client";
 import { screenshotDB } from "./screenshot-db";
 

@@ -26,12 +26,10 @@ import {
   Filter,
   RefreshCw,
   Trash2,
-  FileText,
   Target,
   Zap,
   ArrowRight,
   ExternalLink,
-  Play,
   TestTube,
   BookOpen,
   ChevronDown,
@@ -65,7 +63,6 @@ import type {
 } from "@/services/workflow-dependency-analyzer";
 import type { Workflow } from "@/lib/action-schema/action-types";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 
 // ============================================================================
 // Types
@@ -96,32 +93,6 @@ function getNodeColor(node: DependencyNode): string {
   if (node.inDegree === 0) return "#10b981"; // green - leaf/unused
   if (node.inDegree >= 3) return "#f59e0b"; // amber - critical
   return "#3b82f6"; // blue - normal
-}
-
-function getSeverityBadge(count: number) {
-  if (count === 0)
-    return {
-      variant: "default" as const,
-      label: "None",
-      color: "text-green-600",
-    };
-  if (count <= 2)
-    return {
-      variant: "secondary" as const,
-      label: "Low",
-      color: "text-yellow-600",
-    };
-  if (count <= 5)
-    return {
-      variant: "default" as const,
-      label: "Medium",
-      color: "text-orange-600",
-    };
-  return {
-    variant: "destructive" as const,
-    label: "High",
-    color: "text-red-600",
-  };
 }
 
 function getImpactBadge(level: "low" | "medium" | "high" | "critical") {
@@ -244,42 +215,6 @@ function DependenciesPageInner() {
   }, [initialNodes, initialEdges, setNodes, setEdges]);
 
   // Filtered workflows
-  const filteredWorkflows = useMemo(() => {
-    return workflows.filter((w) => {
-      // Search filter
-      if (
-        searchQuery &&
-        !w.name.toLowerCase().includes(searchQuery.toLowerCase())
-      ) {
-        return false;
-      }
-
-      // Category filter
-      if (
-        filters.categories.length > 0 &&
-        !filters.categories.includes(w.category || "")
-      ) {
-        return false;
-      }
-
-      // Tags filter
-      if (filters.tags.length > 0) {
-        const workflowTags = w.tags || [];
-        if (!filters.tags.some((tag) => workflowTags.includes(tag))) {
-          return false;
-        }
-      }
-
-      // Issues filter
-      if (filters.showOnlyIssues) {
-        const node = graph.nodes.get(w.id);
-        if (!node?.isCircular) return false;
-      }
-
-      return true;
-    });
-  }, [workflows, searchQuery, filters, graph]);
-
   // Get unused workflows
   const unusedWorkflows = useMemo(() => {
     const unused = workflowDependencyAnalyzer.findUnusedWorkflows(workflows);
@@ -299,7 +234,7 @@ function DependenciesPageInner() {
 
   // Handle node click
   const handleNodeClick = useCallback(
-    (event: React.MouseEvent, node: Node) => {
+    (_event: React.MouseEvent, node: Node) => {
       const workflow = workflows.find((w) => w.id === node.id);
       if (!workflow) return;
 
@@ -333,18 +268,6 @@ function DependenciesPageInner() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Dependency report exported");
-  }, [workflows]);
-
-  const handleExportGraphML = useCallback(() => {
-    const graphml = workflowDependencyAnalyzer.exportGraphML(workflows);
-    const blob = new Blob([graphml], { type: "application/xml" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `workflow-dependencies-${new Date().toISOString()}.graphml`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("GraphML exported");
   }, [workflows]);
 
   const handleAnalyzeAll = useCallback(() => {

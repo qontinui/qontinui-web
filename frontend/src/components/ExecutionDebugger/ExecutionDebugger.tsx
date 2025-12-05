@@ -1,8 +1,6 @@
 import React, { useState } from "react";
 import {
   Bug,
-  ChevronLeft,
-  ChevronRight,
   X,
   Maximize2,
   Minimize2,

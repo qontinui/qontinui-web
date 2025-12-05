@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -20,7 +20,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   Search,
-  Filter,
   ChevronRight,
   Mail,
   Calendar,

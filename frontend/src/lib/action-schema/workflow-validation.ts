@@ -7,7 +7,6 @@
 
 import {
   Workflow,
-  Connection,
   getActionOutputCount,
   getActionInputCount,
 } from "./action-types";
@@ -16,7 +15,6 @@ import {
   hasCycles,
   findOrphanedActions,
   getActionById,
-  getActionConnections,
 } from "./workflow-utils";
 
 // ============================================================================

@@ -55,12 +55,6 @@ export function processToWorkflow(process: Process): Workflow {
  * Complex control flow (branches, loops, parallel execution) will be flattened.
  */
 export function workflowToProcess(workflow: Workflow): Process {
-  // Remove position property from actions
-  const actions = workflow.actions.map((action) => {
-    const { position, ...rest } = action;
-    return rest;
-  });
-
   // Perform topological sort to get linear order
   const sortedActions = topologicalSort(workflow.actions, workflow.connections);
 
@@ -189,7 +183,7 @@ export function canConvertToProcess(workflow: Workflow): {
   }
 
   // Check for complex control flow
-  const hasComplexFlow = Object.values(workflow.connections).some((outputs) => {
+  Object.values(workflow.connections).some((outputs) => {
     // Check for multiple outputs (branching)
     const mainOutputs = outputs.main?.[0]?.length || 0;
     if (mainOutputs > 1) {

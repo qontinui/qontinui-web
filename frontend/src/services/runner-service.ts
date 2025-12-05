@@ -1,5 +1,4 @@
 import { HttpClient } from "./http-client";
-import { ApiConfig } from "./api-config";
 import type {
   RunnerToken,
   RunnerTokenWithSecret,

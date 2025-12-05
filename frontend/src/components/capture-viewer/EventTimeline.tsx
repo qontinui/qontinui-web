@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
@@ -147,7 +146,6 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
         <h3 className="font-semibold text-sm">Event Timeline</h3>
         <div className="flex gap-2">
           {Object.entries(EVENT_LABELS).map(([type, label]) => {
-            const Icon = EVENT_ICONS[type as keyof typeof EVENT_ICONS];
             const color = EVENT_COLORS[type as keyof typeof EVENT_COLORS];
             return (
               <div key={type} className="flex items-center gap-1 text-xs">

@@ -9,11 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Upload,
   Trash2,
-  Check,
-  X,
   Image as ImageIcon,
-  Plus,
-  Tag,
   CheckCircle,
   XCircle,
   Circle,

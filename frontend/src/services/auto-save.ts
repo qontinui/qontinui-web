@@ -437,7 +437,7 @@ export class AutoSaveService {
   /**
    * Resolve save conflict
    */
-  private async resolveConflict(workflow: Workflow): Promise<boolean> {
+  private async resolveConflict(): Promise<boolean> {
     // For now, we always prefer the current version (last-write-wins)
     // In a more sophisticated system, we could:
     // - Show a conflict resolution UI

@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { captureService } from "@/services/service-factory";
 import type { CaptureSession } from "@/types/capture";
-import { formatDuration, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 
 export function CaptureListPage() {
   const router = useRouter();

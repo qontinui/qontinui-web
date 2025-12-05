@@ -24,7 +24,7 @@ export class TokenStorage {
    * Save access token - NO-OP (tokens are in HttpOnly cookies)
    * Kept for API compatibility during migration
    */
-  saveAccessToken(token: string): void {
+  saveAccessToken(): void {
     if (typeof window === "undefined") return;
     // DO NOT store actual token in localStorage (XSS vulnerability)
     // Backend sets access_token as HttpOnly cookie automatically
@@ -40,7 +40,7 @@ export class TokenStorage {
    * Save refresh token - NO-OP (tokens are in HttpOnly cookies)
    * Kept for API compatibility during migration
    */
-  saveRefreshToken(token: string): void {
+  saveRefreshToken(): void {
     if (typeof window === "undefined") return;
     // DO NOT store actual token in localStorage (XSS vulnerability)
     // Backend sets refresh_token as HttpOnly cookie automatically

@@ -78,12 +78,6 @@ const LICENSES: PackageLicense[] = [
   "Other",
 ];
 
-const VISIBILITY_OPTIONS: PackageVisibility[] = [
-  "public",
-  "private",
-  "unlisted",
-];
-
 export default function PublishPackagePage() {
   const router = useRouter();
   const createPackage = useCreatePackage();

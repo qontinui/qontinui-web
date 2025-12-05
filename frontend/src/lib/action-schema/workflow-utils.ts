@@ -7,11 +7,8 @@
 
 import {
   Workflow,
-  Connections,
-  Connection,
   Action,
   ActionType,
-  getActionOutputCount,
 } from "./action-types";
 
 // ============================================================================

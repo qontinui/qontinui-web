@@ -11,7 +11,6 @@
 import type {
   Workflow,
   Action,
-  Connection,
 } from "@/lib/action-schema/action-types";
 
 // ============================================================================
@@ -128,8 +127,7 @@ export function calculateLayoutStatistics(
   const qualityMetrics = calculateQualityMetrics(
     nodeMetrics,
     edgeMetrics,
-    spatialMetrics,
-    bbox
+    spatialMetrics
   );
 
   return {
@@ -209,20 +207,10 @@ export function compareLayouts(
   improvementScore = Math.max(-100, Math.min(100, improvementScore));
 
   // Generate summary
-  const summary = generateComparisonSummary(improvementScore, {
-    overlaps: overlapChange,
-    crossings: crossingChange,
-    compactness: compactnessChange,
-    readability: readabilityChange,
-  });
+  const summary = generateComparisonSummary(improvementScore);
 
   // Generate recommendations
-  const recommendations = generateRecommendations(afterStats, {
-    overlaps: overlapChange,
-    crossings: crossingChange,
-    compactness: compactnessChange,
-    readability: readabilityChange,
-  });
+  const recommendations = generateRecommendations(afterStats);
 
   return {
     improvementScore,
@@ -486,8 +474,7 @@ function calculateSpatialMetrics(
 function calculateQualityMetrics(
   nodeMetrics: any,
   edgeMetrics: any,
-  spatialMetrics: any,
-  bbox: BoundingBox
+  spatialMetrics: any
 ) {
   // Compactness: prefer smaller bounding box (normalized)
   const compactness = Math.max(0, Math.min(1, spatialMetrics.utilization));
@@ -522,13 +509,7 @@ function calculateQualityMetrics(
 }
 
 function generateComparisonSummary(
-  improvementScore: number,
-  changes: {
-    overlaps: number;
-    crossings: number;
-    compactness: number;
-    readability: number;
-  }
+  improvementScore: number
 ): string {
   if (improvementScore > 50) {
     return "Significant improvement - layout is much better";
@@ -546,13 +527,7 @@ function generateComparisonSummary(
 }
 
 function generateRecommendations(
-  stats: LayoutStatistics,
-  changes: {
-    overlaps: number;
-    crossings: number;
-    compactness: number;
-    readability: number;
-  }
+  stats: LayoutStatistics
 ): string[] {
   const recommendations: string[] = [];
 

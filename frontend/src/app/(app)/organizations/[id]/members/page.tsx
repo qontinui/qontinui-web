@@ -69,7 +69,6 @@ export default function MembersPage() {
   const {
     switchOrg,
     members,
-    loading: orgLoading,
     getMembers,
     inviteMember,
     updateMemberRole,

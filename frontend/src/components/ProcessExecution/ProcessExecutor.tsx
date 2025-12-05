@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Play,
   Pause,
@@ -6,7 +6,6 @@ import {
   RotateCcw,
   CheckCircle,
   XCircle,
-  AlertCircle,
   Loader2,
   Terminal,
   ChevronRight,
@@ -47,7 +46,6 @@ interface ExecutionStatus {
 
 export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
   process,
-  states,
   onComplete,
 }) => {
   const [status, setStatus] = useState<ExecutionStatus>({
@@ -75,7 +73,6 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
     pause: pauseDebugger,
     stop: stopDebugger,
     step: stepDebugger,
-    state: debuggerState,
     speed: debuggerSpeed,
     shouldBreakAt,
   } = useExecutionDebugger();

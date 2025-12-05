@@ -16,7 +16,6 @@
 
 import React, { useState, useMemo, useCallback } from "react";
 import {
-  File,
   Folder,
   FolderOpen,
   Search,
@@ -313,7 +312,6 @@ export function PythonFileBrowser({
   isLoading = false,
   error = null,
   onRefresh,
-  validateOnSelect = false,
   height = "400px",
   showMetadata = true,
 }: PythonFileBrowserProps) {

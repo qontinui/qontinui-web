@@ -41,7 +41,6 @@ export const ProcessTestRunner: React.FC = () => {
     processes = [],
     categories = [],
     states = [],
-    transitions = [],
     screenshots = [],
   } = useAutomation();
   const [selectedCategory, setSelectedCategory] = useState<string>("");

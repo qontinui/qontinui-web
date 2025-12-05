@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Anchor, MousePointer, Image, Check } from "lucide-react";
+import { X, Check } from "lucide-react";
 import {
   ScreenshotLocation,
   Screenshot,
@@ -10,7 +10,6 @@ import { StateImage } from "../../contexts/automation-context/types";
 interface LocationPropertiesPanelProps {
   selectedLocation: ScreenshotLocation;
   states: any[]; // Will be replaced with proper State type
-  screenshots: Screenshot[];
   onUpdate: (location: ScreenshotLocation) => void;
   onDelete: (locationId: string) => void;
 }
@@ -18,7 +17,6 @@ interface LocationPropertiesPanelProps {
 const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
   selectedLocation,
   states,
-  screenshots,
   onUpdate,
   onDelete,
 }) => {
@@ -52,18 +50,6 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
     showSavedIndicator();
   };
 
-  const handlePropertyToggle = (property: "anchor" | "fixed") => {
-    const updatedLocation = {
-      ...location,
-      [property]: !location[property],
-    };
-    setLocation(updatedLocation);
-    onUpdate(updatedLocation);
-  };
-
-  const getScreenshot = () => {
-    return screenshots.find((s) => s.id === location.screenshotId);
-  };
 
   return (
     <>

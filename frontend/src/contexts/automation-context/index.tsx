@@ -18,7 +18,6 @@ import { ActionHistoryManager } from "./action-history-manager";
 import { ScreenshotManager } from "./screenshot-manager";
 import { screenshotDB, normalizeUrl } from "@/lib/screenshot-db";
 import { projectDB } from "@/lib/project-db";
-import { DEFAULT_PROJECT_SETTINGS } from "@/types/project-settings";
 import { projectLogger } from "@/lib/project-logger";
 import type {
   AutomationContextType,

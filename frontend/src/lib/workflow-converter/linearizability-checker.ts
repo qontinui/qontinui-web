@@ -2,10 +2,9 @@
  * Linearizability checker - determines if a graph workflow can be converted to sequential format
  */
 
-import { Workflow, Connections, Action } from "../action-schema/action-types";
+import { Workflow } from "../action-schema/action-types";
 import {
   getEntryPoints,
-  getPreviousActions,
   getNextActions,
   hasCycles,
 } from "../action-schema/workflow-utils";

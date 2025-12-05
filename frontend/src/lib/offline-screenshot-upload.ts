@@ -9,7 +9,6 @@ import { syncQueue } from "./sync-queue";
 import { syncProcessor } from "./sync-processor";
 import { screenshotDB, StoredScreenshot } from "./screenshot-db";
 import { serviceWorkerManager } from "./service-worker";
-import { apiClient } from "./api-client";
 
 /**
  * Upload result (immediate, works offline)
@@ -102,7 +101,7 @@ export async function uploadScreenshotOffline(
 
   // Track upload progress
   if (options.onProgress) {
-    syncProcessor.onProgress(syncItem.id, (itemId, progress) => {
+    syncProcessor.onProgress(syncItem.id, (_itemId, progress) => {
       options.onProgress?.(progress, "Uploading");
     });
   }

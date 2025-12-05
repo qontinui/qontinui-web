@@ -13,11 +13,9 @@ import {
   Resolution,
   ConflictCheckResult,
   ConflictDetails,
-  Change,
   ResourceType,
   ConflictDetectorConfig,
   AutoResolutionResult,
-  ThreeWayMergeInfo,
   VersionInfo,
 } from "../../types/collaboration/conflict-types";
 
@@ -379,8 +377,7 @@ export class ConflictDetector {
    * Determine severity of a conflict
    */
   private determineSeverity(
-    type: ConflictType,
-    path: string[]
+    type: ConflictType
   ): "low" | "medium" | "high" {
     // High severity for structural changes
     if (
@@ -565,13 +562,11 @@ export class ConflictDetector {
     target: any,
     source: any,
     base: any,
-    conflicts: Conflict[],
-    side: "local" | "remote"
+    conflicts: Conflict[]
   ): void {
     if (!source || typeof source !== "object") return;
 
     for (const key in source) {
-      const sourcePath = [key];
       const hasConflict = conflicts.some(
         (c) => c.path.length > 0 && c.path[0] === key
       );

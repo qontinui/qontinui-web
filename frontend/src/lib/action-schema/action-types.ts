@@ -517,7 +517,7 @@ export function getActionOutputCount(actionType: string, config?: any): number {
  * Get the number of inputs for a given action type
  * Currently all actions have exactly 1 input
  */
-export function getActionInputCount(actionType: string): number {
+export function getActionInputCount(): number {
   return 1;
 }
 

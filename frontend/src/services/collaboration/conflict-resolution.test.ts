@@ -16,7 +16,6 @@ import {
   Conflict,
   Operation,
   Change,
-  ResolutionStrategy,
 } from "../../types/collaboration/conflict-types";
 
 describe("ConflictDetector", () => {
@@ -276,7 +275,7 @@ describe("OperationalTransformService", () => {
         operationId: "op-2",
       };
 
-      const [op1Prime, op2Prime] = otService.transform(op1, op2);
+      const [, op2Prime] = otService.transform(op1, op2);
 
       // Earlier operation's value becomes old value for later
       expect(op2Prime.oldValue).toBe("Value 1");

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { apiClient } from "@/lib/api-client";
 
 const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 1 hour in milliseconds
 // REMOVED: REFRESH_INTERVAL - Frontend no longer proactively refreshes tokens
@@ -36,10 +35,8 @@ export function useActivityTracker() {
     window.addEventListener("session-expired", handleSessionExpired);
 
     // Update last activity time on user interaction
-    const updateActivity = (event: Event) => {
-      const previousActivity = lastActivityRef.current;
+    const updateActivity = () => {
       const now = Date.now();
-      const timeSinceLastActivity = now - previousActivity;
 
       activityEventCountRef.current++;
       lastActivityRef.current = now;
@@ -48,9 +45,6 @@ export function useActivityTracker() {
     };
 
     const resetTimers = () => {
-      const now = Date.now();
-      const timeSinceLastActivity = now - lastActivityRef.current;
-
       // Clear existing timers
       if (inactivityTimerRef.current) {
         clearTimeout(inactivityTimerRef.current);

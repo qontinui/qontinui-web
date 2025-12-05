@@ -12,9 +12,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Plus,
-  RotateCcw,
-  Settings,
-  Info,
   ChevronRight,
   ChevronLeft,
 } from "lucide-react";

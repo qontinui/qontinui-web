@@ -13,7 +13,6 @@ import { Action, ActionType } from "../action-schema/action-types";
 import {
   Workflow,
   Connections,
-  Connection,
 } from "../action-schema/action-types";
 import {
   IfActionConfig,
@@ -199,7 +198,7 @@ export class SequentialToGraphConverter {
     verticalOffset: number,
     parentId?: string
   ): void {
-    actions.forEach((action, index) => {
+    actions.forEach((action) => {
       const actionId = this.options.preserveActionIds
         ? action.id
         : this.generateId("action");
@@ -259,8 +258,8 @@ export class SequentialToGraphConverter {
   private handleControlFlow(
     action: Action,
     actionId: string,
-    depth: number,
-    verticalOffset: number
+    _depth: number,
+    _verticalOffset: number
   ): void {
     this.stats.controlFlowExpanded++;
 
@@ -268,33 +267,25 @@ export class SequentialToGraphConverter {
       case "IF":
         this.handleIfAction(
           action as Action<"IF">,
-          actionId,
-          depth,
-          verticalOffset
+          actionId
         );
         break;
       case "LOOP":
         this.handleLoopAction(
           action as Action<"LOOP">,
-          actionId,
-          depth,
-          verticalOffset
+          actionId
         );
         break;
       case "SWITCH":
         this.handleSwitchAction(
           action as Action<"SWITCH">,
-          actionId,
-          depth,
-          verticalOffset
+          actionId
         );
         break;
       case "TRY_CATCH":
         this.handleTryCatchAction(
           action as Action<"TRY_CATCH">,
-          actionId,
-          depth,
-          verticalOffset
+          actionId
         );
         break;
     }
@@ -309,9 +300,7 @@ export class SequentialToGraphConverter {
    */
   private handleIfAction(
     action: Action<"IF">,
-    actionId: string,
-    depth: number,
-    verticalOffset: number
+    actionId: string
   ): void {
     const config = action.config as IfActionConfig;
 
@@ -341,9 +330,7 @@ export class SequentialToGraphConverter {
    */
   private handleLoopAction(
     action: Action<"LOOP">,
-    actionId: string,
-    depth: number,
-    verticalOffset: number
+    actionId: string
   ): void {
     const config = action.config as LoopActionConfig;
 
@@ -366,9 +353,7 @@ export class SequentialToGraphConverter {
    */
   private handleSwitchAction(
     action: Action<"SWITCH">,
-    actionId: string,
-    depth: number,
-    verticalOffset: number
+    actionId: string
   ): void {
     const config = action.config as SwitchActionConfig;
 
@@ -398,9 +383,7 @@ export class SequentialToGraphConverter {
    */
   private handleTryCatchAction(
     action: Action<"TRY_CATCH">,
-    actionId: string,
-    depth: number,
-    verticalOffset: number
+    actionId: string
   ): void {
     const config = action.config as TryCatchActionConfig;
 

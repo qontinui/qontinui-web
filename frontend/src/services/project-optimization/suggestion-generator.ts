@@ -20,8 +20,7 @@ import { formatBytes } from "./utils";
 export function generateSuggestions(
   workflows: WorkflowAnalysis[],
   states: StateAnalysis[],
-  images: ImageAnalysis[],
-  transitions: TransitionAnalysis[]
+  images: ImageAnalysis[]
 ): OptimizationSuggestion[] {
   const suggestions: OptimizationSuggestion[] = [];
   let suggestionId = 1;

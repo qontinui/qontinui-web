@@ -24,7 +24,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { useAutomation } from "@/contexts/automation-context";
-import { Plus, Info, MapPin, Search } from "lucide-react";
+import { Info, MapPin, Search } from "lucide-react";
 import type {
   ExtractedPattern,
   OptimizationStrategy,
@@ -54,7 +54,7 @@ export function StateImageCreationDialog({
   strategy,
   onCreateStateImage,
 }: StateImageCreationDialogProps) {
-  const { states, addState, updateState } = useAutomation();
+  const { states } = useAutomation();
 
   const [createNewState, setCreateNewState] = useState(false);
   const [selectedStateId, setSelectedStateId] = useState<string>("");

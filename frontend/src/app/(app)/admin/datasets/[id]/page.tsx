@@ -11,7 +11,7 @@
  * - Review workflow
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { datasetService } from "@/services/dataset-service";
@@ -25,7 +25,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
@@ -33,15 +32,11 @@ import { Label } from "@/components/ui/label";
 import { ImageCanvas, BoundingBox } from "@/components/common/ImageCanvas";
 import { DatasetExportDialog } from "@/components/datasets/DatasetExportDialog";
 import {
-  LayoutDashboard,
-  Shield,
-  Database,
   ArrowLeft,
   Download,
   ImageIcon,
   Tag,
   CheckCircle2,
-  Clock,
   Filter,
   ChevronLeft,
   ChevronRight,
@@ -51,7 +46,6 @@ import {
   BarChart3,
   CheckSquare,
   Square,
-  Trash2,
 } from "lucide-react";
 import type {
   Dataset,

@@ -124,8 +124,7 @@ export function findDuplicateStates(
  */
 export function findDuplicateWorkflows(
   workflow: Workflow,
-  allWorkflows: Workflow[],
-  threshold: number = 0.9
+  allWorkflows: Workflow[]
 ): DuplicateMatch[] {
   const duplicates: DuplicateMatch[] = [];
 

@@ -272,7 +272,7 @@ export const mathExample: Action<"MATH_OPERATION"> = createAction(
  */
 export function demonstrateTypeSafety() {
   // ✅ Valid - config matches CLICK type
-  const validClick = createAction("CLICK", {
+  createAction("CLICK", {
     target: { type: "image", imageId: "btn" },
     numberOfClicks: 1,
   });
@@ -283,7 +283,7 @@ export function demonstrateTypeSafety() {
   // });
 
   // ✅ Valid - config matches TYPE type
-  const validType = createAction("TYPE", {
+  createAction("TYPE", {
     text: "Hello world",
     typeDelay: 50,
   });

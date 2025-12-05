@@ -14,7 +14,6 @@ import {
   Loader2,
 } from "lucide-react";
 import { Screenshot } from "../../types/Screenshot";
-import { generateId } from "../../lib/utils";
 import {
   downloadStateExport,
   downloadPythonStateCode,
@@ -28,7 +27,6 @@ import {
 } from "@/components/ImageUploadProgress";
 import { toast } from "sonner";
 import {
-  QontinuiPage,
   QontinuiHeader,
   QontinuiHeaderActions,
   QontinuiMain,
@@ -66,9 +64,6 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
   );
   const [editingName, setEditingName] = useState<string>("");
   const [zoomMode, setZoomMode] = useState<"fit" | "original">("fit");
-  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
-    {}
-  );
   const [uploadingFiles, setUploadingFiles] = useState<UploadingImage[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [showMonitorMenu, setShowMonitorMenu] = useState(false);

@@ -9,7 +9,7 @@
  * - Empty connections
  */
 
-import { Workflow, ActionType } from "./export-schema";
+import { Workflow } from "./export-schema";
 
 export interface WorkflowValidationError {
   type: "error" | "warning";
@@ -22,23 +22,6 @@ export interface WorkflowValidationResult {
   valid: boolean;
   errors: WorkflowValidationError[];
   warnings: WorkflowValidationError[];
-}
-
-// Read-only actions that are safe for parallel execution
-const READ_ONLY_ACTIONS = new Set<ActionType>([
-  "FIND",
-  "FIND_STATE_IMAGE",
-  "EXISTS",
-  "VANISH",
-  "SCREENSHOT",
-  "WAIT",
-]);
-
-/**
- * Check if an action type is read-only (safe for parallel execution)
- */
-function isReadOnlyAction(actionType: ActionType): boolean {
-  return READ_ONLY_ACTIONS.has(actionType);
 }
 
 /**
@@ -117,7 +100,7 @@ function validateConnectionIndices(
       const connections = outputs[outputType as keyof typeof outputs];
       if (!connections) return;
 
-      connections.forEach((outputArray, outputIndex) => {
+      connections.forEach((outputArray) => {
         outputArray.forEach((targetIndex) => {
           if (targetIndex < 0 || targetIndex > maxIndex) {
             errors.push({
@@ -138,7 +121,7 @@ function validateConnectionIndices(
  */
 function detectUnreachableActions(
   workflow: Workflow,
-  actionIndexMap: Map<string, number>,
+  _actionIndexMap: Map<string, number>,
   warnings: WorkflowValidationError[]
 ): void {
   const reachable = new Set<number>();
@@ -192,7 +175,7 @@ function detectUnreachableActions(
  */
 function detectCycles(
   workflow: Workflow,
-  actionIndexMap: Map<string, number>,
+  _actionIndexMap: Map<string, number>,
   warnings: WorkflowValidationError[]
 ): void {
   const visited = new Set<number>();

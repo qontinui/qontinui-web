@@ -5,7 +5,6 @@ import {
   ZoomOut,
   Maximize2,
   Target,
-  Eye,
   Sliders,
   Download,
   Play,

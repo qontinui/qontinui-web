@@ -2,7 +2,7 @@
  * Pattern detector - identifies control flow patterns (IF, LOOP) in graph workflows
  */
 
-import { Workflow, Connections, Action } from "../action-schema/action-types";
+import { Workflow, Action } from "../action-schema/action-types";
 import { getActionById, getNextActions } from "../action-schema/workflow-utils";
 
 /**
@@ -139,8 +139,7 @@ export class PatternDetector {
     // Find action after loop exits
     const nextAction = this.findLoopExitAction(
       workflow,
-      loopAction.id,
-      bodyActions
+      loopAction.id
     );
 
     return {
@@ -296,8 +295,7 @@ export class PatternDetector {
    */
   private findLoopExitAction(
     workflow: Workflow,
-    loopActionId: string,
-    bodyActions: Action[]
+    loopActionId: string
   ): Action | undefined {
     if (!workflow.connections) {
       return undefined;

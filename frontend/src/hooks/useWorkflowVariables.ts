@@ -30,13 +30,10 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api-client";
 import type {
   VariablesResponse,
   VariableChangesResponse,
   WorkflowVariable,
-  VariableSnapshot,
-  VariableChange,
 } from "@/types/workflow-variables";
 
 // Use empty string for relative URLs that go through Next.js proxy

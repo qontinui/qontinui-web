@@ -16,7 +16,7 @@
 
 import { RequireProject } from "@/components/require-project";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -28,7 +28,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -36,9 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import {
   Calendar,
@@ -54,7 +51,6 @@ import {
   Filter,
   X,
   BarChart3,
-  PieChart as PieChartIcon,
   FileDown,
   Search,
   Eye,
@@ -62,10 +58,6 @@ import {
   ChevronRight,
   Zap,
   Info,
-  Settings,
-  Users,
-  FolderOpen,
-  Tag,
   ArrowLeft,
 } from "lucide-react";
 import { AnalyticsDashboard } from "@/components/workflow-analytics/AnalyticsDashboard";
@@ -73,9 +65,7 @@ import { WorkflowMetricsPanel } from "@/components/workflow-analytics/WorkflowMe
 import { PerformanceAnalyzer } from "@/components/workflow-analytics/PerformanceAnalyzer";
 import {
   workflowAnalyticsService,
-  WorkflowMetrics,
   ExecutionRecord,
-  AggregatedStats,
 } from "@/services/workflow-analytics-service";
 import { cn } from "@/lib/utils";
 
@@ -100,11 +90,6 @@ interface FilterState {
   searchQuery?: string;
 }
 
-interface ComparisonWorkflow {
-  id: string;
-  name: string;
-  metrics: WorkflowMetrics;
-}
 
 // ============================================================================
 // Time Range Utilities
@@ -488,8 +473,7 @@ export default function WorkflowAnalyticsPage() {
     complexityLevel: "all",
   });
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
-  const [comparisonWorkflows, setComparisonWorkflows] = useState<string[]>([]);
-  const [showComparison, setShowComparison] = useState(false);
+  const [comparisonWorkflows] = useState<string[]>([]);
   const [selectedExecution, setSelectedExecution] =
     useState<ExecutionRecord | null>(null);
 
@@ -647,17 +631,6 @@ export default function WorkflowAnalyticsPage() {
     setFilters({
       status: "all",
       complexityLevel: "all",
-    });
-  };
-
-  const toggleComparisonWorkflow = (workflowId: string) => {
-    setComparisonWorkflows((prev) => {
-      if (prev.includes(workflowId)) {
-        return prev.filter((id) => id !== workflowId);
-      } else if (prev.length < 5) {
-        return [...prev, workflowId];
-      }
-      return prev;
     });
   };
 
