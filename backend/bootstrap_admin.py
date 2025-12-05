@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, text
 # Get DB URL from environment or use default
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://qontinui_admin:QontinuiSecure2025@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require",
+    "postgresql://qontinui_admin:YOUR_DB_PASSWORD@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require",
 )
 
 print("Connecting to database...")

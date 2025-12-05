@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
 import { Workflow } from "@/lib/action-schema/action-types";
 import {
   WorkflowDocumentation,
@@ -285,13 +286,19 @@ export function DocumentationViewer({
         '<code class="bg-muted px-1.5 py-0.5 rounded text-sm">$1</code>'
       );
 
+      // Sanitize HTML to prevent XSS
+      const sanitizedHtml = DOMPurify.sanitize(codeText, {
+        ALLOWED_TAGS: ["strong", "code"],
+        ALLOWED_ATTR: ["class"],
+      });
+
       // Regular paragraph
       if (line.trim()) {
         return (
           <p
             key={idx}
             className="mb-4 leading-7"
-            dangerouslySetInnerHTML={{ __html: codeText }}
+            dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
           />
         );
       }

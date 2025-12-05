@@ -5,7 +5,7 @@ import sys
 
 from sqlalchemy import create_engine, text
 
-DATABASE_URL = "postgresql://qontinui_admin:QontinuiSecure2025@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require"
+DATABASE_URL = "postgresql://qontinui_admin:YOUR_DB_PASSWORD@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require"
 
 
 def main():

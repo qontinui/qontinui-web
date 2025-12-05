@@ -55,6 +55,40 @@ MIN_FREE_DISK_SPACE_BYTES = 100 * 1024 * 1024
 
 
 # ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+def validate_package_name(package: str) -> bool:
+    """
+    Validate package name follows PyPI conventions.
+
+    Allows: alphanumeric, hyphens, underscores, dots, and version specifiers.
+    This prevents command injection attacks through malicious package names.
+
+    Args:
+        package: Package specification string (e.g., "requests>=2.0")
+
+    Returns:
+        True if package name is valid, False otherwise
+
+    Examples:
+        >>> validate_package_name("requests")
+        True
+        >>> validate_package_name("requests>=2.0.0")
+        True
+        >>> validate_package_name("Django[extra]>=3.0")
+        True
+        >>> validate_package_name("package; rm -rf /")
+        False
+    """
+    # PEP 508 compatible package name pattern
+    # Allows: package-name[extras]>=version,<other-version
+    pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?(\[([a-zA-Z0-9._-]+,?)+\])?([<>=!~]+[0-9a-zA-Z.*,<>=!~]+)?$"
+    return bool(re.match(pattern, package))
+
+
+# ============================================================================
 # Package Installer Service
 # ============================================================================
 
@@ -278,8 +312,18 @@ class PackageInstaller:
                 pip_path = venv_path / "Scripts" / "pip.exe"
 
             for dep in dependencies:
+                # Validate package name to prevent command injection
+                if not validate_package_name(dep):
+                    logger.error(
+                        "invalid_package_name",
+                        project_id=project_id,
+                        package=dep,
+                        reason="Package name does not follow PyPI conventions",
+                    )
+                    continue  # Skip invalid packages
+
                 result = subprocess.run(
-                    [str(pip_path), "install", dep],
+                    [str(pip_path), "install", "--no-deps", dep],
                     capture_output=True,
                     text=True,
                     timeout=300,  # 5 minute timeout
