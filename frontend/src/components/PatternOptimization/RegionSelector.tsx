@@ -3,10 +3,8 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Slider } from "@/components/ui/slider";
 import {
   Copy,
-  Move,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -28,7 +26,7 @@ interface RegionSelectorProps {
 }
 
 export function RegionSelector({ screenshot }: RegionSelectorProps) {
-  const { setRegion, copyRegionToAll, clearRegions } = usePatternOptimization();
+  const { setRegion, copyRegionToAll } = usePatternOptimization();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

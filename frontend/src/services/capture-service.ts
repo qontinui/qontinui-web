@@ -5,12 +5,10 @@ import type {
   CaptureSessionApi,
   InputEvent,
   InputEventApi,
-  CaptureSessionStats,
 } from "@/types/capture";
 import {
   transformCaptureSession,
   transformInputEvent,
-  calculateEventStats,
 } from "@/types/capture";
 
 export interface CaptureSessionListResponse {

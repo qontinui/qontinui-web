@@ -7,7 +7,6 @@ import { useAuth } from "@/contexts/auth-context";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { authService } from "@/services/service-factory";
 import {
   LayoutDashboard,
   Users,

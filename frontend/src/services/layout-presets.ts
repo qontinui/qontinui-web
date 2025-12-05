@@ -11,7 +11,7 @@
  * - Local storage persistence
  */
 
-import { LayoutStyle, LayoutConfig } from "@/lib/workflow-layout/auto-layout";
+import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
 import type { LayoutOptions } from "./layout-service";
 
 // ============================================================================

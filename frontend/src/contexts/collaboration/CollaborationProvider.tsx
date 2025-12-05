@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, ReactNode } from "react";
+import React, { useEffect } from "react";
 import { OrganizationProvider } from "./OrganizationContext";
 import { PermissionsProvider } from "./PermissionsContext";
 import { PresenceProvider, usePresence } from "./PresenceContext";
@@ -41,17 +41,14 @@ function WebSocketIntegration({ workflowId }: { workflowId?: string }) {
           });
         }
       },
-      onCommentAdded: (comment) => {
+      onCommentAdded: () => {
         // Add new comment if it belongs to current workflow
-        if (!workflowId || comment.workflow_id === workflowId) {
-          // Update comments state through internal method
-          comments.refreshComments();
-        }
-      },
-      onCommentUpdated: (comment) => {
         comments.refreshComments();
       },
-      onCommentDeleted: (commentId) => {
+      onCommentUpdated: () => {
+        comments.refreshComments();
+      },
+      onCommentDeleted: () => {
         comments.refreshComments();
       },
       onActivityUpdate: (activityItem) => {

@@ -140,7 +140,7 @@ export class IntegrationTestEngine {
     if (!currentScreenshot) return;
 
     // Use Qontinui API to detect states with real pattern matching
-    const detectedStates = await qontinuiAPI.detectStates(
+    await qontinuiAPI.detectStates(
       currentScreenshot.imageData,
       this.scenario.states,
       0.8
@@ -148,46 +148,6 @@ export class IntegrationTestEngine {
 
     // The detect_states endpoint already activates states in Qontinui's state manager
     // No need to manually activate them here
-  }
-
-  /**
-   * Activate a state with dependency checking
-   * Uses Qontinui's state manager for activation
-   */
-  private async activateState(stateId: string) {
-    if (!this.scenario) return;
-
-    // Get current active states from Qontinui
-    const activeStates = await getCurrentActiveStates();
-
-    // Check dependencies
-    const dependencies =
-      this.scenario.activationRules.dependencies.get(stateId);
-    if (dependencies) {
-      const allDependenciesMet = dependencies.every((dep) =>
-        activeStates.includes(dep)
-      );
-      if (!allDependenciesMet) {
-        console.warn(`Cannot activate ${stateId}: dependencies not met`);
-        return;
-      }
-    }
-
-    // Check exclusions - deactivate conflicting states
-    const exclusions = this.scenario.activationRules.exclusions.get(stateId);
-    if (exclusions) {
-      for (const excluded of exclusions) {
-        if (activeStates.includes(excluded)) {
-          console.log(
-            `Deactivating ${excluded} due to exclusion with ${stateId}`
-          );
-          await qontinuiAPI.deactivateState(excluded);
-        }
-      }
-    }
-
-    // Activate the state using Qontinui's state manager
-    await qontinuiAPI.activateState(stateId, 1.0);
   }
 
   /**
@@ -414,7 +374,7 @@ export class SnapshotRecorder {
     this.snapshots = [];
 
     // Get active states from Qontinui instead of managing locally
-    const activeStates = await getCurrentActiveStates();
+    await getCurrentActiveStates();
   }
 
   async recordAction(

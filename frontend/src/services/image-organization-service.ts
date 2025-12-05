@@ -205,10 +205,6 @@ export interface ImportExportData {
 
 const STORAGE_VERSION = 1;
 const STORAGE_KEY = "qontinui_image_organization";
-const METADATA_STORAGE_KEY = "qontinui_image_metadata";
-const COLLECTIONS_STORAGE_KEY = "qontinui_image_collections";
-const USAGE_STORAGE_KEY = "qontinui_image_usage";
-const VERSIONS_STORAGE_KEY = "qontinui_image_versions";
 
 const MAX_FOLDER_DEPTH = 10;
 const MAX_FOLDER_NAME_LENGTH = 100;
@@ -1889,7 +1885,7 @@ export class ImageOrganizationService {
         collections: Array.from(this.collections.values()),
         usageRecords: Array.from(this.usageRecords.values()),
         versions: Array.from(this.versions.entries()).flatMap(
-          ([imageId, versions]) => versions
+          ([, versions]) => versions
         ),
         lastUpdated: new Date().toISOString(),
       };

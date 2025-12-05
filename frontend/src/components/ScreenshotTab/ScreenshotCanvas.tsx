@@ -6,8 +6,8 @@ import {
   SelectionMode,
 } from "../../types/Screenshot";
 import { generateId } from "../../lib/utils";
-import { ZoomIn, ZoomOut, Maximize2, Move } from "lucide-react";
-import { useProgressiveImage, getImageUrlForZoom } from "./ProgressiveImage";
+import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { useProgressiveImage } from "./ProgressiveImage";
 
 interface ScreenshotCanvasProps {
   screenshot: Screenshot;

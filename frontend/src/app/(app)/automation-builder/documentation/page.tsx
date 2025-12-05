@@ -1,17 +1,14 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Workflow, Action } from "@/lib/action-schema/action-types";
+import { Workflow } from "@/lib/action-schema/action-types";
 import {
   WorkflowDocumentation,
   WorkflowDocumentationService,
-  ActionComment,
-  DocumentationTemplate,
 } from "@/services/workflow-documentation-service";
 import { DocumentationEditor } from "@/components/workflow-documentation/DocumentationEditor";
 import { DocumentationViewer } from "@/components/workflow-documentation/DocumentationViewer";
-import { ActionCommentsPanel } from "@/components/workflow-documentation/ActionCommentsPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +20,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import {
   Select,
@@ -38,9 +34,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
@@ -59,11 +52,9 @@ import {
   Download,
   Upload,
   Search,
-  Filter,
   ChevronRight,
   ChevronDown,
   Folder,
-  FolderOpen,
   BookOpen,
   FileCode,
   Package,
@@ -72,24 +63,17 @@ import {
   History,
   BarChart3,
   Eye,
-  EyeOff,
   Edit,
   Trash2,
   MoreVertical,
   CheckCircle2,
-  XCircle,
   AlertCircle,
   Clock,
   TrendingUp,
   Settings,
-  Copy,
   ExternalLink,
   Tags,
   GitBranch,
-  Activity,
-  Zap,
-  Target,
-  MessageSquare,
   Info,
   PlayCircle,
 } from "lucide-react";

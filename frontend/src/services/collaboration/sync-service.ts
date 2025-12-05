@@ -13,7 +13,6 @@ import {
   OptimisticUpdate,
   Conflict,
   ResourceType,
-  SyncStatus,
   OfflineQueueState,
   SyncServiceConfig,
 } from "../../types/collaboration/conflict-types";
@@ -385,7 +384,7 @@ export class SyncService {
       const localOp = this.changeToOperation(optimistic.change);
       const remoteOp = this.changeToOperation(update.change);
 
-      const [localTransformed, remoteTransformed] =
+      const [, remoteTransformed] =
         operationalTransformService.transform(localOp, remoteOp);
 
       // Apply transformed remote change

@@ -46,8 +46,6 @@ import {
   Upload,
   Trash2,
   Search,
-  MoreVertical,
-  FileJson,
   AlertCircle,
   Info,
 } from "lucide-react";
@@ -58,7 +56,6 @@ import type {
   UpdateVariableRequest,
   VariableImportExport,
 } from "@/types/variables";
-import { formatDistanceToNow } from "date-fns";
 
 export default function VariablesPage() {
   const searchParams = useSearchParams();

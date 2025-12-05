@@ -8,7 +8,6 @@
 
 import {
   Operation,
-  OperationType,
   TransformResult,
   ComposedOperation,
   InvertedOperation,

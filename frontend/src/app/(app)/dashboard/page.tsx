@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -58,13 +57,6 @@ interface Project {
   status: "draft" | "testing" | "production";
 }
 
-interface Activity {
-  id: string;
-  type: "created" | "modified" | "exported" | "run";
-  projectName: string;
-  timestamp: Date;
-  projectId: string;
-}
 
 export default function Dashboard() {
   const { user, logout, loading: authLoading } = useAuth();
@@ -86,7 +78,6 @@ export default function Dashboard() {
 
   // Onboarding state
   const {
-    showWelcomeModal,
     showTutorialOverlay,
     hasCompletedWelcome,
     toggleWelcomeModal,

@@ -24,7 +24,6 @@ import type {
   ImageAnalysis,
   TransitionAnalysis,
   BrokenReference,
-  DuplicateMatch,
 } from "./types";
 import { findDuplicateImages } from "./duplicate-detector";
 import {

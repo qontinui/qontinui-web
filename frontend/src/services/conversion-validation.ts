@@ -8,11 +8,9 @@
 import type {
   Workflow,
   Action,
-  Connections,
 } from "../lib/action-schema/action-types";
 import {
   getNextActions,
-  getPreviousActions,
 } from "../lib/action-schema/workflow-utils";
 
 // ============================================================================
@@ -302,10 +300,6 @@ export function validateControlFlowIntegrity(
     ["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(a.type)
   );
 
-  const convertedControlFlow = converted.actions.filter((a) =>
-    ["IF", "LOOP", "SWITCH", "TRY_CATCH"].includes(a.type)
-  );
-
   // Check that control flow actions are preserved
   for (const action of originalControlFlow) {
     const convertedAction = converted.actions.find((a) => a.id === action.id);
@@ -321,12 +315,12 @@ export function validateControlFlowIntegrity(
 
     // Validate IF actions
     if (action.type === "IF") {
-      validateIfAction(action, convertedAction, original, converted, issues);
+      validateIfAction(action, convertedAction, issues);
     }
 
     // Validate LOOP actions
     if (action.type === "LOOP") {
-      validateLoopAction(action, convertedAction, original, converted, issues);
+      validateLoopAction(action, convertedAction, issues);
     }
 
     // Validate SWITCH actions
@@ -334,8 +328,6 @@ export function validateControlFlowIntegrity(
       validateSwitchAction(
         action,
         convertedAction,
-        original,
-        converted,
         issues
       );
     }
@@ -345,8 +337,6 @@ export function validateControlFlowIntegrity(
       validateTryCatchAction(
         action,
         convertedAction,
-        original,
-        converted,
         issues
       );
     }
@@ -369,8 +359,6 @@ export function validateControlFlowIntegrity(
 function validateIfAction(
   original: Action,
   converted: Action,
-  originalWorkflow: Workflow,
-  convertedWorkflow: Workflow,
   issues: ValidationIssue[]
 ): void {
   const originalConfig = original.config as any;
@@ -415,8 +403,6 @@ function validateIfAction(
 function validateLoopAction(
   original: Action,
   converted: Action,
-  originalWorkflow: Workflow,
-  convertedWorkflow: Workflow,
   issues: ValidationIssue[]
 ): void {
   const originalConfig = original.config as any;
@@ -452,8 +438,6 @@ function validateLoopAction(
 function validateSwitchAction(
   original: Action,
   converted: Action,
-  originalWorkflow: Workflow,
-  convertedWorkflow: Workflow,
   issues: ValidationIssue[]
 ): void {
   const originalConfig = original.config as any;
@@ -476,8 +460,6 @@ function validateSwitchAction(
 function validateTryCatchAction(
   original: Action,
   converted: Action,
-  originalWorkflow: Workflow,
-  convertedWorkflow: Workflow,
   issues: ValidationIssue[]
 ): void {
   const originalConfig = original.config as any;

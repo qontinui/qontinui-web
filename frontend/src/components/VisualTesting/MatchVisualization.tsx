@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from "react";
 import { Screenshot } from "../../types/Screenshot";
-import { Eye, Search, Target } from "lucide-react";
+import { Search, Target } from "lucide-react";
 
 interface MatchRegion {
   x: number;
@@ -244,7 +244,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
             <input
               type="checkbox"
               checked={showScores}
-              onChange={(e) => {
+              onChange={() => {
                 /* Toggle showScores */
               }}
               className="w-4 h-4"
@@ -255,7 +255,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
             <input
               type="checkbox"
               checked={showLabels}
-              onChange={(e) => {
+              onChange={() => {
                 /* Toggle showLabels */
               }}
               className="w-4 h-4"
@@ -266,7 +266,7 @@ const MatchVisualization: React.FC<MatchVisualizationProps> = ({
             <input
               type="checkbox"
               checked={highlightBest}
-              onChange={(e) => {
+              onChange={() => {
                 /* Toggle highlightBest */
               }}
               className="w-4 h-4"

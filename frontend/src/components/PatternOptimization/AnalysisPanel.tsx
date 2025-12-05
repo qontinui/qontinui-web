@@ -16,7 +16,6 @@ import {
   RefreshCw,
   Download,
   TrendingUp,
-  TrendingDown,
   AlertCircle,
   CheckCircle,
   BarChart3,
@@ -29,7 +28,6 @@ import { toast } from "sonner";
 import { usePatternOptimization } from "@/contexts/pattern-optimization-context";
 import type {
   OptimizationStrategy,
-  ExtractedPattern,
 } from "@/types/pattern-optimization";
 import type {
   StateImage,
@@ -47,8 +45,6 @@ export function AnalysisPanel() {
     evaluations,
     selectedStrategy,
     selectStrategy,
-    generateResult,
-    exportResult,
   } = usePatternOptimization();
 
   const { states, addState, updateState } = useAutomation();

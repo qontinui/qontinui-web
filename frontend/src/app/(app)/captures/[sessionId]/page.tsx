@@ -11,7 +11,6 @@ import {
   ArrowLeft,
   Download,
   Camera,
-  Save,
   Loader2,
   Monitor,
   MousePointer,
@@ -39,7 +38,7 @@ export default function CaptureViewerPage() {
   const [events, setEvents] = useState<InputEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentTimestamp, setCurrentTimestamp] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [, setIsPlaying] = useState(false);
 
   // Screenshot save dialog state
   const [showSaveDialog, setShowSaveDialog] = useState(false);

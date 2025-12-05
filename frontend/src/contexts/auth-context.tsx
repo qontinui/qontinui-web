@@ -202,7 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fullName?: string
   ) => {
     try {
-      const newUser = await authService.register({
+      await authService.register({
         email,
         username,
         password,

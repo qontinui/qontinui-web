@@ -60,4 +60,3 @@ import type {
 } from "./types";
 
 // Type compilation verification
-const _typeCheck = true;

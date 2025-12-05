@@ -32,13 +32,10 @@ import {
 } from "@/components/annotations/ScreenshotThumbnailStrip";
 import {
   Upload,
-  Save,
   Download,
   Trash2,
   FileImage,
   Plus,
-  Eye,
-  EyeOff,
   LayoutDashboard,
   Shield,
   Sparkles,

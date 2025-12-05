@@ -16,8 +16,6 @@ import {
   GripVertical,
   Trash2,
   Copy,
-  GitBranch,
-  RotateCw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useAutomation } from "@/contexts/automation-context";

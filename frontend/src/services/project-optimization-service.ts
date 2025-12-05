@@ -21,8 +21,6 @@
 
 import type {
   Workflow,
-  Action,
-  ActionType,
 } from "@/lib/action-schema/action-types";
 import type {
   State,
@@ -1456,8 +1454,7 @@ export class ProjectOptimizationService {
   generateSuggestions(
     workflows: WorkflowAnalysis[],
     states: StateAnalysis[],
-    images: ImageAnalysis[],
-    transitions: TransitionAnalysis[]
+    images: ImageAnalysis[]
   ): OptimizationSuggestion[] {
     const suggestions: OptimizationSuggestion[] = [];
     let suggestionId = 1;
@@ -1863,8 +1860,7 @@ export class ProjectOptimizationService {
    */
   findDuplicateWorkflows(
     workflow: Workflow,
-    allWorkflows: Workflow[],
-    threshold: number = 0.9
+    allWorkflows: Workflow[]
   ): DuplicateMatch[] {
     const duplicates: DuplicateMatch[] = [];
 
@@ -2484,8 +2480,7 @@ export class ProjectOptimizationService {
     resourceId: string,
     type: "workflow" | "state" | "image",
     workflows: Workflow[],
-    states: State[],
-    images: ImageAsset[]
+    states: State[]
   ) {
     if (type === "workflow") {
       return this.dependencyAnalyzer.getImpactAnalysis(resourceId, workflows);
@@ -3039,8 +3034,7 @@ export class ProjectOptimizationService {
   private collectIssues(
     workflows: WorkflowAnalysis[],
     states: StateAnalysis[],
-    images: ImageAnalysis[],
-    transitions: TransitionAnalysis[]
+    images: ImageAnalysis[]
   ): ProjectIssue[] {
     const issues: ProjectIssue[] = [];
     let issueId = 1;

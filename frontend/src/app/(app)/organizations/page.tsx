@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useOrganization } from "@/hooks/useOrganization";
@@ -21,7 +21,6 @@ import {
   ArrowRight,
   Loader2,
 } from "lucide-react";
-import { toast } from "sonner";
 import type { Organization } from "@/types/collaboration";
 
 export default function OrganizationsPage() {

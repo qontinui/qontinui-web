@@ -8,7 +8,6 @@ import {
   OutgoingTransition as ExportOutgoingTransition,
   IncomingTransition as ExportIncomingTransition,
   ConfigSettings,
-  ActionConfig,
 } from "./export-schema";
 
 import { validateWorkflowConnections } from "./workflow-validator";
@@ -16,9 +15,6 @@ import { validateWorkflowConnections } from "./workflow-validator";
 // Import types from new action schema
 import {
   Action,
-  ActionType,
-  BaseActionSettings,
-  ExecutionSettings,
   Workflow,
 } from "./action-schema";
 
@@ -32,7 +28,6 @@ import { Screenshot } from "../types/Screenshot";
 
 export class ConfigExporter {
   private version = "2.0.0"; // Updated to 2.0.0 for workflows
-  private settings: any = null;
 
   /**
    * Export the current configuration to Qontinui format
@@ -44,13 +39,13 @@ export class ConfigExporter {
     transitions: Transition[],
     categories: string[],
     metadata?: Partial<ConfigMetadata>,
-    settings?: any,
+    _settings?: any,
     screenshots?: Screenshot[]
   ): Promise<QontinuiConfig> {
     const now = new Date().toISOString();
 
-    // Store settings for use in other methods
-    this.settings = settings || this.getDefaultSettings();
+    // Get settings
+    const settings = _settings || this.getDefaultSettings();
 
     // Export images first and build a lookup map from base64 data to image IDs
     const exportedImages = await this.exportImages(images || [], screenshots);
@@ -82,7 +77,7 @@ export class ConfigExporter {
       images: exportedImages,
       workflows: this.exportWorkflows(allWorkflows, states || []),
       states: this.exportStates(states || [], screenshots, base64ToImageId),
-      transitions: this.exportTransitions(transitions || [], states || []),
+      transitions: this.exportTransitions(transitions || []),
       categories: categories || ["Main"],
       settings: this.convertSettings(settings) || this.getDefaultSettings(),
     };
@@ -264,7 +259,6 @@ export class ConfigExporter {
       let connections = workflow.connections || {};
 
       // Ensure all actions have connection entries
-      const actionIds = new Set(workflow.actions.map((a) => a.id));
       workflow.actions.forEach((action) => {
         if (!connections[action.id]) {
           connections[action.id] = { main: [] };
@@ -760,8 +754,7 @@ export class ConfigExporter {
    * Convert transitions to export format
    */
   private exportTransitions(
-    transitions: Transition[],
-    states?: State[]
+    transitions: Transition[]
   ): ExportTransition[] {
     if (!transitions || !Array.isArray(transitions)) {
       return [];

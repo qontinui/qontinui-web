@@ -61,8 +61,7 @@ export function getImpactAnalysis(
   resourceId: string,
   type: "workflow" | "state" | "image",
   workflows: Workflow[],
-  states: State[],
-  images: ImageAsset[]
+  states: State[]
 ) {
   const dependencyAnalyzer = WorkflowDependencyAnalyzer.getInstance();
 

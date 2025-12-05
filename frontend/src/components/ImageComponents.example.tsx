@@ -185,7 +185,7 @@ function ExampleImageGallery() {
             projectId={projectId}
             alt={image.name}
             className="w-full h-full object-cover rounded"
-            onRefresh={(newUrl) => {
+            onRefresh={() => {
               // Update image in your state/context
               console.log(`Image ${image.name} URL refreshed`);
             }}

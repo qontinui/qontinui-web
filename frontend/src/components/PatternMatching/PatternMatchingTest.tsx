@@ -13,11 +13,9 @@ import {
   X,
   CheckCircle,
   AlertCircle,
-  Info,
   Camera,
   Target,
   Layers,
-  Grid,
 } from "lucide-react";
 import { Screenshot } from "../../contexts/automation-context/types";
 import { useAutomation } from "../../contexts/automation-context";
@@ -80,7 +78,6 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
     width: number;
     height: number;
   } | null>(null);
-  const [isDrawingRegion, setIsDrawingRegion] = useState(false);
 
   // Results
   const [matches, setMatches] = useState<MatchResult[]>([]);
@@ -89,7 +86,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   const [selectedMatch, setSelectedMatch] = useState<MatchResult | null>(null);
 
   // Visualization
-  const [scale, setScale] = useState(1);
+  const [scale] = useState(1);
   const [showMatches, setShowMatches] = useState(true);
   const [showScores, setShowScores] = useState(true); // Always show scores by default
   const [showHeatmap, setShowHeatmap] = useState(false);
@@ -732,37 +729,6 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
 
   const clearSearchRegion = () => {
     setSearchRegion(null);
-    setIsDrawingRegion(false);
-  };
-
-  const getMatchImageData = (match: MatchResult): string | null => {
-    if (!selectedScreenshot) return null;
-
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-
-    const img = new Image();
-    img.src = selectedScreenshot.url;
-
-    // Set canvas size to match region
-    canvas.width = match.region.width;
-    canvas.height = match.region.height;
-
-    // Draw the cropped region
-    ctx.drawImage(
-      img,
-      match.region.x,
-      match.region.y,
-      match.region.width,
-      match.region.height,
-      0,
-      0,
-      match.region.width,
-      match.region.height
-    );
-
-    return canvas.toDataURL();
   };
 
   return (

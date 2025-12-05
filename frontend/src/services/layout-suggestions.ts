@@ -467,7 +467,6 @@ export function hasCriticalIssues(workflow: Workflow): boolean {
  * Get suggested layout style based on issues
  */
 export function getSuggestedLayoutStyle(workflow: Workflow): LayoutStyle {
-  const suggestions = getLayoutSuggestions(workflow);
   const statistics = calculateLayoutStatistics(workflow);
 
   // If many edge crossings, suggest hierarchical

@@ -337,11 +337,7 @@ export class CanvasExportService {
   /**
    * Export canvas as PDF
    */
-  private async exportPDF(
-    workflow: Workflow,
-    canvasElement: HTMLElement | null,
-    options: ExportOptions
-  ): Promise<CanvasExportResult> {
+  private async exportPDF(): Promise<CanvasExportResult> {
     // PDF export would require a library like jsPDF
     // This is a placeholder implementation
     return {

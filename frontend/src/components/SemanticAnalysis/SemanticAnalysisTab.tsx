@@ -12,19 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import {
   Upload,
   Scan,
-  Eye,
-  Type,
-  Cpu,
   Image as ImageIcon,
   RefreshCw,
-  Download,
   Info,
-  AlertCircle,
-  ChevronRight,
-  ChevronLeft,
   ZoomIn,
   ZoomOut,
-  Move,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";

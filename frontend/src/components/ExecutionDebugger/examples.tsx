@@ -535,7 +535,6 @@ export function CompleteIntegrationExample() {
     failAction,
     setVariable,
     play,
-    pause,
     stop,
     state: debuggerState,
   } = useExecutionDebugger();

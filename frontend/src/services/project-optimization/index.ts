@@ -85,7 +85,6 @@ import type {
   ProjectMetrics,
   MetricsTrend,
   HealthAlert,
-  HealthAlertTrigger,
 } from "./types";
 
 // ============================================================================

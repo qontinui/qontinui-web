@@ -103,7 +103,7 @@ export class AutoLayout {
     this.assignPositions(depthGroups);
 
     // Handle branches
-    this.adjustBranches(depthGroups);
+    this.adjustBranches();
 
     // Apply positions to actions
     this.applyPositions(actions);
@@ -266,7 +266,7 @@ export class AutoLayout {
    *
    * Branches should be visually separated to show control flow.
    */
-  private adjustBranches(depthGroups: Map<number, LayoutNode[]>): void {
+  private adjustBranches(): void {
     const { branchOffset } = this.options;
 
     this.nodes.forEach((node) => {

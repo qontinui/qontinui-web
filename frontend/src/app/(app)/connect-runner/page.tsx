@@ -4,10 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
-import { httpClient, projectService } from "@/services/service-factory";
+import { projectService } from "@/services/service-factory";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -23,7 +22,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
-import { ConnectionString } from "@/components/runners/ConnectionString";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import type { Project } from "@/services/project-service";
 import { AutomationStreamingCard } from "@/components/profile/automation-streaming-card";
@@ -315,7 +313,7 @@ export default function ConnectRunnerPage() {
                 </div>
                 {activeConnections && activeConnections.length > 0 ? (
                   <div className="text-sm text-gray-400 mt-1">
-                    {activeConnections.map((conn, idx) => (
+                    {activeConnections.map((conn) => (
                       <div key={conn.id} className="flex items-center gap-2">
                         <Monitor className="w-3 h-3" />
                         <span className="text-white">{conn.runner_name}</span>

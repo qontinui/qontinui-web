@@ -64,11 +64,10 @@ export interface ImageProcessingStatus {
  * Manages API communication, retry logic, and token refresh
  */
 class ApiClient {
-  private tokenValidator: TokenValidator;
   private retryAttempts = 3;
 
   constructor() {
-    this.tokenValidator = new TokenValidator();
+    new TokenValidator();
   }
 
   private async fetchWithAuth(

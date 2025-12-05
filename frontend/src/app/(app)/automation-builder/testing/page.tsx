@@ -20,7 +20,6 @@ import {
   Plus,
   Download,
   Upload,
-  RefreshCw,
   CheckCircle2,
   XCircle,
   Clock,
@@ -29,16 +28,8 @@ import {
   FolderOpen,
   TestTube2,
   BarChart3,
-  Search,
-  Filter,
-  ChevronDown,
-  ChevronRight,
   Settings,
-  TrendingUp,
-  TrendingDown,
   Minus,
-  Archive,
-  Target,
   Zap,
   Copy,
   Trash2,
@@ -53,7 +44,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -75,13 +65,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TestCaseEditor } from "@/components/workflow-testing/TestCaseEditor";
-import { TestSuiteManager } from "@/components/workflow-testing/TestSuiteManager";
 import {
   getWorkflowTestingService,
   type TestCase,
   type TestSuite,
   type TestResult,
-  type TestStatistics,
   type WorkflowCoverage,
 } from "@/services/workflow-testing-service";
 import type { Workflow } from "@/lib/action-schema/action-types";
@@ -120,7 +108,7 @@ export default function WorkflowTestingPage() {
   const [testResults, setTestResults] = React.useState<
     Map<string, TestResult[]>
   >(new Map());
-  const [coverage, setCoverage] = React.useState<Map<string, WorkflowCoverage>>(
+  const [coverage] = React.useState<Map<string, WorkflowCoverage>>(
     new Map()
   );
 
@@ -139,15 +127,15 @@ export default function WorkflowTestingPage() {
     React.useState<Workflow | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [filterStatus, setFilterStatus] = React.useState<FilterStatus>("all");
-  const [sortBy, setSortBy] = React.useState<SortBy>("name");
-  const [showCoverage, setShowCoverage] = React.useState(false);
+  const [sortBy] = React.useState<SortBy>("name");
+  const [showCoverage] = React.useState(false);
 
   // ========================================================================
   // State - Modals
   // ========================================================================
 
   const [showCreateTest, setShowCreateTest] = React.useState(false);
-  const [showCreateSuite, setShowCreateSuite] = React.useState(false);
+  const [showCreateSuite] = React.useState(false);
   const [showImportDialog, setShowImportDialog] = React.useState(false);
   const [editingTest, setEditingTest] = React.useState<TestCase | null>(null);
 
@@ -327,38 +315,6 @@ export default function WorkflowTestingPage() {
   // ========================================================================
   // Handlers - Test Suites
   // ========================================================================
-
-  const handleCreateSuite = React.useCallback(
-    (suite: TestSuite) => {
-      testingService.createTestSuite(
-        suite.name,
-        suite.description,
-        suite.testCaseIds
-      );
-      loadData();
-      setShowCreateSuite(false);
-    },
-    [testingService, loadData]
-  );
-
-  const handleUpdateSuite = React.useCallback(
-    (suiteId: string, updates: Partial<TestSuite>) => {
-      testingService.updateTestSuite(suiteId, updates);
-      loadData();
-    },
-    [testingService, loadData]
-  );
-
-  const handleDeleteSuite = React.useCallback(
-    (suiteId: string) => {
-      testingService.deleteTestSuite(suiteId);
-      loadData();
-      if (selectedSuite?.id === suiteId) {
-        setSelectedSuite(null);
-      }
-    },
-    [testingService, loadData, selectedSuite]
-  );
 
   // ========================================================================
   // Handlers - Test Execution
@@ -563,18 +519,6 @@ export default function WorkflowTestingPage() {
   // ========================================================================
   // Handlers - Selection
   // ========================================================================
-
-  const toggleTestSelection = React.useCallback((testId: string) => {
-    setSelectedTests((prev) => {
-      const next = new Set(prev);
-      if (next.has(testId)) {
-        next.delete(testId);
-      } else {
-        next.add(testId);
-      }
-      return next;
-    });
-  }, []);
 
   const clearSelection = React.useCallback(() => {
     setSelectedTests(new Set());
@@ -1355,7 +1299,7 @@ function TestCaseDetails({
             <div>
               <h3 className="font-semibold mb-2">Assertions</h3>
               <div className="space-y-2">
-                {testCase.config.assertions.map((assertion, i) => (
+                {testCase.config.assertions.map((assertion) => (
                   <div
                     key={assertion.id}
                     className="text-sm p-2 border rounded-md bg-accent/50"
@@ -1529,10 +1473,8 @@ function WorkflowTestDetails({
 }
 
 function TestResults({
-  testCase,
   results,
 }: {
-  testCase: TestCase;
   results: TestResult[];
 }) {
   const lastResult = results[0];
@@ -1648,7 +1590,7 @@ function TestResults({
       <div>
         <h3 className="font-semibold mb-2">History</h3>
         <div className="space-y-1">
-          {results.slice(0, 10).map((result, i) => (
+          {results.slice(0, 10).map((result) => (
             <div
               key={result.id}
               className="text-xs flex items-center justify-between p-1.5 rounded hover:bg-accent"
@@ -1671,11 +1613,9 @@ function TestResults({
 }
 
 function SuiteResults({
-  suite,
   testCases,
   testResults,
 }: {
-  suite: TestSuite;
   testCases: TestCase[];
   testResults: Map<string, TestResult[]>;
 }) {

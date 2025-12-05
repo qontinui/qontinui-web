@@ -15,7 +15,6 @@
 import type {
   Workflow,
   Connection,
-  Connections,
   Action,
 } from "../action-schema/action-types";
 

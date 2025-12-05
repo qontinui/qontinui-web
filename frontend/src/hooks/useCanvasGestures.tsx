@@ -55,11 +55,9 @@ export function useCanvasGestures(config: CanvasGesturesConfig = {}) {
     enableMiddleMousePan = true,
     enableDoubleClickNode = true,
     enableDoubleClickCanvas = true,
-    enableAltDuplicate = true,
     enableShiftConstrain = true,
     onDoubleClickNode,
     onDoubleClickCanvas,
-    onNodeDuplicate,
   } = config;
 
   const reactFlow = useReactFlow();

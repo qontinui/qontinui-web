@@ -64,18 +64,6 @@ interface BackendPackageDetailRead {
   total_ratings: number;
 }
 
-interface BackendVersionRead {
-  id: number;
-  package_id: number;
-  version: string;
-  code_content: string;
-  readme: string | null;
-  changelog: string | null;
-  security_scan_status: string;
-  security_scan_result: any;
-  created_at: string;
-  downloads: number;
-}
 
 interface BackendInstallResponse {
   id: number;
@@ -436,7 +424,7 @@ export class CodePackageService {
   /**
    * Report a package for violations
    */
-  async reportPackage(data: ReportPackageRequest): Promise<void> {
+  async reportPackage(): Promise<void> {
     // Report endpoint not yet implemented in backend
     throw new Error("Report package endpoint not yet implemented");
   }

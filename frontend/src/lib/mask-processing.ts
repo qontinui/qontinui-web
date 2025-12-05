@@ -3,7 +3,7 @@
  * Adapts image-processing functions to work with mask data
  */
 
-import { removeBorder, removeBackground } from "./image-processing";
+import { removeBackground } from "./image-processing";
 
 export interface MaskProcessingResult {
   maskData: ImageData;

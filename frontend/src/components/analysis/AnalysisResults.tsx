@@ -26,13 +26,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Eye, EyeOff, Download, Layers, BarChart3 } from "lucide-react";
+import { Eye, EyeOff, Download, Layers } from "lucide-react";
 import { toast } from "sonner";
 import type {
   AnalysisResponse,
   FusedElement,
   DetectedElement,
-  AnalyzerResult,
 } from "@/services/analysis";
 
 interface AnalysisResultsProps {
@@ -81,7 +80,7 @@ export function AnalysisResults({
     toast.success("Results exported");
   };
 
-  const getColorForSource = (source: string, index: number): string => {
+  const getColorForSource = (_source: string, index: number): string => {
     const colors = [
       "#ef4444", // red
       "#3b82f6", // blue

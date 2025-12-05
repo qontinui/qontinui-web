@@ -35,11 +35,9 @@ import {
   Zap,
   RefreshCw,
   FileJson,
-  ChevronRight,
   Info,
   Sparkles,
   Target,
-  Users,
 } from "lucide-react";
 import { SubflowComponent } from "@/lib/workflow-organization/types";
 import { Button } from "@/components/ui/button";
@@ -52,7 +50,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -76,7 +73,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ComponentLibrary } from "@/components/workflow-components/ComponentLibrary";
@@ -328,8 +324,6 @@ export default function ComponentLibraryPage() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [sortOption, setSortOption] = useState<SortOption>("name");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedComponent, setSelectedComponent] =
-    useState<SubflowComponent | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingComponent, setEditingComponent] = useState<
     SubflowComponent | undefined
@@ -338,7 +332,6 @@ export default function ComponentLibraryPage() {
   const [insertingComponent, setInsertingComponent] =
     useState<SubflowComponent | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
-  const [showStatsPanel, setShowStatsPanel] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "library" | "built-in" | "stats" | "docs"
   >("library");
@@ -407,18 +400,6 @@ export default function ComponentLibraryPage() {
     a.download = "component-library.json";
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const handleDuplicateComponent = (component: SubflowComponent) => {
-    const duplicated: SubflowComponent = {
-      ...component,
-      id: crypto.randomUUID(),
-      name: `${component.name} (Copy)`,
-      usageCount: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setComponents((prev) => [...prev, duplicated]);
   };
 
   return (
@@ -795,7 +776,7 @@ export default function ComponentLibraryPage() {
                         <ComponentLibrary
                           components={components}
                           onSelectComponent={setSelectedComponent}
-                          onInsertComponent={(componentId, parameters) => {
+                          onInsertComponent={(componentId) => {
                             const component = components.find(
                               (c) => c.id === componentId
                             );

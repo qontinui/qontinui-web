@@ -429,7 +429,7 @@ export function PatternOptimizationProvider({
 
       // Convert API response to our format
       const patterns: ExtractedPattern[] = apiResult.extractedPatterns.map(
-        (pattern: any, idx: number) => ({
+        (pattern: any) => ({
           id: pattern.id,
           screenshotId:
             session.screenshots[pattern.screenshot_index]?.id ||
