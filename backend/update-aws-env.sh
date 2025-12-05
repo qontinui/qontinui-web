@@ -31,14 +31,14 @@ aws elasticbeanstalk update-environment \
     --environment-name "$ENVIRONMENT_NAME" \
     --region "$REGION" \
     --option-settings \
-      Namespace=aws:elasticbeanstalk:application:environment,OptionName=DATABASE_URL,Value="postgresql://qontinui_admin:2008NawaNawa%3D@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require" \
-      Namespace=aws:elasticbeanstalk:application:environment,OptionName=SECRET_KEY,Value="-ZWZgpU1UTinhkj4Ub_znMqAiX5onX80RXb42oWAshM" \
+      Namespace=aws:elasticbeanstalk:application:environment,OptionName=DATABASE_URL,Value="postgresql://qontinui_admin:YOUR_DB_PASSWORD@qontinui-db.c16uiu02ugak.eu-central-1.rds.amazonaws.com:5432/postgres?sslmode=require" \
+      Namespace=aws:elasticbeanstalk:application:environment,OptionName=SECRET_KEY,Value="YOUR_SECRET_KEY_HERE" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=ACCESS_SECRET_KEY,Value="$ACCESS_SECRET" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=REFRESH_SECRET_KEY,Value="$REFRESH_SECRET" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=RESET_PASSWORD_SECRET_KEY,Value="$RESET_PASSWORD_SECRET" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=VERIFICATION_SECRET_KEY,Value="$VERIFICATION_SECRET" \
-      Namespace=aws:elasticbeanstalk:application:environment,OptionName=STRIPE_SECRET_KEY,Value="sk_test_51SFYGgD0GLnmL6QjB4VOHwLYIk2wFlif4SiPASBgTji2QGfrMG7SO0HGWSHtslntyBza1DQrx9IOIvgdRbiUceYo00grCCcDRx" \
-      Namespace=aws:elasticbeanstalk:application:environment,OptionName=STRIPE_PUBLISHABLE_KEY,Value="pk_test_51SFYGgD0GLnmL6Qjp8rsmDzzSxQ34gRv78KW6AaMiU3ENUPRfSposbl0EshDiWUdSWakvkxBNs3JoaGXXt5H4pDk00KoAdieQa" \
+      Namespace=aws:elasticbeanstalk:application:environment,OptionName=STRIPE_SECRET_KEY,Value="sk_test_YOUR_STRIPE_SECRET_KEY_HERE" \
+      Namespace=aws:elasticbeanstalk:application:environment,OptionName=STRIPE_PUBLISHABLE_KEY,Value="pk_test_YOUR_STRIPE_PUBLISHABLE_KEY_HERE" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=FRONTEND_URL,Value="$VERCEL_URL" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=BACKEND_CORS_ORIGINS,Value="[\"${VERCEL_URL}\",\"https://*.vercel.app\",\"https://qontinui.io\",\"https://www.qontinui.io\",\"https://qontinui.com\"]" \
       Namespace=aws:elasticbeanstalk:application:environment,OptionName=ENVIRONMENT,Value="production" \
