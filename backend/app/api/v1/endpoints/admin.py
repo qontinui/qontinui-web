@@ -810,12 +810,12 @@ async def get_notification_settings(
 
     return AdminNotificationSettingsResponse(
         id=str(settings.id),
-        notification_email=settings.notification_email,
-        notify_on_user_signup=settings.notify_on_user_signup,
-        notify_on_project_created=settings.notify_on_project_created,
-        notifications_enabled=settings.notifications_enabled,
-        created_at=settings.created_at,
-        updated_at=settings.updated_at,
+        notification_email=str(settings.notification_email),
+        notify_on_user_signup=bool(settings.notify_on_user_signup),
+        notify_on_project_created=bool(settings.notify_on_project_created),
+        notifications_enabled=bool(settings.notifications_enabled),
+        created_at=settings.created_at,  # type: ignore[arg-type]
+        updated_at=settings.updated_at,  # type: ignore[arg-type]
     )
 
 
@@ -858,12 +858,12 @@ async def update_notification_settings(
 
     return AdminNotificationSettingsResponse(
         id=str(settings.id),
-        notification_email=settings.notification_email,
-        notify_on_user_signup=settings.notify_on_user_signup,
-        notify_on_project_created=settings.notify_on_project_created,
-        notifications_enabled=settings.notifications_enabled,
-        created_at=settings.created_at,
-        updated_at=settings.updated_at,
+        notification_email=str(settings.notification_email),
+        notify_on_user_signup=bool(settings.notify_on_user_signup),
+        notify_on_project_created=bool(settings.notify_on_project_created),
+        notifications_enabled=bool(settings.notifications_enabled),
+        created_at=settings.created_at,  # type: ignore[arg-type]
+        updated_at=settings.updated_at,  # type: ignore[arg-type]
     )
 
 
@@ -895,7 +895,7 @@ async def send_test_notification(
     email_transport = EmailTransportService()
 
     success = await email_transport.send_email(
-        to_email=settings.notification_email,
+        to_email=str(settings.notification_email),
         subject="Qontinui Admin Notification Test",
         text_body=(
             f"This is a test notification from Qontinui.\n\n"

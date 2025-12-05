@@ -201,7 +201,7 @@ class AdminNotificationService:
             )
 
             success = await self.email_transport.send_email(
-                to_email=settings_obj.notification_email,
+                to_email=str(settings_obj.notification_email),
                 subject=subject,
                 text_body=text_body,
                 html_body=html_body,
@@ -300,7 +300,7 @@ class AdminNotificationService:
             )
 
             success = await self.email_transport.send_email(
-                to_email=settings_obj.notification_email,
+                to_email=str(settings_obj.notification_email),
                 subject=subject,
                 text_body=text_body,
                 html_body=html_body,
