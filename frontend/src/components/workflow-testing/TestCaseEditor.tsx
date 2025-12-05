@@ -267,8 +267,7 @@ export function TestCaseEditor({
       const result = await runWorkflowTest(testCaseData, workflow, projectId);
 
       // Store result in test case metadata
-      const existingResults =
-        (testCase?.metadata?.testResults as any[]) || [];
+      const existingResults = (testCase?.metadata?.testResults as any[]) || [];
       const updatedResults = [result, ...existingResults].slice(0, 100); // Keep last 100 results
 
       // Update test case with result

@@ -74,13 +74,16 @@ export async function runWorkflowTest(
         assertion,
         passed,
         actualValue,
-        error: passed ? undefined : `Assertion failed: ${assertion.description}`,
+        error: passed
+          ? undefined
+          : `Assertion failed: ${assertion.description}`,
       };
     });
 
     const allAssertionsPassed = assertionResults.every((r) => r.passed);
     const endTime = new Date().toISOString();
-    const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
+    const duration =
+      new Date(endTime).getTime() - new Date(startTime).getTime();
 
     // Complete the test run
     await fetch(`${API_BASE_URL}/api/v1/testing/runs/${runId}/complete`, {
@@ -131,7 +134,8 @@ export async function runWorkflowTest(
     };
   } catch (error) {
     const endTime = new Date().toISOString();
-    const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
+    const duration =
+      new Date(endTime).getTime() - new Date(startTime).getTime();
 
     // Mark test run as failed
     await fetch(`${API_BASE_URL}/api/v1/testing/runs/${runId}/complete`, {
@@ -227,7 +231,9 @@ function evaluateAssertion(assertion: any, actualValue: any): boolean {
         typeof actualValue === "number" && actualValue > assertion.expected
       );
     case "lessThan":
-      return typeof actualValue === "number" && actualValue < assertion.expected;
+      return (
+        typeof actualValue === "number" && actualValue < assertion.expected
+      );
     case "regex":
       if (assertion.pattern) {
         const regex = new RegExp(assertion.pattern);

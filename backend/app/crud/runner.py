@@ -485,6 +485,59 @@ async def get_active_connections(
     return list(result.scalars().all())
 
 
+async def close_orphaned_connections(
+    db: AsyncSession,
+    user_id: UUID,
+    exclude_connection_id: int | None = None,
+    runner_token_id: UUID | None = None,
+) -> list[int]:
+    """
+    Close any orphaned connections for a user, optionally filtered by runner token.
+
+    This is used to clean up stale connections that weren't properly closed
+    (e.g., due to network issues or crashes). Called when a new connection
+    is established to ensure only one active connection per runner token.
+
+    Args:
+        db: Database session
+        user_id: ID of the user
+        exclude_connection_id: Optional connection ID to exclude from closing
+        runner_token_id: Optional runner token ID to filter by (only close connections
+                        from the same runner token, not all user connections)
+
+    Returns:
+        List of connection IDs that were closed
+    """
+    # Build the query to find orphaned connections
+    conditions = [
+        RunnerConnection.user_id == user_id,
+        RunnerConnection.disconnected_at.is_(None),
+    ]
+
+    # If runner_token_id is provided, only close connections from the same token
+    # This prevents closing connections from other runner devices
+    if runner_token_id is not None:
+        conditions.append(RunnerConnection.runner_token_id == runner_token_id)
+
+    if exclude_connection_id is not None:
+        conditions.append(RunnerConnection.id != exclude_connection_id)
+
+    query = select(RunnerConnection).where(and_(*conditions))
+    result = await db.execute(query)
+    orphaned = list(result.scalars().all())
+
+    closed_ids: list[int] = []
+    for conn in orphaned:
+        conn.disconnected_at = datetime.utcnow()
+        conn.calculate_duration()
+        closed_ids.append(conn.id)
+
+    if closed_ids:
+        await db.commit()
+
+    return closed_ids
+
+
 async def get_connection_by_session_id(
     db: AsyncSession,
     session_id: str,

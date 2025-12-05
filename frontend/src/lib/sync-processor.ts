@@ -167,13 +167,19 @@ class SyncProcessor {
         }
       );
 
+      // Use presigned_url from backend response (fallback to presigned_urls.original for legacy compatibility)
+      const uploadUrl =
+        result.presigned_url || result.presigned_urls?.original || result.url;
+
       // Update IndexedDB with server response
       await screenshotDB.update({
         id: result.image_id,
         name: name || file.name,
-        url: result.url,
-        size: result.size,
-        uploadedAt: new Date(result.created_at),
+        url: uploadUrl || "",
+        size: result.size || 0,
+        uploadedAt: result.created_at
+          ? new Date(result.created_at)
+          : new Date(),
         description,
         tags,
         projectId,
@@ -185,7 +191,7 @@ class SyncProcessor {
         success: true,
         data: {
           imageId: result.image_id,
-          url: result.url,
+          url: uploadUrl || "",
           s3Key: result.s3_key,
         },
       };
@@ -227,13 +233,19 @@ class SyncProcessor {
 
         results.push(result);
 
+        // Use presigned_url from backend response (fallback to presigned_urls.original for legacy compatibility)
+        const batchUploadUrl =
+          result.presigned_url || result.presigned_urls?.original || result.url;
+
         // Update IndexedDB
         await screenshotDB.update({
           id: result.image_id,
           name: file.name,
-          url: result.url,
-          size: result.size,
-          uploadedAt: new Date(result.created_at),
+          url: batchUploadUrl || "",
+          size: result.size || 0,
+          uploadedAt: result.created_at
+            ? new Date(result.created_at)
+            : new Date(),
           projectId,
           s3Key: result.s3_key,
           urlExpiresAt: new Date(Date.now() + 7 * 86400000),

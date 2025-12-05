@@ -57,7 +57,7 @@ export const createActionSlice: StateCreator<
         state.workflow.actions[index] = {
           ...state.workflow.actions[index],
           ...updates,
-        };
+        } as Action;
         state.isDirty = true;
       }
     });

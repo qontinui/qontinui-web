@@ -20,10 +20,7 @@ describe("ExpectationsPanel", () => {
   describe("Rendering", () => {
     it("should render with all three tabs", () => {
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       expect(screen.getByText("Global")).toBeInTheDocument();
@@ -33,10 +30,7 @@ describe("ExpectationsPanel", () => {
 
     it("should render Global tab content by default", () => {
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       expect(screen.getByText("Global Expectations")).toBeInTheDocument();
@@ -70,10 +64,7 @@ describe("ExpectationsPanel", () => {
       const user = userEvent.setup();
 
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       const successTab = screen.getByText("Success");
@@ -88,10 +79,7 @@ describe("ExpectationsPanel", () => {
       const user = userEvent.setup();
 
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       const checkpointsTab = screen.getByText("Checkpoints");
@@ -106,10 +94,7 @@ describe("ExpectationsPanel", () => {
       const user = userEvent.setup();
 
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       // Switch to Success tab
@@ -130,10 +115,7 @@ describe("ExpectationsPanel", () => {
       const user = userEvent.setup();
 
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       // Find and toggle "No Console Errors" switch
@@ -159,10 +141,7 @@ describe("ExpectationsPanel", () => {
       const user = userEvent.setup();
 
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       // Switch to Success tab
@@ -189,10 +168,7 @@ describe("ExpectationsPanel", () => {
       const user = userEvent.setup();
 
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       // Switch to Checkpoints tab
@@ -200,7 +176,9 @@ describe("ExpectationsPanel", () => {
       await user.click(checkpointsTab);
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Enter checkpoint name")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Enter checkpoint name")
+        ).toBeInTheDocument();
       });
 
       // Add a checkpoint
@@ -278,10 +256,7 @@ describe("ExpectationsPanel", () => {
       const user = userEvent.setup();
 
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       // Set global expectations
@@ -305,7 +280,9 @@ describe("ExpectationsPanel", () => {
       await user.click(checkpointsTab);
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Enter checkpoint name")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Enter checkpoint name")
+        ).toBeInTheDocument();
       });
 
       // All tabs should have triggered onChange calls
@@ -316,22 +293,14 @@ describe("ExpectationsPanel", () => {
   describe("Empty State Handling", () => {
     it("should handle undefined expectations", () => {
       render(
-        <ExpectationsPanel
-          expectations={undefined}
-          onChange={mockOnChange}
-        />
+        <ExpectationsPanel expectations={undefined} onChange={mockOnChange} />
       );
 
       expect(screen.getByText("Global Expectations")).toBeInTheDocument();
     });
 
     it("should handle empty expectations object", () => {
-      render(
-        <ExpectationsPanel
-          expectations={{}}
-          onChange={mockOnChange}
-        />
-      );
+      render(<ExpectationsPanel expectations={{}} onChange={mockOnChange} />);
 
       expect(screen.getByText("Global Expectations")).toBeInTheDocument();
     });

@@ -1,7 +1,7 @@
 "use client";
 
 // Horizontal icon popover for collapsed sidebar - updated icons v3
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
@@ -12,7 +12,6 @@ import {
   BarChart3,
   Settings,
   FileText,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Scissors,
@@ -21,8 +20,6 @@ import {
   Camera,
   Map,
   Eraser,
-  Edit3,
-  ListTree,
   Box,
   GitBranch,
   Scan,
@@ -41,6 +38,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsedMenuPopover } from "./collapsed-menu-popover";
+import { SidebarFlyout } from "./sidebar-flyout";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { OrganizationSwitcher } from "@/components/collaboration/OrganizationSwitcher";
 import { CreateOrganizationDialog } from "@/components/collaboration/CreateOrganizationDialog";
@@ -50,11 +48,11 @@ import { useAuth } from "@/contexts/auth-context";
 import { useAutomation } from "@/contexts/automation-context";
 import { useProjects, useCreateProject } from "@/hooks/use-projects";
 import { toast } from "sonner";
-import type { Organization } from "@/types/collaboration";
 
 interface NavItem {
   id: string;
   label: string;
+  description?: string;
   icon: React.ReactNode;
   route: string;
   color: string;
@@ -81,6 +79,7 @@ const navItems: NavItem[] = [
       {
         id: "workflows",
         label: "Workflows",
+        description: "Create and manage automation workflows",
         icon: <Workflow size={22} />,
         route: "/automation-builder",
         color: "#BD00FF",
@@ -88,6 +87,7 @@ const navItems: NavItem[] = [
       {
         id: "states",
         label: "States",
+        description: "Define application states for recognition",
         icon: <Network size={22} />,
         route: "/automation-builder/states",
         color: "#BD00FF",
@@ -95,6 +95,7 @@ const navItems: NavItem[] = [
       {
         id: "images",
         label: "Images",
+        description: "Manage pattern images for matching",
         icon: <ImageIcon size={22} />,
         route: "/automation-builder/images",
         color: "#BD00FF",
@@ -102,6 +103,7 @@ const navItems: NavItem[] = [
       {
         id: "screenshots",
         label: "Screenshots",
+        description: "View and manage captured screenshots",
         icon: <Camera size={22} />,
         route: "/automation-builder/screenshots",
         color: "#BD00FF",
@@ -109,6 +111,7 @@ const navItems: NavItem[] = [
       {
         id: "annotations",
         label: "Annotations",
+        description: "Add training annotations to images",
         icon: <Scan size={22} />,
         route: "/automation-builder/annotations",
         color: "#BD00FF",
@@ -117,6 +120,7 @@ const navItems: NavItem[] = [
       {
         id: "variables",
         label: "Variables",
+        description: "Configure workflow variables",
         icon: <Sliders size={22} />,
         route: "/automation-builder/variables",
         color: "#BD00FF",
@@ -124,6 +128,7 @@ const navItems: NavItem[] = [
       {
         id: "recordings",
         label: "Recordings",
+        description: "View recorded automation sessions",
         icon: <Video size={22} />,
         route: "/recordings",
         color: "#BD00FF",
@@ -131,6 +136,7 @@ const navItems: NavItem[] = [
       {
         id: "captures",
         label: "Captures",
+        description: "Browse screen captures",
         icon: <Camera size={22} />,
         route: "/captures",
         color: "#BD00FF",
@@ -138,6 +144,7 @@ const navItems: NavItem[] = [
       {
         id: "web-extraction",
         label: "Web Extraction",
+        description: "Extract data from web pages",
         icon: <Globe size={22} />,
         route: "/automation-builder/web-extraction",
         color: "#BD00FF",
@@ -155,6 +162,7 @@ const navItems: NavItem[] = [
       {
         id: "overview",
         label: "Overview",
+        description: "Project summary and quick access",
         icon: <LayoutDashboard size={22} />,
         route: "/automation-builder/overview",
         color: "#00D9FF",
@@ -162,6 +170,7 @@ const navItems: NavItem[] = [
       {
         id: "dependencies",
         label: "Dependencies",
+        description: "View state and workflow relationships",
         icon: <GitBranch size={22} />,
         route: "/automation-builder/dependencies",
         color: "#00D9FF",
@@ -169,6 +178,7 @@ const navItems: NavItem[] = [
       {
         id: "components",
         label: "Components",
+        description: "Reusable automation components",
         icon: <Box size={22} />,
         route: "/automation-builder/components",
         color: "#00D9FF",
@@ -176,6 +186,7 @@ const navItems: NavItem[] = [
       {
         id: "documentation",
         label: "Documentation",
+        description: "Auto-generated project docs",
         icon: <FileText size={22} />,
         route: "/automation-builder/documentation",
         color: "#00D9FF",
@@ -183,6 +194,7 @@ const navItems: NavItem[] = [
       {
         id: "automation-analytics",
         label: "Automation Analytics",
+        description: "Performance metrics and insights",
         icon: <BarChart3 size={22} />,
         route: "/automation-builder/analytics",
         color: "#00D9FF",
@@ -199,6 +211,7 @@ const navItems: NavItem[] = [
       {
         id: "extract-images",
         label: "Extract Images",
+        description: "Cut pattern images from screenshots",
         icon: <Scissors size={22} />,
         route: "/automation-builder/image-extraction",
         color: "#FFA500",
@@ -206,6 +219,7 @@ const navItems: NavItem[] = [
       {
         id: "optimize-patterns",
         label: "Optimize Patterns",
+        description: "AI-powered pattern improvement",
         icon: <Sparkles size={22} />,
         route: "/automation-builder/pattern-optimization",
         color: "#FFD700",
@@ -213,6 +227,7 @@ const navItems: NavItem[] = [
       {
         id: "discover-states",
         label: "Discover States",
+        description: "Automatically discover UI states",
         icon: <Search size={22} />,
         route: "/automation-builder/state-discovery",
         color: "#4ECDC4",
@@ -222,6 +237,7 @@ const navItems: NavItem[] = [
       {
         id: "remove-backgrounds",
         label: "Remove Backgrounds",
+        description: "Remove image backgrounds with AI",
         icon: <Eraser size={22} />,
         route: "/automation-builder/background-removal",
         color: "#9B59B6",
@@ -240,6 +256,7 @@ const navItems: NavItem[] = [
       {
         id: "pattern-tests",
         label: "Pattern Tests",
+        description: "Test pattern recognition accuracy",
         icon: <Target size={22} />,
         route: "/automation-builder/pattern-tests",
         color: "#FF6B6B",
@@ -247,6 +264,7 @@ const navItems: NavItem[] = [
       {
         id: "integration-tests",
         label: "Integration Tests",
+        description: "End-to-end workflow testing",
         icon: <Globe size={22} />,
         route: "/integration-testing",
         color: "#FF6B6B",
@@ -255,6 +273,7 @@ const navItems: NavItem[] = [
       {
         id: "semantic-analysis",
         label: "Semantic Analysis",
+        description: "Analyze UI element semantics",
         icon: <Scan size={22} />,
         route: "/automation-builder/semantic-analysis",
         color: "#FF6B6B",
@@ -262,6 +281,7 @@ const navItems: NavItem[] = [
       {
         id: "workflow-runner",
         label: "Workflow Runner",
+        description: "Execute and debug workflows",
         icon: <Play size={22} />,
         route: "/workflow-viz",
         color: "#FF6B6B",
@@ -269,6 +289,7 @@ const navItems: NavItem[] = [
       {
         id: "test-runs",
         label: "Test Runs",
+        description: "View test execution history",
         icon: <TestTube2 size={22} />,
         route: "/testing",
         color: "#FF6B6B",
@@ -299,6 +320,7 @@ const navItems: NavItem[] = [
       {
         id: "runner-list",
         label: "Manage Runners",
+        description: "View and configure your runners",
         icon: <Server size={22} />,
         route: "/runners",
         color: "#10B981",
@@ -306,6 +328,7 @@ const navItems: NavItem[] = [
       {
         id: "connect-runner",
         label: "Connect Runner",
+        description: "Connect a new desktop runner",
         icon: <Link size={22} />,
         route: "/connect-runner",
         color: "#10B981",
@@ -313,6 +336,7 @@ const navItems: NavItem[] = [
       {
         id: "monitor",
         label: "Monitor",
+        description: "Real-time runner monitoring",
         icon: <Monitor size={22} />,
         route: "/monitor",
         color: "#10B981",
@@ -336,6 +360,7 @@ const navItems: NavItem[] = [
       {
         id: "automation-settings",
         label: "Automation",
+        description: "Configure automation preferences",
         icon: <Sliders size={22} />,
         route: "/automation-builder/settings",
         color: "#FFD700",
@@ -343,6 +368,7 @@ const navItems: NavItem[] = [
       {
         id: "application-settings",
         label: "Profile",
+        description: "Manage your account settings",
         icon: <Settings size={22} />,
         route: "/profile",
         color: "#FFD700",
@@ -350,6 +376,7 @@ const navItems: NavItem[] = [
       {
         id: "pricing",
         label: "Pricing",
+        description: "View plans and billing",
         icon: <CreditCard size={22} />,
         route: "/pricing",
         color: "#FFD700",
@@ -374,6 +401,7 @@ const navItems: NavItem[] = [
       {
         id: "admin-dashboard",
         label: "Dashboard",
+        description: "Admin overview and metrics",
         icon: <LayoutDashboard size={22} />,
         route: "/admin",
         color: "#FF6B6B",
@@ -382,6 +410,7 @@ const navItems: NavItem[] = [
       {
         id: "admin-annotations",
         label: "Annotations",
+        description: "Manage training data annotations",
         icon: <Scan size={22} />,
         route: "/admin/annotations",
         color: "#FF6B6B",
@@ -390,6 +419,7 @@ const navItems: NavItem[] = [
       {
         id: "admin-analysis",
         label: "GUI Analysis",
+        description: "Analyze GUI elements globally",
         icon: <Search size={22} />,
         route: "/admin/analysis",
         color: "#FF6B6B",
@@ -398,6 +428,7 @@ const navItems: NavItem[] = [
       {
         id: "admin-regions",
         label: "Region Analysis",
+        description: "Screen region classification",
         icon: <Map size={22} />,
         route: "/admin/region-analysis",
         color: "#FF6B6B",
@@ -406,6 +437,7 @@ const navItems: NavItem[] = [
       {
         id: "admin-architecture",
         label: "Architecture",
+        description: "System architecture overview",
         icon: <Network size={22} />,
         route: "/admin/architecture",
         color: "#FF6B6B",
@@ -426,9 +458,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
 }) => {
   const { user } = useAuth();
   const { isCollapsed, setIsCollapsed } = useSidebar();
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["workflows", "structure", "create", "verify", "settings"])
-  );
+  const [openFlyout, setOpenFlyout] = useState<string | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [closeTimer, setCloseTimer] = useState<NodeJS.Timeout | null>(null);
   const [showCreateOrgDialog, setShowCreateOrgDialog] = useState(false);
@@ -496,22 +526,14 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     setIsCollapsed(newState);
     localStorage.setItem("unified-sidebar-collapsed", JSON.stringify(newState));
 
-    // Expand default sections when expanding sidebar
-    if (!newState) {
-      setExpandedSections(
-        new Set(["workflows", "structure", "create", "verify", "settings"])
-      );
+    // Close any open flyout when collapsing sidebar
+    if (newState) {
+      setOpenFlyout(null);
     }
   };
 
-  const toggleSection = (id: string) => {
-    const newExpanded = new Set(expandedSections);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpandedSections(newExpanded);
+  const toggleFlyout = (id: string) => {
+    setOpenFlyout(openFlyout === id ? null : id);
   };
 
   const isRouteActive = (route: string, item: NavItem): boolean => {
@@ -562,16 +584,6 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
     router.push(buildRoute(route));
   };
 
-  const getBadgeStyles = (badge?: string) => {
-    if (badge === "beta") {
-      return "bg-amber-500 text-black";
-    }
-    if (badge === "experimental") {
-      return "bg-purple-500 text-white";
-    }
-    return "";
-  };
-
   const handleOrganizationChange = async (orgId: string) => {
     try {
       await switchOrganization(orgId);
@@ -605,12 +617,15 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
         name: currentOrganization.name,
         avatar_url: undefined,
         member_count: currentOrganization.member_count,
-        role: (currentOrganization.owner_id === user?.id ? "owner" : "member") as "owner" | "admin" | "member" | "viewer",
+        role: (currentOrganization.owner_id === user?.id
+          ? "owner"
+          : "member") as "owner" | "admin" | "member" | "viewer",
       }
     : null;
 
   return (
     <div
+      data-sidebar="true"
       className={cn(
         "fixed left-0 top-0 h-screen bg-[#0A0A0B] border-r border-gray-800/50 flex flex-col transition-all duration-300 overflow-visible z-50",
         isCollapsed ? "w-16" : "w-64",
@@ -675,7 +690,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 data-nav-id={item.id}
                 onClick={() => {
                   if (item.children) {
-                    toggleSection(item.id);
+                    toggleFlyout(item.id);
                   } else {
                     handleNavigation(item.route);
                   }
@@ -729,10 +744,7 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                   style={
                     hoveredItem === item.id || isRouteActive(item.route, item)
                       ? {
-                          filter: `drop-shadow(0 0 8px ${item.color})`,
-                          brightness: isRouteActive(item.route, item)
-                            ? 1.5
-                            : 1.1,
+                          filter: `drop-shadow(0 0 8px ${item.color}) brightness(${isRouteActive(item.route, item) ? 1.5 : 1.1})`,
                         }
                       : {}
                   }
@@ -747,11 +759,11 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                       {item.label}
                     </span>
                     {item.children && (
-                      <ChevronDown
+                      <ChevronRight
                         size={16}
                         className={cn(
                           "flex-shrink-0 transition-transform duration-300",
-                          expandedSections.has(item.id) ? "rotate-180" : ""
+                          openFlyout === item.id ? "rotate-90" : ""
                         )}
                       />
                     )}
@@ -772,57 +784,25 @@ export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = ({
                 )}
               </button>
 
-              {/* Children - Expanded Sidebar */}
-              {item.children &&
-                expandedSections.has(item.id) &&
-                !isCollapsed && (
-                  <div className="ml-2 border-l border-gray-800 space-y-1 mt-2">
-                    {item.children.map((child, childIndex) => {
-                      const childIconColor =
-                        item.id === "create" ? item.color : child.color;
-
-                      return (
-                        <button
-                          key={child.id}
-                          onClick={() => handleNavigation(child.route)}
-                          onMouseEnter={() => setHoveredItem(child.id)}
-                          onMouseLeave={() => setHoveredItem(null)}
-                          className={cn(
-                            "w-full px-3 py-2.5 rounded-lg flex items-center gap-2 transition-all duration-300 text-sm",
-                            isRouteActive(child.route, child)
-                              ? "bg-gray-900 text-gray-100"
-                              : "text-gray-400 hover:text-gray-100 hover:bg-gray-900/50"
-                          )}
-                          style={{
-                            animation: expandedSections.has(item.id)
-                              ? `slideIn 0.3s ease-out forwards`
-                              : undefined,
-                            animationDelay: `${childIndex * 30}ms`,
-                          }}
-                        >
-                          <span
-                            style={{ color: childIconColor, opacity: 0.65 }}
-                          >
-                            {child.icon}
-                          </span>
-                          <span className="flex-1 text-left truncate">
-                            {child.label}
-                          </span>
-                          {child.badge && (
-                            <span
-                              className={cn(
-                                "text-[10px] font-bold uppercase px-2 py-0.5 rounded",
-                                getBadgeStyles(child.badge)
-                              )}
-                            >
-                              {child.badge}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+              {/* Children - Expanded Sidebar Flyout */}
+              {item.children && openFlyout === item.id && !isCollapsed && (
+                <SidebarFlyout
+                  parentLabel={item.label}
+                  parentColor={item.color}
+                  children={item.children.map((child) => ({
+                    id: child.id,
+                    label: child.label,
+                    description: child.description,
+                    icon: child.icon,
+                    route: child.route,
+                    color: child.color,
+                    badge: child.badge,
+                  }))}
+                  onNavigate={handleNavigation}
+                  onClose={() => setOpenFlyout(null)}
+                  activeRoute={pathname}
+                />
+              )}
 
               {/* Children - Collapsed Sidebar Popover */}
               {item.children && isCollapsed && hoveredItem === item.id && (

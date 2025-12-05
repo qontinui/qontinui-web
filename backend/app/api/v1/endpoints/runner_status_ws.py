@@ -5,11 +5,13 @@ Provides WebSocket connection for frontend to receive real-time notifications
 when runners connect or disconnect, eliminating the need for polling.
 """
 
+import asyncio
 import json
 
 import structlog
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from redis import asyncio as aioredis
+from starlette.websockets import WebSocketState
 
 from app.api.deps import get_current_user_from_ws
 from app.config.redis_config import get_redis
@@ -144,28 +146,67 @@ async def websocket_runner_status(
 
         # Listen for messages from Redis
         async for message in pubsub.listen():
+            # Check if WebSocket is still connected before processing
+            if websocket.client_state != WebSocketState.CONNECTED:
+                logger.info(
+                    "runner_status_ws_client_disconnected",
+                    user_id=str(user.id),
+                    state=str(websocket.client_state),
+                )
+                break
+
             if message["type"] == "message":
                 try:
                     data = json.loads(message["data"])
-                    await websocket.send_json(data)
-                    logger.debug(
-                        "runner_status_ws_message_forwarded",
-                        user_id=str(user.id),
-                        message_type=data.get("type"),
-                    )
+                    # Double-check connection state before send
+                    if websocket.client_state == WebSocketState.CONNECTED:
+                        await websocket.send_json(data)
+                        logger.info(
+                            "runner_status_ws_message_forwarded",
+                            user_id=str(user.id),
+                            message_type=data.get("type"),
+                            connection_id=data.get("connection_id")
+                            or data.get("connection", {}).get("id"),
+                        )
+                    else:
+                        logger.warning(
+                            "runner_status_ws_send_skipped",
+                            user_id=str(user.id),
+                            message_type=data.get("type"),
+                            state=str(websocket.client_state),
+                        )
+                        break
                 except json.JSONDecodeError as e:
                     logger.error(
                         "runner_status_ws_invalid_message",
                         error=str(e),
                         user_id=str(user.id),
                     )
-                except Exception as e:
-                    logger.error(
-                        "runner_status_ws_send_failed",
-                        error=str(e),
+                except WebSocketDisconnect:
+                    logger.info(
+                        "runner_status_ws_disconnected_during_send",
                         user_id=str(user.id),
                     )
                     break
+                except Exception as e:
+                    # Log the error but check if we should continue
+                    error_type = type(e).__name__
+                    logger.error(
+                        "runner_status_ws_send_failed",
+                        error=str(e),
+                        error_type=error_type,
+                        user_id=str(user.id),
+                    )
+                    # Check if the WebSocket is still connected
+                    if websocket.client_state != WebSocketState.CONNECTED:
+                        logger.info(
+                            "runner_status_ws_closing_after_error",
+                            user_id=str(user.id),
+                            state=str(websocket.client_state),
+                        )
+                        break
+                    # For other errors, wait briefly and continue
+                    await asyncio.sleep(0.1)
 
     except WebSocketDisconnect:
         logger.info(
@@ -176,6 +217,7 @@ async def websocket_runner_status(
         logger.error(
             "runner_status_ws_error",
             error=str(e),
+            error_type=type(e).__name__,
             user_id=str(user.id),
         )
     finally:

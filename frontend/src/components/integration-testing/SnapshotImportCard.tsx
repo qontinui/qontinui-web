@@ -47,7 +47,7 @@ export function SnapshotImportCard({
 
         toast.info(
           "Browser directory picker selected a local path. " +
-          "Please enter the absolute path on the server where snapshots are stored.",
+            "Please enter the absolute path on the server where snapshots are stored.",
           { duration: 5000 }
         );
 

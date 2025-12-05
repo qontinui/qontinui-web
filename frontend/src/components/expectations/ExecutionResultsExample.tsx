@@ -147,10 +147,7 @@ export function ExecutionResultsExample() {
             <div className="text-sm text-muted-foreground">
               Success (with duration)
             </div>
-            <ExecutionResultsBadge
-              result={successResult}
-              showDuration={true}
-            />
+            <ExecutionResultsBadge result={successResult} showDuration={true} />
           </div>
           <div className="space-y-2">
             <div className="text-sm text-muted-foreground">
@@ -162,10 +159,7 @@ export function ExecutionResultsExample() {
             <div className="text-sm text-muted-foreground">
               Timeout (with duration)
             </div>
-            <ExecutionResultsBadge
-              result={timeoutResult}
-              showDuration={true}
-            />
+            <ExecutionResultsBadge result={timeoutResult} showDuration={true} />
           </div>
         </div>
       </div>

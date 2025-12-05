@@ -115,7 +115,7 @@ export const ImageExtractionTab: React.FC = () => {
     const projectScreenshot = projectScreenshots.find(
       (s) => s.id === screenshotId
     );
-    if (projectScreenshot) {
+    if (projectScreenshot && projectScreenshot.url) {
       setCurrentScreenshot({
         id: `screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: projectScreenshot.name,
@@ -124,6 +124,12 @@ export const ImageExtractionTab: React.FC = () => {
 
       // Reset extracted result when new screenshot is loaded
       setExtractedResult(null);
+    } else {
+      console.warn(
+        "[ImageExtractionTab] Project screenshot missing URL:",
+        screenshotId
+      );
+      toast.error("Selected screenshot has no image URL");
     }
   };
 

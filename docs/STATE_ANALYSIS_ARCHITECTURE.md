@@ -146,7 +146,7 @@ Recording Session:
 - Runner does NOT identify states
 - Runner simply captures raw data
 - Can capture manual exploration or automated runs
-- Bridge script connects to qontinui library: `python-bridge/qontinui_bridge.py`
+- Bridge script connects to qontinui library: `python-bridge/qontinui_executor.py`
 
 ### Phase 2: Local Analysis (qontinui Library)
 

@@ -12,9 +12,9 @@ import { syncProcessor } from "@/lib/sync-processor";
 import { WifiOff, Wifi, CloudOff, Cloud, RefreshCw } from "lucide-react";
 
 export function OfflineIndicator() {
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== "undefined" ? navigator.onLine : true
-  );
+  // Start with null to prevent hydration mismatch - only render after mount
+  const [isMounted, setIsMounted] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const [stats, setStats] = useState<SyncQueueStats>({
     total: 0,
     pending: 0,
@@ -25,7 +25,14 @@ export function OfflineIndicator() {
   });
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Set initial online status after mount to prevent hydration mismatch
   useEffect(() => {
+    setIsMounted(true);
+    setIsOnline(navigator.onLine);
+  }, []);
+
+  useEffect(() => {
+    if (!isMounted) return;
     // Monitor online/offline status
     const handleOnline = () => {
       setIsOnline(true);
@@ -59,7 +66,12 @@ export function OfflineIndicator() {
       unsubscribe();
       clearInterval(syncInterval);
     };
-  }, []);
+  }, [isMounted]);
+
+  // Don't render until mounted (prevents hydration mismatch)
+  if (!isMounted) {
+    return null;
+  }
 
   // Don't show if everything is synced and online
   if (

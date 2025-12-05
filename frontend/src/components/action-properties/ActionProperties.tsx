@@ -6,6 +6,8 @@ import { Settings } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
 import { actionConfigRegistry } from "./ActionConfigRegistry";
 import { Action } from "./types";
+import { ActionExpectationsEditor } from "@/components/expectations/ActionExpectationsEditor";
+import { ActionExpectations } from "@/lib/expectations";
 import "./actions"; // Import to trigger registration
 
 interface ActionPropertiesProps {
@@ -128,6 +130,14 @@ export function ActionProperties({
     );
   }
 
+  const handleExpectationsChange = (expectations: ActionExpectations) => {
+    const updatedAction = {
+      ...action,
+      expectations,
+    };
+    onUpdateAction(updatedAction);
+  };
+
   return (
     <div className="space-y-4">
       <Card className="border-gray-700 bg-[#27272A]">
@@ -149,6 +159,11 @@ export function ActionProperties({
           />
         </CardContent>
       </Card>
+
+      <ActionExpectationsEditor
+        expectations={action.expectations}
+        onChange={handleExpectationsChange}
+      />
     </div>
   );
 }

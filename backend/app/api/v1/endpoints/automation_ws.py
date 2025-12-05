@@ -555,7 +555,7 @@ async def websocket_runner_endpoint(
     WebSocket endpoint for automation runner streaming.
 
     Connection URL:
-        ws://localhost:8000/api/v1/ws/automation/runner?token=<jwt_token>
+        ws://localhost:8000/api/v1/automation/ws/automation/runner?token=<jwt_token>
 
     Query Parameters:
         token: JWT access token for authentication
@@ -594,8 +594,16 @@ async def websocket_runner_endpoint(
         - Graceful disconnect handling
         - Rate limiting: 5 connections per minute per IP, 60 messages per minute per session
     """
-    # Check connection rate limit (5 per minute per IP)
+    # DEBUG: Log ALL incoming WebSocket requests immediately
     client_ip = websocket.client.host if websocket.client else "unknown"
+    logger.info(
+        "automation_ws_runner_incoming_request",
+        client_ip=client_ip,
+        query_params=dict(websocket.query_params),
+        path=str(websocket.url.path),
+    )
+
+    # Check connection rate limit (5 per minute per IP)
     if not check_connection_rate_limit(client_ip, limit=5, window=60):
         await websocket.close(
             code=status.WS_1008_POLICY_VIOLATION,
@@ -733,6 +741,28 @@ async def websocket_runner_endpoint(
                 token_id=runner_token.id if runner_token else None,
                 ip_address=client_host,
             )
+
+            # Clean up any orphaned connections (from previous disconnects that weren't properly closed)
+            # Pass runner_token_id to only close connections from the same runner device
+            closed_connection_ids = await runner_crud.close_orphaned_connections(
+                db=db,
+                user_id=user.id,
+                exclude_connection_id=connection_record.id,
+                runner_token_id=runner_token.id if runner_token else None,
+            )
+            if closed_connection_ids:
+                logger.info(
+                    "orphaned_connections_closed",
+                    count=len(closed_connection_ids),
+                    connection_ids=closed_connection_ids,
+                    user_id=str(user.id),
+                )
+                # Send disconnect notifications for orphaned connections so frontend removes them
+                redis_client = await get_redis()
+                runner_manager = await get_runner_connection_manager(redis_client)
+                for closed_id in closed_connection_ids:
+                    await runner_manager.unregister_runner(closed_id, user.id)
+
             logger.info(
                 "runner_connection_logged",
                 connection_id=connection_record.id,
@@ -851,6 +881,24 @@ async def websocket_runner_endpoint(
                                 connection_id=connection_record.id,
                                 runner_name=runner_name,
                             )
+                            # Also update Redis metadata with runner_name for real-time frontend updates
+                            if runner_manager:
+                                metadata = await runner_manager.get_connection_metadata(
+                                    connection_record.id
+                                )
+                                if metadata:
+                                    metadata["runner_name"] = runner_name
+                                    metadata_key = f"runner:connection:{connection_record.id}:metadata"
+                                    await redis_client.set(
+                                        metadata_key, json.dumps(metadata), ex=300
+                                    )  # 5 minute TTL
+                                # Publish runner_name_updated event to frontend
+                                # (moved outside `if metadata:` block to ensure event is always sent)
+                                await runner_manager.publish_runner_name_update(
+                                    connection_id=connection_record.id,
+                                    runner_name=runner_name,
+                                    user_id=user.id,
+                                )
                             logger.info(
                                 "runner_info_received",
                                 connection_id=connection_record.id,
@@ -1210,7 +1258,10 @@ async def websocket_runner_endpoint(
             try:
                 redis_client = await get_redis()
                 runner_manager = await get_runner_connection_manager(redis_client)
-                await runner_manager.unregister_runner(connection_record.id)
+                # Pass user_id to ensure disconnect event is published to frontend
+                await runner_manager.unregister_runner(
+                    connection_record.id, user.id if user else None
+                )
             except Exception as e:
                 logger.error(
                     "runner_unregister_failed",

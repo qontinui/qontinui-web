@@ -109,10 +109,7 @@ const packageApi = {
     return codePackageService.installPackage(data);
   },
 
-  async uninstallPackage(
-    packageId: string,
-    projectId: string
-  ): Promise<void> {
+  async uninstallPackage(packageId: string, projectId: string): Promise<void> {
     return codePackageService.uninstallPackage(packageId, projectId);
   },
 

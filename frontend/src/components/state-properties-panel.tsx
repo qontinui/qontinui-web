@@ -1026,8 +1026,8 @@ export function StatePropertiesPanel({
                                                 </div>
                                               ) : (
                                                 <div className="text-xs text-gray-400 mt-1">
-                                                  ↖ {sr.x},{sr.y} ↔ {sr.width}{" "}
-                                                  ↕ {sr.height}
+                                                  ↖ {sr.x},{sr.y} ↔ {sr.width} ↕{" "}
+                                                  {sr.height}
                                                 </div>
                                               )}
                                             </div>

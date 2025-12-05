@@ -168,3 +168,31 @@ class ConnectionCleanupResponse(BaseModel):
         ..., description="Number of connections successfully cleaned up"
     )
     message: str = Field(..., description="Human-readable status message")
+
+
+class ExecuteWorkflowRequest(BaseModel):
+    """Schema for executing a workflow on a connected runner."""
+
+    workflow: dict = Field(
+        ...,
+        description="The workflow configuration to execute (as exported from the web app)",
+    )
+    variables: dict | None = Field(
+        default=None,
+        description="Optional variables to pass to the workflow execution",
+    )
+
+
+class ExecuteWorkflowResponse(BaseModel):
+    """Schema for workflow execution response."""
+
+    execution_id: str = Field(
+        ..., description="Unique ID for tracking this workflow execution"
+    )
+    status: str = Field(
+        ..., description="Status of the execution request (sent, failed)"
+    )
+    message: str = Field(..., description="Human-readable status message")
+    connection_id: int = Field(
+        ..., description="The runner connection ID that received the workflow"
+    )

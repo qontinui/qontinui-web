@@ -200,6 +200,50 @@ class RunnerConnectionManager:
             "runner_unregistered", connection_id=connection_id, redis_state_removed=True
         )
 
+    async def publish_runner_name_update(
+        self, connection_id: int, runner_name: str, user_id: UUID
+    ) -> None:
+        """
+        Publish a runner name update event to the frontend.
+
+        Called when the runner sends its runner_info message after connection,
+        which contains the custom runner name.
+
+        Args:
+            connection_id: Database connection record ID
+            runner_name: The updated runner name
+            user_id: User ID to send the update to
+        """
+        logger.info(
+            "runner_name_update_publishing",
+            connection_id=connection_id,
+            runner_name=runner_name,
+            user_id=str(user_id),
+        )
+        try:
+            await self._publish_status_update(
+                user_id=user_id,
+                message={
+                    "type": "runner_name_updated",
+                    "connection_id": connection_id,
+                    "runner_name": runner_name,
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+            logger.info(
+                "runner_name_update_published",
+                connection_id=connection_id,
+                runner_name=runner_name,
+                user_id=str(user_id),
+            )
+        except Exception as e:
+            logger.error(
+                "runner_name_update_publish_error",
+                connection_id=connection_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+
     async def connect_frontend(
         self, connection_id: int, websocket: WebSocket, user_id: UUID
     ) -> bool:
@@ -468,11 +512,13 @@ class RunnerConnectionManager:
         """
         channel = f"runner:status:updates:{user_id}"
         try:
-            await self.redis.publish(channel, json.dumps(message))
-            logger.debug(
+            result = await self.redis.publish(channel, json.dumps(message))
+            logger.info(
                 "runner_status_update_published",
                 user_id=str(user_id),
                 message_type=message.get("type"),
+                channel=channel,
+                subscribers=result,  # Number of subscribers that received the message
             )
         except Exception as e:
             logger.error(

@@ -32,7 +32,7 @@ interface Process {
 interface Action {
   id: string;
   type: // Pure mouse actions
-  | "MOUSE_MOVE"
+    | "MOUSE_MOVE"
     | "MOUSE_DOWN"
     | "MOUSE_UP"
     | "MOUSE_SCROLL"

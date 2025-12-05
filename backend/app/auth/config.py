@@ -191,6 +191,24 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         else:
             logger.error("verification_email_enqueue_failed", email=user.email)
 
+        # Send admin notification for new user signup
+        from app.services.admin_notification_service import admin_notification_service
+
+        try:
+            await admin_notification_service.notify_user_signup(
+                db=user_db.session,
+                user_email=user.email,
+                username=user.username,
+                user_id=user.id,
+            )
+        except Exception as e:
+            # Don't fail registration if admin notification fails
+            logger.error(
+                "admin_notification_user_signup_failed",
+                error=str(e),
+                user_id=str(user.id),
+            )
+
     async def on_after_forgot_password(
         self, user: User, token: str, request: Request | None = None
     ):

@@ -8,8 +8,9 @@ import { styles } from "@/config/theme";
  * Extends the base Textarea component with dark theme styling
  */
 
-export interface QontinuiTextareaProps
-  extends React.ComponentProps<typeof Textarea> {
+export interface QontinuiTextareaProps extends React.ComponentProps<
+  typeof Textarea
+> {
   /**
    * Optional label for the textarea
    */

@@ -77,12 +77,14 @@ async def cleanup_stale_connections() -> dict[str, int]:
 
                 # Mark stale connections as disconnected
                 now = datetime.utcnow()
+                cleaned_connections = []
 
                 for conn in stale_connections:
                     try:
                         conn.disconnected_at = now
                         conn.calculate_duration()
                         stats["cleaned"] += 1
+                        cleaned_connections.append(conn)
 
                         logger.debug(
                             "stale_connection_cleaned",
@@ -100,6 +102,17 @@ async def cleanup_stale_connections() -> dict[str, int]:
 
                 # Commit all changes
                 await db.commit()
+
+                # Send disconnect notifications to frontend for each cleaned connection
+                for conn in cleaned_connections:
+                    try:
+                        await runner_manager.unregister_runner(conn.id, conn.user_id)
+                    except Exception as e:
+                        logger.error(
+                            "stale_connection_notify_error",
+                            connection_id=conn.id,
+                            error=str(e),
+                        )
 
                 logger.info(
                     "cleanup_stale_connections_completed",

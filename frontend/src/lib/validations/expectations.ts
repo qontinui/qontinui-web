@@ -157,7 +157,10 @@ export const minMatchesCriteriaSchema = baseSuccessCriteriaSchema.extend({
  */
 export const maxFailuresCriteriaSchema = baseSuccessCriteriaSchema.extend({
   type: z.literal("max_failures"),
-  max_failures: z.number().int().min(0, "Maximum failures must be non-negative"),
+  max_failures: z
+    .number()
+    .int()
+    .min(0, "Maximum failures must be non-negative"),
 });
 
 /**
@@ -244,7 +247,8 @@ export const validateTextCountAssertion = (data: {
 }) => {
   // Must have either count OR (min_count and/or max_count)
   const hasCount = data.count !== undefined;
-  const hasBounds = data.min_count !== undefined || data.max_count !== undefined;
+  const hasBounds =
+    data.min_count !== undefined || data.max_count !== undefined;
   if (hasCount === hasBounds) {
     throw new Error(
       "Either 'count' or 'min_count'/'max_count' must be specified, but not both"
@@ -267,7 +271,8 @@ export const validateCheckpointPassedCriteria = (data: {
 }) => {
   // Must have either checkpoint_name OR checkpoints, but not both
   const hasName = data.checkpoint_name !== undefined;
-  const hasArray = data.checkpoints !== undefined && data.checkpoints.length > 0;
+  const hasArray =
+    data.checkpoints !== undefined && data.checkpoints.length > 0;
   if (hasName === hasArray) {
     throw new Error(
       "Either 'checkpoint_name' or 'checkpoints' must be specified, but not both"
@@ -346,13 +351,17 @@ export type TextInRegionAssertion = z.infer<typeof textInRegionAssertionSchema>;
 export type OcrAssertion = z.infer<typeof ocrAssertionSchema>;
 export type CheckpointDefinition = z.infer<typeof checkpointDefinitionSchema>;
 export type GlobalExpectations = z.infer<typeof globalExpectationsSchema>;
-export type AllActionsPassCriteria = z.infer<typeof allActionsPassCriteriaSchema>;
+export type AllActionsPassCriteria = z.infer<
+  typeof allActionsPassCriteriaSchema
+>;
 export type MinMatchesCriteria = z.infer<typeof minMatchesCriteriaSchema>;
 export type MaxFailuresCriteria = z.infer<typeof maxFailuresCriteriaSchema>;
 export type CheckpointPassedCriteria = z.infer<
   typeof checkpointPassedCriteriaSchema
 >;
-export type RequiredStatesCriteria = z.infer<typeof requiredStatesCriteriaSchema>;
+export type RequiredStatesCriteria = z.infer<
+  typeof requiredStatesCriteriaSchema
+>;
 export type CustomCriteria = z.infer<typeof customCriteriaSchema>;
 export type SuccessCriteria = z.infer<typeof successCriteriaSchema>;
 export type ActionDefaults = z.infer<typeof actionDefaultsSchema>;

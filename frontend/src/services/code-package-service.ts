@@ -146,7 +146,8 @@ export class CodePackageService {
 
     if (filters?.query) params.append("query", filters.query);
     if (filters?.category) params.append("category", filters.category);
-    if (filters?.tags) filters.tags.forEach((tag) => params.append("tags", tag));
+    if (filters?.tags)
+      filters.tags.forEach((tag) => params.append("tags", tag));
     if (filters?.verified_only) params.append("verified_only", "true");
     if (filters?.min_rating !== undefined)
       params.append("min_rating", filters.min_rating.toString());
@@ -229,7 +230,9 @@ export class CodePackageService {
   /**
    * Get packages installed in a specific project
    */
-  async getInstalledPackages(projectId: string): Promise<PackageInstallation[]> {
+  async getInstalledPackages(
+    projectId: string
+  ): Promise<PackageInstallation[]> {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/marketplace/projects/${projectId}/packages`
     );
@@ -374,10 +377,7 @@ export class CodePackageService {
   /**
    * Uninstall a package from a project
    */
-  async uninstallPackage(
-    packageId: string,
-    projectId: string
-  ): Promise<void> {
+  async uninstallPackage(packageId: string, projectId: string): Promise<void> {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/marketplace/packages/${packageId}/uninstall`,
       {

@@ -19,6 +19,7 @@ import {
   Tag,
   Network,
   Smartphone,
+  Bell,
 } from "lucide-react";
 
 // Dynamic imports for admin tabs - these are loaded only when accessed
@@ -68,6 +69,17 @@ const HealthDashboardTab = dynamic(
     loading: () => (
       <div className="flex items-center justify-center h-64">
         Loading Health Dashboard...
+      </div>
+    ),
+  }
+);
+
+const NotificationsTab = dynamic(
+  () => import("@/components/admin/NotificationsTab"),
+  {
+    loading: () => (
+      <div className="flex items-center justify-center h-64">
+        Loading Notifications...
       </div>
     ),
   }
@@ -156,7 +168,7 @@ export default function AdminDashboard() {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-7 lg:w-auto lg:inline-grid">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <LayoutDashboard className="h-4 w-4" />
               <span className="hidden sm:inline">Overview</span>
@@ -172,6 +184,13 @@ export default function AdminDashboard() {
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
               <span className="hidden sm:inline">Analytics</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="notifications"
+              className="flex items-center gap-2"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="hidden sm:inline">Notifications</span>
             </TabsTrigger>
             <TabsTrigger value="health" className="flex items-center gap-2">
               <Activity className="h-4 w-4" />
@@ -197,6 +216,10 @@ export default function AdminDashboard() {
 
           <TabsContent value="analytics" className="space-y-6">
             <AnalyticsTab />
+          </TabsContent>
+
+          <TabsContent value="notifications" className="space-y-6">
+            <NotificationsTab />
           </TabsContent>
 
           <TabsContent value="health" className="space-y-6">
