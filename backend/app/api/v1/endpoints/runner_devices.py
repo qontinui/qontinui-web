@@ -91,12 +91,12 @@ async def register_device(
 
     if existing_device:
         # Update existing device
-        existing_device.device_name = device_in.device_name
-        existing_device.platform = device_in.platform
-        existing_device.user_id = current_user.id
-        existing_device.is_active = True
-        existing_device.updated_at = datetime.utcnow()
-        existing_device.last_seen_at = datetime.utcnow()
+        existing_device.device_name = device_in.device_name  # type: ignore[assignment]
+        existing_device.platform = device_in.platform  # type: ignore[assignment]
+        existing_device.user_id = current_user.id  # type: ignore[assignment]
+        existing_device.is_active = True  # type: ignore[assignment]
+        existing_device.updated_at = datetime.utcnow()  # type: ignore[assignment]
+        existing_device.last_seen_at = datetime.utcnow()  # type: ignore[assignment]
 
         await db.commit()
         await db.refresh(existing_device)
@@ -278,8 +278,8 @@ async def delete_device(
         )
 
     # Deactivate device
-    device.is_active = False
-    device.updated_at = datetime.utcnow()
+    device.is_active = False  # type: ignore[assignment]
+    device.updated_at = datetime.utcnow()  # type: ignore[assignment]
 
     await db.commit()
 
@@ -364,8 +364,8 @@ async def device_heartbeat(
         )
 
     # Update last seen
-    device.last_seen_at = datetime.utcnow()
-    device.updated_at = datetime.utcnow()
+    device.last_seen_at = datetime.utcnow()  # type: ignore[assignment]
+    device.updated_at = datetime.utcnow()  # type: ignore[assignment]
 
     await db.commit()
 
@@ -462,9 +462,9 @@ async def get_connection_info(
     )
 
     return RunnerDeviceConnectionInfo(
-        device_id=device.device_id,
+        device_id=str(device.device_id),
         websocket_url=ws_url,
         http_url=backend_url,
         user_id=str(current_user.id),
-        is_active=device.is_active,
+        is_active=bool(device.is_active),
     )

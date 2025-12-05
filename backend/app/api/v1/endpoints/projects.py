@@ -212,11 +212,11 @@ async def create_new_project(
     try:
         await admin_notification_service.notify_project_created(
             db=db,
-            project_name=project.name,
-            project_id=project.id,
+            project_name=str(project.name),
+            project_id=project.id,  # type: ignore[arg-type]
             owner_email=current_user.email,
             owner_username=current_user.username,
-            owner_id=current_user.id,
+            owner_id=current_user.id,  # type: ignore[arg-type]
         )
     except Exception as e:
         # Don't fail project creation if admin notification fails
