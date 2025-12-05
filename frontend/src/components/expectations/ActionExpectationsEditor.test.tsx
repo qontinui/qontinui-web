@@ -192,7 +192,9 @@ describe("ActionExpectationsEditor", () => {
       );
 
       // Initially checkpoint name should not be visible
-      expect(screen.queryByPlaceholderText("Enter checkpoint name")).not.toBeInTheDocument();
+      expect(
+        screen.queryByPlaceholderText("Enter checkpoint name")
+      ).not.toBeInTheDocument();
 
       // Enable capture after action
       const switches = screen.getAllByRole("switch");
@@ -200,7 +202,9 @@ describe("ActionExpectationsEditor", () => {
 
       // Checkpoint name field should now be visible
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Enter checkpoint name")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Enter checkpoint name")
+        ).toBeInTheDocument();
       });
     });
 
@@ -227,7 +231,9 @@ describe("ActionExpectationsEditor", () => {
 
       // Checkpoint name should be hidden
       await waitFor(() => {
-        expect(screen.queryByDisplayValue("test-checkpoint")).not.toBeInTheDocument();
+        expect(
+          screen.queryByDisplayValue("test-checkpoint")
+        ).not.toBeInTheDocument();
       });
     });
 
@@ -572,13 +578,17 @@ describe("ActionExpectationsEditor", () => {
 
       // Enable all switches
       for (const switchEl of switches) {
-        if ((switchEl as HTMLInputElement).getAttribute("data-state") === "unchecked") {
+        if (
+          (switchEl as HTMLInputElement).getAttribute("data-state") ===
+          "unchecked"
+        ) {
           await user.click(switchEl);
         }
       }
 
       await waitFor(() => {
-        const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
+        const lastCall =
+          mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
         expect(lastCall[0]).toMatchObject({
           capture_checkpoint_on_failure: true,
           capture_checkpoint_after: true,
@@ -628,7 +638,9 @@ describe("ActionExpectationsEditor", () => {
       await user.click(captureAfterSwitch);
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Enter checkpoint name")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Enter checkpoint name")
+        ).toBeInTheDocument();
       });
 
       // Type checkpoint name

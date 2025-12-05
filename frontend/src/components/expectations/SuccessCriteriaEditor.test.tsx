@@ -5,7 +5,13 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SuccessCriteriaEditor } from "./SuccessCriteriaEditor";
 import type { SuccessCriteria } from "@/lib/expectations/types";
@@ -20,10 +26,7 @@ describe("SuccessCriteriaEditor", () => {
   describe("Rendering", () => {
     it("should render with default all_actions_pass criteria", () => {
       render(
-        <SuccessCriteriaEditor
-          criteria={undefined}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={undefined} onChange={mockOnChange} />
       );
 
       expect(screen.getByText("Success Criteria")).toBeInTheDocument();
@@ -37,10 +40,7 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
       expect(screen.getByDisplayValue("5")).toBeInTheDocument();
@@ -65,10 +65,7 @@ describe("SuccessCriteriaEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <SuccessCriteriaEditor
-          criteria={undefined}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={undefined} onChange={mockOnChange} />
       );
 
       const select = screen.getByRole("combobox");
@@ -91,10 +88,7 @@ describe("SuccessCriteriaEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <SuccessCriteriaEditor
-          criteria={undefined}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={undefined} onChange={mockOnChange} />
       );
 
       const select = screen.getByRole("combobox");
@@ -117,10 +111,7 @@ describe("SuccessCriteriaEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <SuccessCriteriaEditor
-          criteria={undefined}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={undefined} onChange={mockOnChange} />
       );
 
       const select = screen.getByRole("combobox");
@@ -143,10 +134,7 @@ describe("SuccessCriteriaEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <SuccessCriteriaEditor
-          criteria={undefined}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={undefined} onChange={mockOnChange} />
       );
 
       const select = screen.getByRole("combobox");
@@ -169,10 +157,7 @@ describe("SuccessCriteriaEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <SuccessCriteriaEditor
-          criteria={undefined}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={undefined} onChange={mockOnChange} />
       );
 
       const select = screen.getByRole("combobox");
@@ -201,10 +186,7 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
       const input = screen.getByDisplayValue("1");
@@ -229,10 +211,7 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
       const input = screen.getByDisplayValue("5");
@@ -256,10 +235,7 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
       const input = screen.getByDisplayValue("0");
@@ -428,10 +404,7 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
       // Find the X button for state-1
@@ -472,7 +445,8 @@ describe("SuccessCriteriaEditor", () => {
 
       // Should not add duplicate - states should still be ["state-1"]
       await waitFor(() => {
-        const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
+        const lastCall =
+          mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
         if (lastCall) {
           expect(lastCall[0].required_states).toEqual(["state-1"]);
         }
@@ -565,10 +539,7 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
       const textarea = screen.getByPlaceholderText(/Enter Python expression/i);
@@ -593,10 +564,7 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
       const textarea = screen.getByPlaceholderText(/Add a description/i);
@@ -619,10 +587,7 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
       const select = screen.getByRole("combobox");
@@ -665,8 +630,8 @@ describe("SuccessCriteriaEditor", () => {
       await user.click(addButton);
 
       // Should not add whitespace-only state
-      const wasCalledWithWhitespace = mockOnChange.mock.calls.some(
-        (call) => call[0].required_states?.includes("   ")
+      const wasCalledWithWhitespace = mockOnChange.mock.calls.some((call) =>
+        call[0].required_states?.includes("   ")
       );
       expect(wasCalledWithWhitespace).toBe(false);
     });
@@ -679,10 +644,7 @@ describe("SuccessCriteriaEditor", () => {
       };
 
       render(
-        <SuccessCriteriaEditor
-          criteria={criteria}
-          onChange={mockOnChange}
-        />
+        <SuccessCriteriaEditor criteria={criteria} onChange={mockOnChange} />
       );
 
       const input = screen.getByDisplayValue("5");

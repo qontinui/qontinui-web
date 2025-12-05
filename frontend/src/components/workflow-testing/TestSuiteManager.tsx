@@ -167,9 +167,8 @@ export function TestSuiteManager({
       });
 
       // Calculate pass rate (0 if no test results exist)
-      const passRate = totalWithResults > 0
-        ? (passedCount / totalWithResults) * 100
-        : 0;
+      const passRate =
+        totalWithResults > 0 ? (passedCount / totalWithResults) * 100 : 0;
 
       return {
         totalTests: suiteTestCases.length,

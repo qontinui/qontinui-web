@@ -34,6 +34,7 @@ from app.api.v1.endpoints import (
     recordings,
     region_analysis,
     runner_command_ws,
+    runner_devices,
     runner_status_ws,
     runners,
     security_endpoints,
@@ -107,6 +108,9 @@ api_router.include_router(
 )
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(runners.router, prefix="/runners", tags=["runners"])
+api_router.include_router(
+    runner_devices.router, prefix="/runner-devices", tags=["runner-devices"]
+)
 api_router.include_router(versions.router, prefix="/projects", tags=["versions"])
 api_router.include_router(
     security_endpoints.router, prefix="/security", tags=["security"]

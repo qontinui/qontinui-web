@@ -43,13 +43,12 @@ export function ExecutionResultsBadge({
         className
       )}
     >
-      {showIcon && (
-        result.success ? (
+      {showIcon &&
+        (result.success ? (
           <CheckCircle2 className="h-3 w-3" />
         ) : (
           <XCircle className="h-3 w-3" />
-        )
-      )}
+        ))}
       <span>
         {result.success ? "PASS" : "FAIL"}
         {durationText}

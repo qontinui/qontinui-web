@@ -398,7 +398,7 @@ export const useCanvasStore = create<CanvasStore>()(
                 state.workflow.actions[index] = {
                   ...state.workflow.actions[index],
                   ...updates,
-                };
+                } as Action;
                 state.isDirty = true;
               }
             });
@@ -915,8 +915,10 @@ export const useCanvasStore = create<CanvasStore>()(
               }
 
               // Calculate viewport dimensions (assume standard canvas size)
-              const viewportWidth = (typeof window !== 'undefined') ? window.innerWidth : 1920;
-              const viewportHeight = (typeof window !== 'undefined') ? window.innerHeight : 1080;
+              const viewportWidth =
+                typeof window !== "undefined" ? window.innerWidth : 1920;
+              const viewportHeight =
+                typeof window !== "undefined" ? window.innerHeight : 1080;
 
               const contentWidth = maxX - minX + 2 * PADDING;
               const contentHeight = maxY - minY + 2 * PADDING;
@@ -983,7 +985,9 @@ export const useCanvasStore = create<CanvasStore>()(
             }
 
             // Import validation functions from canvas-validation
-            const { validateWorkflow: validate } = require("./canvas-validation");
+            const {
+              validateWorkflow: validate,
+            } = require("./canvas-validation");
 
             // Run comprehensive validation
             const result = validate(workflow, {

@@ -89,6 +89,9 @@ export function StateStructure() {
   // Track counts to trigger auto-layout when items are added
   const prevCountsRef = useRef({ stateCount: 0, transitionCount: 0 });
 
+  // Track if a drag operation is in progress to prevent node destruction during drag
+  const isDraggingRef = useRef(false);
+
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
@@ -143,12 +146,27 @@ export function StateStructure() {
   // Handle node position changes
   const handleNodesChange = useCallback(
     (changes: any) => {
+      // Track drag start/end to prevent node destruction during drag
+      changes.forEach((change: any) => {
+        if (change.type === "position") {
+          if (change.dragging === true) {
+            isDraggingRef.current = true;
+          } else if (change.dragging === false) {
+            isDraggingRef.current = false;
+          }
+        }
+      });
+
       // Call the original handler
       onNodesChange(changes);
 
-      // Update positions when nodes are dragged
+      // Update positions when nodes finish dragging (dragging === false means drag ended)
       changes.forEach((change: any) => {
-        if (change.type === "position" && change.position) {
+        if (
+          change.type === "position" &&
+          change.dragging === false &&
+          change.position
+        ) {
           // Check if it's a state node
           const state = states.find((s) => s.id === change.id);
           if (state) {
@@ -174,6 +192,11 @@ export function StateStructure() {
   );
 
   React.useEffect(() => {
+    // Skip rebuilding nodes while dragging to prevent node destruction
+    if (isDraggingRef.current) {
+      return;
+    }
+
     // Check which states have IncomingTransitions
     // Map incoming transitions by state
     const incomingTransitionsByState = new Map<string, IncomingTransition[]>();

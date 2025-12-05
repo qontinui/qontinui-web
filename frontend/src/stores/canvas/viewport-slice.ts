@@ -56,8 +56,10 @@ export const createViewportSlice: StateCreator<
       }
 
       // Calculate viewport dimensions (assume standard canvas size)
-      const viewportWidth = (typeof window !== 'undefined') ? window.innerWidth : 1920;
-      const viewportHeight = (typeof window !== 'undefined') ? window.innerHeight : 1080;
+      const viewportWidth =
+        typeof window !== "undefined" ? window.innerWidth : 1920;
+      const viewportHeight =
+        typeof window !== "undefined" ? window.innerHeight : 1080;
 
       const contentWidth = maxX - minX + 2 * PADDING;
       const contentHeight = maxY - minY + 2 * PADDING;

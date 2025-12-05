@@ -2,10 +2,12 @@
  * Shared types for action properties components.
  */
 
+import type { ActionExpectations } from "@/lib/expectations/types";
+
 export interface Action {
   id: string;
   type: // Pure mouse actions
-  | "MOUSE_MOVE"
+    | "MOUSE_MOVE"
     | "MOUSE_DOWN"
     | "MOUSE_UP"
     | "MOUSE_SCROLL"
@@ -44,6 +46,8 @@ export interface Action {
     | "STRING_OPERATION"
     | "MATH_OPERATION";
   config: Record<string, any>;
+  /** Action-level expectations for checkpoint and failure behavior */
+  expectations?: ActionExpectations;
 }
 
 export interface ActionPropertiesComponentProps {

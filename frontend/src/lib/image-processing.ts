@@ -107,6 +107,7 @@ export async function removeBorder(
 ): Promise<ProcessedImageResult> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.width;
@@ -228,6 +229,7 @@ export async function removeBackground(
 ): Promise<ProcessedImageResult> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.width;
@@ -383,6 +385,7 @@ export async function extractRegion(
 ): Promise<ProcessedImageResult> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = Math.floor(region.width);

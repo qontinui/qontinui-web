@@ -116,7 +116,11 @@ export function ExportPanel() {
 
       // Create and download file
       const blob = new Blob(
-        [typeof exportData === "string" ? exportData : JSON.stringify(exportData, null, 2)],
+        [
+          typeof exportData === "string"
+            ? exportData
+            : JSON.stringify(exportData, null, 2),
+        ],
         { type: "application/json" }
       );
       const url = URL.createObjectURL(blob);
@@ -128,7 +132,9 @@ export function ExportPanel() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      toast.success(`Exported ${states.length} states as ${exportFormat.toUpperCase()}`);
+      toast.success(
+        `Exported ${states.length} states as ${exportFormat.toUpperCase()}`
+      );
     } catch (error: any) {
       console.error("Export failed:", error);
       toast.error(`Export failed: ${error.message}`);

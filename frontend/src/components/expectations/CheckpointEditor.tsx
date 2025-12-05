@@ -160,7 +160,9 @@ export function CheckpointEditor({
         </p>
         <ul className="text-xs text-gray-500 space-y-1">
           <li>
-            <span className="text-gray-400">{checkpoint.ocrAssertions.length}</span>{" "}
+            <span className="text-gray-400">
+              {checkpoint.ocrAssertions.length}
+            </span>{" "}
             OCR assertion(s)
           </li>
           <li>
@@ -173,7 +175,9 @@ export function CheckpointEditor({
             Screenshot:{" "}
             <span
               className={
-                checkpoint.screenshotRequired ? "text-green-400" : "text-gray-400"
+                checkpoint.screenshotRequired
+                  ? "text-green-400"
+                  : "text-gray-400"
               }
             >
               {checkpoint.screenshotRequired ? "Required" : "Optional"}

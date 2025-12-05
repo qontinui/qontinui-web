@@ -6,6 +6,10 @@
  */
 
 import { BaseActionSettings, ExecutionSettings } from "./shared/timing-config";
+import type {
+  WorkflowExpectations,
+  ActionExpectations,
+} from "@/lib/expectations/types";
 
 // Import all action configs
 import {
@@ -209,6 +213,9 @@ export interface Action<T extends ActionType = ActionType> {
    * REQUIRED for all actions in graph format
    */
   position: [number, number];
+
+  /** Action-level expectations for checkpoint and failure behavior */
+  expectations?: ActionExpectations;
 }
 
 // ============================================================================
@@ -468,6 +475,9 @@ export interface Workflow {
 
   /** Tags for categorization and search */
   tags?: string[];
+
+  /** Workflow-level expectations (success criteria, checkpoints, global settings) */
+  expectations?: WorkflowExpectations;
 }
 
 // ============================================================================

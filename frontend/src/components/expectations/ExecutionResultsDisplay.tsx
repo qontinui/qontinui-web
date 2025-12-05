@@ -102,13 +102,15 @@ export function ExecutionResultsDisplay({
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500" />
               <span>
-                Passed: <span className="font-medium">{result.actions_passed}</span>
+                Passed:{" "}
+                <span className="font-medium">{result.actions_passed}</span>
               </span>
             </div>
             <div className="flex items-center gap-2">
               <XCircle className="h-4 w-4 text-red-600 dark:text-red-500" />
               <span>
-                Failed: <span className="font-medium">{result.actions_failed}</span>
+                Failed:{" "}
+                <span className="font-medium">{result.actions_failed}</span>
               </span>
             </div>
           </div>
@@ -285,10 +287,7 @@ function CheckpointResultDisplay({
           </h4>
           <div className="space-y-2">
             {checkpoint.assertion_results.map((assertion, index) => (
-              <AssertionResultDisplay
-                key={index}
-                assertion={assertion}
-              />
+              <AssertionResultDisplay key={index} assertion={assertion} />
             ))}
           </div>
         </div>
@@ -334,11 +333,7 @@ function CheckpointResultDisplay({
 /**
  * Display a single assertion result
  */
-function AssertionResultDisplay({
-  assertion,
-}: {
-  assertion: AssertionResult;
-}) {
+function AssertionResultDisplay({ assertion }: { assertion: AssertionResult }) {
   return (
     <div className="flex items-start gap-2 text-sm">
       {assertion.passed ? (

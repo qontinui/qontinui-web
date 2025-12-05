@@ -63,35 +63,45 @@ export function SuccessCriteriaEditor({
       case "min_matches":
         updatedCriteria = {
           type: "min_matches",
-          min_matches: isMinMatchesCriteria(currentCriteria) ? currentCriteria.min_matches : 1,
+          min_matches: isMinMatchesCriteria(currentCriteria)
+            ? currentCriteria.min_matches
+            : 1,
           description: currentCriteria.description,
         };
         break;
       case "max_failures":
         updatedCriteria = {
           type: "max_failures",
-          max_failures: isMaxFailuresCriteria(currentCriteria) ? currentCriteria.max_failures : 0,
+          max_failures: isMaxFailuresCriteria(currentCriteria)
+            ? currentCriteria.max_failures
+            : 0,
           description: currentCriteria.description,
         };
         break;
       case "checkpoint_passed":
         updatedCriteria = {
           type: "checkpoint_passed",
-          checkpoint_name: isCheckpointPassedCriteria(currentCriteria) ? currentCriteria.checkpoint_name : "",
+          checkpoint_name: isCheckpointPassedCriteria(currentCriteria)
+            ? currentCriteria.checkpoint_name
+            : "",
           description: currentCriteria.description,
         };
         break;
       case "required_states":
         updatedCriteria = {
           type: "required_states",
-          required_states: isRequiredStatesCriteria(currentCriteria) ? currentCriteria.required_states : [],
+          required_states: isRequiredStatesCriteria(currentCriteria)
+            ? currentCriteria.required_states
+            : [],
           description: currentCriteria.description,
         };
         break;
       case "custom":
         updatedCriteria = {
           type: "custom",
-          custom_expression: isCustomCriteria(currentCriteria) ? currentCriteria.custom_expression : "",
+          custom_expression: isCustomCriteria(currentCriteria)
+            ? currentCriteria.custom_expression
+            : "",
           description: currentCriteria.description,
         };
         break;
@@ -115,7 +125,11 @@ export function SuccessCriteriaEditor({
 
   const handleMinMatchesChange = (value: string) => {
     const min_matches = parseInt(value, 10);
-    if (!isNaN(min_matches) && min_matches >= 0 && isMinMatchesCriteria(currentCriteria)) {
+    if (
+      !isNaN(min_matches) &&
+      min_matches >= 0 &&
+      isMinMatchesCriteria(currentCriteria)
+    ) {
       onChange({
         ...currentCriteria,
         min_matches,
@@ -125,7 +139,11 @@ export function SuccessCriteriaEditor({
 
   const handleMaxFailuresChange = (value: string) => {
     const max_failures = parseInt(value, 10);
-    if (!isNaN(max_failures) && max_failures >= 0 && isMaxFailuresCriteria(currentCriteria)) {
+    if (
+      !isNaN(max_failures) &&
+      max_failures >= 0 &&
+      isMaxFailuresCriteria(currentCriteria)
+    ) {
       onChange({
         ...currentCriteria,
         max_failures,
@@ -152,10 +170,17 @@ export function SuccessCriteriaEditor({
   };
 
   const handleAddState = () => {
-    if (stateInput.trim() && isRequiredStatesCriteria(currentCriteria) && !currentCriteria.required_states.includes(stateInput.trim())) {
+    if (
+      stateInput.trim() &&
+      isRequiredStatesCriteria(currentCriteria) &&
+      !currentCriteria.required_states.includes(stateInput.trim())
+    ) {
       onChange({
         ...currentCriteria,
-        required_states: [...currentCriteria.required_states, stateInput.trim()],
+        required_states: [
+          ...currentCriteria.required_states,
+          stateInput.trim(),
+        ],
       });
       setStateInput("");
     }
@@ -227,7 +252,9 @@ export function SuccessCriteriaEditor({
             <SelectItem value="custom">Custom Expression</SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-gray-500">{getTypeDescription(currentCriteria.type)}</p>
+        <p className="text-xs text-gray-500">
+          {getTypeDescription(currentCriteria.type)}
+        </p>
       </div>
 
       {/* Type-Specific Inputs */}
@@ -392,7 +419,9 @@ export function SuccessCriteriaEditor({
 
       {isCustomCriteria(currentCriteria) && (
         <div className="space-y-2">
-          <Label className="text-xs text-gray-400">Custom Python Expression</Label>
+          <Label className="text-xs text-gray-400">
+            Custom Python Expression
+          </Label>
           <Textarea
             value={currentCriteria.custom_expression}
             onChange={(e) => handleCustomExpressionChange(e.target.value)}
@@ -400,8 +429,8 @@ export function SuccessCriteriaEditor({
             className="font-mono text-sm min-h-24"
           />
           <p className="text-xs text-gray-500">
-            Python expression evaluated in workflow context. Available variables: matches,
-            failures, states, checkpoints
+            Python expression evaluated in workflow context. Available
+            variables: matches, failures, states, checkpoints
           </p>
         </div>
       )}

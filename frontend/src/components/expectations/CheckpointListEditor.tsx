@@ -64,7 +64,9 @@ export function CheckpointListEditor({
         retry_interval_ms: 500,
       },
     });
-    setExpandedCheckpoints(new Set([...expandedCheckpoints, newCheckpointName]));
+    setExpandedCheckpoints(
+      new Set([...expandedCheckpoints, newCheckpointName])
+    );
     setNewCheckpointName("");
   };
 
@@ -160,7 +162,9 @@ export function CheckpointListEditor({
         <div className="text-center py-8 text-gray-500 text-sm">
           <Flag className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p>No checkpoints defined</p>
-          <p className="text-xs">Add checkpoints to validate workflow execution</p>
+          <p className="text-xs">
+            Add checkpoints to validate workflow execution
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -316,26 +320,34 @@ export function CheckpointListEditor({
                         {checkpoint.claude_review &&
                           checkpoint.claude_review.length > 0 && (
                             <div className="space-y-2">
-                              {checkpoint.claude_review.map((instruction, i) => (
-                                <div key={i} className="flex gap-2">
-                                  <Textarea
-                                    value={instruction}
-                                    onChange={(e) =>
-                                      updateClaudeReview(name, i, e.target.value)
-                                    }
-                                    placeholder="Instruction for Claude to review the checkpoint..."
-                                    className="bg-transparent border-gray-700 text-sm min-h-20"
-                                  />
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => removeClaudeReview(name, i)}
-                                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 w-8 p-0"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </Button>
-                                </div>
-                              ))}
+                              {checkpoint.claude_review.map(
+                                (instruction, i) => (
+                                  <div key={i} className="flex gap-2">
+                                    <Textarea
+                                      value={instruction}
+                                      onChange={(e) =>
+                                        updateClaudeReview(
+                                          name,
+                                          i,
+                                          e.target.value
+                                        )
+                                      }
+                                      placeholder="Instruction for Claude to review the checkpoint..."
+                                      className="bg-transparent border-gray-700 text-sm min-h-20"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() =>
+                                        removeClaudeReview(name, i)
+                                      }
+                                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 w-8 p-0"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                )
+                              )}
                             </div>
                           )}
                         <p className="text-xs text-gray-500">

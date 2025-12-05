@@ -332,7 +332,13 @@ class LocalBackend(StorageBackend):
         """
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
-        logger.info("local_storage_initialized", path=str(self.base_path.absolute()))
+        # Store the backend URL for generating absolute URLs
+        self.backend_url = settings.BACKEND_URL.rstrip("/")
+        logger.info(
+            "local_storage_initialized",
+            path=str(self.base_path.absolute()),
+            backend_url=self.backend_url,
+        )
 
     def _get_file_path(self, key: str) -> Path:
         """Get full file path from key"""
@@ -371,8 +377,8 @@ class LocalBackend(StorageBackend):
 
             logger.info("file_uploaded_locally", key=key, path=str(file_path))
 
-            # Return a local file URL (for consistency with S3Backend)
-            return f"/uploads/{key}"
+            # Return an absolute URL with the backend host (for consistency with S3Backend)
+            return f"{self.backend_url}/uploads/{key}"
 
         except Exception as e:
             logger.error("local_upload_failed", key=key, error=str(e))
@@ -429,7 +435,7 @@ class LocalBackend(StorageBackend):
 
         Note: expiration parameter is ignored for local backend
         """
-        return f"/uploads/{key}"
+        return f"{self.backend_url}/uploads/{key}"
 
     def file_exists(self, key: str) -> bool:
         """Check if file exists in local filesystem"""

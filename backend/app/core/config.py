@@ -101,8 +101,9 @@ class Settings(BaseSettings):
     )
 
     # Runner connection URLs (for desktop app)
+    # WebSocket endpoint is on main backend (port 8000), NOT qontinui-api (port 8001)
     RUNNER_WS_URL: str = Field(
-        default="ws://localhost:8001",
+        default="ws://localhost:8000",
         description="WebSocket URL for qontinui-runner desktop app",
     )
     RUNNER_BACKEND_URL: str = Field(

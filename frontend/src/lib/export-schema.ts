@@ -13,6 +13,8 @@
  * - All workflows now in unified graph format with viewMode metadata
  */
 
+import type { WorkflowExpectations, ActionExpectations } from "./expectations";
+
 export interface QontinuiConfig {
   version: string;
   metadata: ConfigMetadata;
@@ -40,6 +42,7 @@ export interface Workflow {
   actions: Action[];
   connections: WorkflowConnections;
   metadata?: WorkflowMetadata;
+  expectations?: WorkflowExpectations; // Optional workflow-level expectations
 }
 
 /**
@@ -107,6 +110,11 @@ export interface Action {
   timeout?: number;
   retryCount?: number;
   continueOnError?: boolean;
+  // Checkpoint and expectations fields
+  capture_checkpoint_after?: boolean; // Capture checkpoint after action succeeds
+  checkpoint_name?: string; // Name of checkpoint to create
+  is_terminal_on_failure?: boolean; // If true, workflow stops on action failure
+  expectations?: ActionExpectations; // Action-level expectation overrides
 }
 
 export type ActionType =

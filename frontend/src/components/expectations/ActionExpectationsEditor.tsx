@@ -66,9 +66,7 @@ export function ActionExpectationsEditor({
         {/* Checkpoint on Failure */}
         <div className="flex items-center justify-between">
           <div className="space-y-0.5 flex-1 pr-2">
-            <Label className="text-xs text-gray-400">
-              Capture on Failure
-            </Label>
+            <Label className="text-xs text-gray-400">Capture on Failure</Label>
             <p className="text-xs text-gray-500">
               Capture checkpoint when action fails
             </p>
@@ -162,9 +160,7 @@ export function ActionExpectationsEditor({
 
         {/* Max Duration */}
         <div className="space-y-2 pt-3 border-t border-gray-700">
-          <Label className="text-xs text-gray-400">
-            Max Duration (ms)
-          </Label>
+          <Label className="text-xs text-gray-400">Max Duration (ms)</Label>
           <Input
             type="number"
             min="0"

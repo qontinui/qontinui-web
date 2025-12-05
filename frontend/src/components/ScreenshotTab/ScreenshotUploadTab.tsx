@@ -9,6 +9,9 @@ import {
   X,
   FileJson,
   FileCode,
+  Camera,
+  Monitor,
+  Loader2,
 } from "lucide-react";
 import { Screenshot } from "../../types/Screenshot";
 import { generateId } from "../../lib/utils";
@@ -18,6 +21,7 @@ import {
 } from "../../lib/state-exporter";
 import { useAutomation } from "../../contexts/automation-context";
 import { apiClient } from "@/lib/api-client";
+import { normalizeUrl } from "@/lib/screenshot-db";
 import {
   ImageUploadProgress,
   type UploadingImage,
@@ -66,7 +70,33 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     {}
   );
   const [uploadingFiles, setUploadingFiles] = useState<UploadingImage[]>([]);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [showMonitorMenu, setShowMonitorMenu] = useState(false);
+  const [availableMonitors, setAvailableMonitors] = useState<
+    Array<{ index: number; width: number; height: number; is_primary: boolean }>
+  >([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const monitorMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close monitor menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        monitorMenuRef.current &&
+        !monitorMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowMonitorMenu(false);
+      }
+    };
+
+    if (showMonitorMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showMonitorMenu]);
 
   // Sync local screenshots with project screenshots
   useEffect(() => {
@@ -190,12 +220,21 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
         // Create screenshot object with S3 data
         const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
+        // Use presigned_url from backend response (fallback to presigned_urls.original for legacy compatibility)
+        const screenshotUrl =
+          result.presigned_url || result.presigned_urls?.original || result.url;
+        if (!screenshotUrl) {
+          console.error("Upload response missing URL:", result);
+          throw new Error("Upload succeeded but no URL was returned");
+        }
         const screenshot = {
           id: result.image_id,
           name: nameWithoutExtension,
-          url: result.url, // S3 presigned URL
-          size: result.size,
-          uploadedAt: new Date(result.created_at),
+          url: normalizeUrl(screenshotUrl),
+          size: result.size || 0,
+          uploadedAt: result.created_at
+            ? new Date(result.created_at)
+            : new Date(),
           projectName: projectName,
         };
 
@@ -321,6 +360,137 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     setShowExportMenu(false);
   };
 
+  // Fetch available monitors when opening the monitor menu
+  const handleOpenMonitorMenu = async () => {
+    setShowMonitorMenu(true);
+    try {
+      const apiUrl =
+        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+      const response = await fetch(`${apiUrl}/api/capture/screenshot/monitors`);
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableMonitors(data.monitors || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch monitors:", error);
+      // Default to single monitor if API fails
+      setAvailableMonitors([
+        { index: 0, width: 1920, height: 1080, is_primary: true },
+      ]);
+    }
+  };
+
+  // Capture screenshot from screen
+  const handleCaptureFromScreen = async (monitorIndex: number | null) => {
+    setShowMonitorMenu(false);
+
+    if (!projectId) {
+      toast.error("No project selected", {
+        description: "Please open a project before capturing screenshots.",
+      });
+      return;
+    }
+
+    setIsCapturing(true);
+    try {
+      const apiUrl =
+        process.env.NEXT_PUBLIC_QONTINUI_API_URL || "http://localhost:8001";
+      const monitorParam =
+        monitorIndex !== null ? `&monitor=${monitorIndex}` : "";
+      const response = await fetch(
+        `${apiUrl}/api/capture/screenshot/current?quality=95${monitorParam}`
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          errorText || `Failed to capture screenshot: ${response.statusText}`
+        );
+      }
+
+      const data = await response.json();
+
+      // Convert base64 to Blob
+      const byteCharacters = atob(data.screenshot_base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "image/png" });
+
+      // Create File object from Blob
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const monitorLabel =
+        monitorIndex !== null ? `monitor${monitorIndex}_` : "";
+      const filename = `screenshot_${monitorLabel}${timestamp}.png`;
+      const file = new File([blob], filename, { type: "image/png" });
+
+      // Add to uploading files for progress display
+      setUploadingFiles([{ name: filename, progress: 0 }]);
+
+      // Upload using existing upload logic
+      const result = await apiClient.uploadProjectImage(
+        projectId,
+        file,
+        (progress) => {
+          setUploadingFiles([{ name: filename, progress }]);
+        }
+      );
+
+      // Add to screenshots
+      // Use presigned_url from backend response (fallback to presigned_urls.original for legacy compatibility)
+      const captureUrl =
+        result.presigned_url || result.presigned_urls?.original || result.url;
+      if (!captureUrl) {
+        console.error("Upload response missing URL:", result);
+        throw new Error("Upload succeeded but no URL was returned");
+      }
+      const screenshot = {
+        id: result.image_id,
+        name: `Screenshot ${data.width}x${data.height}`,
+        url: captureUrl,
+        size: result.size || 0,
+        uploadedAt: result.created_at
+          ? new Date(result.created_at)
+          : new Date(),
+        projectName: projectName,
+      };
+
+      addScreenshot(screenshot);
+
+      // Select the new screenshot
+      const img = new window.Image();
+      img.onload = () => {
+        setSelectedScreenshot({
+          id: screenshot.id,
+          name: screenshot.name,
+          imageData: screenshot.url,
+          width: img.width,
+          height: img.height,
+          uploadedAt: screenshot.uploadedAt,
+          associatedStates: [],
+          regions: [],
+          locations: [],
+        });
+      };
+      img.src = screenshot.url;
+
+      toast.success("Screenshot captured and uploaded", {
+        description: `${data.width}x${data.height} pixels`,
+      });
+    } catch (error: any) {
+      console.error("Screenshot capture failed:", error);
+      toast.error("Failed to capture screenshot", {
+        description:
+          error.message || "Make sure qontinui-api is running on port 8001",
+      });
+    } finally {
+      setIsCapturing(false);
+      setUploadingFiles([]);
+    }
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-[#0A0A0B]">
       {/* Upload Progress Indicator */}
@@ -329,19 +499,87 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
       {/* Toolbar */}
       <QontinuiHeader>
         <div className="flex items-center justify-between w-full">
-          {/* Upload button */}
-          <UploadButton onClick={() => fileInputRef.current?.click()}>
-            <Upload className="w-4 h-4" />
-            Upload Screenshots
-          </UploadButton>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
+          {/* Upload and Capture buttons */}
+          <div className="flex items-center gap-2">
+            <UploadButton onClick={() => fileInputRef.current?.click()}>
+              <Upload className="w-4 h-4" />
+              Upload Screenshots
+            </UploadButton>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+
+            {/* Capture from Screen button */}
+            <div className="relative" ref={monitorMenuRef}>
+              <UploadButton
+                onClick={handleOpenMonitorMenu}
+                disabled={isCapturing}
+              >
+                {isCapturing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Camera className="w-4 h-4" />
+                )}
+                {isCapturing ? "Capturing..." : "Capture from Screen"}
+              </UploadButton>
+
+              {showMonitorMenu && (
+                <div className="absolute left-0 mt-2 w-64 bg-[#27272A] rounded-md shadow-lg z-10 border border-gray-700">
+                  <div className="py-1">
+                    <div className="px-4 py-2 text-xs text-gray-500 border-b border-gray-700">
+                      Select monitor to capture
+                    </div>
+                    {availableMonitors.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-gray-400 flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading monitors...
+                      </div>
+                    ) : (
+                      <>
+                        {availableMonitors.map((monitor) => (
+                          <button
+                            key={monitor.index}
+                            onClick={() =>
+                              handleCaptureFromScreen(monitor.index)
+                            }
+                            className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                          >
+                            <Monitor className="w-4 h-4" />
+                            Monitor {monitor.index + 1}
+                            {monitor.is_primary && (
+                              <span className="text-xs text-[#00FF88] ml-1">
+                                (Primary)
+                              </span>
+                            )}
+                            <span className="text-xs text-gray-500 ml-auto">
+                              {monitor.width}x{monitor.height}
+                            </span>
+                          </button>
+                        ))}
+                        {availableMonitors.length > 1 && (
+                          <>
+                            <div className="border-t border-gray-700 my-1"></div>
+                            <button
+                              onClick={() => handleCaptureFromScreen(null)}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                            >
+                              <Monitor className="w-4 h-4" />
+                              All Monitors Combined
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Zoom controls */}
           <div className="flex-1 flex items-center justify-center gap-2">
@@ -426,11 +664,17 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
               >
                 {/* Thumbnail */}
                 <div className="aspect-video relative overflow-hidden rounded bg-[#0A0A0B]">
-                  <img
-                    src={screenshot.imageData}
-                    alt={screenshot.name}
-                    className="w-full h-full object-contain"
-                  />
+                  {screenshot.imageData ? (
+                    <img
+                      src={screenshot.imageData}
+                      alt={screenshot.name}
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-500 text-xs">
+                      No image
+                    </div>
+                  )}
                 </div>
 
                 {/* Name editing */}
@@ -505,20 +749,29 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           {selectedScreenshot ? (
             <div className="p-6 h-full">
               <div className="relative inline-block">
-                <img
-                  src={selectedScreenshot.imageData}
-                  alt={selectedScreenshot.name}
-                  className="border border-gray-700 shadow-lg bg-[#27272A]"
-                  style={{
-                    maxWidth: zoomMode === "fit" ? "100%" : "none",
-                    height: "auto",
-                  }}
-                />
-                <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
-                  <span>
-                    {selectedScreenshot.width} x {selectedScreenshot.height}px
-                  </span>
-                </div>
+                {selectedScreenshot.imageData ? (
+                  <>
+                    <img
+                      src={selectedScreenshot.imageData}
+                      alt={selectedScreenshot.name}
+                      className="border border-gray-700 shadow-lg bg-[#27272A]"
+                      style={{
+                        maxWidth: zoomMode === "fit" ? "100%" : "none",
+                        height: "auto",
+                      }}
+                    />
+                    <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                      <span>
+                        {selectedScreenshot.width} x {selectedScreenshot.height}
+                        px
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-center w-96 h-64 border border-gray-700 bg-[#27272A] text-gray-500">
+                    Image not available
+                  </div>
+                )}
               </div>
             </div>
           ) : (

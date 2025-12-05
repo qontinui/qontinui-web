@@ -212,9 +212,7 @@ function ResourceCard({ title, description, link }: ResourceCardProps) {
     >
       <h3 className="font-semibold mb-2 flex items-center gap-1">
         {title}
-        {isExternal && (
-          <span className="text-xs text-muted-foreground">↗</span>
-        )}
+        {isExternal && <span className="text-xs text-muted-foreground">↗</span>}
       </h3>
       <p className="text-sm text-muted-foreground">{description}</p>
     </Link>

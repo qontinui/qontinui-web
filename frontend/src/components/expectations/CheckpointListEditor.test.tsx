@@ -5,7 +5,13 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CheckpointListEditor } from "./CheckpointListEditor";
 import type { CheckpointDefinition } from "@/lib/expectations/types";
@@ -20,15 +26,14 @@ describe("CheckpointListEditor", () => {
   describe("Rendering", () => {
     it("should render empty state when no checkpoints", () => {
       render(
-        <CheckpointListEditor
-          checkpoints={undefined}
-          onChange={mockOnChange}
-        />
+        <CheckpointListEditor checkpoints={undefined} onChange={mockOnChange} />
       );
 
       expect(screen.getByText("Checkpoints")).toBeInTheDocument();
       expect(screen.getByText("No checkpoints defined")).toBeInTheDocument();
-      expect(screen.getByPlaceholderText("Enter checkpoint name")).toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText("Enter checkpoint name")
+      ).toBeInTheDocument();
     });
 
     it("should render with existing checkpoints", () => {
@@ -62,10 +67,7 @@ describe("CheckpointListEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <CheckpointListEditor
-          checkpoints={undefined}
-          onChange={mockOnChange}
-        />
+        <CheckpointListEditor checkpoints={undefined} onChange={mockOnChange} />
       );
 
       const input = screen.getByPlaceholderText("Enter checkpoint name");
@@ -91,10 +93,7 @@ describe("CheckpointListEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <CheckpointListEditor
-          checkpoints={undefined}
-          onChange={mockOnChange}
-        />
+        <CheckpointListEditor checkpoints={undefined} onChange={mockOnChange} />
       );
 
       const input = screen.getByPlaceholderText("Enter checkpoint name");
@@ -113,10 +112,7 @@ describe("CheckpointListEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <CheckpointListEditor
-          checkpoints={undefined}
-          onChange={mockOnChange}
-        />
+        <CheckpointListEditor checkpoints={undefined} onChange={mockOnChange} />
       );
 
       const input = screen.getByPlaceholderText("Enter checkpoint name");
@@ -134,10 +130,7 @@ describe("CheckpointListEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <CheckpointListEditor
-          checkpoints={undefined}
-          onChange={mockOnChange}
-        />
+        <CheckpointListEditor checkpoints={undefined} onChange={mockOnChange} />
       );
 
       const addButton = screen.getByRole("button", { name: /plus/i });
@@ -174,10 +167,7 @@ describe("CheckpointListEditor", () => {
       const user = userEvent.setup();
 
       render(
-        <CheckpointListEditor
-          checkpoints={undefined}
-          onChange={mockOnChange}
-        />
+        <CheckpointListEditor checkpoints={undefined} onChange={mockOnChange} />
       );
 
       const input = screen.getByPlaceholderText("Enter checkpoint name");
@@ -187,8 +177,8 @@ describe("CheckpointListEditor", () => {
       await user.click(addButton);
 
       // Should not add whitespace-only checkpoint
-      const wasCalledWithWhitespace = mockOnChange.mock.calls.some(
-        (call) => Object.keys(call[0]).includes("  new-checkpoint  ")
+      const wasCalledWithWhitespace = mockOnChange.mock.calls.some((call) =>
+        Object.keys(call[0]).includes("  new-checkpoint  ")
       );
       expect(wasCalledWithWhitespace).toBe(false);
     });
@@ -215,8 +205,12 @@ describe("CheckpointListEditor", () => {
 
       // Find and click the trash button for checkpoint-1
       const checkpoint1 = screen.getByText("checkpoint-1").closest("div");
-      const deleteButtons = within(checkpoint1?.parentElement as HTMLElement).getAllByRole("button");
-      const trashButton = deleteButtons.find(btn => btn.querySelector('[class*="lucide-trash"]'));
+      const deleteButtons = within(
+        checkpoint1?.parentElement as HTMLElement
+      ).getAllByRole("button");
+      const trashButton = deleteButtons.find((btn) =>
+        btn.querySelector('[class*="lucide-trash"]')
+      );
 
       await user.click(trashButton as HTMLElement);
 
@@ -227,7 +221,8 @@ describe("CheckpointListEditor", () => {
           })
         );
 
-        const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
+        const lastCall =
+          mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
         expect(lastCall[0]).not.toHaveProperty("checkpoint-1");
       });
     });
@@ -254,7 +249,9 @@ describe("CheckpointListEditor", () => {
       await user.click(checkpoint);
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/What does this checkpoint validate/i)).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText(/What does this checkpoint validate/i)
+        ).toBeInTheDocument();
       });
     });
 
@@ -278,13 +275,17 @@ describe("CheckpointListEditor", () => {
       // Expand
       await user.click(checkpoint);
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/What does this checkpoint validate/i)).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText(/What does this checkpoint validate/i)
+        ).toBeInTheDocument();
       });
 
       // Collapse
       await user.click(checkpoint);
       await waitFor(() => {
-        expect(screen.queryByPlaceholderText(/What does this checkpoint validate/i)).not.toBeInTheDocument();
+        expect(
+          screen.queryByPlaceholderText(/What does this checkpoint validate/i)
+        ).not.toBeInTheDocument();
       });
     });
   });
@@ -308,7 +309,9 @@ describe("CheckpointListEditor", () => {
       // Expand checkpoint
       await user.click(screen.getByText("checkpoint-1"));
 
-      const descriptionInput = await screen.findByPlaceholderText(/What does this checkpoint validate/i);
+      const descriptionInput = await screen.findByPlaceholderText(
+        /What does this checkpoint validate/i
+      );
       await user.type(descriptionInput, "Test description");
 
       await waitFor(() => {
@@ -477,7 +480,9 @@ describe("CheckpointListEditor", () => {
       // Expand checkpoint
       await user.click(screen.getByText("checkpoint-1"));
 
-      const instructionInput = await screen.findByPlaceholderText(/Instruction for Claude/i);
+      const instructionInput = await screen.findByPlaceholderText(
+        /Instruction for Claude/i
+      );
       await user.type(instructionInput, "Check if login succeeded");
 
       await waitFor(() => {
@@ -511,10 +516,13 @@ describe("CheckpointListEditor", () => {
       await user.click(screen.getByText("checkpoint-1"));
 
       // Find and click trash button for first instruction
-      const instructionTextarea = await screen.findByDisplayValue("Review instruction 1");
+      const instructionTextarea = await screen.findByDisplayValue(
+        "Review instruction 1"
+      );
       const instructionContainer = instructionTextarea.closest("div");
-      const trashButton = within(instructionContainer?.parentElement as HTMLElement)
-        .getByRole("button");
+      const trashButton = within(
+        instructionContainer?.parentElement as HTMLElement
+      ).getByRole("button");
       await user.click(trashButton);
 
       await waitFor(() => {
@@ -688,13 +696,11 @@ describe("CheckpointListEditor", () => {
 
     it("should handle very long checkpoint names", async () => {
       const user = userEvent.setup();
-      const longName = "very-long-checkpoint-name-that-should-still-work-correctly";
+      const longName =
+        "very-long-checkpoint-name-that-should-still-work-correctly";
 
       render(
-        <CheckpointListEditor
-          checkpoints={undefined}
-          onChange={mockOnChange}
-        />
+        <CheckpointListEditor checkpoints={undefined} onChange={mockOnChange} />
       );
 
       const input = screen.getByPlaceholderText("Enter checkpoint name");
@@ -729,13 +735,18 @@ describe("CheckpointListEditor", () => {
 
       // Remove checkpoint-2
       const checkpoint2 = screen.getByText("checkpoint-2").closest("div");
-      const deleteButtons = within(checkpoint2?.parentElement as HTMLElement).getAllByRole("button");
-      const trashButton = deleteButtons.find(btn => btn.querySelector('[class*="lucide-trash"]'));
+      const deleteButtons = within(
+        checkpoint2?.parentElement as HTMLElement
+      ).getAllByRole("button");
+      const trashButton = deleteButtons.find((btn) =>
+        btn.querySelector('[class*="lucide-trash"]')
+      );
 
       await user.click(trashButton as HTMLElement);
 
       await waitFor(() => {
-        const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
+        const lastCall =
+          mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1];
         expect(lastCall[0]).toHaveProperty("checkpoint-1");
         expect(lastCall[0]).not.toHaveProperty("checkpoint-2");
         expect(lastCall[0]).toHaveProperty("checkpoint-3");

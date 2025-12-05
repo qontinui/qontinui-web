@@ -1,5 +1,7 @@
 """Pydantic schemas for admin endpoints."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -53,6 +55,60 @@ class AdminStats(BaseModel):
     total_projects: int = Field(..., ge=0)
     projects_week: int = Field(..., ge=0)
     active_users: int = Field(..., ge=0)
+
+    class Config:
+        from_attributes = True
+
+
+# ==================== Admin Notification Settings ====================
+
+
+class AdminNotificationSettingsBase(BaseModel):
+    """Base schema for admin notification settings."""
+
+    notification_email: EmailStr = Field(
+        ..., description="Email address to send admin notifications to"
+    )
+    notify_on_user_signup: bool = Field(
+        default=True, description="Send notification when a new user signs up"
+    )
+    notify_on_project_created: bool = Field(
+        default=True, description="Send notification when a new project is created"
+    )
+    notifications_enabled: bool = Field(
+        default=True, description="Master toggle for all admin notifications"
+    )
+
+
+class AdminNotificationSettingsCreate(AdminNotificationSettingsBase):
+    """Schema for creating admin notification settings."""
+
+    pass
+
+
+class AdminNotificationSettingsUpdate(BaseModel):
+    """Schema for updating admin notification settings."""
+
+    notification_email: EmailStr | None = Field(
+        None, description="Email address to send admin notifications to"
+    )
+    notify_on_user_signup: bool | None = Field(
+        None, description="Send notification when a new user signs up"
+    )
+    notify_on_project_created: bool | None = Field(
+        None, description="Send notification when a new project is created"
+    )
+    notifications_enabled: bool | None = Field(
+        None, description="Master toggle for all admin notifications"
+    )
+
+
+class AdminNotificationSettingsResponse(AdminNotificationSettingsBase):
+    """Schema for admin notification settings response."""
+
+    id: str = Field(..., description="Settings UUID")
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

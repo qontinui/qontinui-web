@@ -323,7 +323,7 @@ export class FormatConverter {
       // Calculate statistics
       // Count modified actions by comparing configs
       let actionsModified = 0;
-      const originalActionMap = new Map(workflow.actions.map(a => [a.id, a]));
+      const originalActionMap = new Map(workflow.actions.map((a) => [a.id, a]));
 
       for (const newAction of actions) {
         const originalAction = originalActionMap.get(newAction.id);

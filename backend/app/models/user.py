@@ -124,3 +124,6 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         back_populates="assigned_to",
         foreign_keys="TestDeficiency.assigned_to_user_id",
     )
+    runner_devices = relationship(
+        "RunnerDevice", back_populates="user", cascade="all, delete-orphan"
+    )

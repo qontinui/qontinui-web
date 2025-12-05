@@ -28,6 +28,40 @@ const STORE_NAME = "screenshots";
 const DB_VERSION = 3; // Version 3: Added s3Key, projectId, urlExpiresAt for URL refresh
 
 /**
+ * Get the backend URL from environment or default
+ */
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+/**
+ * Normalize a URL to ensure it's absolute
+ * Converts relative URLs like "/uploads/..." to absolute URLs
+ */
+export function normalizeUrl(url: string | undefined | null): string {
+  // Handle undefined/null URLs
+  if (!url) {
+    return "";
+  }
+
+  // Skip base64 data URLs
+  if (url.startsWith("data:")) {
+    return url;
+  }
+
+  // Skip URLs that are already absolute
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+
+  // Convert relative URLs to absolute URLs using the backend URL
+  if (url.startsWith("/")) {
+    return `${BACKEND_URL}${url}`;
+  }
+
+  // Return as-is for unknown formats
+  return url;
+}
+
+/**
  * Screenshot stored in IndexedDB (temporary client-side cache)
  */
 export interface StoredScreenshot {
@@ -140,6 +174,7 @@ class ScreenshotDB {
         request.onsuccess = () => {
           const screenshots = request.result.map((s: any) => ({
             ...s,
+            url: normalizeUrl(s.url),
             uploadedAt: new Date(s.uploadedAt),
           }));
           resolve(screenshots);
@@ -164,6 +199,7 @@ class ScreenshotDB {
         request.onsuccess = () => {
           const screenshots = request.result.map((s: any) => ({
             ...s,
+            url: normalizeUrl(s.url),
             uploadedAt: new Date(s.uploadedAt),
           }));
           resolve(screenshots);
@@ -190,6 +226,7 @@ class ScreenshotDB {
         request.onsuccess = () => {
           const screenshot = request.result;
           if (screenshot) {
+            screenshot.url = normalizeUrl(screenshot.url);
             screenshot.uploadedAt = new Date(screenshot.uploadedAt);
           }
           resolve(screenshot || null);

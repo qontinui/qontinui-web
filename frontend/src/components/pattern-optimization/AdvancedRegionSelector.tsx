@@ -64,6 +64,14 @@ export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
   // Load image from IndexedDB
   useEffect(() => {
     const loadImage = async () => {
+      // Skip if no URL provided
+      if (!screenshotUrl) {
+        console.log(
+          "[AdvancedRegionSelector] No screenshot URL provided, skipping load"
+        );
+        return;
+      }
+
       try {
         console.log(
           "[AdvancedRegionSelector] Attempting to load image:",

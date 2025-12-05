@@ -206,6 +206,26 @@ async def create_new_project(
         organization_id=organization_id,
     )
 
+    # Send admin notification for new project creation
+    from app.services.admin_notification_service import admin_notification_service
+
+    try:
+        await admin_notification_service.notify_project_created(
+            db=db,
+            project_name=project.name,
+            project_id=project.id,
+            owner_email=current_user.email,
+            owner_username=current_user.username,
+            owner_id=current_user.id,
+        )
+    except Exception as e:
+        # Don't fail project creation if admin notification fails
+        logger.error(
+            "admin_notification_project_created_failed",
+            error=str(e),
+            project_id=str(project.id),
+        )
+
     return project
 
 

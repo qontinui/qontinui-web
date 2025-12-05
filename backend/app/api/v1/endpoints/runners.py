@@ -24,6 +24,8 @@ from app.crud import runner as runner_crud
 from app.models.user import User as UserModel
 from app.schemas.runner import (
     ConnectionCleanupResponse,
+    ExecuteWorkflowRequest,
+    ExecuteWorkflowResponse,
     RunnerConnectionHistory,
     RunnerConnectionResponse,
     RunnerTokenCreate,
@@ -582,3 +584,106 @@ async def cleanup_stale_connections(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Cleanup failed: {str(e)}",
         )
+
+
+@router.post(
+    "/connections/{connection_id}/execute",
+    response_model=ExecuteWorkflowResponse,
+)
+async def execute_workflow_on_runner(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(get_current_active_user_async),
+    connection_id: int,
+    request: ExecuteWorkflowRequest,
+) -> Any:
+    """
+    Send a workflow configuration to a connected runner for execution.
+
+    This endpoint sends the workflow configuration to the specified runner
+    via WebSocket command. The runner will receive the configuration and
+    begin execution.
+
+    Args:
+        connection_id: The runner connection ID to send the workflow to
+        request: The workflow execution request containing the configuration
+
+    Returns:
+        ExecuteWorkflowResponse with execution_id and status
+
+    Raises:
+        404: If connection not found or not owned by user
+        400: If runner is not currently connected
+    """
+    from sqlalchemy import select
+
+    from app.models.runner_connection import RunnerConnection
+
+    # Verify connection exists and belongs to user
+    query = select(RunnerConnection).where(
+        RunnerConnection.id == connection_id,
+        RunnerConnection.user_id == current_user.id,
+        RunnerConnection.disconnected_at.is_(None),
+    )
+    result = await db.execute(query)
+    connection = result.scalar_one_or_none()
+
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Runner connection not found or not owned by you",
+        )
+
+    # Get runner connection manager and verify runner is connected
+    redis_client = await get_redis()
+    runner_manager = await get_runner_connection_manager(redis_client)
+
+    if not runner_manager.is_runner_connected(connection_id):
+        # Also check Redis for cross-process connections
+        is_connected = await runner_manager.is_runner_connected_redis(connection_id)
+        if not is_connected:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Runner is not currently connected. Please ensure the runner is running and connected.",
+            )
+
+    # Generate execution ID
+    import uuid
+
+    execution_id = str(uuid.uuid4())
+
+    # Build the execute_workflow command
+    command_msg = {
+        "type": "command",
+        "command": "execute_workflow",
+        "params": {
+            "execution_id": execution_id,
+            "workflow": request.workflow,
+            "variables": request.variables or {},
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+    # Send command to runner
+    sent = await runner_manager.send_command_to_runner(connection_id, command_msg)
+
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send workflow to runner. Please try again.",
+        )
+
+    logger.info(
+        "workflow_execution_sent",
+        connection_id=connection_id,
+        user_id=str(current_user.id),
+        execution_id=execution_id,
+        workflow_name=request.workflow.get("name", "Unknown"),
+    )
+
+    return ExecuteWorkflowResponse(
+        execution_id=execution_id,
+        status="sent",
+        message=f"Workflow sent to runner. Execution ID: {execution_id}",
+        connection_id=connection_id,
+    )

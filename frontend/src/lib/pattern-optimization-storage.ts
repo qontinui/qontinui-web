@@ -40,6 +40,20 @@ class PatternOptimizationStorage {
   }
 
   async storeImage(id: string, imageData: string): Promise<void> {
+    // Validate inputs
+    if (!id) {
+      console.warn(
+        "[PatternOptimizationStorage] storeImage called with empty id"
+      );
+      return;
+    }
+    if (!imageData) {
+      console.warn(
+        "[PatternOptimizationStorage] storeImage called with empty imageData"
+      );
+      return;
+    }
+
     await this.init();
     if (!this.db) throw new Error("Database not initialized");
 
@@ -54,6 +68,14 @@ class PatternOptimizationStorage {
   }
 
   async getImage(id: string): Promise<string | null> {
+    // Validate id before querying IndexedDB
+    if (!id) {
+      console.warn(
+        "[PatternOptimizationStorage] getImage called with empty id"
+      );
+      return null;
+    }
+
     await this.init();
     if (!this.db) throw new Error("Database not initialized");
 
@@ -71,6 +93,14 @@ class PatternOptimizationStorage {
   }
 
   async deleteImage(id: string): Promise<void> {
+    // Validate id before querying IndexedDB
+    if (!id) {
+      console.warn(
+        "[PatternOptimizationStorage] deleteImage called with empty id"
+      );
+      return;
+    }
+
     await this.init();
     if (!this.db) throw new Error("Database not initialized");
 

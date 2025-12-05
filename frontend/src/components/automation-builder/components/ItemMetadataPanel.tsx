@@ -17,12 +17,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Check, X, Users } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
+import { Check, X, Users, ChevronDown } from "lucide-react";
 import type { LibraryItem } from "../types";
 import { isLinearWorkflow, getSuggestedMode } from "../types";
 import type { BuilderMode } from "../types";
 import { PermissionBadge } from "./PermissionBadge";
 import type { PermissionLevel } from "@/types/collaboration";
+import { ExpectationsPanel } from "@/components/expectations/ExpectationsPanel";
+import type { WorkflowExpectations } from "@/lib/expectations/types";
 
 export interface ItemMetadataPanelProps {
   item: LibraryItem;
@@ -62,6 +69,7 @@ export function ItemMetadataPanel({
   const [tempViewMode, setTempViewMode] = useState<BuilderMode>(
     item.metadata?.viewMode || getSuggestedMode(item)
   );
+  const [expectationsOpen, setExpectationsOpen] = useState(false);
 
   // Reset temp values when item changes
   useEffect(() => {
@@ -122,6 +130,23 @@ export function ItemMetadataPanel({
       }
     },
     [handleSave, handleCancel]
+  );
+
+  /**
+   * Handle expectations change
+   */
+  const handleExpectationsChange = useCallback(
+    (expectations: WorkflowExpectations) => {
+      onUpdate({
+        ...item,
+        expectations,
+        metadata: {
+          ...item.metadata,
+          updated: new Date().toISOString(),
+        },
+      });
+    },
+    [item, onUpdate]
   );
 
   const isLinear = isLinearWorkflow(item);
@@ -316,6 +341,32 @@ export function ItemMetadataPanel({
           </Button>
         </div>
       )}
+
+      {/* Workflow Expectations Section */}
+      <div className="mt-6 pt-6 border-t border-gray-800">
+        <Collapsible open={expectationsOpen} onOpenChange={setExpectationsOpen}>
+          <CollapsibleTrigger className="w-full flex items-center justify-between py-2 hover:bg-gray-900/50 rounded-md px-2 transition-colors">
+            <span className="text-sm font-medium text-gray-300">
+              Workflow Expectations
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                expectationsOpen ? "rotate-180" : ""
+              }`}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2">
+            <div className="bg-gray-900/30 border border-gray-800 rounded-lg overflow-hidden">
+              <ExpectationsPanel
+                expectations={item.expectations}
+                onChange={handleExpectationsChange}
+                availableCheckpoints={[]}
+                availableStates={[]}
+              />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
 
       {/* Metadata Info */}
       <div className="mt-6 pt-6 border-t border-gray-800">

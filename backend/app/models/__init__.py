@@ -4,6 +4,7 @@ Models package for qontinui-web backend.
 This package contains all SQLAlchemy models for the application.
 """
 
+from app.models.admin_notification_settings import AdminNotificationSettings
 from app.models.analysis_result import (
     AnalysisJob,
     AnalyzerResult,
@@ -70,6 +71,7 @@ from app.models.region_result import (
     RegionAnalyzerResult,
 )
 from app.models.runner_connection import RunnerConnection
+from app.models.runner_device import RunnerDevice
 from app.models.runner_token import RunnerToken
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
@@ -130,6 +132,8 @@ __all__ = [
     "Notification",
     "NotificationPreferences",
     "NotificationType",
+    # Admin Notifications
+    "AdminNotificationSettings",
     # Annotations
     "Annotation",
     "AnnotationSet",
@@ -173,6 +177,7 @@ __all__ = [
     # Runner Tokens
     "RunnerToken",
     "RunnerConnection",
+    "RunnerDevice",
     # Version History & Event Sourcing
     "ProjectVersion",
     "EditCommand",

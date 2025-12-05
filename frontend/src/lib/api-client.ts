@@ -17,25 +17,29 @@ export type { User, Project, UserUpdate, ProjectCreate, ProjectUpdate };
 // Image types
 export interface ImageUploadResponse {
   image_id: string;
-  variants: {
-    original: string;
-    thumb: string;
-    medium: string;
-    large: string;
-  };
-  presigned_urls: {
-    original: string;
-    thumb: string;
-    medium: string;
-    large: string;
-  };
+  // Fields returned by backend after upload
+  s3_key: string;
+  presigned_url: string; // Primary URL field from backend
+  size: number;
+  content_type: string;
+  created_at: string;
   status: "processing" | "completed";
-  job_id?: string;
+  job_id?: string | null;
+  // Fields returned after thumbnail processing is complete
+  variants?: {
+    original: string;
+    thumb: string;
+    medium: string;
+    large: string;
+  };
+  presigned_urls?: {
+    original: string;
+    thumb: string;
+    medium: string;
+    large: string;
+  };
   // Legacy fields for backward compatibility
-  s3_key?: string;
   url?: string;
-  size?: number;
-  created_at?: string;
 }
 
 export interface ImageProcessingStatus {

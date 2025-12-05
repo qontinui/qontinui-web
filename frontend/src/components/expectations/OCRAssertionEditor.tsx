@@ -14,7 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Trash2 } from "lucide-react";
-import { OCRAssertion, OCRAssertionType } from "@/types/checkpoint-expectations";
+import {
+  OCRAssertion,
+  OCRAssertionType,
+} from "@/types/checkpoint-expectations";
 
 export interface OCRAssertionEditorProps {
   assertion: OCRAssertion;
@@ -117,7 +120,9 @@ export function OCRAssertionEditor({
       {/* Regex Toggle */}
       <div className="flex items-center justify-between py-2">
         <div className="space-y-0.5">
-          <Label className="text-xs text-gray-500">Use Regular Expression</Label>
+          <Label className="text-xs text-gray-500">
+            Use Regular Expression
+          </Label>
           <p className="text-xs text-gray-600">
             Treat pattern as a regex pattern
           </p>
@@ -139,7 +144,9 @@ export function OCRAssertionEditor({
               value={assertion.minCount ?? ""}
               onChange={(e) =>
                 updateAssertion({
-                  minCount: e.target.value ? parseInt(e.target.value) : undefined,
+                  minCount: e.target.value
+                    ? parseInt(e.target.value)
+                    : undefined,
                 })
               }
               placeholder="0"
@@ -154,7 +161,9 @@ export function OCRAssertionEditor({
               value={assertion.maxCount ?? ""}
               onChange={(e) =>
                 updateAssertion({
-                  maxCount: e.target.value ? parseInt(e.target.value) : undefined,
+                  maxCount: e.target.value
+                    ? parseInt(e.target.value)
+                    : undefined,
                 })
               }
               placeholder="∞"

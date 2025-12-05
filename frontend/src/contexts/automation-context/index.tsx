@@ -16,7 +16,7 @@ import { TransitionManager } from "./transition-manager";
 import { ImageManager } from "./image-manager";
 import { ActionHistoryManager } from "./action-history-manager";
 import { ScreenshotManager } from "./screenshot-manager";
-import { screenshotDB } from "@/lib/screenshot-db";
+import { screenshotDB, normalizeUrl } from "@/lib/screenshot-db";
 import { projectDB } from "@/lib/project-db";
 import { DEFAULT_PROJECT_SETTINGS } from "@/types/project-settings";
 import { projectLogger } from "@/lib/project-logger";
@@ -190,7 +190,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     "qontinui-lastSaved",
     null
   );
-  const [projectId, setProjectId] = useState<string | null>(null);
+  // Project ID is persisted to localStorage so it survives page navigations
+  const [projectId, setProjectId] = useLocalStorage<string | null>(
+    "qontinui-selected-project-id",
+    null
+  );
 
   // Categories are now stored per-project in the database, not in global localStorage
   const [categories, setCategories] = useState<string[]>([]);
@@ -260,9 +264,13 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
 
   // Load all data from IndexedDB on mount and when project changes
   useEffect(() => {
+    // Track if this effect's load should be aborted (stale closure prevention)
+    let isAborted = false;
+    const currentProjectName = projectName;
+
     const loadProjectData = async () => {
       projectLogger.contextProvider("loadProjectData triggered", {
-        projectName,
+        projectName: currentProjectName,
         isRenaming: isRenamingRef.current,
         isLoadingFromBackend: isLoadingFromBackendRef.current,
       });
@@ -272,7 +280,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         projectLogger.contextProvider(
           "SKIPPING IndexedDB load - loading from backend",
           {
-            projectName,
+            projectName: currentProjectName,
           }
         );
         return;
@@ -283,7 +291,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         projectLogger.contextProvider(
           "SKIPPING IndexedDB load - rename in progress",
           {
-            projectName,
+            projectName: currentProjectName,
           }
         );
         isRenamingRef.current = false; // Reset the flag
@@ -291,12 +299,12 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
 
       projectLogger.contextProvider("Starting IndexedDB load for project", {
-        projectName,
+        projectName: currentProjectName,
       });
 
       // One-time migration: rename "bdo-mask" to "bdo" (only if not already migrated)
       const migrationKey = "qontinui-migration-bdo-mask-to-bdo-done";
-      if (projectName === "bdo" && !localStorage.getItem(migrationKey)) {
+      if (currentProjectName === "bdo" && !localStorage.getItem(migrationKey)) {
         try {
           const oldData = await projectDB.getStatesByProject("bdo-mask");
           if (oldData.length > 0) {
@@ -308,6 +316,14 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         } catch (error) {
           console.error("Migration failed:", error);
         }
+      }
+
+      // Check if this load was aborted (project changed before we finished migrations)
+      if (isAborted) {
+        projectLogger.contextProvider("Load aborted after migrations", {
+          projectName: currentProjectName,
+        });
+        return;
       }
 
       // Migrate data from localStorage to IndexedDB if needed
@@ -323,7 +339,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
             );
             for (const state of parsed) {
               try {
-                await projectDB.updateState({ ...state, projectName });
+                await projectDB.updateState({
+                  ...state,
+                  projectName: currentProjectName,
+                });
               } catch (error) {
                 console.error(`Failed to migrate state ${state.id}:`, error);
               }
@@ -346,7 +365,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
               try {
                 await projectDB.updateTransition({
                   ...transition,
-                  projectName,
+                  projectName: currentProjectName,
                 });
               } catch (error) {
                 console.error(
@@ -370,7 +389,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
             );
             for (const image of parsed) {
               try {
-                await projectDB.updateImage({ ...image, projectName });
+                await projectDB.updateImage({
+                  ...image,
+                  projectName: currentProjectName,
+                });
               } catch (error) {
                 console.error(`Failed to migrate image ${image.id}:`, error);
               }
@@ -391,7 +413,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
             );
             for (const screenshot of parsed) {
               try {
-                await screenshotDB.update({ ...screenshot, projectName }); // Use update instead of add to handle duplicates
+                await screenshotDB.update({
+                  ...screenshot,
+                  projectName: currentProjectName,
+                }); // Use update instead of add to handle duplicates
               } catch (error) {
                 console.error(
                   `Failed to migrate screenshot ${screenshot.id}:`,
@@ -408,6 +433,17 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         console.error("Error during data migration:", error);
       }
 
+      // Check if this load was aborted (project changed during localStorage migration)
+      if (isAborted) {
+        projectLogger.contextProvider(
+          "Load aborted after localStorage migration",
+          {
+            projectName: currentProjectName,
+          }
+        );
+        return;
+      }
+
       // Load all data from IndexedDB for current project
       const [
         loadedWorkflows,
@@ -416,11 +452,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         loadedImages,
         loadedScreenshots,
       ] = await Promise.all([
-        projectDB.getWorkflowsByProject(projectName),
-        projectDB.getStatesByProject(projectName),
-        projectDB.getTransitionsByProject(projectName),
-        projectDB.getImagesByProject(projectName),
-        screenshotDB.getByProject(projectName),
+        projectDB.getWorkflowsByProject(currentProjectName),
+        projectDB.getStatesByProject(currentProjectName),
+        projectDB.getTransitionsByProject(currentProjectName),
+        projectDB.getImagesByProject(currentProjectName),
+        screenshotDB.getByProject(currentProjectName),
       ]);
 
       // Migrate old data formats to new schema
@@ -439,7 +475,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
           workflowsMigrated = true;
           const workflowWithProject = {
             ...migratedWorkflows[i],
-            projectName,
+            projectName: currentProjectName,
           } as Workflow & { projectName: string };
           await projectDB.updateWorkflow(workflowWithProject);
         }
@@ -453,7 +489,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
           transitionsMigrated = true;
           const transitionWithProject = {
             ...migratedTransitions[i],
-            projectName,
+            projectName: currentProjectName,
           } as Transition & { projectName: string };
           await projectDB.updateTransition(transitionWithProject);
         }
@@ -463,6 +499,20 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         console.log(
           `Data migration completed - Workflows: ${workflowsMigrated}, Transitions: ${transitionsMigrated}`
         );
+      }
+
+      // Final check if this load was aborted before setting state
+      // This is the critical check that prevents stale data from overwriting current data
+      if (isAborted) {
+        projectLogger.contextProvider(
+          "Load aborted before setting state - preventing stale data overwrite",
+          {
+            projectName: currentProjectName,
+            workflowCount: loadedWorkflows.length,
+            stateCount: loadedStates.length,
+          }
+        );
+        return;
       }
 
       setWorkflows(migratedWorkflows);
@@ -487,6 +537,17 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     };
 
     loadProjectData();
+
+    // Cleanup function - abort the load if projectName changes before it completes
+    return () => {
+      isAborted = true;
+      projectLogger.contextProvider(
+        "Project changed - aborting previous load",
+        {
+          abortedProject: currentProjectName,
+        }
+      );
+    };
   }, [projectName]);
 
   // Workflow management functions
@@ -863,7 +924,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         if (hasChanges) {
           const updatedWorkflow = {
             ...workflow,
-            actions: updatedActions,
+            actions: updatedActions as Workflow["actions"],
           };
           const workflowWithProject = {
             ...updatedWorkflow,
@@ -885,19 +946,29 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   // Screenshot management functions (using IndexedDB)
   const addScreenshot = useCallback(
     async (screenshot: Screenshot) => {
-      const screenshotWithProject = { ...screenshot, projectName };
-      await screenshotDB.add(screenshotWithProject);
+      // Normalize the URL to ensure it's absolute (e.g., http://localhost:8000/uploads/...)
+      const normalizedScreenshot = {
+        ...screenshot,
+        url: normalizeUrl(screenshot.url),
+        projectName,
+      };
+      await screenshotDB.add(normalizedScreenshot);
       setScreenshots((prev) =>
-        ScreenshotManager.addScreenshot(prev, screenshotWithProject)
+        ScreenshotManager.addScreenshot(prev, normalizedScreenshot)
       );
     },
     [projectName]
   );
 
   const updateScreenshot = useCallback(async (screenshot: Screenshot) => {
-    await screenshotDB.update(screenshot);
+    // Normalize the URL to ensure it's absolute
+    const normalizedScreenshot = {
+      ...screenshot,
+      url: normalizeUrl(screenshot.url),
+    };
+    await screenshotDB.update(normalizedScreenshot);
     setScreenshots((prev) =>
-      ScreenshotManager.updateScreenshot(prev, screenshot)
+      ScreenshotManager.updateScreenshot(prev, normalizedScreenshot)
     );
   }, []);
 
