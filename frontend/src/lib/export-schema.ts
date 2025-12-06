@@ -1,9 +1,13 @@
 /**
  * Qontinui Automation Configuration Schema
- * Version 2.0.1
+ * Version 2.1.0
  *
  * This defines the structure for exported automation configurations
  * that can be consumed by the Qontinui runner.
+ *
+ * CHANGELOG v2.1.0:
+ * - Consolidated FIND_STATE_IMAGE into FIND with stateImage target type
+ * - "Find State" now uses FIND action with target.type = "stateImage"
  *
  * CHANGELOG v2.0.1:
  * - Removed 'parallel' connection type (GUI automation is sequential)
@@ -120,7 +124,6 @@ export interface Action {
 export type ActionType =
   // Find actions
   | "FIND"
-  | "FIND_STATE_IMAGE"
   // Pure mouse actions
   | "MOUSE_MOVE"
   | "MOUSE_DOWN"

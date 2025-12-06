@@ -15,4 +15,4 @@ export type {
 } from "./ScreenshotRequestPanel";
 
 // Shared types
-export type { InputEvent } from "./InputEventsSidePanel";
+export type { InputEvent } from "@/types/capture";

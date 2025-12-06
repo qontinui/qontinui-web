@@ -17,7 +17,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { CanvasNode, CanvasEdge, CanvasNodeData } from "./canvas-types";
 import { COLORS } from "./canvas-config";
 
 // ============================================================================
@@ -78,8 +77,6 @@ export function Tooltip({
   const [position, setPosition] = useState<{ x: number; y: number } | null>(
     null
   );
-  const [actualPlacement, setActualPlacement] =
-    useState<TooltipPlacement>(placement);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -160,7 +157,7 @@ export function Tooltip({
     }
 
     setPosition({ x, y });
-    setActualPlacement(finalPlacement);
+    // setActualPlacement(finalPlacement); // TODO: add state for actualPlacement
   }, [placement, offset]);
 
   const showTooltip = useCallback(() => {
@@ -341,16 +338,18 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
 // ============================================================================
 
 export function HandleTooltip({ data }: { data: HandleTooltipData }) {
-  const typeColors = {
+  const typeColors: Record<"main" | "error" | "success" | "parallel", string> = {
     main: COLORS.main,
     error: COLORS.error,
     success: COLORS.success,
+    parallel: COLORS.main, // Use same color as main for parallel
   };
 
-  const typeLabels = {
+  const typeLabels: Record<"main" | "error" | "success" | "parallel", string> = {
     main: "Main Flow",
     error: "Error Handling",
     success: "Success Condition",
+    parallel: "Parallel Flow",
   };
 
   return (
@@ -392,16 +391,18 @@ export function HandleTooltip({ data }: { data: HandleTooltipData }) {
 // ============================================================================
 
 export function EdgeTooltip({ data }: { data: EdgeTooltipData }) {
-  const typeColors = {
+  const typeColors: Record<"main" | "error" | "success" | "parallel", string> = {
     main: COLORS.main,
     error: COLORS.error,
     success: COLORS.success,
+    parallel: COLORS.main, // Use same color as main for parallel
   };
 
-  const typeLabels = {
+  const typeLabels: Record<"main" | "error" | "success" | "parallel", string> = {
     main: "Main Flow",
     error: "Error Handling",
     success: "Success Condition",
+    parallel: "Parallel Flow",
   };
 
   return (

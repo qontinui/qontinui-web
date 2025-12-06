@@ -10,7 +10,6 @@ import { Workflow } from "@/lib/action-schema/action-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -46,7 +45,6 @@ export function BulkCreationWizard({
   const [step, setStep] = useState(1);
   const [sourceStates, setSourceStates] = useState<string[]>([]);
   const [targetStates, setTargetStates] = useState<string[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [config, setConfig] = useState({
     timeout: 10000,
     retryCount: 0,
@@ -78,7 +76,6 @@ export function BulkCreationWizard({
     setStep(1);
     setSourceStates([]);
     setTargetStates([]);
-    setSelectedTemplate("");
     setConfig({ timeout: 10000, retryCount: 0, workflows: [] });
   };
 

@@ -32,22 +32,26 @@ export type ValidationResult = components["schemas"]["ValidationResult"];
  * Helper type to extract response from API operations
  */
 export type QontinuiApiResponse<
-  Method extends keyof Route,
   Route extends keyof paths,
-> = paths[Route][Method] extends {
-  responses: { 200: { content: { "application/json": infer T } } };
-}
-  ? T
+  Method extends string,
+> = Route extends keyof paths
+  ? Method extends keyof paths[Route]
+    ? paths[Route][Method] extends { responses: { 200: { content: { "application/json": infer T } } } }
+      ? T
+      : never
+    : never
   : never;
 
 /**
  * Helper type to extract request body from API operations
  */
 export type QontinuiApiRequestBody<
-  Method extends keyof Route,
   Route extends keyof paths,
-> = paths[Route][Method] extends {
-  requestBody: { content: { "application/json": infer T } };
-}
-  ? T
+  Method extends string,
+> = Route extends keyof paths
+  ? Method extends keyof paths[Route]
+    ? paths[Route][Method] extends { requestBody: { content: { "application/json": infer T } } }
+      ? T
+      : never
+    : never
   : never;

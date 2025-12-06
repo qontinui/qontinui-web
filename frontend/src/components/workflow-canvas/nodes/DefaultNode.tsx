@@ -13,14 +13,14 @@ import {
   getActionOutputCount,
 } from "../canvas-config";
 
-export interface DefaultNodeProps extends NodeProps {
+export interface DefaultNodeProps extends Omit<NodeProps, 'data'> {
   data: CanvasNodeData;
 }
 
 /**
  * Default node component
  */
-export const DefaultNode = memo(({ data, selected, id }: DefaultNodeProps) => {
+export const DefaultNode = memo(({ data, selected, id: _id }: DefaultNodeProps) => {
   const action = data.action;
   const color = getActionTypeColor(action.type);
   const outputCount = getActionOutputCount(action.type, action.config);

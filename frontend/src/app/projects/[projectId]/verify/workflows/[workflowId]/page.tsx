@@ -54,18 +54,21 @@ function getActiveStatesAtStep(
       action.config.stateIds.forEach((stateId) => activeStateIds.add(stateId));
     }
 
-    // Handle FIND_STATE_IMAGE actions (implies the state is active)
-    if (action.type === "FIND_STATE_IMAGE" && "stateId" in action.config) {
-      const stateId = action.config.stateId;
-      if (stateId) {
-        activeStateIds.add(stateId);
-      }
+    // Handle FIND with stateImage target (implies the state is active)
+    if (
+      action.type === "FIND" &&
+      "target" in action.config &&
+      typeof action.config.target === "object" &&
+      action.config.target?.type === "stateImage" &&
+      action.config.target?.stateId
+    ) {
+      activeStateIds.add(action.config.target.stateId);
     }
   }
 
   // If no states found, return initial states
   if (activeStateIds.size === 0) {
-    const initialStates = states.filter((s) => s.isInitial).map((s) => s.id);
+    const initialStates = states.filter((s) => s.initial).map((s) => s.id);
     return initialStates;
   }
 

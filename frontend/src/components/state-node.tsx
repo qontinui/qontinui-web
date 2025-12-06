@@ -73,7 +73,6 @@ interface StateNodeData extends Record<string, unknown> {
 
 export function StateNode({ data, selected }: NodeProps<ReactFlowNode<StateNodeData>>) {
   const state = data?.state ?? { id: "", name: "", description: "", stateImages: [] };
-  const images = data?.images ?? [];
   const hasIncomingTransitions = data?.hasIncomingTransitions ?? false;
   const incomingTransitions = data?.incomingTransitions ?? [];
   const { resolvePatternImage } = useAutomation();

@@ -9,11 +9,10 @@
 
 import type {
   Lock,
-  LockResourceType,
-  LockStatus,
-  AcquireLockRequest,
+  ResourceType,
+  LockAcquireRequest,
 } from "@/types/collaboration";
-import { httpClient } from "./http-client";
+import { httpClient } from "./service-factory";
 
 const API_BASE = "/api/locks";
 
@@ -29,16 +28,15 @@ class LockService {
    * Acquire a lock on a resource
    */
   async acquireLock(
-    projectId: string,
-    resourceType: LockResourceType,
+    _projectId: string,
+    resourceType: ResourceType,
     resourceId: string,
     autoRefresh: boolean = true
   ): Promise<Lock> {
-    const data: AcquireLockRequest = {
-      project_id: projectId,
+    const data: LockAcquireRequest = {
       resource_type: resourceType,
       resource_id: resourceId,
-      auto_refresh: autoRefresh,
+      timeout_seconds: autoRefresh ? 300 : 60,
     };
 
     const lock = await httpClient.post<Lock>(API_BASE, data);
@@ -74,16 +72,16 @@ class LockService {
    */
   async getLockStatus(
     projectId: string,
-    resourceType: LockResourceType,
+    resourceType: ResourceType,
     resourceId: string
-  ): Promise<LockStatus> {
+  ): Promise<Lock | null> {
     const params = new URLSearchParams({
       project_id: projectId,
       resource_type: resourceType,
       resource_id: resourceId,
     });
 
-    const status = await httpClient.get<LockStatus>(
+    const status = await httpClient.get<Lock | null>(
       `${API_BASE}/status?${params}`
     );
     return status;

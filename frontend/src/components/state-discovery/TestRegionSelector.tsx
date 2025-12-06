@@ -67,9 +67,9 @@ const TestRegionSelector: React.FC = () => {
         imageHeight={600}
         onRegionSelect={(region) => {
           console.log("Region selected:", region);
-          setSelectedRegion(region);
+          setSelectedRegion(region ?? null);
         }}
-        initialRegion={selectedRegion}
+        initialRegion={selectedRegion ?? undefined}
       />
     </div>
   );

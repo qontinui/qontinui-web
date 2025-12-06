@@ -377,7 +377,7 @@ export class ClipboardManager {
 
         // Only include if there are connections
         if (filteredOutputs?.some((arr) => arr.length > 0)) {
-          filtered[sourceId][type] = filteredOutputs;
+          (filtered[sourceId][type as keyof typeof sourceConnections] as Connection[][]) = filteredOutputs;
         }
       }
 
@@ -404,7 +404,7 @@ export class ClipboardManager {
       updated[newSourceId] = {};
 
       for (const [type, outputs] of Object.entries(sourceConnections)) {
-        updated[newSourceId][type] = outputs?.map((outputConnections) =>
+        (updated[newSourceId][type as keyof typeof sourceConnections] as Connection[][]) = outputs?.map((outputConnections) =>
           outputConnections.map((conn) => ({
             ...conn,
             action: idMap.get(conn.action) || conn.action,

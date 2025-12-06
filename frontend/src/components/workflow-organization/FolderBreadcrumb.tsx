@@ -40,7 +40,6 @@ export function FolderBreadcrumb({
       return [{ id: "uncategorized", name: "Uncategorized" }];
     }
 
-    const path = getFolderPath(folderId, folders);
     const result: Array<{ id: string; name: string }> = [];
 
     let currentId: string | null = null;

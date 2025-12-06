@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, CSSProperties } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -211,10 +211,9 @@ function ArrowAnnotation({
   annotation: Annotation;
   color: AnnotationColor;
 }) {
-  const size = SIZE_MAP[annotation.size || "md"].arrow;
+  const size = SIZE_MAP[annotation.size || "md"]?.arrow ?? 32;
   const direction = annotation.direction || "down";
   const rotation = ARROW_ROTATION_MAP[direction];
-  const colors = COLOR_MAP[color];
 
   return (
     <div
@@ -273,7 +272,7 @@ function PulseAnnotation({
   annotation: Annotation;
   color: AnnotationColor;
 }) {
-  const size = SIZE_MAP[annotation.size || "md"].pulse;
+  const size = SIZE_MAP[annotation.size || "md"]?.pulse ?? 24;
   const duration = annotation.duration ?? 2000;
   const delay = annotation.delay ?? 0;
   const colors = COLOR_MAP[color];
@@ -348,7 +347,7 @@ function LabelAnnotation({
 }) {
   const size = annotation.size || "md";
   const colors = COLOR_MAP[color];
-  const sizeClass = SIZE_MAP[size].label;
+  const sizeClass = SIZE_MAP[size]?.label ?? "text-sm";
   const offsetX = annotation.width ? annotation.width / 2 : 0;
   const offsetY = annotation.height ? annotation.height / 2 : 0;
 
@@ -453,6 +452,7 @@ export const AnnotatedImage = React.forwardRef<
         return () => img.removeEventListener("load", handleImageLoad);
       }
     }
+    return undefined;
   }, []);
 
   return (

@@ -46,12 +46,22 @@ export function useProjectAutoSave({
     states,
     transitions,
     images,
+    isLoadingFromBackend,
   } = useAutomation();
 
   const isSavingRef = useRef(false);
 
   // Save to backend
   const saveToBackend = useCallback(async () => {
+    // Don't save if we're currently loading from backend - this prevents
+    // overwriting backend data with empty/partial local state
+    if (isLoadingFromBackend) {
+      projectLogger.debug("AutoSave", "Skipping save - loading from backend", {
+        projectId,
+      });
+      return;
+    }
+
     if (!projectId || isSavingRef.current) {
       return;
     }
@@ -60,9 +70,34 @@ export function useProjectAutoSave({
 
     try {
       const config = getConfiguration();
+
+      // Safety check: don't save if configuration appears to be empty/invalid
+      // This prevents accidental data loss from race conditions
+      const hasData =
+        (config.workflows?.length ?? 0) > 0 ||
+        (config.states?.length ?? 0) > 0 ||
+        (config.transitions?.length ?? 0) > 0 ||
+        (config.images?.length ?? 0) > 0;
+
+      if (!hasData) {
+        projectLogger.warn(
+          "AutoSave",
+          "Skipping save - configuration appears empty",
+          {
+            projectId,
+            workflowCount: config.workflows?.length ?? 0,
+            stateCount: config.states?.length ?? 0,
+            transitionCount: config.transitions?.length ?? 0,
+            imageCount: config.images?.length ?? 0,
+          }
+        );
+        return;
+      }
+
       projectLogger.debug("AutoSave", "Saving to backend", {
         projectId,
         workflowCount: config.workflows?.length ?? 0,
+        stateCount: config.states?.length ?? 0,
       });
 
       await projectService.updateProject(projectId, {
@@ -78,7 +113,7 @@ export function useProjectAutoSave({
     } finally {
       isSavingRef.current = false;
     }
-  }, [projectId, getConfiguration]);
+  }, [projectId, getConfiguration, isLoadingFromBackend]);
 
   // Auto-save to localStorage
   useEffect(() => {

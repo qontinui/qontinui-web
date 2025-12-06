@@ -150,9 +150,6 @@ export class TokenRefreshService {
       );
       return false;
     }
-
-    // This line should never be reached now
-    return false;
   }
 
   /**

@@ -1090,7 +1090,7 @@ export class ProjectOptimizationService {
       const complexity = workflowComplexityAnalyzer.analyzeComplexity(workflow);
 
       // Check testing
-      const tests = getWorkflowTestingService().getTestsForWorkflow(workflow.id);
+      const tests = getWorkflowTestingService().getTestCasesForWorkflow(workflow.id);
       const hasTesting = tests.length > 0;
 
       // Check documentation

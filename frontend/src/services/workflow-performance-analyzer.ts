@@ -19,7 +19,6 @@ import type {
   Workflow,
   Action,
   ActionType,
-  Connections,
 } from "@/lib/action-schema/action-types";
 import type { ActionExecutionState } from "@/stores/execution-store";
 
@@ -355,7 +354,6 @@ export class WorkflowPerformanceAnalyzer {
     Record<ActionType, number>
   > = {
     FIND: 500,
-    FIND_STATE_IMAGE: 500,
     EXISTS: 200,
     VANISH: 500,
     WAIT: 1000,
@@ -569,7 +567,7 @@ export class WorkflowPerformanceAnalyzer {
    * Get slowest actions from execution data
    */
   getSlowestActions(
-    workflow: Workflow,
+    _workflow: Workflow,
     executionData: ExecutionData,
     limit: number = 10
   ): Array<{ actionId: string; duration: number }> {
@@ -607,10 +605,7 @@ export class WorkflowPerformanceAnalyzer {
           // Check if there's a FIND action right after this
           const nextActions = this.getNextActions(workflow, action.id);
           const hasFind = nextActions.some(
-            (a) =>
-              a.type === "FIND" ||
-              a.type === "FIND_STATE_IMAGE" ||
-              a.type === "EXISTS"
+            (a) => a.type === "FIND" || a.type === "EXISTS"
           );
 
           if (hasFind) {
@@ -1045,10 +1040,7 @@ export class WorkflowPerformanceAnalyzer {
    */
   countFindActions(workflow: Workflow): number {
     return workflow.actions.filter(
-      (a) =>
-        a.type === "FIND" ||
-        a.type === "FIND_STATE_IMAGE" ||
-        a.type === "EXISTS"
+      (a) => a.type === "FIND" || a.type === "EXISTS"
     ).length;
   }
 
@@ -1131,9 +1123,7 @@ export class WorkflowPerformanceAnalyzer {
 
         // Check for WAIT + FIND pattern
         const nextActions = this.getNextActions(workflow, waitAction.id);
-        const findAction = nextActions.find(
-          (a) => a.type === "FIND" || a.type === "FIND_STATE_IMAGE"
-        );
+        const findAction = nextActions.find((a) => a.type === "FIND");
 
         if (findAction) {
           waitFindPatterns.push({
@@ -1151,10 +1141,7 @@ export class WorkflowPerformanceAnalyzer {
       if (action.type === "CLICK" || action.type === "TYPE") {
         const prevActions = this.getPreviousActions(workflow, action.id);
         const hasWaitOrFind = prevActions.some(
-          (a) =>
-            a.type === "WAIT" ||
-            a.type === "FIND" ||
-            a.type === "FIND_STATE_IMAGE"
+          (a) => a.type === "WAIT" || a.type === "FIND"
         );
 
         if (!hasWaitOrFind && prevActions.length > 0) {
@@ -1402,7 +1389,7 @@ export class WorkflowPerformanceAnalyzer {
    */
   generateSuggestions(
     workflow: Workflow,
-    executionData?: ExecutionData
+    _executionData?: ExecutionData
   ): OptimizationSuggestion[] {
     const suggestions: OptimizationSuggestion[] = [];
 
@@ -1573,7 +1560,7 @@ export class WorkflowPerformanceAnalyzer {
 
     if (executionData) {
       // Use actual execution data
-      for (const [actionId, state] of Object.entries(
+      for (const [_actionId, state] of Object.entries(
         executionData.actionStates
       )) {
         if (state.duration !== undefined) {
@@ -1727,7 +1714,7 @@ export class WorkflowPerformanceAnalyzer {
    * Detect performance regression
    */
   detectPerformanceRegression(
-    workflowId: string,
+    _workflowId: string,
     versions: Array<{
       version: string;
       workflow: Workflow;
@@ -2020,7 +2007,7 @@ export class WorkflowPerformanceAnalyzer {
    */
   private calculatePerformanceScore(
     workflow: Workflow,
-    executionData: ExecutionData | undefined,
+    _executionData: ExecutionData | undefined,
     bottleneckScore: number
   ): number {
     let score = 100;
@@ -2349,10 +2336,7 @@ export class WorkflowPerformanceAnalyzer {
       for (const actionId of chain) {
         const action = workflow.actions.find((a) => a.id === actionId);
 
-        if (
-          action &&
-          (action.type === "FIND" || action.type === "FIND_STATE_IMAGE")
-        ) {
+        if (action && action.type === "FIND") {
           sequentialFinds.push(actionId);
         } else {
           if (sequentialFinds.length > 0) {
@@ -2376,7 +2360,7 @@ export class WorkflowPerformanceAnalyzer {
   private generateComparisonSummary(
     performanceDelta: number,
     timeDelta: number,
-    bottleneckDelta: number,
+    _bottleneckDelta: number,
     winner: "workflow1" | "workflow2" | "tie"
   ): string {
     if (winner === "tie") {

@@ -113,7 +113,7 @@ const mockWorkflows: Workflow[] = [
         id: "a3",
         type: "WAIT",
         name: "Wait for Download",
-        config: { duration: 5000 },
+        config: { waitFor: "time", duration: 5000 },
         position: [100, 400],
       },
     ],

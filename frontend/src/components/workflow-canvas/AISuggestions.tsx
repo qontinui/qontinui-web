@@ -127,7 +127,7 @@ export function AISuggestions({
       if (!acc[suggestion.type]) {
         acc[suggestion.type] = [];
       }
-      acc[suggestion.type].push(suggestion);
+      acc[suggestion.type]?.push(suggestion);
       return acc;
     },
     {} as Record<string, WorkflowSuggestion[]>

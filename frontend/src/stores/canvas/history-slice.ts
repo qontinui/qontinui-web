@@ -68,7 +68,7 @@ export const createHistorySlice: StateCreator<
   },
 
   recordHistory: (description?: string) => {
-    const { workflow, history, historyIndex, maxHistorySize } = get();
+    const { workflow, maxHistorySize } = get();
     if (!workflow) return;
 
     // Deep clone workflow

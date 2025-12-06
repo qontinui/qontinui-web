@@ -437,7 +437,7 @@ export function downloadPythonStateCode(
   exportData.states.forEach((state) => {
     lines.push(generatePythonStateCode(state));
     lines.push("");
-    lines.push("# " + "=" * 50);
+    lines.push("# " + "=".repeat(50));
     lines.push("");
   });
 

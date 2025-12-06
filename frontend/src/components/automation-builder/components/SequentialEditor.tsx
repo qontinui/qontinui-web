@@ -29,9 +29,10 @@ const ACTION_GROUPS = {
   Find: [
     { type: "FIND", label: "Find Element", color: "bg-blue-500" },
     {
-      type: "FIND_STATE_IMAGE",
-      label: "Find State Image",
+      type: "FIND",
+      label: "Find State",
       color: "bg-cyan-500",
+      preset: "stateImage",
     },
   ],
   Mouse: [
@@ -74,11 +75,28 @@ export function SequentialEditor({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [insertAtIndex, setInsertAtIndex] = useState<number | null>(null);
 
-  const addAction = (type: Action["type"], insertAfterIndex?: number) => {
+  const addAction = (
+    type: Action["type"],
+    insertAfterIndex?: number,
+    preset?: string
+  ) => {
+    let config = getDefaultConfig(type);
+
+    // Handle presets for FIND action
+    if (type === "FIND" && preset === "stateImage") {
+      config = {
+        target: {
+          type: "stateImage",
+          stateId: "",
+          imageIds: [],
+        },
+      } as typeof config;
+    }
+
     const newAction: Action = {
       id: `action-${Date.now()}`,
       type,
-      config: getDefaultConfig(type),
+      config,
       position: [100, 100 + actions.length * 150], // Auto-position vertically
     };
 
@@ -169,13 +187,15 @@ export function SequentialEditor({
                   {groupName}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
-                  {actions.map(({ type, label }) => (
+                  {actions.map((actionTemplate) => (
                     <DropdownMenuItem
-                      key={type}
-                      onClick={() => addAction(type as Action["type"])}
+                      key={`${actionTemplate.type}-${"preset" in actionTemplate ? actionTemplate.preset : "default"}`}
+                      onClick={() =>
+                        addAction(actionTemplate.type as Action["type"], undefined, "preset" in actionTemplate ? actionTemplate.preset : undefined)
+                      }
                       className="hover:bg-gray-700 focus:bg-gray-700"
                     >
-                      {label}
+                      {actionTemplate.label}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuSubContent>
@@ -228,18 +248,19 @@ export function SequentialEditor({
                                   {groupName}
                                 </DropdownMenuSubTrigger>
                                 <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
-                                  {actions.map(({ type, label }) => (
+                                  {actions.map((actionTemplate) => (
                                     <DropdownMenuItem
-                                      key={type}
+                                      key={`${actionTemplate.type}-${"preset" in actionTemplate ? actionTemplate.preset : "default"}`}
                                       onClick={() =>
                                         addAction(
-                                          type as Action["type"],
-                                          index - 1
+                                          actionTemplate.type as Action["type"],
+                                          index - 1,
+                                          "preset" in actionTemplate ? actionTemplate.preset : undefined
                                         )
                                       }
                                       className="hover:bg-gray-700 focus:bg-gray-700"
                                     >
-                                      {label}
+                                      {actionTemplate.label}
                                     </DropdownMenuItem>
                                   ))}
                                 </DropdownMenuSubContent>
@@ -364,18 +385,19 @@ export function SequentialEditor({
                             {groupName}
                           </DropdownMenuSubTrigger>
                           <DropdownMenuSubContent className="bg-[#27272A] border-gray-700">
-                            {actions.map(({ type, label }) => (
+                            {actions.map((actionTemplate) => (
                               <DropdownMenuItem
-                                key={type}
+                                key={`${actionTemplate.type}-${"preset" in actionTemplate ? actionTemplate.preset : "default"}`}
                                 onClick={() =>
                                   addAction(
-                                    type as Action["type"],
-                                    actions.length - 1
+                                    actionTemplate.type as Action["type"],
+                                    actions.length - 1,
+                                    "preset" in actionTemplate ? actionTemplate.preset : undefined
                                   )
                                 }
                                 className="hover:bg-gray-700 focus:bg-gray-700"
                               >
-                                {label}
+                                {actionTemplate.label}
                               </DropdownMenuItem>
                             ))}
                           </DropdownMenuSubContent>
@@ -406,8 +428,6 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
           imageId: null,
         },
       };
-    case "FIND_STATE_IMAGE":
-      return { state: null };
     case "CLICK":
       return {
         target: "Last Find Result",
@@ -476,10 +496,6 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
       return { button: "left", target: null };
     case "MOUSE_UP":
       return { button: "left", target: null };
-    case "DOUBLE_CLICK":
-      return { target: "Last Find Result", mouseButton: "LEFT" };
-    case "RIGHT_CLICK":
-      return { target: "Last Find Result" };
     case "KEY_PRESS":
       return { key: "" };
     case "KEY_DOWN":
@@ -503,11 +519,22 @@ function getActionSummary(
       if (config.removedImage) {
         return `[REMOVED: ${config.removedImage}]`;
       }
+
+      // Handle stateImage target type (Find State)
+      if (config.target?.type === "stateImage") {
+        const stateId = config.target.stateId;
+        if (stateId) {
+          const state = states.find((s) => s.id === stateId);
+          return state
+            ? `Find any image from ${state.name}`
+            : "State not found";
+        }
+        return "No state selected";
+      }
+
       // Handle new target structure with imageIds array
       const imageIds =
-        config.target?.type === "image"
-          ? config.target.imageIds
-          : null;
+        config.target?.type === "image" ? config.target.imageIds : null;
       const imageId =
         imageIds?.[0] || config.target?.imageId || config.image;
 
@@ -549,25 +576,9 @@ function getActionSummary(
       }
       return "No image selected";
     }
-    case "FIND_STATE_IMAGE": {
-      const config = action.config as { stateId?: string; imageId?: string };
-      if (config.stateId) {
-        const state = states.find((s) => s.id === config.stateId);
-        return state ? `Find any image from ${state.name}` : "State not found";
-      }
-      return "No state selected";
-    }
     case "CLICK": {
       const config = action.config as { mouseButton?: string; target?: string };
       return `${config.mouseButton?.toLowerCase() || "left"} click on ${config.target}`;
-    }
-    case "DOUBLE_CLICK": {
-      const config = action.config as { target?: string };
-      return `Double click on ${config.target || "Last Find Result"}`;
-    }
-    case "RIGHT_CLICK": {
-      const config = action.config as { target?: string };
-      return `Right click on ${config.target || "Last Find Result"}`;
     }
     case "TYPE": {
       const config = action.config as { text?: string; textSource?: { stateId: string; stringIds: string[] } };

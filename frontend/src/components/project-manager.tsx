@@ -6,7 +6,7 @@ import {
   useCreateProject,
   useUpdateProject,
   useDeleteProject,
-  useProject,
+
 } from "@/hooks/use-projects";
 import type { Project } from "@/lib/schemas";
 import { useAuth } from "@/contexts/auth-context";
@@ -117,7 +117,7 @@ export function ProjectManager({
       // Query is cached, so this will be fast
       const config = project.configuration ?? {};
       onLoadConfiguration(config);
-      setSelectedProject({ ...project, configuration: config });
+      setSelectedProject({ ...project, configuration: config } as Project);
       setLoadDialogOpen(false);
       toast.success(`Loaded project: ${project.name}`);
     } catch (error: any) {
@@ -126,7 +126,7 @@ export function ProjectManager({
   };
 
   const handleDelete = (project: Project) => {
-    setProjectToDelete({ ...project, configuration: project.configuration ?? {} });
+    setProjectToDelete({ ...project, configuration: project.configuration ?? {} } as Project);
     setDeleteDialogOpen(true);
   };
 
@@ -327,14 +327,14 @@ export function ProjectManager({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleLoad(project)}
+                        onClick={() => handleLoad({ ...project, configuration: project.configuration || {} })}
                       >
                         Load
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => handleDelete(project)}
+                        onClick={() => handleDelete({ ...project, configuration: project.configuration || {} })}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>

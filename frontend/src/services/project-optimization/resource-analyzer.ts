@@ -47,7 +47,7 @@ export function analyzeWorkflows(
 
     // Check testing
     const workflowTestingService = getWorkflowTestingService();
-    const tests = workflowTestingService.getTestsForWorkflow(workflow.id);
+    const tests = workflowTestingService.getTestCasesForWorkflow(workflow.id);
     const hasTesting = tests.length > 0;
 
     // Check documentation

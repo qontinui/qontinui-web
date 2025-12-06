@@ -64,7 +64,6 @@ export function CustomOrganizationExample() {
     currentFilter,
     setCurrentFilter,
     selectedImageIds,
-    toggleImageSelection,
     clearSelection,
   } = useImageOrganization({
     images: images.map((img) => ({
@@ -182,16 +181,13 @@ export function CustomOrganizationExample() {
  * Demonstrates programmatic control of the image library.
  */
 export function ProgrammaticExample() {
-  const { images, updateImage, addImage } = useAutomation();
+  const { images, updateImage } = useAutomation();
 
   const {
-    folders,
     createFolder,
-    collections,
     createCollection,
     addImagesToCollection,
     addTagToImages,
-    selectedImageIds,
     selectAllImages,
     clearSelection,
   } = useImageOrganization({
@@ -290,7 +286,7 @@ import {
 
 export function WorkflowIntegrationExample() {
   const [showImagePicker, setShowImagePicker] = useState(false);
-  const [selectedImageForWorkflow, setSelectedImageForWorkflow] = useState<
+  const [selectedImageForWorkflow] = useState<
     string | null
   >(null);
 

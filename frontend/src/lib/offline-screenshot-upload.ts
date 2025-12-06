@@ -196,7 +196,7 @@ export async function uploadScreenshotsOffline(
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
 
-    const result = await uploadScreenshotOffline(file, projectId, {
+    const result = await uploadScreenshotOffline(file!, projectId, {
       ...options,
       onProgress: (progress, status) => {
         // Calculate overall progress

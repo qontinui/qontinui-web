@@ -21,8 +21,6 @@ import {
   Line,
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -45,8 +43,6 @@ import {
   Gauge,
   Calendar,
   AlertCircle,
-  Play,
-  StopCircle,
 } from "lucide-react";
 import {
   Card,
@@ -74,15 +70,6 @@ export interface WorkflowMetricsPanelProps {
   className?: string;
 }
 
-interface ComplexityMetrics {
-  actionCount: number;
-  connectionCount: number;
-  maxDepth: number;
-  branchingFactor: number;
-  cyclomaticComplexity: number;
-  complexityScore: number;
-  complexityRating: "low" | "medium" | "high" | "very-high";
-}
 
 interface MetricCardProps {
   title: string;
@@ -722,7 +709,7 @@ export function WorkflowMetricsPanel({
                         cy="50%"
                         labelLine={false}
                         label={({ name, value, percent }) =>
-                          `${name}: ${value} (${(percent * 100).toFixed(0)}%)`
+                          `${name}: ${value} (${((percent ?? 0) * 100).toFixed(0)}%)`
                         }
                         outerRadius={80}
                         fill="#8884d8"

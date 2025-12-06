@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { cn } from "@/lib/utils";
 
 interface PopoverChild {
   id: string;
@@ -29,7 +28,6 @@ export function CollapsedMenuPopover({
   onClose,
   onClearTimer,
 }: CollapsedMenuPopoverProps) {
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const [mounted, setMounted] = useState(false);
 

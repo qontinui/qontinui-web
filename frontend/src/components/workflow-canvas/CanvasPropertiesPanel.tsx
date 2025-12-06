@@ -33,7 +33,6 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronUp,
-  X,
   Save,
   RotateCcw,
   Settings,
@@ -155,7 +154,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
       }
 
       // Get the property component for this action type
-      const PropertyComponent = actionConfigRegistry.getComponent(action.type);
+      const PropertyComponent = actionConfigRegistry.getComponent(action.type as any);
 
       if (!PropertyComponent) {
         return (
@@ -196,7 +195,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
                   <p className="text-xs text-gray-500 font-mono">{action.id}</p>
                 </div>
                 <Badge variant="secondary" className="text-xs">
-                  {actionConfigRegistry.getDisplayName(action.type)}
+                  {actionConfigRegistry.getDisplayName(action.type as any)}
                 </Badge>
               </div>
 
@@ -204,14 +203,14 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
 
               {/* Property Editor */}
               <PropertyEditorWrapper
-                actionId={nodeId}
+                actionId={nodeId!}
                 component={PropertyComponent}
               />
             </div>
           </TabsContent>
 
           <TabsContent value="history" className="flex-1 overflow-y-auto m-0">
-            <PropertyHistory actionId={nodeId} />
+            <PropertyHistory actionId={nodeId!} />
           </TabsContent>
         </Tabs>
       );
@@ -223,7 +222,7 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
     }
 
     // Single edge selected
-    if (selectedEdges.length === 1) {
+    if (selectedEdges.length === 1 && selectedEdges[0]) {
       return <ConnectionProperties edgeId={selectedEdges[0]} />;
     }
 

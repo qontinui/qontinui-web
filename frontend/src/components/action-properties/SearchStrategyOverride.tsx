@@ -18,7 +18,7 @@ interface SearchStrategyOverrideProps {
 }
 
 /**
- * Reusable search strategy override component for FIND and FIND_STATE_IMAGE actions.
+ * Reusable search strategy override component for FIND actions.
  *
  * Strategy is stored in target.searchOptions.searchStrategy (nested in searchOptions).
  */

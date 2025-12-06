@@ -92,7 +92,7 @@ export function useTutorialTarget(
 
   useEffect(() => {
     if (!ref.current || !isActive || mode !== "contextual") {
-      return;
+      return undefined;
     }
 
     const targetSelector = `[data-tutorial-id="${targetId}"]`;
@@ -128,6 +128,7 @@ export function useTutorialTarget(
         onBlur?.();
       };
     }
+    return undefined;
   }, [targetId, currentStep, isActive, mode, focusable, onFocus, onBlur]);
 
   // ============================================================================
@@ -136,7 +137,7 @@ export function useTutorialTarget(
 
   useEffect(() => {
     if (!ref.current || !isActive || mode !== "contextual") {
-      return;
+      return undefined;
     }
 
     const targetSelector = `[data-tutorial-id="${targetId}"]`;
@@ -152,6 +153,7 @@ export function useTutorialTarget(
         element.classList.remove("tutorial-target-pulse");
       };
     }
+    return undefined;
   }, [targetId, currentStep, isActive, mode]);
 
   // ============================================================================

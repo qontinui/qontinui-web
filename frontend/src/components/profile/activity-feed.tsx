@@ -139,7 +139,7 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
         ) : (
           <ScrollArea className="h-[400px] pr-4">
             <div className="space-y-3">
-              {activities.map((activity, index) => (
+              {activities.map((activity) => (
                 <div
                   key={activity.id}
                   className="flex items-start gap-3 p-4 rounded-lg bg-[#0A0A0B]/50 border border-gray-800/50 hover:border-gray-700/50 transition-colors"

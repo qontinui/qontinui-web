@@ -121,8 +121,8 @@ const packageApi = {
     return codePackageService.ratePackage(data);
   },
 
-  async reportPackage(data: ReportPackageRequest): Promise<void> {
-    return codePackageService.reportPackage(data);
+  async reportPackage(_data: ReportPackageRequest): Promise<void> {
+    return codePackageService.reportPackage();
   },
 
   async deletePackage(id: string): Promise<void> {

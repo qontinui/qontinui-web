@@ -46,6 +46,7 @@ export type {
   SearchRegion,
   Position,
   PositionName,
+  Pattern,
   Transition,
   TransitionType,
   BaseTransition,
@@ -81,8 +82,8 @@ export { StateUpdateCoordinator } from "./state-update-coordinator";
 function migrateWorkflows(workflows: Workflow[]): Workflow[] {
   return workflows.map((workflow) => {
     const migratedActions = workflow.actions.map((action) => {
-      // Migrate RUN_PROCESS to RUN_WORKFLOW
-      if (action.type === "RUN_PROCESS") {
+      // Migrate RUN_PROCESS to RUN_WORKFLOW (legacy migration)
+      if ((action.type as string) === "RUN_PROCESS") {
         const config = { ...action.config };
 
         // Migrate processId to workflowId
@@ -130,6 +131,101 @@ function migrateTransitions(transitions: Transition[]): Transition[] {
 
     return transition;
   });
+}
+
+/**
+ * Migrate patterns with embedded image data to use imageId references
+ * This handles legacy patterns that have image/mask data embedded directly
+ * instead of referencing the image library
+ */
+function migratePatternImages(
+  states: State[],
+  images: ImageAsset[]
+): { states: State[]; newImages: ImageAsset[] } {
+  const newImages: ImageAsset[] = [];
+  let migrationCount = 0;
+
+  const migratedStates = states.map((state) => {
+    if (!state.stateImages || state.stateImages.length === 0) {
+      return state;
+    }
+
+    const migratedStateImages = state.stateImages.map((stateImage) => {
+      if (!stateImage.patterns || stateImage.patterns.length === 0) {
+        return stateImage;
+      }
+
+      const migratedPatterns = stateImage.patterns.map((pattern) => {
+        const patternAny = pattern as any;
+
+        // Check if pattern has embedded image data but no imageId
+        if (!pattern.imageId && patternAny.image) {
+          // Try to find matching image in library
+          let matchingImage = images.find(
+            (img) => img.url === patternAny.image
+          );
+
+          // If not found, also check newImages we've created in this migration
+          if (!matchingImage) {
+            matchingImage = newImages.find(
+              (img) => img.url === patternAny.image
+            );
+          }
+
+          // If still not found, create a new image asset
+          if (!matchingImage) {
+            const imageId = `image-migrated-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            matchingImage = {
+              id: imageId,
+              name: pattern.name || stateImage.name || "Migrated Image",
+              url: patternAny.image,
+              mask: patternAny.mask,
+              size: Math.ceil(
+                ((patternAny.image.split(",")[1] || "").length * 3) / 4
+              ),
+              createdAt: new Date(),
+              usageCount: 1,
+              usage: [],
+              source: "image_extraction" as const,
+            };
+            newImages.push(matchingImage);
+          }
+
+          migrationCount++;
+          console.log(
+            `[Migration] Pattern ${pattern.id} migrated to use imageId: ${matchingImage.id}`
+          );
+
+          // Return pattern with imageId, removing embedded data
+          const { image, mask, ...rest } = patternAny;
+          return {
+            ...rest,
+            imageId: matchingImage.id,
+          };
+        }
+
+        return pattern;
+      });
+
+      return {
+        ...stateImage,
+        patterns: migratedPatterns,
+      };
+    });
+
+    return {
+      ...state,
+      stateImages: migratedStateImages,
+    };
+  });
+
+  if (migrationCount > 0) {
+    console.log(
+      `[Migration] Migrated ${migrationCount} patterns to use imageId references`
+    );
+  }
+
+  return { states: migratedStates, newImages };
 }
 
 const AutomationContext = createContext<AutomationContextType | undefined>(
@@ -507,6 +603,46 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         );
       }
 
+      // Migrate patterns with embedded image data to use imageId references
+      const { states: migratedStates, newImages: patternMigrationImages } =
+        migratePatternImages(loadedStates, loadedImages);
+
+      // If any patterns were migrated, save the updated states and new images
+      if (patternMigrationImages.length > 0) {
+        // Save new images to database
+        for (const newImage of patternMigrationImages) {
+          const imageWithProject = {
+            ...newImage,
+            projectName: currentProjectName,
+          } as ImageAsset & { projectName: string };
+          await projectDB.addImage(imageWithProject);
+        }
+      }
+
+      // Check if any states were modified by the migration
+      let statesMigrated = false;
+      for (let i = 0; i < migratedStates.length; i++) {
+        if (
+          JSON.stringify(migratedStates[i]) !== JSON.stringify(loadedStates[i])
+        ) {
+          statesMigrated = true;
+          const stateWithProject = {
+            ...migratedStates[i],
+            projectName: currentProjectName,
+          } as State & { projectName: string };
+          await projectDB.updateState(stateWithProject);
+        }
+      }
+
+      if (statesMigrated) {
+        console.log(
+          `Pattern image migration completed - ${patternMigrationImages.length} new images created`
+        );
+      }
+
+      // Combine loaded images with any new images from migration
+      const allImages = [...loadedImages, ...patternMigrationImages];
+
       // Final check if this load was aborted before setting state
       // This is the critical check that prevents stale data from overwriting current data
       if (isAborted) {
@@ -522,9 +658,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       }
 
       setWorkflows(migratedWorkflows);
-      setStates(loadedStates);
+      setStates(migratedStates);
       setTransitions(migratedTransitions);
-      setImages(loadedImages);
+      setImages(allImages);
       setScreenshots(loadedScreenshots);
 
       // Extract unique categories from loaded workflows, always including Main and Transitions
@@ -538,7 +674,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       setCategories(uniqueCategories);
 
       console.log(
-        `Loaded project data - Workflows: ${loadedWorkflows.length}, States: ${loadedStates.length}, Transitions: ${loadedTransitions.length}, Images: ${loadedImages.length}, Screenshots: ${loadedScreenshots.length}, Categories: ${uniqueCategories.length}`
+        `Loaded project data - Workflows: ${migratedWorkflows.length}, States: ${migratedStates.length}, Transitions: ${migratedTransitions.length}, Images: ${allImages.length}, Screenshots: ${loadedScreenshots.length}, Categories: ${uniqueCategories.length}`
       );
     };
 
@@ -781,11 +917,20 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     [images]
   );
 
-  // Helper: Resolve pattern's image data
+  // Helper: Resolve pattern's image data from library
   const resolvePatternImage = useCallback(
     (pattern: Pattern): { url: string; mask?: string } | null => {
+      if (!pattern.imageId) {
+        // Pattern has no imageId - this is a data issue
+        return null;
+      }
       const image = getImageById(pattern.imageId);
-      if (!image) return null;
+      if (!image) {
+        console.warn(
+          `[resolvePatternImage] Image not found: ${pattern.imageId} (pattern: ${pattern.id})`
+        );
+        return null;
+      }
       return { url: image.url, mask: image.mask };
     },
     [getImageById]
@@ -1178,6 +1323,13 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
     async (config: any) => {
       const newProjectName = config.name || "Untitled Project";
 
+      // Check if the incoming config has any data
+      const configHasData =
+        (config.workflows?.length ?? 0) > 0 ||
+        (config.states?.length ?? 0) > 0 ||
+        (config.transitions?.length ?? 0) > 0 ||
+        (config.images?.length ?? 0) > 0;
+
       projectLogger.configLoader("loadConfiguration START", {
         newProjectName,
         oldProjectName: projectName,
@@ -1186,7 +1338,23 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         stateCount: config.states?.length ?? 0,
         transitionCount: config.transitions?.length ?? 0,
         imageCount: config.images?.length ?? 0,
+        configHasData,
       });
+
+      // SAFETY: If backend returns empty config, don't clear local data
+      // This prevents data loss when backend has been corrupted or reset
+      if (!configHasData) {
+        projectLogger.warn(
+          "configLoader",
+          "Backend config is empty - preserving local data",
+          {
+            newProjectName,
+            oldProjectName: projectName,
+          }
+        );
+        // Don't clear local data, just return without changes
+        return;
+      }
 
       // Clear existing data for the old project from IndexedDB
       projectLogger.indexedDB("Clearing old project data", { projectName });

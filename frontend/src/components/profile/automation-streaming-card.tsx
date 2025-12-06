@@ -10,10 +10,9 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { Wifi, RefreshCcw, Info } from "lucide-react";
+import { Wifi,  Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
@@ -100,6 +99,8 @@ export function AutomationStreamingCard({
     }
   };
 
+  // Unused function - kept for potential future use
+  /*
   const resetLimit = async () => {
     try {
       setUpdating(true);
@@ -122,6 +123,7 @@ export function AutomationStreamingCard({
       setUpdating(false);
     }
   };
+  */
 
   if (loading) {
     return (

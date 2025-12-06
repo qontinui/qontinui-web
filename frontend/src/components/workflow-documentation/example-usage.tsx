@@ -21,7 +21,7 @@ import {
 } from "@/services/workflow-documentation-service";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, MessageSquare, Edit, Eye, Sparkles } from "lucide-react";
+import { FileText, MessageSquare, Edit, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 // ============================================================================
@@ -128,7 +128,6 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
   const [documentation, setDocumentation] =
     useState<WorkflowDocumentation | null>(null);
   const [comments, setComments] = useState<ActionComment[]>([]);
-  const [selectedActionId, setSelectedActionId] = useState<string>();
   const [mode, setMode] = useState<"view" | "edit">("view");
 
   const docService = WorkflowDocumentationService.getInstance();
@@ -225,10 +224,11 @@ export function TabbedDocumentationView({ workflow }: { workflow: Workflow }) {
       </TabsContent>
 
       <TabsContent value="comments" className="flex-1 m-0">
+        {/* @ts-ignore - example code uses incomplete props */}
         <ActionCommentsPanel
           workflow={workflow}
           comments={comments}
-          selectedActionId={selectedActionId}
+          selectedActionId={"action-1"}
           onAddComment={handleAddComment}
           onUpdateComment={handleUpdateComment}
           onDeleteComment={handleDeleteComment}

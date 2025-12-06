@@ -1,13 +1,21 @@
 /**
- * Format converter - Convert between sequential Process and graph Workflow formats
+ * Format converter - Convert between sequential workflow format and graph Workflow formats
  */
 
-import type { Process } from "@/contexts/automation-context/types";
 import type {
   Workflow,
   Action as WorkflowAction,
   Connections,
 } from "./action-schema/action-types";
+
+// Legacy Process type for backward compatibility
+interface Process {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  actions: any[];
+}
 
 /**
  * Convert a sequential Process to a graph Workflow

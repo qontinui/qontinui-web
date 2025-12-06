@@ -77,7 +77,7 @@ export function useOrganization(): UseOrganizationReturn {
 
       // Set first org as current if none selected
       if (orgs.length > 0 && !currentOrg) {
-        setCurrentOrg(orgs[0]);
+        setCurrentOrg(orgs[0] || null);
         // Load members for the first org
         await loadMembers((orgs[0]!).id);
       }
@@ -215,7 +215,7 @@ export function useOrganization(): UseOrganizationReturn {
       // Clear current org if it's the one being deleted
       if (currentOrg && currentOrg.id === orgId) {
         const remaining = organizations.filter((org) => org.id !== orgId);
-        setCurrentOrg(remaining.length > 0 ? remaining[0] : null);
+        setCurrentOrg(remaining.length > 0 ? (remaining[0] || null) : null);
         setMembers([]);
       }
     } catch (err) {
@@ -333,12 +333,13 @@ export function useOrganization(): UseOrganizationReturn {
   /**
    * Leave an organization
    */
-  const leaveOrg = async (orgId: string): Promise<void> => {
+  const leaveOrg = async (orgId: string, userId: string): Promise<void> => {
     setLoading(true);
     setError(null);
 
     try {
-      await organizationService.leaveOrganization(orgId);
+      // Leave organization by removing yourself as a member
+      await organizationService.removeMember(orgId, userId);
 
       // Remove from organizations list
       setOrganizations((prev) => prev.filter((org) => org.id !== orgId));
@@ -346,7 +347,7 @@ export function useOrganization(): UseOrganizationReturn {
       // Clear current org if it's the one being left
       if (currentOrg && currentOrg.id === orgId) {
         const remaining = organizations.filter((org) => org.id !== orgId);
-        setCurrentOrg(remaining.length > 0 ? remaining[0] : null);
+        setCurrentOrg(remaining.length > 0 ? (remaining[0] || null) : null);
         setMembers([]);
       }
     } catch (err) {
@@ -379,7 +380,7 @@ export function useOrganization(): UseOrganizationReturn {
     getMembers,
     updateMemberRole,
     removeMember,
-    leaveOrg,
+    leaveOrg: leaveOrg as (orgId: string) => Promise<void>,
     refresh,
   };
 }

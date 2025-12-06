@@ -102,7 +102,7 @@ interface ActiveStatesChecklistProps {
 2. **Step Tracking**: Current step is tracked in local state
 3. **State Calculation**: `getActiveStatesAtStep()` determines which states are active at the current step by analyzing:
    - `GO_TO_STATE` actions (activate target states)
-   - `FIND_STATE_IMAGE` actions (imply state is active)
+   - Find State actions (imply state is active)
    - Transition definitions (activate/deactivate states)
 4. **Visualization**: Active states are rendered on canvas at their fixed positions
 5. **Checklist Update**: Checklist reflects which states are active
@@ -114,7 +114,7 @@ The current implementation uses a simplified state tracking algorithm:
 ```typescript
 function getActiveStatesAtStep(workflow, step, states) {
   // Scan all actions up to current step
-  // Track state activations from GO_TO_STATE and FIND_STATE_IMAGE actions
+  // Track state activations from GO_TO_STATE and Find State actions
   // Return array of active state IDs
 }
 ```

@@ -6,7 +6,10 @@
  */
 
 import React, { useEffect, useRef, useCallback } from "react";
-import { useLocation } from "react-router-dom";
+// TODO: This component uses react-router-dom but Next.js uses its own routing
+// Replace with Next.js usePathname/useRouter
+// import { useLocation } from "react-router-dom";
+const useLocation = () => ({ pathname: "/" });
 import { useTutorial } from "./TutorialProvider";
 import { useTutorialStore } from "@/stores/tutorial-store";
 import type { Tutorial } from "@/types/tutorial";
@@ -54,7 +57,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
     useTutorialStore();
 
   const hasCheckedRef = useRef(false);
-  const timerRef = useRef<NodeJS.Timeout>();
+  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // ============================================================================
   // Local Storage Helpers
@@ -88,6 +91,8 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
     }
   }, []);
 
+  // Helper function to add tutorial to "don't show again" list - currently unused
+  /*
   const addToDontShow = useCallback(
     (tutorialId: string) => {
       try {
@@ -102,6 +107,7 @@ export const TutorialTrigger: React.FC<TutorialTriggerProps> = ({
     },
     [getDontShowList]
   );
+  */
 
   // ============================================================================
   // Trigger Evaluation

@@ -13,6 +13,7 @@
 import {
   Workflow,
   Action,
+  Connection,
   Connections,
   createAction,
 } from "../lib/action-schema/action-types";
@@ -1107,7 +1108,7 @@ export class WorkflowComponentsService {
       updated[newSourceId] = {};
 
       Object.entries(outputs).forEach(([type, outputList]) => {
-        updated[newSourceId]![type]! = outputList?.map((output) =>
+        (updated[newSourceId]![type as keyof typeof outputs] as Connection[][]) = outputList?.map((output) =>
           output.map((conn) => ({
             ...conn,
             action: idMap.get(conn.action) || conn.action,
@@ -1260,7 +1261,7 @@ export class WorkflowComponentsService {
 
     const errorAction = createAction(
       "SCREENSHOT",
-      { filename: "error-${timestamp}.png" },
+      { saveToFile: { enabled: true, filename: "error-${timestamp}.png" } },
       [300, 200],
       { id: "error-screenshot", name: "Capture Error" }
     );
@@ -1305,12 +1306,12 @@ export class WorkflowComponentsService {
   private createBuiltinRetryLogic(): void {
     const loop = createAction(
       "LOOP",
-      { iterations: 3, loopActions: [], variable: "attempt" },
+      { loopType: "FOR", iterations: 3, actions: [], iteratorVariable: "attempt" },
       [100, 100],
       { id: "retry-loop", name: "Retry Loop" }
     );
 
-    const wait = createAction("WAIT", { duration: 1000 }, [300, 100], {
+    const wait = createAction("WAIT", { waitFor: "time", duration: 1000 }, [300, 100], {
       id: "retry-wait",
       name: "Wait Between Retries",
     });
@@ -1364,9 +1365,9 @@ export class WorkflowComponentsService {
   private createBuiltinWaitForElement(): void {
     const exists = createAction(
       "EXISTS",
-      { target: { image: "${targetImage}" }, timeout: 10000 },
+      { target: { type: "image", imageId: "${targetImage}" } },
       [100, 100],
-      { id: "wait-exists", name: "Wait for Element" }
+      { id: "wait-exists", name: "Wait for Element", execution: { timeout: 10000 } }
     );
 
     const component: WorkflowComponent = {
@@ -1411,12 +1412,12 @@ export class WorkflowComponentsService {
   private createBuiltinClickAndWait(): void {
     const click = createAction(
       "CLICK",
-      { target: { image: "${targetImage}" } },
+      { target: "${targetImage}" as any },
       [100, 100],
       { id: "click", name: "Click Element" }
     );
 
-    const wait = createAction("WAIT", { duration: 500 }, [100, 250], {
+    const wait = createAction("WAIT", { waitFor: "time", duration: 500 }, [100, 250], {
       id: "wait",
       name: "Wait After Click",
     });
@@ -1467,28 +1468,28 @@ export class WorkflowComponentsService {
   private createBuiltinFormFill(): void {
     const clickField1 = createAction(
       "CLICK",
-      { target: { selector: "${field1Selector}" } },
+      { target: "${field1Selector}" as any },
       [100, 100],
       { id: "click-field1", name: "Click Field 1" }
     );
 
     const typeField1 = createAction(
       "TYPE",
-      { text: "${field1Value}", target: { selector: "${field1Selector}" } },
+      { text: "${field1Value}" },
       [100, 250],
       { id: "type-field1", name: "Type Field 1" }
     );
 
     const clickField2 = createAction(
       "CLICK",
-      { target: { selector: "${field2Selector}" } },
+      { target: "${field2Selector}" as any },
       [100, 400],
       { id: "click-field2", name: "Click Field 2" }
     );
 
     const typeField2 = createAction(
       "TYPE",
-      { text: "${field2Value}", target: { selector: "${field2Selector}" } },
+      { text: "${field2Value}" },
       [100, 550],
       { id: "type-field2", name: "Type Field 2" }
     );
@@ -1550,21 +1551,27 @@ export class WorkflowComponentsService {
   }
 
   /**
-   * Built-in: Screenshot and Verify (SCREENSHOT + FIND_STATE_IMAGE)
+   * Built-in: Screenshot and Verify (SCREENSHOT + FIND with stateImage target)
    */
   private createBuiltinScreenshotAndVerify(): void {
     const screenshot = createAction(
       "SCREENSHOT",
-      { filename: "verify-${timestamp}.png" },
+      { saveToFile: { enabled: true, filename: "verify-${timestamp}.png" } },
       [100, 100],
       { id: "screenshot", name: "Take Screenshot" }
     );
 
     const verify = createAction(
-      "FIND_STATE_IMAGE",
-      { target: { image: "${expectedImage}" }, timeout: 5000 },
+      "FIND",
+      {
+        target: {
+          type: "stateImage",
+          stateId: "${expectedStateId}",
+          imageIds: [],
+        },
+      },
       [100, 250],
-      { id: "verify", name: "Verify Expected State" }
+      { id: "verify", name: "Verify Expected State", execution: { timeout: 5000 } }
     );
 
     const component: WorkflowComponent = {
@@ -1612,15 +1619,15 @@ export class WorkflowComponentsService {
   private createBuiltinSafeClick(): void {
     const exists = createAction(
       "EXISTS",
-      { target: { image: "${targetImage}" }, timeout: 5000 },
+      { target: { type: "image", imageId: "${targetImage}" } },
       [100, 100],
-      { id: "check-exists", name: "Check Element Exists" }
+      { id: "check-exists", name: "Check Element Exists", execution: { timeout: 5000 } }
     );
 
     const ifAction = createAction(
       "IF",
       {
-        condition: { type: "found", variable: "check-exists" },
+        condition: { type: "expression" as const, expression: "check-exists.found" },
         thenActions: [],
         elseActions: [],
       },
@@ -1630,7 +1637,7 @@ export class WorkflowComponentsService {
 
     const click = createAction(
       "CLICK",
-      { target: { image: "${targetImage}" } },
+      { target: "${targetImage}" as any },
       [300, 400],
       { id: "click-element", name: "Click Element" }
     );

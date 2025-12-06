@@ -17,7 +17,6 @@ import {
   Workflow,
   Action,
   Connections,
-  Connection,
 } from "../lib/action-schema/action-types";
 import { cloneWorkflow } from "../lib/action-schema/workflow-utils";
 import { Snapshot, WorkflowSnapshotsService } from "./workflow-snapshots";
@@ -305,7 +304,7 @@ export class WorkflowVersionControl {
       const index = branches.findIndex((b) => b.id === branchId);
       if (index !== -1) {
         const branch = branches[index];
-        if (!branch) return;
+        if (!branch) return false;
 
         // Don't allow deleting default branch if there are other branches
         if (branch.isDefault && branches.length > 1) {
@@ -414,9 +413,6 @@ export class WorkflowVersionControl {
     const sourceVersion = sourceBranch.currentVersionId
       ? this.getVersion(sourceBranch.currentVersionId)
       : undefined;
-    const targetVersion = targetBranch.currentVersionId
-      ? this.getVersion(targetBranch.currentVersionId)
-      : undefined;
 
     if (!sourceVersion) {
       return {
@@ -441,7 +437,7 @@ export class WorkflowVersionControl {
     const mergedWorkflow = sourceVersion.workflow;
 
     // Create new version in target branch
-    const version = this.saveVersion(
+    this.saveVersion(
       targetBranch.workflowId,
       targetBranchId,
       mergedWorkflow,
@@ -828,8 +824,8 @@ export class WorkflowVersionControl {
    * Resolve a merge conflict
    */
   resolveMergeConflict(
-    conflictId: string,
-    resolution: ConflictResolution
+    _conflictId: string,
+    _resolution: ConflictResolution
   ): boolean {
     // This would be implemented with a conflict tracking system
     // For now, return true as a placeholder
@@ -1245,7 +1241,11 @@ export class WorkflowVersionControl {
     });
 
     // Create branches and versions for each workflow
-    snapshotsByWorkflow.forEach((snapshots, workflowId) => {
+    const workflowIds = Array.from(snapshotsByWorkflow.keys());
+    for (const workflowId of workflowIds) {
+      const snapshots = snapshotsByWorkflow.get(workflowId);
+      if (!snapshots) continue;
+
       // Create main branch if doesn't exist
       let branches = this.getAllBranches(workflowId);
       if (branches.length === 0) {
@@ -1264,19 +1264,18 @@ export class WorkflowVersionControl {
       const mainBranchId = mainBranch.id; // Capture the ID outside the closure
 
       // Convert each snapshot to a version
-      snapshots
-        .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-        .forEach((snapshot) => {
-          this.saveVersion(
-            workflowId,
-            mainBranchId,
-            snapshot.workflow,
-            snapshot.name,
-            snapshot.metadata?.author
-          );
-          migrated++;
-        });
-    });
+      const sortedSnapshots = snapshots.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      for (const snapshot of sortedSnapshots) {
+        this.saveVersion(
+          workflowId,
+          mainBranchId,
+          snapshot.workflow,
+          snapshot.name,
+          snapshot.metadata?.author
+        );
+        migrated++;
+      }
+    }
 
     return migrated;
   }
@@ -1486,7 +1485,7 @@ export class WorkflowVersionControl {
     const connections: ConnectionDiff[] = [];
 
     (["main", "error", "success", "parallel"] as const).forEach((type) => {
-      const conns = outputs[type];
+      const conns = outputs[type as keyof typeof outputs];
       if (conns) {
         conns.forEach((outputConns: any, outputIndex: number) => {
           outputConns.forEach((conn: any) => {

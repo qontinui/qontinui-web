@@ -10,10 +10,10 @@ import {
   RotateCw,
 } from "lucide-react";
 import { useExecutionDebugger } from "../../stores/execution-debugger-store";
-import { Action } from "../../contexts/automation-context/types";
 import { ActionExecutionStatus } from "../../types/debugger/execution-types";
 import { SpecialKeyDisplay } from "../special-keys-selector";
 import { useAutomation } from "../../contexts/automation-context";
+import type { Action } from "../../lib/action-schema/action-types";
 
 interface ActionTimelineProps {
   actions: Action[];
@@ -71,22 +71,24 @@ const getActionIcon = (actionType: string) => {
 const getTypeActionText = (action: Action, states: any[]): string | null => {
   if (action.type !== "TYPE") return null;
 
+  const typeConfig = action.config as any;
+
   // If using manual text, return it directly
-  if (action.config.textSource !== "stateString" && action.config.text) {
-    return action.config.text;
+  if (!typeConfig.textSource && typeConfig.text) {
+    return typeConfig.text;
   }
 
   // If using StateString, resolve the values
   if (
-    action.config.textSource === "stateString" &&
-    action.config.selectedState
+    typeConfig.textSource &&
+    typeConfig.textSource.stateId
   ) {
-    const state = states.find((s) => s.id === action.config.selectedState);
+    const state = states.find((s) => s.id === typeConfig.textSource.stateId);
     if (!state || !state.strings) return null;
 
-    if (action.config.selectedStateStrings?.length > 0) {
+    if (typeConfig.textSource.stringIds?.length > 0) {
       const selectedStrings = state.strings
-        .filter((s: any) => action.config.selectedStateStrings.includes(s.id))
+        .filter((s: any) => typeConfig.textSource.stringIds.includes(s.id))
         .map((s: any) => s.value)
         .filter((v: any) => v);
 
@@ -181,7 +183,7 @@ const ActionItem: React.FC<ActionItemProps> = ({
         {(() => {
           const typeText =
             action.type === "TYPE" ? getTypeActionText(action, states) : null;
-          const displayText = typeText || action.config.description;
+          const displayText = typeText || action.name;
 
           if (!displayText) return null;
 

@@ -18,7 +18,6 @@ import {
   ChevronDown,
   ChevronRight,
   ArrowUpDown,
-  Filter,
   X,
 } from "lucide-react";
 import { SubflowComponent } from "@/lib/workflow-organization/types";
@@ -113,14 +112,6 @@ export function ComponentLibrary({
       if (comp.category) cats.add(comp.category);
     });
     return ["all", "built-in", "custom", ...Array.from(cats).sort()];
-  }, [components]);
-
-  const allTags = React.useMemo(() => {
-    const tags = new Set<string>();
-    components.forEach((comp) => {
-      comp.tags?.forEach((tag) => tags.add(tag));
-    });
-    return Array.from(tags).sort();
   }, [components]);
 
   // Filter and sort components

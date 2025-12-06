@@ -9,8 +9,6 @@ import {
   UserPlus,
   X,
   RefreshCw,
-  Trash2,
-  Check,
   AlertCircle,
   Loader2,
 } from "lucide-react";
@@ -21,7 +19,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +32,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 
 const inviteFormSchema = z.object({

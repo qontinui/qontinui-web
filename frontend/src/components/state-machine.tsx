@@ -84,8 +84,8 @@ export function StateStructure() {
   // Track if a drag operation is in progress to prevent node destruction during drag
   const isDraggingRef = useRef(false);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   // Helper function to find an empty space for a new node
   const findEmptyPosition = useCallback(() => {
@@ -395,6 +395,8 @@ export function StateStructure() {
         staysVisible: false,
         deactivateStates: [],
         workflows: [],
+        timeout: 30000,
+        retryCount: 0,
       };
 
       addTransition(newTransition);
@@ -466,7 +468,7 @@ export function StateStructure() {
     );
     if (!currentTransition) return;
 
-    const updatedTransition = { ...currentTransition, ...updates };
+    const updatedTransition = { ...currentTransition, ...updates } as Transition;
     updateTransition(updatedTransition);
   };
 
@@ -480,7 +482,7 @@ export function StateStructure() {
     // Create a default pattern for the new StateImage
     const newPattern: Pattern = {
       id: `pattern_${Date.now()}`,
-      image: "",
+      imageId: "",
       searchRegions: [],
       fixed: false,
     };
@@ -507,7 +509,7 @@ export function StateStructure() {
     if (!currentState || !currentState.stateImages) return;
 
     const updatedStateImages = [...currentState.stateImages];
-    updatedStateImages[index] = { ...updatedStateImages[index], ...updates };
+    updatedStateImages[index] = { ...updatedStateImages[index], ...updates } as StateImage;
     updateSelectedState({ stateImages: updatedStateImages });
   };
 
@@ -552,7 +554,7 @@ export function StateStructure() {
 
     const regions = currentState.regions || [];
     const updatedRegions = [...regions];
-    updatedRegions[index] = { ...updatedRegions[index], [field]: value };
+    updatedRegions[index] = { ...updatedRegions[index], [field]: value } as StateRegion;
     updateSelectedState({ regions: updatedRegions });
   };
 
@@ -597,7 +599,7 @@ export function StateStructure() {
 
     const locations = currentState.locations || [];
     const updatedLocations = [...locations];
-    updatedLocations[index] = { ...updatedLocations[index], [field]: value };
+    updatedLocations[index] = { ...updatedLocations[index], [field]: value } as StateLocation;
     updateSelectedState({ locations: updatedLocations });
   };
 
@@ -638,7 +640,7 @@ export function StateStructure() {
 
     const strings = currentState.strings || [];
     const updatedStrings = [...strings];
-    updatedStrings[index] = { ...updatedStrings[index], [field]: value };
+    updatedStrings[index] = { ...updatedStrings[index], [field]: value } as StateString;
     updateSelectedState({ strings: updatedStrings });
   };
 

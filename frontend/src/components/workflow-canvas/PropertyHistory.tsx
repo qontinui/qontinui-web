@@ -108,7 +108,7 @@ export const PropertyHistory: React.FC<PropertyHistoryProps> = ({
 
         {/* Changes List */}
         <div className="space-y-3">
-          {changes.map((change, index) => (
+          {changes.map((change) => (
             <div
               key={`${change.property}-${change.timestamp}`}
               className="p-3 rounded bg-gray-800/50 border border-gray-700 space-y-2"

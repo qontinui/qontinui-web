@@ -6,8 +6,7 @@ import type {
 
 export interface StateImageCreationOptions {
   name: string;
-  image: string; // Base64 data URL
-  mask?: string; // Base64 data URL for mask (optional)
+  imageId: string; // ID of ImageAsset in the library (library is source of truth)
   source: string; // Source identifier (e.g., 'pattern-optimization', 'image-extraction')
   fixed?: boolean;
   searchRegion?: SearchRegion; // Optional search region to add to the pattern
@@ -21,20 +20,20 @@ export interface StateImageCreationResult {
 
 /**
  * Creates a StateImage object with proper pattern-based structure
+ * Patterns reference images in the library via imageId (library is source of truth)
  */
 export function createStateImage(
   options: StateImageCreationOptions
 ): StateImage {
-  const { name, image, mask, source, fixed = false, searchRegion } = options;
+  const { name, imageId, source, fixed = false, searchRegion } = options;
 
-  // Create the pattern with search regions
+  // Create the pattern with search regions - imageId references library
   const searchRegions = searchRegion ? [searchRegion] : [];
 
   const pattern = {
     id: `pattern_${Date.now()}`,
     name,
-    image,
-    mask,
+    imageId, // Reference to ImageAsset in library
     searchRegions,
     fixed,
   };
@@ -44,7 +43,7 @@ export function createStateImage(
     name,
     patterns: [pattern],
     shared: false,
-    source,
+    source: source as "upload" | "pattern-optimization" | undefined,
   };
 }
 

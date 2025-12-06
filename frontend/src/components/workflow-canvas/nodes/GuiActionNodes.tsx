@@ -193,18 +193,6 @@ export function FindNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
 }
 
 /**
- * FIND_STATE_IMAGE Node
- */
-export function FindStateImageNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
-  return (
-    <BaseNode
-      {...props}
-      className="gui-action-node find-node find-state-image-node border-amber-400"
-    />
-  );
-}
-
-/**
  * VANISH Node
  */
 export function VanishNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
@@ -279,7 +267,6 @@ export const GuiActionNodes = {
 
   // Find actions
   FIND: FindNode,
-  FIND_STATE_IMAGE: FindStateImageNode,
   VANISH: VanishNode,
   EXISTS: ExistsNode,
   WAIT: WaitNode,

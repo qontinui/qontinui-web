@@ -13,13 +13,14 @@ import {
   Activity,
   Bug,
 } from "lucide-react";
-import { Process, Action, State } from "../../contexts/automation-context";
+import { State } from "../../contexts/automation-context";
+import type { Workflow, Action } from "../../lib/action-schema/action-types";
 import { qontinuiAPI } from "../../lib/qontinui-api-client";
 import { ExecutionDebugger } from "../ExecutionDebugger";
 import { useExecutionDebugger } from "../../stores/execution-debugger-store";
 
 interface ProcessExecutorProps {
-  process: Process;
+  process: Workflow;
   states: State[];
   onComplete?: (success: boolean, results: ExecutionResult[]) => void;
 }
@@ -130,7 +131,6 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
       switch (action.type) {
         case "FIND":
-        case "FIND_STATE_IMAGE":
           // Simulate find operation
           await new Promise((resolve) => setTimeout(resolve, 500));
           success = Math.random() > 0.2; // 80% success rate for demo
@@ -157,11 +157,13 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         case "TYPE":
           await new Promise((resolve) => setTimeout(resolve, 800));
           success = true;
-          addLog(`Typed text: "${action.config.text || ""}"`, "success");
+          const typeConfig = action.config as any;
+          addLog(`Typed text: "${typeConfig.text || ""}"`, "success");
           break;
 
         case "WAIT":
-          const waitTime = action.config.duration || 1000;
+          const waitConfig = action.config as any;
+          const waitTime = waitConfig.duration || 1000;
           await new Promise((resolve) => setTimeout(resolve, waitTime));
           success = true;
           addLog(`Waited ${waitTime}ms`, "success");
@@ -170,9 +172,10 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         case "GO_TO_STATE":
           await new Promise((resolve) => setTimeout(resolve, 400));
           success = Math.random() > 0.1; // 90% success rate
+          const goToStateConfig = action.config as any;
           if (success) {
             addLog(
-              `Transitioned to state: ${action.config.targetState}`,
+              `Transitioned to state: ${goToStateConfig.stateIds?.[0] || "unknown"}`,
               "success"
             );
           } else {
@@ -184,7 +187,8 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         case "RUN_WORKFLOW":
           await new Promise((resolve) => setTimeout(resolve, 1000));
           success = true;
-          addLog(`Running sub-workflow: ${action.config.workflowId}`, "info");
+          const runWorkflowConfig = action.config as any;
+          addLog(`Running sub-workflow: ${runWorkflowConfig.workflowId}`, "info");
           break;
 
         default:
@@ -203,10 +207,12 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       // Handle SET_VARIABLE action for debugger
       if (
         debugEnabled &&
-        action.type === "SET_VARIABLE" &&
-        action.config.variableName
+        action.type === "SET_VARIABLE"
       ) {
-        setVariable(action.config.variableName, action.config.value, index);
+        const setVarConfig = action.config as any;
+        if (setVarConfig.variableName) {
+          setVariable(setVarConfig.variableName, setVarConfig.value, index);
+        }
       }
 
       return {
@@ -282,7 +288,9 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
       setStatus((prev) => ({ ...prev, currentAction: i }));
 
-      const result = await executeAction(process.actions[i], i);
+      const action = process.actions[i];
+      if (!action) continue;
+      const result = await executeAction(action, i);
       results.push(result);
 
       setStatus((prev) => ({
@@ -385,8 +393,10 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       startTime: prev.startTime || Date.now(),
     }));
 
+    const action = process.actions[currentIndex];
+    if (!action) return;
     const result = await executeAction(
-      process.actions[currentIndex],
+      action,
       currentIndex
     );
 

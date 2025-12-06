@@ -478,7 +478,7 @@ function findDisconnectedNodes(workflow: Workflow): string[] {
       "success",
       "parallel",
     ] as const) {
-      const outputs = connections[outputType];
+      const outputs = connections[outputType as keyof typeof connections];
       if (!outputs) continue;
 
       for (const conns of outputs) {

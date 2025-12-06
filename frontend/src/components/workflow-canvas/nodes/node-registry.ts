@@ -15,6 +15,7 @@ import { ControlFlowNodes } from "./ControlFlowNodes";
 import { GuiActionNodes } from "./GuiActionNodes";
 import { DataOperationNodes } from "./DataOperationNodes";
 import { SpecialNodes } from "./SpecialNodes";
+import { CodeBlockNode, CustomFunctionNode } from "./CodeNodes";
 
 /**
  * Node component type
@@ -29,7 +30,6 @@ export type NodeComponent = ComponentType<NodeProps<ReactFlowNode<BaseNodeData>>
 export const NODE_TYPES: Record<ActionType, NodeComponent> = {
   // Find Actions
   FIND: GuiActionNodes.FIND,
-  FIND_STATE_IMAGE: GuiActionNodes.FIND_STATE_IMAGE,
   VANISH: GuiActionNodes.VANISH,
   EXISTS: GuiActionNodes.EXISTS,
   WAIT: GuiActionNodes.WAIT,
@@ -71,6 +71,10 @@ export const NODE_TYPES: Record<ActionType, NodeComponent> = {
   GO_TO_STATE: SpecialNodes.GO_TO_STATE,
   RUN_WORKFLOW: SpecialNodes.RUN_WORKFLOW,
   SCREENSHOT: GuiActionNodes.SCREENSHOT,
+
+  // Code Actions
+  CODE_BLOCK: CodeBlockNode,
+  CUSTOM_FUNCTION: CustomFunctionNode,
 };
 
 /**
@@ -120,13 +124,7 @@ export function getRegisteredNodeTypes(): ActionType[] {
  * Node type groups for UI organization
  */
 export const NODE_TYPE_GROUPS = {
-  find: [
-    "FIND",
-    "FIND_STATE_IMAGE",
-    "VANISH",
-    "EXISTS",
-    "WAIT",
-  ] as ActionType[],
+  find: ["FIND", "VANISH", "EXISTS", "WAIT"] as ActionType[],
   mouse: [
     "CLICK",
     "DOUBLE_CLICK",

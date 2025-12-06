@@ -25,7 +25,7 @@ export function LazyImage({
   onError,
 }: LazyImageProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const isVisible = useIntersectionObserver(ref, {
+  const isVisible = useIntersectionObserver(ref as React.RefObject<Element>, {
     threshold: 0.1,
     rootMargin: "100px", // Start loading 100px before element enters viewport
   });

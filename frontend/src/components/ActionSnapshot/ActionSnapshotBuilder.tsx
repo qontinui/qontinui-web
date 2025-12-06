@@ -74,8 +74,12 @@ export const ActionSnapshotBuilder: React.FC<ActionSnapshotBuilderProps> = ({
   const handleUpdateMatch = (index: number, field: string, value: any) => {
     const updated = [...matches];
     if (field.includes(".")) {
-      const [parent, child] = field.split(".");
-      updated[index][parent][child] = value;
+      const parts = field.split(".");
+      const parent = parts[0];
+      const child = parts[1];
+      if (parent && child) {
+        updated[index][parent][child] = value;
+      }
     } else {
       updated[index][field] = value;
     }

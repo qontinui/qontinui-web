@@ -8,7 +8,6 @@
 import type { Workflow } from "../lib/action-schema/action-types";
 import {
   SequentialToGraphConverter,
-  type ConverterOptions as SeqToGraphOptions,
 } from "../lib/workflow-converter/sequential-to-graph-converter";
 import {
   GraphToSequentialConverter,

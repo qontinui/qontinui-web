@@ -16,11 +16,11 @@ import {
 } from "@/lib/action-schema/action-types";
 import type {
   ClickActionConfig,
-  DoubleClickActionConfig,
-  RightClickActionConfig,
-  TypeActionConfig,
-  WaitActionConfig,
 } from "@/lib/action-schema/configs/mouse-actions";
+import type {
+  WaitActionConfig,
+} from "@/lib/action-schema/configs/find-actions";
+import type { TypeActionConfig } from "@/lib/action-schema/configs/keyboard-actions";
 import type {
   IfActionConfig,
   LoopActionConfig,
@@ -56,11 +56,7 @@ export type NodeCategory =
  */
 export function getNodeCategory(actionType: ActionType): NodeCategory {
   // Find actions
-  if (
-    ["FIND", "FIND_STATE_IMAGE", "VANISH", "EXISTS", "WAIT"].includes(
-      actionType
-    )
-  ) {
+  if (["FIND", "VANISH", "EXISTS", "WAIT"].includes(actionType)) {
     return "find";
   }
 
@@ -151,10 +147,12 @@ export function getNodeSummary(action: Action): string {
   switch (type) {
     // Find Actions
     case "FIND":
+      // Check if this is a stateImage target type
+      const findConfig = config as any;
+      if (findConfig?.target?.type === "stateImage") {
+        return "Find any image from state";
+      }
       return "Find element on screen";
-
-    case "FIND_STATE_IMAGE":
-      return "Find state image";
 
     case "VANISH":
       return "Wait for element to vanish";
@@ -163,7 +161,7 @@ export function getNodeSummary(action: Action): string {
       return "Check if element exists";
 
     case "WAIT":
-      const waitConfig = config as WaitActionConfig;
+      const waitConfig = config as any;
       return `Wait ${waitConfig.duration || 1000}ms`;
 
     // Mouse Actions
@@ -176,26 +174,6 @@ export function getNodeSummary(action: Action): string {
         return "Click at current position";
       }
       return `Click ${clickConfig.target}`;
-
-    case "DOUBLE_CLICK":
-      const doubleClickConfig = config as DoubleClickActionConfig;
-      if (
-        !doubleClickConfig.target ||
-        doubleClickConfig.target.type === "currentPosition"
-      ) {
-        return "Double click at current position";
-      }
-      return "Double click element";
-
-    case "RIGHT_CLICK":
-      const rightClickConfig = config as RightClickActionConfig;
-      if (
-        !rightClickConfig.target ||
-        rightClickConfig.target.type === "currentPosition"
-      ) {
-        return "Right click at current position";
-      }
-      return "Right click element";
 
     case "MOUSE_MOVE":
       return "Move mouse";
@@ -270,7 +248,7 @@ export function getNodeSummary(action: Action): string {
 
     case "SORT":
       const sortConfig = config as SortActionConfig;
-      return `Sort ${sortConfig.order === "desc" ? "descending" : "ascending"}`;
+      return `Sort ${sortConfig.order === "DESC" ? "descending" : "ascending"}`;
 
     case "FILTER":
       const filterConfig = config as FilterActionConfig;
@@ -303,7 +281,7 @@ export function getNodeSummary(action: Action): string {
     case "CODE_BLOCK":
       const codeBlockConfig = config as CodeBlockActionConfig;
       const codePreview = codeBlockConfig.code
-        ? codeBlockConfig.code.split("\n")[0].substring(0, 30) + "..."
+        ? (codeBlockConfig.code.split("\n")[0]?.substring(0, 30) ?? "") + "..."
         : "Python code";
       return codePreview;
 
@@ -445,15 +423,13 @@ export function validateNodeConfig(action: Action): ValidationResult {
   // Type-specific validation
   switch (action.type) {
     case "CLICK":
-    case "DOUBLE_CLICK":
-    case "RIGHT_CLICK":
       // Target is optional - defaults to current position (pure action)
       // No validation error needed
       break;
 
     case "TYPE":
       const typeConfig = action.config as TypeActionConfig;
-      if (!typeConfig.text && !typeConfig.variable) {
+      if (!typeConfig.text && !typeConfig.textSource) {
         warnings.push("No text or variable specified for TYPE action");
       }
       break;
@@ -535,7 +511,6 @@ export function isBranchingNode(actionType: ActionType): boolean {
  */
 export function getActionTypeDisplayName(actionType: ActionType): string {
   const displayNames: Partial<Record<ActionType, string>> = {
-    FIND_STATE_IMAGE: "Find State Image",
     MOUSE_MOVE: "Mouse Move",
     MOUSE_DOWN: "Mouse Down",
     MOUSE_UP: "Mouse Up",

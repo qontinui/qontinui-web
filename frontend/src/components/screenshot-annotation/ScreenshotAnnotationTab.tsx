@@ -5,7 +5,6 @@ import {
   SelectionMode,
   ScreenshotRegion,
   ScreenshotLocation,
-  AnchorType,
 } from "../../types/Screenshot";
 import ScreenshotCanvas from "../ScreenshotTab/ScreenshotCanvas";
 import RegionPropertiesPanel from "../ScreenshotTab/RegionPropertiesPanel";
@@ -16,8 +15,6 @@ import { useAutomation } from "../../contexts/automation-context";
 import {
   StateRegion as ContextStateRegion,
   StateLocation as ContextStateLocation,
-  Position,
-  PositionName,
 } from "../../contexts/automation-context/types";
 import { ScrollArea } from "../ui/scroll-area";
 import { Badge } from "../ui/badge";
@@ -26,7 +23,8 @@ interface ScreenshotAnnotationTabProps {
   states: any[];
 }
 
-// Helper function to convert AnchorType to PositionName
+// Helper function to convert AnchorType to PositionName - currently unused
+/*
 const convertAnchorTypeToPositionName = (
   anchorType?: AnchorType
 ): PositionName | undefined => {
@@ -45,6 +43,7 @@ const convertAnchorTypeToPositionName = (
   };
   return mapping[anchorType];
 };
+*/
 
 // Helper function to convert Screenshot Region to Context StateRegion
 const convertToContextRegion = (
@@ -91,10 +90,10 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
   const [selectedScreenshot, setSelectedScreenshot] =
     useState<Screenshot | null>(null);
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("view");
-  const [selectedRegion, setSelectedRegion] = useState<ScreenshotRegion | null>(
+  const [, setSelectedRegion] = useState<ScreenshotRegion | null>(
     null
   );
-  const [selectedLocation, setSelectedLocation] =
+  const [, setSelectedLocation] =
     useState<ScreenshotLocation | null>(null);
   const [showRegionPanel, setShowRegionPanel] = useState(false);
   const [showLocationPanel, setShowLocationPanel] = useState(false);
@@ -123,7 +122,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                   uploadedAt: ps.uploadedAt,
                   associatedStates: ps.associatedStates || [],
                   regions: ps.regions || [],
-                  locations: ps.locations || [],
+                  locations: (ps.locations || []) as any,
                 });
               };
               img.onerror = () => {
@@ -136,7 +135,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                   uploadedAt: ps.uploadedAt,
                   associatedStates: ps.associatedStates || [],
                   regions: ps.regions || [],
-                  locations: ps.locations || [],
+                  locations: (ps.locations || []) as any,
                 });
               };
               img.src = ps.url;
@@ -890,7 +889,6 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
                     key={location.id}
                     selectedLocation={location}
                     states={states}
-                    screenshots={screenshots}
                     onUpdate={handleLocationUpdate}
                     onDelete={handleLocationDelete}
                   />

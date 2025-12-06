@@ -94,13 +94,13 @@ describe("ActionExpectationsEditor", () => {
       await waitFor(() => {
         expect(mockOnChange).toHaveBeenCalledWith(
           expect.objectContaining({
-            is_terminal_on_failure: false, // Default is true, so clicking toggles to false
+            is_terminal_on_failure: true, // Default is false, so clicking toggles to true
           })
         );
       });
     });
 
-    it("should default to true", () => {
+    it("should default to false", () => {
       render(
         <ActionExpectationsEditor
           expectations={undefined}
@@ -111,8 +111,8 @@ describe("ActionExpectationsEditor", () => {
       const switches = screen.getAllByRole("switch");
       const terminalSwitch = switches[0] as HTMLInputElement;
 
-      // Default should be checked (true)
-      expect(terminalSwitch.getAttribute("data-state")).toBe("checked");
+      // Default should be unchecked (false)
+      expect(terminalSwitch.getAttribute("data-state")).toBe("unchecked");
     });
   });
 

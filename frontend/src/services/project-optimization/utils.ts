@@ -29,8 +29,8 @@ export function calculateStringSimilarity(str1: string, str2: string): number {
 
       if (currRow && prevRow && prevRowPrevCol !== undefined) {
         currRow[j] = Math.min(
-          prevRow[j]! + 1,
-          currRow[j - 1] + 1,
+          (prevRow[j] ?? 0) + 1,
+          (currRow[j - 1] ?? 0) + 1,
           prevRowPrevCol + cost
         );
       }

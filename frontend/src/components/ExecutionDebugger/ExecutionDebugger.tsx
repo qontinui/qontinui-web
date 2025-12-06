@@ -10,7 +10,7 @@ import { ExecutionControls } from "./ExecutionControls";
 import { ActionTimeline } from "./ActionTimeline";
 import { VariableInspector } from "./VariableInspector";
 import { ExecutionLog } from "./ExecutionLog";
-import { Action } from "../../contexts/automation-context/types";
+import type { Action } from "../../lib/action-schema/action-types";
 
 interface ExecutionDebuggerProps {
   actions: Action[];

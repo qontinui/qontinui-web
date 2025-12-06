@@ -26,7 +26,6 @@ export interface Action {
     | "TYPE"
     // Find actions
     | "FIND"
-    | "FIND_STATE_IMAGE"
     | "VANISH"
     | "GO_TO_STATE"
     | "RUN_WORKFLOW"

@@ -6,7 +6,6 @@ import { actionConfigRegistry } from "../ActionConfigRegistry";
 
 // Import all action property components
 export { FindActionProperties } from "./FindActionProperties";
-export { FindStateImageProperties } from "./FindStateImageProperties";
 export { ClickActionProperties } from "./ClickActionProperties";
 export {
   MouseMoveProperties,
@@ -32,7 +31,6 @@ export { CodeBlockActionProperties } from "./code-execution/CodeBlockActionPrope
 
 // Register components with the registry
 import { FindActionProperties } from "./FindActionProperties";
-import { FindStateImageProperties } from "./FindStateImageProperties";
 import { ClickActionProperties } from "./ClickActionProperties";
 import {
   MouseMoveProperties,
@@ -58,11 +56,6 @@ import { CodeBlockActionProperties } from "./code-execution/CodeBlockActionPrope
 
 // Register all action types with their components
 actionConfigRegistry.register("FIND", FindActionProperties, "FIND");
-actionConfigRegistry.register(
-  "FIND_STATE_IMAGE",
-  FindStateImageProperties,
-  "FIND_STATE_IMAGE"
-);
 actionConfigRegistry.register("CLICK", ClickActionProperties, "CLICK");
 actionConfigRegistry.register("MOUSE_MOVE", MouseMoveProperties, "MOUSE_MOVE");
 actionConfigRegistry.registerMultiple(

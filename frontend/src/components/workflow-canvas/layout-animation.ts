@@ -117,7 +117,6 @@ export class LayoutAnimationController {
 
     return new Promise((resolve, reject) => {
       const startTime = performance.now();
-      const endTime = startTime + duration;
       const easingFn = EASING_FUNCTIONS[easing];
 
       // Store cancel callback
@@ -399,13 +398,13 @@ export async function animateAction(
   easing: EasingType = "easeOut"
 ): Promise<void> {
   const controller = new LayoutAnimationController();
-  const fromPosition = action.position ? [...action.position] : toPosition;
+  const fromPosition: [number, number] = action.position ? [...action.position] : toPosition;
 
   await controller.animate(
-    { [action.id]: fromPosition as [number, number] },
+    { [action.id]: fromPosition },
     { [action.id]: toPosition },
     (positions) => {
-      action.position = positions[action.id];
+      action.position = positions[action.id] as [number, number];
     },
     { duration, easing }
   );
@@ -424,9 +423,9 @@ export async function animateActions(
   const fromPositions: PositionMap = {};
 
   for (const action of actions) {
-    fromPositions[action.id] = action.position
+    fromPositions[action.id] = (action.position
       ? [...action.position]
-      : toPositions[action.id];
+      : toPositions[action.id]) as [number, number];
   }
 
   await controller.animate(
@@ -460,7 +459,8 @@ export async function animateStaggered(
 
   for (let i = 0; i < actions.length; i++) {
     const action = actions[i];
-    const toPosition = toPositions[action?.id];
+    if (!action) continue;
+    const toPosition = toPositions[action.id];
 
     if (!toPosition) continue;
 
@@ -479,7 +479,7 @@ export async function animateStaggered(
  */
 export function createZoomAnimation(
   scale: { from: number; to: number },
-  duration: number = 300,
+  _duration: number = 300,
   easing: EasingType = "easeOut"
 ): (progress: number) => number {
   const easingFn = EASING_FUNCTIONS[easing];
@@ -495,7 +495,7 @@ export function createZoomAnimation(
  */
 export function createFadeAnimation(
   opacity: { from: number; to: number },
-  duration: number = 300,
+  _duration: number = 300,
   easing: EasingType = "linear"
 ): (progress: number) => number {
   const easingFn = EASING_FUNCTIONS[easing];

@@ -134,7 +134,7 @@ export function ActiveStatesChecklist({
 
                     {/* State flags */}
                     <div className="flex items-center gap-2 mt-2">
-                      {state.isInitial && (
+                      {state.initial && (
                         <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">
                           Initial
                         </span>
@@ -158,7 +158,7 @@ export function ActiveStatesChecklist({
         <div className="text-xs text-gray-600 text-center p-4 bg-[#1A1A1B]/30 rounded border border-gray-800">
           <Info className="w-4 h-4 mx-auto mb-1 opacity-50" />
           No states are currently active. States become active as the workflow
-          progresses through GO_TO_STATE and FIND_STATE_IMAGE actions.
+          progresses through GO_TO_STATE and Find State actions.
         </div>
       )}
     </div>

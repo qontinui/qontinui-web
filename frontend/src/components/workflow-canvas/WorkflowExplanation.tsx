@@ -47,7 +47,7 @@ interface ExplanationData {
 
 export function WorkflowExplanation({
   workflow,
-  onClose,
+  onClose: _onClose,
 }: WorkflowExplanationProps) {
   const [explanation, setExplanation] = useState<ExplanationData | null>(null);
   const [loading, setLoading] = useState(false);

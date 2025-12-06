@@ -231,7 +231,7 @@ export class AutoSaveService {
       if (this.config.enableConflictDetection) {
         const hasConflict = await this.detectConflict(this.currentWorkflow);
         if (hasConflict) {
-          const resolved = await this.resolveConflict(this.currentWorkflow);
+          const resolved = await this.resolveConflict();
           if (!resolved) {
             throw new Error("Save conflict detected and could not be resolved");
           }
@@ -273,18 +273,6 @@ export class AutoSaveService {
     }
   }
 
-  /**
-   * Save workflow with recovery information
-   */
-  private async saveWithRecovery(workflow: Workflow): Promise<void> {
-    const recoveryData = {
-      workflow,
-      timestamp: new Date().toISOString(),
-      hash: this.hashWorkflow(workflow),
-    };
-
-    localStorage.setItem(this.getRecoveryKey(), JSON.stringify(recoveryData));
-  }
 
   // ==========================================================================
   // History Management

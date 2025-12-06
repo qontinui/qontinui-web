@@ -154,11 +154,11 @@ export async function removeBorder(
           // If pixel doesn't match edge color, include it
           if (
             !colorMatches(
-              r,
-              g,
-              b,
-              edgeColor.r,
-              edgeColor.g,
+              r!,
+              g!,
+              b!,
+              edgeColor.r!,
+              edgeColor.g!,
               edgeColor.b,
               tolerance
             )
@@ -276,10 +276,10 @@ export async function removeBackground(
           const b = imageData.data[idx + 2];
 
           const isBackground = colorMatches(
-            r,
-            g,
-            b,
-            bgColor.r,
+            r!,
+            g!,
+            b!,
+            bgColor.r!,
             bgColor.g,
             bgColor.b,
             tolerance

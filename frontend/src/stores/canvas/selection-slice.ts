@@ -16,7 +16,7 @@ export const createSelectionSlice: StateCreator<
   [["zustand/immer", never]],
   [],
   SelectionSlice
-> = (set, get) => ({
+> = (set) => ({
   // State
   selectedNodes: [],
   selectedEdges: [],

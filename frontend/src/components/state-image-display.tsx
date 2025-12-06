@@ -63,7 +63,7 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
         // Load the mask
         const maskImg = new Image();
         let maskLoadedSuccessfully = false;
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>((resolve) => {
           maskImg.onload = () => {
             console.log("[StateImageDisplay] Mask loaded:", {
               width: maskImg.width,

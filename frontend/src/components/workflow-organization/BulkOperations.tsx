@@ -35,7 +35,6 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Badge } from "../ui/badge";
 import { Progress } from "../ui/progress";
-import { Separator } from "../ui/separator";
 import {
   Select,
   SelectContent,

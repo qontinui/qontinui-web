@@ -180,7 +180,7 @@ export function PermissionGate({
       ? requiredPermission[0]
       : requiredPermission;
     const message =
-      permissionMessages[firstRequired] ||
+      (firstRequired && typeof firstRequired === 'string' && permissionMessages[firstRequired]) ||
       "You do not have permission to access this content.";
 
     return (
@@ -316,11 +316,11 @@ export class PermissionBoundary extends React.Component<
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+  override componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error("Permission error:", error, errorInfo);
   }
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback;

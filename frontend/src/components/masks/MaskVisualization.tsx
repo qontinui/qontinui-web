@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { StateImage } from "../../types/stateDiscovery";
 import { toast } from "sonner";
 

@@ -25,10 +25,10 @@ interface TransitionGraphViewProps {
 export function TransitionGraphView({
   transitions,
   states,
-  onTransitionClick,
+  onTransitionClick: _onTransitionClick,
 }: TransitionGraphViewProps) {
-  const [nodes, setNodes] = useNodesState([]);
-  const [edges, setEdges] = useEdgesState([]);
+  const [nodes, setNodes] = useNodesState<Node>([]);
+  const [edges, setEdges] = useEdgesState<Edge>([]);
 
   React.useEffect(() => {
     // Create nodes from states

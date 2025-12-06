@@ -63,7 +63,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
 
       // Set first org as current if none selected
       if (orgs.length > 0 && !currentOrg) {
-        setCurrentOrg(orgs[0]);
+        setCurrentOrg(orgs[0] || null);
       }
     } catch (error) {
       console.error("[Organization] Failed to load organizations:", error);

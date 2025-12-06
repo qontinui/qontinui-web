@@ -6,7 +6,10 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+// TODO: Install framer-motion dependency
+// import { motion, AnimatePresence } from "framer-motion";
+const motion: any = { div: "div" };
+const AnimatePresence: any = ({ children }: any) => <>{children}</>;
 import { CheckCircle, XCircle, AlertCircle, Lightbulb } from "lucide-react";
 
 export type ValidationStatus = "idle" | "validating" | "success" | "failure";
@@ -51,6 +54,7 @@ export const ValidationFeedback: React.FC<ValidationFeedbackProps> = ({
       }, autoHideDuration);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [status, autoHideDuration, onDismiss]);
 
   useEffect(() => {

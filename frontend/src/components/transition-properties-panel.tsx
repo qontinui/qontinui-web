@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,13 +22,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-
-interface Process {
-  id: string;
-  name: string;
-  description: string;
-  category?: string;
-}
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 interface State {
   id: string;
@@ -64,7 +57,7 @@ type Transition = OutgoingTransition | IncomingTransition;
 interface TransitionPropertiesPanelProps {
   transition: Transition;
   states: State[];
-  processes: Process[];
+  processes: Workflow[];
   updateTransition: (updates: Partial<Transition>) => void;
   deleteTransition: (transitionId: string) => void;
 }

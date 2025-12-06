@@ -68,6 +68,7 @@ export function SessionTimeoutWarning() {
 
       return () => clearInterval(timer);
     }
+    return undefined;
   }, [showWarning, timeRemaining, isLoggedOut]);
 
   const handleExtendSession = async () => {

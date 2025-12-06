@@ -66,6 +66,7 @@ export function AIToolbarButton({
       return () =>
         document.removeEventListener("mousedown", handleClickOutside);
     }
+    return undefined;
   }, [isOpen]);
 
   // Keyboard shortcuts

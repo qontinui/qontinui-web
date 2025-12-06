@@ -11,7 +11,6 @@ import {
   Undo,
   Redo,
   Download,
-  Upload,
   RotateCcw,
   Save,
   Maximize,
@@ -431,7 +430,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                 </label>
                 <Slider
                   value={[brushSize]}
-                  onValueChange={(v) => setBrushSize(v[0])}
+                  onValueChange={(v) => setBrushSize(v[0] ?? 5)}
                   min={1}
                   max={50}
                   step={1}

@@ -198,7 +198,7 @@ export function SelectionBoxManager({
       updateSelection(position);
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = (_e: MouseEvent) => {
       if (!isDragging.current || !state.active) return;
 
       isDragging.current = false;

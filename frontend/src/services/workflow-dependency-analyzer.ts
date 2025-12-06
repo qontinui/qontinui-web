@@ -394,7 +394,6 @@ export class WorkflowDependencyAnalyzer {
 
     const nodes = new Map<string, DependencyNode>();
     const edges: DependencyEdge[] = [];
-    const workflowMap = new Map(workflows.map((w) => [w.id, w]));
 
     // Initialize nodes
     for (const workflow of workflows) {
@@ -472,7 +471,7 @@ export class WorkflowDependencyAnalyzer {
         }
 
         // Mark nodes as circular
-        const node = nodes.get(from);
+        const node = nodes.get(from!);
         if (node) {
           node.isCircular = true;
         }
@@ -722,7 +721,6 @@ export class WorkflowDependencyAnalyzer {
    * Get graph data for visualization (React Flow format)
    */
   getGraphData(workflows: Workflow[]): GraphVisualizationData {
-    const graph = this.buildDependencyGraph(workflows);
     return this.getNodesAndEdges(workflows);
   }
 
@@ -1238,7 +1236,7 @@ export class WorkflowDependencyAnalyzer {
   private normalizeCycle(cycle: string[]): string {
     if (cycle.length === 0) return "";
 
-    const minIndex = cycle.indexOf(Math.min(...cycle.map((id) => id)));
+    const minIndex = cycle.indexOf(String(Math.min(...cycle.map((id) => Number(id)))));
     const rotated = [...cycle.slice(minIndex), ...cycle.slice(0, minIndex)];
     return rotated.join("->");
   }

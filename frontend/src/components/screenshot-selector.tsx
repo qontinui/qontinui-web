@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import {
   Upload,
   Camera,
-  Image as ImageIcon,
+  Image as
   Trash2,
   Check,
 } from "lucide-react";

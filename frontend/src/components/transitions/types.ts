@@ -1,5 +1,4 @@
-import { Transition, State } from "@/contexts/automation-context/types";
-import { Workflow } from "@/lib/action-schema/action-types";
+import { Transition } from "@/contexts/automation-context/types";
 
 export type ViewMode = "matrix" | "list" | "graph" | "statistics";
 

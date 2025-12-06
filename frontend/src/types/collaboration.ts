@@ -258,7 +258,9 @@ export type WebSocketMessageType =
   | "comment_deleted"
   | "activity_update"
   | "ping"
-  | "pong";
+  | "pong"
+  | "connection_state"
+  | "resend_complete";
 
 export interface WebSocketMessage {
   type: WebSocketMessageType;

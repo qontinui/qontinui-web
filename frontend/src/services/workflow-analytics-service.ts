@@ -9,8 +9,6 @@
  * - 'workflow-executions': Detailed execution records
  */
 
-import { Workflow } from "@/lib/action-schema/action-types";
-
 // ============================================================================
 // Types
 // ============================================================================

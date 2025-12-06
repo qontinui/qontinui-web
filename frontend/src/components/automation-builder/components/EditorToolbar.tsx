@@ -25,6 +25,7 @@ import {
   Download,
   Upload,
   Share2,
+  FolderDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { LibraryItem, BuilderMode } from "../types";
@@ -43,6 +44,7 @@ export interface EditorToolbarProps {
   onRedo?: () => void;
   onExport?: () => void;
   onImport?: () => void;
+  onExportProject?: () => void;
   onShare?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
@@ -63,6 +65,7 @@ export function EditorToolbar({
   onRedo,
   onExport,
   onImport,
+  onExportProject,
   onShare,
   canUndo = false,
   canRedo = false,
@@ -190,7 +193,24 @@ export function EditorToolbar({
         {/* Divider */}
         {item && onShare && <div className="h-6 w-px bg-gray-700 mx-1" />}
 
-        {/* Import/Export */}
+        {/* Export Project */}
+        {onExportProject && (
+          <Button
+            onClick={onExportProject}
+            size="sm"
+            variant="ghost"
+            className="text-gray-300 hover:text-white hover:bg-gray-800"
+            title="Export entire project for qontinui-runner"
+          >
+            <FolderDown className="w-4 h-4 mr-2" />
+            Export Project
+          </Button>
+        )}
+
+        {/* Divider */}
+        {onExportProject && <div className="h-6 w-px bg-gray-700 mx-1" />}
+
+        {/* Import/Export Workflow */}
         {item && (
           <>
             {onExport && (
@@ -199,7 +219,7 @@ export function EditorToolbar({
                 size="sm"
                 variant="ghost"
                 className="text-gray-400 hover:text-white hover:bg-gray-800"
-                title="Export"
+                title="Export Workflow"
               >
                 <Download className="w-4 h-4" />
               </Button>
@@ -210,7 +230,7 @@ export function EditorToolbar({
                 size="sm"
                 variant="ghost"
                 className="text-gray-400 hover:text-white hover:bg-gray-800"
-                title="Import"
+                title="Import Workflow"
               >
                 <Upload className="w-4 h-4" />
               </Button>

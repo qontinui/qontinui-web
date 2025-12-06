@@ -79,7 +79,6 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     height: 27,
   });
 
-  const CANVAS_SIZE = 27;
 
   // Initialize canvases when image loads
   useEffect(() => {
@@ -291,8 +290,6 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     const ctx = maskCanvas.getContext("2d");
     if (!ctx) return;
 
-    const { width, height } = imageDimensionsRef.current;
-
     // Draw mask visualization (white = visible, black = masked)
     // Standard format: use RGB brightness to determine visibility
     ctx.putImageData(maskDataRef.current, 0, 0);
@@ -420,16 +417,14 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
       const containerAspect = canvasRect.width / canvasRect.height;
       const imageAspect = width / height;
 
-      let displayWidth, displayHeight;
+      let displayWidth;
 
       if (imageAspect > containerAspect) {
         // Image is wider - fits to width
         displayWidth = canvasRect.width;
-        displayHeight = canvasRect.width / imageAspect;
       } else {
         // Image is taller - fits to height
         displayWidth = canvasRect.height * imageAspect;
-        displayHeight = canvasRect.height;
       }
 
       // Calculate scale factor based on actual displayed size
@@ -460,16 +455,14 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
       const containerAspect = canvasRect.width / canvasRect.height;
       const imageAspect = width / height;
 
-      let displayWidth, displayHeight;
+      let displayWidth;
 
       if (imageAspect > containerAspect) {
         // Image is wider - fits to width
         displayWidth = canvasRect.width;
-        displayHeight = canvasRect.width / imageAspect;
       } else {
         // Image is taller - fits to height
         displayWidth = canvasRect.height * imageAspect;
-        displayHeight = canvasRect.height;
       }
 
       const scale = displayWidth / width;
@@ -620,9 +613,6 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     );
   };
 
-  const handleReset = () => {
-    clearMask();
-  };
 
   const getCurrentMaskedImage = (): string | null => {
     if (!originalCanvasRef.current || !maskDataRef.current || !imageRef.current)

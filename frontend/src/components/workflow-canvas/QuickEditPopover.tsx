@@ -10,7 +10,7 @@
 
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { usePropertyAdapter } from "./property-adapter";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,7 +78,7 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
 
   // Render appropriate quick edit fields based on action type
   const renderQuickEditFields = () => {
-    switch (action.type) {
+    switch (action.type as string) {
       case "CLICK":
         return (
           <div className="space-y-3">
@@ -243,11 +243,9 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
         className="w-80 bg-[#1e1e1e] border-gray-700"
         side="right"
         align="start"
-        style={
-          position
-            ? { position: "fixed", top: position.y, left: position.x }
-            : undefined
-        }
+        {...(position && {
+          style: { position: "fixed", top: position.y, left: position.x } as React.CSSProperties,
+        })}
       >
         <div className="space-y-4">
           {/* Header */}

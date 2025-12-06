@@ -14,15 +14,6 @@ export interface FindActionConfig {
 }
 
 /**
- * FIND_STATE_IMAGE - Find an image associated with a state
- */
-export interface FindStateImageActionConfig {
-  stateId: string;
-  imageId: string;
-  searchOptions?: SearchOptions;
-}
-
-/**
  * VANISH - Wait for a target to disappear
  */
 export interface VanishActionConfig {

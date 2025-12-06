@@ -11,7 +11,6 @@ import type {
   PublishVersionRequest,
   InstallPackageRequest,
   RatePackageRequest,
-  ReportPackageRequest,
 } from "@/types/code-packages";
 
 /**

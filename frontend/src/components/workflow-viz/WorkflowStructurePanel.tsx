@@ -9,7 +9,7 @@ import React from "react";
 import type { Workflow, Action } from "@/lib/action-schema/action-types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, AlertCircle } from "lucide-react";
+import { CheckCircle2, Circle } from "lucide-react";
 
 interface WorkflowStructurePanelProps {
   workflow: Workflow;
@@ -61,7 +61,6 @@ function SequentialView({
       {actions.map((action, index) => {
         const isCurrent = index === currentActionIndex;
         const isPast = index < currentActionIndex;
-        const isFuture = index > currentActionIndex;
 
         return (
           <button
@@ -159,19 +158,18 @@ function getActionSummary(action: Action): string {
 
   switch (action.type) {
     case "FIND":
-    case "FIND_STATE_IMAGE":
       return config?.targetName || "Find target";
 
     case "CLICK":
       return `Click ${config?.targetName || "target"}`;
 
-    case "TYPE_TEXT":
+    case "TYPE":
       return `Type: "${config?.text?.substring(0, 30) || "..."}"`;
 
     case "WAIT":
       return `Wait ${config?.duration || 1000}ms`;
 
-    case "STATE_ACTIVATOR":
+    case "GO_TO_STATE":
       const stateIds = config?.stateIds || [];
       return `Activate ${stateIds.length} state(s)`;
 

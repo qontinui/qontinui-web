@@ -7,6 +7,7 @@ import { SearchOptions } from "./search-options";
 
 export type TargetType =
   | "image"
+  | "stateImage"
   | "region"
   | "text"
   | "coordinates"
@@ -19,6 +20,18 @@ export type TargetType =
 export interface ImageTarget {
   type: "image";
   imageId: string;
+  searchOptions?: SearchOptions;
+}
+
+/**
+ * StateImageTarget - Find any image from a state definition
+ * When selected, all images from the state are used for matching
+ */
+export interface StateImageTarget {
+  type: "stateImage";
+  stateId: string;
+  /** Image IDs from the state - populated when state is selected */
+  imageIds: string[];
   searchOptions?: SearchOptions;
 }
 
@@ -78,6 +91,7 @@ export interface ResultByImageTarget {
 
 export type TargetConfig =
   | ImageTarget
+  | StateImageTarget
   | RegionTarget
   | TextTarget
   | CoordinatesTarget

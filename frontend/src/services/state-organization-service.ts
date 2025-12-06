@@ -1017,7 +1017,7 @@ export class StateOrganizationService {
         const outTrans = transition as OutgoingTransition;
         edges.push({
           from: outTrans.fromState,
-          to: outTrans.toState,
+          to: outTrans.toState!,
           transitionId: transition.id,
           workflowCount: transition.workflows.length,
         });

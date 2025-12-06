@@ -165,13 +165,10 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     }
 
     // Initialize upload progress for all files
-    const initialProgress: Record<string, number> = {};
     const initialUploading: UploadingImage[] = [];
     fileArray.forEach((file) => {
-      initialProgress[file.name] = 0;
       initialUploading.push({ name: file.name, progress: 0 });
     });
-    setUploadProgress(initialProgress);
     setUploadingFiles(initialUploading);
 
     // Upload files sequentially to avoid overwhelming the backend
@@ -206,7 +203,6 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
           parseInt(projectId ?? "0", 10),
           file,
           (progress: number) => {
-            setUploadProgress((prev: Record<string, number>) => ({ ...prev, [file.name]: progress }));
             setUploadingFiles((prev: any[]) =>
               prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
             );

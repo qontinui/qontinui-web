@@ -4,7 +4,7 @@
  * Custom hook for managing folder state and operations
  */
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import { WorkflowFolder } from "./types";
 import {
   createFolder,

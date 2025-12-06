@@ -259,7 +259,7 @@ function validateConnections(
 
           // Validate target input index
           const targetAction = getActionById(workflow, conn.action)!;
-          const inputCount = getActionInputCount(targetAction.type);
+          const inputCount = getActionInputCount();
           if (conn.index >= inputCount) {
             errors.push({
               type: "invalid_input_index",

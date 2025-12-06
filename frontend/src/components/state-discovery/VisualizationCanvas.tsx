@@ -5,7 +5,6 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { StateImage } from "@/types/stateDiscovery";
-import { cn } from "@/lib/utils";
 
 interface VisualizationCanvasProps {
   screenshot: File;
@@ -61,6 +60,7 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
       setImageUrl(url);
       return () => URL.revokeObjectURL(url);
     }
+    return undefined;
   }, [screenshot]);
 
   // Draw canvas
@@ -120,8 +120,6 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
     if (!imageData) return { darkPercentage: 0, lightPercentage: 0 };
 
     const { x, y, x2, y2 } = stateImage;
-    const width = x2 - x;
-    const height = y2 - y;
 
     let darkPixels = 0;
     let lightPixels = 0;
@@ -265,10 +263,10 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
       }
 
       // Draw rectangle or mask
+      // If masks are enabled and StateImage has a mask, show mask density visualization
       const width = stateImage.x2 - stateImage.x;
       const height = stateImage.y2 - stateImage.y;
 
-      // If masks are enabled and StateImage has a mask, show mask density visualization
       if (
         showMasks &&
         stateImage.hasMask &&

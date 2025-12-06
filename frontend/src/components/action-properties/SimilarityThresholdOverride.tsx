@@ -12,7 +12,7 @@ interface SimilarityThresholdOverrideProps {
 }
 
 /**
- * Reusable similarity threshold override component for FIND and FIND_STATE_IMAGE actions.
+ * Reusable similarity threshold override component for FIND actions.
  */
 export function SimilarityThresholdOverride({
   action,

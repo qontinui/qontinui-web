@@ -41,7 +41,12 @@ import {
   EditorToolbar,
 } from "./index";
 import { ShareProjectDialog } from "./components/ShareProjectDialog";
+import { ProjectExportDialog } from "./components/ProjectExportDialog";
 import { useProjectSharing } from "./hooks/useProjectSharing";
+import {
+  ExportDialog,
+  ImportDialog,
+} from "@/components/workflow-canvas/ImportExportDialog";
 
 export function AutomationBuilder() {
   // State
@@ -49,12 +54,15 @@ export function AutomationBuilder() {
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [projectExportDialogOpen, setProjectExportDialogOpen] = useState(false);
 
   // Context
   const { addWorkflow, updateWorkflow } = useAutomation();
 
   // Hooks
-  const { allItems, updateItem, deleteItem, createWorkflow } =
+  const { updateItem, deleteItem, createWorkflow } =
     useItemManagement();
   const { handleItemSelection } = useModeDetection({
     currentMode: mode,
@@ -312,6 +320,43 @@ export function AutomationBuilder() {
     setShareDialogOpen(true);
   }, [selectedItem]);
 
+  /**
+   * Handle opening the export dialog
+   */
+  const handleExport = useCallback(() => {
+    if (!selectedItem) return;
+    setExportDialogOpen(true);
+  }, [selectedItem]);
+
+  /**
+   * Handle opening the import dialog
+   */
+  const handleImport = useCallback(() => {
+    setImportDialogOpen(true);
+  }, []);
+
+  /**
+   * Handle opening the project export dialog
+   */
+  const handleExportProject = useCallback(() => {
+    setProjectExportDialogOpen(true);
+  }, []);
+
+  /**
+   * Handle importing a workflow
+   */
+  const handleImportWorkflow = useCallback(
+    (workflow: Workflow) => {
+      addWorkflow(workflow);
+      setSelectedItem(workflow);
+      setImportDialogOpen(false);
+      toast.success("Workflow imported", {
+        description: `Imported "${workflow.name}"`,
+      });
+    },
+    [addWorkflow]
+  );
+
   // Render the editor based on mode
   const renderEditor = () => {
     if (!selectedItem) {
@@ -433,6 +478,9 @@ export function AutomationBuilder() {
           onDuplicate={handleDuplicateItem}
           onConvert={() => selectedItem && openConversion(selectedItem)}
           onShare={handleShare}
+          onExport={handleExport}
+          onImport={handleImport}
+          onExportProject={handleExportProject}
         />
 
         {/* Editor Content */}
@@ -481,6 +529,28 @@ export function AutomationBuilder() {
           onGenerateLink={generateShareLink}
         />
       )}
+
+      {/* Export Dialog */}
+      {selectedItem && (
+        <ExportDialog
+          workflow={selectedItem}
+          open={exportDialogOpen}
+          onClose={() => setExportDialogOpen(false)}
+        />
+      )}
+
+      {/* Import Dialog */}
+      <ImportDialog
+        open={importDialogOpen}
+        onImport={handleImportWorkflow}
+        onClose={() => setImportDialogOpen(false)}
+      />
+
+      {/* Project Export Dialog */}
+      <ProjectExportDialog
+        open={projectExportDialogOpen}
+        onOpenChange={setProjectExportDialogOpen}
+      />
     </div>
   );
 }

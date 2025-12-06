@@ -54,7 +54,7 @@ export function ImageWithRefresh({
     try {
       const response = await apiClient.refreshPresignedUrl(
         projectId,
-        imageAsset.s3_key
+        imageAsset.s3_key ?? ""
       );
 
       setCurrentUrl(response.url);

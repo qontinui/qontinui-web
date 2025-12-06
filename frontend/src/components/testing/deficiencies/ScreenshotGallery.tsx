@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -122,12 +122,13 @@ export function ScreenshotGallery({
   };
 
   // Add keyboard listener
-  useState(() => {
+  useEffect(() => {
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", handleKeyDown as any);
       return () => window.removeEventListener("keydown", handleKeyDown as any);
     }
-  });
+    return undefined;
+  }, [handleKeyDown]);
 
   if (screenshots.length === 0) {
     return (
@@ -216,7 +217,7 @@ export function ScreenshotGallery({
                     variant="outline"
                     size="sm"
                     onClick={() =>
-                      handleDownload(screenshots[selectedIndex], selectedIndex)
+                      handleDownload(screenshots[selectedIndex] || "", selectedIndex)
                     }
                   >
                     <Download className="h-4 w-4" />
@@ -245,7 +246,7 @@ export function ScreenshotGallery({
                 }}
               >
                 <Image
-                  src={screenshots[selectedIndex]}
+                  src={screenshots[selectedIndex] || ""}
                   alt={`Screenshot ${selectedIndex + 1}`}
                   width={1200}
                   height={800}

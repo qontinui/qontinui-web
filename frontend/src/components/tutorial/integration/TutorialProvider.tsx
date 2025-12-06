@@ -12,7 +12,10 @@ import React, {
   useState,
   useCallback,
 } from "react";
-import { useLocation } from "react-router-dom";
+// TODO: This component uses react-router-dom but Next.js uses its own routing
+// Replace with Next.js usePathname/useRouter
+// import { useLocation } from "react-router-dom";
+const useLocation = () => ({ pathname: "/" });
 import { useTutorialStore } from "@/stores/tutorial-store";
 import type {
   Tutorial,

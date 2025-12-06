@@ -23,7 +23,7 @@ export class TokenValidator {
         console.error("[TokenValidator] Invalid token format");
         return null;
       }
-      const payload = JSON.parse(atob(parts[1]));
+      const payload = JSON.parse(atob(parts[1]!));
       return payload;
     } catch (error) {
       console.error("[TokenValidator] Failed to decode token:", error);

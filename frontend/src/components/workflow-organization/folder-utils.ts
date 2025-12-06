@@ -4,7 +4,7 @@
  * Helper functions for folder operations
  */
 
-import { WorkflowFolder, FolderTreeNode } from "./types";
+import { WorkflowFolder } from "./types";
 import { Workflow } from "../../lib/action-schema/action-types";
 
 /**

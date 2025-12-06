@@ -14,7 +14,7 @@ interface RegionSelectorProps {
  * Single Responsibility: Handle region selection on screenshots
  */
 export const RegionSelector: React.FC<RegionSelectorProps> = ({
-  screenshotId,
+  screenshotId: _screenshotId,
   screenshotUrl,
   initialRegion,
   onRegionChange,

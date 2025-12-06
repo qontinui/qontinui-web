@@ -5,7 +5,6 @@ import { useTestRuns, useExportTestRun } from "@/hooks/useTesting";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -29,7 +28,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Filter,
+
 } from "lucide-react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
@@ -52,7 +51,6 @@ export function TestRunsList({ projectId, workflowId }: TestRunsListProps) {
   });
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [dateRangeFilter, setDateRangeFilter] = useState<string>("all");
 
   const { data, isLoading, error } = useTestRuns(filters);
   const exportTestRun = useExportTestRun();

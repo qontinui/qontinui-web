@@ -130,6 +130,7 @@ export default function DevResetPage() {
     } else if (redirectCountdown === 0) {
       router.push("/");
     }
+    return undefined;
   }, [isClearing, redirectCountdown, router]);
 
   if (process.env.NODE_ENV !== "development") {

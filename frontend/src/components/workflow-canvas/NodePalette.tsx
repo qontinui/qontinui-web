@@ -26,7 +26,6 @@ import {
   Clock,
   Minimize2,
   Maximize2,
-  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import "./NodePalette.css";
@@ -83,7 +82,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
   const recentTypes = useRecentNodeTypes(5);
 
   const { addNodeAtCenter } = useClickToAdd();
-  const dragHandlers = usePaletteDrag(canvasRef || { current: null });
+  const dragHandlers = usePaletteDrag(canvasRef as React.RefObject<HTMLElement>);
 
   // Get favorite and recent metadata
   const favoriteNodes = useMemo(
@@ -423,6 +422,7 @@ export const FloatingPalette: React.FC<FloatingPaletteProps> = ({
         document.removeEventListener("mouseup", handleMouseUp);
       };
     }
+    return undefined;
   }, [isDragging, dragStart]);
 
   return (

@@ -66,7 +66,7 @@ interface CommentThreadProps {
 export function CommentThread({
   thread,
   currentUserId,
-  currentUserName,
+  currentUserName: _currentUserName,
   availableUsers = [],
   onAddComment,
   onEditComment,

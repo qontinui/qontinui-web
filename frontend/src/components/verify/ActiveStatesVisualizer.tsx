@@ -7,7 +7,6 @@
  */
 
 import React, { useRef, useEffect, useState } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,8 +35,8 @@ const STATE_COLORS = [
 /**
  * Get a consistent color for a state based on its ID
  */
-function getStateColor(stateId: string, index: number): string {
-  return STATE_COLORS[index % STATE_COLORS.length];
+function getStateColor(_stateId: string, index: number): string {
+  return STATE_COLORS[index % STATE_COLORS.length] ?? STATE_COLORS[0] ?? "#00D9FF";
 }
 
 export function ActiveStatesVisualizer({

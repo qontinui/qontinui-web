@@ -62,9 +62,11 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
   }
 
   // Get connection details
-  const connection = workflow.connections[sourceId]?.[outputType]?.[
-    Number(outputIndex)
-  ]?.find((c: any) => c.action === targetId);
+  const connection = outputType && sourceId
+    ? (workflow.connections[sourceId] as any)?.[outputType]?.[
+        Number(outputIndex)
+      ]?.find((c: any) => c.action === targetId)
+    : undefined;
 
   if (!connection) {
     return (
@@ -76,7 +78,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
 
   const handleDeleteConnection = () => {
     if (confirm("Are you sure you want to delete this connection?")) {
-      deleteConnection(sourceId, outputType, Number(outputIndex), targetId);
+      deleteConnection(sourceId!, outputType!, Number(outputIndex!), targetId!);
     }
   };
 

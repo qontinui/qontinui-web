@@ -92,7 +92,7 @@ class ProjectDB {
   private isConnectionClosed(db: IDBDatabase): boolean {
     try {
       // Try to create a transaction - will throw if connection is closed
-      db.transaction(Object.values(STORES)[0], "readonly");
+      db.transaction(Object.values(STORES)[0] as string, "readonly");
       return false;
     } catch {
       return true;

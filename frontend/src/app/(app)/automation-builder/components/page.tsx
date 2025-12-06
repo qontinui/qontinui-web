@@ -164,7 +164,7 @@ const BUILT_IN_COMPONENTS: BuiltInComponent[] = [
   {
     id: "builtin-screenshot-verify",
     name: "Screenshot and Verify",
-    description: "SCREENSHOT + FIND_STATE_IMAGE combination",
+    description: "SCREENSHOT + Find State combination",
     category: "UI",
     icon: Eye,
     example: "Capture screenshot and verify state",

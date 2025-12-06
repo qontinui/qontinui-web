@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import {  useMemo } from "react";
 import { useStateGraph } from "@/hooks/useTesting";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   ReactFlow,
   Node,
@@ -145,8 +144,8 @@ export function StateGraphVisualization({
     return { initialNodes: nodes, initialEdges: edges };
   }, [graphData]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
   if (isLoading) {
     return (
@@ -221,7 +220,7 @@ export function StateGraphVisualization({
             <MiniMap
               className="bg-[#1A1A1B] border border-gray-700"
               nodeColor={(node) => {
-                const rate = node.data.success_rate;
+                const rate = node.data.success_rate as number;
                 if (rate >= 90) return "#10b981";
                 if (rate >= 70) return "#eab308";
                 return "#ef4444";

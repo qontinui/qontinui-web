@@ -46,11 +46,11 @@ import type {
   StateLocation,
   StateString,
   StateImage,
-  PositionName,
+  Pattern,
   IncomingTransition,
   Transition,
-  Workflow,
 } from "@/contexts/automation-context";
+import type { Workflow } from "@/lib/action-schema/action-types";
 import { createFindAnyStateImageWorkflow } from "@/lib/workflow-helpers";
 
 interface StatePropertiesPanelProps {
@@ -85,7 +85,7 @@ interface StatePropertiesPanelProps {
   updateString: (
     index: number,
     field: keyof StateString,
-    value: string
+    value: string | boolean
   ) => void;
   removeString: (index: number) => void;
 }
@@ -339,7 +339,7 @@ export function StatePropertiesPanel({
 
                   // Auto-detect if any pattern in this StateImage is shared (appears in other states)
                   const currentPatternImages = (stateImage.patterns || [])
-                    .map((p) => p.image)
+                    .map((p) => p.imageId)
                     .filter((img) => img && img !== "");
 
                   const otherStatesWithThesePatterns = allStates.filter(
@@ -348,8 +348,8 @@ export function StatePropertiesPanel({
                       s.stateImages?.some((img) =>
                         img.patterns?.some(
                           (p) =>
-                            currentPatternImages.includes(p.image) &&
-                            p.image !== ""
+                            currentPatternImages.includes(p.imageId) &&
+                            p.imageId !== ""
                         )
                       )
                   );
@@ -480,7 +480,7 @@ export function StatePropertiesPanel({
                                             updatedPatterns[pIdx] = {
                                               ...updatedPatterns[pIdx],
                                               name: e.target.value,
-                                            };
+                                            } as Pattern;
                                             updateStateImage(index, {
                                               patterns: updatedPatterns,
                                             });
@@ -541,7 +541,7 @@ export function StatePropertiesPanel({
                                             updatedPatterns[pIdx] = {
                                               ...updatedPatterns[pIdx],
                                               fixed: checked as boolean,
-                                            };
+                                            } as Pattern;
                                             updateStateImage(index, {
                                               patterns: updatedPatterns,
                                             });
@@ -826,7 +826,7 @@ export function StatePropertiesPanel({
                                                   updatedPatterns[pIdx] = {
                                                     ...updatedPatterns[pIdx],
                                                     similarity: 0.85,
-                                                  };
+                                                  } as Pattern;
                                                   updateStateImage(index, {
                                                     patterns: updatedPatterns,
                                                   });
@@ -853,7 +853,7 @@ export function StatePropertiesPanel({
                                           updatedPatterns[pIdx] = {
                                             ...updatedPatterns[pIdx],
                                             imageId: imageId,
-                                          };
+                                          } as Pattern;
                                           updateStateImage(index, {
                                             patterns: updatedPatterns,
                                             source: "upload",
@@ -982,24 +982,18 @@ export function StatePropertiesPanel({
                                           !!sr.referenceImageId;
                                         const linkedInfo = hasLinkedPosition
                                           ? (() => {
-                                              const refStateId =
+                                              const refImageId =
                                                 state.regions?.find(
                                                   (r) => r.id === sr.id
-                                                )?.referenceStateId;
-                                              const refState = refStateId
-                                                ? allStates.find(
-                                                    (s) => s.id === refStateId
+                                                )?.referenceImageId;
+                                              const refImage = refImageId
+                                                ? state.stateImages?.find(
+                                                    (img) => img.id === refImageId
                                                   )
                                                 : null;
-                                              const refImage =
-                                                refState?.stateImages?.find(
-                                                  (img) =>
-                                                    img.id ===
-                                                    sr.referenceImageId
-                                                );
-                                              return refState && refImage
+                                              return refImage
                                                 ? {
-                                                    stateName: refState.name,
+                                                    stateName: state.name,
                                                     imageName:
                                                       refImage.name ||
                                                       "Unnamed",
@@ -1382,25 +1376,20 @@ export function StatePropertiesPanel({
                                 return imageInCurrentState.name;
 
                               // Then check in the referenceStateId if it exists
-                              if (location.referenceStateId) {
-                                const refState = allStates.find(
-                                  (s) => s.id === location.referenceStateId
-                                );
-                                const imageInRefState =
-                                  refState?.stateImages?.find(
-                                    (img) =>
-                                      img.id === location.referenceImageId
-                                  );
-                                if (imageInRefState)
-                                  return imageInRefState.name;
-                              }
-
-                              // Finally check all states
-                              for (const s of allStates) {
-                                const img = s.stateImages?.find(
+                              if (location.referenceImageId) {
+                                // First check current state
+                                const imageInState = state.stateImages?.find(
                                   (img) => img.id === location.referenceImageId
                                 );
-                                if (img) return img.name;
+                                if (imageInState) return imageInState.name;
+
+                                // Then check all states
+                                for (const s of allStates) {
+                                  const img = s.stateImages?.find(
+                                    (img) => img.id === location.referenceImageId
+                                  );
+                                  if (img) return img.name;
+                                }
                               }
                               return "Unknown";
                             })()}
@@ -2064,6 +2053,8 @@ export function StatePropertiesPanel({
                             updatedPatterns.push({
                               id: `pattern_${Date.now()}`,
                               name: `Pattern ${updatedPatterns.length + 1}`,
+                              imageId: "",
+                              fixed: false,
                               searchRegions: [],
                             });
                           }

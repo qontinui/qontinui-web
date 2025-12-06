@@ -33,7 +33,6 @@ export function GraphWorkflowBuilder() {
     addWorkflow,
     updateWorkflow,
     deleteWorkflow,
-    triggerSave,
   } = useAutomation();
 
   // Load workflows from context
@@ -53,6 +52,7 @@ export function GraphWorkflowBuilder() {
     const newWorkflow: Workflow = {
       id: `workflow-${Date.now()}`,
       name: "New Workflow",
+      version: "1.0.0",
       format: "graph",
       actions: [],
       connections: {},
@@ -495,8 +495,8 @@ export function GraphWorkflowBuilder() {
         >
           {selectedAction ? (
             <ActionProperties
-              action={selectedAction}
-              onUpdateAction={handleUpdateAction}
+              action={selectedAction as any}
+              onUpdateAction={(action) => handleUpdateAction(action as any)}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-gray-500">

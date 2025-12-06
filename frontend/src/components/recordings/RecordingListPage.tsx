@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { useAutomation } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,15 +44,12 @@ import {
 import type {
   Recording,
   RecordingStatus,
-  ProcessingPhase,
-  RecordingListResponse,
 } from "@/types/recording";
 import { formatDistanceToNow } from "date-fns";
 
 export function RecordingListPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
   const { projectId: contextProjectId } = useAutomation();
 
   // Get project ID from context or URL (same logic as RequireProject)

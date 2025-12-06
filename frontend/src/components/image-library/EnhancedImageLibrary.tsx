@@ -67,7 +67,6 @@ import type {
   ImageViewMode,
   ImageGridSize,
   ImageWithMetadata,
-  ImageTag,
 } from "./types";
 import { useImageOrganization } from "./useImageOrganization";
 import {
@@ -123,7 +122,6 @@ export function EnhancedImageLibrary() {
     updateCollection,
     deleteCollection,
     addImagesToCollection,
-    addTagToImages,
     currentFilter,
     setCurrentFilter,
     selectedImageIds,
@@ -265,7 +263,7 @@ export function EnhancedImageLibrary() {
       const uploadPromises = fileArray.map(async (file) => {
         try {
           // Upload immediately (works offline)
-          const result = await uploadScreenshotOffline(file, projectId, {
+          const result = await uploadScreenshotOffline(file, Number(projectId), {
             name: file.name,
             onProgress: (progress, _status) => {
               setUploadingFiles((prev) =>
@@ -283,7 +281,7 @@ export function EnhancedImageLibrary() {
             size: file.size,
             createdAt: new Date(result.screenshot.uploadedAt),
             usageCount: 0,
-            usedIn: [],
+            usage: [],
             source: "uploaded",
             projectName: projectName,
             s3_key: result.screenshot.s3Key,

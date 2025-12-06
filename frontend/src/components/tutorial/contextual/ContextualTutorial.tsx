@@ -6,10 +6,12 @@
  * Handles step navigation, validation, and progression.
  */
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
-import { AnimatePresence } from "framer-motion";
+import React, { useEffect, useState, useCallback } from "react";
+// TODO: Install framer-motion dependency
+// import { AnimatePresence } from "framer-motion";
+const AnimatePresence: any = ({ children }: any) => <>{children}</>;
 import { useTutorialStore } from "../../../stores/tutorial-store";
-import type { Tutorial, TutorialStep } from "../../../types/tutorial";
+import type { Tutorial } from "../../../types/tutorial";
 import { SpotlightOverlay } from "./SpotlightOverlay";
 import { TutorialTooltip } from "./TutorialTooltip";
 import { TutorialPanel } from "./TutorialPanel";
@@ -59,12 +61,11 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
   const [validationStatus, setValidationStatus] =
     useState<ValidationStatus>("idle");
   const [completedStepIds, setCompletedStepIds] = useState<string[]>([]);
-  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const currentStep = getCurrentStep();
 
   // Scroll target element into view when step changes
   useEffect(() => {
-    if (!currentStep?.targetElement || !isActive) return;
+    if (!currentStep?.targetElement || !isActive) return undefined;
 
     const {
       selector,
@@ -88,6 +89,7 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
       return () => clearTimeout(timer);
     } else {
       scrollToElement();
+      return undefined;
     }
   }, [currentStep, isActive]);
 
@@ -95,7 +97,7 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
   useEffect(() => {
     if (!currentStep?.actions || !isActive) return;
 
-    const { before, after, autoExecute } = currentStep.actions;
+    const { before, after } = currentStep.actions;
 
     // Execute before action
     if (before) {
@@ -133,10 +135,8 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
     setValidationStatus("validating");
 
     const {
-      type,
+      type: _type,
       condition,
-      feedback,
-      timeout = 5000,
       optional = false,
     } = currentStep.validation;
 

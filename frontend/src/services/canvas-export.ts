@@ -85,7 +85,7 @@ export class CanvasExportService {
         case "svg":
           return await this.exportSVG(workflow, canvasElement, options);
         case "pdf":
-          return await this.exportPDF(workflow, canvasElement, options);
+          return await this.exportPDF();
         case "json":
           return this.exportJSON(workflow, options);
         case "markdown":

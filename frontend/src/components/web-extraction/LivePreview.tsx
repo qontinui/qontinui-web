@@ -9,13 +9,9 @@ export function LivePreview() {
   );
   const screenshots = useExtractionStore((state) => state.screenshots);
   const states = useExtractionStore((state) => state.states);
-  const elements = useExtractionStore((state) => state.elements);
   const selectedStateId = useExtractionStore((state) => state.selectedStateId);
   const showStateBoundaries = useExtractionStore(
     (state) => state.showStateBoundaries
-  );
-  const showElementLabels = useExtractionStore(
-    (state) => state.showElementLabels
   );
   const selectState = useExtractionStore((state) => state.selectState);
 

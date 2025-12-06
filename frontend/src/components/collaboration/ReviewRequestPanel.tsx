@@ -15,8 +15,6 @@ import {
   AlertCircle,
   Send,
   Loader2,
-  User,
-  Calendar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,13 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+// Removed unused Select components - all functionality has been replaced with custom implementation
 import {
   Card,
   CardContent,

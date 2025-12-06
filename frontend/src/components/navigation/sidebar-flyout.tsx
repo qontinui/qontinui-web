@@ -83,7 +83,9 @@ export function SidebarFlyout({
   const isChildActive = (route: string): boolean => {
     if (!activeRoute) return false;
     const basePath = route.split("?")[0] ?? route;
-    return activeRoute.startsWith(basePath);
+    // Use exact match for base paths to prevent /automation-builder from matching /automation-builder/states
+    // Only use startsWith if the route has a trailing segment indicator or query params
+    return activeRoute === basePath || activeRoute.startsWith(basePath + "?");
   };
 
   if (!mounted) {

@@ -336,9 +336,6 @@ export interface SchedulerStatistics {
   averageIterationCount: number;
 }
 
-// Import Workflow type for context
-import type { Workflow } from "@/lib/action-schema/action-types";
-
 // Context type
 export interface AutomationContextType {
   // Project

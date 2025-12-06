@@ -320,6 +320,9 @@ export interface TutorialStep {
   /** Optional setup/teardown actions */
   actions?: StepActions;
 
+  /** Optional action instruction string to display to user */
+  action?: string;
+
   /** Optional flag to wait for user action before auto-advancing */
   waitForUserAction?: boolean;
 

@@ -128,7 +128,7 @@ class ServiceWorkerManager {
     // Try to use Background Sync API
     if ("sync" in this.registration) {
       try {
-        await this.registration.sync.register(tag);
+        await (this.registration.sync as { register: (tag: string) => Promise<void> }).register(tag);
         console.log(`[ServiceWorker] Background sync registered: ${tag}`);
       } catch (error) {
         console.error("[ServiceWorker] Background sync failed:", error);

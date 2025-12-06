@@ -19,7 +19,6 @@ import {
   ConversionPreview,
   ConversionResult,
 } from "@/services/format-converter";
-import { getLayoutService } from "@/services/layout-service";
 import { LayoutStyle } from "@/lib/workflow-layout/auto-layout";
 import { ConversionPreview as ConversionPreviewComponent } from "./ConversionPreview";
 
@@ -124,7 +123,6 @@ export function FormatSwitcherDialog({
   const [previewWorkflow, setPreviewWorkflow] = useState<Workflow | null>(null);
 
   const converter = useMemo(() => getFormatConverter(), []);
-  const layoutService = useMemo(() => getLayoutService(), []);
 
   // Load conversion preview when dialog opens
   useEffect(() => {
@@ -156,7 +154,7 @@ export function FormatSwitcherDialog({
       if (targetFormat === "graph") {
         result = await converter.convertToGraph(workflow, {
           autoLayout: true,
-          layoutStyle: selectedLayout,
+          layoutStyle: selectedLayout as "tree" | "horizontal" | "hierarchical" | undefined,
           validate: true,
         });
       } else {
@@ -183,7 +181,7 @@ export function FormatSwitcherDialog({
       if (targetFormat === "graph") {
         result = await converter.convertToGraph(workflow, {
           autoLayout: true,
-          layoutStyle: selectedLayout,
+          layoutStyle: selectedLayout as "tree" | "horizontal" | "hierarchical" | undefined,
           validate: true,
         });
       } else {
@@ -214,7 +212,6 @@ export function FormatSwitcherDialog({
 
   const canConvert = conversionPreview?.canConvert ?? false;
   const targetInfo = FORMAT_INFO[targetFormat];
-  const currentInfo = FORMAT_INFO[currentFormat];
 
   return (
     <div className="format-switcher-overlay">
@@ -498,7 +495,7 @@ interface FormatCardProps {
 }
 
 function FormatCard({
-  format,
+  format: _format,
   info,
   selected,
   disabled,

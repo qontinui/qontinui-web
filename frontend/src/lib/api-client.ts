@@ -182,7 +182,7 @@ class ApiClient {
   }
 
   async getCurrentUser(): Promise<User> {
-    return authService.getCurrentUser();
+    return authService.getCurrentUser() as Promise<User>;
   }
 
   async updateCurrentUser(data: UserUpdate): Promise<User> {

@@ -186,6 +186,7 @@ export function useCodeExecutionFiles(
 
       return () => clearInterval(intervalId);
     }
+    return undefined;
   }, [autoRefresh, projectId, fetchFiles]);
 
   return {

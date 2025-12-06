@@ -593,11 +593,12 @@ export class MCPClient {
         throw error;
       }
 
-      if (error.name === "AbortError") {
+      const err = error as Error;
+      if (err.name === "AbortError") {
         throw new MCPError("Request timeout", 408);
       }
 
-      throw new MCPError(error.message || "Network error", 0, error);
+      throw new MCPError(err.message || "Network error", 0, error);
     }
   }
 

@@ -353,7 +353,7 @@ export function PatternOptimizationProvider({
               imageData,
               screenshot.region
             );
-            const base64Data = croppedImage.split(",")[1];
+            const base64Data = croppedImage.split(",")[1] ?? "";
             screenshots.push(base64Data);
 
             // Since we're sending cropped regions, the coordinates are now relative to the crop

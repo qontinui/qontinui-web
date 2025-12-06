@@ -39,14 +39,14 @@ import {
   Edit2,
 } from "lucide-react";
 import { AuthDialog } from "@/components/auth-dialog";
-import { TabStateProvider, useTabState } from "@/contexts/tab-state-context";
+import { TabStateProvider } from "@/contexts/tab-state-context";
 import { StateStructure } from "@/components/state-machine";
 import { ImagesManager } from "@/components/images-manager";
-import { ScreenshotAnnotationTab } from "@/components/screenshot-annotation/ScreenshotAnnotationTab";
+import ScreenshotAnnotationTab from "@/components/screenshot-annotation/ScreenshotAnnotationTab";
 import { PatternOptimizationSimplified } from "@/components/pattern-optimization/PatternOptimizationSimplified";
 import { ImageExtractionTab } from "@/components/image-extraction/ImageExtractionTab";
-import { ScreenshotUploadTab } from "@/components/ScreenshotTab/ScreenshotUploadTab";
-import { StateDiscoveryTab } from "@/components/state-discovery/StateDiscoveryTab";
+import ScreenshotUploadTab from "@/components/ScreenshotTab/ScreenshotUploadTab";
+import StateDiscoveryTab from "@/components/state-discovery/StateDiscoveryTab";
 import { BackgroundRemovalTab } from "@/components/background-removal/BackgroundRemovalTab";
 import { PatternMatchingTest } from "@/components/PatternMatching/PatternMatchingTest";
 import { ProcessTestRunner } from "@/components/IntegrationTests/ProcessTestRunner";
@@ -838,7 +838,7 @@ function AutomationBuilderContent() {
                 value="pattern-matching"
                 className="flex-1 min-h-0 overflow-hidden mt-0"
               >
-                <PatternMatchingTest screenshots={screenshots} />
+                <PatternMatchingTest screenshots={screenshots as unknown as import("@/contexts/automation-context/types").Screenshot[]} />
               </TabsContent>
               <TabsContent
                 value="integration-tests"

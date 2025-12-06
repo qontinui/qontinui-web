@@ -6,10 +6,11 @@
  */
 
 import { Action, ActionPropertiesComponentProps } from "./types";
+import React from "react";
 
 export type ActionPropertiesComponent = (
   props: ActionPropertiesComponentProps
-) => JSX.Element;
+) => React.ReactElement;
 
 interface ActionConfig {
   component: ActionPropertiesComponent;

@@ -44,7 +44,7 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
   const [opacity, setOpacity] = useState(1);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
-  const { copy, duplicate, deleteActions, updateAction } = useCanvasStore();
+  const { copy, duplicate, deleteActions } = useCanvasStore();
 
   // Actions
   const actions: ToolbarAction[] = [
@@ -121,7 +121,7 @@ export function MiniToolbar({ nodeIds, position, onClose }: MiniToolbarProps) {
         </div>
 
         {/* Actions */}
-        {actions.map((action, index) => (
+        {actions.map((action) => (
           <button
             key={action.id}
             onClick={action.onClick}

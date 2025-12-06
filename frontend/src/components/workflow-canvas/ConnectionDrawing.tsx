@@ -55,7 +55,6 @@ export function ConnectionPreviewLine({
 }) {
   // Calculate smooth bezier path
   const dx = end.x - start.x;
-  const dy = end.y - start.y;
 
   const controlPoint1X = start.x + dx * 0.5;
   const controlPoint1Y = start.y;
@@ -104,8 +103,8 @@ export function ConnectionPreviewLine({
 
 export function ConnectionDrawing({
   state,
-  onComplete,
-  onCancel,
+  onComplete: _onComplete,
+  onCancel: _onCancel,
 }: ConnectionDrawingProps) {
   if (!state.active || !state.sourcePosition || !state.currentPosition) {
     return null;
@@ -209,9 +208,10 @@ export function useConnectionDrawing() {
   }, []);
 
   const completeConnection = useCallback(
-    (targetNodeId: string, targetIndex: number = 0) => {
+    (targetNodeId: string, targetHandleId: string) => {
       if (!state.sourceNodeId) return;
 
+      const targetIndex = parseInt(targetHandleId.split("-").pop() || "0");
       finishConnecting(targetNodeId, targetIndex);
 
       setState({

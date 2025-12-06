@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
 import { Play, StopCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAutomation } from "@/contexts/automation-context";
@@ -31,7 +30,6 @@ import type {
  * - Each test run is different due to random selection from historical data
  */
 export default function IntegrationTestsPage() {
-  const params = useParams();
   const { workflows, states, categories } = useAutomation();
 
   // State
@@ -98,6 +96,9 @@ export default function IntegrationTestsPage() {
           successRate: status.success_rate,
           totalActions: status.total_actions,
           executedActions: status.successful_actions,
+          totalSteps: status.total_actions,
+          successfulSteps: status.successful_actions,
+          duration: status.duration || 0,
         };
 
         updatedResults.push(result);
@@ -131,6 +132,7 @@ export default function IntegrationTestsPage() {
         pollIntervalRef.current = null;
       }
       setCurrentExecution(null);
+      return;
     }
   }, [activeSessionIds, workflows]);
 
@@ -142,14 +144,14 @@ export default function IntegrationTestsPage() {
 
       // Then poll every 1 second
       pollIntervalRef.current = setInterval(pollWorkflowStatus, 1000);
-
-      return () => {
-        if (pollIntervalRef.current) {
-          clearInterval(pollIntervalRef.current);
-          pollIntervalRef.current = null;
-        }
-      };
     }
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
   }, [isRunning, activeSessionIds, pollWorkflowStatus]);
 
   /**
@@ -163,7 +165,6 @@ export default function IntegrationTestsPage() {
     setTestResults([]);
     setCompletedWorkflows(0);
     setActiveSessionIds(new Map());
-    setWorkflowHistoricalIds(new Map());
 
     const newSessionIds = new Map<string, string>();
     const newHistoricalIds = new Map<string, number[]>();
@@ -259,9 +260,7 @@ export default function IntegrationTestsPage() {
               actionType: action.type,
               actionName: action.name || `Step ${i + 1}`,
               patternName:
-                (action.type === "FIND_STATE_IMAGE" && "imageId" in action.config)
-                  ? action.config.imageId
-                  : (action.type === "FIND" && "target" in action.config && typeof action.config.target === 'object' && action.config.target?.type === 'image')
+                (action.type === "FIND" && "target" in action.config && typeof action.config.target === 'object' && action.config.target?.type === 'image')
                   ? action.config.target?.imageId
                   : undefined,
               success: stepResult.success,
@@ -281,9 +280,7 @@ export default function IntegrationTestsPage() {
               actionType: action.type,
               actionName: action.name || `Step ${i + 1}`,
               patternName:
-                (action.type === "FIND_STATE_IMAGE" && "imageId" in action.config)
-                  ? action.config.imageId
-                  : (action.type === "FIND" && "target" in action.config && typeof action.config.target === 'object' && action.config.target?.type === 'image')
+                (action.type === "FIND" && "target" in action.config && typeof action.config.target === 'object' && action.config.target?.type === 'image')
                   ? action.config.target?.imageId
                   : undefined,
               success: false,
@@ -351,7 +348,6 @@ export default function IntegrationTestsPage() {
     }
 
     setActiveSessionIds(newSessionIds);
-    setWorkflowHistoricalIds(newHistoricalIds);
     setIsRunning(false);
     setCurrentExecution(null);
   };

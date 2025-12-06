@@ -58,6 +58,7 @@ export function EarlyAccessWelcomeModal({
         return () => clearTimeout(timer);
       }
     }
+    return undefined;
   }, [controlledOpen]);
 
   const handleClose = () => {

@@ -29,10 +29,6 @@ interface UseProjectSharingOptions {
   enabled?: boolean;
 }
 
-interface ShareProjectOptions {
-  expiresAt?: string;
-}
-
 export function useProjectSharing({
   projectId,
   enabled = true,

@@ -12,8 +12,6 @@ import type {
   CanvasStore,
   WorkflowSlice,
   Workflow,
-  ValidationResult,
-  ValidationError,
 } from "./types";
 
 export const createWorkflowSlice: StateCreator<

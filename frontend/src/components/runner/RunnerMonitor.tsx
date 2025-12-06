@@ -18,8 +18,6 @@ import {
   XCircle,
   AlertCircle,
   Monitor,
-  Play,
-  Square,
   RefreshCw,
 } from "lucide-react";
 import {
@@ -27,7 +25,7 @@ import {
   SessionStartEvent,
   ScreenshotEvent,
   LogEvent,
-  SessionEndEvent,
+
 } from "@/lib/runner-websocket";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
@@ -42,7 +40,7 @@ interface SessionInfo extends SessionStartEvent {
   error_message?: string;
 }
 
-export function RunnerMonitor({ projectId }: RunnerMonitorProps) {
+export function RunnerMonitor({ projectId: _projectId }: RunnerMonitorProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [currentSession, setCurrentSession] = useState<SessionInfo | null>(
     null

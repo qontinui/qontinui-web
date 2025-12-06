@@ -375,7 +375,7 @@ export function ArchitectureDiagram({
   };
 
   const handleComponentDoubleClick = (component: Component) => {
-    if (component.hasDrillDown && component.id) {
+    if (component.hasDrillDown && component.id && onDrillDown) {
       onDrillDown(component.id);
     }
   };

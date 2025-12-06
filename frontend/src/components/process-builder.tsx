@@ -15,7 +15,6 @@ import {
   Plus,
   Play,
   Camera,
-  Layers,
   ArrowRight,
   Target,
   ChevronRight,
@@ -67,7 +66,6 @@ interface Action {
     | "LOOP"
     // Other actions
     | "FIND"
-    | "FIND_STATE_IMAGE"
     | "VANISH"
     | "GO_TO_STATE"
     | "RUN_WORKFLOW";
@@ -210,8 +208,8 @@ export function ProcessBuilder() {
             selectedItem={selectedItem as any}
             onSelectItem={handleSelectItem as any}
             onDeleteItem={handleDeleteItem as any}
-            onUpdateProcess={handleUpdateProcess as any}
-            onCreateProcess={createNewProcess}
+            onUpdateWorkflow={handleUpdateProcess as any}
+            onCreateSequential={createNewProcess}
             onConvertItem={handleConvertItem as any}
           />
         </div>
@@ -485,7 +483,7 @@ export function ProcessBuilder() {
       {/* Transition Dialog */}
       {showTransitionDialog && transitionType === "outgoing" && (
         <OutgoingTransitionBuilder
-          preselectedProcess={selectedProcess?.id}
+          preselectedWorkflow={selectedProcess?.id}
           onClose={() => {
             setShowTransitionDialog(false);
             setTransitionType(null);
@@ -494,7 +492,7 @@ export function ProcessBuilder() {
       )}
       {showTransitionDialog && transitionType === "incoming" && (
         <IncomingTransitionBuilder
-          preselectedProcess={selectedProcess?.id}
+          preselectedWorkflow={selectedProcess?.id}
           onClose={() => {
             setShowTransitionDialog(false);
             setTransitionType(null);

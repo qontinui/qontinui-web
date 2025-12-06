@@ -11,6 +11,7 @@ import {
 } from "./export-schema";
 
 import { validateWorkflowConnections } from "./workflow-validator";
+import { CURRENT_VERSION } from "./config-migration/migrations";
 
 // Import types from new action schema
 import {
@@ -27,7 +28,7 @@ import type {
 import { Screenshot } from "../types/Screenshot";
 
 export class ConfigExporter {
-  private version = "2.0.0"; // Updated to 2.0.0 for workflows
+  private version = CURRENT_VERSION;
 
   /**
    * Export the current configuration to Qontinui format
@@ -530,18 +531,16 @@ export class ConfigExporter {
       }
     }
 
-    // Handle FIND_STATE_IMAGE action: convert 'state' to 'stateId'
-    if (action.type === "FIND_STATE_IMAGE" && (config as any).state) {
-      const stateId = (config as any).state;
+    // Handle stateImage target: add stateName for readability in exported JSON
+    if (
+      action.type === "FIND" &&
+      (config as any).target?.type === "stateImage" &&
+      (config as any).target?.stateId
+    ) {
+      const stateId = (config as any).target.stateId;
       const state = states?.find((s) => s.id === stateId);
-
-      // Convert UI field 'state' to schema field 'stateId'
-      (config as any).stateId = stateId;
-      delete (config as any).state;
-
-      // Add stateName for readability in exported JSON
       if (state) {
-        (config as any).stateName = state.name;
+        (config as any).target.stateName = state.name;
       }
     }
 
