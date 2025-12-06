@@ -6,7 +6,7 @@
  * the qontinui library's MockMode.
  */
 
-import type { Workflow } from "@/types";
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 /**
  * Current workflow test execution state
@@ -115,6 +115,11 @@ export interface HistoricalDataStats {
   hasHistoricalData: boolean;
   oldestRun: string | null;
   newestRun: string | null;
+  automationRunsCount?: number;
+  totalActionsCount?: number;
+  stateCoveragePercentage?: number;
+  transitionsRecorded?: number;
+  lastUpdated?: string;
 }
 
 /**

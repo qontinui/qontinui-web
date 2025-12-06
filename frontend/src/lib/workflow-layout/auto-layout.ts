@@ -202,6 +202,8 @@ export class AutoLayout {
         for (let j = i + 1; j < workflow.actions.length; j++) {
           const a1 = workflow.actions[i];
           const a2 = workflow.actions[j];
+          if (!a1 || !a2) continue;
+
           const [x1, y1] = a1.position || [0, 0];
           const [x2, y2] = a2.position || [0, 0];
 
@@ -213,12 +215,14 @@ export class AutoLayout {
           const fx = (dx / distance) * force;
           const fy = (dy / distance) * force;
 
-          const f1 = forces.get(a1.id)!;
-          const f2 = forces.get(a2.id)!;
-          f1[0] -= fx;
-          f1[1] -= fy;
-          f2[0] += fx;
-          f2[1] += fy;
+          const f1 = forces.get(a1.id);
+          const f2 = forces.get(a2.id);
+          if (f1 && f2) {
+            f1[0] -= fx;
+            f1[1] -= fy;
+            f2[0] += fx;
+            f2[1] += fy;
+          }
         }
       }
 
@@ -782,6 +786,8 @@ export class AutoLayout {
 
     // Mark all actions that have incoming connections
     Object.values(workflow.connections).forEach((connGroup) => {
+      if (!connGroup) return;
+
       ["main", "error", "success", "parallel"].forEach((type) => {
         const connections = connGroup[type as keyof typeof connGroup];
         if (connections) {

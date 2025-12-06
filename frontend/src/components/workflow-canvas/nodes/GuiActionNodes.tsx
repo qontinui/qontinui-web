@@ -11,26 +11,6 @@
 import React from "react";
 import { NodeProps } from "@xyflow/react";
 import { BaseNode, BaseNodeData, CompactNode } from "./BaseNode";
-import type {
-  ClickActionConfig,
-  DoubleClickActionConfig,
-  RightClickActionConfig,
-  DragActionConfig,
-  ScrollActionConfig,
-  MouseMoveActionConfig,
-} from "@/lib/action-schema/configs/mouse-actions";
-import type {
-  TypeActionConfig,
-  KeyPressActionConfig,
-  HotkeyActionConfig,
-} from "@/lib/action-schema/configs/keyboard-actions";
-import type {
-  FindActionConfig,
-  VanishActionConfig,
-  ExistsActionConfig,
-  WaitActionConfig,
-} from "@/lib/action-schema/configs/find-actions";
-import type { ScreenshotActionConfig } from "@/lib/action-schema/configs/state-actions";
 
 // =============================================================================
 // Mouse Action Nodes
@@ -112,8 +92,6 @@ export function MouseUpNode(props: NodeProps<BaseNodeData>) {
  * DRAG Node
  */
 export function DragNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as DragActionConfig;
-
   return (
     <BaseNode
       {...props}
@@ -126,8 +104,6 @@ export function DragNode(props: NodeProps<BaseNodeData>) {
  * SCROLL Node
  */
 export function ScrollNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as ScrollActionConfig;
-
   return (
     <BaseNode
       {...props}
@@ -144,10 +120,6 @@ export function ScrollNode(props: NodeProps<BaseNodeData>) {
  * TYPE Node
  */
 export function TypeNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as TypeActionConfig;
-  const text = config.text || "";
-  const preview = text.length > 20 ? `${text.substring(0, 20)}...` : text;
-
   return (
     <BaseNode
       {...props}
@@ -160,8 +132,6 @@ export function TypeNode(props: NodeProps<BaseNodeData>) {
  * KEY_PRESS Node
  */
 export function KeyPressNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as KeyPressActionConfig;
-
   return (
     <BaseNode
       {...props}
@@ -198,8 +168,6 @@ export function KeyUpNode(props: NodeProps<BaseNodeData>) {
  * HOTKEY Node
  */
 export function HotkeyNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as HotkeyActionConfig;
-
   return (
     <BaseNode
       {...props}
@@ -216,8 +184,6 @@ export function HotkeyNode(props: NodeProps<BaseNodeData>) {
  * FIND Node
  */
 export function FindNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as FindActionConfig;
-
   return (
     <BaseNode
       {...props}
@@ -242,8 +208,6 @@ export function FindStateImageNode(props: NodeProps<BaseNodeData>) {
  * VANISH Node
  */
 export function VanishNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as VanishActionConfig;
-
   return (
     <BaseNode
       {...props}
@@ -256,8 +220,6 @@ export function VanishNode(props: NodeProps<BaseNodeData>) {
  * EXISTS Node
  */
 export function ExistsNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as ExistsActionConfig;
-
   return (
     <BaseNode
       {...props}
@@ -270,9 +232,6 @@ export function ExistsNode(props: NodeProps<BaseNodeData>) {
  * WAIT Node
  */
 export function WaitNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as WaitActionConfig;
-  const duration = config.duration || 1000;
-
   return (
     <CompactNode
       {...props}
@@ -289,8 +248,6 @@ export function WaitNode(props: NodeProps<BaseNodeData>) {
  * SCREENSHOT Node
  */
 export function ScreenshotNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as ScreenshotActionConfig;
-
   return (
     <BaseNode
       {...props}

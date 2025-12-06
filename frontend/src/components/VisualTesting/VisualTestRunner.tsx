@@ -126,6 +126,7 @@ const VisualTestRunner: React.FC<VisualTestRunnerProps> = ({
     for (let i = 0; i < testCases.length; i++) {
       setCurrentTestIndex(i);
       const testCase = testCases[i];
+      if (!testCase) continue;
       const startTime = Date.now();
 
       try {

@@ -395,17 +395,21 @@ export function getMetricsInDateRange(
     if (!workflowGroups[exec.workflowId]) {
       workflowGroups[exec.workflowId] = [];
     }
-    workflowGroups[exec.workflowId].push(exec);
+    workflowGroups[exec.workflowId]?.push(exec);
   });
 
-  return Object.entries(workflowGroups).map(([workflowId, execs]) =>
-    calculateMetrics(
+  return Object.entries(workflowGroups).map(([workflowId, execs]) => {
+    const firstExec = execs[0];
+    if (!firstExec) {
+      throw new Error(`No executions found for workflow ${workflowId}`);
+    }
+    return calculateMetrics(
       workflowId,
-      execs[0].workflowName,
+      firstExec.workflowName,
       execs,
-      execs[0].folderId
-    )
-  );
+      firstExec.folderId
+    );
+  });
 }
 
 /**
@@ -623,17 +627,22 @@ export function exportAnalyticsReport(timeRange?: TimeRange): AnalyticsReport {
     if (!workflowGroups[exec.workflowId]) {
       workflowGroups[exec.workflowId] = [];
     }
-    workflowGroups[exec.workflowId].push(exec);
+    workflowGroups[exec.workflowId]?.push(exec);
   });
 
   const workflowMetrics = Object.entries(workflowGroups).map(
-    ([workflowId, execs]) =>
-      calculateMetrics(
+    ([workflowId, execs]) => {
+      const firstExec = execs[0];
+      if (!firstExec) {
+        throw new Error(`No executions found for workflow ${workflowId}`);
+      }
+      return calculateMetrics(
         workflowId,
-        execs[0].workflowName,
+        firstExec.workflowName,
         execs,
-        execs[0].folderId
-      )
+        firstExec.folderId
+      );
+    }
   );
 
   // Calculate aggregated stats

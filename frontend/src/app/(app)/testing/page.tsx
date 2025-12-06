@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { TestRunsList } from "@/components/testing/TestRunsList";
 import { CoverageTrendChart } from "@/components/testing/CoverageTrendChart";
 import { ReliabilityStats } from "@/components/testing/ReliabilityStats";

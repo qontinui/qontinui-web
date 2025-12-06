@@ -178,6 +178,7 @@ export function ImageCanvas({
       // Check in reverse order (top to bottom)
       for (let i = boxes.length - 1; i >= 0; i--) {
         const box = boxes[i];
+        if (!box) continue;
         const handle = getHandleAtPoint(x, y, box);
         if (handle) {
           return { box, handle };

@@ -28,6 +28,7 @@ export interface LinearizabilityResult {
    */
   details?: {
     entryPointCount: number;
+    branchingNodeCount: number;
     mergeNodeCount: number;
     parallelBranchCount: number;
     cycleCount: number;
@@ -45,6 +46,7 @@ export class LinearizabilityChecker {
     const issues: string[] = [];
     const details = {
       entryPointCount: 0,
+      branchingNodeCount: 0,
       mergeNodeCount: 0,
       parallelBranchCount: 0,
       cycleCount: 0,
@@ -76,7 +78,11 @@ export class LinearizabilityChecker {
       );
     }
 
-    // Check 2: Merge nodes (actions with multiple inputs)
+    // Check 2: Branching nodes (actions with multiple outputs)
+    const branchingNodes = this.findBranchingNodes(workflow);
+    details.branchingNodeCount = branchingNodes.length;
+
+    // Check 3: Merge nodes (actions with multiple inputs)
     const mergeNodes = this.findMergeNodes(workflow);
     details.mergeNodeCount = mergeNodes.length;
     if (mergeNodes.length > 0) {
@@ -85,7 +91,7 @@ export class LinearizabilityChecker {
       );
     }
 
-    // Check 3: Parallel execution
+    // Check 4: Parallel execution
     const parallelBranches = this.findParallelBranches(workflow);
     details.parallelBranchCount = parallelBranches.length;
     if (parallelBranches.length > 0) {
@@ -94,7 +100,7 @@ export class LinearizabilityChecker {
       );
     }
 
-    // Check 4: Cycles (except valid LOOP back-edges)
+    // Check 5: Cycles (except valid LOOP back-edges)
     const cycles = this.detectNonLoopCycles(workflow);
     details.cycleCount = cycles.length;
     if (cycles.length > 0) {
@@ -103,7 +109,7 @@ export class LinearizabilityChecker {
       );
     }
 
-    // Check 5: IF branches must eventually converge or terminate
+    // Check 6: IF branches must eventually converge or terminate
     const ifIssues = this.checkIfBranchStructure(workflow);
     issues.push(...ifIssues);
 
@@ -112,6 +118,37 @@ export class LinearizabilityChecker {
       issues,
       details,
     };
+  }
+
+  /**
+   * Find all branching nodes (actions with multiple outgoing connections)
+   */
+  private findBranchingNodes(workflow: Workflow): string[] {
+    if (!workflow.connections) {
+      return [];
+    }
+
+    const branchingNodes: string[] = [];
+
+    Object.entries(workflow.connections).forEach(([actionId, outputs]) => {
+      // Count total outputs across all output types
+      let outputCount = 0;
+      ["main", "error", "success", "parallel"].forEach((type) => {
+        const connections = outputs[type as keyof typeof outputs];
+        if (connections) {
+          connections.forEach((outputConnections) => {
+            outputCount += outputConnections.length;
+          });
+        }
+      });
+
+      // If action has more than one output, it's a branching node
+      if (outputCount > 1) {
+        branchingNodes.push(actionId);
+      }
+    });
+
+    return branchingNodes;
   }
 
   /**
@@ -282,7 +319,7 @@ export class LinearizabilityChecker {
       const trueBranch = connections.main[0];
       const falseBranch = connections.main[1];
 
-      if (trueBranch.length === 0 && falseBranch.length === 0) {
+      if (trueBranch && falseBranch && trueBranch.length === 0 && falseBranch.length === 0) {
         issues.push(`IF action ${ifAction.id} has no outgoing connections`);
       }
     });

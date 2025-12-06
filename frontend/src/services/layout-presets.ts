@@ -354,12 +354,20 @@ export function updateCustomPreset(
 
   if (index === -1) return false;
 
+  const current = customPresets[index];
+  if (!current) return false;
+
   customPresets[index] = {
-    ...customPresets[index],
+    ...current,
     ...updates,
     id, // Preserve ID
     builtIn: false, // Cannot change built-in status
-  };
+    category: updates.category ?? current.category,
+    style: updates.style ?? current.style,
+    options: updates.options ?? current.options,
+    name: updates.name ?? current.name,
+    description: updates.description ?? current.description,
+  } as LayoutPreset;
 
   saveCustomPresetsToStorage(customPresets);
   return true;
@@ -402,8 +410,9 @@ export function createPresetFromSettings(
     description,
     style,
     options,
-    tags,
+    tags: tags ?? [],
     icon: "star",
+    category: "custom",
   });
 }
 
@@ -422,8 +431,9 @@ export function duplicatePreset(
     description: preset.description,
     style: preset.style,
     options: { ...preset.options },
-    icon: preset.icon,
-    tags: preset.tags ? [...preset.tags] : undefined,
+    icon: preset.icon ?? "star",
+    tags: preset.tags ? [...preset.tags] : [],
+    category: "custom",
   });
 }
 
@@ -524,8 +534,9 @@ export function importCustomPresets(json: string): {
           description: preset.description || "",
           style: preset.style,
           options: preset.options,
-          icon: preset.icon,
-          tags: preset.tags,
+          icon: preset.icon ?? "star",
+          tags: preset.tags ?? [],
+          category: preset.category ?? "custom",
         });
 
         success++;

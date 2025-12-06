@@ -20,7 +20,6 @@ import React, {
   useCallback,
   useMemo,
   useEffect,
-  useRef,
 } from "react";
 import {
   ReactFlow,
@@ -35,9 +34,7 @@ import {
   useReactFlow,
   ReactFlowProvider,
   NodeMouseHandler,
-  EdgeMouseHandler,
   MarkerType,
-  Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
@@ -50,24 +47,18 @@ import {
   AlertCircle,
   TrendingUp,
   Link2,
-  Eye,
   EyeOff,
-  MoreVertical,
   FileText,
   GitBranch,
   Target,
   ZoomIn,
   ZoomOut,
   Maximize2,
-  RefreshCw,
-  ChevronRight,
-  ChevronDown,
   X,
-  Settings2,
   BarChart3,
   Layers,
 } from "lucide-react";
-import { Workflow, Action } from "../../lib/action-schema/action-types";
+import { Workflow } from "../../lib/action-schema/action-types";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
@@ -78,8 +69,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuLabel,
-  DropdownMenuCheckboxItem,
 } from "../ui/dropdown-menu";
 import {
   Select,
@@ -564,11 +553,9 @@ function applyTreeLayout(
  * Export graph as PNG
  */
 async function exportAsPNG(
-  reactFlowInstance: any,
-  filename: string = "dependency-graph.png"
+  _reactFlowInstance: any,
+  _filename: string = "dependency-graph.png"
 ) {
-  const { getNodes } = reactFlowInstance;
-
   // Use html2canvas or similar - for now just alert
   alert("PNG export would be implemented with html2canvas or similar library");
 }
@@ -577,9 +564,9 @@ async function exportAsPNG(
  * Export graph as SVG
  */
 function exportAsSVG(
-  nodes: WorkflowNode[],
-  edges: DependencyEdge[],
-  filename: string = "dependency-graph.svg"
+  _nodes: WorkflowNode[],
+  _edges: DependencyEdge[],
+  _filename: string = "dependency-graph.svg"
 ) {
   alert("SVG export would generate an SVG representation of the graph");
 }
@@ -636,7 +623,7 @@ function exportAsGraphML(
 
   // Edges
   dependencyMap.forEach((info, workflowId) => {
-    info.dependencies.forEach((depId, index) => {
+    info.dependencies.forEach((depId) => {
       graphml += `    <edge source="${workflowId}" target="${depId}"/>
 `;
     });
@@ -813,7 +800,7 @@ function DependencyGraphInner({
   const [selectedFilter, setSelectedFilter] = useState<
     "all" | "dependencies" | "dependents" | "unused" | "critical"
   >("all");
-  const [hideUnused, setHideUnused] = useState(false);
+  const [hideUnused] = useState(false);
   const [highlightedWorkflows, setHighlightedWorkflows] = useState<Set<string>>(
     new Set()
   );
@@ -1037,14 +1024,14 @@ function DependencyGraphInner({
 
   // Handlers
   const handleNodeClick: NodeMouseHandler = useCallback(
-    (event, node) => {
+    (_event, node) => {
       onSelectWorkflow(node.id);
     },
     [onSelectWorkflow]
   );
 
   const handleNodeDoubleClick: NodeMouseHandler = useCallback(
-    (event, node) => {
+    (_event, node) => {
       onOpenWorkflow(node.id);
     },
     [onOpenWorkflow]

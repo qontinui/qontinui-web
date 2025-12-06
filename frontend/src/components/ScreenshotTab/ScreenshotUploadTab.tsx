@@ -159,7 +159,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
     );
     if (invalidFiles.length > 0) {
       toast.error("Invalid file type", {
-        description: `${invalidFiles[0].name} is not an image file.`,
+        description: `${invalidFiles[0]?.name ?? "Unknown file"} is not an image file.`,
       });
       return;
     }
@@ -203,7 +203,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
         // Upload to S3 via API
         const result = await apiClient.uploadProjectImage(
-          projectId,
+          parseInt(projectId ?? "0", 10),
           file,
           (progress) => {
             setUploadProgress((prev) => ({ ...prev, [file.name]: progress }));
@@ -426,7 +426,7 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
 
       // Upload using existing upload logic
       const result = await apiClient.uploadProjectImage(
-        projectId,
+        parseInt(projectId ?? "0", 10),
         file,
         (progress) => {
           setUploadingFiles([{ name: filename, progress }]);

@@ -189,7 +189,7 @@ export const useLayoutHistory = create<LayoutHistoryStore>()(
 
         set({ currentIndex: newIndex });
 
-        return entry;
+        return entry ?? null;
       },
 
       redo: () => {
@@ -202,7 +202,7 @@ export const useLayoutHistory = create<LayoutHistoryStore>()(
 
         set({ currentIndex: newIndex });
 
-        return entry;
+        return entry ?? null;
       },
 
       canUndo: () => {
@@ -222,7 +222,7 @@ export const useLayoutHistory = create<LayoutHistoryStore>()(
         if (index === -1) return null;
 
         set({ currentIndex: index });
-        return state.history[index];
+        return state.history[index] ?? null;
       },
 
       clear: () => {

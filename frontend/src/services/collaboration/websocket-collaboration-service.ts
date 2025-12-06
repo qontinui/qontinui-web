@@ -20,6 +20,7 @@ import type {
   CursorMoveMessage,
   LockUpdateMessage,
   ResourceUpdateMessage,
+  ResourceType,
   Lock,
   Comment,
   Activity,

@@ -90,20 +90,26 @@ export function createFindAnyStateImageWorkflow(state: State): Workflow {
 
     // Connect to previous action (if not first)
     if (index > 0) {
-      const prevActionId = actions[index - 1].id;
-      // Connect through the 'false' branch (else path) of previous IF
-      if (!connections[prevActionId]) {
-        connections[prevActionId] = {};
+      const prevAction = actions[index - 1];
+      if (prevAction) {
+        const prevActionId = prevAction.id;
+        // Connect through the 'false' branch (else path) of previous IF
+        if (!connections[prevActionId]) {
+          connections[prevActionId] = {};
+        }
+        const prevConn = connections[prevActionId];
+        if (prevConn) {
+          prevConn["false"] = [
+            [
+              {
+                action: ifActionId,
+                type: "false",
+                index: 0,
+              },
+            ],
+          ];
+        }
       }
-      connections[prevActionId]["false"] = [
-        [
-          {
-            action: ifActionId,
-            type: "false",
-            index: 0,
-          },
-        ],
-      ];
     }
 
     xPos += xSpacing;
@@ -122,19 +128,24 @@ export function createFindAnyStateImageWorkflow(state: State): Workflow {
 
   // Connect last IF's false branch to final action
   if (actions.length > 1) {
-    const lastIfId = actions[actions.length - 2].id;
-    if (!connections[lastIfId]) {
-      connections[lastIfId] = {};
+    const lastIf = actions[actions.length - 2];
+    if (lastIf) {
+      if (!connections[lastIf.id]) {
+        connections[lastIf.id] = {};
+      }
+      const lastConn = connections[lastIf.id];
+      if (lastConn) {
+        lastConn["false"] = [
+          [
+            {
+              action: finalActionId,
+              type: "false",
+              index: 0,
+            },
+          ],
+        ];
+      }
     }
-    connections[lastIfId]["false"] = [
-      [
-        {
-          action: finalActionId,
-          type: "false",
-          index: 0,
-        },
-      ],
-    ];
   }
 
   return {

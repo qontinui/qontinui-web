@@ -85,9 +85,11 @@ export async function generateStateImageThumbnail(
     if (stateImage.screenshots && stateImage.screenshots.length > 0) {
       // Extract index from screenshot ID (e.g., "screenshot_001" -> 1)
       const firstScreenshotId = stateImage.screenshots[0];
-      const match = firstScreenshotId.match(/screenshot_(\d+)/);
-      if (match) {
-        targetIndex = parseInt(match[1], 10);
+      if (firstScreenshotId) {
+        const match = firstScreenshotId.match(/screenshot_(\d+)/);
+        if (match) {
+          targetIndex = parseInt(match[1], 10);
+        }
       }
     }
 

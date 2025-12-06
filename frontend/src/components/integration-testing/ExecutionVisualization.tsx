@@ -44,6 +44,10 @@ export function ExecutionVisualization({
     playbackSpeed: 1500,
   });
 
+  if (!currentAction) {
+    return <div>No action data available</div>;
+  }
+
   const screenshotUrl = getScreenshotUrl(
     result.process_id,
     currentAction.screenshot_path

@@ -29,13 +29,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { VariableTable } from "@/components/variables/VariableTable";
 import { VariableEditorDialog } from "@/components/variables/VariableEditorDialog";
 import { RequireProject } from "@/components/require-project";

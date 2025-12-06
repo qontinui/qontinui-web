@@ -33,7 +33,7 @@ import {
 } from "./workflow-complexity-analyzer";
 import { WorkflowDependencyAnalyzer } from "./workflow-dependency-analyzer";
 import { WorkflowDocumentationService } from "./workflow-documentation-service";
-import { workflowTestingService } from "./workflow-testing-service";
+import { getWorkflowTestingService } from "./workflow-testing-service";
 
 // ============================================================================
 // Core Types
@@ -811,15 +811,13 @@ export class ProjectOptimizationService {
     const suggestions = this.generateSuggestions(
       workflowAnalyses,
       stateAnalyses,
-      imageAnalyses,
-      transitionAnalyses
+      imageAnalyses
     );
 
     const issues = this.collectIssues(
       workflowAnalyses,
       stateAnalyses,
-      imageAnalyses,
-      transitionAnalyses
+      imageAnalyses
     );
 
     const storage = this.getStorageUsage(
@@ -1092,7 +1090,7 @@ export class ProjectOptimizationService {
       const complexity = workflowComplexityAnalyzer.analyzeComplexity(workflow);
 
       // Check testing
-      const tests = workflowTestingService.getTestsForWorkflow(workflow.id);
+      const tests = getWorkflowTestingService().getTestsForWorkflow(workflow.id);
       const hasTesting = tests.length > 0;
 
       // Check documentation
@@ -1101,8 +1099,9 @@ export class ProjectOptimizationService {
       );
 
       // Check organization
-      const isOrganized =
-        workflow.category && workflow.category !== "Uncategorized";
+      const isOrganized = !!(
+        workflow.category && workflow.category !== "Uncategorized"
+      );
 
       // Analyze dependencies
       const deps = this.dependencyAnalyzer.analyzeDependencies(workflow);
@@ -2171,7 +2170,8 @@ export class ProjectOptimizationService {
     // Calculate potential savings
     const unusedImages = images.filter((img) => {
       const analyses = this.analyzeImages([img], workflows, states);
-      return !analyses[0].isUsed;
+      const firstAnalysis = analyses[0];
+      return firstAnalysis ? !firstAnalysis.isUsed : false;
     });
     const unusedStorage = unusedImages.reduce((sum, img) => sum + img.size, 0);
 
@@ -2243,7 +2243,7 @@ export class ProjectOptimizationService {
     const sortedScores = [...scores].sort((a, b) => a - b);
     const median =
       sortedScores.length > 0
-        ? sortedScores[Math.floor(sortedScores.length / 2)]
+        ? (sortedScores[Math.floor(sortedScores.length / 2)] ?? 0)
         : 0;
 
     const highComplexity = workflowComplexityAnalyzer
@@ -2326,7 +2326,7 @@ export class ProjectOptimizationService {
    */
   calculateTestCoverage(workflows: Workflow[]): CoverageReport["testCoverage"] {
     const tested = new Set<string>();
-    const allTests = workflowTestingService.getAllTests();
+    const allTests = getWorkflowTestingService().getAllTestCases();
 
     allTests.forEach((test) => {
       if (test.enabled !== false) {
@@ -2883,6 +2883,21 @@ export class ProjectOptimizationService {
     const firstMetric = metrics[0];
     const lastMetric = metrics[metrics.length - 1];
 
+    if (!firstMetric || !lastMetric) {
+      return {
+        metrics,
+        trend: {
+          health: "stable",
+          coverage: "stable",
+          issues: "stable",
+        },
+        period: {
+          start: new Date().toISOString(),
+          end: new Date().toISOString(),
+        },
+      };
+    }
+
     const healthTrend = this.calculateTrend(
       firstMetric.healthScore,
       lastMetric.healthScore
@@ -2904,8 +2919,8 @@ export class ProjectOptimizationService {
         issues: issuesTrend,
       },
       period: {
-        start: metrics[0].timestamp,
-        end: metrics[metrics.length - 1].timestamp,
+        start: metrics[0]?.timestamp ?? new Date().toISOString(),
+        end: metrics[metrics.length - 1]?.timestamp ?? new Date().toISOString(),
       },
     };
   }
@@ -2984,7 +2999,7 @@ export class ProjectOptimizationService {
       switch (alert.type) {
         case "health-drop":
           currentValue = currentMetrics.healthScore;
-          previousValue = previousMetrics.healthScore;
+          previousValue = previousMetrics?.healthScore ?? currentValue;
           const drop = previousValue - currentValue;
           if (drop >= alert.threshold) {
             shouldTrigger = true;
@@ -2994,7 +3009,7 @@ export class ProjectOptimizationService {
 
         case "critical-issue":
           currentValue = currentMetrics.issues.critical;
-          previousValue = previousMetrics.issues.critical;
+          previousValue = previousMetrics?.issues.critical ?? 0;
           if (currentValue >= alert.threshold) {
             shouldTrigger = true;
             message = `${currentValue} critical issues detected`;
@@ -3003,7 +3018,7 @@ export class ProjectOptimizationService {
 
         case "storage-limit":
           currentValue = currentMetrics.storage;
-          previousValue = previousMetrics.storage;
+          previousValue = previousMetrics?.storage ?? 0;
           if (currentValue >= alert.threshold) {
             shouldTrigger = true;
             message = `Storage usage (${this.formatBytes(currentValue)}) exceeded threshold`;
@@ -3011,7 +3026,7 @@ export class ProjectOptimizationService {
           break;
       }
 
-      if (shouldTrigger && alert.callback) {
+      if (shouldTrigger && alert.callback && message) {
         const trigger: HealthAlertTrigger = {
           alert,
           currentValue,
@@ -3118,22 +3133,34 @@ export class ProjectOptimizationService {
       matrix[i] = [i];
     }
 
-    for (let j = 0; j <= len2; j++) {
-      matrix[0][j] = j;
+    const firstRow = matrix[0];
+    if (firstRow) {
+      for (let j = 0; j <= len2; j++) {
+        firstRow[j] = j;
+      }
     }
 
     for (let i = 1; i <= len1; i++) {
       for (let j = 1; j <= len2; j++) {
         const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j - 1] + cost
-        );
+        const prevRow = matrix[i - 1];
+        const currRow = matrix[i];
+        const prevRowPrev = prevRow?.[j - 1];
+        const prevRowCurr = prevRow?.[j];
+        const currRowPrev = currRow?.[j - 1];
+
+        if (prevRowPrev !== undefined && prevRowCurr !== undefined && currRowPrev !== undefined && currRow) {
+          currRow[j] = Math.min(
+            prevRowCurr + 1,
+            currRowPrev + 1,
+            prevRowPrev + cost
+          );
+        }
       }
     }
 
-    const distance = matrix[len1][len2];
+    const lastRow = matrix[len1];
+    const distance = lastRow?.[len2] ?? 0;
     const maxLen = Math.max(len1, len2);
     return maxLen === 0 ? 1 : 1 - distance / maxLen;
   }

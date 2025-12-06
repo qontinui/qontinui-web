@@ -38,7 +38,7 @@ interface TestRun {
 
 export const ProcessTestRunner: React.FC = () => {
   const {
-    processes = [],
+    workflows = [],
     categories = [],
     states = [],
     screenshots = [],
@@ -65,13 +65,13 @@ export const ProcessTestRunner: React.FC = () => {
     setApiConnected(connected);
   };
 
-  // Group processes by category
-  const processesByCategory = useMemo(() => {
-    const grouped = new Map<string, typeof processes>();
+  // Group workflows by category
+  const workflowsByCategory = useMemo(() => {
+    const grouped = new Map<string, typeof workflows>();
 
     if (categories && categories.length > 0) {
       categories.forEach((categoryName) => {
-        const categoryProcesses = processes.filter(
+        const categoryProcesses = workflows.filter(
           (p) => p.category === categoryName
         );
         if (categoryProcesses.length > 0) {
@@ -80,8 +80,8 @@ export const ProcessTestRunner: React.FC = () => {
       });
     }
 
-    // Add uncategorized processes
-    const uncategorized = processes.filter(
+    // Add uncategorized workflows
+    const uncategorized = workflows.filter(
       (p) => !p.category || !categories || !categories.includes(p.category)
     );
     if (uncategorized.length > 0) {
@@ -89,17 +89,17 @@ export const ProcessTestRunner: React.FC = () => {
     }
 
     return grouped;
-  }, [processes, categories]);
+  }, [workflows, categories]);
 
-  // Get processes for selected category
+  // Get workflows for selected category
   const categoryProcesses = useMemo(() => {
-    if (!selectedCategory) return processes;
-    return processesByCategory.get(selectedCategory) || [];
-  }, [selectedCategory, processesByCategory, processes]);
+    if (!selectedCategory) return workflows;
+    return workflowsByCategory.get(selectedCategory) || [];
+  }, [selectedCategory, workflowsByCategory, workflows]);
 
   // Get all actions for a process
   const getProcessActions = (processId: string): any[] => {
-    const process = processes.find((p) => p.id === processId);
+    const process = workflows.find((p) => p.id === processId);
     if (!process || !process.actions) return [];
     return process.actions;
   };
@@ -108,7 +108,7 @@ export const ProcessTestRunner: React.FC = () => {
   const startTestRun = async () => {
     if (!selectedProcess || !apiConnected || isExecuting) return;
 
-    const process = processes.find((p) => p.id === selectedProcess);
+    const process = workflows.find((p) => p.id === selectedProcess);
     if (!process) return;
 
     // Validate workflow has required fields for integration testing
@@ -155,7 +155,7 @@ export const ProcessTestRunner: React.FC = () => {
 
     try {
       // Use the process's configured initial screenshot
-      const screenshotData = [initialScreenshot.imageData];
+      const screenshotData = [initialScreenshot.url];
 
       // Transform categories from string[] to object[]
       const categoryObjects = (categories || []).map((cat) => ({
@@ -327,7 +327,7 @@ export const ProcessTestRunner: React.FC = () => {
                 Process Test Runner
               </h2>
               <p className="text-sm text-gray-600">
-                Run processes as integration tests with real pattern matching
+                Run workflows as integration tests with real pattern matching
               </p>
             </div>
           </div>
@@ -387,7 +387,7 @@ export const ProcessTestRunner: React.FC = () => {
                   {categoryName}
                 </option>
               ))}
-            {processesByCategory.has("uncategorized") && (
+            {workflowsByCategory.has("uncategorized") && (
               <option value="uncategorized">Uncategorized</option>
             )}
           </select>

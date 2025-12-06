@@ -21,7 +21,6 @@ import React, {
   useEffect,
   useCallback,
   useMemo,
-  useRef,
 } from "react";
 import { Workflow } from "../../lib/action-schema/action-types";
 import { workflowFileManager } from "../../services/workflow-file-manager";
@@ -34,50 +33,36 @@ import { getWorkflowTestingService } from "../../services/workflow-testing-servi
 import { FolderTree } from "../workflow-organization/FolderTree";
 import { AdvancedSearch } from "../workflow-organization/AdvancedSearch";
 import type {
-  WorkflowFolder,
   SearchFilter,
   SavedFilter,
-} from "../../types/workflow-organization/types";
+  WorkflowFolder,
+} from "../workflow-organization/types";
 import {
   X,
-  Search,
   Grid,
   List,
   Columns,
-  SlidersHorizontal,
   Download,
-  Upload,
   FolderPlus,
-  ChevronLeft,
-  ChevronRight,
   MoreVertical,
   Copy,
   Trash2,
-  Edit2,
-  Play,
   TestTube,
   BookOpen,
   TrendingUp,
   AlertTriangle,
-  CheckCircle2,
   Clock,
   Folder,
-  Tag as TagIcon,
   Link2,
-  Settings,
   Eye,
-  FileJson,
   FolderOpen,
-  Maximize2,
   LayoutGrid,
   Rows,
   Check,
   Filter as FilterIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
-import { Separator } from "../ui/separator";
 import { ScrollArea } from "../ui/scroll-area";
 import { Checkbox } from "../ui/checkbox";
 import {
@@ -94,9 +79,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
 } from "../ui/dropdown-menu";
 import {
   Tooltip,
@@ -106,7 +88,6 @@ import {
 } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { toast } from "sonner";
-import { FixedSizeList as VirtualList } from "react-window";
 
 // ============================================================================
 // Types
@@ -234,15 +215,6 @@ function isRecentlyModified(date?: Date): boolean {
 }
 
 /**
- * Format duration in ms to readable string
- */
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60000).toFixed(1)}m`;
-}
-
-/**
  * Format date to relative time
  */
 function formatRelativeTime(date: Date): string {
@@ -311,7 +283,7 @@ export function WorkflowBrowser({
       // Load folder data
       const folderResult = workflowFolderManager.getAllFolders();
       const folderData = folderResult.success ? folderResult.folders : [];
-      setFolders(folderData);
+      setFolders(folderData as unknown as WorkflowFolder[]);
 
       for (const key of keys) {
         const result = await workflowFileManager.loadWorkflowFromStorage(key);
@@ -372,7 +344,7 @@ export function WorkflowBrowser({
             avgDuration: metrics?.avgDuration,
             failedLastRun: metrics ? (metrics.successRate || 0) < 1 : false,
             hasDependencies: workflow.actions.some(
-              (a) => a.type === "SUBWORKFLOW" || a.type === "CALL_WORKFLOW"
+              (a) => a.type === "RUN_WORKFLOW"
             ),
             recentlyModified: isRecentlyModified(lastModified),
           });
@@ -636,7 +608,7 @@ export function WorkflowBrowser({
         id: `filter-${Date.now()}`,
         name,
         filter,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(),
       };
       const updated = [...savedFilters, newFilter];
       setSavedFilters(updated);
@@ -646,7 +618,7 @@ export function WorkflowBrowser({
   );
 
   const handleSearchResults = useCallback(
-    (results: Workflow[], filter: SearchFilter) => {
+    (_results: Workflow[], filter: SearchFilter) => {
       setSearchFilter(filter);
       // Results are automatically applied through the filtering chain
     },

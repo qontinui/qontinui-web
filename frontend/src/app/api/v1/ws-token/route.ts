@@ -11,7 +11,7 @@ import { cookies } from "next/headers";
  * Security: This endpoint requires the request to have the access_token cookie,
  * so it can only be called by authenticated users.
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const cookieStore = await cookies();
     const accessTokenCookie = cookieStore.get("access_token");

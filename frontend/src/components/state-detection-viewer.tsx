@@ -8,7 +8,7 @@
  * and export capabilities.
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   Card,
   CardHeader,

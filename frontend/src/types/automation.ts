@@ -17,6 +17,8 @@ export interface AutomationSession {
   total_screenshots: number;
   total_actions: number;
   error_message?: string;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface AutomationSessionWithStats extends AutomationSession {
@@ -78,6 +80,7 @@ export interface AutomationLog {
   log_data?: Record<string, any>;
   screenshot_id?: string;
   sequence_number: number;
+  created_at: string;
 }
 
 export interface ScreenshotList {

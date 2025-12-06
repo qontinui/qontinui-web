@@ -127,7 +127,8 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     setMaxBrushSize(calculatedMaxBrushSize);
 
     // Reset brush size if it exceeds the new max
-    if (brushSize[0] > calculatedMaxBrushSize) {
+    const currentBrushSize = brushSize[0];
+    if (currentBrushSize !== undefined && currentBrushSize > calculatedMaxBrushSize) {
       setBrushSize([Math.min(15, calculatedMaxBrushSize)]);
     }
 
@@ -237,11 +238,14 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     if (historyIndex > 0) {
       const newIndex = historyIndex - 1;
       setHistoryIndex(newIndex);
-      maskDataRef.current = new ImageData(
-        new Uint8ClampedArray(history[newIndex].maskData.data),
-        history[newIndex].maskData.width,
-        history[newIndex].maskData.height
-      );
+      const historyItem = history[newIndex];
+      if (historyItem) {
+        maskDataRef.current = new ImageData(
+          new Uint8ClampedArray(historyItem.maskData.data),
+          historyItem.maskData.width,
+          historyItem.maskData.height
+        );
+      }
       updateMaskCanvas();
       updateResultCanvas();
     }
@@ -251,11 +255,14 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     if (historyIndex < history.length - 1) {
       const newIndex = historyIndex + 1;
       setHistoryIndex(newIndex);
-      maskDataRef.current = new ImageData(
-        new Uint8ClampedArray(history[newIndex].maskData.data),
-        history[newIndex].maskData.width,
-        history[newIndex].maskData.height
-      );
+      const historyItem = history[newIndex];
+      if (historyItem) {
+        maskDataRef.current = new ImageData(
+          new Uint8ClampedArray(historyItem.maskData.data),
+          historyItem.maskData.width,
+          historyItem.maskData.height
+        );
+      }
       updateMaskCanvas();
       updateResultCanvas();
     }
@@ -320,7 +327,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     const imageData = ctx.getImageData(0, 0, width, height);
     for (let i = 0; i < imageData.data.length; i += 4) {
       const brightness = maskDataRef.current.data[i]; // Use red channel as brightness
-      if (brightness < 128) {
+      if (brightness !== undefined && brightness < 128) {
         imageData.data[i + 3] = 0; // Make transparent (black = masked)
       }
     }
@@ -367,7 +374,9 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     if (!maskDataRef.current) return;
 
     const { width, height } = imageDimensionsRef.current;
-    const radius = Math.floor(brushSize[0] / 2);
+    const currentBrushSize = brushSize[0];
+    if (currentBrushSize === undefined) return;
+    const radius = Math.floor(currentBrushSize / 2);
     const isErasing = tool === "eraser";
 
     for (let dy = -radius; dy <= radius; dy++) {
@@ -502,6 +511,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
       for (let x = 0; x < width; x++) {
         const idx = (y * width + x) * 4;
         const maskValue = maskDataRef.current.data[idx]; // R channel
+        if (maskValue === undefined) continue;
         if (maskValue > 0) {
           // White pixel (visible)
           foundWhite = true;
@@ -635,6 +645,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     const imageData = ctx.getImageData(0, 0, width, height);
     for (let i = 0; i < imageData.data.length; i += 4) {
       const brightness = maskDataRef.current.data[i]; // Use red channel as brightness
+      if (brightness === undefined) continue;
       if (brightness < 128) {
         // Masked area (black in mask) - make transparent
         imageData.data[i + 3] = 0;
@@ -934,8 +945,8 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                       style={{
                         left: cursorPos.x,
                         top: cursorPos.y,
-                        width: brushSize[0] * (cursorPos.scale || 1),
-                        height: brushSize[0] * (cursorPos.scale || 1),
+                        width: (brushSize[0] ?? 15) * (cursorPos.scale || 1),
+                        height: (brushSize[0] ?? 15) * (cursorPos.scale || 1),
                         transform: "translate(-50%, -50%)",
                         opacity: 0.5,
                       }}

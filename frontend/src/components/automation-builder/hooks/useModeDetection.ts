@@ -48,7 +48,7 @@ export function useModeDetection({
         onModeChange(suggestedMode);
 
         toast.info(`Switched to ${suggestedMode} mode`, {
-          description: `${item.type === "workflow" ? "Graph workflows" : "Sequential processes"} are best edited in ${suggestedMode} mode.`,
+          description: `${suggestedMode === "graph" ? "Graph workflows" : "Sequential workflows"} are best edited in ${suggestedMode} mode.`,
           duration: 2000,
         });
 
@@ -57,10 +57,9 @@ export function useModeDetection({
         // Show warning but don't switch
         const modeLabel =
           suggestedMode === "sequential" ? "Sequential" : "Graph";
-        const itemType = item.type === "workflow" ? "workflow" : "process";
 
-        toast.warning(`${itemType} requires ${modeLabel} mode`, {
-          description: `Switch to ${modeLabel} mode to edit this ${itemType}.`,
+        toast.warning(`Workflow requires ${modeLabel} mode`, {
+          description: `Switch to ${modeLabel} mode to edit this workflow.`,
           action: {
             label: `Switch to ${modeLabel}`,
             onClick: () => onModeChange(suggestedMode),

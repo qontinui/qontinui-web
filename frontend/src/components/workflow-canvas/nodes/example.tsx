@@ -6,7 +6,7 @@
  */
 
 import React, { useCallback, useState } from "react";
-import ReactFlow, {
+import {
   Node,
   Edge,
   Background,
@@ -16,8 +16,8 @@ import ReactFlow, {
   useEdgesState,
   addEdge,
   Connection,
+  ReactFlow,
 } from "@xyflow/react";
-import { Action } from "@/lib/action-schema/action-types";
 import { NODE_TYPES } from "./node-registry";
 import { BaseNodeData } from "./BaseNode";
 import "@xyflow/react/dist/style.css";
@@ -83,7 +83,7 @@ export function SimpleWorkflowExample() {
     { id: "e2-3", source: "2", target: "3" },
   ];
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
   const onConnect = useCallback(
@@ -188,8 +188,8 @@ export function ConditionalWorkflowExample() {
     { id: "e2-4", source: "2", sourceHandle: "false", target: "4" },
   ];
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
   return (
     <div style={{ width: "100%", height: "600px" }}>
@@ -288,8 +288,8 @@ export function LoopWorkflowExample() {
     { id: "e2-4", source: "2", sourceHandle: "main", target: "4" }, // Exit loop
   ];
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
   return (
     <div style={{ width: "100%", height: "600px" }}>
@@ -361,12 +361,10 @@ export function InteractiveWorkflowExample() {
     },
   ]);
 
-  const [edges, setEdges, onEdgesChange] = useEdgesState([
+  const [edges, , onEdgesChange] = useEdgesState([
     { id: "e1-2", source: "1", target: "2" },
     { id: "e2-3", source: "2", target: "3" },
   ]);
-
-  const [currentNodeIndex, setCurrentNodeIndex] = useState(-1);
 
   function handleNodeClick(nodeId: string) {
     console.log("Node clicked:", nodeId);

@@ -38,7 +38,7 @@ function PatternOptimizationContent() {
       const firstPositive = session.screenshots.find(
         (s) => s.label === "positive"
       );
-      setSelectedScreenshot(firstPositive || session.screenshots[0]);
+      setSelectedScreenshot(firstPositive || session.screenshots[0] || null);
     }
   }, [session?.screenshots, selectedScreenshot]);
 

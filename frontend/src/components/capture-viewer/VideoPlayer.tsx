@@ -103,7 +103,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Handle timeline scrubbing
   const handleSeek = (value: number[]) => {
     if (!videoRef.current) return;
-    const newTime = value[0];
+    const newTime = value[0] ?? 0;
     videoRef.current.currentTime = newTime;
     onTimestampChange(newTime);
   };
@@ -118,7 +118,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Handle volume change
   const handleVolumeChange = (value: number[]) => {
-    const newVolume = value[0];
+    const newVolume = value[0] ?? 0.5;
     setVolume(newVolume);
     if (videoRef.current) {
       videoRef.current.volume = newVolume;

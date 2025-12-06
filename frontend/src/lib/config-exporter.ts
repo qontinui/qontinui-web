@@ -280,10 +280,11 @@ export class ConfigExporter {
           (outputs) => {
             if (!outputs || typeof outputs !== "object") return false;
             // Check if any output has non-empty connection arrays
-            return Object.values(outputs).some(
-              (conns) =>
-                Array.isArray(conns) && conns.length > 0 && conns[0]?.length > 0
-            );
+            return Object.values(outputs).some((conns) => {
+              if (!Array.isArray(conns) || conns.length === 0) return false;
+              const firstConn = conns[0];
+              return firstConn && firstConn.length > 0;
+            });
           }
         );
 
@@ -299,25 +300,28 @@ export class ConfigExporter {
           for (let i = 0; i < workflow.actions.length - 1; i++) {
             const currentAction = workflow.actions[i];
             const nextAction = workflow.actions[i + 1];
-            generatedConnections[currentAction.id] = {
-              main: [
-                [
-                  {
-                    action: nextAction.id,
-                    type: "main",
-                    index: 0,
-                  },
+            if (currentAction && nextAction) {
+              generatedConnections[currentAction.id] = {
+                main: [
+                  [
+                    {
+                      action: nextAction.id,
+                      type: "main",
+                      index: 0,
+                    },
+                  ],
                 ],
-              ],
-            };
+              };
+            }
           }
           // Last action has empty connections
           if (workflow.actions.length > 0) {
-            generatedConnections[
-              workflow.actions[workflow.actions.length - 1].id
-            ] = {
-              main: [],
-            };
+            const lastAction = workflow.actions[workflow.actions.length - 1];
+            if (lastAction) {
+              generatedConnections[lastAction.id] = {
+                main: [],
+              };
+            }
           }
 
           console.log(
@@ -388,14 +392,14 @@ export class ConfigExporter {
         }
 
         // Export timeout and retry settings
-        if (action.timeout !== undefined) {
-          exported.timeout = action.timeout;
+        if ((action as any).timeout !== undefined) {
+          exported.timeout = (action as any).timeout;
         }
-        if (action.retryCount !== undefined) {
-          exported.retryCount = action.retryCount;
+        if ((action as any).retryCount !== undefined) {
+          exported.retryCount = (action as any).retryCount;
         }
-        if (action.continueOnError !== undefined) {
-          exported.continueOnError = action.continueOnError;
+        if ((action as any).continueOnError !== undefined) {
+          exported.continueOnError = (action as any).continueOnError;
         }
 
         return exported;
@@ -689,11 +693,11 @@ export class ConfigExporter {
             name: img.name,
             patterns: img.patterns.map((pattern) => {
               // Convert embedded base64 data to imageId reference
-              let imageIdRef = pattern.image;
+              let imageIdRef = pattern.imageId;
 
-              // If pattern.image is a base64 data URL, look it up in the image map
-              if (base64ToImageId && pattern.image) {
-                const matchedImageId = base64ToImageId.get(pattern.image);
+              // If pattern.imageId is a base64 data URL, look it up in the image map
+              if (base64ToImageId && pattern.imageId) {
+                const matchedImageId = base64ToImageId.get(pattern.imageId);
                 if (matchedImageId) {
                   imageIdRef = matchedImageId;
                 } else {
@@ -708,7 +712,7 @@ export class ConfigExporter {
                 id: pattern.id,
                 name: pattern.name,
                 imageId: imageIdRef, // Use imageId instead of image
-                mask: pattern.mask,
+                mask: (pattern as any).mask,
                 searchRegions: pattern.searchRegions || [],
                 fixed: pattern.fixed,
                 similarity: pattern.similarity,
@@ -882,7 +886,7 @@ export class ConfigExporter {
         }
 
         ctx.drawImage(img, 0, 0);
-        const base64 = canvas.toDataURL("image/png").split(",")[1];
+        const base64 = canvas.toDataURL("image/png").split(",")[1] || "";
         resolve(base64);
       };
 

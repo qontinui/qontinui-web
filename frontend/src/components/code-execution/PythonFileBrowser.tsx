@@ -93,6 +93,7 @@ function buildFileTree(files: PythonFile[]): FileTreeNode[] {
     // Process directories
     for (let i = 0; i < pathParts.length - 1; i++) {
       const dirName = pathParts[i];
+      if (!dirName) continue;
       currentPath = currentPath ? `${currentPath}/${dirName}` : dirName;
 
       let dirNode = dirMap.get(currentPath);
@@ -106,17 +107,21 @@ function buildFileTree(files: PythonFile[]): FileTreeNode[] {
         dirMap.set(currentPath, dirNode);
         currentLevel.push(dirNode);
       }
-      currentLevel = dirNode.children!;
+      if (dirNode?.children) {
+        currentLevel = dirNode.children;
+      }
     }
 
     // Add file
     const fileName = pathParts[pathParts.length - 1];
-    currentLevel.push({
-      name: fileName,
-      path: file.path,
-      type: "file",
-      file,
-    });
+    if (fileName) {
+      currentLevel.push({
+        name: fileName,
+        path: file.path,
+        type: "file",
+        file,
+      });
+    }
   });
 
   return root;

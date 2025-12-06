@@ -16,11 +16,57 @@ import { useQueryClient } from "@tanstack/react-query";
 import { projectKeys } from "@/hooks/use-projects";
 
 import { Screenshot } from "../types/Screenshot";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Plus,
+  Save,
+  Upload,
+  Download,
+  Home,
+  LogOut,
+  User,
+  ChevronDown,
+  Check,
+  X,
+  Edit2,
+} from "lucide-react";
+import { AuthDialog } from "@/components/auth-dialog";
+import { TabStateProvider, useTabState } from "@/contexts/tab-state-context";
+import { StateStructure } from "@/components/state-machine";
+import { ImagesManager } from "@/components/images-manager";
+import { ScreenshotAnnotationTab } from "@/components/screenshot-annotation/ScreenshotAnnotationTab";
+import { PatternOptimizationSimplified } from "@/components/pattern-optimization/PatternOptimizationSimplified";
+import { ImageExtractionTab } from "@/components/image-extraction/ImageExtractionTab";
+import { ScreenshotUploadTab } from "@/components/ScreenshotTab/ScreenshotUploadTab";
+import { StateDiscoveryTab } from "@/components/state-discovery/StateDiscoveryTab";
+import { BackgroundRemovalTab } from "@/components/background-removal/BackgroundRemovalTab";
+import { PatternMatchingTest } from "@/components/PatternMatching/PatternMatchingTest";
+import { ProcessTestRunner } from "@/components/IntegrationTests/ProcessTestRunner";
+import { SemanticAnalysisTab } from "@/components/SemanticAnalysis/SemanticAnalysisTab";
+import { ProjectSettingsComponent } from "@/components/project-settings";
+import { SettingsTab } from "@/components/settings/SettingsTab";
+import { ProjectManager } from "@/components/project-manager";
 
 function AutomationBuilderContent() {
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempProjectName, setTempProjectName] = useState("");
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const previousProjectName = useRef<string>("");
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const [imageAssetsDropdownOpen, setImageAssetsDropdownOpen] = useState(false);
+  const [createImagesDropdownOpen, setCreateImagesDropdownOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string>("image-assets");
+  const [activeTab, setActiveTab] = useState<string>("screenshot-upload");
   const {
     projectName,
     setProjectName,
@@ -29,7 +75,6 @@ function AutomationBuilderContent() {
     triggerSave,
     getConfiguration,
     loadConfiguration,
-    clearAllData,
     images,
     workflows,
     states,

@@ -1,10 +1,8 @@
 import Link from "next/link";
 import {
-  Eye,
   Image,
   Layers,
   Target,
-  Sliders,
   CheckCircle2,
   AlertTriangle,
 } from "lucide-react";

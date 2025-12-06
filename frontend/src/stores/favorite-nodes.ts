@@ -136,6 +136,7 @@ export const useFavoriteNodes = create<FavoriteNodesStore>()(
           if (index === -1) return state;
 
           const [removed] = favorites.splice(index, 1);
+          if (!removed) return state;
           favorites.splice(newOrder, 0, removed);
 
           // Update order values

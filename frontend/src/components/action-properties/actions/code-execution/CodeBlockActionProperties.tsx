@@ -58,7 +58,7 @@ export function CodeBlockActionProperties({
 
   // Fetch Python files for file browser
   const { files, isLoading, error, refresh } = useCodeExecutionFiles({
-    projectId: projectId || undefined,
+    projectId: projectId ? parseInt(projectId, 10) : undefined,
     autoLoad: config.codeSource === "file",
   });
 
@@ -117,10 +117,11 @@ export function CodeBlockActionProperties({
       <div className="space-y-2">
         <Label className="text-xs text-gray-400 flex items-center gap-2">
           Code Source
-          <Info
-            className="w-3 h-3"
-            title="Choose between inline code or external Python file"
-          />
+          <span title="Choose between inline code or external Python file">
+            <Info
+              className="w-3 h-3"
+            />
+          </span>
         </Label>
         <Select value={codeSource} onValueChange={handleCodeSourceChange}>
           <SelectTrigger className="bg-transparent border-gray-700">
@@ -214,10 +215,11 @@ export function CodeBlockActionProperties({
           <div className="space-y-2 mt-3">
             <Label className="text-xs text-gray-400 flex items-center gap-2">
               Function Name (Optional)
-              <Info
-                className="w-3 h-3"
-                title="Leave empty to execute entire file"
-              />
+              <span title="Leave empty to execute entire file">
+                <Info
+                  className="w-3 h-3"
+                />
+              </span>
             </Label>
             <Input
               type="text"

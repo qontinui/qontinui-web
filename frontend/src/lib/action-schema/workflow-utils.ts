@@ -9,6 +9,7 @@ import {
   Workflow,
   Action,
   ActionType,
+  Connections,
 } from "./action-types";
 
 // ============================================================================
@@ -72,10 +73,10 @@ export function getNextActions(
     : (["main", "error", "success", "parallel"] as const);
 
   types.forEach((type) => {
-    const typeConnections = connections[type];
+    const typeConnections = connections[type as keyof typeof connections];
     if (typeConnections) {
-      typeConnections.forEach((outputConnections) => {
-        outputConnections.forEach((conn) => {
+      typeConnections.forEach((outputConnections: any) => {
+        outputConnections.forEach((conn: any) => {
           nextActionIds.add(conn.action);
         });
       });
@@ -330,8 +331,8 @@ export function cloneWorkflow(
     newConnections[newSourceId] = {};
     ["main", "error", "success", "parallel"].forEach((type) => {
       const connections = outputs[type as keyof typeof outputs];
-      if (connections) {
-        newConnections[newSourceId][type as keyof typeof outputs] =
+      if (connections && newConnections[newSourceId]) {
+        newConnections[newSourceId]![type as keyof typeof outputs] =
           connections.map((outputConnections) =>
             outputConnections.map((conn) => ({
               ...conn,
@@ -396,10 +397,12 @@ export function processToWorkflow(process: LegacyProcess): Workflow {
 
     // Create linear connection to next action
     if (index < process.actions.length - 1) {
-      const nextActionId = process.actions[index + 1].id;
-      connections[action.id] = {
-        main: [[{ action: nextActionId, type: "main", index: 0 }]],
-      };
+      const nextAction = process.actions[index + 1];
+      if (nextAction) {
+        connections[action.id] = {
+          main: [[{ action: nextAction.id, type: "main", index: 0 }]],
+        };
+      }
     }
   });
 
@@ -466,6 +469,7 @@ export function isLinearWorkflow(workflow: Workflow): boolean {
   // Check connections for branching
   for (const sourceId in workflow.connections) {
     const outputs = workflow.connections[sourceId];
+    if (!outputs) continue;
 
     // Check for error/success connections
     if (outputs.error && outputs.error.length > 0) return false;
@@ -477,7 +481,8 @@ export function isLinearWorkflow(workflow: Workflow): boolean {
       if (outputs.main.length > 1) return false;
 
       // Multiple connections from same output = parallel paths
-      if (outputs.main[0] && outputs.main[0].length > 1) return false;
+      const firstOutput = outputs.main[0];
+      if (firstOutput && firstOutput.length > 1) return false;
     }
   }
 
@@ -502,9 +507,12 @@ export function getLinearActionOrder(workflow: Workflow): Action[] {
   // Build incoming connections map
   const incomingMap = new Map<string, string[]>();
   for (const sourceId in connections) {
-    const outputs = connections[sourceId].main;
-    if (outputs && outputs[0]) {
-      outputs[0].forEach((conn) => {
+    const outputs = connections[sourceId];
+    if (!outputs?.main) continue;
+
+    const firstOutput = outputs.main[0];
+    if (firstOutput) {
+      firstOutput.forEach((conn) => {
         if (!incomingMap.has(conn.action)) {
           incomingMap.set(conn.action, []);
         }
@@ -538,8 +546,11 @@ export function getLinearActionOrder(workflow: Workflow): Action[] {
       break; // End of chain
     }
 
-    const nextActionId = nextConnections[0].action;
-    current = actions.find((a) => a.id === nextActionId) || null;
+    const nextConn = nextConnections[0];
+    if (!nextConn) break;
+
+    const nextActionId = nextConn.action;
+    current = actions.find((a) => a.id === nextActionId) || undefined;
   }
 
   return ordered;
@@ -648,12 +659,14 @@ export function buildLinearConnections(actions: Action[]): Connections {
   const connections: Connections = {};
 
   for (let i = 0; i < actions.length - 1; i++) {
-    const currentId = actions[i].id;
-    const nextId = actions[i + 1].id;
+    const current = actions[i];
+    const next = actions[i + 1];
 
-    connections[currentId] = {
-      main: [[{ action: nextId, type: "main", index: 0 }]],
-    };
+    if (current && next) {
+      connections[current.id] = {
+        main: [[{ action: next.id, type: "main", index: 0 }]],
+      };
+    }
   }
 
   return connections;

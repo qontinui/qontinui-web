@@ -94,7 +94,7 @@ export default function AnalysisPage() {
   // Load annotation sets
   useEffect(() => {
     // Only run in browser (not during SSR)
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") return undefined;
 
     if (token) {
       // Small delay to ensure DOM is fully loaded and avoid race conditions
@@ -103,6 +103,7 @@ export default function AnalysisPage() {
       }, 100);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [token]);
 
   const loadAnnotationSets = async () => {

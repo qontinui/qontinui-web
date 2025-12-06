@@ -1840,7 +1840,7 @@ export class TransitionOrganizationService {
     for (let i = 0; i < matrix.states.length; i++) {
       const row = [matrix.states[i]];
       for (let j = 0; j < matrix.states.length; j++) {
-        const transitionIds = matrix.matrix[i][j];
+        const transitionIds = matrix.matrix[i]?.[j];
         row.push(transitionIds ? transitionIds.length.toString() : "0");
       }
       lines.push(row.join(","));
@@ -1875,11 +1875,14 @@ export class TransitionOrganizationService {
           : undefined;
 
         if (fromIndex !== undefined && toIndex !== undefined) {
-          if (!matrix[fromIndex][toIndex]) {
-            matrix[fromIndex][toIndex] = [];
+          const row = matrix[fromIndex];
+          if (row) {
+            if (!row[toIndex]) {
+              row[toIndex] = [];
+            }
+            row[toIndex]?.push(transition.id);
+            totalTransitions++;
           }
-          matrix[fromIndex][toIndex]!.push(transition.id);
-          totalTransitions++;
         }
       }
     }
@@ -1914,10 +1917,13 @@ export class TransitionOrganizationService {
 
     for (let i = 0; i < transitions.length; i++) {
       const t1 = transitions[i];
+      if (!t1) continue;
+
       const duplicates: string[] = [];
 
       for (let j = i + 1; j < transitions.length; j++) {
         const t2 = transitions[j];
+        if (!t2) continue;
 
         // Check for exact duplicates
         if (this.areTransitionsIdentical(t1, t2)) {
@@ -1938,10 +1944,13 @@ export class TransitionOrganizationService {
     // Find similar configurations
     for (let i = 0; i < transitions.length; i++) {
       const t1 = transitions[i];
+      if (!t1) continue;
+
       const similar: string[] = [];
 
       for (let j = i + 1; j < transitions.length; j++) {
         const t2 = transitions[j];
+        if (!t2) continue;
 
         const similarity = this.calculateTransitionSimilarity(t1, t2);
         if (similarity > 0.8 && similarity < 1.0) {

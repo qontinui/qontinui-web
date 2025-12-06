@@ -145,6 +145,7 @@ export class LayoutAnimationController {
         for (const actionId in toPositions) {
           const from = fromPositions[actionId] || toPositions[actionId];
           const to = toPositions[actionId];
+          if (!from || !to) continue;
 
           currentPositions[actionId] = [
             from[0] + (to[0] - from[0]) * easedProgress,

@@ -114,7 +114,7 @@ class CommentService {
     const parentComment = await this.getComment(commentId);
     return this.addComment(
       projectId,
-      parentComment.workflow_id,
+      parentComment.workflow_id ?? undefined,
       content,
       undefined,
       commentId

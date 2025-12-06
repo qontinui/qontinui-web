@@ -172,7 +172,7 @@ export default function IntegrationTestingPage() {
               processName={
                 workflows.find((w) => w.id === selectedProcessId)?.name
               }
-              snapshotRunIds={selectedSnapshots.map((s) => s.runId)}
+              snapshotRunIds={selectedSnapshots.map((s) => s.run_id)}
               autoRefresh={false}
             />
           </TabsContent>

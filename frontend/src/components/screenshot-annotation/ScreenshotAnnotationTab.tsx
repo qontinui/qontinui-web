@@ -148,23 +148,31 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       // Auto-select first screenshot if available and restore its open panels
       if (convertedScreenshots.length > 0 && !selectedScreenshot) {
         const firstScreenshot = convertedScreenshots[0];
-        setSelectedScreenshot(firstScreenshot);
+        if (firstScreenshot) {
+          setSelectedScreenshot(firstScreenshot);
 
-        // Restore open regions if any exist
-        if (firstScreenshot.regions.length > 0) {
-          setOpenRegions(firstScreenshot.regions);
-          setActiveRegionTab(firstScreenshot.regions[0].id);
-          setShowRegionPanel(true);
-        }
+          // Restore open regions if any exist
+          if (firstScreenshot.regions?.length > 0) {
+            setOpenRegions(firstScreenshot.regions);
+            const firstRegion = firstScreenshot.regions[0];
+            if (firstRegion) {
+              setActiveRegionTab(firstRegion.id);
+            }
+            setShowRegionPanel(true);
+          }
 
-        // Restore open locations if any exist (only if no regions)
-        if (
-          firstScreenshot.regions.length === 0 &&
-          firstScreenshot.locations.length > 0
-        ) {
-          setOpenLocations(firstScreenshot.locations);
-          setActiveLocationTab(firstScreenshot.locations[0].id);
-          setShowLocationPanel(true);
+          // Restore open locations if any exist (only if no regions)
+          if (
+            firstScreenshot.regions?.length === 0 &&
+            firstScreenshot.locations?.length > 0
+          ) {
+            setOpenLocations(firstScreenshot.locations);
+            const firstLocation = firstScreenshot.locations[0];
+            if (firstLocation) {
+              setActiveLocationTab(firstLocation.id);
+            }
+            setShowLocationPanel(true);
+          }
         }
       }
     };
@@ -177,14 +185,15 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     if (!selectedScreenshot) return;
 
     // Restore all regions and locations as open panels for the selected screenshot
-    if (selectedScreenshot.regions.length > 0) {
+    if (selectedScreenshot.regions?.length > 0) {
       setOpenRegions(selectedScreenshot.regions);
       // Keep the currently active tab if it exists in this screenshot, otherwise select first
       const currentTabExists = selectedScreenshot.regions.some(
         (r) => r.id === activeRegionTab
       );
-      if (!currentTabExists || !activeRegionTab) {
-        setActiveRegionTab(selectedScreenshot.regions[0].id);
+      const firstRegion = selectedScreenshot.regions[0];
+      if ((!currentTabExists || !activeRegionTab) && firstRegion) {
+        setActiveRegionTab(firstRegion.id);
       }
       setShowRegionPanel(true);
     } else {
@@ -193,23 +202,24 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       setShowRegionPanel(false);
     }
 
-    if (selectedScreenshot.locations.length > 0) {
+    if (selectedScreenshot.locations?.length > 0) {
       setOpenLocations(selectedScreenshot.locations);
       // Keep the currently active tab if it exists in this screenshot, otherwise select first
       const currentTabExists = selectedScreenshot.locations.some(
         (l) => l.id === activeLocationTab
       );
-      if (!currentTabExists || !activeLocationTab) {
-        setActiveLocationTab(selectedScreenshot.locations[0].id);
+      const firstLocation = selectedScreenshot.locations[0];
+      if ((!currentTabExists || !activeLocationTab) && firstLocation) {
+        setActiveLocationTab(firstLocation.id);
       }
       // Only show location panel if no region panel is shown
-      if (selectedScreenshot.regions.length === 0) {
+      if (selectedScreenshot.regions?.length === 0) {
         setShowLocationPanel(true);
       }
     } else {
       setOpenLocations([]);
       setActiveLocationTab(null);
-      if (selectedScreenshot.regions.length === 0) {
+      if (selectedScreenshot.regions?.length === 0) {
         setShowLocationPanel(false);
       }
     }
@@ -465,7 +475,8 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     setOpenRegions((prev) => prev.filter((r) => r.id !== regionId));
     if (activeRegionTab === regionId) {
       const remaining = openRegions.filter((r) => r.id !== regionId);
-      setActiveRegionTab(remaining.length > 0 ? remaining[0].id : null);
+      const firstRemaining = remaining[0];
+      setActiveRegionTab(remaining.length > 0 && firstRemaining ? firstRemaining.id : null);
       if (remaining.length === 0) {
         setShowRegionPanel(false);
       }
@@ -480,12 +491,12 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
         ? deletedRegion.saveToStateImageStateId
         : deletedRegion?.stateId;
 
-    if (targetStateId) {
+    if (targetStateId && deletedRegion) {
       const state = states.find((s) => s.id === targetStateId);
       if (state) {
         if (deletedRegion.type === "StateRegion") {
           // Remove from State.regions array
-          const updatedRegions = state.regions.filter((r) => r.id !== regionId);
+          const updatedRegions = state.regions?.filter((r) => r.id !== regionId) ?? [];
 
           await updateState({
             ...state,
@@ -571,7 +582,8 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     setOpenLocations((prev) => prev.filter((l) => l.id !== locationId));
     if (activeLocationTab === locationId) {
       const remaining = openLocations.filter((l) => l.id !== locationId);
-      setActiveLocationTab(remaining.length > 0 ? remaining[0].id : null);
+      const firstRemaining = remaining[0];
+      setActiveLocationTab(remaining.length > 0 && firstRemaining ? firstRemaining.id : null);
       if (remaining.length === 0) {
         setShowLocationPanel(false);
       }

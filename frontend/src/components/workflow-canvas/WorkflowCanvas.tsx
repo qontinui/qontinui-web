@@ -51,14 +51,12 @@ import {
   workflowToReactFlow,
   reactFlowToWorkflow,
   validateConnection,
-  fitViewport,
   autoLayout,
 } from "./canvas-utils";
 import { CustomEdge } from "./CustomEdge";
 import { DefaultNode } from "./nodes/DefaultNode";
 import {
   GRID_CONFIG,
-  ZOOM_CONFIG,
   COLORS,
   getConnectionColor,
   getConnectionStyle,
@@ -158,8 +156,8 @@ function WorkflowCanvasInner({
   );
 
   // React Flow state
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes as unknown as Node[]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges as unknown as Edge[]);
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
 
   // Track if we initiated the last workflow change
@@ -190,8 +188,8 @@ function WorkflowCanvasInner({
       nodes: newNodes,
     });
 
-    setNodes(newNodes);
-    setEdges(newEdges);
+    setNodes(newNodes as unknown as Node[]);
+    setEdges(newEdges as unknown as Edge[]);
     lastWorkflowRef.current = workflow;
   }, [workflow.actions, workflow.connections, workflow.id]); // Watch actions and connections arrays
 
@@ -230,8 +228,8 @@ function WorkflowCanvasInner({
               // Queue the workflow update outside of render
               queueMicrotask(() => {
                 const updatedWorkflow = reactFlowToWorkflow(
-                  currentNodes,
-                  currentEdges,
+                  currentNodes as unknown as CanvasNode[],
+                  currentEdges as unknown as CanvasEdge[],
                   workflow.id,
                   workflow.name
                 );
@@ -294,8 +292,8 @@ function WorkflowCanvasInner({
               // Queue the workflow update outside of render
               queueMicrotask(() => {
                 const updatedWorkflow = reactFlowToWorkflow(
-                  currentNodes,
-                  currentEdges,
+                  currentNodes as unknown as CanvasNode[],
+                  currentEdges as unknown as CanvasEdge[],
                   workflow.id,
                   workflow.name
                 );
@@ -352,7 +350,7 @@ function WorkflowCanvasInner({
         targetHandle: connection.targetHandle,
       };
 
-      const validation = validateConnection(attempt, nodes, edges);
+      const validation = validateConnection(attempt, nodes as unknown as CanvasNode[], edges as unknown as CanvasEdge[]);
 
       if (!validation.valid) {
         console.warn("Invalid connection:", validation.message);
@@ -376,7 +374,7 @@ function WorkflowCanvasInner({
         );
         if (parts.length >= 2) {
           const handleType = parts[0];
-          const handleIndex = parseInt(parts[1], 10);
+          const handleIndex = parseInt(parts[1] || "0", 10);
 
           if (
             handleType === "error" ||
@@ -401,7 +399,7 @@ function WorkflowCanvasInner({
       }
 
       // Get source action for label generation
-      const sourceNode = nodes.find((n) => n.id === connection.source);
+      const sourceNode = nodes.find((n) => n.id === connection.source) as CanvasNode | undefined;
       const sourceAction = sourceNode?.data.action;
 
       console.log("[WorkflowCanvas] Source action:", {
@@ -424,16 +422,20 @@ function WorkflowCanvasInner({
           case "LOOP":
             label = outputIndex === 0 ? "loop" : "exit";
             break;
-          case "SWITCH":
+          case "SWITCH": {
+            const switchConfig = sourceAction.config as any;
             if (
-              sourceAction.config.cases &&
-              outputIndex < sourceAction.config.cases.length
+              switchConfig?.cases &&
+              Array.isArray(switchConfig.cases) &&
+              outputIndex < switchConfig.cases.length
             ) {
-              label = String(sourceAction.config.cases[outputIndex]);
+              const caseItem = switchConfig.cases[outputIndex];
+              label = String(caseItem?.value || caseItem);
             } else {
               label = "default";
             }
             break;
+          }
         }
       }
 
@@ -484,13 +486,13 @@ function WorkflowCanvasInner({
 
       // Add enriched edge
       const newEdges = [...edges, enrichedEdge];
-      setEdges(newEdges);
+      setEdges(newEdges as unknown as Edge[]);
 
       // Update workflow
       setTimeout(() => {
         const updatedWorkflow = reactFlowToWorkflow(
-          nodes,
-          newEdges,
+          nodes as unknown as CanvasNode[],
+          newEdges as unknown as CanvasEdge[],
           workflow.id,
           workflow.name
         );
@@ -524,7 +526,7 @@ function WorkflowCanvasInner({
         targetHandle: newConnection.targetHandle,
       };
 
-      const validation = validateConnection(attempt, nodes, edges);
+      const validation = validateConnection(attempt, nodes as unknown as CanvasNode[], edges as unknown as CanvasEdge[]);
 
       if (!validation.valid) {
         console.warn("Invalid reconnection:", validation.message);
@@ -542,8 +544,8 @@ function WorkflowCanvasInner({
       // Update workflow
       setTimeout(() => {
         const updatedWorkflow = reactFlowToWorkflow(
-          nodes,
-          newEdges,
+          nodes as unknown as CanvasNode[],
+          newEdges as unknown as CanvasEdge[],
           workflow.id,
           workflow.name
         );
@@ -566,8 +568,8 @@ function WorkflowCanvasInner({
    * Handle node click
    */
   const handleNodeClick = useCallback(
-    (event: React.MouseEvent, node: Node) => {
-      const canvasNode = node as CanvasNode;
+    (_event: React.MouseEvent, node: Node) => {
+      const canvasNode = node as unknown as CanvasNode;
       setSelectedNode(canvasNode);
 
       if (onNodeClick) {
@@ -581,8 +583,8 @@ function WorkflowCanvasInner({
    * Handle edge click
    */
   const handleEdgeClick = useCallback(
-    (event: React.MouseEvent, edge: Edge) => {
-      const canvasEdge = edge as CanvasEdge;
+    (_event: React.MouseEvent, edge: Edge) => {
+      const canvasEdge = edge as unknown as CanvasEdge;
 
       if (onEdgeClick) {
         onEdgeClick(canvasEdge.data.connection);
@@ -657,8 +659,8 @@ function WorkflowCanvasInner({
 
     // Update workflow
     const updatedWorkflow = reactFlowToWorkflow(
-      newNodes,
-      newEdges,
+      newNodes as unknown as CanvasNode[],
+      newEdges as unknown as CanvasEdge[],
       workflow.id,
       workflow.name
     );
@@ -737,8 +739,8 @@ function WorkflowCanvasInner({
 
       // Update workflow
       const updatedWorkflow = reactFlowToWorkflow(
-        nodes,
-        newEdges,
+        nodes as unknown as CanvasNode[],
+        newEdges as unknown as CanvasEdge[],
         workflow.id,
         workflow.name
       );
@@ -784,7 +786,7 @@ function WorkflowCanvasInner({
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
-        nodeTypes={nodeTypes}
+        nodeTypes={nodeTypes as any}
         edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{ padding: 0.1 }}
@@ -813,7 +815,6 @@ function WorkflowCanvasInner({
             color={GRID_CONFIG.color}
             gap={GRID_CONFIG.size}
             size={GRID_CONFIG.dotSize}
-            variant="dots"
           />
         )}
 
@@ -832,7 +833,7 @@ function WorkflowCanvasInner({
         {settings.showMinimap && (
           <MiniMap
             nodeColor={(node) => {
-              const canvasNode = node as CanvasNode;
+              const canvasNode = node as unknown as CanvasNode;
               if (canvasNode.style?.borderColor) {
                 return canvasNode.style.borderColor as string;
               }

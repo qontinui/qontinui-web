@@ -45,14 +45,19 @@ export function TransitionEdge({
     targetPosition,
   });
 
-  const { transition, isMultiTarget, targetIndex, totalTargets, isIncoming } =
-    data || {
-      transition: { process: "", staysVisible: false },
-      isMultiTarget: false,
-      targetIndex: 0,
-      totalTargets: 1,
-      isIncoming: false,
-    };
+  const {
+    transition = { process: "", staysVisible: false },
+    isMultiTarget = false,
+    targetIndex = 0,
+    totalTargets = 1,
+    isIncoming = false,
+  } = data || {
+    transition: { process: "", staysVisible: false },
+    isMultiTarget: false,
+    targetIndex: 0,
+    totalTargets: 1,
+    isIncoming: false,
+  };
 
   // Determine edge styling based on transition type
   const isIncomingTransition =

@@ -188,8 +188,8 @@ export class StateImageRenderer {
 
     for (let i = 0; i < imageData.data.length; i += 4) {
       // Use red channel of mask as alpha multiplier (grayscale mask)
-      const maskValue = maskData.data[i] / 255; // Normalize to 0-1
-      const currentAlpha = imageData.data[i + 3];
+      const maskValue = (maskData.data[i] ?? 0) / 255; // Normalize to 0-1
+      const currentAlpha = imageData.data[i + 3] ?? 255;
 
       // Multiply current alpha by mask value
       imageData.data[i + 3] = currentAlpha * maskValue;

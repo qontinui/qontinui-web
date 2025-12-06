@@ -98,8 +98,7 @@ const DeleteConfirmationDialog: React.FC<DeleteConfirmationDialogProps> = ({
                       {impact.statesAffected !== 1 ? "s" : ""}
                     </li>
                     <li>
-                      Present in {(stateImage.frequency * 100).toFixed(0)}% of
-                      screenshots
+                      Present in {stateImage.screenshots?.length || 0} screenshot(s)
                     </li>
                     {impact.willCreateOrphans && (
                       <li className="text-red-600">

@@ -196,7 +196,7 @@ const initialState: ExtractionState = {
 
 export const useExtractionStore = create<ExtractionState & ExtractionActions>()(
   devtools(
-    immer((set, get) => ({
+    immer((set) => ({
       ...initialState,
 
       // =========================================================================
@@ -804,8 +804,11 @@ export const useExtractionStore = create<ExtractionState & ExtractionActions>()(
           ];
 
           // Create merged state
+          const firstState = statesToMerge[0];
+          if (!firstState) return;
+
           const mergedState: ExtractedState = {
-            ...statesToMerge[0],
+            ...firstState,
             id: `merged_${Date.now()}`,
             name: newName,
             bbox: {

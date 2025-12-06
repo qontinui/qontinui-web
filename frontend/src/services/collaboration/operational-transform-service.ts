@@ -690,10 +690,12 @@ export class OperationalTransformService {
     const parent = this.navigateToPath(doc, op.path.slice(0, -1));
     const key = op.path[op.path.length - 1];
 
-    if (Array.isArray(parent[key])) {
-      parent[key].splice(op.position ?? 0, 0, op.value);
-    } else {
-      parent[key] = op.value;
+    if (key !== undefined) {
+      if (Array.isArray(parent[key])) {
+        parent[key].splice(op.position ?? 0, 0, op.value);
+      } else {
+        parent[key] = op.value;
+      }
     }
   }
 
@@ -704,10 +706,12 @@ export class OperationalTransformService {
     const parent = this.navigateToPath(doc, op.path.slice(0, -1));
     const key = op.path[op.path.length - 1];
 
-    if (Array.isArray(parent[key])) {
-      parent[key].splice(op.position ?? 0, 1);
-    } else {
-      delete parent[key];
+    if (key !== undefined) {
+      if (Array.isArray(parent[key])) {
+        parent[key].splice(op.position ?? 0, 1);
+      } else {
+        delete parent[key];
+      }
     }
   }
 
@@ -717,7 +721,9 @@ export class OperationalTransformService {
   private applyUpdate(doc: any, op: Operation): void {
     const parent = this.navigateToPath(doc, op.path.slice(0, -1));
     const key = op.path[op.path.length - 1];
-    parent[key] = op.value;
+    if (key !== undefined) {
+      parent[key] = op.value;
+    }
   }
 
   /**
@@ -727,7 +733,7 @@ export class OperationalTransformService {
     const parent = this.navigateToPath(doc, op.path.slice(0, -1));
     const key = op.path[op.path.length - 1];
 
-    if (Array.isArray(parent[key])) {
+    if (key !== undefined && Array.isArray(parent[key])) {
       const item = parent[key].splice(op.position ?? 0, 1)[0];
       parent[key].splice(op.newPosition ?? 0, 0, item);
     }
@@ -846,8 +852,11 @@ export class OperationalTransformService {
     const commonLength = Math.min(path.length, insertPath.length);
 
     for (let i = 0; i < commonLength; i++) {
-      if (path[i] !== insertPath[i]) {
-        const pathIndex = parseInt(path[i], 10);
+      const pathSegment = path[i];
+      const insertSegment = insertPath[i];
+      if (pathSegment !== insertSegment) {
+        if (!pathSegment) break;
+        const pathIndex = parseInt(pathSegment, 10);
         if (!isNaN(pathIndex) && pathIndex >= position) {
           const newPath = [...path];
           newPath[i] = String(pathIndex + 1);

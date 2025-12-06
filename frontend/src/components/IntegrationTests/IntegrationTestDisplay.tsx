@@ -141,24 +141,6 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
     return scenarios;
   }, [allSnapshots, screenshots]);
 
-  // Filter snapshots
-  const filteredSnapshots = useMemo(() => {
-    let filtered = allSnapshots;
-
-    if (filterState) {
-      filtered = filtered.filter((s) => s.activeStates.includes(filterState));
-    }
-
-    if (filterActionType) {
-      filtered = filtered.filter((s) => s.actionType === filterActionType);
-    }
-
-    if (showOnlySuccessful) {
-      filtered = filtered.filter((s) => s.actionSuccess && s.resultSuccess);
-    }
-
-    return filtered;
-  }, [allSnapshots, filterState, filterActionType, showOnlySuccessful]);
 
   const getActionIcon = (type: ActionSnapshot["actionType"]) => {
     switch (type) {

@@ -78,12 +78,12 @@ export class PatternDetector {
     // Get actions in each branch
     const thenBranch = this.extractBranchActions(
       workflow,
-      trueBranchConnections.length > 0 ? trueBranchConnections[0].action : null
+      trueBranchConnections && trueBranchConnections.length > 0 && trueBranchConnections[0] ? trueBranchConnections[0].action : null
     );
 
     const elseBranch = this.extractBranchActions(
       workflow,
-      falseBranchConnections.length > 0
+      falseBranchConnections && falseBranchConnections.length > 0 && falseBranchConnections[0]
         ? falseBranchConnections[0].action
         : null
     );
@@ -124,7 +124,9 @@ export class PatternDetector {
     }
 
     // Get first action in loop body
-    const firstBodyAction = connections.main[0][0]?.action;
+    const firstOutput = connections.main[0];
+    const firstConn = firstOutput?.[0];
+    const firstBodyAction = firstConn?.action;
     if (!firstBodyAction) {
       return null;
     }
@@ -188,7 +190,7 @@ export class PatternDetector {
         break;
       }
 
-      currentId = nextActions.length > 0 ? nextActions[0] : null;
+      currentId = nextActions.length > 0 ? nextActions[0] || null : null;
     }
 
     return branchActions;
@@ -307,9 +309,14 @@ export class PatternDetector {
     }
 
     // Check for success/exit connections (index 1 if present)
-    if (connections.main.length > 1 && connections.main[1].length > 0) {
-      const exitActionId = connections.main[1][0].action;
-      return getActionById(workflow, exitActionId);
+    if (connections.main.length > 1) {
+      const exitOutput = connections.main[1];
+      if (exitOutput && exitOutput.length > 0) {
+        const exitConn = exitOutput[0];
+        if (exitConn) {
+          return getActionById(workflow, exitConn.action);
+        }
+      }
     }
 
     return undefined;

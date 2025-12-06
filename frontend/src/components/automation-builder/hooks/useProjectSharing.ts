@@ -90,7 +90,7 @@ export function useProjectSharing({
    * Add a user to the project
    */
   const addUser = useCallback(
-    async (email: string, permission: PermissionLevel, expiresAt?: string) => {
+    async (email: string, permission: PermissionLevel, _expiresAt?: string) => {
       if (!projectId) {
         throw new Error("No project ID provided");
       }
@@ -113,7 +113,7 @@ export function useProjectSharing({
    * Add an organization to the project
    */
   const addOrganization = useCallback(
-    async (orgId: string, permission: PermissionLevel, expiresAt?: string) => {
+    async (orgId: string, permission: PermissionLevel, _expiresAt?: string) => {
       if (!projectId) {
         throw new Error("No project ID provided");
       }

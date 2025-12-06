@@ -224,6 +224,8 @@ export interface ExtractedTransition {
   targetSelector: string;
   causesAppear: string[];
   causesDisappear: string[];
+  fromStateId?: string;
+  toStateId?: string;
 }
 
 // =============================================================================

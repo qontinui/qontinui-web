@@ -792,7 +792,7 @@ export function StateStructure() {
             onConnect={onConnect}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            onNodeClick={(_, node) => {
+            onNodeClick={(_, node: Node) => {
               if (node.type === "transitionNode") {
                 // For transition nodes, select the transition instead of the node
                 const transitionId = node.id.replace("transition-node-", "");
@@ -803,7 +803,7 @@ export function StateStructure() {
                 setSelectedEdge(null);
               }
             }}
-            onEdgeClick={(_, edge) => {
+            onEdgeClick={(_, edge: Edge) => {
               setSelectedEdge(edge.id);
               setSelectedNode(null);
             }}

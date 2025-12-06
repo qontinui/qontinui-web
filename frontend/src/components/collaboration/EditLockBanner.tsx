@@ -44,6 +44,7 @@ export function EditLockBanner({
         typeof lock.lock_expires_at === "string"
           ? new Date(lock.lock_expires_at)
           : lock.lock_expires_at;
+      if (!expiresAt) return;
       const now = new Date();
       const remaining = Math.max(0, expiresAt.getTime() - now.getTime());
       setTimeRemaining(Math.floor(remaining / 1000));

@@ -91,7 +91,6 @@ const permissionColors = {
 export function ShareProjectDialog({
   open,
   onOpenChange,
-  projectId,
   projectName,
   collaborators,
   organizations,
@@ -227,10 +226,6 @@ export function ShareProjectDialog({
       .join("")
       .toUpperCase()
       .slice(0, 2);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString();
   };
 
   return (

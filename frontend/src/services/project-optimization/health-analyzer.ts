@@ -541,6 +541,21 @@ export function calculateMetricsTrend(
   const firstMetric = filtered[0];
   const lastMetric = filtered[filtered.length - 1];
 
+  if (!firstMetric || !lastMetric) {
+    return {
+      metrics: filtered,
+      trend: {
+        health: "stable",
+        coverage: "stable",
+        issues: "stable",
+      },
+      period: {
+        start: new Date().toISOString(),
+        end: new Date().toISOString(),
+      },
+    };
+  }
+
   const healthTrend = calculateTrend(
     firstMetric.healthScore,
     lastMetric.healthScore

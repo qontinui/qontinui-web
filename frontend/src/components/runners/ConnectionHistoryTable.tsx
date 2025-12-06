@@ -58,16 +58,20 @@ export function ConnectionHistoryTable() {
   };
 
   const handleNextPage = () => {
-    if (data && params.offset + params.limit! < data.total) {
-      setParams({ ...params, offset: params.offset + params.limit! });
+    const limit = params.limit ?? 25;
+    const offset = params.offset ?? 0;
+    if (data && offset + limit < data.total) {
+      setParams({ ...params, offset: offset + limit });
     }
   };
 
   const handlePrevPage = () => {
-    if (params.offset > 0) {
+    const limit = params.limit ?? 25;
+    const offset = params.offset ?? 0;
+    if (offset > 0) {
       setParams({
         ...params,
-        offset: Math.max(0, params.offset - params.limit!),
+        offset: Math.max(0, offset - limit),
       });
     }
   };
@@ -78,8 +82,10 @@ export function ConnectionHistoryTable() {
     }
   };
 
-  const currentPage = Math.floor(params.offset / params.limit!) + 1;
-  const totalPages = data ? Math.ceil(data.total / params.limit!) : 0;
+  const limit = params.limit ?? 25;
+  const offset = params.offset ?? 0;
+  const currentPage = Math.floor(offset / limit) + 1;
+  const totalPages = data ? Math.ceil(data.total / limit) : 0;
 
   if (error) {
     const isConnectionError =
@@ -262,8 +268,8 @@ export function ConnectionHistoryTable() {
           <div className="border-t border-gray-800 p-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-400">
-                Showing {params.offset + 1} to{" "}
-                {Math.min(params.offset + params.limit!, data.total)} of{" "}
+                Showing {offset + 1} to{" "}
+                {Math.min(offset + limit, data.total)} of{" "}
                 {data.total} results
               </span>
               <div className="flex items-center gap-2">
@@ -289,7 +295,7 @@ export function ConnectionHistoryTable() {
                 variant="outline"
                 size="sm"
                 onClick={handlePrevPage}
-                disabled={params.offset === 0}
+                disabled={offset === 0}
                 className="border-gray-700"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -298,7 +304,7 @@ export function ConnectionHistoryTable() {
                 variant="outline"
                 size="sm"
                 onClick={handleNextPage}
-                disabled={params.offset + params.limit! >= data.total}
+                disabled={offset + limit >= data.total}
                 className="border-gray-700"
               >
                 <ChevronRight className="w-4 h-4" />

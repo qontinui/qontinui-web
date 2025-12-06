@@ -18,11 +18,11 @@ export class FileUploadService {
     try {
       const metaTag = document.querySelector('meta[name="csrf-token"]');
       if (metaTag) {
-        this.csrfToken = metaTag.getAttribute("content");
+        this.csrfToken = metaTag.getAttribute("content") ?? null;
       } else {
         const match = document.cookie.match(/csrf_token=([^;]+)/);
         if (match) {
-          this.csrfToken = match[1];
+          this.csrfToken = match[1] ?? null;
         }
       }
     } catch (error) {

@@ -21,6 +21,8 @@ export interface StateImage {
   avgBrightness?: number;
   maskDensity?: number; // Percentage of active pixels in mask (1.0 = full rectangle)
   hasMask?: boolean; // Whether this StateImage has a custom mask
+  frequency?: number; // Frequency of appearance across screenshots (0.0-1.0)
+  image_data?: string; // Base64 encoded image data
 }
 
 export interface DiscoveredState {

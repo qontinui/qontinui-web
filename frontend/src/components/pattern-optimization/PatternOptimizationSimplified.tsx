@@ -99,8 +99,11 @@ const PatternOptimizationContent: React.FC = () => {
   useEffect(() => {
     if (!session) {
       createSession();
-    } else if (session.screenshots.length > 0 && !selectedScreenshotId) {
-      setSelectedScreenshotId(session.screenshots[0].id);
+    } else if (session.screenshots?.length > 0 && !selectedScreenshotId) {
+      const firstScreenshot = session.screenshots[0];
+      if (firstScreenshot) {
+        setSelectedScreenshotId(firstScreenshot.id);
+      }
     }
   }, [session, createSession, selectedScreenshotId]);
 
@@ -118,8 +121,11 @@ const PatternOptimizationContent: React.FC = () => {
       await addScreenshots(files);
       // Select first screenshot after adding if none selected
       setTimeout(() => {
-        if (!selectedScreenshotId && session?.screenshots.length > 0) {
-          setSelectedScreenshotId(session.screenshots[0].id);
+        if (!selectedScreenshotId && session?.screenshots?.length > 0) {
+          const firstScreenshot = session.screenshots[0];
+          if (firstScreenshot) {
+            setSelectedScreenshotId(firstScreenshot.id);
+          }
         }
       }, 100);
     }
@@ -149,10 +155,11 @@ const PatternOptimizationContent: React.FC = () => {
 
       // Select the first newly added screenshot
       setTimeout(() => {
-        if (session?.screenshots.length > 0) {
-          setSelectedScreenshotId(
-            session.screenshots[session.screenshots.length - files.length].id
-          );
+        if (session?.screenshots?.length > 0) {
+          const targetScreenshot = session.screenshots[session.screenshots.length - files.length];
+          if (targetScreenshot) {
+            setSelectedScreenshotId(targetScreenshot.id);
+          }
         }
       }, 100);
     }
@@ -377,9 +384,9 @@ const PatternOptimizationContent: React.FC = () => {
             height: number;
           }
         | undefined;
-      if (fixedLocation && session && session.screenshots.length > 0) {
+      if (fixedLocation && session?.screenshots?.length > 0) {
         const firstScreenshot = session.screenshots[0];
-        if (firstScreenshot.region) {
+        if (firstScreenshot?.region) {
           searchRegion = {
             id: `search_region_${Date.now()}`,
             name: "Pattern Region",
@@ -452,7 +459,7 @@ const PatternOptimizationContent: React.FC = () => {
           <div className="p-4 border-b border-gray-800">
             <div className="flex justify-between items-center mb-2">
               <h2 className="font-semibold text-white">Screenshots</h2>
-              {session?.screenshots.length > 0 && (
+              {(session?.screenshots?.length ?? 0) > 0 && (
                 <button
                   onClick={clearSession}
                   className="px-3 py-1.5 bg-red-500/90 text-white rounded-md hover:bg-red-600 text-sm"
@@ -706,7 +713,7 @@ const PatternOptimizationContent: React.FC = () => {
                 </button>
 
                 {!hasRequirements &&
-                  session?.screenshots.length > 0 &&
+                  (session?.screenshots?.length ?? 0) > 0 &&
                   !isExtracting && (
                     <p className="text-xs text-amber-500 flex items-start gap-1 mt-2">
                       <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
@@ -1013,13 +1020,13 @@ const PatternOptimizationContent: React.FC = () => {
                 </div>
 
                 {/* Recommendations */}
-                {patternQuality?.recommendations.length > 0 && (
+                {(patternQuality?.recommendations?.length ?? 0) > 0 && (
                   <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
                     <h4 className="text-sm font-medium text-white mb-1">
                       Recommendations
                     </h4>
                     <ul className="text-xs text-amber-800 space-y-1">
-                      {patternQuality.recommendations.map((rec, i) => (
+                      {patternQuality?.recommendations?.map((rec, i) => (
                         <li key={i} className="flex items-start gap-1">
                           <span className="text-amber-600">•</span>
                           <span>{rec}</span>

@@ -5,7 +5,6 @@
 import { useSnapshotList } from "@/hooks/useSnapshotList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Loader2, Database, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -20,7 +19,7 @@ export function SnapshotMultiSelector({
   selectedSnapshots,
   onChange,
 }: SnapshotMultiSelectorProps) {
-  const { snapshots, loading, error, refresh } = useSnapshotList();
+  const { snapshots, loading, error } = useSnapshotList();
 
   const handleToggle = (snapshot: SnapshotRun) => {
     const isSelected = selectedSnapshots.some((s) => s.id === snapshot.id);

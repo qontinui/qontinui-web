@@ -176,7 +176,7 @@ export class ExecutionWebSocket {
     this.config = {
       ...DEFAULT_CONFIG,
       ...config,
-      authToken: config.authToken,
+      authToken: config.authToken ?? "",
     };
     this.handlers = handlers;
     this.maxReconnectAttempts = this.config.maxReconnectAttempts;

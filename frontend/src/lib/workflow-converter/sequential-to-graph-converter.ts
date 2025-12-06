@@ -306,7 +306,7 @@ export class SequentialToGraphConverter {
 
     // Process then branch (output 0)
     if (config.thenActions && config.thenActions.length > 0) {
-      const thenActionId = config.thenActions[0];
+      const thenActionId = config.thenActions[0] || "";
       this.addConnection(actionId, thenActionId, "main", 0, 0);
 
       // Note: In a full implementation, we would need to resolve action IDs
@@ -315,7 +315,7 @@ export class SequentialToGraphConverter {
 
     // Process else branch (output 1)
     if (config.elseActions && config.elseActions.length > 0) {
-      const elseActionId = config.elseActions[0];
+      const elseActionId = config.elseActions[0] || "";
       this.addConnection(actionId, elseActionId, "main", 1, 0);
     }
   }
@@ -336,7 +336,7 @@ export class SequentialToGraphConverter {
 
     // Process loop body
     if (config.actions && config.actions.length > 0) {
-      const firstBodyActionId = config.actions[0];
+      const firstBodyActionId = config.actions[0] || "";
       this.addConnection(actionId, firstBodyActionId, "main", 0, 0);
 
       // Note: Loop back connection would need to be handled by execution engine
@@ -360,14 +360,14 @@ export class SequentialToGraphConverter {
     // Process each case
     config.cases.forEach((caseItem, index) => {
       if (caseItem.actions && caseItem.actions.length > 0) {
-        const caseActionId = caseItem.actions[0];
+        const caseActionId = caseItem.actions[0] || "";
         this.addConnection(actionId, caseActionId, "main", index, 0);
       }
     });
 
     // Process default case
     if (config.defaultActions && config.defaultActions.length > 0) {
-      const defaultActionId = config.defaultActions[0];
+      const defaultActionId = config.defaultActions[0] || "";
       const defaultIndex = config.cases.length;
       this.addConnection(actionId, defaultActionId, "main", defaultIndex, 0);
     }
@@ -389,13 +389,13 @@ export class SequentialToGraphConverter {
 
     // Process try branch (success path)
     if (config.tryActions && config.tryActions.length > 0) {
-      const tryActionId = config.tryActions[0];
+      const tryActionId = config.tryActions[0] || "";
       this.addConnection(actionId, tryActionId, "success", 0, 0);
     }
 
     // Process catch branch (error path)
     if (config.catchActions && config.catchActions.length > 0) {
-      const catchActionId = config.catchActions[0];
+      const catchActionId = config.catchActions[0] || "";
       this.addConnection(actionId, catchActionId, "error", 0, 0);
     }
 
@@ -421,11 +421,11 @@ export class SequentialToGraphConverter {
       this.connections[sourceId] = {};
     }
 
-    if (!this.connections[sourceId][type]) {
-      this.connections[sourceId][type] = [];
+    if (!this.connections[sourceId]![type as keyof typeof this.connections[typeof sourceId]]) {
+      (this.connections[sourceId] as any)[type] = [];
     }
 
-    const outputs = this.connections[sourceId][type]!;
+    const outputs = (this.connections[sourceId] as any)[type]!;
 
     // Ensure output array exists
     while (outputs.length <= outputIndex) {

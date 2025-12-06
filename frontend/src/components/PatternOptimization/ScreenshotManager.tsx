@@ -34,6 +34,7 @@ export function ScreenshotManager() {
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        if (!file) continue;
 
         if (!file.type.startsWith("image/")) {
           toast.error(`${file.name} is not an image`);

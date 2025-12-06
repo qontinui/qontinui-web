@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -12,7 +11,6 @@ import {
 } from "@/components/ui/card";
 
 export default function SetupAdmin() {
-  const [email, setEmail] = useState("jspinak@hotmail.com");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
 

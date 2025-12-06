@@ -1,12 +1,9 @@
 import Link from "next/link";
 import {
   Play,
-  Pause,
-  RotateCcw,
   Settings,
   AlertCircle,
   CheckCircle2,
-  Clock,
   FileJson,
 } from "lucide-react";
 

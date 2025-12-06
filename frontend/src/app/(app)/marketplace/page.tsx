@@ -46,8 +46,8 @@ export default function MarketplacePage() {
     usePopularPackages();
   const { data: projects } = useProjects();
   const { data: installedPackages } = useInstalledPackages(
-    projects?.data?.[0]?.id || "",
-    !!projects?.data?.[0]?.id
+    projects?.[0]?.id || "",
+    !!projects?.[0]?.id
   );
 
   // Mutations
@@ -262,7 +262,7 @@ export default function MarketplacePage() {
             onOpenChange={setInstallDialogOpen}
             package={selectedPackage}
             projects={
-              projects?.data?.map((p) => ({ id: p.id, name: p.name })) || []
+              projects?.map((p) => ({ id: p.id, name: p.name })) || []
             }
             onInstall={handleInstall}
             installStatus={installStatus}

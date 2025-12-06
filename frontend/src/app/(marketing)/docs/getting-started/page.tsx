@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, Globe, Play, CheckCircle } from "lucide-react";
+import { Download, CheckCircle } from "lucide-react";
 
 export const metadata = {
   title: "Getting Started with Qontinui - Quick Start Guide",

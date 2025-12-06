@@ -11,7 +11,7 @@
  * - Performance monitoring
  */
 
-import { useCallback, useMemo, useRef, useEffect } from "react";
+import { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import type { Action, Workflow } from "../lib/action-schema/action-types";
 
 // ============================================================================
@@ -118,6 +118,7 @@ export function useThrottle<T>(value: T, interval: number): T {
     if (now >= lastUpdated.current + interval) {
       lastUpdated.current = now;
       setThrottledValue(value);
+      return;
     } else {
       const timer = setTimeout(() => {
         lastUpdated.current = Date.now();
@@ -138,7 +139,7 @@ export function useDebouncedCallback<T extends (...args: any[]) => any>(
   callback: T,
   delay: number
 ): (...args: Parameters<T>) => void {
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   useEffect(() => {
     return () => {
@@ -338,11 +339,11 @@ export class PerformanceMonitor {
     return {
       count,
       avg: sum / count,
-      min: sorted[0],
-      max: sorted[count - 1],
-      p50: sorted[Math.floor(count * 0.5)],
-      p95: sorted[Math.floor(count * 0.95)],
-      p99: sorted[Math.floor(count * 0.99)],
+      min: sorted[0] ?? 0,
+      max: sorted[count - 1] ?? 0,
+      p50: sorted[Math.floor(count * 0.5)] ?? 0,
+      p95: sorted[Math.floor(count * 0.95)] ?? 0,
+      p99: sorted[Math.floor(count * 0.99)] ?? 0,
     };
   }
 
@@ -389,7 +390,7 @@ export class PerformanceMonitor {
  * Hook for performance monitoring
  */
 export function usePerformanceMonitor(): PerformanceMonitor {
-  const monitorRef = useRef<PerformanceMonitor>();
+  const monitorRef = useRef<PerformanceMonitor | undefined>(undefined);
 
   if (!monitorRef.current) {
     monitorRef.current = new PerformanceMonitor();
@@ -436,7 +437,7 @@ export class BatchUpdater<T> {
     if (this.batch.length >= this.batchSize) {
       this.flush();
     } else {
-      this.scheduleFlu();
+      this.scheduleFlush();
     }
   }
 
@@ -489,7 +490,7 @@ export function useBatchUpdater<T>(
   batchSize = 10,
   delay = 100
 ): BatchUpdater<T> {
-  const updaterRef = useRef<BatchUpdater<T>>();
+  const updaterRef = useRef<BatchUpdater<T> | undefined>(undefined);
 
   if (!updaterRef.current) {
     updaterRef.current = new BatchUpdater(callback, batchSize, delay);
@@ -507,12 +508,6 @@ export function useBatchUpdater<T>(
 // ============================================================================
 // Utilities
 // ============================================================================
-
-function useState<T>(initialValue: T): [T, (value: T) => void] {
-  // This is a placeholder - in actual use, import from React
-  const { useState: reactUseState } = require("react");
-  return reactUseState(initialValue);
-}
 
 /**
  * Calculate bounding box for actions

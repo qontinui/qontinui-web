@@ -26,7 +26,7 @@ export function getComplexityDistribution(
   const sortedScores = [...scores].sort((a, b) => a - b);
   const median =
     sortedScores.length > 0
-      ? sortedScores[Math.floor(sortedScores.length / 2)]
+      ? (sortedScores[Math.floor(sortedScores.length / 2)] ?? 0)
       : 0;
 
   const highComplexity = workflowComplexityAnalyzer

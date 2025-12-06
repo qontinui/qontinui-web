@@ -19,13 +19,13 @@ import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 export interface ScreenshotData {
-  id: string;
-  file: File;
-  url: string; // Blob URL for display
+  id?: string;
+  file?: File;
+  url?: string; // Blob URL for display
   permanentUrl?: string; // Permanent URL from backend (for saving)
-  dimensions: { width: number; height: number };
-  annotations: any[];
-  hasUnsavedChanges: boolean;
+  dimensions?: { width: number; height: number };
+  annotations?: any[];
+  hasUnsavedChanges?: boolean;
 }
 
 export interface ScreenshotThumbnailStripProps {

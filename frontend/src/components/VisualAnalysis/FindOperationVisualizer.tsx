@@ -192,7 +192,8 @@ export const FindOperationVisualizer: React.FC<
   ]);
 
   const performFind = async () => {
-    if (!stateImage || !stateImage.image || !apiConnected) return;
+    const imageId = stateImage?.patterns?.[0]?.imageId;
+    if (!stateImage || !imageId || !apiConnected) return;
 
     setIsSearching(true);
     const startTime = Date.now();
@@ -200,7 +201,7 @@ export const FindOperationVisualizer: React.FC<
     try {
       const result = await testStateImage(
         screenshot,
-        stateImage.image,
+        imageId,
         similarity
       );
 

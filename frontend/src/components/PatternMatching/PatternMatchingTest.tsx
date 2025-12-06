@@ -55,7 +55,7 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
   // State
   const [selectedScreenshot, setSelectedScreenshot] =
     useState<Screenshot | null>(
-      activeScreenshots.length > 0 ? activeScreenshots[0] : null
+      activeScreenshots.length > 0 ? (activeScreenshots[0] ?? null) : null
     );
   const [screenshotDimensions, setScreenshotDimensions] = useState<{
     width: number;
@@ -532,11 +532,11 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
           templateImage,
           similarity,
           searchRegion
-            ? {
+            ? ({
                 bounds: searchRegion,
                 id: "search-region",
                 name: "Search Region",
-              }
+              } as any)
             : undefined
         );
 
@@ -562,11 +562,11 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
           templateImage,
           similarity,
           searchRegion
-            ? {
+            ? ({
                 bounds: searchRegion,
                 id: "search-region",
                 name: "Search Region",
-              }
+              } as any)
             : undefined
         );
 

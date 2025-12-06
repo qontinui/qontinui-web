@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { X, Check } from "lucide-react";
 import {
   ScreenshotLocation,
-  Screenshot,
   AnchorType,
 } from "../../types/Screenshot";
 import { StateImage } from "../../contexts/automation-context/types";

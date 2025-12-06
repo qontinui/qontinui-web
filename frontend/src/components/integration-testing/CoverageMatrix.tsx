@@ -72,7 +72,7 @@ export function CoverageMatrix({
           </tr>
         </thead>
         <tbody>
-          {states.map((state, index) => (
+          {states.map((state) => (
             <tr
               key={state.state_name}
               className={`

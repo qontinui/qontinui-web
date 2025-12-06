@@ -274,6 +274,12 @@ export interface TutorialStep {
   /** Main content (supports markdown formatting) */
   content: string;
 
+  /** Optional additional details text */
+  details?: string;
+
+  /** Optional keyboard shortcuts for this step */
+  shortcuts?: string[];
+
   /** Optional path to a screenshot image for this step */
   screenshot?: string;
 
@@ -339,6 +345,9 @@ export interface Tutorial {
 
   /** Estimated duration (e.g., "15 minutes", "1 hour") */
   duration: string;
+
+  /** Estimated time in minutes (numeric) */
+  estimatedTime?: number;
 
   /** Overall difficulty level of the tutorial */
   difficulty: DifficultyLevel;

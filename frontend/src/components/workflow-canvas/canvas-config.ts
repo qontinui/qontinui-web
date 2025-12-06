@@ -184,11 +184,12 @@ export function hexToRgba(hex: string, alpha: number = 1): string {
 /**
  * Get color for a connection type
  */
-export function getConnectionColor(type: "main" | "error" | "success"): string {
+export function getConnectionColor(type: "main" | "error" | "success" | "parallel"): string {
   const colorMap = {
     main: COLORS.main,
     error: COLORS.error,
     success: COLORS.success,
+    parallel: COLORS.main, // Use main color for parallel connections
   };
 
   return colorMap[type] || COLORS.main;

@@ -100,7 +100,7 @@ export function PresenceIndicator({
 
   if (
     users.length === 0 ||
-    (users.length === 1 && users[0].id === currentUserId)
+    (users.length === 1 && users[0]?.id === currentUserId)
   ) {
     return null;
   }

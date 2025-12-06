@@ -94,12 +94,12 @@ export default function Dashboard() {
     // Wait for auth to finish loading before redirecting
     if (!authLoading && !user) {
       router.push("/");
-      return;
+      return undefined;
     }
 
     // Show welcome modal for new users who haven't completed onboarding
     if (user && !authLoading && isNewUser() && !hasCompletedWelcome) {
-      toggleWelcomeModal();
+      toggleWelcomeModal(true);
     }
 
     // Show early access welcome for new users (separate from onboarding)
@@ -113,6 +113,8 @@ export default function Dashboard() {
       ); // Longer delay if showing onboarding first
       return () => clearTimeout(timer);
     }
+
+    return undefined;
   }, [user, authLoading, router, hasCompletedWelcome, toggleWelcomeModal]);
 
   // Clear old localStorage project data (one-time cleanup)
@@ -251,9 +253,10 @@ export default function Dashboard() {
         }
 
         // Create a new project with imported data
-        const newProject = await createProject({
+        const newProject = await createProject.mutateAsync({
           name: `${projectData.name} (Imported)`,
           description: projectData.description || "Imported project",
+          configuration: {},
         });
 
         toast.success(`Imported project: ${projectData.name}`);
@@ -706,8 +709,8 @@ export default function Dashboard() {
       {showTutorialOverlay && <TutorialOverlay />}
       <QuickStartChecklist />
       <FirstProjectWizard
-        isOpen={showFirstProjectWizard}
-        onClose={() => setShowFirstProjectWizard(false)}
+        open={showFirstProjectWizard}
+        onOpenChange={setShowFirstProjectWizard}
       />
 
       {/* Early Access Welcome Modal */}

@@ -130,6 +130,8 @@ export function SequentialEditor({
     const updatedActions = [...actions];
     const draggedAction = updatedActions[draggedIndex];
 
+    if (!draggedAction) return;
+
     // Remove from old position
     updatedActions.splice(draggedIndex, 1);
     // Insert at new position
@@ -271,7 +273,7 @@ export function SequentialEditor({
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <GripVertical className="w-3.5 h-3.5 text-gray-500 cursor-grab active:cursor-grabbing" />
                           <Badge
-                            className={`${actionType?.color} text-white text-xs px-1.5 py-0 h-5 min-w-[1.5rem] flex items-center justify-center`}
+                            className={`${actionType?.color ?? "bg-gray-500"} text-white text-xs px-1.5 py-0 h-5 min-w-[1.5rem] flex items-center justify-center`}
                           >
                             {index + 1}
                           </Badge>
@@ -281,7 +283,7 @@ export function SequentialEditor({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="font-medium text-sm truncate">
-                              {actionType?.label}
+                              {actionType?.label ?? action.type}
                             </span>
                             {action.type !== "GO_TO_STATE" &&
                               action.type !== "RUN_WORKFLOW" && (
@@ -489,40 +491,6 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
   }
 }
 
-function renderActionSummary(
-  action: Action,
-  states: any[],
-  workflows: any[],
-  images: any[]
-) {
-  const summary = getActionSummary(action, states, workflows, images);
-  const hasRemovedImage = summary.includes("[REMOVED:");
-
-  if (hasRemovedImage) {
-    const parts = summary.split(/(\[REMOVED:[^\]]+\])/);
-    return (
-      <p className="text-xs mt-1">
-        {parts.map((part, index) => {
-          if (part.startsWith("[REMOVED:")) {
-            return (
-              <span key={index} className="text-red-400 font-medium">
-                {part}
-              </span>
-            );
-          }
-          return (
-            <span key={index} className="text-gray-400">
-              {part}
-            </span>
-          );
-        })}
-      </p>
-    );
-  }
-
-  return <p className="text-xs text-gray-400 mt-1">{summary}</p>;
-}
-
 function getActionSummary(
   action: Action,
   states: any[],
@@ -530,17 +498,18 @@ function getActionSummary(
   images: any[]
 ): string {
   switch (action.type) {
-    case "FIND":
-      if (action.config.removedImage) {
-        return `[REMOVED: ${action.config.removedImage}]`;
+    case "FIND": {
+      const config = action.config as any;
+      if (config.removedImage) {
+        return `[REMOVED: ${config.removedImage}]`;
       }
       // Handle new target structure with imageIds array
       const imageIds =
-        action.config.target?.type === "image"
-          ? action.config.target.imageIds
+        config.target?.type === "image"
+          ? config.target.imageIds
           : null;
       const imageId =
-        imageIds?.[0] || action.config.target?.imageId || action.config.image;
+        imageIds?.[0] || config.target?.imageId || config.image;
 
       if (imageId) {
         let stateImageName = null;
@@ -579,27 +548,38 @@ function getActionSummary(
         return "Image not found";
       }
       return "No image selected";
-    case "FIND_STATE_IMAGE":
-      if (action.config.state) {
-        const state = states.find((s) => s.id === action.config.state);
+    }
+    case "FIND_STATE_IMAGE": {
+      const config = action.config as { stateId?: string; imageId?: string };
+      if (config.stateId) {
+        const state = states.find((s) => s.id === config.stateId);
         return state ? `Find any image from ${state.name}` : "State not found";
       }
       return "No state selected";
-    case "CLICK":
-      return `${action.config.mouseButton?.toLowerCase() || "left"} click on ${action.config.target}`;
-    case "DOUBLE_CLICK":
-      return `Double click on ${action.config.target || "Last Find Result"}`;
-    case "RIGHT_CLICK":
-      return `Right click on ${action.config.target || "Last Find Result"}`;
-    case "TYPE":
-      if (action.config.textSource === "stateString") {
-        if (!action.config.selectedState) return "No state selected";
-        const state = states.find((s) => s.id === action.config.selectedState);
+    }
+    case "CLICK": {
+      const config = action.config as { mouseButton?: string; target?: string };
+      return `${config.mouseButton?.toLowerCase() || "left"} click on ${config.target}`;
+    }
+    case "DOUBLE_CLICK": {
+      const config = action.config as { target?: string };
+      return `Double click on ${config.target || "Last Find Result"}`;
+    }
+    case "RIGHT_CLICK": {
+      const config = action.config as { target?: string };
+      return `Right click on ${config.target || "Last Find Result"}`;
+    }
+    case "TYPE": {
+      const config = action.config as { text?: string; textSource?: { stateId: string; stringIds: string[] } };
+      if (config.textSource) {
+        const stateId = config.textSource.stateId;
+        if (!stateId) return "No state selected";
+        const state = states.find((s) => s.id === stateId);
         if (!state) return "Invalid state";
-        if (action.config.selectedStateStrings?.length > 0 && state.strings) {
+        if (config.textSource.stringIds?.length > 0 && state.strings) {
           const selectedStrings = state.strings
             .filter((s: any) =>
-              action.config.selectedStateStrings.includes(s.id)
+              config.textSource!.stringIds.includes(s.id)
             )
             .map((s: any) => s.value)
             .filter((v: any) => v);
@@ -616,29 +596,28 @@ function getActionSummary(
           return `No strings selected from ${state.name || state.id}`;
         }
       } else {
-        if (!action.config.text) return "No text specified";
+        if (!config.text) return "No text specified";
         const displayText =
-          action.config.text.length > 30
-            ? action.config.text.substring(0, 30) + "..."
-            : action.config.text;
+          config.text.length > 30
+            ? config.text.substring(0, 30) + "..."
+            : config.text;
         return `Type "${displayText.replace(/\n/g, "↵").replace(/\t/g, "→")}"`;
       }
-    case "DRAG":
-      if (action.config.removedImageTo) {
-        return `Drag from ${action.config.from} to [REMOVED: ${action.config.removedImageTo}]`;
-      }
-      return `Drag from ${action.config.from} to ${action.config.to || "target"}`;
-    case "SCROLL":
-      return `Scroll ${action.config.direction} ${action.config.amount} units`;
-    case "VANISH":
-      if (action.config.removedImage) {
-        return `Wait for [REMOVED: ${action.config.removedImage}] to vanish`;
-      }
-      // Handle new target structure
+    }
+    case "DRAG": {
+      const config = action.config as { source?: any; destination?: any };
+      return `Drag from ${config.source || "source"} to ${config.destination || "destination"}`;
+    }
+    case "SCROLL": {
+      const config = action.config as { direction?: string; clicks?: number };
+      return `Scroll ${config.direction} ${config.clicks || 1} clicks`;
+    }
+    case "VANISH": {
+      const config = action.config as { target?: { type?: string; imageId?: string } };
       const vanishImageId =
-        action.config.target?.type === "image"
-          ? action.config.target.imageId
-          : action.config.image;
+        config.target?.type === "image"
+          ? config.target.imageId
+          : undefined;
       if (vanishImageId) {
         const vanishImage = images.find((img) => img.id === vanishImageId);
         if (vanishImage) {
@@ -651,75 +630,88 @@ function getActionSummary(
         return `Wait for ${vanishImageId} to vanish`;
       }
       return "No image selected";
-    case "GO_TO_STATE":
-      const targetStates = (action.config.states as string[]) || [];
-      if (targetStates.length > 0) {
-        const stateNames = targetStates.map((stateId: string) => {
-          const state = states.find((s) => s.id === stateId);
-          return state ? state.name : stateId;
-        });
-        if (stateNames.length === 1) {
-          return `Target: ${stateNames[0]}`;
-        } else {
-          return `Targets: ${stateNames.join(", ")} (${stateNames.length} states)`;
-        }
+    }
+    case "GO_TO_STATE": {
+      const config = action.config as { stateId?: string };
+      if (config.stateId) {
+        const state = states.find((s) => s.id === config.stateId);
+        return state ? `Target: ${state.name}` : `Target: ${config.stateId}`;
       }
-      return "No states selected";
-    case "RUN_WORKFLOW":
-      if (action.config.workflowId) {
+      return "No state selected";
+    }
+    case "RUN_WORKFLOW": {
+      const config = action.config as { workflowId?: string };
+      if (config.workflowId) {
         const workflow = workflows.find(
-          (w: any) => w.id === action.config.workflowId
+          (w: any) => w.id === config.workflowId
         );
-        return workflow ? workflow.name : action.config.workflowId;
+        return workflow ? workflow.name : config.workflowId;
       }
       return "No workflow selected";
-    case "IF":
-      const thenCount = action.config.thenActions?.length || 0;
-      const elseCount = action.config.elseActions?.length || 0;
-      const conditionType = action.config.condition?.type || "not configured";
+    }
+    case "IF": {
+      const config = action.config as { thenActions?: any[]; elseActions?: any[]; condition?: { type?: string } };
+      const thenCount = config.thenActions?.length || 0;
+      const elseCount = config.elseActions?.length || 0;
+      const conditionType = config.condition?.type || "not configured";
       if (elseCount > 0) {
         return `${conditionType} condition: ${thenCount} then-actions, ${elseCount} else-actions`;
       } else {
         return `${conditionType} condition: ${thenCount} then-actions`;
       }
-    case "LOOP":
-      const loopType = action.config.loopType || "FOR";
-      const actionCount = action.config.actions?.length || 0;
+    }
+    case "LOOP": {
+      const config = action.config as { loopType?: string; actions?: any[]; iterations?: number };
+      const loopType = config.loopType || "FOR";
+      const actionCount = config.actions?.length || 0;
       if (loopType === "FOR") {
-        const iterations = action.config.iterations || 0;
+        const iterations = config.iterations || 0;
         return `FOR loop: ${iterations} iterations, ${actionCount} actions`;
       } else if (loopType === "WHILE") {
         return `WHILE loop: ${actionCount} actions`;
       } else {
         return `FOREACH loop: ${actionCount} actions`;
       }
-    case "MOUSE_MOVE":
-      if (action.config.target === "Coordinates") {
-        return `Move mouse to (${action.config.x}, ${action.config.y})`;
+    }
+    case "MOUSE_MOVE": {
+      const config = action.config as { target?: any; x?: number; y?: number };
+      if (config.target === "Coordinates") {
+        return `Move mouse to (${config.x}, ${config.y})`;
       }
-      return `Move mouse to ${action.config.target}`;
-    case "MOUSE_DOWN":
-      if (action.config.target === "Coordinates") {
-        return `Press ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`;
+      return `Move mouse to ${config.target}`;
+    }
+    case "MOUSE_DOWN": {
+      const config = action.config as { target?: string; button?: string; x?: number; y?: number; mouseButton?: string };
+      if (config.target === "Coordinates") {
+        return `Press ${config.button || config.mouseButton || "left"} button at (${config.x}, ${config.y})`;
       }
-      return `Press ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`;
-    case "MOUSE_UP":
-      if (action.config.target === "Coordinates") {
-        return `Release ${action.config.button || "left"} button at (${action.config.x}, ${action.config.y})`;
+      return `Press ${config.button || config.mouseButton || "left"} button${config.target ? ` at ${config.target}` : ""}`;
+    }
+    case "MOUSE_UP": {
+      const config = action.config as { target?: string; button?: string; x?: number; y?: number; mouseButton?: string };
+      if (config.target === "Coordinates") {
+        return `Release ${config.button || config.mouseButton || "left"} button at (${config.x}, ${config.y})`;
       }
-      return `Release ${action.config.button || "left"} button${action.config.target ? ` at ${action.config.target}` : ""}`;
-    case "KEY_PRESS":
-      return action.config.key
-        ? `Press key: ${action.config.key}`
+      return `Release ${config.button || config.mouseButton || "left"} button${config.target ? ` at ${config.target}` : ""}`;
+    }
+    case "KEY_PRESS": {
+      const config = action.config as { key?: string; keys?: string[] };
+      return config.key || config.keys?.[0]
+        ? `Press key: ${config.key || config.keys?.[0]}`
         : "No key selected";
-    case "KEY_DOWN":
-      return action.config.key
-        ? `Hold key down: ${action.config.key}`
+    }
+    case "KEY_DOWN": {
+      const config = action.config as { key?: string; keys?: string[] };
+      return config.key || config.keys?.[0]
+        ? `Hold key down: ${config.key || config.keys?.[0]}`
         : "No key selected";
-    case "KEY_UP":
-      return action.config.key
-        ? `Release key: ${action.config.key}`
+    }
+    case "KEY_UP": {
+      const config = action.config as { key?: string; keys?: string[] };
+      return config.key || config.keys?.[0]
+        ? `Release key: ${config.key || config.keys?.[0]}`
         : "No key selected";
+    }
     default:
       return "Configure action";
   }

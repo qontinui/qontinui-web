@@ -259,7 +259,7 @@ export class ImageOrganizationService {
       // Validate folder name
       const nameValidation = this.validateFolderName(name, parentId);
       if (!nameValidation.success) {
-        return nameValidation;
+        return nameValidation as OperationResult<ImageFolder>;
       }
 
       // Validate parent exists
@@ -337,7 +337,7 @@ export class ImageOrganizationService {
           id
         );
         if (!nameValidation.success) {
-          return nameValidation;
+          return nameValidation as OperationResult<ImageFolder>;
         }
       }
 
@@ -1668,6 +1668,13 @@ export class ImageOrganizationService {
       }
 
       const version = versions[versionIndex];
+
+      if (!version) {
+        return {
+          success: false,
+          error: "Version not found",
+        };
+      }
 
       if (version.isPrimary && versions.length > 1) {
         return {

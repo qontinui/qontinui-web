@@ -96,10 +96,14 @@ const VariableNode: React.FC<VariableNodeProps> = ({
         </span>
         <span className="text-xs text-gray-400">{type}</span>
         {isNew && (
-          <Sparkles className="w-3 h-3 text-green-500" title="New variable" />
+          <span title="New variable">
+            <Sparkles className="w-3 h-3 text-green-500" />
+          </span>
         )}
         {isChanged && !isNew && (
-          <History className="w-3 h-3 text-yellow-500" title="Value changed" />
+          <span title="Value changed">
+            <History className="w-3 h-3 text-yellow-500" />
+          </span>
         )}
         <span className="text-sm font-mono flex-1 text-right">
           {renderValue()}
@@ -157,7 +161,7 @@ export const VariableInspector: React.FC = () => {
       if (!acc[entry.variableName]) {
         acc[entry.variableName] = [];
       }
-      acc[entry.variableName].push(entry);
+      acc[entry.variableName]?.push(entry);
       return acc;
     },
     {} as Record<string, typeof variableHistory>

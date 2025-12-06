@@ -230,6 +230,22 @@ export class RecordingService {
   }
 
   /**
+   * Get processing logs for a recording
+   */
+  async getProcessingLogs(recordingId: string): Promise<Array<{ timestamp: string; level: string; message: string }>> {
+    const response = await this.httpClient.fetch(
+      `${this.apiUrl}/api/v1/recordings/${recordingId}/logs`
+    );
+
+    if (!response.ok) {
+      // Return empty array if logs endpoint doesn't exist yet
+      return [];
+    }
+
+    return response.json();
+  }
+
+  /**
    * Poll processing status until complete
    */
   async pollProcessingStatus(

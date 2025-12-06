@@ -17,7 +17,7 @@
  */
 
 import { create } from "zustand";
-import { devtools, persist, StateCreator } from "zustand/middleware";
+import { devtools, persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import type {
   Workflow,
@@ -25,6 +25,21 @@ import type {
   Connection,
   Connections,
 } from "../lib/action-schema/action-types";
+
+// ============================================================================
+// Helper Type Guards
+// ============================================================================
+
+type ConnectionType = "main" | "error" | "success" | "parallel";
+
+function isValidConnectionType(type: string): type is ConnectionType {
+  return (
+    type === "main" ||
+    type === "error" ||
+    type === "success" ||
+    type === "parallel"
+  );
+}
 
 // ============================================================================
 // Types
@@ -240,17 +255,6 @@ function generateActionId(): string {
   return `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-/**
- * Generate an edge ID from connection data
- */
-function getEdgeId(
-  sourceId: string,
-  outputType: string,
-  outputIndex: number,
-  targetId: string
-): string {
-  return `${sourceId}-${outputType}-${outputIndex}-${targetId}`;
-}
 
 /**
  * Deep clone an action with a new ID
@@ -281,12 +285,15 @@ function updateConnectionsForClonedActions(
     newConnections[newSourceId] = {};
 
     for (const [type, outputs] of Object.entries(connectionTypes)) {
-      newConnections[newSourceId][type] = outputs.map((outputConnections) =>
-        outputConnections.map((conn) => ({
-          ...conn,
-          action: oldToNewIdMap.get(conn.action) || conn.action,
-        }))
-      );
+      if (outputs && Array.isArray(outputs) && isValidConnectionType(type)) {
+        (newConnections[newSourceId] as any)[type] = outputs.map(
+          (outputConnections) =>
+            outputConnections.map((conn) => ({
+              ...conn,
+              action: oldToNewIdMap.get(conn.action) || conn.action,
+            }))
+        );
+      }
     }
   }
 
@@ -420,11 +427,20 @@ export const useCanvasStore = create<CanvasStore>()(
               // Remove connections TO this action
               for (const sourceId of Object.keys(state.workflow.connections)) {
                 const sourceConnections = state.workflow.connections[sourceId];
+                if (!sourceConnections) continue;
+
                 for (const type of Object.keys(sourceConnections)) {
-                  sourceConnections[type] = sourceConnections[type]?.map(
-                    (outputs) =>
-                      outputs.filter((conn) => conn.action !== actionId)
-                  );
+                  if (isValidConnectionType(type)) {
+                    const outputs = (sourceConnections as any)[type];
+                    if (outputs && Array.isArray(outputs)) {
+                      const filteredOutputs = outputs.map((conns: Connection[]) =>
+                        conns.filter(
+                          (conn: Connection) => conn.action !== actionId
+                        )
+                      );
+                      (sourceConnections as any)[type] = filteredOutputs;
+                    }
+                  }
                 }
               }
 
@@ -456,11 +472,20 @@ export const useCanvasStore = create<CanvasStore>()(
               // Remove connections TO these actions
               for (const sourceId of Object.keys(state.workflow.connections)) {
                 const sourceConnections = state.workflow.connections[sourceId];
+                if (!sourceConnections) continue;
+
                 for (const type of Object.keys(sourceConnections)) {
-                  sourceConnections[type] = sourceConnections[type]?.map(
-                    (outputs) =>
-                      outputs.filter((conn) => !idsSet.has(conn.action))
-                  );
+                  if (isValidConnectionType(type)) {
+                    const outputs = (sourceConnections as any)[type];
+                    if (outputs && Array.isArray(outputs)) {
+                      const filteredOutputs = outputs.map((conns: Connection[]) =>
+                        conns.filter(
+                          (conn: Connection) => !idsSet.has(conn.action)
+                        )
+                      );
+                      (sourceConnections as any)[type] = filteredOutputs;
+                    }
+                  }
                 }
               }
 
@@ -497,7 +522,10 @@ export const useCanvasStore = create<CanvasStore>()(
                   (a) => a.id === actionId
                 );
                 if (index !== -1) {
-                  state.workflow.actions[index].position = position;
+                  const action = state.workflow.actions[index];
+                  if (action) {
+                    action.position = position;
+                  }
                 }
               }
               state.isDirty = true;
@@ -524,16 +552,23 @@ export const useCanvasStore = create<CanvasStore>()(
                 state.workflow.connections[sourceId] = {};
               }
 
-              if (!state.workflow.connections[sourceId][outputType]) {
-                state.workflow.connections[sourceId][outputType] = [];
+              const sourceConns = state.workflow.connections[sourceId];
+              if (!sourceConns) return;
+
+              if (!isValidConnectionType(outputType)) {
+                return;
               }
 
+              if (!(sourceConns as any)[outputType]) {
+                (sourceConns as any)[outputType] = [];
+              }
+
+              const outputArray = (sourceConns as any)[outputType];
+              if (!outputArray || !Array.isArray(outputArray)) return;
+
               // Ensure output index array exists
-              while (
-                state.workflow.connections[sourceId][outputType]!.length <=
-                outputIndex
-              ) {
-                state.workflow.connections[sourceId][outputType]!.push([]);
+              while (outputArray.length <= outputIndex) {
+                outputArray.push([]);
               }
 
               // Add connection
@@ -543,9 +578,10 @@ export const useCanvasStore = create<CanvasStore>()(
                 index: targetIndex,
               };
 
-              state.workflow.connections[sourceId][outputType]![
-                outputIndex
-              ].push(connection);
+              const targetArray = outputArray[outputIndex];
+              if (targetArray && Array.isArray(targetArray)) {
+                targetArray.push(connection);
+              }
               state.isDirty = true;
             });
             get().recordHistory("Add connection");
@@ -558,17 +594,23 @@ export const useCanvasStore = create<CanvasStore>()(
             targetId: string
           ) => {
             set((state) => {
-              if (
-                !state.workflow?.connections[sourceId]?.[outputType]?.[
-                  outputIndex
-                ]
-              )
-                return;
+              const sourceConns = state.workflow?.connections[sourceId];
+              if (!sourceConns) return;
 
-              state.workflow.connections[sourceId][outputType]![outputIndex] =
-                state.workflow.connections[sourceId][outputType]![
-                  outputIndex
-                ].filter((conn) => conn.action !== targetId);
+              if (!isValidConnectionType(outputType)) {
+                return;
+              }
+
+              const outputs = (sourceConns as any)[outputType];
+              if (!outputs || !Array.isArray(outputs)) return;
+
+              const targetOutputs = outputs[outputIndex];
+              if (targetOutputs && Array.isArray(targetOutputs)) {
+                const filtered = targetOutputs.filter(
+                  (conn: Connection) => conn.action !== targetId
+                );
+                outputs[outputIndex] = filtered;
+              }
 
               state.isDirty = true;
             });
@@ -720,9 +762,18 @@ export const useCanvasStore = create<CanvasStore>()(
               connectionsToCopy[nodeId] = {};
 
               for (const [type, outputs] of Object.entries(connections)) {
-                connectionsToCopy[nodeId][type] = outputs?.map((outputConns) =>
-                  outputConns.filter((conn) => selectedSet.has(conn.action))
-                );
+                if (
+                  outputs &&
+                  Array.isArray(outputs) &&
+                  isValidConnectionType(type)
+                ) {
+                  (connectionsToCopy[nodeId] as any)[type] = outputs.map(
+                    (outputConns: Connection[]) =>
+                      outputConns.filter((conn: Connection) =>
+                        selectedSet.has(conn.action)
+                      )
+                  );
+                }
               }
             }
 
@@ -740,10 +791,12 @@ export const useCanvasStore = create<CanvasStore>()(
             let offset = { x: 50, y: 50 };
             if (position && clipboardNodes.length > 0) {
               const firstNode = clipboardNodes[0];
-              offset = {
-                x: position.x - firstNode.position[0],
-                y: position.y - firstNode.position[1],
-              };
+              if (firstNode) {
+                offset = {
+                  x: position.x - firstNode.position[0],
+                  y: position.y - firstNode.position[1],
+                };
+              }
             }
 
             // Clone actions with new IDs
@@ -773,8 +826,17 @@ export const useCanvasStore = create<CanvasStore>()(
                   state.workflow.connections[sourceId] = {};
                 }
 
+                const sourceConns = state.workflow.connections[sourceId];
+                if (!sourceConns) continue;
+
                 for (const [type, outputs] of Object.entries(connections)) {
-                  state.workflow.connections[sourceId][type] = outputs;
+                  if (
+                    outputs &&
+                    Array.isArray(outputs) &&
+                    isValidConnectionType(type)
+                  ) {
+                    (sourceConns as any)[type] = outputs;
+                  }
                 }
               }
 
@@ -808,10 +870,11 @@ export const useCanvasStore = create<CanvasStore>()(
             if (historyIndex <= 0) return;
 
             const newIndex = historyIndex - 1;
-            const state = history[newIndex];
+            const historyState = history[newIndex];
+            if (!historyState) return;
 
             set((s) => {
-              s.workflow = state.workflow;
+              s.workflow = historyState.workflow;
               s.historyIndex = newIndex;
               s.isDirty = true;
             });
@@ -822,10 +885,11 @@ export const useCanvasStore = create<CanvasStore>()(
             if (historyIndex >= history.length - 1) return;
 
             const newIndex = historyIndex + 1;
-            const state = history[newIndex];
+            const historyState = history[newIndex];
+            if (!historyState) return;
 
             set((s) => {
-              s.workflow = state.workflow;
+              s.workflow = historyState.workflow;
               s.historyIndex = newIndex;
               s.isDirty = true;
             });
@@ -841,7 +905,7 @@ export const useCanvasStore = create<CanvasStore>()(
           },
 
           recordHistory: (description?: string) => {
-            const { workflow, history, historyIndex, maxHistorySize } = get();
+            const { workflow, maxHistorySize } = get();
             if (!workflow) return;
 
             // Deep clone workflow

@@ -139,6 +139,7 @@ export function isLinearWorkflow(workflow: Workflow): boolean {
   // Check if workflow has any branching in connections
   for (const sourceId in workflow.connections) {
     const outputs = workflow.connections[sourceId];
+    if (!outputs) continue;
 
     // Check for error/success connections (non-linear)
     if (outputs.error && outputs.error.length > 0) return false;

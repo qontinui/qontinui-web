@@ -19,18 +19,18 @@ import type {
   State,
   Transition,
   OutgoingTransition,
-  IncomingTransition,
   StateImage,
   StateRegion,
   StateLocation,
   StateString,
-  SearchRegion,
-  Pattern,
 } from "@/contexts/automation-context/types";
 
 import type {
   StateTemplate,
   StateTemplateConfig,
+  RegionTemplate,
+  LocationTemplate,
+  StringTemplate,
   StateGroup,
   GroupTreeNode,
   StateGroupAssociation,
@@ -61,10 +61,11 @@ import type {
   AnalysisResult,
   StateOrganizationStorage,
   SearchMatch,
+} from "@/types/state-organization/types";
+
+import {
   STATE_COMPLEXITY_THRESHOLDS,
   STATE_COMPLEXITY_WEIGHTS,
-  DEFAULT_COLORS,
-  DEFAULT_ICONS,
   STORAGE_VERSION,
   STORAGE_KEY,
 } from "@/types/state-organization/types";
@@ -672,7 +673,7 @@ export class StateOrganizationService {
   /**
    * Filter states by action type (via transitions)
    */
-  filterByActionType(actionType: string): State[] {
+  filterByActionType(_actionType: string): State[] {
     // This would require workflow analysis
     // For now, return states with transitions
     const statesWithTransitions = new Set<string>();
@@ -1950,6 +1951,7 @@ export class StateOrganizationService {
         depth,
         path,
         hasChildren: this.getChildren(group.id).length > 0,
+        description: group.description || undefined,
       };
 
       return node;

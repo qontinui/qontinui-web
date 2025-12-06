@@ -28,6 +28,14 @@ export interface StateRegion {
   offsetX?: number; // X offset in pixels (default 0)
   offsetY?: number; // Y offset in pixels (default 0)
 
+  // Bounding box (alternative to x, y, width, height)
+  bounds?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+
   // SearchRegion flag
   isSearchRegion?: boolean; // If true, this region can be used as a search region for StateImages
 
@@ -70,6 +78,9 @@ export interface StateLocation {
   // For relative positioning
   referenceImageId?: string; // ID of StateImage for relative positioning
   position?: Position; // Position within referenced image region
+  anchorType?: string; // Position anchor type
+  percentW?: number; // Width percentage (0.0-1.0)
+  percentH?: number; // Height percentage (0.0-1.0)
 
   // Metadata and history
   metadata?: Record<string, any>;
@@ -94,6 +105,10 @@ export interface SearchRegion {
   y: number;
   width: number;
   height: number;
+  referenceImageId?: string; // ID of StateImage for relative positioning
+  position?: Position; // Position within referenced image region
+  offsetX?: number; // X offset in pixels (default 0)
+  offsetY?: number; // Y offset in pixels (default 0)
 }
 
 // Pattern represents a single image variation with its search configuration
@@ -126,6 +141,7 @@ export interface State {
   name: string;
   description: string;
   initial?: boolean;
+  isFinal?: boolean;
   stateImages: StateImage[];
   regions: StateRegion[];
   locations: StateLocation[];

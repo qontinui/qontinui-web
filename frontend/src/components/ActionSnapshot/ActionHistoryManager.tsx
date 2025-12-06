@@ -47,7 +47,7 @@ export const ActionHistoryManager: React.FC<ActionHistoryManagerProps> = ({
     null
   );
   const [selectedScreenshot, setSelectedScreenshot] =
-    useState<Screenshot | null>(screenshots.length > 0 ? screenshots[0] : null);
+    useState<Screenshot | null>(screenshots.length > 0 ? (screenshots[0] ?? null) : null);
 
   const actionHistory = stateObject.actionHistory || { snapshots: [] };
 

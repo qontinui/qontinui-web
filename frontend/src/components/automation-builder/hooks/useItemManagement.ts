@@ -119,7 +119,6 @@ export function useItemManagement() {
         viewMode = "sequential",
         category = "Main",
         name,
-        description = "",
       } = options;
 
       if (viewMode === "sequential") {

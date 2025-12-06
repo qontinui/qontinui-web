@@ -4,7 +4,6 @@ import React from "react";
 import {
   CheckCircle,
   XCircle,
-  Clock,
   ArrowLeft,
   Activity,
   Timer,
@@ -36,37 +35,6 @@ export const TestResultsDetailPanel: React.FC<TestResultsDetailPanelProps> = ({
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
     return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
-  };
-
-  const getActionTypeIcon = (actionType: string) => {
-    const type = actionType.toLowerCase();
-    if (type.includes("find") || type.includes("wait")) {
-      return <Target className="w-4 h-4" />;
-    }
-    if (
-      type.includes("click") ||
-      type.includes("type") ||
-      type.includes("key")
-    ) {
-      return <Zap className="w-4 h-4" />;
-    }
-    return <Activity className="w-4 h-4" />;
-  };
-
-  const getActionTypeLabel = (actionType: string): string => {
-    const typeMap: Record<string, string> = {
-      find: "Find Pattern",
-      find_state_image: "Find State Image",
-      click: "Click",
-      type: "Type Text",
-      key: "Key Press",
-      wait: "Wait",
-      wait_for: "Wait For",
-      scroll: "Scroll",
-      drag: "Drag",
-      move: "Move Mouse",
-    };
-    return typeMap[actionType.toLowerCase()] || actionType;
   };
 
   const successRate =

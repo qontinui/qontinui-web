@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { CropIcon, Maximize, Move, X } from "lucide-react";
+import { CropIcon, Maximize, X } from "lucide-react";
 
 interface RegionSelectorProps {
   imageUrl: string;
