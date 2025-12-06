@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Book, Rocket, Globe, Terminal, FileCode, Zap } from "lucide-react";
+import { Rocket, Globe, Terminal, FileCode, Zap } from "lucide-react";
 
 export const metadata = {
   title: "Qontinui Documentation - Get Started with GUI Automation",

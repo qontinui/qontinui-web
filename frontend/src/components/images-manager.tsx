@@ -26,6 +26,7 @@ interface ImageAsset {
   id: string;
   name: string;
   url: string;
+  mask?: string;
   size: number;
   createdAt: Date;
   usageCount: number;
@@ -106,7 +107,7 @@ export function ImagesManager() {
       );
       if (invalidFiles.length > 0) {
         toast.error("Invalid file type", {
-          description: `${invalidFiles[0].name} is not an image file.`,
+          description: `${invalidFiles[0]?.name ?? "Unknown file"} is not an image file.`,
         });
         return;
       }
@@ -166,7 +167,7 @@ export function ImagesManager() {
             name: nameWithoutExtension,
             url: result.screenshot.url,
             size: file.size,
-            createdAt: new Date(result.screenshot.createdAt),
+            createdAt: new Date(result.screenshot.uploadedAt),
             usageCount: 0,
             usedIn: [],
             source: "uploaded",
@@ -680,7 +681,7 @@ export function ImagesManager() {
         <MaskEditor
           imageUrl={editingImage.url}
           imageName={editingImage.name}
-          initialMask={editingImage.mask}
+          initialMask={editingImage.mask || undefined}
           onSave={handleSaveMask}
           onCancel={() => {
             setShowMaskEditor(false);

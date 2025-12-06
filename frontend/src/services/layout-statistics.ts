@@ -335,14 +335,14 @@ function calculateNodeMetrics(
   // Check for overlaps
   for (let i = 0; i < actions.length; i++) {
     const a1 = actions[i];
-    if (!a1.position) {
+    if (!a1 || !a1.position) {
       withoutPosition++;
       continue;
     }
 
     for (let j = i + 1; j < actions.length; j++) {
       const a2 = actions[j];
-      if (!a2.position) continue;
+      if (!a2 || !a2.position) continue;
 
       const [x1, y1] = a1.position;
       const [x2, y2] = a2.position;
@@ -371,17 +371,16 @@ function calculateEdgeMetrics(workflow: Workflow, actions: Action[]) {
   const edges: EdgeInfo[] = [];
 
   // Build edge list
-  for (const [sourceId, connections] of Object.entries(workflow.connections)) {
+  for (const [sourceId, connGroup] of Object.entries(workflow.connections)) {
     const source = actions.find((a) => a.id === sourceId);
-    if (!source?.position) continue;
+    if (!source?.position || !connGroup) continue;
 
     for (const outputType of [
       "main",
       "error",
       "success",
-      "parallel",
     ] as const) {
-      const outputs = connections[outputType];
+      const outputs = connGroup[outputType];
       if (!outputs) continue;
 
       for (const conns of outputs) {
@@ -405,7 +404,10 @@ function calculateEdgeMetrics(workflow: Workflow, actions: Action[]) {
   let crossings = 0;
   for (let i = 0; i < edges.length; i++) {
     for (let j = i + 1; j < edges.length; j++) {
-      if (edgesIntersect(edges[i], edges[j])) {
+      const edgeI = edges[i];
+      const edgeJ = edges[j];
+      if (!edgeI || !edgeJ) continue;
+      if (edgeI && edgeJ && edgesIntersect(edgeI, edgeJ)) {
         crossings++;
       }
     }

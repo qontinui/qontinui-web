@@ -48,9 +48,12 @@ export function SimilarityThresholdOverride({
             max={100}
             step={1}
             value={[action.config.similarity * 100]}
-            onValueChange={(values) =>
-              updateConfig("similarity", values[0] / 100)
-            }
+            onValueChange={(values) => {
+              const value = values[0];
+              if (value !== undefined) {
+                updateConfig("similarity", value / 100);
+              }
+            }}
             className="w-full"
           />
           <div className="flex justify-between text-xs text-gray-500">

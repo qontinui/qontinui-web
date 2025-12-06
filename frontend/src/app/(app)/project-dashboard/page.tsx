@@ -17,15 +17,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
   Download,
   Upload,
   Settings,
@@ -327,9 +318,9 @@ function generateMockProjectData() {
       "image",
       "transition",
     ];
-    const type = types[Math.floor(Math.random() * types.length)];
+    const type = types[Math.floor(Math.random() * types.length)] || "created";
     const resourceType =
-      resourceTypes[Math.floor(Math.random() * resourceTypes.length)];
+      resourceTypes[Math.floor(Math.random() * resourceTypes.length)] || "workflow";
 
     return {
       id: `event-${i}`,
@@ -945,64 +936,7 @@ function ResourceOverviewTabs({
                   data={data.imagesByFolder}
                   dataKey="size"
                   stroke="#1A1A1B"
-                  content={({
-                    x,
-                    y,
-                    width,
-                    height,
-                    index,
-                    name,
-                    count,
-                  }: any) => {
-                    if (!x || !y || !width || !height) return null;
-                    const colors = [
-                      "#00D9FF",
-                      "#BD00FF",
-                      "#00FF88",
-                      "#FFD700",
-                      "#FF6B6B",
-                      "#888888",
-                    ];
-                    return (
-                      <g>
-                        <rect
-                          x={x}
-                          y={y}
-                          width={width}
-                          height={height}
-                          style={{
-                            fill: colors[index % colors.length],
-                            fillOpacity: 0.9,
-                            stroke: "#1A1A1B",
-                            strokeWidth: 2,
-                          }}
-                        />
-                        {width > 60 && height > 30 && (
-                          <>
-                            <text
-                              x={x + width / 2}
-                              y={y + height / 2 - 6}
-                              textAnchor="middle"
-                              fill="#000"
-                              fontSize={12}
-                              fontWeight="600"
-                            >
-                              {name}
-                            </text>
-                            <text
-                              x={x + width / 2}
-                              y={y + height / 2 + 10}
-                              textAnchor="middle"
-                              fill="#000"
-                              fontSize={10}
-                            >
-                              {count} images
-                            </text>
-                          </>
-                        )}
-                      </g>
-                    );
-                  }}
+                  content={TreemapContent as any}
                 />
               </ResponsiveContainer>
             </CardContent>
@@ -1396,7 +1330,7 @@ function BulkOptimizationTools() {
     },
   ];
 
-  const handleToolAction = useCallback(() => {
+  const handleToolAction = useCallback((_toolId: string) => {
     setIsProcessing(true);
     // Simulate processing
     setTimeout(() => {
@@ -1643,6 +1577,70 @@ function ExportImportPanel() {
     </div>
   );
 }
+
+// ============================================================================
+// Helper Components
+// ============================================================================
+
+// Treemap content renderer
+const TreemapContent = ({
+  x,
+  y,
+  width,
+  height,
+  index,
+  name,
+  count,
+}: any) => {
+  if (!x || !y || !width || !height) return null;
+  const colors = [
+    "#00D9FF",
+    "#BD00FF",
+    "#00FF88",
+    "#FFD700",
+    "#FF6B6B",
+    "#888888",
+  ];
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        style={{
+          fill: colors[index % colors.length],
+          fillOpacity: 0.9,
+          stroke: "#1A1A1B",
+          strokeWidth: 2,
+        }}
+      />
+      {width > 60 && height > 30 && (
+        <>
+          <text
+            x={x + width / 2}
+            y={y + height / 2 - 6}
+            textAnchor="middle"
+            fill="#000"
+            fontSize={12}
+            fontWeight="600"
+          >
+            {name}
+          </text>
+          <text
+            x={x + width / 2}
+            y={y + height / 2 + 10}
+            textAnchor="middle"
+            fill="#000"
+            fontSize={10}
+          >
+            {count} images
+          </text>
+        </>
+      )}
+    </g>
+  );
+};
 
 // ============================================================================
 // Main Component

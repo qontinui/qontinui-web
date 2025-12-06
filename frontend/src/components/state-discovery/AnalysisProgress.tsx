@@ -68,8 +68,8 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
   ];
 
   const currentStageIndex =
-    stages.findIndex((s) => progress <= s.percentage) || stages.length - 1;
-  const currentStage = stages[Math.max(0, currentStageIndex)];
+    stages.findIndex((s) => progress <= s.percentage);
+  const currentStage = stages[Math.max(0, currentStageIndex !== -1 ? currentStageIndex : stages.length - 1)];
 
   const getStageStatus = (stage: Stage) => {
     if (progress >= stage.percentage + 30) return "complete";
@@ -143,7 +143,7 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
           <div className="space-y-2">
             <Progress value={progress} className="h-2" />
             <div className="flex justify-between text-sm text-gray-600">
-              <span>{currentStage.name}</span>
+              <span>{currentStage?.name || "Processing"}</span>
               <span>{progress}%</span>
             </div>
           </div>

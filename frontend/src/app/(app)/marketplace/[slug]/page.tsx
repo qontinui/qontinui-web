@@ -171,10 +171,11 @@ export default function PackageDetailsPage() {
               <div className="flex items-start gap-3 mb-3">
                 <h1 className="text-3xl font-bold text-gray-100">{pkg.name}</h1>
                 {pkg.verified && (
-                  <Shield
-                    className="w-6 h-6 text-cyan-500 flex-shrink-0 mt-1"
-                    title="Verified by staff"
-                  />
+                  <div title="Verified by staff">
+                    <Shield
+                      className="w-6 h-6 text-cyan-500 flex-shrink-0 mt-1"
+                    />
+                  </div>
                 )}
               </div>
 
@@ -581,7 +582,7 @@ export default function PackageDetailsPage() {
         onOpenChange={setInstallDialogOpen}
         package={pkg}
         projects={
-          projects?.data?.map((p) => ({ id: p.id, name: p.name })) || []
+          projects?.map((p) => ({ id: p.id, name: p.name })) || []
         }
         onInstall={handleInstall}
         installStatus={installStatus}

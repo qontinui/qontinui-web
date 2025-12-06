@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
-import { Play, StopCircle, RefreshCw, Loader2 } from "lucide-react";
+import { Play, StopCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAutomation } from "@/contexts/automation-context";
 import { WorkflowSelector } from "@/components/integration-tests/WorkflowSelector";
@@ -32,7 +32,6 @@ import type {
  */
 export default function IntegrationTestsPage() {
   const params = useParams();
-  const projectId = params?.projectId as string;
   const { workflows, states, categories } = useAutomation();
 
   // State
@@ -51,10 +50,6 @@ export default function IntegrationTestsPage() {
     []
   );
   const [playbackWorkflowName, setPlaybackWorkflowName] = useState("");
-  // Track historical result IDs per workflow
-  const [workflowHistoricalIds, setWorkflowHistoricalIds] = useState<
-    Map<string, number[]>
-  >(new Map());
   // Detail view state
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
 
@@ -223,7 +218,9 @@ export default function IntegrationTestsPage() {
 
         // Execute each action step and collect historical result IDs
         for (let i = 0; i < (workflow.actions || []).length; i++) {
-          const action = workflow.actions![i];
+          const action = workflow.actions?.[i];
+          if (!action) continue;
+
           const stepStartTime = Date.now();
 
           setCurrentExecution({
@@ -261,7 +258,12 @@ export default function IntegrationTestsPage() {
               actionId: action.id,
               actionType: action.type,
               actionName: action.name || `Step ${i + 1}`,
-              patternName: action.config?.image_id || action.config?.object_id,
+              patternName:
+                (action.type === "FIND_STATE_IMAGE" && "imageId" in action.config)
+                  ? action.config.imageId
+                  : (action.type === "FIND" && "target" in action.config && typeof action.config.target === 'object' && action.config.target?.type === 'image')
+                  ? action.config.target?.imageId
+                  : undefined,
               success: stepResult.success,
               message:
                 stepResult.message ||
@@ -278,7 +280,12 @@ export default function IntegrationTestsPage() {
               actionId: action.id,
               actionType: action.type,
               actionName: action.name || `Step ${i + 1}`,
-              patternName: action.config?.image_id || action.config?.object_id,
+              patternName:
+                (action.type === "FIND_STATE_IMAGE" && "imageId" in action.config)
+                  ? action.config.imageId
+                  : (action.type === "FIND" && "target" in action.config && typeof action.config.target === 'object' && action.config.target?.type === 'image')
+                  ? action.config.target?.imageId
+                  : undefined,
               success: false,
               message: "Request failed",
               duration: stepDuration,

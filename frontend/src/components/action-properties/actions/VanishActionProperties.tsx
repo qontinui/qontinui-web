@@ -21,7 +21,8 @@ export function VanishActionProperties({
       ? action.config.target.imageId
       : null;
 
-  const handleImageSelect = (selectedImageId: string) => {
+  const handleImageSelect = (selectedImageId: string | null) => {
+    if (!selectedImageId) return;
     // Generate the new target structure
     updateConfig("target", {
       type: "image",

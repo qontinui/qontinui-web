@@ -32,6 +32,7 @@ interface FormatConversionDialogProps {
 function isLinearWorkflow(workflow: Workflow): boolean {
   for (const sourceId in workflow.connections) {
     const outputs = workflow.connections[sourceId];
+    if (!outputs) continue;
     if (outputs.error && outputs.error.length > 0) return false;
     if (outputs.success && outputs.success.length > 0) return false;
     if (outputs.main) {

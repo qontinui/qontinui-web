@@ -9,7 +9,6 @@ import { VideoExportDialog, VideoExportOptions } from "./VideoExportDialog";
 import {
   exportExecutionVideo,
   getVideoExportStatus,
-  type VideoExportStatus,
 } from "@/lib/api/integration-testing";
 import type { MockExecutionResponse } from "@/types/integration-testing";
 import { toast } from "sonner";
@@ -31,7 +30,6 @@ export function VideoExportButton({
   >("idle");
   const [videoUrl, setVideoUrl] = useState<string>();
   const [errorMessage, setErrorMessage] = useState<string>();
-  const [currentVideoId, setCurrentVideoId] = useState<string>();
 
   const handleOpenDialog = () => {
     // Reset state when opening dialog
@@ -50,7 +48,6 @@ export function VideoExportButton({
 
       // Start video export
       const response = await exportExecutionVideo(executionResult, options);
-      setCurrentVideoId(response.video_id);
 
       // Poll for status
       const pollInterval = setInterval(async () => {

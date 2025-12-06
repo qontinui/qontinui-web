@@ -182,7 +182,7 @@ export class ConfigImporter {
       actions:
         exportWorkflow.actions?.map((action) => this.importAction(action)) ||
         [],
-      connections: exportWorkflow.connections || {},
+      connections: exportWorkflow.connections as any || {},
       metadata: exportWorkflow.metadata || {},
     }));
   }
@@ -542,8 +542,8 @@ export class ConfigImporter {
         ...action,
         config: {
           ...action.config,
-          imageId: action.config.imageId
-            ? idMap.get(action.config.imageId) || action.config.imageId
+          imageId: (action.config as any).imageId
+            ? idMap.get((action.config as any).imageId) || (action.config as any).imageId
             : undefined,
         },
       }));
@@ -602,12 +602,12 @@ export class ConfigImporter {
         }
         if (transition.activateStates) {
           updatedTransition.activateStates = transition.activateStates.map(
-            (sid) => idMap.get(sid) || sid
+            (sid: any) => idMap.get(sid) || sid
           );
         }
         if (transition.deactivateStates) {
           updatedTransition.deactivateStates = transition.deactivateStates.map(
-            (sid) => idMap.get(sid) || sid
+            (sid: any) => idMap.get(sid) || sid
           );
         }
       } else if (

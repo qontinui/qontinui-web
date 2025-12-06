@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Terminal, Download, Play, Monitor, AlertCircle } from "lucide-react";
+import { Download } from "lucide-react";
 
 export const metadata = {
   title: "Qontinui Runner Documentation - Desktop Automation Executor",

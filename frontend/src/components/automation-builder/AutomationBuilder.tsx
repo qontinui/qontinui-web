@@ -12,7 +12,7 @@
 
 "use client";
 
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { UnifiedProcessLibrary } from "@/components/unified-process-library";
 import { ActionProperties } from "@/components/action-properties";
 import { useAutomation } from "@/contexts/automation-context";
@@ -29,7 +29,6 @@ import type { PermissionLevel } from "@/types/collaboration";
 import {
   BuilderMode,
   LibraryItem,
-  getSuggestedMode,
   isLinearWorkflow,
   useItemManagement,
   useModeDetection,
@@ -52,10 +51,10 @@ export function AutomationBuilder() {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
   // Context
-  const { addWorkflow, updateWorkflow, deleteWorkflow } = useAutomation();
+  const { addWorkflow, updateWorkflow } = useAutomation();
 
   // Hooks
-  const { allItems, createProcess, createWorkflow, updateItem, deleteItem } =
+  const { allItems, updateItem, deleteItem, createWorkflow } =
     useItemManagement();
   const { handleItemSelection } = useModeDetection({
     currentMode: mode,
@@ -68,7 +67,6 @@ export function AutomationBuilder() {
   const {
     collaborators,
     organizations,
-    loading: sharingLoading,
     addUser,
     addOrganization,
     changePermission,
@@ -369,8 +367,10 @@ export function AutomationBuilder() {
           onReorderActions={(startIndex, endIndex) => {
             const actions = [...selectedItem.actions];
             const [removed] = actions.splice(startIndex, 1);
-            actions.splice(endIndex, 0, removed);
-            handleUpdateActions(actions);
+            if (removed) {
+              actions.splice(endIndex, 0, removed);
+              handleUpdateActions(actions);
+            }
           }}
         />
       );
@@ -456,8 +456,8 @@ export function AutomationBuilder() {
         ) : (
           // Show action properties when an action is selected
           <ActionProperties
-            action={selectedAction}
-            onUpdateAction={handleUpdateAction}
+            action={selectedAction as any}
+            onUpdateAction={handleUpdateAction as any}
           />
         )}
       </div>

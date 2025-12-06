@@ -78,7 +78,7 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
                 <span className="text-sm text-gray-700">Automation runs</span>
               </div>
               <span className="text-sm font-semibold text-gray-900">
-                {formatNumber(stats.automationRunsCount)}
+                {formatNumber(stats.automationRunsCount || stats.totalSnapshotRuns)}
               </span>
             </div>
 
@@ -89,7 +89,7 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
                 <span className="text-sm text-gray-700">Total actions</span>
               </div>
               <span className="text-sm font-semibold text-gray-900">
-                {formatNumber(stats.totalActionsCount)}
+                {formatNumber(stats.totalActionsCount || stats.totalActions)}
               </span>
             </div>
 
@@ -98,29 +98,29 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-gray-700">State coverage</span>
                 <span className="text-sm font-semibold text-gray-900">
-                  {stats.stateCoveragePercentage.toFixed(0)}%
+                  {(stats.stateCoveragePercentage || 0).toFixed(0)}%
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    stats.stateCoveragePercentage >= 80
+                    (stats.stateCoveragePercentage || 0) >= 80
                       ? "bg-green-500"
-                      : stats.stateCoveragePercentage >= 50
+                      : (stats.stateCoveragePercentage || 0) >= 50
                         ? "bg-yellow-500"
                         : "bg-orange-500"
                   }`}
                   style={{
-                    width: `${Math.min(100, stats.stateCoveragePercentage)}%`,
+                    width: `${Math.min(100, stats.stateCoveragePercentage || 0)}%`,
                   }}
                 />
               </div>
               <div className="flex items-center justify-between mt-1">
                 <span className="text-xs text-gray-500">
-                  {stats.uniqueStatesCount} states covered
+                  {stats.uniqueStates} states covered
                 </span>
                 <span className="text-xs text-gray-500">
-                  {formatNumber(stats.transitionsRecorded)} transitions
+                  {formatNumber(stats.transitionsRecorded || 0)} transitions
                 </span>
               </div>
             </div>
@@ -131,7 +131,7 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
               <div className="flex-1">
                 <span className="text-xs text-blue-700">Last updated</span>
                 <p className="text-sm font-medium text-blue-900">
-                  {formatDate(stats.lastUpdated)}
+                  {formatDate(stats.lastUpdated || stats.newestRun || new Date().toISOString())}
                 </p>
               </div>
             </div>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mouse, Keyboard, Eye, Navigation, Clock, Camera } from "lucide-react";
+import { Mouse, Keyboard, Eye, Navigation, Clock } from "lucide-react";
 
 export const metadata = {
   title: "Action Types - Qontinui Web Documentation",

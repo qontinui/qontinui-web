@@ -16,24 +16,20 @@ export function ScrollVisualization({
   // Determine center point - prefer region center, fall back to location or screen center
   let centerX: number;
   let centerY: number;
-  let width: number;
   let height: number;
 
   if (actionRegion) {
     centerX = actionRegion.x + actionRegion.w / 2;
     centerY = actionRegion.y + actionRegion.h / 2;
-    width = actionRegion.w;
     height = actionRegion.h;
   } else if (location) {
     centerX = location[0];
     centerY = location[1];
-    width = 200;
     height = 200;
   } else {
     // Default to center of screen
     centerX = 400;
     centerY = 300;
-    width = 200;
     height = 200;
   }
 

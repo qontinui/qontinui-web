@@ -101,11 +101,11 @@ function validateConnectionIndices(
       if (!connections) return;
 
       connections.forEach((outputArray) => {
-        outputArray.forEach((targetIndex) => {
-          if (targetIndex < 0 || targetIndex > maxIndex) {
+        outputArray.forEach((conn) => {
+          if (conn.index < 0 || conn.index > maxIndex) {
             errors.push({
               type: "error",
-              message: `Invalid connection index ${targetIndex} (valid range: 0-${maxIndex})`,
+              message: `Invalid connection index ${conn.index} (valid range: 0-${maxIndex})`,
               actionId,
               connectionType: outputType,
             });
@@ -148,10 +148,15 @@ function detectUnreachableActions(
       if (!outputs) return;
 
       outputs.forEach((outputArray) => {
-        outputArray.forEach((targetIndex) => {
-          if (!reachable.has(targetIndex)) {
-            reachable.add(targetIndex);
-            queue.push(targetIndex);
+        outputArray.forEach((conn) => {
+          // Find the target action index
+          const targetAction = workflow.actions.find(a => a.id === conn.action);
+          if (targetAction) {
+            const targetIndex = workflow.actions.indexOf(targetAction);
+            if (!reachable.has(targetIndex)) {
+              reachable.add(targetIndex);
+              queue.push(targetIndex);
+            }
           }
         });
       });
@@ -194,26 +199,37 @@ function detectCycles(
     const connections = workflow.connections[action.id];
 
     if (connections) {
+      let foundCycle = false;
       ["main", "success", "error", "parallel"].forEach((outputType) => {
         const outputs = connections[outputType as keyof typeof connections];
         if (!outputs) return;
 
         outputs.forEach((outputArray) => {
-          outputArray.forEach((targetIndex) => {
+          outputArray.forEach((conn) => {
+            // Find the target action index
+            const targetAction = workflow.actions.find(a => a.id === conn.action);
+            if (!targetAction) return;
+            const targetIndex = workflow.actions.indexOf(targetAction);
+
             if (!visited.has(targetIndex)) {
               if (hasCycle(targetIndex, [...path, targetIndex])) {
                 cycleDetected.add(index);
-                return true;
+                foundCycle = true;
               }
             } else if (recursionStack.has(targetIndex)) {
               // Cycle detected
               cycleDetected.add(index);
               cycleDetected.add(targetIndex);
-              return true;
+              foundCycle = true;
             }
           });
         });
       });
+
+      if (foundCycle) {
+        recursionStack.delete(index);
+        return true;
+      }
     }
 
     recursionStack.delete(index);
@@ -225,9 +241,10 @@ function detectCycles(
 
   if (cycleDetected.size > 0) {
     const cycleActions = Array.from(cycleDetected)
-      .map(
-        (index) => workflow.actions[index].name || workflow.actions[index].id
-      )
+      .map((index) => {
+        const action = workflow.actions[index];
+        return action ? (action.name || action.id) : `unknown-${index}`;
+      })
       .join(", ");
 
     warnings.push({
@@ -258,6 +275,11 @@ export function hasLoops(workflow: Workflow): boolean {
     recursionStack.add(index);
 
     const action = workflow.actions[index];
+    if (!action) {
+      recursionStack.delete(index);
+      return false;
+    }
+
     const connections = workflow.connections[action.id];
 
     if (connections) {
@@ -271,7 +293,12 @@ export function hasLoops(workflow: Workflow): boolean {
         if (!outputs) continue;
 
         for (const outputArray of outputs) {
-          for (const targetIndex of outputArray) {
+          for (const conn of outputArray) {
+            // Find the target action index
+            const targetAction = workflow.actions.find(a => a.id === conn.action);
+            if (!targetAction) continue;
+            const targetIndex = workflow.actions.indexOf(targetAction);
+
             if (!visited.has(targetIndex)) {
               if (hasCycle(targetIndex)) {
                 return true;

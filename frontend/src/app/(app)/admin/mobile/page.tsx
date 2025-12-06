@@ -20,10 +20,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { healthService } from "@/services/admin/health-service";
-import type {
-  HealthOverview,
-  SecurityWarning,
-} from "@/services/admin/health-service";
 
 interface AnalyticsData {
   dau: number;

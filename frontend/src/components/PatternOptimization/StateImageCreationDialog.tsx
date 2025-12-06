@@ -76,7 +76,7 @@ export function StateImageCreationDialog({
   // Auto-select first state if available
   useEffect(() => {
     if (states.length > 0 && !selectedStateId) {
-      setSelectedStateId(states[0].id);
+      setSelectedStateId(states[0]?.id ?? "");
     }
   }, [states, selectedStateId]);
 

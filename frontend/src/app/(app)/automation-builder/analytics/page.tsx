@@ -46,6 +46,7 @@ import {
   Clock,
   XCircle,
   AlertTriangle,
+  AlertCircle,
   TrendingUp,
   TrendingDown,
   Filter,

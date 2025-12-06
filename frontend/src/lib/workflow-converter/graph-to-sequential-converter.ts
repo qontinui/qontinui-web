@@ -5,7 +5,7 @@
  * Detects if a graph can be linearized and produces sequential action lists.
  */
 
-import { Workflow, Action } from "../action-schema/action-types";
+import { Workflow, Action, Connections } from "../action-schema/action-types";
 import {
   getTopologicalOrder,
   getActionById,

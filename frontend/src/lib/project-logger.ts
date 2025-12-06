@@ -66,7 +66,8 @@ class ProjectLogger {
     }
 
     // Format for console
-    const prefix = `[${entry.timestamp.split("T")[1].split(".")[0]}] [${component}]`;
+    const timeStr = entry.timestamp.split("T")[1]?.split(".")[0] ?? "";
+    const prefix = `[${timeStr}] [${component}]`;
     const dataStr = this.formatData(data);
     const message = `${prefix} ${action}${dataStr ? ` | ${dataStr}` : ""}`;
 

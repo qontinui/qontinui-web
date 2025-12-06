@@ -445,6 +445,7 @@ function findOverlappingNodes(workflow: Workflow): string[] {
     for (let j = i + 1; j < workflow.actions.length; j++) {
       const a1 = workflow.actions[i];
       const a2 = workflow.actions[j];
+      if (!a1 || !a2) continue;
 
       if (!a1.position || !a2.position) continue;
 

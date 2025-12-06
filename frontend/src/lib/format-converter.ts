@@ -23,12 +23,14 @@ export function processToWorkflow(process: Process): Workflow {
   const connections: Connections = {};
 
   for (let i = 0; i < actions.length - 1; i++) {
-    const sourceId = actions[i].id;
-    const targetId = actions[i + 1].id;
+    const source = actions[i];
+    const target = actions[i + 1];
 
-    connections[sourceId] = {
-      main: [[{ action: targetId, type: "main", index: 0 }]],
-    };
+    if (source && target) {
+      connections[source.id] = {
+        main: [[{ action: target.id, type: "main", index: 0 }]],
+      };
+    }
   }
 
   return {

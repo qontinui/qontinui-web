@@ -26,7 +26,6 @@ interface PublicProject {
 
 export default function DemoProjectPage() {
   const params = useParams();
-  const router = useRouter();
   const projectId = params.id as string;
 
   const [project, setProject] = useState<PublicProject | null>(null);

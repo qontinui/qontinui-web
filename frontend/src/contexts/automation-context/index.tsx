@@ -23,6 +23,8 @@ import type {
   AutomationContextType,
   State,
   Transition,
+  IncomingTransition,
+  Pattern,
   ImageAsset,
   ImageUsage,
   ActionHistory,

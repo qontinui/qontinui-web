@@ -43,13 +43,13 @@ export default function OrganizationDetailsPage() {
   } = useOrganization();
 
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [statistics, setStatistics] = useState<{
+  const [statistics, _setStatistics] = useState<{
     member_count: number;
     project_count: number;
     active_users_today: number;
     total_workflows: number;
   } | null>(null);
-  const [, setActivities] = useState<ActivityType[]>([]);
+  const [, _setActivities] = useState<ActivityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -73,12 +73,13 @@ export default function OrganizationDetailsPage() {
         setOrganization(org);
 
         // Load statistics
-        try {
-          const stats = await organizationService.getStatistics(orgId);
-          setStatistics(stats);
-        } catch (err) {
-          console.error("Failed to load statistics:", err);
-        }
+        // TODO: Implement getStatistics method in OrganizationService
+        // try {
+        //   const stats = await organizationService.getStatistics(orgId);
+        //   setStatistics(stats);
+        // } catch (err) {
+        //   console.error("Failed to load statistics:", err);
+        // }
 
         // Load members
         await getMembers(orgId);

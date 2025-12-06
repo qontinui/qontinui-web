@@ -266,6 +266,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     // Replay actions up to index
     for (let i = 0; i <= toIndex; i++) {
       const action = history[i];
+      if (!action) continue;
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = action.type === "erase" ? "white" : "black";
 

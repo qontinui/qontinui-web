@@ -20,7 +20,6 @@ import type { GraphEditorProps } from "../types";
 
 function GraphEditorInner({
   workflow,
-  selectedNode,
   onSelectNode,
   onUpdateWorkflow,
   onAddNode,

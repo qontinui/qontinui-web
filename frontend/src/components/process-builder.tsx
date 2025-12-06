@@ -119,14 +119,14 @@ export function ProcessBuilder() {
     if (selectedProcess) {
       const updatedProcess = workflows.find((w) => w.id === selectedProcess.id);
       if (updatedProcess && updatedProcess !== selectedProcess) {
-        setSelectedItem({ type: "process", data: updatedProcess });
+        setSelectedItem({ type: "process", data: updatedProcess } as any);
         // Also update selectedAction if it exists
         if (selectedAction) {
           const updatedAction = updatedProcess.actions.find(
             (a) => a.id === selectedAction.id
           );
           if (updatedAction) {
-            setSelectedAction(updatedAction);
+            setSelectedAction(updatedAction as any);
           }
         }
       }
@@ -141,12 +141,12 @@ export function ProcessBuilder() {
       category,
       actions: [],
     };
-    addWorkflow(newProcess);
-    setSelectedItem({ type: "process", data: newProcess });
+    addWorkflow(newProcess as any);
+    setSelectedItem({ type: "process", data: newProcess } as any);
   };
 
   const handleUpdateProcess = (updatedProcess: Process) => {
-    updateWorkflow(updatedProcess);
+    updateWorkflow(updatedProcess as any);
     // Don't set selectedItem here - let useEffect handle it
   };
 
@@ -207,12 +207,12 @@ export function ProcessBuilder() {
           </Button>
 
           <UnifiedProcessLibrary
-            selectedItem={selectedItem}
-            onSelectItem={handleSelectItem}
-            onDeleteItem={handleDeleteItem}
-            onUpdateProcess={handleUpdateProcess}
+            selectedItem={selectedItem as any}
+            onSelectItem={handleSelectItem as any}
+            onDeleteItem={handleDeleteItem as any}
+            onUpdateProcess={handleUpdateProcess as any}
             onCreateProcess={createNewProcess}
-            onConvertItem={handleConvertItem}
+            onConvertItem={handleConvertItem as any}
           />
         </div>
       </div>
@@ -475,7 +475,7 @@ export function ProcessBuilder() {
                   a.id === updated.id ? updated : a
                 ),
               };
-              handleUpdateProcess(updatedProcess);
+              handleUpdateProcess(updatedProcess as any);
               // useEffect will handle updating selectedAction
             }
           }}
@@ -506,8 +506,8 @@ export function ProcessBuilder() {
       <FormatConversionDialog
         open={conversionDialogOpen}
         onOpenChange={setConversionDialogOpen}
-        item={conversionItem}
-        onConvert={handleConversionComplete}
+        item={conversionItem as any}
+        onConvert={handleConversionComplete as any}
       />
     </div>
   );

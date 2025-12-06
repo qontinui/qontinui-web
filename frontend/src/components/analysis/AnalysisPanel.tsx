@@ -207,7 +207,7 @@ export function AnalysisPanel({
       if (!acc[analyzer.type]) {
         acc[analyzer.type] = [];
       }
-      acc[analyzer.type].push(analyzer);
+      acc[analyzer.type]?.push(analyzer);
       return acc;
     },
     {} as Record<string, AnalyzerInfo[]>
@@ -420,7 +420,7 @@ export function AnalysisPanel({
                   max={1}
                   step={0.05}
                   value={[overlapThreshold]}
-                  onValueChange={(value) => setOverlapThreshold(value[0])}
+                  onValueChange={(value) => setOverlapThreshold(value[0] ?? 0)}
                 />
                 <p className="text-xs text-muted-foreground">
                   IoU threshold for grouping overlapping elements

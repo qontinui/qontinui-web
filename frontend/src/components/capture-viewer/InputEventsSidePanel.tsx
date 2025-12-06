@@ -263,7 +263,8 @@ export const InputEventsSidePanel: React.FC<InputEventsSidePanelProps> = ({
   const getCurrentEventIndex = (): number => {
     // Find the last event that occurred before or at current timestamp
     for (let i = events.length - 1; i >= 0; i--) {
-      if (events[i].timestamp <= currentTimestamp + 0.5) {
+      const event = events[i];
+      if (event?.timestamp && event.timestamp <= currentTimestamp + 0.5) {
         return i;
       }
     }

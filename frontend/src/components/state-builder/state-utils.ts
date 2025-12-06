@@ -6,7 +6,6 @@
 
 import type {
   State,
-  StateImage,
   Transition,
 } from "@/contexts/automation-context";
 import type {
@@ -231,8 +230,11 @@ export function analyzeStateUsage(
   const referencingWorkflows = workflows.filter((workflow) => {
     return workflow.actions.some((action) => {
       // Check FIND actions that target this state's images
-      if (action.type === "FIND" && action.config.target?.type === "state") {
-        return action.config.target.stateId === state.id;
+      if (action.type === "FIND" && action.config && "target" in action.config) {
+        const findConfig = action.config as any;
+        if (findConfig.target?.type === "state") {
+          return findConfig.target.stateId === state.id;
+        }
       }
       return false;
     });

@@ -5,11 +5,9 @@ import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/auth-context";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { SessionTimeoutWarning } from "@/components/session-timeout-warning";
 import { RefreshTokenExpiryWarning } from "@/components/refresh-token-expiry-warning";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { OnboardingTour } from "@/components/onboarding-tour";
-import { ActivityTracker } from "@/components/activity-tracker";
 import { DevDebugInit } from "@/components/dev-debug-init";
 import "./globals.css";
 

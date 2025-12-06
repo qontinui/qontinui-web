@@ -9,8 +9,6 @@ import React, {
   useState,
   useCallback,
   useMemo,
-  useRef,
-  useEffect,
 } from "react";
 import {
   ChevronRight,
@@ -23,12 +21,12 @@ import {
   Edit2,
   Trash2,
   Palette,
-  Image as ImageIcon,
+  ImageIcon,
   Move,
   Plus,
   Minus,
   X,
-  FolderTree as FolderTreeIcon,
+  FolderTreeIcon,
 } from "lucide-react";
 import { Workflow } from "../../lib/action-schema/action-types";
 import { WorkflowFolder, FolderTreeNode, DragItem } from "./types";
@@ -43,6 +41,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import {
   DndContext,
   DragOverlay,
@@ -598,7 +602,10 @@ export function FolderTree({
   const [showColorPicker, setShowColorPicker] = useState<string | null>(null);
   const [showIconPicker, setShowIconPicker] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
-  const [overId, setOverId] = useState<UniqueIdentifier | null>(null);
+  const [_overId, _setOverId] = useState<UniqueIdentifier | null>(null);
+  const [movingFolderId, setMovingFolderId] = useState<string | null>(null);
+  const [moveDialogSearchQuery, setMoveDialogSearchQuery] = useState("");
+  const [moveDialogExpandedIds, setMoveDialogExpandedIds] = useState<Set<string>>(new Set());
 
   // Build tree
   const tree = useMemo(
@@ -614,6 +621,30 @@ export function FolderTree({
 
   // Flatten for rendering
   const flatTree = useMemo(() => flattenTree(filteredTree), [filteredTree]);
+
+  // Build tree for move dialog
+  const moveDialogTree = useMemo(
+    () => buildFolderTree(folders.filter(f => f.id !== movingFolderId), workflows, moveDialogExpandedIds),
+    [folders, workflows, moveDialogExpandedIds, movingFolderId]
+  );
+
+  // Filter move dialog tree
+  const filteredMoveDialogTree = useMemo(
+    () => filterTree(moveDialogTree, moveDialogSearchQuery),
+    [moveDialogTree, moveDialogSearchQuery]
+  );
+
+  // Flatten move dialog tree
+  const flatMoveDialogTree = useMemo(
+    () => flattenTree(filteredMoveDialogTree),
+    [filteredMoveDialogTree]
+  );
+
+  // Get moving folder
+  const movingFolder = useMemo(
+    () => folders.find(f => f.id === movingFolderId),
+    [folders, movingFolderId]
+  );
 
   // Count total workflows
   const totalWorkflows = workflows.length;
@@ -691,8 +722,8 @@ export function FolderTree({
     setActiveId(event.active.id);
   }, []);
 
-  const handleDragOver = useCallback((event: DragOverEvent) => {
-    setOverId(event.over?.id || null);
+  const handleDragOver = useCallback((_event: DragOverEvent) => {
+    // Drag over handling can be implemented here if needed
   }, []);
 
   const handleDragEnd = useCallback(
@@ -719,10 +750,30 @@ export function FolderTree({
       }
 
       setActiveId(null);
-      setOverId(null);
     },
     [folders, onMoveFolder, onMoveWorkflow]
   );
+
+  const handleMoveDialogToggle = useCallback((id: string) => {
+    setMoveDialogExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleMoveFolder = useCallback((targetFolderId: string | null) => {
+    if (movingFolderId) {
+      onMoveFolder(movingFolderId, targetFolderId);
+      setMovingFolderId(null);
+      setMoveDialogSearchQuery("");
+      setMoveDialogExpandedIds(new Set());
+    }
+  }, [movingFolderId, onMoveFolder]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -757,23 +808,23 @@ export function FolderTree({
 
         case "ArrowLeft":
           e.preventDefault();
-          if (currentNode.expanded) {
+          if (currentNode?.expanded) {
             handleToggle(currentNode.id);
-          } else if (currentNode.parentId) {
+          } else if (currentNode?.parentId) {
             onSelectFolder(currentNode.parentId);
           }
           break;
 
         case "Enter":
           e.preventDefault();
-          if (currentNode.children.length > 0) {
+          if (currentNode && currentNode.children.length > 0) {
             handleToggle(currentNode.id);
           }
           break;
 
         case "Delete":
           e.preventDefault();
-          if (window.confirm(`Delete folder "${currentNode.name}"?`)) {
+          if (currentNode && window.confirm(`Delete folder "${currentNode.name}"?`)) {
             onDeleteFolder(currentNode.id);
           }
           break;

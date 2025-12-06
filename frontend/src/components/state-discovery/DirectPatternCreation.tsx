@@ -39,7 +39,7 @@ import { createStateImage } from "@/lib/state-image-creator";
 import { useAutomation } from "@/contexts/automation-context";
 
 export function DirectPatternCreation() {
-  const { dispatch } = useAutomation();
+  const { addImage } = useAutomation();
 
   // Step 1: Snapshot Selection
   const [selectedSnapshots, setSelectedSnapshots] = useState<SnapshotRun[]>([]);
@@ -125,6 +125,9 @@ export function DirectPatternCreation() {
     setExtracting(true);
     try {
       const currentScreenshot = screenshots[currentScreenshotIndex];
+      if (!currentScreenshot) {
+        throw new Error("No screenshot selected");
+      }
 
       // Create a canvas to extract the region
       const img = new Image();
@@ -216,21 +219,23 @@ export function DirectPatternCreation() {
 
       for (let i = 0; i < extractedPatterns.length; i++) {
         const pattern = extractedPatterns[i];
+        if (!pattern) continue;
 
         try {
-          // Create StateImage using the existing helper
-          const stateImage = createStateImage({
+          // Create image asset and add to library
+          const imageAsset = {
+            id: `image-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             name: pattern.name,
-            image: pattern.imageData,
-            source: "direct-pattern-creation",
-            fixed: false,
-          });
+            url: pattern.imageData,
+            size: Math.ceil((pattern.imageData.split(",")[1]?.length || 0) * 0.75),
+            createdAt: new Date(),
+            usageCount: 0,
+            usage: [],
+            source: "image_extraction" as const,
+          };
 
           // Add to automation context (this updates the library)
-          dispatch({
-            type: "ADD_STATE_IMAGE",
-            payload: stateImage,
-          });
+          addImage(imageAsset);
 
           savedCount++;
         } catch (error) {

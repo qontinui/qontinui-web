@@ -51,7 +51,7 @@ const RegionPropertiesPanel: React.FC<RegionPropertiesPanelProps> = ({
       );
       if (state) {
         setLinkedMatchState(state.id);
-        setLinkedMatchImage(selectedRegion.linkedStateObjectId);
+        setLinkedMatchImage(selectedRegion.linkedStateObjectId ?? "");
       }
     } else if (isInitializing || selectedRegion.id !== region.id) {
       // Only clear local state during initialization or region change

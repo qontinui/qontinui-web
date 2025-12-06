@@ -132,8 +132,12 @@ export function distributeNodes(
   switch (type) {
     case "horizontal": {
       sortedNodes.sort((a, b) => a.position.x - b.position.x);
-      const minX = sortedNodes[0].position.x;
-      const maxX = sortedNodes[sortedNodes.length - 1].position.x;
+      const firstNode = sortedNodes[0];
+      const lastNode = sortedNodes[sortedNodes.length - 1];
+      if (!firstNode || !lastNode) break;
+
+      const minX = firstNode.position.x;
+      const maxX = lastNode.position.x;
       const spacing = (maxX - minX) / (sortedNodes.length - 1);
 
       sortedNodes.forEach((node, index) => {
@@ -147,8 +151,12 @@ export function distributeNodes(
 
     case "vertical": {
       sortedNodes.sort((a, b) => a.position.y - b.position.y);
-      const minY = sortedNodes[0].position.y;
-      const maxY = sortedNodes[sortedNodes.length - 1].position.y;
+      const firstNode = sortedNodes[0];
+      const lastNode = sortedNodes[sortedNodes.length - 1];
+      if (!firstNode || !lastNode) break;
+
+      const minY = firstNode.position.y;
+      const maxY = lastNode.position.y;
       const spacing = (maxY - minY) / (sortedNodes.length - 1);
 
       sortedNodes.forEach((node, index) => {
@@ -163,13 +171,21 @@ export function distributeNodes(
     case "even": {
       // Distribute evenly in both directions
       sortedNodes.sort((a, b) => a.position.x - b.position.x);
-      const minX = sortedNodes[0].position.x;
-      const maxX = sortedNodes[sortedNodes.length - 1].position.x;
+      const firstNodeX = sortedNodes[0];
+      const lastNodeX = sortedNodes[sortedNodes.length - 1];
+      if (!firstNodeX || !lastNodeX) break;
+
+      const minX = firstNodeX.position.x;
+      const maxX = lastNodeX.position.x;
       const spacingX = (maxX - minX) / (sortedNodes.length - 1);
 
       sortedNodes.sort((a, b) => a.position.y - b.position.y);
-      const minY = sortedNodes[0].position.y;
-      const maxY = sortedNodes[sortedNodes.length - 1].position.y;
+      const firstNodeY = sortedNodes[0];
+      const lastNodeY = sortedNodes[sortedNodes.length - 1];
+      if (!firstNodeY || !lastNodeY) break;
+
+      const minY = firstNodeY.position.y;
+      const maxY = lastNodeY.position.y;
       const spacingY = (maxY - minY) / (sortedNodes.length - 1);
 
       sortedNodes.forEach((node, index) => {

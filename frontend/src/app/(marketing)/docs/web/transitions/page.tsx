@@ -1,11 +1,7 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  GitBranch,
   CheckCircle2,
-  Settings,
-  Clock,
-  Zap,
 } from "lucide-react";
 
 export const metadata = {

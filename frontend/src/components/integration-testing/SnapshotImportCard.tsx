@@ -21,7 +21,6 @@ export function SnapshotImportCard({
   const [directoryPath, setDirectoryPath] = useState("");
   const [tags, setTags] = useState("");
   const [notes, setNotes] = useState("");
-  const fileInputRef = useState<HTMLInputElement | null>(null)[0];
 
   const { importing, error, importSnapshotDirectory } = useSnapshotImport();
 

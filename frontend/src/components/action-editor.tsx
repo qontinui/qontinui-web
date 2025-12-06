@@ -110,7 +110,7 @@ export function ActionEditor({
   onSelectAction,
   onUpdateProcess,
 }: ActionEditorProps) {
-  const { states, processes, images } = useAutomation();
+  const { states, workflows, images } = useAutomation();
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   const addAction = (type: Action["type"]) => {
@@ -135,8 +135,8 @@ export function ActionEditor({
       actions: process.actions.filter((a) => a.id !== actionId),
     };
     onUpdateProcess(updatedProcess);
-    if (selectedAction?.id === actionId) {
-      onSelectAction(process.actions[0] || null);
+    if (selectedAction?.id === actionId && process.actions[0]) {
+      onSelectAction(process.actions[0]);
     }
   };
 
@@ -169,6 +169,8 @@ export function ActionEditor({
 
     const updatedActions = [...process.actions];
     const draggedAction = updatedActions[draggedIndex];
+
+    if (!draggedAction) return;
 
     // Remove from old position
     updatedActions.splice(draggedIndex, 1);
@@ -267,7 +269,7 @@ export function ActionEditor({
                             </Badge>
                           )}
                       </div>
-                      {renderActionSummary(action, states, processes, images)}
+                      {renderActionSummary(action, states, workflows, images)}
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -455,10 +457,10 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
 function renderActionSummary(
   action: Action,
   states: any[],
-  processes: any[],
+  workflows: any[],
   images: any[]
 ) {
-  const summary = getActionSummary(action, states, processes, images);
+  const summary = getActionSummary(action, states, workflows, images);
   const hasRemovedImage = summary.includes("[REMOVED:");
 
   if (hasRemovedImage) {
@@ -490,7 +492,7 @@ function renderActionSummary(
 function getActionSummary(
   action: Action,
   states: any[],
-  processes: any[],
+  workflows: any[],
   images: any[]
 ): string {
   switch (action.type) {
@@ -658,7 +660,7 @@ function getActionSummary(
       return "No states selected";
     case "RUN_WORKFLOW":
       if (action.config.process) {
-        const proc = processes.find((p) => p.id === action.config.process);
+        const proc = workflows.find((p) => p.id === action.config.process);
         return proc ? proc.name : action.config.process;
       }
       return "No process selected";

@@ -33,7 +33,7 @@ function WorkflowsList() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.projectId as string;
-  const { workflows, isLoading } = useAutomation();
+  const { workflows } = useAutomation();
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredWorkflows, setFilteredWorkflows] = useState<Workflow[]>([]);
 
@@ -70,14 +70,6 @@ function WorkflowsList() {
     },
     {} as Record<string, Workflow[]>
   );
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
-      </div>
-    );
-  }
 
   if (!workflows || workflows.length === 0) {
     return (

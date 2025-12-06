@@ -816,10 +816,12 @@ class GlobalSearchService {
     const matches = Array.from(query.matchAll(operatorPattern));
 
     for (const match of matches) {
-      const key = match[1];
-      const value = match[3] || match[4]; // Quoted or unquoted value
+      const key = match[1] ?? "";
+      const value = match[3] || match[4] || ""; // Quoted or unquoted value
 
-      operators.push({ key, value });
+      if (key && value) {
+        operators.push({ key, value });
+      }
 
       // Remove operator from clean query
       cleanQuery = cleanQuery.replace(match[0], "").trim();
@@ -949,7 +951,7 @@ class GlobalSearchService {
   // Search Aliases
   // ============================================================================
 
-  private expandAlias(): string {
+  private expandAlias(query: string): string {
     const aliases: Record<string, string> = {
       wf: "workflow",
       st: "state",

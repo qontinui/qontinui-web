@@ -283,6 +283,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
         <div className="absolute inset-0 flex items-end justify-around px-1">
           {Object.entries(eventClusters).map(([key, clusterEvents]) => {
             const firstEvent = clusterEvents[0];
+            if (!firstEvent) return null;
             const position = (firstEvent.timestamp / duration) * 100;
             const height = Math.min(
               100,

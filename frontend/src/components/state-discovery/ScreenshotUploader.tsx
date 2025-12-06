@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import {
   calculateImageHashes,
-  filterDuplicateImages,
 } from "@/utils/imageUtils";
 import { useAvailableStates } from "@/hooks/useAvailableStates";
 import ProjectScreenshotSelector from "./ProjectScreenshotSelector";

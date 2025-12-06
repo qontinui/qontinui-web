@@ -127,6 +127,8 @@ export function ActiveStatesVisualizer({
     // Draw regions
     if (state.regions && state.regions.length > 0) {
       state.regions.forEach((region) => {
+        if (!region.bounds) return;
+
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.globalAlpha = 0.5;

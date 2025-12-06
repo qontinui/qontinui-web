@@ -159,9 +159,12 @@ export class AutoLayout {
 
     if (entryPoints.length === 0 && actions.length > 0) {
       // No entry points found, use first action
-      const firstNode = this.nodes.get(actions[0].id);
-      if (firstNode) {
-        entryPoints.push(firstNode);
+      const firstAction = actions[0];
+      if (firstAction) {
+        const firstNode = this.nodes.get(firstAction.id);
+        if (firstNode) {
+          entryPoints.push(firstNode);
+        }
       }
     }
 

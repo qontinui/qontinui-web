@@ -304,7 +304,7 @@ function generateCategoryStats(
     .map(([category, count], index) => ({
       category,
       count,
-      color: colors[index % colors.length],
+      color: colors[index % colors.length] || "#00D9FF",
     }))
     .sort((a, b) => b.count - a.count);
 }
@@ -335,6 +335,9 @@ export default function ComponentLibraryPage() {
   const [activeTab, setActiveTab] = useState<
     "library" | "built-in" | "stats" | "docs"
   >("library");
+  const [_selectedComponent, setSelectedComponent] = useState<
+    SubflowComponent | null
+  >(null);
 
   // Computed values
   const usageStats = useMemo(
@@ -826,10 +829,9 @@ export default function ComponentLibraryPage() {
                                 className="w-10 h-10 rounded-lg flex items-center justify-center"
                                 style={{ backgroundColor: `${comp.color}20` }}
                               >
-                                <Icon
-                                  className="w-5 h-5"
-                                  style={{ color: comp.color }}
-                                />
+                                <div style={{ color: comp.color }}>
+                                  <Icon className="w-5 h-5" />
+                                </div>
                               </div>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

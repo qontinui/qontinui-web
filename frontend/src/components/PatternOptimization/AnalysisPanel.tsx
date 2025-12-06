@@ -32,6 +32,7 @@ import type {
 import type {
   StateImage,
   SearchRegion,
+  Pattern,
 } from "@/contexts/automation-context/types";
 
 export function AnalysisPanel() {
@@ -166,12 +167,23 @@ export function AnalysisPanel() {
                 ]
               : [];
 
-          return {
-            id: `stateimage-${Date.now()}-${idx}`,
-            name: config.imageNames[idx],
-            image: pattern.imageUrl || "",
+          // Create a Pattern object for this StateImage
+          const imageName = config.imageNames[idx] ?? `Pattern ${idx + 1}`;
+          const patternObj: Pattern = {
+            id: `pattern-${Date.now()}-${idx}`,
+            name: imageName,
+            imageId: undefined, // Will be set when image is uploaded to library
             searchRegions,
             fixed: false,
+          };
+
+          return {
+            id: `stateimage-${Date.now()}-${idx}`,
+            name: imageName,
+            patterns: [patternObj],
+            shared: false,
+            source: "pattern-optimization" as const,
+            searchRegions,
           };
         });
 

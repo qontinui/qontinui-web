@@ -171,7 +171,9 @@ export function StatePropertiesPanel({
     if (currentLength > prevStateImagesLength.current && state.stateImages) {
       const lastImage = state.stateImages[state.stateImages.length - 1];
       // Open selector for the first pattern of the new StateImage
-      setOpenImageSelectorId(`${lastImage.id}_pattern_0`);
+      if (lastImage) {
+        setOpenImageSelectorId(`${lastImage.id}_pattern_0`);
+      }
     }
 
     // Check if new patterns were added to existing StateImages (only if same state)
@@ -684,21 +686,20 @@ export function StatePropertiesPanel({
                                                                 ...(stateImage.patterns ||
                                                                   []),
                                                               ];
-                                                            updatedPatterns[
-                                                              pIdx
-                                                            ] = {
-                                                              ...updatedPatterns[
+                                                            const currentPattern = updatedPatterns[pIdx];
+                                                            if (currentPattern) {
+                                                              updatedPatterns[
                                                                 pIdx
-                                                              ],
-                                                              searchRegions:
-                                                                updatedPatterns[
-                                                                  pIdx
-                                                                ].searchRegions.filter(
-                                                                  (_, idx) =>
-                                                                    idx !==
-                                                                    srIdx
-                                                                ),
-                                                            };
+                                                              ] = {
+                                                                ...currentPattern,
+                                                                searchRegions:
+                                                                  currentPattern.searchRegions.filter(
+                                                                    (_, idx) =>
+                                                                      idx !==
+                                                                      srIdx
+                                                                  ),
+                                                              };
+                                                            }
                                                             updateStateImage(
                                                               index,
                                                               {
@@ -750,13 +751,15 @@ export function StatePropertiesPanel({
                                                             ...(stateImage.patterns ||
                                                               []),
                                                           ];
-                                                        const {
-                                                          similarity,
-                                                          ...rest
-                                                        } =
-                                                          updatedPatterns[pIdx];
-                                                        updatedPatterns[pIdx] =
-                                                          rest as any;
+                                                        const pattern = updatedPatterns[pIdx];
+                                                        if (pattern) {
+                                                          const {
+                                                            similarity,
+                                                            ...rest
+                                                          } = pattern;
+                                                          updatedPatterns[pIdx] =
+                                                            rest as any;
+                                                        }
                                                         updateStateImage(
                                                           index,
                                                           {
@@ -797,14 +800,17 @@ export function StatePropertiesPanel({
                                                       ...(stateImage.patterns ||
                                                         []),
                                                     ];
-                                                    updatedPatterns[pIdx] = {
-                                                      ...updatedPatterns[pIdx],
-                                                      similarity:
-                                                        values[0] / 100,
-                                                    };
-                                                    updateStateImage(index, {
-                                                      patterns: updatedPatterns,
-                                                    });
+                                                    const currentPattern = updatedPatterns[pIdx];
+                                                    if (currentPattern) {
+                                                      updatedPatterns[pIdx] = {
+                                                        ...currentPattern,
+                                                        similarity:
+                                                          values[0] / 100,
+                                                      };
+                                                      updateStateImage(index, {
+                                                        patterns: updatedPatterns,
+                                                      });
+                                                    }
                                                   }}
                                                   className="w-full"
                                                 />
@@ -1117,7 +1123,7 @@ export function StatePropertiesPanel({
                                       min={0}
                                       max={100}
                                       step={1}
-                                      value={[stateImage.probability * 100]}
+                                      value={[(stateImage.probability ?? 0.85) * 100]}
                                       onValueChange={(values) => {
                                         updateStateImage(index, {
                                           probability: values[0] / 100,
@@ -1200,10 +1206,12 @@ export function StatePropertiesPanel({
                                                   ...(stateImage.patterns ||
                                                     []),
                                                 ];
-                                                const { similarity, ...rest } =
-                                                  updatedPatterns[pIdx];
-                                                updatedPatterns[pIdx] =
-                                                  rest as any;
+                                                const pattern = updatedPatterns[pIdx];
+                                                if (pattern) {
+                                                  const { similarity, ...rest } = pattern;
+                                                  updatedPatterns[pIdx] =
+                                                    rest as any;
+                                                }
                                                 updateStateImage(index, {
                                                   patterns: updatedPatterns,
                                                 });
@@ -2066,19 +2074,20 @@ export function StatePropertiesPanel({
                             });
                           }
 
-                          updatedPatterns[
+                          const currentPattern = updatedPatterns[
                             showAddSearchRegionDialog.patternIndex
-                          ] = {
-                            ...updatedPatterns[
+                          ];
+                          if (currentPattern) {
+                            updatedPatterns[
                               showAddSearchRegionDialog.patternIndex
-                            ],
-                            searchRegions: [
-                              ...(updatedPatterns[
-                                showAddSearchRegionDialog.patternIndex
-                              ].searchRegions || []),
-                              newSearchRegion,
-                            ],
-                          };
+                            ] = {
+                              ...currentPattern,
+                              searchRegions: [
+                                ...(currentPattern.searchRegions || []),
+                                newSearchRegion,
+                              ],
+                            };
+                          }
 
                           updateStateImage(
                             showAddSearchRegionDialog.stateImageIndex,

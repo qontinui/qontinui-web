@@ -31,7 +31,7 @@ export function exampleLinearWorkflow() {
         target: {
           image: "login-button.png",
         },
-      } as ClickActionConfig,
+      } as unknown as ClickActionConfig,
       position: [0, 0],
     },
     {
@@ -51,7 +51,7 @@ export function exampleLinearWorkflow() {
         target: {
           image: "submit-button.png",
         },
-      } as ClickActionConfig,
+      } as unknown as ClickActionConfig,
       position: [0, 0],
     },
   ];

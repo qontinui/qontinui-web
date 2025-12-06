@@ -22,7 +22,6 @@ export function KeyboardActionProperties({
           <Label className="text-xs text-gray-400">Key</Label>
           <SpecialKeysSelector
             onInsertKey={(key) => updateConfig("key", key)}
-            textAreaRef={null}
           />
         </div>
         {action.config.key && (

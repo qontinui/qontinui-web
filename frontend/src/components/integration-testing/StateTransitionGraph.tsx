@@ -139,7 +139,7 @@ export function StateTransitionGraph({
       labelBgStyle: {
         fill: "#fff",
       },
-      data: transition,
+      data: transition as unknown as Record<string, unknown>,
     }));
 
     // Apply dagre layout
@@ -161,7 +161,7 @@ export function StateTransitionGraph({
 
   const onEdgeClick = (_event: React.MouseEvent, edge: Edge) => {
     if (edge.data) {
-      onTransitionClick?.(edge.data);
+      onTransitionClick?.(edge.data as unknown as StateTransition);
     }
   };
 

@@ -6,13 +6,6 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import {
   Card,
@@ -31,10 +24,8 @@ import {
   Image as ImageIcon,
   AlertTriangle,
   CheckCircle,
-  XCircle,
 } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
-import { prepareStateImageCreation } from "@/lib/state-image-creator";
 import {
   createImageAsset,
   imageExistsInLibrary,
@@ -57,7 +48,6 @@ interface DetectedPattern {
 
 export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
   onSuccess,
-  screenshots,
 }) => {
   const [stateName, setStateName] = useState("");
   const [screenshotPaths, setScreenshotPaths] = useState<string>("");
@@ -73,7 +63,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
     new Set()
   );
 
-  const { states, addState, updateState, images, addImage } = useAutomation();
+  const { addImage, images } = useAutomation();
 
   const handleExtract = async () => {
     if (!stateName.trim()) {
@@ -180,7 +170,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
           const imageAsset = createImageAsset(
             pattern.image_data,
             pattern.suggested_name,
-            "auto_extraction"
+            "image_extraction"
           );
           addImage(imageAsset);
           addedCount++;
@@ -319,7 +309,7 @@ export const AutoPatternExtraction: React.FC<AutoPatternExtractionProps> = ({
             </div>
             <Slider
               value={[minConfidence]}
-              onValueChange={([value]) => setMinConfidence(value)}
+              onValueChange={([value]) => setMinConfidence(value ?? 0.7)}
               min={0.5}
               max={1}
               step={0.05}

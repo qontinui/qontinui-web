@@ -13,7 +13,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Progress } from "@/components/ui/progress";
 import {
   Loader2,
   Sparkles,
@@ -22,10 +21,8 @@ import {
   X,
   AlertCircle,
   Info,
-  CheckCircle2,
   Activity,
   ImageIcon,
-  Clock,
   Star,
 } from "lucide-react";
 import { useSnapshotRecommendations } from "@/hooks/useSnapshotRecommendations";

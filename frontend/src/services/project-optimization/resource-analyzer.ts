@@ -54,8 +54,9 @@ export function analyzeWorkflows(
     const hasDocumentation = documentationService.hasDocumentation(workflow.id);
 
     // Check organization
-    const isOrganized =
-      workflow.category && workflow.category !== "Uncategorized";
+    const isOrganized = !!(
+      workflow.category && workflow.category !== "Uncategorized"
+    );
 
     // Analyze dependencies
     const deps = dependencyAnalyzer.analyzeDependencies(workflow);

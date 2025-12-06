@@ -377,7 +377,8 @@ export class ConflictDetector {
    * Determine severity of a conflict
    */
   private determineSeverity(
-    type: ConflictType
+    type: ConflictType,
+    _path?: string[]
   ): "low" | "medium" | "high" {
     // High severity for structural changes
     if (
@@ -403,12 +404,15 @@ export class ConflictDetector {
   private inferResourceType(path: string[]): ResourceType {
     if (path.length === 0) return "workflow";
 
-    const firstSegment = path[0].toLowerCase();
-    if (firstSegment.includes("action")) return "action";
-    if (firstSegment.includes("connection")) return "connection";
-    if (firstSegment.includes("state")) return "state";
-    if (firstSegment.includes("image")) return "image";
-    if (firstSegment.includes("transition")) return "transition";
+    const firstSegment = path[0];
+    if (!firstSegment) return "workflow";
+
+    const segment = firstSegment.toLowerCase();
+    if (segment.includes("action")) return "action";
+    if (segment.includes("connection")) return "connection";
+    if (segment.includes("state")) return "state";
+    if (segment.includes("image")) return "image";
+    if (segment.includes("transition")) return "transition";
 
     return "workflow";
   }
@@ -517,8 +521,7 @@ export class ConflictDetector {
       mergedVersion,
       local,
       base,
-      conflicts,
-      "local"
+      conflicts
     );
 
     // Apply non-conflicting changes from remote
@@ -526,8 +529,7 @@ export class ConflictDetector {
       mergedVersion,
       remote,
       base,
-      conflicts,
-      "remote"
+      conflicts
     );
 
     return {
@@ -546,13 +548,18 @@ export class ConflictDetector {
 
     let current = target;
     for (let i = 0; i < path.length - 1; i++) {
-      if (!current[path[i]]) {
-        current[path[i]] = {};
+      const key = path[i];
+      if (!key) continue;
+      if (!current[key]) {
+        current[key] = {};
       }
-      current = current[path[i]];
+      current = current[key];
     }
 
-    current[path[path.length - 1]] = value;
+    const lastKey = path[path.length - 1];
+    if (lastKey !== undefined) {
+      current[lastKey] = value;
+    }
   }
 
   /**

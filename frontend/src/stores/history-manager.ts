@@ -187,7 +187,7 @@ export class HistoryManager {
     const entry = this.state.entries[this.state.currentIndex];
     this.notifyListeners();
 
-    return entry;
+    return entry ?? null;
   }
 
   /**
@@ -200,7 +200,7 @@ export class HistoryManager {
     const entry = this.state.entries[this.state.currentIndex];
     this.notifyListeners();
 
-    return entry;
+    return entry ?? null;
   }
 
   /**
@@ -215,7 +215,7 @@ export class HistoryManager {
     const entry = this.state.entries[index];
     this.notifyListeners();
 
-    return entry;
+    return entry ?? null;
   }
 
   /**
@@ -237,7 +237,7 @@ export class HistoryManager {
    */
   getCurrentState(): HistoryEntry | null {
     if (this.state.currentIndex < 0) return null;
-    return this.state.entries[this.state.currentIndex];
+    return this.state.entries[this.state.currentIndex] ?? null;
   }
 
   /**

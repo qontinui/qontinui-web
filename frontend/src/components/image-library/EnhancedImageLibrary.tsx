@@ -29,14 +29,11 @@ import {
   Plus,
   Minus,
   Check,
-  Settings,
-  Save,
   MoreVertical,
   Edit,
   Package,
   Eye,
   Calendar,
-  Ruler,
   HardDrive,
   Link2,
   Layers,
@@ -77,7 +74,6 @@ import {
   ImageUploadProgress,
   type UploadingImage,
 } from "@/components/ImageUploadProgress";
-import { apiClient } from "@/lib/api-client";
 import { uploadScreenshotOffline } from "@/lib/offline-screenshot-upload";
 import { MaskEditor } from "@/components/mask-editor";
 import {
@@ -118,30 +114,20 @@ export function EnhancedImageLibrary() {
   const {
     folders,
     folderTree,
-    expandedFolderIds,
     createFolder,
     updateFolder,
     deleteFolder,
-    moveFolder,
     toggleFolderExpanded,
     collections,
     createCollection,
     updateCollection,
     deleteCollection,
     addImagesToCollection,
-    removeImagesFromCollection,
-    availableTags,
     addTagToImages,
-    removeTagFromImages,
     currentFilter,
     setCurrentFilter,
-    savedFilters,
-    saveFilter,
-    loadFilter,
-    deleteFilter,
     selectedImageIds,
     toggleImageSelection,
-    selectAllImages,
     clearSelection,
   } = useImageOrganization({ images, onUpdateImage: updateImage as any });
 
@@ -171,7 +157,7 @@ export function EnhancedImageLibrary() {
   });
 
   // Bulk operations state
-  const [showBulkToolbar, setShowBulkToolbar] = useState(false);
+  // const [showBulkToolbar, setShowBulkToolbar] = useState(false);
 
   // ============================================================================
   // Filtering & Sorting
@@ -263,7 +249,7 @@ export function EnhancedImageLibrary() {
       );
       if (invalidFiles.length > 0) {
         toast.error("Invalid file type", {
-          description: `${invalidFiles[0].name} is not an image file.`,
+          description: `${invalidFiles[0]?.name ?? "Unknown file"} is not an image file.`,
         });
         return;
       }
@@ -281,7 +267,7 @@ export function EnhancedImageLibrary() {
           // Upload immediately (works offline)
           const result = await uploadScreenshotOffline(file, projectId, {
             name: file.name,
-            onProgress: (progress, status) => {
+            onProgress: (progress, _status) => {
               setUploadingFiles((prev) =>
                 prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
               );
@@ -295,7 +281,7 @@ export function EnhancedImageLibrary() {
             name: nameWithoutExtension,
             url: result.screenshot.url,
             size: file.size,
-            createdAt: new Date(result.screenshot.createdAt),
+            createdAt: new Date(result.screenshot.uploadedAt),
             usageCount: 0,
             usedIn: [],
             source: "uploaded",
@@ -498,13 +484,13 @@ export function EnhancedImageLibrary() {
     [selectedImageIds, images, updateImage, clearSelection]
   );
 
-  const handleBulkTag = useCallback(
-    (tagName: string) => {
-      addTagToImages(Array.from(selectedImageIds), tagName);
-      toast.success(`Tagged ${selectedImageIds.size} image(s)`);
-    },
-    [selectedImageIds, addTagToImages]
-  );
+  // const handleBulkTag = useCallback(
+  //   (tagName: string) => {
+  //     addTagToImages(Array.from(selectedImageIds), tagName);
+  //     toast.success(`Tagged ${selectedImageIds.size} image(s)`);
+  //   },
+  //   [selectedImageIds, addTagToImages]
+  // );
 
   const handleBulkAddToCollection = useCallback(
     (collectionId: string) => {
@@ -587,31 +573,31 @@ export function EnhancedImageLibrary() {
     }
   };
 
-  const getGridSizeClass = () => {
-    switch (gridSize) {
-      case "small":
-        return "grid-cols-8 md:grid-cols-12 lg:grid-cols-16 xl:grid-cols-20";
-      case "medium":
-        return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
-      case "large":
-        return "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
-      default:
-        return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
-    }
-  };
+  // const getGridSizeClass = () => {
+  //   switch (gridSize) {
+  //     case "small":
+  //       return "grid-cols-8 md:grid-cols-12 lg:grid-cols-16 xl:grid-cols-20";
+  //     case "medium":
+  //       return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
+  //     case "large":
+  //       return "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
+  //     default:
+  //       return "grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
+  //   }
+  // };
 
-  const getImageCardSize = () => {
-    switch (gridSize) {
-      case "small":
-        return "w-16 h-16";
-      case "medium":
-        return "w-32 h-32";
-      case "large":
-        return "w-48 h-48";
-      default:
-        return "w-32 h-32";
-    }
-  };
+  // const getImageCardSize = () => {
+  //   switch (gridSize) {
+  //     case "small":
+  //       return "w-16 h-16";
+  //     case "medium":
+  //       return "w-32 h-32";
+  //     case "large":
+  //       return "w-48 h-48";
+  //     default:
+  //       return "w-32 h-32";
+  //   }
+  // };
 
   const selectedImage = useMemo(() => {
     return selectedImageId
@@ -756,7 +742,9 @@ export function EnhancedImageLibrary() {
                 value={[
                   gridSize === "small" ? 0 : gridSize === "medium" ? 50 : 100,
                 ]}
-                onValueChange={([value]) => {
+                onValueChange={(values) => {
+                  const value = values[0];
+                  if (value === undefined) return;
                   if (value < 33) setGridSize("small");
                   else if (value < 67) setGridSize("medium");
                   else setGridSize("large");
@@ -931,6 +919,7 @@ export function EnhancedImageLibrary() {
                 onUpdateCollection={updateCollection}
                 onDeleteCollection={deleteCollection}
                 images={images}
+                getImageUrl={getImageUrl}
               />
             </TabsContent>
           </Tabs>
@@ -1343,14 +1332,16 @@ interface CollectionsSidebarProps {
   onUpdateCollection: (id: string, updates: Partial<ImageCollection>) => void;
   onDeleteCollection: (id: string) => void;
   images: ImageWithMetadata[];
+  getImageUrl: (image: ImageAsset, size?: "thumb" | "medium" | "original") => string;
 }
 
 function CollectionsSidebar({
   collections,
   onCreateCollection,
-  onUpdateCollection,
+  onUpdateCollection: _onUpdateCollection,
   onDeleteCollection,
   images,
+  getImageUrl,
 }: CollectionsSidebarProps) {
   const [showNewCollection, setShowNewCollection] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState("");

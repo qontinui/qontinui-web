@@ -85,7 +85,7 @@ export const BackgroundRemovalTab: React.FC = () => {
       );
       console.log(
         "[BackgroundRemoval] First screenshot URL preview:",
-        selectedScreenshots[0].url.substring(0, 100)
+        selectedScreenshots[0]?.url.substring(0, 100) ?? "No screenshots"
       );
 
       // Prepare request
@@ -161,7 +161,7 @@ export const BackgroundRemovalTab: React.FC = () => {
     result.maskedScreenshots.forEach((dataUrl, index) => {
       const link = document.createElement("a");
       link.href = dataUrl;
-      link.download = `masked_${selectedScreenshots[index].name}`;
+      link.download = `masked_${selectedScreenshots[index]?.name ?? "screenshot"}`;
       link.click();
     });
 
@@ -285,7 +285,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                       <Slider
                         value={[config.varianceThreshold]}
                         onValueChange={([value]) =>
-                          setConfig({ ...config, varianceThreshold: value })
+                          setConfig({ ...config, varianceThreshold: value ?? 20 })
                         }
                         min={5}
                         max={50}
@@ -314,12 +314,15 @@ export const BackgroundRemovalTab: React.FC = () => {
                       </Label>
                       <Slider
                         value={[config.edgeDensityThreshold * 100]}
-                        onValueChange={([value]) =>
-                          setConfig({
-                            ...config,
-                            edgeDensityThreshold: value / 100,
-                          })
-                        }
+                        onValueChange={(values) => {
+                          const value = values[0];
+                          if (value !== undefined) {
+                            setConfig({
+                              ...config,
+                              edgeDensityThreshold: value / 100,
+                            });
+                          }
+                        }}
                         min={1}
                         max={15}
                         step={0.5}
@@ -348,7 +351,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                       <Slider
                         value={[config.uniformityThreshold]}
                         onValueChange={([value]) =>
-                          setConfig({ ...config, uniformityThreshold: value })
+                          setConfig({ ...config, uniformityThreshold: value ?? 15 })
                         }
                         min={5}
                         max={30}
@@ -389,7 +392,7 @@ export const BackgroundRemovalTab: React.FC = () => {
                         onValueChange={([value]) =>
                           setConfig({
                             ...config,
-                            minForegroundRegionSize: value,
+                            minForegroundRegionSize: value ?? 50,
                           })
                         }
                         min={10}

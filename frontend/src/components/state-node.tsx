@@ -77,7 +77,14 @@ export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
     images = [],
     hasIncomingTransitions = false,
     incomingTransitions = [],
-  } = data;
+  } = data || {
+    state: { id: "", name: "", description: "", stateImages: [] },
+    images: [],
+    hasIncomingTransitions: false,
+    incomingTransitions: [],
+    isSelected: false,
+    onSelect: () => {},
+  };
   const { resolvePatternImage } = useAutomation();
 
   return (

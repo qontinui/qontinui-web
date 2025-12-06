@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Play, Loader2, CheckCircle, AlertCircle, Shuffle } from "lucide-react";
+import { Play, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { TestExecutionPanelProps } from "@/types/integration-tests";
@@ -38,17 +38,15 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
         return "Completed successfully";
       case "failed":
         return "Failed";
-      case "skipped":
-        return "Skipped";
       default:
         return "Unknown status";
     }
   };
 
   const getProgressPercentage = (): number => {
-    if (!execution || !execution.totalSteps) return 0;
-    if (!execution.currentStep) return 0;
-    return Math.floor((execution.currentStep / execution.totalSteps) * 100);
+    if (!execution || !execution.totalActions) return 0;
+    if (!execution.currentAction) return 0;
+    return Math.floor((execution.currentAction / execution.totalActions) * 100);
   };
 
   const getOverallProgress = (): number => {
@@ -102,90 +100,22 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
               </div>
             </div>
 
-            {/* Current Step */}
+            {/* Current Action */}
             {execution.status === "running" &&
-              execution.currentStep &&
-              execution.totalSteps && (
+              execution.currentAction &&
+              execution.totalActions && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500 font-medium">
-                      Current Step
+                      Current Action
                     </span>
                     <span className="text-xs text-gray-500">
-                      Step {execution.currentStep} of {execution.totalSteps}
+                      Action {execution.currentAction} of {execution.totalActions}
                     </span>
                   </div>
-                  {execution.currentAction && (
-                    <div className="p-2 bg-gray-50 rounded-lg">
-                      <p className="text-sm text-gray-900 font-mono truncate">
-                        {execution.currentAction}
-                      </p>
-                    </div>
-                  )}
                   <Progress value={getProgressPercentage()} className="h-2" />
                 </div>
               )}
-
-            {/* Random Match Selection */}
-            {execution.status === "running" && execution.selectedMatch && (
-              <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <Shuffle className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-xs text-purple-700 font-medium mb-1">
-                      Random Match Selection
-                    </p>
-                    <p className="text-sm text-purple-900">
-                      Match #{execution.selectedMatch.matchNumber} of{" "}
-                      {execution.selectedMatch.totalMatches} available
-                    </p>
-                    {execution.selectedMatch.confidence && (
-                      <p className="text-xs text-purple-700 mt-1">
-                        Confidence:{" "}
-                        {(execution.selectedMatch.confidence * 100).toFixed(1)}%
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Error Display */}
-            {execution.status === "failed" && execution.error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-xs text-red-700 font-medium mb-1">
-                      Failed at Step {execution.error.step}
-                    </p>
-                    <p className="text-sm text-red-900 font-mono">
-                      {execution.error.action}
-                    </p>
-                    <p className="text-xs text-red-700 mt-2">
-                      {execution.error.message}
-                    </p>
-                    {execution.error.expectedState &&
-                      execution.error.actualState && (
-                        <div className="mt-2 text-xs space-y-1">
-                          <p className="text-red-700">
-                            Expected:{" "}
-                            <span className="font-mono">
-                              {execution.error.expectedState}
-                            </span>
-                          </p>
-                          <p className="text-red-700">
-                            Actual:{" "}
-                            <span className="font-mono">
-                              {execution.error.actualState}
-                            </span>
-                          </p>
-                        </div>
-                      )}
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Overall Progress */}
             {totalWorkflows > 1 && (

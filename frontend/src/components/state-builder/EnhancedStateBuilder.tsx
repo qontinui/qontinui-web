@@ -16,43 +16,27 @@ import React, {
   useState,
   useCallback,
   useMemo,
-  useRef,
-  useEffect,
 } from "react";
 import {
   Search,
   Plus,
   Trash2,
   Copy,
-  FolderPlus,
-  Tag,
-  Image as ImageIcon,
-  MapPin,
-  Type,
+  ImageIcon,
   ArrowRightLeft,
-  Layers,
   ZoomIn,
   ZoomOut,
   Grid,
   Eye,
-  EyeOff,
   Download,
-  Upload,
   FileText,
-  AlertCircle,
   Check,
-  X,
-  ChevronRight,
-  ChevronDown,
   MoreVertical,
   Filter,
   Settings,
   GitBranch,
   Star,
-  Circle,
   Layout,
-  BoxSelect,
-  Move,
 } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
 import type {
@@ -60,10 +44,6 @@ import type {
   StateImage,
   StateRegion,
   StateLocation,
-  StateString,
-  Transition,
-  Pattern,
-  SearchRegion,
 } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,14 +54,6 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Slider } from "@/components/ui/slider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -93,35 +65,15 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 // ============================================================================
 // Types
 // ============================================================================
-
-interface StateGroup {
-  id: string;
-  name: string;
-  color?: string;
-  parentId?: string | null;
-  expanded?: boolean;
-  order: number;
-}
 
 interface StateWithMetadata extends State {
   groupId?: string | null;
@@ -153,15 +105,9 @@ export function EnhancedStateBuilder() {
   const {
     states,
     transitions,
-    workflows,
-    images,
     addState,
     updateState,
     deleteState,
-    addTransition,
-    updateTransition,
-    deleteTransition,
-    getImageById,
     resolvePatternImage,
   } = useAutomation();
 
@@ -169,10 +115,7 @@ export function EnhancedStateBuilder() {
   // State Management
   // ============================================================================
 
-  const [groups, setGroups] = useState<StateGroup[]>([
-    { id: "root", name: "All States", order: 0, expanded: true },
-  ]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>("root");
+  const [selectedGroupId] = useState<string | null>("root");
   const [selectedStateIds, setSelectedStateIds] = useState<Set<string>>(
     new Set()
   );
@@ -192,10 +135,6 @@ export function EnhancedStateBuilder() {
   const [canvasZoom, setCanvasZoom] = useState(1);
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(
-    null
-  );
-  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
     null
   );
 
@@ -330,15 +269,6 @@ export function EnhancedStateBuilder() {
     [transitions]
   );
 
-  const allTags = useMemo(() => {
-    const tags = new Set<string>();
-    states.forEach((s) => {
-      const stateTags = (s as StateWithMetadata).tags || [];
-      stateTags.forEach((tag) => tags.add(tag));
-    });
-    return Array.from(tags).sort();
-  }, [states]);
-
   // ============================================================================
   // Handlers
   // ============================================================================
@@ -413,7 +343,7 @@ export function EnhancedStateBuilder() {
 
   const handleBulkOperation = useCallback(
     (operation: BulkOperationPayload) => {
-      const { stateIds, operation: op, data } = operation;
+      const { stateIds, operation: op } = operation;
 
       switch (op) {
         case "delete":
@@ -553,21 +483,6 @@ export function EnhancedStateBuilder() {
     toast.success("Location added");
   }, [currentState, handleUpdateCurrentState]);
 
-  const handleAddString = useCallback(() => {
-    if (!currentState) return;
-
-    const newString: StateString = {
-      id: `str-${Date.now()}`,
-      name: "New String",
-      value: "",
-      inputText: true,
-    };
-
-    handleUpdateCurrentState({
-      strings: [...(currentState.strings || []), newString],
-    });
-    toast.success("String added");
-  }, [currentState, handleUpdateCurrentState]);
 
   // ============================================================================
   // Render Helpers

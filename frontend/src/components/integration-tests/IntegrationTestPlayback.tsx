@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ApiConfig } from "@/services/api-config";
 
 /**
@@ -120,68 +119,6 @@ export const IntegrationTestPlayback: React.FC<
     loadFrames();
   }, [historicalResultIds]);
 
-  // Playback timer
-  useEffect(() => {
-    if (isPlaying && frames.length > 0) {
-      const interval = 1000 / playbackSpeed; // Base interval adjusted by speed
-
-      playbackRef.current = setInterval(() => {
-        setCurrentIndex((prev) => {
-          if (prev >= frames.length - 1) {
-            setIsPlaying(false);
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, interval);
-
-      return () => {
-        if (playbackRef.current) {
-          clearInterval(playbackRef.current);
-        }
-      };
-    }
-  }, [isPlaying, playbackSpeed, frames.length]);
-
-  // Keyboard controls
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case " ":
-          e.preventDefault();
-          setIsPlaying((prev) => !prev);
-          break;
-        case "ArrowLeft":
-          e.preventDefault();
-          goToPrevious();
-          break;
-        case "ArrowRight":
-          e.preventDefault();
-          goToNext();
-          break;
-        case "Home":
-          e.preventDefault();
-          goToStart();
-          break;
-        case "End":
-          e.preventDefault();
-          goToEnd();
-          break;
-        case "Escape":
-          e.preventDefault();
-          if (isFullscreen) {
-            setIsFullscreen(false);
-          } else {
-            onClose();
-          }
-          break;
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullscreen, onClose]);
-
   // Navigation functions
   const goToStart = useCallback(() => {
     setCurrentIndex(0);
@@ -211,29 +148,97 @@ export const IntegrationTestPlayback: React.FC<
   const cycleSpeed = useCallback(() => {
     const currentSpeedIndex = PLAYBACK_SPEEDS.indexOf(playbackSpeed);
     const nextIndex = (currentSpeedIndex + 1) % PLAYBACK_SPEEDS.length;
-    setPlaybackSpeed(PLAYBACK_SPEEDS[nextIndex]);
+    const nextSpeed = PLAYBACK_SPEEDS[nextIndex];
+    if (nextSpeed !== undefined) {
+      setPlaybackSpeed(nextSpeed);
+    }
   }, [playbackSpeed]);
 
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen((prev) => !prev);
   }, []);
 
+  // Playback timer
+  useEffect(() => {
+    if (isPlaying && frames.length > 0) {
+      const interval = 1000 / playbackSpeed; // Base interval adjusted by speed
+
+      playbackRef.current = setInterval(() => {
+        setCurrentIndex((prev) => {
+          if (prev >= frames.length - 1) {
+            setIsPlaying(false);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, interval);
+
+      return () => {
+        if (playbackRef.current) {
+          clearInterval(playbackRef.current);
+        }
+      };
+    }
+    return undefined;
+  }, [isPlaying, playbackSpeed, frames.length]);
+
+  // Keyboard controls
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case " ":
+          e.preventDefault();
+          setIsPlaying((prev) => !prev);
+          return;
+        case "ArrowLeft":
+          e.preventDefault();
+          goToPrevious();
+          return;
+        case "ArrowRight":
+          e.preventDefault();
+          goToNext();
+          return;
+        case "Home":
+          e.preventDefault();
+          goToStart();
+          return;
+        case "End":
+          e.preventDefault();
+          goToEnd();
+          return;
+        case "Escape":
+          e.preventDefault();
+          if (isFullscreen) {
+            setIsFullscreen(false);
+          } else {
+            onClose();
+          }
+          return;
+        default:
+          return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen, onClose, goToPrevious, goToNext, goToStart, goToEnd]);
+
   // Render loading state
   if (isLoading) {
     return (
-      <Card className="w-full h-full flex items-center justify-center">
+      <div className="w-full h-full flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
           <p className="mt-4 text-gray-600">Loading playback frames...</p>
         </div>
-      </Card>
+      </div>
     );
   }
 
   // Render error state
   if (error) {
     return (
-      <Card className="w-full h-full flex items-center justify-center">
+      <div className="w-full h-full flex items-center justify-center">
         <div className="text-center text-red-600">
           <XCircle className="w-12 h-12 mx-auto mb-4" />
           <p>{error}</p>
@@ -241,21 +246,21 @@ export const IntegrationTestPlayback: React.FC<
             Close
           </Button>
         </div>
-      </Card>
+      </div>
     );
   }
 
   // Render empty state
   if (frames.length === 0) {
     return (
-      <Card className="w-full h-full flex items-center justify-center">
+      <div className="w-full h-full flex items-center justify-center">
         <div className="text-center text-gray-600">
           <p>No frames available for playback</p>
           <Button onClick={onClose} className="mt-4">
             Close
           </Button>
         </div>
-      </Card>
+      </div>
     );
   }
 
@@ -380,8 +385,10 @@ export const IntegrationTestPlayback: React.FC<
           max={frames.length - 1}
           step={1}
           onValueChange={([value]) => {
-            setCurrentIndex(value);
-            setIsPlaying(false);
+            if (value !== undefined) {
+              setCurrentIndex(value);
+              setIsPlaying(false);
+            }
           }}
           className="w-full"
         />

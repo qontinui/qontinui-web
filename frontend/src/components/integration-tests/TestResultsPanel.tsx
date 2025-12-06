@@ -197,12 +197,12 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                               </div>
                             )}
 
-                          {!result.passed && result.failedSteps > 0 && (
+                          {!result.passed && (result.failedSteps ?? 0) > 0 && (
                             <p
                               className={`text-xs ${result.passed ? "text-green-700" : "text-red-700"}`}
                             >
-                              {result.failedSteps} step
-                              {result.failedSteps > 1 ? "s" : ""} failed
+                              {result.failedSteps ?? 0} step
+                              {(result.failedSteps ?? 0) > 1 ? "s" : ""} failed
                             </p>
                           )}
                         </div>

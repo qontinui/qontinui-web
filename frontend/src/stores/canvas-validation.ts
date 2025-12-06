@@ -13,10 +13,6 @@
 
 import type {
   Workflow,
-  Action,
-  Connections,
-  Connection,
-  ActionType,
 } from "../lib/action-schema/action-types";
 import { getActionOutputCount } from "../lib/action-schema/action-types";
 
@@ -186,6 +182,7 @@ function validateConnections(workflow: Workflow): ValidationError[] {
 
       for (let outputIndex = 0; outputIndex < outputs.length; outputIndex++) {
         const connections = outputs[outputIndex];
+        if (!connections) continue;
 
         for (const conn of connections) {
           const targetAction = actionMap.get(conn.action);
@@ -376,7 +373,7 @@ function detectMissingConnections(workflow: Workflow): ValidationError[] {
 
   for (const action of workflow.actions) {
     const connections = workflow.connections[action.id];
-    const expectedOutputs = getActionOutputCount(action.type, action.config);
+    getActionOutputCount(action.type, action.config);
 
     // Check for actions that should have connections
     if (action.type === "IF") {
@@ -571,6 +568,7 @@ function validateVariableReferences(workflow: Workflow): ValidationError[] {
 
     for (const match of matches) {
       const varName = match[1];
+      if (!varName) continue;
 
       // Check if variable exists
       if (!availableVariables.has(varName)) {
@@ -616,21 +614,21 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
     // Type-specific validation
     const config = action.config as any;
 
+    // Type-specific validation using string checks instead of type enum
+    if (action.type === "CLICK") {
+      if (!config.target && !config.position) {
+        errors.push({
+          id: `missing-target-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `${action.type} action "${action.name || action.id}" must have either a target or position`,
+          details: { actionId: action.id, actionType: action.type },
+        });
+      }
+    }
+
     switch (action.type) {
-      case "CLICK":
-      case "DOUBLE_CLICK":
-      case "RIGHT_CLICK":
-        if (!config.target && !config.position) {
-          errors.push({
-            id: `missing-target-${action.id}`,
-            actionId: action.id,
-            type: "invalid_config",
-            severity: "error",
-            message: `${action.type} action "${action.name || action.id}" must have either a target or position`,
-            details: { actionId: action.id, actionType: action.type },
-          });
-        }
-        break;
 
       case "TYPE":
         if (!config.text && !config.variableRef) {
@@ -707,29 +705,6 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
         }
         break;
 
-      case "EXTRACT":
-        if (!config.target && !config.region) {
-          errors.push({
-            id: `missing-extract-target-${action.id}`,
-            actionId: action.id,
-            type: "invalid_config",
-            severity: "error",
-            message: `EXTRACT action "${action.name || action.id}" must have target or region`,
-            details: { actionId: action.id },
-          });
-        }
-        if (!config.outputVariable) {
-          errors.push({
-            id: `missing-output-variable-${action.id}`,
-            actionId: action.id,
-            type: "invalid_config",
-            severity: "warning",
-            message: `EXTRACT action "${action.name || action.id}" should specify outputVariable`,
-            details: { actionId: action.id },
-          });
-        }
-        break;
-
       case "SET_VARIABLE":
         if (!config.variableName) {
           errors.push({
@@ -752,45 +727,70 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
           });
         }
         break;
+    }
 
-      case "ASSERT":
-        if (!config.condition && !config.expected) {
-          errors.push({
-            id: `missing-assertion-${action.id}`,
-            actionId: action.id,
-            type: "invalid_config",
-            severity: "error",
-            message: `ASSERT action "${action.name || action.id}" must have condition or expected value`,
-            details: { actionId: action.id },
-          });
-        }
-        break;
+    // Additional validation for types not in ActionType enum
+    if ((action.type as string) === "EXTRACT") {
+      if (!config.target && !config.region) {
+        errors.push({
+          id: `missing-extract-target-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `EXTRACT action "${action.name || action.id}" must have target or region`,
+          details: { actionId: action.id },
+        });
+      }
+      if (!config.outputVariable) {
+        errors.push({
+          id: `missing-output-variable-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "warning",
+          message: `EXTRACT action "${action.name || action.id}" should specify outputVariable`,
+          details: { actionId: action.id },
+        });
+      }
+    }
 
-      case "EXECUTE_CODE":
-        if (!config.code && !config.function) {
-          errors.push({
-            id: `missing-code-${action.id}`,
-            actionId: action.id,
-            type: "invalid_config",
-            severity: "error",
-            message: `EXECUTE_CODE action "${action.name || action.id}" must have code or function`,
-            details: { actionId: action.id },
-          });
-        }
-        break;
+    if ((action.type as string) === "ASSERT") {
+      if (!config.condition && !config.expected) {
+        errors.push({
+          id: `missing-assertion-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `ASSERT action "${action.name || action.id}" must have condition or expected value`,
+          details: { actionId: action.id },
+        });
+      }
+    }
 
-      case "API_CALL":
-        if (!config.url) {
-          errors.push({
-            id: `missing-api-url-${action.id}`,
-            actionId: action.id,
-            type: "invalid_config",
-            severity: "error",
-            message: `API_CALL action "${action.name || action.id}" must have url`,
-            details: { actionId: action.id },
-          });
-        }
-        if (!config.method) {
+    if ((action.type as string) === "EXECUTE_CODE") {
+      if (!config.code && !config.function) {
+        errors.push({
+          id: `missing-code-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `EXECUTE_CODE action "${action.name || action.id}" must have code or function`,
+          details: { actionId: action.id },
+        });
+      }
+    }
+
+    if ((action.type as string) === "API_CALL") {
+      if (!config.url) {
+        errors.push({
+          id: `missing-api-url-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "error",
+          message: `API_CALL action "${action.name || action.id}" must have url`,
+          details: { actionId: action.id },
+        });
+      }
+      if (!config.method) {
           errors.push({
             id: `missing-http-method-${action.id}`,
             actionId: action.id,
@@ -833,7 +833,9 @@ export class ValidationManager {
     // Limit cache size
     if (this.validationCache.size > 100) {
       const firstKey = this.validationCache.keys().next().value;
-      this.validationCache.delete(firstKey);
+      if (firstKey !== undefined) {
+        this.validationCache.delete(firstKey);
+      }
     }
 
     return result;

@@ -25,7 +25,12 @@ export function TransitionNode({
   data,
   selected,
 }: NodeProps<TransitionNodeData>) {
-  const { transition, label, isSingleTarget, isIncoming } = data;
+  const { transition, label, isSingleTarget = false, isIncoming = false } = data || {
+    transition: { id: "", type: "OutgoingTransition" as const, workflows: [] },
+    label: "",
+    isSingleTarget: false,
+    isIncoming: false,
+  };
 
   // Determine color based on transition type
   const color =

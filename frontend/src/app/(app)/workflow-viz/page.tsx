@@ -57,7 +57,7 @@ export default function WorkflowVisualizationPage() {
     (Workflow & { projectName?: string })[]
   >([]);
   const [states, setStates] = useState<State[]>([]);
-  const [transitions, setTransitions] = useState<Transition[]>([]);
+  const [_transitions, setTransitions] = useState<Transition[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
     null
   );
@@ -106,7 +106,7 @@ export default function WorkflowVisualizationPage() {
 
         // Auto-select first workflow
         if (loadedWorkflows.length > 0 && !selectedWorkflowId) {
-          setSelectedWorkflowId(loadedWorkflows[0].id);
+          setSelectedWorkflowId(loadedWorkflows[0]?.id || null);
         }
 
         toast.success(`Loaded ${loadedWorkflows.length} workflow(s)`);
@@ -194,7 +194,7 @@ export default function WorkflowVisualizationPage() {
   };
 
   // Update active states based on action execution
-  const updateActiveStates = (actionIndex: number, success: boolean) => {
+  const updateActiveStates = (actionIndex: number, _success: boolean) => {
     if (!selectedWorkflow) return;
 
     const action = selectedWorkflow.actions[actionIndex];
@@ -205,7 +205,7 @@ export default function WorkflowVisualizationPage() {
     // actions trigger which transitions based on the workflow structure
 
     // For STATE_ACTIVATOR actions, activate the specified state
-    if (action.type === "STATE_ACTIVATOR" && action.config) {
+    if ((action.type as string) === "STATE_ACTIVATOR" && action.config) {
       const config = action.config as any;
       const stateIds = config.stateIds || [];
       setActiveStateIds((prev) => {
@@ -463,8 +463,8 @@ export default function WorkflowVisualizationPage() {
                       max={selectedWorkflow.actions.length - 1}
                       step={1}
                       onValueChange={([value]) => {
-                        setCurrentActionIndex(value);
-                        updateActiveStates(value, assumeSuccess);
+                        setCurrentActionIndex(value ?? 0);
+                        updateActiveStates(value ?? 0, assumeSuccess);
                       }}
                       className="w-full"
                     />

@@ -6,14 +6,13 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Play, Trash2, CheckCircle } from "lucide-react";
+import { ArrowLeft, Play, Trash2 } from "lucide-react";
 import { recordingService } from "@/services/service-factory";
 import { ProcessingMonitor } from "@/components/recordings/ProcessingMonitor";
 import { StateStructureReview } from "@/components/recordings/StateStructureReview";

@@ -3,6 +3,7 @@
  */
 
 import type { ActionExpectations } from "@/lib/expectations/types";
+import type { BaseActionSettings, ExecutionSettings } from "@/lib/action-schema/shared/timing-config";
 
 export interface Action {
   id: string;
@@ -46,6 +47,10 @@ export interface Action {
     | "STRING_OPERATION"
     | "MATH_OPERATION";
   config: Record<string, any>;
+  /** Base settings (timing, logging, etc.) */
+  base?: BaseActionSettings;
+  /** Execution control (timeout, retries, etc.) */
+  execution?: ExecutionSettings;
   /** Action-level expectations for checkpoint and failure behavior */
   expectations?: ActionExpectations;
 }
@@ -60,7 +65,7 @@ export interface ActionPropertiesComponentProps {
   images: any[];
   states: any[];
   processes: any[]; // Array of workflows (prop name "processes" for legacy compatibility)
-  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement | null>;
   shouldOpenImageSelector?: boolean;
   onUpdateAction?: (action: Action) => void;
 }

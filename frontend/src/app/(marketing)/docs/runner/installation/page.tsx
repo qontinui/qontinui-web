@@ -1,4 +1,4 @@
-import { CheckCircle2, AlertCircle, Terminal } from "lucide-react";
+import { CheckCircle2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 

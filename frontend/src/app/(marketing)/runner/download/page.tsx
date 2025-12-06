@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import {
   Download,
-  Shield,
   CheckCircle2,
   Github,
   AlertCircle,

@@ -128,14 +128,14 @@ export default function WorkflowTestingPage() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [filterStatus, setFilterStatus] = React.useState<FilterStatus>("all");
   const [sortBy] = React.useState<SortBy>("name");
-  const [showCoverage] = React.useState(false);
+  const [_showCoverage] = React.useState(false);
 
   // ========================================================================
   // State - Modals
   // ========================================================================
 
   const [showCreateTest, setShowCreateTest] = React.useState(false);
-  const [showCreateSuite] = React.useState(false);
+  const [_showCreateSuite, setShowCreateSuite] = React.useState(false);
   const [showImportDialog, setShowImportDialog] = React.useState(false);
   const [editingTest, setEditingTest] = React.useState<TestCase | null>(null);
 
@@ -1071,7 +1071,7 @@ export default function WorkflowTestingPage() {
             <Dialog open onOpenChange={() => setShowCreateTest(false)}>
               <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <TestCaseEditor
-                  workflow={workflows[0]}
+                  workflow={workflows[0]!}
                   onSave={handleCreateTest}
                   onCancel={() => setShowCreateTest(false)}
                 />
@@ -1085,8 +1085,8 @@ export default function WorkflowTestingPage() {
                 <TestCaseEditor
                   testCase={editingTest}
                   workflow={
-                    workflows.find((w) => w.id === editingTest.workflowId) ||
-                    workflows[0]
+                    (workflows.find((w) => w.id === editingTest.workflowId) ||
+                    workflows[0])!
                   }
                   onSave={handleUpdateTest}
                   onCancel={() => setEditingTest(null)}
@@ -1473,8 +1473,10 @@ function WorkflowTestDetails({
 }
 
 function TestResults({
+  testCase: _testCase,
   results,
 }: {
+  testCase?: TestCase;
   results: TestResult[];
 }) {
   const lastResult = results[0];
@@ -1613,9 +1615,11 @@ function TestResults({
 }
 
 function SuiteResults({
+  suite: _suite,
   testCases,
   testResults,
 }: {
+  suite?: TestSuite;
   testCases: TestCase[];
   testResults: Map<string, TestResult[]>;
 }) {

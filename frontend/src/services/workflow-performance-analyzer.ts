@@ -1745,6 +1745,7 @@ export class WorkflowPerformanceAnalyzer {
     for (let i = 1; i < versions.length; i++) {
       const prev = versions[i - 1];
       const curr = versions[i];
+      if (!prev || !curr) continue;
 
       const prevAnalysis = this.analyzePerformance(
         prev.workflow,
@@ -1795,9 +1796,10 @@ export class WorkflowPerformanceAnalyzer {
       }
 
       // Check action count increase
-      const actionDelta =
-        curr.workflow.actions.length - prev.workflow.actions.length;
-      const actionIncrease = actionDelta / prev.workflow.actions.length;
+      const prevActionCount = prev.workflow.actions?.length ?? 0;
+      const currActionCount = curr.workflow.actions?.length ?? 0;
+      const actionDelta = currActionCount - prevActionCount;
+      const actionIncrease = prevActionCount > 0 ? actionDelta / prevActionCount : 0;
 
       if (actionIncrease > 0.3) {
         regressions.push({

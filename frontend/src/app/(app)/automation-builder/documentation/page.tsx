@@ -131,85 +131,90 @@ function generateMockWorkflows(): Workflow[] {
       name: "User Login Flow",
       description: "Handles user authentication and login",
       version: "1.0.0",
+      format: "graph" as const,
       actions: Array(12)
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
           type: "CLICK" as any,
           name: `Action ${i + 1}`,
-        })),
-      connections: [],
-      variables: [],
-      folder: "Authentication",
-      tags: ["login", "auth"],
+          config: {},
+          position: [0, 0] as [number, number],
+        })) as any[],
+      connections: {} as any,
+      variables: {},
     },
     {
       id: "wf-2",
       name: "Form Validation",
       description: "Validates form inputs",
       version: "1.0.0",
+      format: "graph" as const,
       actions: Array(8)
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
           type: "TYPE" as any,
           name: `Action ${i + 1}`,
-        })),
-      connections: [],
-      variables: [],
-      folder: "Forms",
-      tags: ["validation", "forms"],
+          config: {},
+          position: [0, 0] as [number, number],
+        })) as any[],
+      connections: {} as any,
+      variables: {},
     },
     {
       id: "wf-3",
       name: "Dashboard Navigation",
       description: "Navigate through dashboard sections",
       version: "1.0.0",
+      format: "graph" as const,
       actions: Array(15)
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
           type: "CLICK" as any,
           name: `Action ${i + 1}`,
-        })),
-      connections: [],
-      variables: [],
-      folder: "Navigation",
-      tags: ["navigation", "ui"],
+          config: {},
+          position: [0, 0] as [number, number],
+        })) as any[],
+      connections: {} as any,
+      variables: {},
     },
     {
       id: "wf-4",
       name: "API Integration Test",
       description: "Tests API endpoints",
       version: "1.0.0",
+      format: "graph" as const,
       actions: Array(20)
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
           type: "WAIT" as any,
           name: `Action ${i + 1}`,
-        })),
-      connections: [],
-      variables: [],
-      folder: "Testing",
-      tags: ["api", "test"],
+          config: {},
+          position: [0, 0] as [number, number],
+        })) as any[],
+      connections: {} as any,
+      variables: {},
     },
     {
       id: "wf-5",
       name: "User Registration",
       description: "New user signup flow",
       version: "1.0.0",
+      format: "graph" as const,
       actions: Array(10)
         .fill(null)
         .map((_, i) => ({
           id: `action-${i}`,
           type: "TYPE" as any,
           name: `Action ${i + 1}`,
-        })),
-      connections: [],
-      variables: [],
-      folder: "Authentication",
-      tags: ["registration", "auth"],
+          config: {},
+          position: [0, 0] as [number, number],
+        })) as any[],
+      connections: {} as any,
+      variables: {},
     },
   ];
 }
@@ -228,10 +233,10 @@ function buildDocumentationTree(
     },
   ];
 
-  // Group workflows by folder
+  // Group workflows by category
   const folderMap = new Map<string, Workflow[]>();
   workflows.forEach((workflow) => {
-    const folder = workflow.folder || "Uncategorized";
+    const folder = workflow.category || "Uncategorized";
     if (!folderMap.has(folder)) {
       folderMap.set(folder, []);
     }
@@ -512,7 +517,7 @@ function DocumentationNavigator({
           variant="outline"
           size="sm"
           className="w-full border-gray-700 hover:border-[#00D9FF] hover:text-[#00D9FF] bg-transparent"
-          onClick={() => onSelectNode(tree[0])}
+          onClick={() => tree[0] && onSelectNode(tree[0])}
         >
           <Plus className="size-4 mr-2" />
           New Doc
@@ -669,7 +674,7 @@ function DocumentationDashboard({
                       <div>
                         <p className="text-sm font-medium">{workflow.name}</p>
                         <p className="text-xs text-gray-500">
-                          {workflow.folder}
+                          {workflow.category}
                         </p>
                       </div>
                     </div>

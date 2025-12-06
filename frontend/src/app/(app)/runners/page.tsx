@@ -65,7 +65,7 @@ export default function RunnersPage() {
     }
   };
 
-  const handleViewConnections = (tokenId: string) => {
+  const handleViewConnections = (_tokenId: string) => {
     // Switch to history tab and filter by token
     setActiveTab("history");
     toast.info("Viewing connections for selected token");

@@ -111,7 +111,7 @@ export function VideoExportDialog({
                 step={0.1}
                 value={[options.frameDuration]}
                 onValueChange={([value]) =>
-                  setOptions({ ...options, frameDuration: value })
+                  setOptions({ ...options, frameDuration: value ?? 1.5 })
                 }
                 disabled={isExporting}
               />

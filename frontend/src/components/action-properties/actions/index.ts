@@ -103,7 +103,7 @@ actionConfigRegistry.register("LOOP", LoopActionProperties, "LOOP");
 
 // Register Code Execution components
 actionConfigRegistry.register(
-  "CODE_BLOCK",
+  "CODE_BLOCK" as any,
   CodeBlockActionProperties,
-  "CODE_BLOCK"
+  "CODE_BLOCK" as any
 );

@@ -181,10 +181,10 @@ export const useConversionHistoryStore = create<ConversionHistoryStore>()(
             // Remove snapshots from oldest records
             for (let i = 0; i < excessCount; i++) {
               const oldRecord = recordsWithSnapshots[i];
-              const index = records.findIndex((r) => r.id === oldRecord.id);
-              if (index !== -1) {
+              const index = records.findIndex((r) => r.id === oldRecord?.id);
+              if (index !== -1 && records[index]) {
                 records[index] = {
-                  ...records[index],
+                  ...records[index]!,
                   beforeSnapshot: undefined,
                   afterSnapshot: undefined,
                 };

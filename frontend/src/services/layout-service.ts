@@ -202,7 +202,7 @@ export class LayoutService {
         const a1 = workflow.actions[i];
         const a2 = workflow.actions[j];
 
-        if (!a1.position || !a2.position) continue;
+        if (!a1 || !a2 || !a1.position || !a2.position) continue;
 
         const [x1, y1] = a1.position;
         const [x2, y2] = a2.position;
@@ -320,7 +320,18 @@ export class LayoutService {
       (a, b) => b[1].score - a[1].score
     );
 
-    const [bestStyle, bestInfo] = sorted[0];
+    const firstEntry = sorted[0];
+    if (!firstEntry) {
+      // Default to hierarchical if no scores
+      return {
+        style: LayoutStyle.HIERARCHICAL,
+        confidence: 0.5,
+        reason: "Default layout style",
+        alternatives: [],
+      };
+    }
+
+    const [bestStyle, bestInfo] = firstEntry;
     const alternatives = sorted.slice(1).map(([style, info]) => ({
       style,
       confidence: info.score,
@@ -425,7 +436,6 @@ export class LayoutService {
         "main",
         "error",
         "success",
-        "parallel",
       ] as const) {
         const outputs = connections[outputType];
         if (!outputs) continue;
@@ -482,7 +492,6 @@ export class LayoutService {
           "main",
           "error",
           "success",
-          "parallel",
         ] as const) {
           const outputs = connections[outputType];
           if (!outputs) continue;
@@ -522,7 +531,6 @@ export class LayoutService {
           "main",
           "error",
           "success",
-          "parallel",
         ] as const) {
           const outputs = connections[outputType];
           if (!outputs) continue;
@@ -561,7 +569,8 @@ export class LayoutService {
    */
   private findEntryPoints(workflow: Workflow): string[] {
     if (!workflow.connections) {
-      return workflow.actions.length > 0 ? [workflow.actions[0].id] : [];
+      const firstAction = workflow.actions[0];
+      return firstAction ? [firstAction.id] : [];
     }
 
     const hasIncoming = new Set<string>();
@@ -571,7 +580,6 @@ export class LayoutService {
         "main",
         "error",
         "success",
-        "parallel",
       ] as const) {
         const outputs = connections[outputType];
         if (!outputs) continue;

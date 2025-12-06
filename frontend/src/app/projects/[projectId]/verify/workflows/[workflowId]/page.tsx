@@ -48,14 +48,17 @@ function getActiveStatesAtStep(
     const action = workflow.actions[i];
 
     // Handle GO_TO_STATE actions
-    if (action.type === "GO_TO_STATE" && action.config.stateIds) {
+    if (action.type === "GO_TO_STATE" && "stateIds" in action.config) {
       // Add the target states
       action.config.stateIds.forEach((stateId) => activeStateIds.add(stateId));
     }
 
     // Handle FIND_STATE_IMAGE actions (implies the state is active)
-    if (action.type === "FIND_STATE_IMAGE" && action.config.stateId) {
-      activeStateIds.add(action.config.stateId);
+    if (action.type === "FIND_STATE_IMAGE" && "stateId" in action.config) {
+      const stateId = action.config.stateId;
+      if (stateId) {
+        activeStateIds.add(stateId);
+      }
     }
   }
 
@@ -74,7 +77,7 @@ function WorkflowVerification() {
   const projectId = params.projectId as string;
   const workflowId = params.workflowId as string;
 
-  const { workflows, states, isLoading } = useAutomation();
+  const { workflows, states } = useAutomation();
   const [currentStep, setCurrentStep] = useState(0);
 
   const workflow = useMemo(
@@ -111,14 +114,6 @@ function WorkflowVerification() {
     // Reset to step 0 when workflow changes
     setCurrentStep(0);
   }, [workflowId]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#00D9FF]" />
-      </div>
-    );
-  }
 
   if (!workflow) {
     return (

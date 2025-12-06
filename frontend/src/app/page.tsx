@@ -2,11 +2,10 @@
 
 import type React from "react";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowRight,
@@ -21,7 +20,6 @@ import {
 import { AuthDialog } from "@/components/auth-dialog";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import { Footer } from "@/components/marketing/footer";
-import { toast } from "sonner";
 
 function LandingContent() {
   const [authDialogOpen, setAuthDialogOpen] = useState(false);

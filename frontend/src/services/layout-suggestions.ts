@@ -512,7 +512,10 @@ export function groupSuggestionsByType(
     if (!groups[suggestion.type]) {
       groups[suggestion.type] = [];
     }
-    groups[suggestion.type].push(suggestion);
+    const group = groups[suggestion.type];
+    if (group) {
+      group.push(suggestion);
+    }
   }
 
   return groups as Record<SuggestionType, LayoutSuggestion[]>;

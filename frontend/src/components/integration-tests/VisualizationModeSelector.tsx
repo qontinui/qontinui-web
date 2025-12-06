@@ -36,7 +36,7 @@ export const VisualizationModeSelector: React.FC<
       icon: <Image className="w-4 h-4" />,
     },
     {
-      value: "state-visualization",
+      value: "state_viz",
       label: "State Visualization",
       description:
         "Show state transitions with fixed positions. Best for understanding flow.",

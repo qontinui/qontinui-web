@@ -155,7 +155,7 @@ export function SemanticAnalysisTab() {
       scene.objects.forEach((obj) => {
         const isHovered = hoveredObject === obj.id;
         const isSelected = selectedObject?.id === obj.id;
-        const color = typeColors[obj.type] || typeColors.default;
+        const color = typeColors[obj.type] ?? typeColors.default ?? "#808080";
 
         // Draw bounding box
         if (showBoundingBoxes) {
@@ -244,18 +244,23 @@ export function SemanticAnalysisTab() {
                 const data = imageData.data;
 
                 // Parse color (remove # if present)
-                const hexColor = color.replace("#", "");
+                const hexColor = (color ?? "#808080").replace("#", "");
                 const r = parseInt(hexColor.substr(0, 2), 16);
                 const g = parseInt(hexColor.substr(2, 2), 16);
                 const b = parseInt(hexColor.substr(4, 2), 16);
 
                 // Colorize the mask
                 for (let i = 0; i < data.length; i += 4) {
-                  if (data[i] > 0 || data[i + 1] > 0 || data[i + 2] > 0) {
-                    data[i] = r; // Red
-                    data[i + 1] = g; // Green
-                    data[i + 2] = b; // Blue
-                    data[i + 3] = 200; // Alpha (semi-transparent)
+                  const val0 = data[i];
+                  const val1 = data[i + 1];
+                  const val2 = data[i + 2];
+                  if (val0 !== undefined && val1 !== undefined && val2 !== undefined) {
+                    if (val0 > 0 || val1 > 0 || val2 > 0) {
+                      data[i] = r; // Red
+                      data[i + 1] = g; // Green
+                      data[i + 2] = b; // Blue
+                      data[i + 3] = 200; // Alpha (semi-transparent)
+                    }
                   }
                 }
 
@@ -546,7 +551,7 @@ export function SemanticAnalysisTab() {
                 </Label>
                 <Slider
                   value={[confidence]}
-                  onValueChange={([v]) => setConfidence(v)}
+                  onValueChange={([v]) => setConfidence(v ?? 0)}
                   min={0}
                   max={1}
                   step={0.05}

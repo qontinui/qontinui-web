@@ -6,7 +6,6 @@
 
 import {
   Play,
-  GitBranch,
   List as ListIcon,
   Workflow as WorkflowIcon,
 } from "lucide-react";

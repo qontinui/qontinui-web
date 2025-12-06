@@ -48,7 +48,7 @@ export class CsrfService {
       // Fallback to parsing from cookies
       const match = document.cookie.match(/csrf_token=([^;]+)/);
       if (match) {
-        this.csrfToken = match[1];
+        this.csrfToken = match[1] ?? null;
       }
     } catch (error) {
       console.warn("Failed to initialize CSRF token:", error);
