@@ -4,11 +4,7 @@
  * Displays placeholder content when no item is selected in the builder.
  */
 
-import {
-  Play,
-  List as ListIcon,
-  Workflow as WorkflowIcon,
-} from "lucide-react";
+import { Play, List as ListIcon, Workflow as WorkflowIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { EmptyStateProps } from "../types";
 

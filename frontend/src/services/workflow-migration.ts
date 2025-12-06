@@ -10,9 +10,7 @@
  * - Support dry-run mode
  */
 
-import type {
-  Workflow,
-} from "../lib/action-schema/action-types";
+import type { Workflow } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types

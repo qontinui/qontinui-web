@@ -6,10 +6,7 @@ import type {
   InputEvent,
   InputEventApi,
 } from "@/types/capture";
-import {
-  transformCaptureSession,
-  transformInputEvent,
-} from "@/types/capture";
+import { transformCaptureSession, transformInputEvent } from "@/types/capture";
 
 export interface CaptureSessionListResponse {
   sessions: CaptureSession[];

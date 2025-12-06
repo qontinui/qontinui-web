@@ -260,7 +260,10 @@ export default function IntegrationTestsPage() {
               actionType: action.type,
               actionName: action.name || `Step ${i + 1}`,
               patternName:
-                (action.type === "FIND" && "target" in action.config && typeof action.config.target === 'object' && action.config.target?.type === 'image')
+                action.type === "FIND" &&
+                "target" in action.config &&
+                typeof action.config.target === "object" &&
+                action.config.target?.type === "image"
                   ? action.config.target?.imageId
                   : undefined,
               success: stepResult.success,
@@ -280,7 +283,10 @@ export default function IntegrationTestsPage() {
               actionType: action.type,
               actionName: action.name || `Step ${i + 1}`,
               patternName:
-                (action.type === "FIND" && "target" in action.config && typeof action.config.target === 'object' && action.config.target?.type === 'image')
+                action.type === "FIND" &&
+                "target" in action.config &&
+                typeof action.config.target === "object" &&
+                action.config.target?.type === "image"
                   ? action.config.target?.imageId
                   : undefined,
               success: false,

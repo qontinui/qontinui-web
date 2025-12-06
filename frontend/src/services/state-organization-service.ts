@@ -820,7 +820,10 @@ export class StateOrganizationService {
           ...state,
           id: this.generateId("state"),
           name: `${state.name} (Copy)`,
-          position: { x: state.position.x + 50, y: state.position.y + 50 },
+          position: {
+            x: Math.round(state.position.x + 50),
+            y: Math.round(state.position.y + 50),
+          },
         };
 
         result.states.push(duplicated);

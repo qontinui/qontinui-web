@@ -36,9 +36,5 @@ export interface PopoverContentProps {
 }
 
 export function PopoverContent({ children, className }: PopoverContentProps) {
-  return (
-    <div className={className}>
-      {children}
-    </div>
-  );
+  return <div className={className}>{children}</div>;
 }

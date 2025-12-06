@@ -108,9 +108,7 @@ export default function WorkflowTestingPage() {
   const [testResults, setTestResults] = React.useState<
     Map<string, TestResult[]>
   >(new Map());
-  const [coverage] = React.useState<Map<string, WorkflowCoverage>>(
-    new Map()
-  );
+  const [coverage] = React.useState<Map<string, WorkflowCoverage>>(new Map());
 
   // ========================================================================
   // State - UI
@@ -1086,7 +1084,7 @@ export default function WorkflowTestingPage() {
                   testCase={editingTest}
                   workflow={
                     (workflows.find((w) => w.id === editingTest.workflowId) ||
-                    workflows[0])!
+                      workflows[0])!
                   }
                   onSave={handleUpdateTest}
                   onCancel={() => setEditingTest(null)}

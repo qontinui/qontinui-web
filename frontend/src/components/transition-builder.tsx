@@ -24,7 +24,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-
   Plus,
   Trash2,
   MoveRight,
@@ -105,7 +104,9 @@ export function TransitionBuilder() {
         retryCount: 3,
       };
 
-      addTransition(transition as import("@/contexts/automation-context/types").Transition);
+      addTransition(
+        transition as import("@/contexts/automation-context/types").Transition
+      );
       toast.success("OutgoingTransition created");
     } else {
       if (!incomingTransitionState) {
@@ -122,7 +123,9 @@ export function TransitionBuilder() {
         retryCount: 3,
       };
 
-      addTransition(transition as import("@/contexts/automation-context/types").Transition);
+      addTransition(
+        transition as import("@/contexts/automation-context/types").Transition
+      );
       toast.success("IncomingTransition created");
     }
 

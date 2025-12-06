@@ -263,14 +263,20 @@ export function EnhancedImageLibrary() {
       const uploadPromises = fileArray.map(async (file) => {
         try {
           // Upload immediately (works offline)
-          const result = await uploadScreenshotOffline(file, Number(projectId), {
-            name: file.name,
-            onProgress: (progress, _status) => {
-              setUploadingFiles((prev) =>
-                prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
-              );
-            },
-          });
+          const result = await uploadScreenshotOffline(
+            file,
+            Number(projectId),
+            {
+              name: file.name,
+              onProgress: (progress, _status) => {
+                setUploadingFiles((prev) =>
+                  prev.map((f) =>
+                    f.name === file.name ? { ...f, progress } : f
+                  )
+                );
+              },
+            }
+          );
 
           // Screenshot available immediately in UI
           const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
@@ -1330,7 +1336,10 @@ interface CollectionsSidebarProps {
   onUpdateCollection: (id: string, updates: Partial<ImageCollection>) => void;
   onDeleteCollection: (id: string) => void;
   images: ImageWithMetadata[];
-  getImageUrl: (image: ImageAsset, size?: "thumb" | "medium" | "original") => string;
+  getImageUrl: (
+    image: ImageAsset,
+    size?: "thumb" | "medium" | "original"
+  ) => string;
 }
 
 function CollectionsSidebar({

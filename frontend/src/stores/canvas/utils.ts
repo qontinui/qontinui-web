@@ -54,7 +54,9 @@ export function updateConnectionsForClonedActions(
     newConnections[newSourceId] = {};
 
     for (const [type, outputs] of Object.entries(connectionTypes)) {
-      (newConnections[newSourceId][type as keyof typeof connectionTypes] as Connection[][]) = outputs.map((outputConnections) =>
+      (newConnections[newSourceId][
+        type as keyof typeof connectionTypes
+      ] as Connection[][]) = outputs.map((outputConnections) =>
         outputConnections.map((conn) => ({
           ...conn,
           action: oldToNewIdMap.get(conn.action) || conn.action,

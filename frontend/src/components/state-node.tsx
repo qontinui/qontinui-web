@@ -1,6 +1,11 @@
 "use client";
 
-import { Handle, Position, type NodeProps, type Node as ReactFlowNode } from "@xyflow/react";
+import {
+  Handle,
+  Position,
+  type NodeProps,
+  type Node as ReactFlowNode,
+} from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ImageIcon, Target, Play, MapPin, Square, Type } from "lucide-react";
@@ -71,8 +76,16 @@ interface StateNodeData extends Record<string, unknown> {
   onSelect: (id: string, selected: boolean) => void;
 }
 
-export function StateNode({ data, selected }: NodeProps<ReactFlowNode<StateNodeData>>) {
-  const state = data?.state ?? { id: "", name: "", description: "", stateImages: [] };
+export function StateNode({
+  data,
+  selected,
+}: NodeProps<ReactFlowNode<StateNodeData>>) {
+  const state = data?.state ?? {
+    id: "",
+    name: "",
+    description: "",
+    stateImages: [],
+  };
   const hasIncomingTransitions = data?.hasIncomingTransitions ?? false;
   const incomingTransitions = data?.incomingTransitions ?? [];
   const { resolvePatternImage } = useAutomation();

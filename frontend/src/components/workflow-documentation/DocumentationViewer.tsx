@@ -139,7 +139,10 @@ export function DocumentationViewer({
       };
 
       // Find parent in stack
-      while (stack.length > 0 && (stack[stack.length - 1]?.level ?? 0) >= item.level) {
+      while (
+        stack.length > 0 &&
+        (stack[stack.length - 1]?.level ?? 0) >= item.level
+      ) {
         stack.pop();
       }
 

@@ -9,7 +9,13 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { CanvasStore, ClipboardSlice, Action, Connection, Connections } from "./types";
+import type {
+  CanvasStore,
+  ClipboardSlice,
+  Action,
+  Connection,
+  Connections,
+} from "./types";
 
 /**
  * Generate a unique ID for actions
@@ -47,7 +53,9 @@ function updateConnectionsForClonedActions(
     newConnections[newSourceId] = {};
 
     for (const [type, outputs] of Object.entries(connectionTypes)) {
-      (newConnections[newSourceId][type as keyof typeof newConnections[typeof newSourceId]] as Connection[][]) = outputs.map((outputConnections) =>
+      (newConnections[newSourceId][
+        type as keyof (typeof newConnections)[typeof newSourceId]
+      ] as Connection[][]) = outputs.map((outputConnections) =>
         outputConnections.map((conn) => ({
           ...conn,
           action: oldToNewIdMap.get(conn.action) || conn.action,
@@ -86,7 +94,9 @@ export const createClipboardSlice: StateCreator<
       connectionsToCopy[nodeId] = {};
 
       for (const [type, outputs] of Object.entries(connections)) {
-        (connectionsToCopy[nodeId][type as keyof typeof connections] as Connection[][]) = outputs?.map((outputConns) =>
+        (connectionsToCopy[nodeId][
+          type as keyof typeof connections
+        ] as Connection[][]) = outputs?.map((outputConns) =>
           outputConns.filter((conn) => selectedSet.has(conn.action))
         );
       }
@@ -140,7 +150,9 @@ export const createClipboardSlice: StateCreator<
         }
 
         for (const [type, outputs] of Object.entries(connections)) {
-          (state.workflow.connections[sourceId][type as keyof typeof connections] as Connection[][]) = outputs;
+          (state.workflow.connections[sourceId][
+            type as keyof typeof connections
+          ] as Connection[][]) = outputs;
         }
       }
 

@@ -8,11 +8,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type {
-  CanvasStore,
-  WorkflowSlice,
-  Workflow,
-} from "./types";
+import type { CanvasStore, WorkflowSlice, Workflow } from "./types";
 
 export const createWorkflowSlice: StateCreator<
   CanvasStore,

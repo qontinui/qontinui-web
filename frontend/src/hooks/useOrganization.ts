@@ -79,7 +79,7 @@ export function useOrganization(): UseOrganizationReturn {
       if (orgs.length > 0 && !currentOrg) {
         setCurrentOrg(orgs[0] || null);
         // Load members for the first org
-        await loadMembers((orgs[0]!).id);
+        await loadMembers(orgs[0]!.id);
       }
     } catch (err) {
       console.error("[useOrganization] Failed to load organizations:", err);
@@ -215,7 +215,7 @@ export function useOrganization(): UseOrganizationReturn {
       // Clear current org if it's the one being deleted
       if (currentOrg && currentOrg.id === orgId) {
         const remaining = organizations.filter((org) => org.id !== orgId);
-        setCurrentOrg(remaining.length > 0 ? (remaining[0] || null) : null);
+        setCurrentOrg(remaining.length > 0 ? remaining[0] || null : null);
         setMembers([]);
       }
     } catch (err) {
@@ -347,7 +347,7 @@ export function useOrganization(): UseOrganizationReturn {
       // Clear current org if it's the one being left
       if (currentOrg && currentOrg.id === orgId) {
         const remaining = organizations.filter((org) => org.id !== orgId);
-        setCurrentOrg(remaining.length > 0 ? (remaining[0] || null) : null);
+        setCurrentOrg(remaining.length > 0 ? remaining[0] || null : null);
         setMembers([]);
       }
     } catch (err) {

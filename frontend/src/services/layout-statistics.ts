@@ -8,10 +8,7 @@
  * - Overall layout quality scores
  */
 
-import type {
-  Workflow,
-  Action,
-} from "@/lib/action-schema/action-types";
+import type { Workflow, Action } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types
@@ -375,11 +372,7 @@ function calculateEdgeMetrics(workflow: Workflow, actions: Action[]) {
     const source = actions.find((a) => a.id === sourceId);
     if (!source?.position || !connGroup) continue;
 
-    for (const outputType of [
-      "main",
-      "error",
-      "success",
-    ] as const) {
+    for (const outputType of ["main", "error", "success"] as const) {
       const outputs = connGroup[outputType];
       if (!outputs) continue;
 
@@ -510,9 +503,7 @@ function calculateQualityMetrics(
   };
 }
 
-function generateComparisonSummary(
-  improvementScore: number
-): string {
+function generateComparisonSummary(improvementScore: number): string {
   if (improvementScore > 50) {
     return "Significant improvement - layout is much better";
   } else if (improvementScore > 20) {
@@ -528,9 +519,7 @@ function generateComparisonSummary(
   }
 }
 
-function generateRecommendations(
-  stats: LayoutStatistics
-): string[] {
+function generateRecommendations(stats: LayoutStatistics): string[] {
   const recommendations: string[] = [];
 
   if (stats.nodesOverlapping > 0) {

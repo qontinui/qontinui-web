@@ -180,7 +180,9 @@ export function PermissionGate({
       ? requiredPermission[0]
       : requiredPermission;
     const message =
-      (firstRequired && typeof firstRequired === 'string' && permissionMessages[firstRequired]) ||
+      (firstRequired &&
+        typeof firstRequired === "string" &&
+        permissionMessages[firstRequired]) ||
       "You do not have permission to access this content.";
 
     return (

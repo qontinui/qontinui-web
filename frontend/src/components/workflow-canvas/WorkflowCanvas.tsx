@@ -156,8 +156,12 @@ function WorkflowCanvasInner({
   );
 
   // React Flow state
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes as unknown as Node[]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges as unknown as Edge[]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(
+    initialNodes as unknown as Node[]
+  );
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(
+    initialEdges as unknown as Edge[]
+  );
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
 
   // Track if we initiated the last workflow change
@@ -350,7 +354,11 @@ function WorkflowCanvasInner({
         targetHandle: connection.targetHandle,
       };
 
-      const validation = validateConnection(attempt, nodes as unknown as CanvasNode[], edges as unknown as CanvasEdge[]);
+      const validation = validateConnection(
+        attempt,
+        nodes as unknown as CanvasNode[],
+        edges as unknown as CanvasEdge[]
+      );
 
       if (!validation.valid) {
         console.warn("Invalid connection:", validation.message);
@@ -399,7 +407,9 @@ function WorkflowCanvasInner({
       }
 
       // Get source action for label generation
-      const sourceNode = nodes.find((n) => n.id === connection.source) as CanvasNode | undefined;
+      const sourceNode = nodes.find((n) => n.id === connection.source) as
+        | CanvasNode
+        | undefined;
       const sourceAction = sourceNode?.data.action;
 
       console.log("[WorkflowCanvas] Source action:", {
@@ -526,7 +536,11 @@ function WorkflowCanvasInner({
         targetHandle: newConnection.targetHandle,
       };
 
-      const validation = validateConnection(attempt, nodes as unknown as CanvasNode[], edges as unknown as CanvasEdge[]);
+      const validation = validateConnection(
+        attempt,
+        nodes as unknown as CanvasNode[],
+        edges as unknown as CanvasEdge[]
+      );
 
       if (!validation.valid) {
         console.warn("Invalid reconnection:", validation.message);

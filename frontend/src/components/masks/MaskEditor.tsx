@@ -443,7 +443,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                 </label>
                 <Slider
                   value={[opacity * 100]}
-                  onValueChange={(v) => setOpacity((v[0]!) / 100)}
+                  onValueChange={(v) => setOpacity(v[0]! / 100)}
                   min={0}
                   max={100}
                   step={5}

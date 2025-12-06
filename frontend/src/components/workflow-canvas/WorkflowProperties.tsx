@@ -464,7 +464,9 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                     </div>
 
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {hasConditionalLogic(workflow as import("@/lib/export-schema").Workflow) && (
+                      {hasConditionalLogic(
+                        workflow as import("@/lib/export-schema").Workflow
+                      ) && (
                         <Badge
                           variant="outline"
                           className="border-green-600 text-green-400"
@@ -474,7 +476,9 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                         </Badge>
                       )}
 
-                      {hasLoops(workflow as import("@/lib/export-schema").Workflow) && (
+                      {hasLoops(
+                        workflow as import("@/lib/export-schema").Workflow
+                      ) && (
                         <Badge
                           variant="outline"
                           className="border-yellow-600 text-yellow-400"

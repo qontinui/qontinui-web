@@ -5,13 +5,8 @@
  * maintain equivalent execution behavior.
  */
 
-import type {
-  Workflow,
-  Action,
-} from "../lib/action-schema/action-types";
-import {
-  getNextActions,
-} from "../lib/action-schema/workflow-utils";
+import type { Workflow, Action } from "../lib/action-schema/action-types";
+import { getNextActions } from "../lib/action-schema/workflow-utils";
 
 // ============================================================================
 // Types
@@ -325,20 +320,12 @@ export function validateControlFlowIntegrity(
 
     // Validate SWITCH actions
     if (action.type === "SWITCH") {
-      validateSwitchAction(
-        action,
-        convertedAction,
-        issues
-      );
+      validateSwitchAction(action, convertedAction, issues);
     }
 
     // Validate TRY_CATCH actions
     if (action.type === "TRY_CATCH") {
-      validateTryCatchAction(
-        action,
-        convertedAction,
-        issues
-      );
+      validateTryCatchAction(action, convertedAction, issues);
     }
   }
 

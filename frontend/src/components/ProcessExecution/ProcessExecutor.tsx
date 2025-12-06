@@ -188,7 +188,10 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
           await new Promise((resolve) => setTimeout(resolve, 1000));
           success = true;
           const runWorkflowConfig = action.config as any;
-          addLog(`Running sub-workflow: ${runWorkflowConfig.workflowId}`, "info");
+          addLog(
+            `Running sub-workflow: ${runWorkflowConfig.workflowId}`,
+            "info"
+          );
           break;
 
         default:
@@ -205,10 +208,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
       }
 
       // Handle SET_VARIABLE action for debugger
-      if (
-        debugEnabled &&
-        action.type === "SET_VARIABLE"
-      ) {
+      if (debugEnabled && action.type === "SET_VARIABLE") {
         const setVarConfig = action.config as any;
         if (setVarConfig.variableName) {
           setVariable(setVarConfig.variableName, setVarConfig.value, index);
@@ -395,10 +395,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
 
     const action = process.actions[currentIndex];
     if (!action) return;
-    const result = await executeAction(
-      action,
-      currentIndex
-    );
+    const result = await executeAction(action, currentIndex);
 
     setStatus((prev) => ({
       ...prev,

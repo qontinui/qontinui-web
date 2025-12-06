@@ -13,9 +13,7 @@
  * - Normalized to 0-100 scale
  */
 
-import type {
-  Workflow,
-} from "@/lib/action-schema/action-types";
+import type { Workflow } from "@/lib/action-schema/action-types";
 
 // ============================================================================
 // Types

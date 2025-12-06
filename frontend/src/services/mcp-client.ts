@@ -678,7 +678,8 @@ let mcpClient: MCPClient | null = null;
  */
 export function getMCPClient(): MCPClient {
   if (!mcpClient) {
-    const baseUrl = (import.meta as any).env?.VITE_MCP_URL || "http://localhost:3000/mcp";
+    const baseUrl =
+      (import.meta as any).env?.VITE_MCP_URL || "http://localhost:3000/mcp";
     mcpClient = new MCPClient(baseUrl);
   }
   return mcpClient;

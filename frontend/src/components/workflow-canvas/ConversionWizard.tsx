@@ -139,7 +139,11 @@ export function ConversionWizard({
       if (targetFormat === "graph") {
         result = await converter.convertToGraph(workflow, {
           autoLayout: true,
-          layoutStyle: selectedLayout as "tree" | "horizontal" | "hierarchical" | undefined,
+          layoutStyle: selectedLayout as
+            | "tree"
+            | "horizontal"
+            | "hierarchical"
+            | undefined,
           validate: true,
         });
       } else {

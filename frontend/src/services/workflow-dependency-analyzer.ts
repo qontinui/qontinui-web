@@ -1236,7 +1236,9 @@ export class WorkflowDependencyAnalyzer {
   private normalizeCycle(cycle: string[]): string {
     if (cycle.length === 0) return "";
 
-    const minIndex = cycle.indexOf(String(Math.min(...cycle.map((id) => Number(id)))));
+    const minIndex = cycle.indexOf(
+      String(Math.min(...cycle.map((id) => Number(id))))
+    );
     const rotated = [...cycle.slice(minIndex), ...cycle.slice(0, minIndex)];
     return rotated.join("->");
   }

@@ -106,7 +106,7 @@ export function TransitionListView({
       if (!groups[groupKey]) {
         groups[groupKey] = [];
       }
-      (groups[groupKey]!).push(t);
+      groups[groupKey]!.push(t);
     });
 
     return groups;

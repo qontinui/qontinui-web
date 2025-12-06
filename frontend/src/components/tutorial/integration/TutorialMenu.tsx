@@ -453,7 +453,9 @@ export const TutorialMenu: React.FC<TutorialMenuProps> = ({
 
             <Select
               value={completionFilter}
-              onValueChange={(value) => setCompletionFilter(value as CompletionFilter)}
+              onValueChange={(value) =>
+                setCompletionFilter(value as CompletionFilter)
+              }
             >
               <SelectTrigger
                 className="w-[180px]"

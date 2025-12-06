@@ -78,12 +78,18 @@ export class PatternDetector {
     // Get actions in each branch
     const thenBranch = this.extractBranchActions(
       workflow,
-      trueBranchConnections && trueBranchConnections.length > 0 && trueBranchConnections[0] ? trueBranchConnections[0].action : null
+      trueBranchConnections &&
+        trueBranchConnections.length > 0 &&
+        trueBranchConnections[0]
+        ? trueBranchConnections[0].action
+        : null
     );
 
     const elseBranch = this.extractBranchActions(
       workflow,
-      falseBranchConnections && falseBranchConnections.length > 0 && falseBranchConnections[0]
+      falseBranchConnections &&
+        falseBranchConnections.length > 0 &&
+        falseBranchConnections[0]
         ? falseBranchConnections[0].action
         : null
     );
@@ -139,10 +145,7 @@ export class PatternDetector {
     );
 
     // Find action after loop exits
-    const nextAction = this.findLoopExitAction(
-      workflow,
-      loopAction.id
-    );
+    const nextAction = this.findLoopExitAction(workflow, loopAction.id);
 
     return {
       loopAction,

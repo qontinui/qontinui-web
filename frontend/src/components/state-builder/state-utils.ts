@@ -4,10 +4,7 @@
  * Helper functions for state analysis, validation, and organization
  */
 
-import type {
-  State,
-  Transition,
-} from "@/contexts/automation-context";
+import type { State, Transition } from "@/contexts/automation-context";
 import type {
   StateWithMetadata,
   StateValidationIssue,
@@ -230,7 +227,11 @@ export function analyzeStateUsage(
   const referencingWorkflows = workflows.filter((workflow) => {
     return workflow.actions.some((action) => {
       // Check FIND actions that target this state's images
-      if (action.type === "FIND" && action.config && "target" in action.config) {
+      if (
+        action.type === "FIND" &&
+        action.config &&
+        "target" in action.config
+      ) {
         const findConfig = action.config as any;
         if (findConfig.target?.type === "state") {
           return findConfig.target.stateId === state.id;

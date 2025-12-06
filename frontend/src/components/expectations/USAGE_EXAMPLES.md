@@ -21,9 +21,7 @@ function WorkflowEditor() {
   return (
     <div className="flex h-screen">
       {/* Main workflow canvas */}
-      <div className="flex-1">
-        {/* Your workflow editor */}
-      </div>
+      <div className="flex-1">{/* Your workflow editor */}</div>
 
       {/* Expectations panel - right sidebar */}
       <div className="w-96 border-l border-gray-800">
@@ -31,7 +29,7 @@ function WorkflowEditor() {
           expectations={workflow.expectations}
           onChange={handleExpectationsChange}
           availableCheckpoints={getCheckpointNames(workflow)}
-          availableStates={getAllStates().map(s => s.name)}
+          availableStates={getAllStates().map((s) => s.name)}
         />
       </div>
     </div>
@@ -85,7 +83,10 @@ Add to the action properties panel for per-action configuration.
 import { ActionExpectationsEditor } from "@/components/expectations";
 import { Action } from "@/lib/action-schema/action-types";
 
-function ActionPropertiesPanel({ action, onUpdate }: {
+function ActionPropertiesPanel({
+  action,
+  onUpdate,
+}: {
   action: Action;
   onUpdate: (action: Action) => void;
 }) {
@@ -96,9 +97,7 @@ function ActionPropertiesPanel({ action, onUpdate }: {
         <CardHeader>
           <CardTitle>Action Settings</CardTitle>
         </CardHeader>
-        <CardContent>
-          {/* Your action config fields */}
-        </CardContent>
+        <CardContent>{/* Your action config fields */}</CardContent>
       </Card>
 
       {/* Action expectations */}
@@ -183,20 +182,20 @@ Add expectations as a fourth panel or tab in the automation builder:
 import { ExpectationsPanel } from "@/components/expectations";
 
 export function AutomationBuilder() {
-  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
-  const [activeTab, setActiveTab] = useState<"editor" | "properties" | "expectations">("editor");
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(
+    null
+  );
+  const [activeTab, setActiveTab] = useState<
+    "editor" | "properties" | "expectations"
+  >("editor");
 
   return (
     <div className="flex h-full">
       {/* Left: Library */}
-      <div className="w-64">
-        {/* Workflow library */}
-      </div>
+      <div className="w-64">{/* Workflow library */}</div>
 
       {/* Center: Editor */}
-      <div className="flex-1">
-        {/* Workflow canvas */}
-      </div>
+      <div className="flex-1">{/* Workflow canvas */}</div>
 
       {/* Right: Properties/Expectations */}
       <div className="w-80">
@@ -207,9 +206,7 @@ export function AutomationBuilder() {
             <TabsTrigger value="expectations">Expectations</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="editor">
-            {/* Action properties */}
-          </TabsContent>
+          <TabsContent value="editor">{/* Action properties */}</TabsContent>
 
           <TabsContent value="properties">
             {/* Workflow metadata */}
@@ -225,7 +222,7 @@ export function AutomationBuilder() {
                     expectations,
                   });
                 }}
-                availableStates={states.map(s => s.name)}
+                availableStates={states.map((s) => s.name)}
               />
             )}
           </TabsContent>
@@ -296,16 +293,18 @@ function executeWorkflow(workflow: Workflow) {
 ## Component Props Reference
 
 ### ExpectationsPanel
+
 ```tsx
 interface ExpectationsPanelProps {
   expectations: WorkflowExpectations | undefined;
   onChange: (expectations: WorkflowExpectations) => void;
-  availableCheckpoints?: string[];  // Optional checkpoint names
-  availableStates?: string[];       // Optional state names
+  availableCheckpoints?: string[]; // Optional checkpoint names
+  availableStates?: string[]; // Optional state names
 }
 ```
 
 ### GlobalExpectationsEditor
+
 ```tsx
 interface GlobalExpectationsEditorProps {
   expectations: GlobalExpectations | undefined;
@@ -314,6 +313,7 @@ interface GlobalExpectationsEditorProps {
 ```
 
 ### SuccessCriteriaEditor
+
 ```tsx
 interface SuccessCriteriaEditorProps {
   criteria: SuccessCriteria | undefined;
@@ -324,6 +324,7 @@ interface SuccessCriteriaEditorProps {
 ```
 
 ### CheckpointListEditor
+
 ```tsx
 interface CheckpointListEditorProps {
   checkpoints: Record<string, CheckpointDefinition> | undefined;
@@ -332,6 +333,7 @@ interface CheckpointListEditorProps {
 ```
 
 ### ActionExpectationsEditor
+
 ```tsx
 interface ActionExpectationsEditorProps {
   expectations: ActionExpectations | undefined;

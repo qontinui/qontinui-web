@@ -6,7 +6,6 @@ import {
   useCreateProject,
   useUpdateProject,
   useDeleteProject,
-
 } from "@/hooks/use-projects";
 import type { Project } from "@/lib/schemas";
 import { useAuth } from "@/contexts/auth-context";
@@ -86,7 +85,10 @@ export function ProjectManager({
         description: newProjectDescription,
         configuration: currentConfiguration,
       });
-      setSelectedProject({ ...project, configuration: project.configuration ?? {} });
+      setSelectedProject({
+        ...project,
+        configuration: project.configuration ?? {},
+      });
       setSaveDialogOpen(false);
       setNewProjectName("");
       setNewProjectDescription("");
@@ -105,7 +107,10 @@ export function ProjectManager({
         id: selectedProject.id,
         data: { configuration: currentConfiguration },
       });
-      setSelectedProject({ ...updated, configuration: updated.configuration ?? {} });
+      setSelectedProject({
+        ...updated,
+        configuration: updated.configuration ?? {},
+      });
       toast.success("Project updated successfully");
     } catch (error: any) {
       toast.error(error.message || "Failed to update project");
@@ -126,7 +131,10 @@ export function ProjectManager({
   };
 
   const handleDelete = (project: Project) => {
-    setProjectToDelete({ ...project, configuration: project.configuration ?? {} } as Project);
+    setProjectToDelete({
+      ...project,
+      configuration: project.configuration ?? {},
+    } as Project);
     setDeleteDialogOpen(true);
   };
 
@@ -327,14 +335,24 @@ export function ProjectManager({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleLoad({ ...project, configuration: project.configuration || {} })}
+                        onClick={() =>
+                          handleLoad({
+                            ...project,
+                            configuration: project.configuration || {},
+                          })
+                        }
                       >
                         Load
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => handleDelete({ ...project, configuration: project.configuration || {} })}
+                        onClick={() =>
+                          handleDelete({
+                            ...project,
+                            configuration: project.configuration || {},
+                          })
+                        }
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>

@@ -67,30 +67,25 @@ function createEmptyWorkflow(): Workflow {
  * 2. Linear Workflow - Sequential actions template
  */
 function createLinearWorkflow(): Workflow {
-  const click1 = createAction(
-    "CLICK",
-    { target: "button.png" },
-    [100, 100],
-    {
-      id: "action-1",
-      name: "Click Button",
-    }
-  );
-
-  const wait = createAction("WAIT", { waitFor: "time", duration: 1000 }, [100, 250], {
-    id: "action-2",
-    name: "Wait 1 Second",
+  const click1 = createAction("CLICK", { target: "button.png" }, [100, 100], {
+    id: "action-1",
+    name: "Click Button",
   });
 
-  const click2 = createAction(
-    "CLICK",
-    { target: "submit.png" },
-    [100, 400],
+  const wait = createAction(
+    "WAIT",
+    { waitFor: "time", duration: 1000 },
+    [100, 250],
     {
-      id: "action-3",
-      name: "Click Submit",
+      id: "action-2",
+      name: "Wait 1 Second",
     }
   );
+
+  const click2 = createAction("CLICK", { target: "submit.png" }, [100, 400], {
+    id: "action-3",
+    name: "Click Submit",
+  });
 
   return {
     id: `workflow-${Date.now()}`,
@@ -187,30 +182,25 @@ function createLoopWorkflow(): Workflow {
     { id: "loop-1", name: "Repeat 5 Times" }
   );
 
-  const click = createAction(
-    "CLICK",
-    { target: "button.png" },
-    [300, 100],
-    {
-      id: "loop-action",
-      name: "Click Button",
-    }
-  );
-
-  const wait = createAction("WAIT", { waitFor: "time", duration: 500 }, [300, 250], {
-    id: "loop-wait",
-    name: "Wait 500ms",
+  const click = createAction("CLICK", { target: "button.png" }, [300, 100], {
+    id: "loop-action",
+    name: "Click Button",
   });
 
-  const done = createAction(
-    "TYPE",
-    { text: "Done" },
-    [100, 400],
+  const wait = createAction(
+    "WAIT",
+    { waitFor: "time", duration: 500 },
+    [300, 250],
     {
-      id: "done",
-      name: "Type Done",
+      id: "loop-wait",
+      name: "Wait 500ms",
     }
   );
+
+  const done = createAction("TYPE", { text: "Done" }, [100, 400], {
+    id: "done",
+    name: "Type Done",
+  });
 
   return {
     id: `workflow-${Date.now()}`,
@@ -255,15 +245,10 @@ function createErrorHandlingWorkflow(): Workflow {
     { id: "risky", name: "Click (May Fail)" }
   );
 
-  const success = createAction(
-    "TYPE",
-    { text: "Success" },
-    [500, 100],
-    {
-      id: "success",
-      name: "Success Handler",
-    }
-  );
+  const success = createAction("TYPE", { text: "Success" }, [500, 100], {
+    id: "success",
+    name: "Success Handler",
+  });
 
   const error = createAction(
     "SCREENSHOT",
@@ -310,22 +295,38 @@ function createDataProcessingWorkflow(): Workflow {
 
   const filter = createAction(
     "FILTER",
-    { variableName: "items", condition: { type: "property", property: "active", operator: "==", value: true } },
+    {
+      variableName: "items",
+      condition: {
+        type: "property",
+        property: "active",
+        operator: "==",
+        value: true,
+      },
+    },
     [100, 250],
     { id: "filter", name: "Filter Active Items" }
   );
 
   const map = createAction(
     "MAP",
-    { variableName: "filteredItems", transform: { type: "property", property: "name" } },
+    {
+      variableName: "filteredItems",
+      transform: { type: "property", property: "name" },
+    },
     [100, 400],
     { id: "map", name: "Map to Uppercase" }
   );
 
-  const reduce = createAction("REDUCE", { variableName: "mappedItems", operation: "count" }, [100, 550], {
-    id: "reduce",
-    name: "Count Items",
-  });
+  const reduce = createAction(
+    "REDUCE",
+    { variableName: "mappedItems", operation: "count" },
+    [100, 550],
+    {
+      id: "reduce",
+      name: "Count Items",
+    }
+  );
 
   const save = createAction(
     "SET_VARIABLE",
@@ -366,35 +367,20 @@ function createDataProcessingWorkflow(): Workflow {
  * 7. Form Automation - Form filling template
  */
 function createFormAutomationWorkflow(): Workflow {
-  const clickName = createAction(
-    "CLICK",
-    { target: "#name" },
-    [100, 100],
-    {
-      id: "click-name",
-      name: "Click Name Field",
-    }
-  );
+  const clickName = createAction("CLICK", { target: "#name" }, [100, 100], {
+    id: "click-name",
+    name: "Click Name Field",
+  });
 
-  const typeName = createAction(
-    "TYPE",
-    { text: "John Doe" },
-    [100, 250],
-    {
-      id: "type-name",
-      name: "Type Name",
-    }
-  );
+  const typeName = createAction("TYPE", { text: "John Doe" }, [100, 250], {
+    id: "type-name",
+    name: "Type Name",
+  });
 
-  const clickEmail = createAction(
-    "CLICK",
-    { target: "#email" },
-    [100, 400],
-    {
-      id: "click-email",
-      name: "Click Email Field",
-    }
-  );
+  const clickEmail = createAction("CLICK", { target: "#email" }, [100, 400], {
+    id: "click-email",
+    name: "Click Email Field",
+  });
 
   const typeEmail = createAction(
     "TYPE",
@@ -463,7 +449,15 @@ function createScrapingWorkflow(): Workflow {
 
   const filter = createAction(
     "FILTER",
-    { variableName: "extractedText", condition: { type: "property", property: "price", operator: "<", value: 100 } },
+    {
+      variableName: "extractedText",
+      condition: {
+        type: "property",
+        property: "price",
+        operator: "<",
+        value: 100,
+      },
+    },
     [100, 400],
     { id: "filter-price", name: "Filter by Price" }
   );

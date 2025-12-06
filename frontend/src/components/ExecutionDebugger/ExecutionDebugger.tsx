@@ -1,10 +1,5 @@
 import React, { useState } from "react";
-import {
-  Bug,
-  X,
-  Maximize2,
-  Minimize2,
-} from "lucide-react";
+import { Bug, X, Maximize2, Minimize2 } from "lucide-react";
 import { useExecutionDebugger } from "../../stores/execution-debugger-store";
 import { ExecutionControls } from "./ExecutionControls";
 import { ActionTimeline } from "./ActionTimeline";

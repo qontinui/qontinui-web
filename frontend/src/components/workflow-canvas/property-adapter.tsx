@@ -29,7 +29,6 @@ function canvasActionToPropertyAction(action: CanvasAction): PropertyAction {
   };
 }
 
-
 // ============================================================================
 // Property Adapter Hook
 // ============================================================================
@@ -260,7 +259,7 @@ export function useMultiPropertyAdapter(
     (key: string): any | undefined => {
       if (canvasActions.length === 0) return undefined;
 
-      const firstValue = ((canvasActions[0]!).config as any)[key];
+      const firstValue = (canvasActions[0]!.config as any)[key];
       const allSame = canvasActions.every(
         (action) => (action.config as any)[key] === firstValue
       );

@@ -258,9 +258,7 @@ class GlobalSearchService {
     };
   }
 
-  async searchWorkflows(
-    query: string
-  ): Promise<SearchResultItem[]> {
+  async searchWorkflows(query: string): Promise<SearchResultItem[]> {
     const workflows = this.index.getAllWorkflows();
     const results: SearchResultItem[] = [];
 
@@ -360,9 +358,7 @@ class GlobalSearchService {
       .slice(0, this.MAX_RESULTS_PER_TYPE);
   }
 
-  async searchStates(
-    query: string
-  ): Promise<SearchResultItem[]> {
+  async searchStates(query: string): Promise<SearchResultItem[]> {
     const states = this.index.getAllStates();
     const results: SearchResultItem[] = [];
 
@@ -430,9 +426,7 @@ class GlobalSearchService {
       .slice(0, this.MAX_RESULTS_PER_TYPE);
   }
 
-  async searchImages(
-    query: string
-  ): Promise<SearchResultItem[]> {
+  async searchImages(query: string): Promise<SearchResultItem[]> {
     const images = this.index.getAllImages();
     const results: SearchResultItem[] = [];
 
@@ -500,9 +494,7 @@ class GlobalSearchService {
       .slice(0, this.MAX_RESULTS_PER_TYPE);
   }
 
-  async searchTransitions(
-    query: string
-  ): Promise<SearchResultItem[]> {
+  async searchTransitions(query: string): Promise<SearchResultItem[]> {
     const transitions = this.index.getAllTransitions();
     const results: SearchResultItem[] = [];
 
@@ -585,9 +577,7 @@ class GlobalSearchService {
       .slice(0, this.MAX_RESULTS_PER_TYPE);
   }
 
-  async searchFolders(
-    query: string
-  ): Promise<SearchResultItem[]> {
+  async searchFolders(query: string): Promise<SearchResultItem[]> {
     const folders = this.index.getAllFolders();
     const results: SearchResultItem[] = [];
 
@@ -644,9 +634,7 @@ class GlobalSearchService {
       .slice(0, this.MAX_RESULTS_PER_TYPE);
   }
 
-  async searchActions(
-    query: string
-  ): Promise<SearchResultItem[]> {
+  async searchActions(query: string): Promise<SearchResultItem[]> {
     const workflows = this.index.getAllWorkflows();
     const results: SearchResultItem[] = [];
 

@@ -1,7 +1,4 @@
-import {
-  State,
-  ActionHistory,
-} from "./types";
+import { State, ActionHistory } from "./types";
 import { ActionSnapshot } from "../../lib/integration-testing-framework";
 
 export class ActionHistoryManager {

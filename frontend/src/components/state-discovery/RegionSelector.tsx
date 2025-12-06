@@ -13,7 +13,10 @@ interface RegionSelectorProps {
   imageWidth: number;
   imageHeight: number;
   onRegionSelect: (
-    region: { x: number; y: number; width: number; height: number } | null | undefined
+    region:
+      | { x: number; y: number; width: number; height: number }
+      | null
+      | undefined
   ) => void;
   initialRegion?: { x: number; y: number; width: number; height: number };
 }

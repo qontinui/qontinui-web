@@ -81,11 +81,7 @@ import { generateSuggestions } from "./suggestion-generator";
 import { autoOptimize, exportBackup } from "./auto-optimizer";
 import { exportOptimizationReport } from "./report-exporter";
 
-import type {
-  ProjectMetrics,
-  MetricsTrend,
-  HealthAlert,
-} from "./types";
+import type { ProjectMetrics, MetricsTrend, HealthAlert } from "./types";
 
 // ============================================================================
 // Main Service Class (Singleton)
@@ -221,10 +217,7 @@ export class ProjectOptimizationService {
     return findDuplicateStates(state, allStates, threshold);
   }
 
-  findDuplicateWorkflows(
-    workflow: Workflow,
-    allWorkflows: Workflow[]
-  ) {
+  findDuplicateWorkflows(workflow: Workflow, allWorkflows: Workflow[]) {
     return findDuplicateWorkflows(workflow, allWorkflows);
   }
 

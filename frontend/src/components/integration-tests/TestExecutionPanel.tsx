@@ -110,7 +110,8 @@ export const TestExecutionPanel: React.FC<TestExecutionPanelProps> = ({
                       Current Action
                     </span>
                     <span className="text-xs text-gray-500">
-                      Action {execution.currentAction} of {execution.totalActions}
+                      Action {execution.currentAction} of{" "}
+                      {execution.totalActions}
                     </span>
                   </div>
                   <Progress value={getProgressPercentage()} className="h-2" />

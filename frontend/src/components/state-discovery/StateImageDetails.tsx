@@ -20,7 +20,6 @@ import {
   X,
   CheckCircle,
   XCircle,
-
 } from "lucide-react";
 import { StateImage, DiscoveredState } from "@/types/stateDiscovery";
 import DeleteConfirmationDialog from "./DeleteConfirmationDialog";

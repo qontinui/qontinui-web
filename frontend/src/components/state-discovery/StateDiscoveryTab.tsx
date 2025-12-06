@@ -832,7 +832,8 @@ const StateDiscoveryTab: React.FC = () => {
                   minWidth: "300px",
                 }}
               >
-                {screenshots.length > 0 && screenshots[selectedScreenshotIndex] ? (
+                {screenshots.length > 0 &&
+                screenshots[selectedScreenshotIndex] ? (
                   <VisualizationCanvas
                     screenshot={screenshots[selectedScreenshotIndex]!}
                     stateImages={stateImages} // Pass all state images for pixel analysis

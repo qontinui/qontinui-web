@@ -432,11 +432,7 @@ export class LayoutService {
 
       let maxChildDepth = 0;
 
-      for (const outputType of [
-        "main",
-        "error",
-        "success",
-      ] as const) {
+      for (const outputType of ["main", "error", "success"] as const) {
         const outputs = connections[outputType];
         if (!outputs) continue;
 
@@ -488,11 +484,7 @@ export class LayoutService {
         const connections = workflow.connections[id];
         if (!connections) continue;
 
-        for (const outputType of [
-          "main",
-          "error",
-          "success",
-        ] as const) {
+        for (const outputType of ["main", "error", "success"] as const) {
           const outputs = connections[outputType];
           if (!outputs) continue;
 
@@ -527,11 +519,7 @@ export class LayoutService {
 
       const connections = workflow.connections[actionId];
       if (connections) {
-        for (const outputType of [
-          "main",
-          "error",
-          "success",
-        ] as const) {
+        for (const outputType of ["main", "error", "success"] as const) {
           const outputs = connections[outputType];
           if (!outputs) continue;
 
@@ -576,11 +564,7 @@ export class LayoutService {
     const hasIncoming = new Set<string>();
 
     for (const connections of Object.values(workflow.connections)) {
-      for (const outputType of [
-        "main",
-        "error",
-        "success",
-      ] as const) {
+      for (const outputType of ["main", "error", "success"] as const) {
         const outputs = connections[outputType];
         if (!outputs) continue;
 

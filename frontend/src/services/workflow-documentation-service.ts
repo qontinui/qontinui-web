@@ -12,10 +12,7 @@
  * - Rich markdown support with Mermaid diagrams
  */
 
-import {
-  Workflow,
-  ActionType,
-} from "../lib/action-schema/action-types";
+import { Workflow, ActionType } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types

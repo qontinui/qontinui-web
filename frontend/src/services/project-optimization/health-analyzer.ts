@@ -129,11 +129,7 @@ export function getHealthReport(
     imageAnalyses
   );
 
-  const issues = collectIssues(
-    workflowAnalyses,
-    stateAnalyses,
-    imageAnalyses
-  );
+  const issues = collectIssues(workflowAnalyses, stateAnalyses, imageAnalyses);
 
   const storage = getStorageUsage(workflows, states, images, transitions);
 

@@ -15,9 +15,7 @@
 
 import React, { useState, useMemo } from "react";
 import { Workflow } from "@/lib/action-schema/action-types";
-import {
-  WorkflowMetrics,
-} from "@/services/workflow-analytics-service";
+import { WorkflowMetrics } from "@/services/workflow-analytics-service";
 import {
   LineChart,
   Line,

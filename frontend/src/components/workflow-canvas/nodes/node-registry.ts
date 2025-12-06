@@ -20,7 +20,9 @@ import { CodeBlockNode, CustomFunctionNode } from "./CodeNodes";
 /**
  * Node component type
  */
-export type NodeComponent = ComponentType<NodeProps<ReactFlowNode<BaseNodeData>>>;
+export type NodeComponent = ComponentType<
+  NodeProps<ReactFlowNode<BaseNodeData>>
+>;
 
 /**
  * Complete registry of all node types

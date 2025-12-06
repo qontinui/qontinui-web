@@ -28,9 +28,7 @@ import {
   Plus,
   Lightbulb,
 } from "lucide-react";
-import {
-  calculateImageHashes,
-} from "@/utils/imageUtils";
+import { calculateImageHashes } from "@/utils/imageUtils";
 import { useAvailableStates } from "@/hooks/useAvailableStates";
 import ProjectScreenshotSelector from "./ProjectScreenshotSelector";
 import SnapshotScreenshotSelector from "./SnapshotScreenshotSelector";

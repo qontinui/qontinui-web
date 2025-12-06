@@ -2,9 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { Workflow, Action } from "@/lib/action-schema/action-types";
-import {
-  ActionComment,
-} from "@/services/workflow-documentation-service";
+import { ActionComment } from "@/services/workflow-documentation-service";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";

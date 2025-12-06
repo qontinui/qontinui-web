@@ -184,7 +184,9 @@ export function hexToRgba(hex: string, alpha: number = 1): string {
 /**
  * Get color for a connection type
  */
-export function getConnectionColor(type: "main" | "error" | "success" | "parallel"): string {
+export function getConnectionColor(
+  type: "main" | "error" | "success" | "parallel"
+): string {
   const colorMap = {
     main: COLORS.main,
     error: COLORS.error,
@@ -268,7 +270,10 @@ export const NODE_DIMENSIONS = {
 export function getNodeDimensions(category: ActionCategory) {
   // Map category to property name (handle both camelCase and snake_case)
   const categoryKey = category === "control_flow" ? "controlFlow" : category;
-  return NODE_DIMENSIONS[categoryKey as keyof typeof NODE_DIMENSIONS] || NODE_DIMENSIONS.default;
+  return (
+    NODE_DIMENSIONS[categoryKey as keyof typeof NODE_DIMENSIONS] ||
+    NODE_DIMENSIONS.default
+  );
 }
 
 // ============================================================================

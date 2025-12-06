@@ -82,7 +82,9 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
   const recentTypes = useRecentNodeTypes(5);
 
   const { addNodeAtCenter } = useClickToAdd();
-  const dragHandlers = usePaletteDrag(canvasRef as React.RefObject<HTMLElement>);
+  const dragHandlers = usePaletteDrag(
+    canvasRef as React.RefObject<HTMLElement>
+  );
 
   // Get favorite and recent metadata
   const favoriteNodes = useMemo(

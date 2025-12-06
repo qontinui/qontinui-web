@@ -15,21 +15,11 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import {
-  Check,
-  Trash2,
-  CheckSquare,
-  Square,
-} from "lucide-react";
+import { Check, Trash2, CheckSquare, Square } from "lucide-react";
 import { recordingService } from "@/services/service-factory";
 import { getConfidenceLevel, getConfidenceColor } from "@/types/recording";
 import type {
@@ -156,9 +146,7 @@ export function StateStructureReview({
     });
   };
 
-  const createFlowEdges = (
-    transitions: DiscoveredTransition[]
-  ): Edge[] => {
+  const createFlowEdges = (transitions: DiscoveredTransition[]): Edge[] => {
     return transitions
       .filter((t) => t.to_state_id) // Only show transitions with target
       .map((transition) => {

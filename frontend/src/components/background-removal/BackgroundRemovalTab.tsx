@@ -285,7 +285,10 @@ export const BackgroundRemovalTab: React.FC = () => {
                       <Slider
                         value={[config.varianceThreshold]}
                         onValueChange={([value]) =>
-                          setConfig({ ...config, varianceThreshold: value ?? 20 })
+                          setConfig({
+                            ...config,
+                            varianceThreshold: value ?? 20,
+                          })
                         }
                         min={5}
                         max={50}
@@ -351,7 +354,10 @@ export const BackgroundRemovalTab: React.FC = () => {
                       <Slider
                         value={[config.uniformityThreshold]}
                         onValueChange={([value]) =>
-                          setConfig({ ...config, uniformityThreshold: value ?? 15 })
+                          setConfig({
+                            ...config,
+                            uniformityThreshold: value ?? 15,
+                          })
                         }
                         min={5}
                         max={30}

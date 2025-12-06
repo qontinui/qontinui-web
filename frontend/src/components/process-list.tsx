@@ -55,8 +55,7 @@ export function ProcessList({
   onUpdateProcess,
   onCreateProcess,
 }: ProcessListProps) {
-  const { categories, addCategory, deleteCategory } =
-    useAutomation();
+  const { categories, addCategory, deleteCategory } = useAutomation();
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
     new Set()
   );
@@ -100,7 +99,6 @@ export function ProcessList({
     },
     {} as Record<string, Process[]>
   );
-
 
   const handleDelete = (processId: string, processName: string) => {
     setDeleteWorkflowDialog({

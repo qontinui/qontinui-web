@@ -338,19 +338,21 @@ export function NodeTooltip({ data }: { data: NodeTooltipData }) {
 // ============================================================================
 
 export function HandleTooltip({ data }: { data: HandleTooltipData }) {
-  const typeColors: Record<"main" | "error" | "success" | "parallel", string> = {
-    main: COLORS.main,
-    error: COLORS.error,
-    success: COLORS.success,
-    parallel: COLORS.main, // Use same color as main for parallel
-  };
+  const typeColors: Record<"main" | "error" | "success" | "parallel", string> =
+    {
+      main: COLORS.main,
+      error: COLORS.error,
+      success: COLORS.success,
+      parallel: COLORS.main, // Use same color as main for parallel
+    };
 
-  const typeLabels: Record<"main" | "error" | "success" | "parallel", string> = {
-    main: "Main Flow",
-    error: "Error Handling",
-    success: "Success Condition",
-    parallel: "Parallel Flow",
-  };
+  const typeLabels: Record<"main" | "error" | "success" | "parallel", string> =
+    {
+      main: "Main Flow",
+      error: "Error Handling",
+      success: "Success Condition",
+      parallel: "Parallel Flow",
+    };
 
   return (
     <div className="space-y-2">
@@ -391,19 +393,21 @@ export function HandleTooltip({ data }: { data: HandleTooltipData }) {
 // ============================================================================
 
 export function EdgeTooltip({ data }: { data: EdgeTooltipData }) {
-  const typeColors: Record<"main" | "error" | "success" | "parallel", string> = {
-    main: COLORS.main,
-    error: COLORS.error,
-    success: COLORS.success,
-    parallel: COLORS.main, // Use same color as main for parallel
-  };
+  const typeColors: Record<"main" | "error" | "success" | "parallel", string> =
+    {
+      main: COLORS.main,
+      error: COLORS.error,
+      success: COLORS.success,
+      parallel: COLORS.main, // Use same color as main for parallel
+    };
 
-  const typeLabels: Record<"main" | "error" | "success" | "parallel", string> = {
-    main: "Main Flow",
-    error: "Error Handling",
-    success: "Success Condition",
-    parallel: "Parallel Flow",
-  };
+  const typeLabels: Record<"main" | "error" | "success" | "parallel", string> =
+    {
+      main: "Main Flow",
+      error: "Error Handling",
+      success: "Success Condition",
+      parallel: "Parallel Flow",
+    };
 
   return (
     <div className="space-y-2">

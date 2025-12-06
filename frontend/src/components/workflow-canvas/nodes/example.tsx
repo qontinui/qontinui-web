@@ -376,7 +376,10 @@ export function InteractiveWorkflowExample() {
           node.id === nodeId
             ? {
                 ...node,
-                data: { ...(node.data as BaseNodeData), executionState: "running" as const },
+                data: {
+                  ...(node.data as BaseNodeData),
+                  executionState: "running" as const,
+                },
               }
             : node
         )
@@ -391,7 +394,10 @@ export function InteractiveWorkflowExample() {
           node.id === nodeId
             ? {
                 ...node,
-                data: { ...(node.data as BaseNodeData), executionState: "completed" as const },
+                data: {
+                  ...(node.data as BaseNodeData),
+                  executionState: "completed" as const,
+                },
               }
             : node
         )
@@ -403,7 +409,10 @@ export function InteractiveWorkflowExample() {
     setNodes((nds) =>
       nds.map((node) => ({
         ...node,
-        data: { ...(node.data as BaseNodeData), executionState: "idle" as const },
+        data: {
+          ...(node.data as BaseNodeData),
+          executionState: "idle" as const,
+        },
       }))
     );
   }, [setNodes]);

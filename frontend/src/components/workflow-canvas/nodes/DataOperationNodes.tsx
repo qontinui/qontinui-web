@@ -106,7 +106,9 @@ export function SortNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
 /**
  * STRING_OPERATION Node
  */
-export function StringOperationNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
+export function StringOperationNode(
+  props: NodeProps<ReactFlowNode<BaseNodeData>>
+) {
   return (
     <BaseNode
       {...props}
@@ -122,7 +124,9 @@ export function StringOperationNode(props: NodeProps<ReactFlowNode<BaseNodeData>
 /**
  * MATH_OPERATION Node
  */
-export function MathOperationNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
+export function MathOperationNode(
+  props: NodeProps<ReactFlowNode<BaseNodeData>>
+) {
   const config = props.data.action.config as MathOperationConfig;
   const operation = config.operation || "add";
 

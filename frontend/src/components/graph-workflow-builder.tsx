@@ -28,12 +28,8 @@ export function GraphWorkflowBuilder() {
   const [tempName, setTempName] = useState("");
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  const {
-    workflows,
-    addWorkflow,
-    updateWorkflow,
-    deleteWorkflow,
-  } = useAutomation();
+  const { workflows, addWorkflow, updateWorkflow, deleteWorkflow } =
+    useAutomation();
 
   // Load workflows from context
   useEffect(() => {

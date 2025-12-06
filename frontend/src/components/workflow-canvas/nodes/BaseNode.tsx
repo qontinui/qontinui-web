@@ -12,7 +12,12 @@
  */
 
 import React from "react";
-import { Handle, Position, NodeProps, Node as ReactFlowNode } from "@xyflow/react";
+import {
+  Handle,
+  Position,
+  NodeProps,
+  Node as ReactFlowNode,
+} from "@xyflow/react";
 import { Action } from "@/lib/action-schema/action-types";
 import { getNodeIcon } from "./node-icons";
 import {

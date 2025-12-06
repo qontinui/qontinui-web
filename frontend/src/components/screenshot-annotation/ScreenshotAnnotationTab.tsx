@@ -90,11 +90,8 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
   const [selectedScreenshot, setSelectedScreenshot] =
     useState<Screenshot | null>(null);
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("view");
-  const [, setSelectedRegion] = useState<ScreenshotRegion | null>(
-    null
-  );
-  const [, setSelectedLocation] =
-    useState<ScreenshotLocation | null>(null);
+  const [, setSelectedRegion] = useState<ScreenshotRegion | null>(null);
+  const [, setSelectedLocation] = useState<ScreenshotLocation | null>(null);
   const [showRegionPanel, setShowRegionPanel] = useState(false);
   const [showLocationPanel, setShowLocationPanel] = useState(false);
   const [openRegions, setOpenRegions] = useState<ScreenshotRegion[]>([]);
@@ -253,7 +250,8 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       (r: ScreenshotRegion) => r.stateId === stateId && r.type === "StateRegion"
     );
     const searchRegions = regions.filter(
-      (r: ScreenshotRegion) => r.type === "SearchRegion" && r.saveToStateImageStateId === stateId
+      (r: ScreenshotRegion) =>
+        r.type === "SearchRegion" && r.saveToStateImageStateId === stateId
     );
 
     // Convert StateRegions
@@ -283,31 +281,36 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       if (searchRegionsForImage.length === 0) return image;
 
       // Add/update SearchRegions in the first pattern
-      const updatedPatterns = image.patterns.map((pattern: any, idx: number) => {
-        if (idx === 0) {
-          // Convert screenshot SearchRegions to Pattern SearchRegions
-          const patternSearchRegions = searchRegionsForImage.map((r: ScreenshotRegion) => ({
-            id: r.id,
-            name: r.name,
-            x: r.bounds.x,
-            y: r.bounds.y,
-            width: r.bounds.width,
-            height: r.bounds.height,
-            referenceImageId: r.linkedStateObjectId, // Link to the StateImage that defines position
-          }));
+      const updatedPatterns = image.patterns.map(
+        (pattern: any, idx: number) => {
+          if (idx === 0) {
+            // Convert screenshot SearchRegions to Pattern SearchRegions
+            const patternSearchRegions = searchRegionsForImage.map(
+              (r: ScreenshotRegion) => ({
+                id: r.id,
+                name: r.name,
+                x: r.bounds.x,
+                y: r.bounds.y,
+                width: r.bounds.width,
+                height: r.bounds.height,
+                referenceImageId: r.linkedStateObjectId, // Link to the StateImage that defines position
+              })
+            );
 
-          // Merge with existing search regions
-          const mergedSearchRegions = [
-            ...pattern.searchRegions.filter(
-              (sr: any) => !patternSearchRegions.find((psr) => psr.id === sr.id)
-            ),
-            ...patternSearchRegions,
-          ];
+            // Merge with existing search regions
+            const mergedSearchRegions = [
+              ...pattern.searchRegions.filter(
+                (sr: any) =>
+                  !patternSearchRegions.find((psr) => psr.id === sr.id)
+              ),
+              ...patternSearchRegions,
+            ];
 
-          return { ...pattern, searchRegions: mergedSearchRegions };
+            return { ...pattern, searchRegions: mergedSearchRegions };
+          }
+          return pattern;
         }
-        return pattern;
-      });
+      );
 
       return { ...image, patterns: updatedPatterns };
     });
@@ -475,7 +478,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     if (activeRegionTab === regionId) {
       const remaining = openRegions.filter((r) => r.id !== regionId);
       const firstRemaining = remaining[0];
-      setActiveRegionTab(remaining.length > 0 && firstRemaining ? firstRemaining.id : null);
+      setActiveRegionTab(
+        remaining.length > 0 && firstRemaining ? firstRemaining.id : null
+      );
       if (remaining.length === 0) {
         setShowRegionPanel(false);
       }
@@ -495,7 +500,10 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       if (state) {
         if (deletedRegion.type === "StateRegion") {
           // Remove from State.regions array
-          const updatedRegions = state.regions?.filter((r: ContextStateRegion) => r.id !== regionId) ?? [];
+          const updatedRegions =
+            state.regions?.filter(
+              (r: ContextStateRegion) => r.id !== regionId
+            ) ?? [];
 
           await updateState({
             ...state,
@@ -582,7 +590,9 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     if (activeLocationTab === locationId) {
       const remaining = openLocations.filter((l) => l.id !== locationId);
       const firstRemaining = remaining[0];
-      setActiveLocationTab(remaining.length > 0 && firstRemaining ? firstRemaining.id : null);
+      setActiveLocationTab(
+        remaining.length > 0 && firstRemaining ? firstRemaining.id : null
+      );
       if (remaining.length === 0) {
         setShowLocationPanel(false);
       }

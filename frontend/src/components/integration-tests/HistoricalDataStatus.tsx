@@ -78,7 +78,9 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
                 <span className="text-sm text-gray-700">Automation runs</span>
               </div>
               <span className="text-sm font-semibold text-gray-900">
-                {formatNumber(stats.automationRunsCount || stats.totalSnapshotRuns)}
+                {formatNumber(
+                  stats.automationRunsCount || stats.totalSnapshotRuns
+                )}
               </span>
             </div>
 
@@ -131,7 +133,11 @@ export const HistoricalDataStatus: React.FC<HistoricalDataStatusProps> = ({
               <div className="flex-1">
                 <span className="text-xs text-blue-700">Last updated</span>
                 <p className="text-sm font-medium text-blue-900">
-                  {formatDate(stats.lastUpdated || stats.newestRun || new Date().toISOString())}
+                  {formatDate(
+                    stats.lastUpdated ||
+                      stats.newestRun ||
+                      new Date().toISOString()
+                  )}
                 </p>
               </div>
             </div>

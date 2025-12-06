@@ -1,6 +1,11 @@
 "use client";
 
-import { type NodeProps, type Node as ReactFlowNode, Handle, Position } from "@xyflow/react";
+import {
+  type NodeProps,
+  type Node as ReactFlowNode,
+  Handle,
+  Position,
+} from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
 import { Zap } from "lucide-react";
 
@@ -25,7 +30,11 @@ export function TransitionNode({
   data,
   selected,
 }: NodeProps<ReactFlowNode<TransitionNodeData>>) {
-  const transition = data?.transition ?? { id: "", type: "OutgoingTransition" as const, workflows: [] };
+  const transition = data?.transition ?? {
+    id: "",
+    type: "OutgoingTransition" as const,
+    workflows: [],
+  };
   const label = data?.label ?? "";
   const isSingleTarget = data?.isSingleTarget ?? false;
   const isIncoming = data?.isIncoming ?? false;

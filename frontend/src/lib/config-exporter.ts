@@ -14,10 +14,7 @@ import { validateWorkflowConnections } from "./workflow-validator";
 import { CURRENT_VERSION } from "./config-migration/migrations";
 
 // Import types from new action schema
-import {
-  Action,
-  Workflow,
-} from "./action-schema";
+import { Action, Workflow } from "./action-schema";
 
 // Import types from automation context
 import type {
@@ -746,7 +743,10 @@ export class ConfigExporter {
         regions: stateRegions,
         locations: stateLocations,
         strings: stateStrings,
-        position: state.position,
+        position: {
+          x: Math.round(state.position.x),
+          y: Math.round(state.position.y),
+        },
         isInitial: state.initial || false,
         isFinal: false,
       };
@@ -756,9 +756,7 @@ export class ConfigExporter {
   /**
    * Convert transitions to export format
    */
-  private exportTransitions(
-    transitions: Transition[]
-  ): ExportTransition[] {
+  private exportTransitions(transitions: Transition[]): ExportTransition[] {
     if (!transitions || !Array.isArray(transitions)) {
       return [];
     }

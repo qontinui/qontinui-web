@@ -30,7 +30,6 @@ export function StorageUsageCard({
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
-
   const getProgressGradient = () => {
     if (usedPercentage >= 90) return "from-red-500 to-red-600";
     if (usedPercentage >= 75) return "from-yellow-500 to-orange-500";

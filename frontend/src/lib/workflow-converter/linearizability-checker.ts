@@ -319,7 +319,12 @@ export class LinearizabilityChecker {
       const trueBranch = connections.main[0];
       const falseBranch = connections.main[1];
 
-      if (trueBranch && falseBranch && trueBranch.length === 0 && falseBranch.length === 0) {
+      if (
+        trueBranch &&
+        falseBranch &&
+        trueBranch.length === 0 &&
+        falseBranch.length === 0
+      ) {
         issues.push(`IF action ${ifAction.id} has no outgoing connections`);
       }
     });

@@ -17,7 +17,7 @@ function calculateTransparency(imageData: ImageData): number {
 
   // Check alpha channel (every 4th value in the data array)
   for (let i = 3; i < pixels.length; i += 4) {
-    if ((pixels[i]!) < 255) {
+    if (pixels[i]! < 255) {
       transparentPixels++;
     }
   }

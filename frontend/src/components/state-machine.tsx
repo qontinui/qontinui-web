@@ -4,13 +4,7 @@ import React from "react";
 
 import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Plus,
-  Square,
-  Trash2,
-  Settings,
-  Network,
-} from "lucide-react";
+import { Plus, Square, Trash2, Settings, Network } from "lucide-react";
 import {
   ReactFlow,
   type Node,
@@ -164,7 +158,10 @@ export function StateStructure() {
           if (state) {
             updateState({
               ...state,
-              position: change.position,
+              position: {
+                x: Math.round(change.position.x),
+                y: Math.round(change.position.y),
+              },
             });
           } else if (change.id.startsWith("transition-node-")) {
             // It's a transition node, extract the transition ID
@@ -173,7 +170,10 @@ export function StateStructure() {
             if (transition) {
               updateTransition({
                 ...transition,
-                position: change.position,
+                position: {
+                  x: Math.round(change.position.x),
+                  y: Math.round(change.position.y),
+                },
               });
             }
           }
@@ -266,7 +266,10 @@ export function StateStructure() {
             // Save the position for next time
             updateTransition({
               ...transition,
-              position: position,
+              position: {
+                x: Math.round(position.x),
+                y: Math.round(position.y),
+              },
             });
           }
 
@@ -330,17 +333,13 @@ export function StateStructure() {
   };
 
   const applyAutoLayout = useCallback(() => {
-    const { nodes: layoutedNodes } = getLayoutedElements(
-      nodes,
-      edges,
-      {
-        direction: "TB",
-        nodeWidth: 200,
-        nodeHeight: 150,
-        nodeSep: 80,
-        rankSep: 120,
-      }
-    );
+    const { nodes: layoutedNodes } = getLayoutedElements(nodes, edges, {
+      direction: "TB",
+      nodeWidth: 200,
+      nodeHeight: 150,
+      nodeSep: 80,
+      rankSep: 120,
+    });
 
     // Update positions in the state
     layoutedNodes.forEach((node) => {
@@ -348,7 +347,10 @@ export function StateStructure() {
       if (state) {
         updateState({
           ...state,
-          position: node.position,
+          position: {
+            x: Math.round(node.position.x),
+            y: Math.round(node.position.y),
+          },
         });
       } else if (node.id.startsWith("transition-node-")) {
         const transitionId = node.id.replace("transition-node-", "");
@@ -356,7 +358,10 @@ export function StateStructure() {
         if (transition) {
           updateTransition({
             ...transition,
-            position: node.position,
+            position: {
+              x: Math.round(node.position.x),
+              y: Math.round(node.position.y),
+            },
           });
         }
       }
@@ -468,7 +473,10 @@ export function StateStructure() {
     );
     if (!currentTransition) return;
 
-    const updatedTransition = { ...currentTransition, ...updates } as Transition;
+    const updatedTransition = {
+      ...currentTransition,
+      ...updates,
+    } as Transition;
     updateTransition(updatedTransition);
   };
 
@@ -509,7 +517,10 @@ export function StateStructure() {
     if (!currentState || !currentState.stateImages) return;
 
     const updatedStateImages = [...currentState.stateImages];
-    updatedStateImages[index] = { ...updatedStateImages[index], ...updates } as StateImage;
+    updatedStateImages[index] = {
+      ...updatedStateImages[index],
+      ...updates,
+    } as StateImage;
     updateSelectedState({ stateImages: updatedStateImages });
   };
 
@@ -554,7 +565,10 @@ export function StateStructure() {
 
     const regions = currentState.regions || [];
     const updatedRegions = [...regions];
-    updatedRegions[index] = { ...updatedRegions[index], [field]: value } as StateRegion;
+    updatedRegions[index] = {
+      ...updatedRegions[index],
+      [field]: value,
+    } as StateRegion;
     updateSelectedState({ regions: updatedRegions });
   };
 
@@ -599,7 +613,10 @@ export function StateStructure() {
 
     const locations = currentState.locations || [];
     const updatedLocations = [...locations];
-    updatedLocations[index] = { ...updatedLocations[index], [field]: value } as StateLocation;
+    updatedLocations[index] = {
+      ...updatedLocations[index],
+      [field]: value,
+    } as StateLocation;
     updateSelectedState({ locations: updatedLocations });
   };
 
@@ -640,7 +657,10 @@ export function StateStructure() {
 
     const strings = currentState.strings || [];
     const updatedStrings = [...strings];
-    updatedStrings[index] = { ...updatedStrings[index], [field]: value } as StateString;
+    updatedStrings[index] = {
+      ...updatedStrings[index],
+      [field]: value,
+    } as StateString;
     updateSelectedState({ strings: updatedStrings });
   };
 

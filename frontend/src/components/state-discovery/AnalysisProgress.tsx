@@ -67,9 +67,14 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
     },
   ];
 
-  const currentStageIndex =
-    stages.findIndex((s) => progress <= s.percentage);
-  const currentStage = stages[Math.max(0, currentStageIndex !== -1 ? currentStageIndex : stages.length - 1)];
+  const currentStageIndex = stages.findIndex((s) => progress <= s.percentage);
+  const currentStage =
+    stages[
+      Math.max(
+        0,
+        currentStageIndex !== -1 ? currentStageIndex : stages.length - 1
+      )
+    ];
 
   const getStageStatus = (stage: Stage) => {
     if (progress >= stage.percentage + 30) return "complete";

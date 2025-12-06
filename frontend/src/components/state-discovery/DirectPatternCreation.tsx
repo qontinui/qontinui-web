@@ -226,7 +226,9 @@ export function DirectPatternCreation() {
             id: `image-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             name: pattern.name,
             url: pattern.imageData,
-            size: Math.ceil((pattern.imageData.split(",")[1]?.length || 0) * 0.75),
+            size: Math.ceil(
+              (pattern.imageData.split(",")[1]?.length || 0) * 0.75
+            ),
             createdAt: new Date(),
             usageCount: 0,
             usage: [],

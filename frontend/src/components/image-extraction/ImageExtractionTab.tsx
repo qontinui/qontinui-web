@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from "react";
-import {
-  Scissors,
-  ImageIcon,
-  Plus,
-  AlertCircle,
-  Edit,
-} from "lucide-react";
+import { Scissors, ImageIcon, Plus, AlertCircle, Edit } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
 import { useImageExtractionState } from "@/contexts/tab-state";
 import { ScreenshotPicker } from "../common/ScreenshotPicker";
@@ -18,13 +12,8 @@ import {
   removeBackground,
   ProcessedImageResult,
 } from "@/lib/image-processing";
-import {
-  prepareStateImageCreation,
-} from "@/lib/state-image-creator";
-import {
-  createImageAsset,
-  findImageByData,
-} from "@/lib/image-library-utils";
+import { prepareStateImageCreation } from "@/lib/state-image-creator";
+import { createImageAsset, findImageByData } from "@/lib/image-library-utils";
 import { toast } from "sonner";
 
 interface Screenshot {

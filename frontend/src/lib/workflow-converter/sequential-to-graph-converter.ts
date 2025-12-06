@@ -10,10 +10,7 @@
  */
 
 import { Action, ActionType } from "../action-schema/action-types";
-import {
-  Workflow,
-  Connections,
-} from "../action-schema/action-types";
+import { Workflow, Connections } from "../action-schema/action-types";
 import {
   IfActionConfig,
   LoopActionConfig,
@@ -265,28 +262,16 @@ export class SequentialToGraphConverter {
 
     switch (action.type) {
       case "IF":
-        this.handleIfAction(
-          action as Action<"IF">,
-          actionId
-        );
+        this.handleIfAction(action as Action<"IF">, actionId);
         break;
       case "LOOP":
-        this.handleLoopAction(
-          action as Action<"LOOP">,
-          actionId
-        );
+        this.handleLoopAction(action as Action<"LOOP">, actionId);
         break;
       case "SWITCH":
-        this.handleSwitchAction(
-          action as Action<"SWITCH">,
-          actionId
-        );
+        this.handleSwitchAction(action as Action<"SWITCH">, actionId);
         break;
       case "TRY_CATCH":
-        this.handleTryCatchAction(
-          action as Action<"TRY_CATCH">,
-          actionId
-        );
+        this.handleTryCatchAction(action as Action<"TRY_CATCH">, actionId);
         break;
     }
   }
@@ -298,10 +283,7 @@ export class SequentialToGraphConverter {
    * - Output 0 (main[0]): true branch (then actions)
    * - Output 1 (main[1]): false branch (else actions)
    */
-  private handleIfAction(
-    action: Action<"IF">,
-    actionId: string
-  ): void {
+  private handleIfAction(action: Action<"IF">, actionId: string): void {
     const config = action.config as IfActionConfig;
 
     // Process then branch (output 0)
@@ -328,10 +310,7 @@ export class SequentialToGraphConverter {
    * - Last action in body connects back to loop start
    * - Exit connection after loop completes
    */
-  private handleLoopAction(
-    action: Action<"LOOP">,
-    actionId: string
-  ): void {
+  private handleLoopAction(action: Action<"LOOP">, actionId: string): void {
     const config = action.config as LoopActionConfig;
 
     // Process loop body
@@ -351,10 +330,7 @@ export class SequentialToGraphConverter {
    * - Output N (main[N]): case N actions
    * - Last output: default case actions
    */
-  private handleSwitchAction(
-    action: Action<"SWITCH">,
-    actionId: string
-  ): void {
+  private handleSwitchAction(action: Action<"SWITCH">, actionId: string): void {
     const config = action.config as SwitchActionConfig;
 
     // Process each case
@@ -421,7 +397,11 @@ export class SequentialToGraphConverter {
       this.connections[sourceId] = {};
     }
 
-    if (!this.connections[sourceId]![type as keyof typeof this.connections[typeof sourceId]]) {
+    if (
+      !this.connections[sourceId]![
+        type as keyof (typeof this.connections)[typeof sourceId]
+      ]
+    ) {
       (this.connections[sourceId] as any)[type] = [];
     }
 

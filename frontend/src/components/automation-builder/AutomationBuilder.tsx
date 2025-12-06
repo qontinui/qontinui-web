@@ -62,8 +62,7 @@ export function AutomationBuilder() {
   const { addWorkflow, updateWorkflow } = useAutomation();
 
   // Hooks
-  const { updateItem, deleteItem, createWorkflow } =
-    useItemManagement();
+  const { updateItem, deleteItem, createWorkflow } = useItemManagement();
   const { handleItemSelection } = useModeDetection({
     currentMode: mode,
     autoSwitch: true,

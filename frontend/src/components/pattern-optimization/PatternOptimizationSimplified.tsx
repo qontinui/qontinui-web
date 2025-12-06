@@ -25,10 +25,7 @@ import {
 import { useAutomation } from "@/contexts/automation-context";
 import { ScreenshotSelector } from "../screenshot-selector";
 import { prepareStateImageCreation } from "@/lib/state-image-creator";
-import {
-  createImageAsset,
-  findImageByData,
-} from "@/lib/image-library-utils";
+import { createImageAsset, findImageByData } from "@/lib/image-library-utils";
 import { toast } from "sonner";
 
 /**
@@ -152,7 +149,10 @@ const PatternOptimizationContent: React.FC = () => {
       // Select the first newly added screenshot
       setTimeout(() => {
         if ((session?.screenshots?.length ?? 0) > 0) {
-          const targetScreenshot = session?.screenshots[(session?.screenshots?.length ?? 0) - files.length];
+          const targetScreenshot =
+            session?.screenshots[
+              (session?.screenshots?.length ?? 0) - files.length
+            ];
           if (targetScreenshot) {
             setSelectedScreenshotId(targetScreenshot.id);
           }

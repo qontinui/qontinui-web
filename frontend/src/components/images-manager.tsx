@@ -146,14 +146,20 @@ export function ImagesManager() {
           });
 
           // Upload with offline-first support
-          const result = await uploadScreenshotOffline(file, Number(projectId), {
-            name: file.name,
-            onProgress: (progress, _status) => {
-              setUploadingFiles((prev) =>
-                prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
-              );
-            },
-          });
+          const result = await uploadScreenshotOffline(
+            file,
+            Number(projectId),
+            {
+              name: file.name,
+              onProgress: (progress, _status) => {
+                setUploadingFiles((prev) =>
+                  prev.map((f) =>
+                    f.name === file.name ? { ...f, progress } : f
+                  )
+                );
+              },
+            }
+          );
 
           // Create ImageAsset with local data (available immediately)
           const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");

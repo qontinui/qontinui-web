@@ -63,7 +63,6 @@ interface BackendPackageDetailRead {
   total_ratings: number;
 }
 
-
 interface BackendInstallResponse {
   id: number;
   package_id: number;

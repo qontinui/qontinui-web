@@ -95,19 +95,19 @@ function WorkflowRunsList({ runs }: { runs: WorkflowRun[] }) {
 
 ### ExecutionResultsDisplay
 
-| Prop | Type | Required | Description |
-|------|------|----------|-------------|
-| `result` | `WorkflowExecutionResult` | Yes | The execution result to display |
-| `className` | `string` | No | Additional CSS classes |
+| Prop        | Type                      | Required | Description                     |
+| ----------- | ------------------------- | -------- | ------------------------------- |
+| `result`    | `WorkflowExecutionResult` | Yes      | The execution result to display |
+| `className` | `string`                  | No       | Additional CSS classes          |
 
 ### ExecutionResultsBadge
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `result` | `WorkflowExecutionResult` | Required | The execution result to display |
-| `showDuration` | `boolean` | `false` | Show execution duration in badge |
-| `showIcon` | `boolean` | `true` | Show pass/fail icon |
-| `className` | `string` | - | Additional CSS classes |
+| Prop           | Type                      | Default  | Description                      |
+| -------------- | ------------------------- | -------- | -------------------------------- |
+| `result`       | `WorkflowExecutionResult` | Required | The execution result to display  |
+| `showDuration` | `boolean`                 | `false`  | Show execution duration in badge |
+| `showIcon`     | `boolean`                 | `true`   | Show pass/fail icon              |
+| `className`    | `string`                  | -        | Additional CSS classes           |
 
 ## WorkflowExecutionResult Type
 

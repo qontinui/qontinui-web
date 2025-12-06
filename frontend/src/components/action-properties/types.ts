@@ -3,7 +3,10 @@
  */
 
 import type { ActionExpectations } from "@/lib/expectations/types";
-import type { BaseActionSettings, ExecutionSettings } from "@/lib/action-schema/shared/timing-config";
+import type {
+  BaseActionSettings,
+  ExecutionSettings,
+} from "@/lib/action-schema/shared/timing-config";
 
 export interface Action {
   id: string;

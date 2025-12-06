@@ -398,7 +398,9 @@ export async function animateAction(
   easing: EasingType = "easeOut"
 ): Promise<void> {
   const controller = new LayoutAnimationController();
-  const fromPosition: [number, number] = action.position ? [...action.position] : toPosition;
+  const fromPosition: [number, number] = action.position
+    ? [...action.position]
+    : toPosition;
 
   await controller.animate(
     { [action.id]: fromPosition },
@@ -423,9 +425,9 @@ export async function animateActions(
   const fromPositions: PositionMap = {};
 
   for (const action of actions) {
-    fromPositions[action.id] = (action.position
-      ? [...action.position]
-      : toPositions[action.id]) as [number, number];
+    fromPositions[action.id] = (
+      action.position ? [...action.position] : toPositions[action.id]
+    ) as [number, number];
   }
 
   await controller.animate(

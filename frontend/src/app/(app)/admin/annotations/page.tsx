@@ -175,7 +175,11 @@ export default function AnnotationsPage() {
     }
 
     // Don't auto-save if there are no annotations yet
-    if (!currentScreenshot || !currentScreenshot.annotations || currentScreenshot.annotations.length === 0) {
+    if (
+      !currentScreenshot ||
+      !currentScreenshot.annotations ||
+      currentScreenshot.annotations.length === 0
+    ) {
       return;
     }
 
@@ -384,7 +388,8 @@ export default function AnnotationsPage() {
 
   // Update selected box details
   const handleUpdateDetails = () => {
-    if (!selectedBoxId || !currentScreenshot || !currentScreenshot.annotations) return;
+    if (!selectedBoxId || !currentScreenshot || !currentScreenshot.annotations)
+      return;
 
     const updatedAnnotations = currentScreenshot.annotations.map((box) => {
       if (box.id === selectedBoxId) {
@@ -416,7 +421,8 @@ export default function AnnotationsPage() {
 
   // Delete selected box
   const handleDeleteBox = () => {
-    if (!selectedBoxId || !currentScreenshot || !currentScreenshot.annotations) return;
+    if (!selectedBoxId || !currentScreenshot || !currentScreenshot.annotations)
+      return;
 
     const updatedAnnotations = currentScreenshot.annotations.filter(
       (box) => box.id !== selectedBoxId
@@ -442,7 +448,11 @@ export default function AnnotationsPage() {
   // Save current screenshot annotations
   // Updated: 2025-11-12 - Fixed API endpoint URL with trailing slash and proper auth headers
   const handleSave = async () => {
-    if (!currentScreenshot || !currentScreenshot.annotations || currentScreenshot.annotations.length === 0) {
+    if (
+      !currentScreenshot ||
+      !currentScreenshot.annotations ||
+      currentScreenshot.annotations.length === 0
+    ) {
       toast.error("Please annotate at least one element before saving");
       return;
     }
@@ -547,8 +557,8 @@ export default function AnnotationsPage() {
 
         // Add screenshot metadata
         screenshotMetadata.push({
-          name: screenshot.file?.name || 'screenshot',
-          url: screenshotUrl || '',
+          name: screenshot.file?.name || "screenshot",
+          url: screenshotUrl || "",
           width: screenshot.dimensions?.width || 0,
           height: screenshot.dimensions?.height || 0,
         });
@@ -571,8 +581,8 @@ export default function AnnotationsPage() {
       // Create annotation set with multi-screenshot support
       const annotationSet: AnnotationSet = {
         // For backward compatibility, set the first screenshot in the old fields
-        screenshot_name: screenshotMetadata[0]?.name || '',
-        screenshot_url: screenshotMetadata[0]?.url || '',
+        screenshot_name: screenshotMetadata[0]?.name || "",
+        screenshot_url: screenshotMetadata[0]?.url || "",
         image_width: screenshotMetadata[0]?.width || 0,
         image_height: screenshotMetadata[0]?.height || 0,
         // New multi-screenshot field
@@ -722,13 +732,17 @@ export default function AnnotationsPage() {
 
   // Export current screenshot annotations as JSON
   const handleExport = () => {
-    if (!currentScreenshot || !currentScreenshot.annotations || currentScreenshot.annotations.length === 0) {
+    if (
+      !currentScreenshot ||
+      !currentScreenshot.annotations ||
+      currentScreenshot.annotations.length === 0
+    ) {
       toast.error("No annotations to export");
       return;
     }
 
     const annotationSet = {
-      screenshot: currentScreenshot.file?.name || 'screenshot',
+      screenshot: currentScreenshot.file?.name || "screenshot",
       image_size: [
         currentScreenshot.dimensions?.width || 0,
         currentScreenshot.dimensions?.height || 0,
@@ -756,7 +770,7 @@ export default function AnnotationsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${(currentScreenshot.file?.name || 'screenshot').replace(/\.[^/.]+$/, "")}_annotations.json`;
+    a.download = `${(currentScreenshot.file?.name || "screenshot").replace(/\.[^/.]+$/, "")}_annotations.json`;
     a.click();
     URL.revokeObjectURL(url);
 
@@ -766,7 +780,8 @@ export default function AnnotationsPage() {
   // Export all screenshots
   const handleExportAll = () => {
     const screenshotsWithAnnotations = screenshots.filter(
-      (screenshot) => screenshot?.annotations && screenshot.annotations.length > 0
+      (screenshot) =>
+        screenshot?.annotations && screenshot.annotations.length > 0
     );
 
     if (screenshotsWithAnnotations.length === 0) {
@@ -778,8 +793,11 @@ export default function AnnotationsPage() {
       export_date: new Date().toISOString(),
       total_screenshots: screenshotsWithAnnotations.length,
       screenshots: screenshotsWithAnnotations.map((screenshot) => ({
-        screenshot: screenshot.file?.name || 'screenshot',
-        image_size: [screenshot.dimensions?.width || 0, screenshot.dimensions?.height || 0],
+        screenshot: screenshot.file?.name || "screenshot",
+        image_size: [
+          screenshot.dimensions?.width || 0,
+          screenshot.dimensions?.height || 0,
+        ],
         num_elements: screenshot.annotations?.length || 0,
         annotations: (screenshot.annotations || []).map((box) => ({
           bbox: [
@@ -1249,30 +1267,33 @@ export default function AnnotationsPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Actions</Label>
-                    {currentScreenshot.annotations && currentScreenshot.annotations.length > 0 && (
-                      <div className="text-xs">
-                        {saveStatus === "saving" && (
-                          <span className="text-blue-500">Saving...</span>
-                        )}
-                        {saveStatus === "saved" && (
-                          <span className="text-muted-foreground">
-                            All changes saved
-                          </span>
-                        )}
-                        {saveStatus === "unsaved" && (
-                          <span className="text-yellow-600">
-                            Unsaved changes
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {currentScreenshot.annotations &&
+                      currentScreenshot.annotations.length > 0 && (
+                        <div className="text-xs">
+                          {saveStatus === "saving" && (
+                            <span className="text-blue-500">Saving...</span>
+                          )}
+                          {saveStatus === "saved" && (
+                            <span className="text-muted-foreground">
+                              All changes saved
+                            </span>
+                          )}
+                          {saveStatus === "unsaved" && (
+                            <span className="text-yellow-600">
+                              Unsaved changes
+                            </span>
+                          )}
+                        </div>
+                      )}
                   </div>
                   <div className="flex gap-2">
                     {currentSetId && (
                       <Button
                         onClick={handleSaveAs}
                         disabled={
-                          isSaving || !currentScreenshot.annotations || currentScreenshot.annotations.length === 0
+                          isSaving ||
+                          !currentScreenshot.annotations ||
+                          currentScreenshot.annotations.length === 0
                         }
                         variant="outline"
                         className="flex-1"
@@ -1284,7 +1305,10 @@ export default function AnnotationsPage() {
                     )}
                     <Button
                       onClick={handleExport}
-                      disabled={!currentScreenshot.annotations || currentScreenshot.annotations.length === 0}
+                      disabled={
+                        !currentScreenshot.annotations ||
+                        currentScreenshot.annotations.length === 0
+                      }
                       variant="outline"
                       size="sm"
                     >
@@ -1330,7 +1354,7 @@ export default function AnnotationsPage() {
           <CardContent>
             {currentScreenshot ? (
               <ImageCanvas
-                imageUrl={currentScreenshot.url || ''}
+                imageUrl={currentScreenshot.url || ""}
                 boxes={currentScreenshot.annotations || []}
                 selectedBoxId={selectedBoxId}
                 onBoxesChange={handleBoxesChange}

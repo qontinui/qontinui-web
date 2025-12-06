@@ -115,11 +115,7 @@ export function useItemManagement() {
    */
   const createWorkflow = useCallback(
     (options: CreateWorkflowOptions = {}): Workflow => {
-      const {
-        viewMode = "sequential",
-        category = "Main",
-        name,
-      } = options;
+      const { viewMode = "sequential", category = "Main", name } = options;
 
       if (viewMode === "sequential") {
         return createSequential(category, name);

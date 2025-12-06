@@ -10,11 +10,7 @@ import { RegionSelector } from "./RegionSelector";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  Plus,
-  ChevronRight,
-  ChevronLeft,
-} from "lucide-react";
+import { Plus, ChevronRight, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import type { OptimizationScreenshot } from "@/types/pattern-optimization";
 

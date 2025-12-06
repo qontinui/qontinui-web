@@ -427,7 +427,11 @@ export function validateAction(action: Action): ValidationResult {
 
   // Validate base settings if present
   if (action.base) {
-    if ("pauseBeforeBegin" in action.base && action.base.pauseBeforeBegin !== undefined && action.base.pauseBeforeBegin < 0) {
+    if (
+      "pauseBeforeBegin" in action.base &&
+      action.base.pauseBeforeBegin !== undefined &&
+      action.base.pauseBeforeBegin < 0
+    ) {
       errors.push({
         property: "base.pauseBeforeBegin",
         message: "Pause before cannot be negative",
@@ -436,7 +440,10 @@ export function validateAction(action: Action): ValidationResult {
       });
     }
 
-    if (action.base.pauseAfterEnd !== undefined && action.base.pauseAfterEnd < 0) {
+    if (
+      action.base.pauseAfterEnd !== undefined &&
+      action.base.pauseAfterEnd < 0
+    ) {
       errors.push({
         property: "base.pauseAfterEnd",
         message: "Pause after cannot be negative",

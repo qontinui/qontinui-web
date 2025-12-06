@@ -19,9 +19,7 @@
  * - Health alerts
  */
 
-import type {
-  Workflow,
-} from "@/lib/action-schema/action-types";
+import type { Workflow } from "@/lib/action-schema/action-types";
 import type {
   State,
   ImageAsset,
@@ -1090,7 +1088,9 @@ export class ProjectOptimizationService {
       const complexity = workflowComplexityAnalyzer.analyzeComplexity(workflow);
 
       // Check testing
-      const tests = getWorkflowTestingService().getTestCasesForWorkflow(workflow.id);
+      const tests = getWorkflowTestingService().getTestCasesForWorkflow(
+        workflow.id
+      );
       const hasTesting = tests.length > 0;
 
       // Check documentation
@@ -3149,7 +3149,12 @@ export class ProjectOptimizationService {
         const prevRowCurr = prevRow?.[j];
         const currRowPrev = currRow?.[j - 1];
 
-        if (prevRowPrev !== undefined && prevRowCurr !== undefined && currRowPrev !== undefined && currRow) {
+        if (
+          prevRowPrev !== undefined &&
+          prevRowCurr !== undefined &&
+          currRowPrev !== undefined &&
+          currRow
+        ) {
           currRow[j] = Math.min(
             prevRowCurr + 1,
             currRowPrev + 1,

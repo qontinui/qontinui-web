@@ -79,10 +79,7 @@ const getTypeActionText = (action: Action, states: any[]): string | null => {
   }
 
   // If using StateString, resolve the values
-  if (
-    typeConfig.textSource &&
-    typeConfig.textSource.stateId
-  ) {
+  if (typeConfig.textSource && typeConfig.textSource.stateId) {
     const state = states.find((s) => s.id === typeConfig.textSource.stateId);
     if (!state || !state.strings) return null;
 

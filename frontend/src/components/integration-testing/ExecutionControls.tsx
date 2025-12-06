@@ -55,7 +55,9 @@ export function ExecutionControls({
 
   // Fetch start screenshot from the first selected snapshot
   const firstSnapshotRunId =
-    selectedSnapshots.length > 0 ? selectedSnapshots[0]?.run_id ?? null : null;
+    selectedSnapshots.length > 0
+      ? (selectedSnapshots[0]?.run_id ?? null)
+      : null;
   const { startScreenshot, loading: loadingStartScreenshot } =
     useStartScreenshot(firstSnapshotRunId);
 

@@ -71,7 +71,6 @@ export interface AdvancedSearchProps {
   className?: string;
 }
 
-
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -192,7 +191,13 @@ function matchesFilter(workflow: Workflow, filter: SearchFilter): boolean {
   // Action types filter
   if (filter.actionTypes && filter.actionTypes.length > 0) {
     const workflowActionTypes = new Set(workflow.actions.map((a) => a.type));
-    if (!filter.actionTypes.some((type) => workflowActionTypes.has(type as import("@/lib/action-schema/action-types").ActionType))) {
+    if (
+      !filter.actionTypes.some((type) =>
+        workflowActionTypes.has(
+          type as import("@/lib/action-schema/action-types").ActionType
+        )
+      )
+    ) {
       return false;
     }
   }

@@ -20,7 +20,6 @@ import {
   Download,
   Loader2,
   Calendar,
-
   WifiOff,
   RefreshCw,
 } from "lucide-react";
@@ -268,9 +267,8 @@ export function ConnectionHistoryTable() {
           <div className="border-t border-gray-800 p-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-400">
-                Showing {offset + 1} to{" "}
-                {Math.min(offset + limit, data.total)} of{" "}
-                {data.total} results
+                Showing {offset + 1} to {Math.min(offset + limit, data.total)}{" "}
+                of {data.total} results
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-400">Rows per page:</span>

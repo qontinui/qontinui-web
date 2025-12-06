@@ -128,7 +128,10 @@ function AcceptInvitationContent() {
         setStatus("expired");
       } else {
         setStatus("valid");
-        setInvitationData({ invitation: data, organization: data.organization });
+        setInvitationData({
+          invitation: data,
+          organization: data.organization,
+        });
       }
     } catch (error) {
       const message =

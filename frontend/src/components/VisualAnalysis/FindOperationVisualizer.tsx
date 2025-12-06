@@ -199,11 +199,7 @@ export const FindOperationVisualizer: React.FC<
     const startTime = Date.now();
 
     try {
-      const result = await testStateImage(
-        screenshot,
-        imageId,
-        similarity
-      );
+      const result = await testStateImage(screenshot, imageId, similarity);
 
       if (result.found && result.matches) {
         const foundMatches: FindMatch[] = result.matches.map((m: any) => ({
