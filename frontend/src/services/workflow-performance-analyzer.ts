@@ -734,8 +734,8 @@ export class WorkflowPerformanceAnalyzer {
 
     for (let i = 0; i < actionIds.length; i++) {
       for (let j = i + 1; j < actionIds.length; j++) {
-        const id1 = actionIds[i];
-        const id2 = actionIds[j];
+        const id1 = actionIds[i] ?? "";
+        const id2 = actionIds[j] ?? "";
 
         if (
           dependencies.get(id1)?.has(id2) ||
@@ -883,8 +883,8 @@ export class WorkflowPerformanceAnalyzer {
 
     // Create edges between consecutive actions
     for (let i = 0; i < actionIds.length - 1; i++) {
-      const current = actionIds[i];
-      const next = actionIds[i + 1];
+      const current = actionIds[i] ?? "";
+      const next = actionIds[i + 1] ?? "";
 
       if (!graph.has(current)) {
         graph.set(current, []);
@@ -898,7 +898,7 @@ export class WorkflowPerformanceAnalyzer {
     const parent = new Map<string, string | null>();
 
     // Initialize first action
-    const startAction = actionIds[0];
+    const startAction = actionIds[0] ?? "";
     maxTime.set(startAction, timings[startAction] || 0);
     parent.set(startAction, null);
 
@@ -921,7 +921,7 @@ export class WorkflowPerformanceAnalyzer {
     }
 
     // Find the action with maximum total time
-    let endAction = actionIds[actionIds.length - 1];
+    let endAction = actionIds[actionIds.length - 1] ?? "";
     let maxTotalTime = maxTime.get(endAction) || 0;
 
     for (const actionId of actionIds) {
@@ -2154,9 +2154,9 @@ export class WorkflowPerformanceAnalyzer {
         const nextDeps = dependencies.get(nextId) || new Set();
 
         // If next action doesn't depend on current, they could be parallel
-        if (!nextDeps.has(actionId)) {
+        if (!nextDeps.has(actionId ?? "")) {
           if (independentGroup.length === 0) {
-            independentGroup.push(actionId);
+            independentGroup.push(actionId ?? "");
           }
           independentGroup.push(nextId);
         } else {

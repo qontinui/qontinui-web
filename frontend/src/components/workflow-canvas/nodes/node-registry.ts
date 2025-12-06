@@ -6,7 +6,7 @@
  */
 
 import { ComponentType } from "react";
-import { NodeProps } from "@xyflow/react";
+import { NodeProps, Node as ReactFlowNode } from "@xyflow/react";
 import { ActionType } from "@/lib/action-schema/action-types";
 import { BaseNodeData } from "./BaseNode";
 
@@ -19,7 +19,7 @@ import { SpecialNodes } from "./SpecialNodes";
 /**
  * Node component type
  */
-export type NodeComponent = ComponentType<NodeProps<BaseNodeData>>;
+export type NodeComponent = ComponentType<NodeProps<ReactFlowNode<BaseNodeData>>>;
 
 /**
  * Complete registry of all node types
@@ -36,8 +36,6 @@ export const NODE_TYPES: Record<ActionType, NodeComponent> = {
 
   // Mouse Actions
   CLICK: GuiActionNodes.CLICK,
-  DOUBLE_CLICK: GuiActionNodes.DOUBLE_CLICK,
-  RIGHT_CLICK: GuiActionNodes.RIGHT_CLICK,
   MOUSE_MOVE: GuiActionNodes.MOUSE_MOVE,
   MOUSE_DOWN: GuiActionNodes.MOUSE_DOWN,
   MOUSE_UP: GuiActionNodes.MOUSE_UP,

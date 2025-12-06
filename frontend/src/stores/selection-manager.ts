@@ -405,6 +405,7 @@ export class SelectionManager {
 
     this.state.historyIndex--;
     const historyState = this.state.history[this.state.historyIndex];
+    if (!historyState) return false;
 
     this.state.selectedNodes = new Set(historyState.nodes);
     this.state.selectedEdges = new Set(historyState.edges);
@@ -421,6 +422,7 @@ export class SelectionManager {
 
     this.state.historyIndex++;
     const historyState = this.state.history[this.state.historyIndex];
+    if (!historyState) return false;
 
     this.state.selectedNodes = new Set(historyState.nodes);
     this.state.selectedEdges = new Set(historyState.edges);

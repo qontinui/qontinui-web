@@ -57,12 +57,16 @@ export type ValidationResult = components["schemas"]["ValidationResult"];
  *   type Projects = ApiResponse<'get', '/api/v1/projects/'>
  */
 export type ApiResponse<
-  Method extends keyof Route,
+  Method extends string,
   Route extends keyof paths,
-> = paths[Route][Method] extends {
-  responses: { 200: { content: { "application/json": infer T } } };
-}
-  ? T
+> = Route extends keyof paths
+  ? Method extends keyof paths[Route]
+    ? paths[Route][Method] extends {
+        responses: { 200: { content: { "application/json": infer T } } };
+      }
+      ? T
+      : never
+    : never
   : never;
 
 /**
@@ -72,12 +76,16 @@ export type ApiResponse<
  *   type CreateProjectBody = ApiRequestBody<'post', '/api/v1/projects/'>
  */
 export type ApiRequestBody<
-  Method extends keyof Route,
+  Method extends string,
   Route extends keyof paths,
-> = paths[Route][Method] extends {
-  requestBody: { content: { "application/json": infer T } };
-}
-  ? T
+> = Route extends keyof paths
+  ? Method extends keyof paths[Route]
+    ? paths[Route][Method] extends {
+        requestBody: { content: { "application/json": infer T } };
+      }
+      ? T
+      : never
+    : never
   : never;
 
 // ============================================================================

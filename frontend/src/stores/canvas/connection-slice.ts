@@ -74,7 +74,7 @@ export const createConnectionSlice: StateCreator<
 
       state.workflow.connections[sourceId][outputType]![outputIndex] =
         state.workflow.connections[sourceId][outputType]![outputIndex].filter(
-          (conn) => conn.action !== targetId
+          (conn: any) => conn.action !== targetId
         );
 
       state.isDirty = true;

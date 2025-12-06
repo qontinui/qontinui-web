@@ -134,10 +134,9 @@ export function TransitionPropertiesPanel({
   const handleMoveWorkflowUp = (index: number) => {
     if (index === 0) return;
     const currentWorkflows = [...(transition.workflows || [])];
-    [currentWorkflows[index], currentWorkflows[index - 1]] = [
-      currentWorkflows[index - 1],
-      currentWorkflows[index],
-    ];
+    const temp = currentWorkflows[index];
+    currentWorkflows[index] = currentWorkflows[index - 1]!;
+    currentWorkflows[index - 1] = temp!;
     updateTransition({ workflows: currentWorkflows });
   };
 
@@ -145,10 +144,9 @@ export function TransitionPropertiesPanel({
     const currentWorkflows = transition.workflows || [];
     if (index === currentWorkflows.length - 1) return;
     const newWorkflows = [...currentWorkflows];
-    [newWorkflows[index], newWorkflows[index + 1]] = [
-      newWorkflows[index + 1],
-      newWorkflows[index],
-    ];
+    const temp = newWorkflows[index];
+    newWorkflows[index] = newWorkflows[index + 1]!;
+    newWorkflows[index + 1] = temp!;
     updateTransition({ workflows: newWorkflows });
   };
 

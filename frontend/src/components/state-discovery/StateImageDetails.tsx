@@ -213,11 +213,11 @@ const StateImageDetails: React.FC<StateImageDetailsProps> = ({
                 <div className="flex-1 bg-gray-200 rounded-full h-2">
                   <div
                     className="bg-green-500 h-2 rounded-full"
-                    style={{ width: `${stateImage.frequency * 100}%` }}
+                    style={{ width: `${(stateImage.frequency ?? 0) * 100}%` }}
                   />
                 </div>
                 <span className="text-sm">
-                  {(stateImage.frequency * 100).toFixed(1)}%
+                  {((stateImage.frequency ?? 0) * 100).toFixed(1)}%
                 </span>
               </div>
             </div>

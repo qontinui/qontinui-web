@@ -11,13 +11,10 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   Search,
   Workflow,
@@ -29,11 +26,6 @@ import {
   FileText,
   TestTube,
   Clock,
-  X,
-  ArrowRight,
-  ExternalLink,
-  Star,
-  Copy,
   ChevronRight,
   Loader2,
 } from "lucide-react";
@@ -443,7 +435,7 @@ export function GlobalSearch({
                     </div>
 
                     <div className="space-y-1">
-                      {items.map((result, index) => {
+                      {items.map((result) => {
                         const globalIndex = results.indexOf(result);
                         const isSelected = globalIndex === selectedIndex;
 

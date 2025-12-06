@@ -151,7 +151,7 @@ const ARCHITECTURE_DIAGRAMS: ArchitectureDiagram[] = [
 
 export function ArchitectureDocsViewer() {
   const [selectedDiagram, setSelectedDiagram] = useState<ArchitectureDiagram>(
-    ARCHITECTURE_DIAGRAMS[0]
+    ARCHITECTURE_DIAGRAMS[0]!
   );
   const [content, setContent] = useState<string>("");
   const [loading, setLoading] = useState(true);

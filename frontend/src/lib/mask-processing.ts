@@ -260,9 +260,9 @@ function getEdgeColor(
   for (let px = x; px < x + width; px++) {
     const idx = (y * imageData.width + px) * 4;
     edgePixels.push({
-      r: imageData.data[idx],
-      g: imageData.data[idx + 1],
-      b: imageData.data[idx + 2],
+      r: imageData.data[idx] ?? 0,
+      g: imageData.data[idx + 1] ?? 0,
+      b: imageData.data[idx + 2] ?? 0,
     });
   }
 
@@ -270,9 +270,9 @@ function getEdgeColor(
   for (let px = x; px < x + width; px++) {
     const idx = ((y + height - 1) * imageData.width + px) * 4;
     edgePixels.push({
-      r: imageData.data[idx],
-      g: imageData.data[idx + 1],
-      b: imageData.data[idx + 2],
+      r: imageData.data[idx] ?? 0,
+      g: imageData.data[idx + 1] ?? 0,
+      b: imageData.data[idx + 2] ?? 0,
     });
   }
 
@@ -280,9 +280,9 @@ function getEdgeColor(
   for (let py = y; py < y + height; py++) {
     const idx = (py * imageData.width + x) * 4;
     edgePixels.push({
-      r: imageData.data[idx],
-      g: imageData.data[idx + 1],
-      b: imageData.data[idx + 2],
+      r: imageData.data[idx] ?? 0,
+      g: imageData.data[idx + 1] ?? 0,
+      b: imageData.data[idx + 2] ?? 0,
     });
   }
 
@@ -290,9 +290,9 @@ function getEdgeColor(
   for (let py = y; py < y + height; py++) {
     const idx = (py * imageData.width + (x + width - 1)) * 4;
     edgePixels.push({
-      r: imageData.data[idx],
-      g: imageData.data[idx + 1],
-      b: imageData.data[idx + 2],
+      r: imageData.data[idx] ?? 0,
+      g: imageData.data[idx + 1] ?? 0,
+      b: imageData.data[idx + 2] ?? 0,
     });
   }
 

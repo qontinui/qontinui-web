@@ -429,8 +429,10 @@ function applyForceLayout(
       for (let j = i + 1; j < nodes.length; j++) {
         const n1 = nodes[i];
         const n2 = nodes[j];
-        const p1 = positions.get(n1.id)!;
-        const p2 = positions.get(n2.id)!;
+        if (!n1 || !n2) continue;
+        const p1 = positions.get(n1.id);
+        const p2 = positions.get(n2.id);
+        if (!p1 || !p2) continue;
 
         const dx = p1.x - p2.x;
         const dy = p1.y - p2.y;
@@ -440,8 +442,9 @@ function applyForceLayout(
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
 
-        const f1 = forces.get(n1.id)!;
-        const f2 = forces.get(n2.id)!;
+        const f1 = forces.get(n1.id);
+        const f2 = forces.get(n2.id);
+        if (!f1 || !f2) continue;
         f1.x += fx;
         f1.y += fy;
         f2.x -= fx;

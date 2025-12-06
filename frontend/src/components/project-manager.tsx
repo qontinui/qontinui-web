@@ -85,9 +85,8 @@ export function ProjectManager({
         name: newProjectName,
         description: newProjectDescription,
         configuration: currentConfiguration,
-        is_public: isPublic,
       });
-      setSelectedProject(project);
+      setSelectedProject({ ...project, configuration: project.configuration ?? {} });
       setSaveDialogOpen(false);
       setNewProjectName("");
       setNewProjectDescription("");
@@ -106,7 +105,7 @@ export function ProjectManager({
         id: selectedProject.id,
         data: { configuration: currentConfiguration },
       });
-      setSelectedProject(updated);
+      setSelectedProject({ ...updated, configuration: updated.configuration ?? {} });
       toast.success("Project updated successfully");
     } catch (error: any) {
       toast.error(error.message || "Failed to update project");
@@ -116,8 +115,9 @@ export function ProjectManager({
   const handleLoad = async (project: Project) => {
     try {
       // Query is cached, so this will be fast
-      onLoadConfiguration(project.configuration);
-      setSelectedProject(project);
+      const config = project.configuration ?? {};
+      onLoadConfiguration(config);
+      setSelectedProject({ ...project, configuration: config });
       setLoadDialogOpen(false);
       toast.success(`Loaded project: ${project.name}`);
     } catch (error: any) {
@@ -126,7 +126,7 @@ export function ProjectManager({
   };
 
   const handleDelete = (project: Project) => {
-    setProjectToDelete(project);
+    setProjectToDelete({ ...project, configuration: project.configuration ?? {} });
     setDeleteDialogOpen(true);
   };
 

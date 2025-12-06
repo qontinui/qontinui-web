@@ -121,7 +121,7 @@ interface QontinuiContainerProps extends React.ComponentProps<"div"> {
   /**
    * Maximum width of the container
    */
-  maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "full";
+  maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "7xl" | "full";
 }
 
 /**

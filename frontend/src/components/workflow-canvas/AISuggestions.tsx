@@ -136,11 +136,14 @@ export function AISuggestions({
   // Sort by impact
   const sortedTypes = Object.keys(groupedSuggestions).sort((a, b) => {
     const impactOrder = { high: 0, medium: 1, low: 2 };
+    const aGroup = groupedSuggestions[a];
+    const bGroup = groupedSuggestions[b];
+    if (!aGroup || !bGroup) return 0;
     const aImpact = Math.min(
-      ...groupedSuggestions[a].map((s) => impactOrder[s.impact])
+      ...aGroup.map((s) => impactOrder[s.impact])
     );
     const bImpact = Math.min(
-      ...groupedSuggestions[b].map((s) => impactOrder[s.impact])
+      ...bGroup.map((s) => impactOrder[s.impact])
     );
     return aImpact - bImpact;
   });
@@ -215,7 +218,7 @@ export function AISuggestions({
                   {type.replace("_", " ")}
                 </h4>
                 <div className="space-y-3">
-                  {groupedSuggestions[type].map((suggestion) => {
+                  {groupedSuggestions[type]?.map((suggestion) => {
                     const Icon = SUGGESTION_ICONS[suggestion.type] || Lightbulb;
                     const isExpanded = expandedSuggestion === suggestion.id;
                     const isApplied = appliedSuggestions.has(suggestion.id);

@@ -24,7 +24,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 interface CreateProjectFormProps {
-  onSuccess?: (projectId: number) => void;
+  onSuccess?: (projectId: string) => void;
   onCancel?: () => void;
 }
 

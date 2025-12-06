@@ -783,19 +783,26 @@ export function FolderTree({
       if (currentIndex === -1) return;
 
       const currentNode = flatTree[currentIndex];
+      if (!currentNode) return;
 
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
           if (currentIndex < flatTree.length - 1) {
-            onSelectFolder(flatTree[currentIndex + 1].id);
+            const nextNode = flatTree[currentIndex + 1];
+            if (nextNode) {
+              onSelectFolder(nextNode.id);
+            }
           }
           break;
 
         case "ArrowUp":
           e.preventDefault();
           if (currentIndex > 0) {
-            onSelectFolder(flatTree[currentIndex - 1].id);
+            const prevNode = flatTree[currentIndex - 1];
+            if (prevNode) {
+              onSelectFolder(prevNode.id);
+            }
           }
           break;
 
@@ -808,9 +815,9 @@ export function FolderTree({
 
         case "ArrowLeft":
           e.preventDefault();
-          if (currentNode?.expanded) {
+          if (currentNode.expanded) {
             handleToggle(currentNode.id);
-          } else if (currentNode?.parentId) {
+          } else if (currentNode.parentId) {
             onSelectFolder(currentNode.parentId);
           }
           break;

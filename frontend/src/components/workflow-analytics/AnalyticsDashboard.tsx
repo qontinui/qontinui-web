@@ -17,7 +17,6 @@ import React, { useState, useMemo } from "react";
 import { Workflow } from "@/lib/action-schema/action-types";
 import {
   WorkflowMetrics,
-  ExecutionRecord,
 } from "@/services/workflow-analytics-service";
 import {
   LineChart,
@@ -30,9 +29,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
 import {
   Calendar,
@@ -66,7 +62,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -210,8 +205,6 @@ export function AnalyticsDashboard({
   className,
 }: AnalyticsDashboardProps) {
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
-  const [selectedTag, setSelectedTag] = useState<string>("all");
-  const [refreshKey, setRefreshKey] = useState(0);
 
   // Calculate aggregated metrics
   const aggregatedMetrics = useMemo(() => {

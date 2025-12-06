@@ -42,7 +42,7 @@ export function GraphWorkflowBuilder() {
 
     // Select first workflow if none selected
     if (workflows.length > 0 && !selectedWorkflow) {
-      setSelectedWorkflow(workflows[0]);
+      setSelectedWorkflow(workflows[0] ?? null);
     }
   }, [workflows]);
 

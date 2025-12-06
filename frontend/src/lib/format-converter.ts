@@ -14,7 +14,7 @@ import type {
  */
 export function processToWorkflow(process: Process): Workflow {
   // Convert actions to graph format (add positions)
-  const actions: WorkflowAction[] = process.actions.map((action, index) => ({
+  const actions: WorkflowAction[] = process.actions.map((action: any, index: number) => ({
     ...action,
     position: [100 + index * 250, 100] as [number, number], // Horizontal layout
   }));

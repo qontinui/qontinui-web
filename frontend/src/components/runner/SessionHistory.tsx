@@ -82,8 +82,8 @@ export function SessionHistory() {
   const loadSessionDetails = async (sessionId: string) => {
     try {
       const [screenshots, logs] = await Promise.all([
-        apiClient.listSessionScreenshots(sessionId, { limit: 100 }),
-        apiClient.listSessionLogs(sessionId, { limit: 100 }),
+        apiClient.listSessionScreenshots(sessionId, { page_size: 100 }),
+        apiClient.listSessionLogs(sessionId, { page_size: 100 }),
       ]);
       setSessionScreenshots(screenshots.screenshots);
       setSessionLogs(logs.logs);

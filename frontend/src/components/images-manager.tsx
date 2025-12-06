@@ -36,6 +36,9 @@ interface ImageAsset {
     | "pattern_optimization"
     | "image_extraction"
     | "state_discovery";
+  projectName?: string;
+  s3_key?: string;
+  url_expires_at?: Date;
 }
 
 export function ImagesManager() {
@@ -150,7 +153,7 @@ export function ImagesManager() {
           });
 
           // Upload with offline-first support
-          const result = await uploadScreenshotOffline(file, projectId, {
+          const result = await uploadScreenshotOffline(file, Number(projectId), {
             name: file.name,
             onProgress: (progress, status) => {
               setUploadProgress((prev) => ({ ...prev, [file.name]: progress }));
@@ -261,7 +264,7 @@ export function ImagesManager() {
 
     // Get usage information
     const usageInfo = getImageUsage(imageId);
-    setImageToDelete(image);
+    setImageToDelete(image as any);
     setDeletionUsageInfo(usageInfo);
     setShowDeletionDialog(true);
   };
@@ -617,7 +620,7 @@ export function ImagesManager() {
                         variant="ghost"
                         size="sm"
                         className="text-purple-400 hover:text-purple-300 hover:bg-purple-400/20 h-6 w-6 p-0"
-                        onClick={() => handleEditMask(image)}
+                        onClick={() => handleEditMask(image as any)}
                         title="Edit Mask"
                       >
                         <Edit className="w-3 h-3" />

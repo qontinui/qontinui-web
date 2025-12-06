@@ -141,7 +141,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
         imageData.data[i] = 147; // R
         imageData.data[i + 1] = 51; // G
         imageData.data[i + 2] = 234; // B
-        imageData.data[i + 3] = maskData.data[i]; // Use mask as alpha
+        imageData.data[i + 3] = maskData.data[i] ?? 0; // Use mask as alpha
       }
 
       ctx.putImageData(imageData, 0, 0);
@@ -444,7 +444,7 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
                 </label>
                 <Slider
                   value={[opacity * 100]}
-                  onValueChange={(v) => setOpacity(v[0] / 100)}
+                  onValueChange={(v) => setOpacity((v[0]!) / 100)}
                   min={0}
                   max={100}
                   step={5}

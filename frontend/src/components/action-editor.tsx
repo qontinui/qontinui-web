@@ -588,9 +588,9 @@ function getActionSummary(
         if (action.config.selectedStateStrings?.length > 0 && state.strings) {
           // Get the actual string values
           const selectedStrings = state.strings
-            .filter((s) => action.config.selectedStateStrings.includes(s.id))
-            .map((s) => s.value)
-            .filter((v) => v); // Remove empty values
+            .filter((s: any) => action.config.selectedStateStrings.includes(s.id))
+            .map((s: any) => s.value)
+            .filter((v: any) => v); // Remove empty values
 
           if (selectedStrings.length === 0) {
             return `No strings selected from ${state.name || state.id}`;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ReactFlow,
@@ -18,21 +18,14 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import {
   Check,
-  X,
-  AlertCircle,
-  Download,
-  Save,
-  Eye,
   Trash2,
   CheckSquare,
   Square,
@@ -89,7 +82,7 @@ export function StateStructureReview({
 
       // Convert to React Flow format
       const flowNodes = createFlowNodes(data.states);
-      const flowEdges = createFlowEdges(data.transitions, data.states);
+      const flowEdges = createFlowEdges(data.transitions);
 
       setNodes(flowNodes);
       setEdges(flowEdges);
@@ -164,8 +157,7 @@ export function StateStructureReview({
   };
 
   const createFlowEdges = (
-    transitions: DiscoveredTransition[],
-    states: DiscoveredState[]
+    transitions: DiscoveredTransition[]
   ): Edge[] => {
     return transitions
       .filter((t) => t.to_state_id) // Only show transitions with target
@@ -280,7 +272,6 @@ export function StateStructureReview({
 
       // Redirect to project after 2 seconds
       setTimeout(() => {
-        const projectId = structure?.states[0]?.recording_id; // Simplified - would need project mapping
         router.push(`/dashboard`);
       }, 2000);
     } catch (error: any) {

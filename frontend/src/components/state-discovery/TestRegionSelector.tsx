@@ -11,7 +11,7 @@ const TestRegionSelector: React.FC = () => {
     y: number;
     width: number;
     height: number;
-  } | null>(null);
+  } | null | undefined>(null);
 
   // Create a test image URL (data URL for a simple colored rectangle)
   const createTestImage = () => {

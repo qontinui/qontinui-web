@@ -89,7 +89,7 @@ export function AnalysisResults({
       "#8b5cf6", // purple
       "#ec4899", // pink
     ];
-    return colors[index % colors.length];
+    return colors[index % colors.length] ?? colors[0];
   };
 
   const elementsToDisplay =
@@ -229,7 +229,7 @@ export function AnalysisResults({
                     {selectedView === "fused" &&
                       (results.fused_elements || []).map((element, index) => {
                         const color = getColorForSource(
-                          element.sources[0],
+                          element.sources[0] ?? "",
                           index
                         );
                         return (

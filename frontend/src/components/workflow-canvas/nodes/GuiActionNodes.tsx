@@ -9,7 +9,7 @@
  */
 
 import React from "react";
-import { NodeProps } from "@xyflow/react";
+import { NodeProps, Node as ReactFlowNode } from "@xyflow/react";
 import { BaseNode, BaseNodeData, CompactNode } from "./BaseNode";
 
 // =============================================================================
@@ -19,7 +19,7 @@ import { BaseNode, BaseNodeData, CompactNode } from "./BaseNode";
 /**
  * CLICK Node
  */
-export function ClickNode(props: NodeProps<BaseNodeData>) {
+export function ClickNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -31,7 +31,7 @@ export function ClickNode(props: NodeProps<BaseNodeData>) {
 /**
  * DOUBLE_CLICK Node
  */
-export function DoubleClickNode(props: NodeProps<BaseNodeData>) {
+export function DoubleClickNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -43,7 +43,7 @@ export function DoubleClickNode(props: NodeProps<BaseNodeData>) {
 /**
  * RIGHT_CLICK Node
  */
-export function RightClickNode(props: NodeProps<BaseNodeData>) {
+export function RightClickNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -55,7 +55,7 @@ export function RightClickNode(props: NodeProps<BaseNodeData>) {
 /**
  * MOUSE_MOVE Node
  */
-export function MouseMoveNode(props: NodeProps<BaseNodeData>) {
+export function MouseMoveNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -67,7 +67,7 @@ export function MouseMoveNode(props: NodeProps<BaseNodeData>) {
 /**
  * MOUSE_DOWN Node
  */
-export function MouseDownNode(props: NodeProps<BaseNodeData>) {
+export function MouseDownNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -79,7 +79,7 @@ export function MouseDownNode(props: NodeProps<BaseNodeData>) {
 /**
  * MOUSE_UP Node
  */
-export function MouseUpNode(props: NodeProps<BaseNodeData>) {
+export function MouseUpNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -91,7 +91,7 @@ export function MouseUpNode(props: NodeProps<BaseNodeData>) {
 /**
  * DRAG Node
  */
-export function DragNode(props: NodeProps<BaseNodeData>) {
+export function DragNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -103,7 +103,7 @@ export function DragNode(props: NodeProps<BaseNodeData>) {
 /**
  * SCROLL Node
  */
-export function ScrollNode(props: NodeProps<BaseNodeData>) {
+export function ScrollNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -119,7 +119,7 @@ export function ScrollNode(props: NodeProps<BaseNodeData>) {
 /**
  * TYPE Node
  */
-export function TypeNode(props: NodeProps<BaseNodeData>) {
+export function TypeNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -131,7 +131,7 @@ export function TypeNode(props: NodeProps<BaseNodeData>) {
 /**
  * KEY_PRESS Node
  */
-export function KeyPressNode(props: NodeProps<BaseNodeData>) {
+export function KeyPressNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -143,7 +143,7 @@ export function KeyPressNode(props: NodeProps<BaseNodeData>) {
 /**
  * KEY_DOWN Node
  */
-export function KeyDownNode(props: NodeProps<BaseNodeData>) {
+export function KeyDownNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -155,7 +155,7 @@ export function KeyDownNode(props: NodeProps<BaseNodeData>) {
 /**
  * KEY_UP Node
  */
-export function KeyUpNode(props: NodeProps<BaseNodeData>) {
+export function KeyUpNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -167,7 +167,7 @@ export function KeyUpNode(props: NodeProps<BaseNodeData>) {
 /**
  * HOTKEY Node
  */
-export function HotkeyNode(props: NodeProps<BaseNodeData>) {
+export function HotkeyNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -183,7 +183,7 @@ export function HotkeyNode(props: NodeProps<BaseNodeData>) {
 /**
  * FIND Node
  */
-export function FindNode(props: NodeProps<BaseNodeData>) {
+export function FindNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -195,7 +195,7 @@ export function FindNode(props: NodeProps<BaseNodeData>) {
 /**
  * FIND_STATE_IMAGE Node
  */
-export function FindStateImageNode(props: NodeProps<BaseNodeData>) {
+export function FindStateImageNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -207,7 +207,7 @@ export function FindStateImageNode(props: NodeProps<BaseNodeData>) {
 /**
  * VANISH Node
  */
-export function VanishNode(props: NodeProps<BaseNodeData>) {
+export function VanishNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -219,7 +219,7 @@ export function VanishNode(props: NodeProps<BaseNodeData>) {
 /**
  * EXISTS Node
  */
-export function ExistsNode(props: NodeProps<BaseNodeData>) {
+export function ExistsNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}
@@ -231,7 +231,7 @@ export function ExistsNode(props: NodeProps<BaseNodeData>) {
 /**
  * WAIT Node
  */
-export function WaitNode(props: NodeProps<BaseNodeData>) {
+export function WaitNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <CompactNode
       {...props}
@@ -247,7 +247,7 @@ export function WaitNode(props: NodeProps<BaseNodeData>) {
 /**
  * SCREENSHOT Node
  */
-export function ScreenshotNode(props: NodeProps<BaseNodeData>) {
+export function ScreenshotNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <BaseNode
       {...props}

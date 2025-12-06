@@ -113,6 +113,7 @@ export function OnboardingTour() {
     if (typeof window === "undefined") return;
 
     const step = tourSteps[currentStep];
+    if (!step) return;
     const element = document.querySelector(step.target);
 
     if (element) {
@@ -260,7 +261,7 @@ export function OnboardingTour() {
       >
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">{step.title}</CardTitle>
+            <CardTitle className="text-lg">{step?.title}</CardTitle>
             <Button
               variant="ghost"
               size="icon"
@@ -272,7 +273,7 @@ export function OnboardingTour() {
           </div>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">{step.content}</p>
+          <p className="text-sm text-muted-foreground">{step?.content}</p>
         </CardContent>
         <CardFooter className="flex items-center justify-between pt-3">
           <div className="flex items-center gap-1">

@@ -288,7 +288,7 @@ function TreeNode({
           {node.file?.isValid === false && (
             <AlertCircle
               className="w-3 h-3 text-red-500 flex-shrink-0"
-              title="File validation failed"
+              aria-label="File validation failed"
             />
           )}
           {isSelected && (

@@ -97,6 +97,7 @@ export function FolderBreadcrumb({
         <>
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
           {displayItems.map((item, index) => {
+            if (!item) return null;
             const isLast = index === displayItems.length - 1;
             const isEllipsis = item.id === "...";
 

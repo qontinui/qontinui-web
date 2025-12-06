@@ -201,8 +201,8 @@ export interface ImageAsset {
     | "state_discovery";
 
   // S3 storage fields
-  s3_key: string; // S3 object key
-  url_expires_at: Date; // When presigned URL expires
+  s3_key?: string; // S3 object key
+  url_expires_at?: Date; // When presigned URL expires
 
   // Versioning support (not yet implemented, but architecture ready)
   version?: number; // Version number (default: 1)
@@ -254,6 +254,7 @@ export interface Screenshot {
   url: string;
   size: number;
   uploadedAt: Date;
+  timestamp?: number;
   description?: string;
   tags?: string[];
   projectName?: string;

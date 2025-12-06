@@ -251,10 +251,10 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
 
     // Separate StateRegions and SearchRegions
     const stateRegions = regions.filter(
-      (r) => r.stateId === stateId && r.type === "StateRegion"
+      (r: ScreenshotRegion) => r.stateId === stateId && r.type === "StateRegion"
     );
     const searchRegions = regions.filter(
-      (r) => r.type === "SearchRegion" && r.saveToStateImageStateId === stateId
+      (r: ScreenshotRegion) => r.type === "SearchRegion" && r.saveToStateImageStateId === stateId
     );
 
     // Convert StateRegions
@@ -262,10 +262,10 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
 
     // Get existing StateRegions that are NOT from screenshots (keep them)
     const screenshotRegionIds = new Set(
-      screenshotContextRegions.map((r) => r.id)
+      screenshotContextRegions.map((r: ContextStateRegion) => r.id)
     );
     const existingNonScreenshotRegions = (state.regions || []).filter(
-      (r) => !screenshotRegionIds.has(r.id)
+      (r: ContextStateRegion) => !screenshotRegionIds.has(r.id)
     );
 
     // Merge StateRegions: keep existing non-screenshot regions + add/update screenshot regions
@@ -275,19 +275,19 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
     ];
 
     // Handle SearchRegions - they belong to Patterns, not State.regions
-    const updatedStateImages = state.stateImages.map((image) => {
+    const updatedStateImages = state.stateImages.map((image: any) => {
       // Find SearchRegions for this StateImage using saveToStateImageId
       const searchRegionsForImage = searchRegions.filter(
-        (r) => r.saveToStateImageId === image.id
+        (r: ScreenshotRegion) => r.saveToStateImageId === image.id
       );
 
       if (searchRegionsForImage.length === 0) return image;
 
       // Add/update SearchRegions in the first pattern
-      const updatedPatterns = image.patterns.map((pattern, idx) => {
+      const updatedPatterns = image.patterns.map((pattern: any, idx: number) => {
         if (idx === 0) {
           // Convert screenshot SearchRegions to Pattern SearchRegions
-          const patternSearchRegions = searchRegionsForImage.map((r) => ({
+          const patternSearchRegions = searchRegionsForImage.map((r: ScreenshotRegion) => ({
             id: r.id,
             name: r.name,
             x: r.bounds.x,
@@ -300,7 +300,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           // Merge with existing search regions
           const mergedSearchRegions = [
             ...pattern.searchRegions.filter(
-              (sr) => !patternSearchRegions.find((psr) => psr.id === sr.id)
+              (sr: any) => !patternSearchRegions.find((psr) => psr.id === sr.id)
             ),
             ...patternSearchRegions,
           ];
@@ -329,15 +329,15 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
 
     // Convert screenshot locations for this state
     const screenshotContextLocations = locations
-      .filter((l) => l.stateId === stateId)
+      .filter((l: ScreenshotLocation) => l.stateId === stateId)
       .map(convertToContextLocation);
 
     // Get existing locations that are NOT from screenshots (keep them)
     const screenshotLocationIds = new Set(
-      screenshotContextLocations.map((l) => l.id)
+      screenshotContextLocations.map((l: ContextStateLocation) => l.id)
     );
     const existingNonScreenshotLocations = (state.locations || []).filter(
-      (l) => !screenshotLocationIds.has(l.id)
+      (l: ContextStateLocation) => !screenshotLocationIds.has(l.id)
     );
 
     // Merge: keep existing non-screenshot locations + add/update screenshot locations
@@ -496,7 +496,7 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
       if (state) {
         if (deletedRegion.type === "StateRegion") {
           // Remove from State.regions array
-          const updatedRegions = state.regions?.filter((r) => r.id !== regionId) ?? [];
+          const updatedRegions = state.regions?.filter((r: ContextStateRegion) => r.id !== regionId) ?? [];
 
           await updateState({
             ...state,
@@ -504,12 +504,12 @@ const ScreenshotAnnotationTab: React.FC<ScreenshotAnnotationTabProps> = ({
           });
         } else if (deletedRegion.type === "SearchRegion") {
           // Remove from Pattern.searchRegions
-          const updatedStateImages = state.stateImages.map((image) => {
+          const updatedStateImages = state.stateImages.map((image: any) => {
             if (deletedRegion.saveToStateImageId === image.id) {
-              const updatedPatterns = image.patterns.map((pattern) => ({
+              const updatedPatterns = image.patterns.map((pattern: any) => ({
                 ...pattern,
                 searchRegions: pattern.searchRegions.filter(
-                  (sr) => sr.id !== regionId
+                  (sr: any) => sr.id !== regionId
                 ),
               }));
               return { ...image, patterns: updatedPatterns };

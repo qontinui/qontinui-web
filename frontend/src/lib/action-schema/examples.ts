@@ -11,14 +11,7 @@ import { createAction, Action } from "./action-types";
 export const clickExample: Action<"CLICK"> = createAction(
   "CLICK",
   {
-    target: {
-      type: "image",
-      imageId: "button-123",
-      searchOptions: {
-        similarity: 0.8,
-        timeout: 5000,
-      },
-    },
+    target: "Last Find Result",
     numberOfClicks: 1,
     mouseButton: "LEFT",
     verify: {
@@ -30,6 +23,7 @@ export const clickExample: Action<"CLICK"> = createAction(
       timeout: 3000,
     },
   },
+  [0, 0],
   {
     name: "Click submit button",
     base: {
@@ -48,19 +42,23 @@ export const clickExample: Action<"CLICK"> = createAction(
  * Example 2: TYPE action with state string source
  * Shows how to reference state strings
  */
-export const typeExample: Action<"TYPE"> = createAction("TYPE", {
-  textSource: {
-    stateId: "login-form",
-    stringIds: ["username-string-789"],
-    useAll: false,
+export const typeExample: Action<"TYPE"> = createAction(
+  "TYPE",
+  {
+    textSource: {
+      stateId: "login-form",
+      stringIds: ["username-string-789"],
+      useAll: false,
+    },
+    typeDelay: 50,
+    clearBefore: true,
+    clickTarget: {
+      type: "image",
+      imageId: "username-field-101",
+    },
   },
-  typeDelay: 50,
-  clearBefore: true,
-  clickTarget: {
-    type: "image",
-    imageId: "username-field-101",
-  },
-});
+  [0, 0]
+);
 
 /**
  * Example 3: LOOP action - NEW control flow
@@ -75,6 +73,7 @@ export const loopExample: Action<"LOOP"> = createAction(
     actions: ["action-collect-item", "action-store-item"],
     maxIterations: 100, // Safety limit
   },
+  [0, 0],
   {
     name: "Collect 10 items",
   }
@@ -94,6 +93,7 @@ export const whileLoopExample: Action<"LOOP"> = createAction(
     actions: ["action-click-more", "action-wait-loading"],
     maxIterations: 50,
   },
+  [0, 0],
   {
     name: "Load all items",
   }
@@ -119,6 +119,7 @@ export const foreachExample: Action<"LOOP"> = createAction(
     iteratorVariable: "item",
     actions: ["action-click-item", "action-process-item"],
   },
+  [0, 0],
   {
     name: "Process all list items",
   }
@@ -138,6 +139,7 @@ export const sortExample: Action<"SORT"> = createAction(
     comparator: "NUMERIC",
     outputVariable: "sorted_items",
   },
+  [0, 0],
   {
     name: "Sort items by price",
   }
@@ -156,6 +158,7 @@ export const ifExample: Action<"IF"> = createAction(
     thenActions: ["action-use-premium-features"],
     elseActions: ["action-show-upgrade-prompt"],
   },
+  [0, 0],
   {
     name: "Check if premium user",
   }
@@ -178,6 +181,7 @@ export const setVariableExample: Action<"SET_VARIABLE"> = createAction(
     type: "number",
     scope: "global",
   },
+  [0, 0],
   {
     name: "Read gold amount",
   }
@@ -198,6 +202,7 @@ export const filterExample: Action<"FILTER"> = createAction(
     },
     outputVariable: "legendary_items",
   },
+  [0, 0],
   {
     name: "Filter legendary items",
   }
@@ -227,6 +232,7 @@ export const dragExample: Action<"DRAG"> = createAction(
       timeout: 2000,
     },
   },
+  [0, 0],
   {
     name: "Move item to stash",
   }
@@ -243,6 +249,7 @@ export const tryCatchExample: Action<"TRY_CATCH"> = createAction(
     finallyActions: ["action-cleanup"],
     errorVariable: "last_error",
   },
+  [0, 0],
   {
     name: "Try risky operation",
   }
@@ -261,6 +268,7 @@ export const mathExample: Action<"MATH_OPERATION"> = createAction(
     ],
     outputVariable: "new_gold_total",
   },
+  [0, 0],
   {
     name: "Calculate new gold total",
   }
@@ -272,10 +280,14 @@ export const mathExample: Action<"MATH_OPERATION"> = createAction(
  */
 export function demonstrateTypeSafety() {
   // ✅ Valid - config matches CLICK type
-  createAction("CLICK", {
-    target: { type: "image", imageId: "btn" },
-    numberOfClicks: 1,
-  });
+  createAction(
+    "CLICK",
+    {
+      target: "Last Find Result",
+      numberOfClicks: 1,
+    },
+    [0, 0]
+  );
 
   // ❌ TypeScript error - CLICK doesn't have 'text' property
   // const invalidClick = createAction('CLICK', {
@@ -283,10 +295,14 @@ export function demonstrateTypeSafety() {
   // });
 
   // ✅ Valid - config matches TYPE type
-  createAction("TYPE", {
-    text: "Hello world",
-    typeDelay: 50,
-  });
+  createAction(
+    "TYPE",
+    {
+      text: "Hello world",
+      typeDelay: 50,
+    },
+    [0, 0]
+  );
 
   // ❌ TypeScript error - TYPE doesn't have 'numberOfClicks'
   // const invalidType = createAction('TYPE', {

@@ -205,9 +205,9 @@ const ScreenshotUploadTab: React.FC<ScreenshotUploadTabProps> = ({
         const result = await apiClient.uploadProjectImage(
           parseInt(projectId ?? "0", 10),
           file,
-          (progress) => {
-            setUploadProgress((prev) => ({ ...prev, [file.name]: progress }));
-            setUploadingFiles((prev) =>
+          (progress: number) => {
+            setUploadProgress((prev: Record<string, number>) => ({ ...prev, [file.name]: progress }));
+            setUploadingFiles((prev: any[]) =>
               prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
             );
           }

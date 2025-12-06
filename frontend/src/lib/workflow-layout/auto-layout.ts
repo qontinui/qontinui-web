@@ -779,7 +779,8 @@ export class AutoLayout {
   private findEntryPoints(workflow: Workflow): string[] {
     if (!workflow.connections) {
       // Sequential workflow - first action is entry point
-      return workflow.actions.length > 0 ? [workflow.actions[0].id] : [];
+      const firstAction = workflow.actions[0];
+      return workflow.actions.length > 0 && firstAction ? [firstAction.id] : [];
     }
 
     const hasIncoming = new Set<string>();

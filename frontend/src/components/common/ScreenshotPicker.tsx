@@ -82,7 +82,7 @@ export const ScreenshotPicker: React.FC<ScreenshotPickerProps> = ({
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
+    if (files.length > 0 && files[0]) {
       onUploadScreenshot(files[0]);
     }
     // Reset file input

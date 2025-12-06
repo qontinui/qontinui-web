@@ -98,8 +98,8 @@ export function DocumentationViewer({
           sections.push(currentSection);
         }
 
-        const level = headerMatch[1].length;
-        const text = headerMatch[2].trim();
+        const level = headerMatch[1]?.length ?? 1;
+        const text = headerMatch[2]?.trim() ?? "";
         const id = text
           .toLowerCase()
           .replace(/[^\w\s-]/g, "")
@@ -139,14 +139,17 @@ export function DocumentationViewer({
       };
 
       // Find parent in stack
-      while (stack.length > 0 && stack[stack.length - 1].level >= item.level) {
+      while (stack.length > 0 && (stack[stack.length - 1]?.level ?? 0) >= item.level) {
         stack.pop();
       }
 
       if (stack.length === 0) {
         toc.push(item);
       } else {
-        stack[stack.length - 1].children.push(item);
+        const parent = stack[stack.length - 1];
+        if (parent) {
+          parent.children.push(item);
+        }
       }
 
       stack.push(item);

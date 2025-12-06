@@ -305,6 +305,7 @@ export class WorkflowVersionControl {
       const index = branches.findIndex((b) => b.id === branchId);
       if (index !== -1) {
         const branch = branches[index];
+        if (!branch) return;
 
         // Don't allow deleting default branch if there are other branches
         if (branch.isDefault && branches.length > 1) {
@@ -1258,6 +1259,9 @@ export class WorkflowVersionControl {
       }
 
       const mainBranch = branches[0];
+      if (!mainBranch) continue;
+
+      const mainBranchId = mainBranch.id; // Capture the ID outside the closure
 
       // Convert each snapshot to a version
       snapshots
@@ -1265,7 +1269,7 @@ export class WorkflowVersionControl {
         .forEach((snapshot) => {
           this.saveVersion(
             workflowId,
-            mainBranch.id,
+            mainBranchId,
             snapshot.workflow,
             snapshot.name,
             snapshot.metadata?.author
@@ -1299,7 +1303,8 @@ export class WorkflowVersionControl {
         const branch = this.createBranch(snapshot.workflowId, "main");
         targetBranchId = branch.id;
       } else {
-        targetBranchId = branches[0].id;
+        const firstBranch = branches[0];
+        targetBranchId = firstBranch?.id ?? this.createBranch(snapshot.workflowId, "main").id;
       }
     }
 
@@ -1483,8 +1488,8 @@ export class WorkflowVersionControl {
     (["main", "error", "success", "parallel"] as const).forEach((type) => {
       const conns = outputs[type];
       if (conns) {
-        conns.forEach((outputConns, outputIndex) => {
-          outputConns.forEach((conn) => {
+        conns.forEach((outputConns: any, outputIndex: number) => {
+          outputConns.forEach((conn: any) => {
             connections.push({
               source,
               target: conn.action,

@@ -13,6 +13,7 @@ import {
   Connections,
   getActionOutputCount,
 } from "@/lib/action-schema/action-types";
+import type { SwitchActionConfig } from "@/lib/action-schema/configs/control-flow-actions";
 import {
   CanvasNode,
   CanvasEdge,
@@ -128,9 +129,9 @@ function connectionsToEdges(
       if (!connectionArray) return;
 
       // Process each output index
-      connectionArray.forEach((outputConnections, outputIndex) => {
+      connectionArray.forEach((outputConnections: any, outputIndex: number) => {
         // Process each connection from this output
-        outputConnections.forEach((conn, connIndex) => {
+        outputConnections.forEach((conn: any, connIndex: number) => {
           const edgeId = `${sourceActionId}-${connType}-${outputIndex}-${conn.action}-${connIndex}`;
           const color = getConnectionColor(connType);
           const style = getConnectionStyle(connType);
@@ -199,14 +200,17 @@ function getEdgeLabel(
     case "TRY_CATCH":
       return connType === "error" ? "catch" : "try";
     case "SWITCH":
-      if (
-        sourceAction.config.cases &&
-        outputIndex < sourceAction.config.cases.length
-      ) {
-        const caseValue = sourceAction.config.cases[outputIndex];
-        return String(caseValue);
+      {
+        const switchConfig = sourceAction.config as SwitchActionConfig;
+        if (
+          switchConfig.cases &&
+          outputIndex < switchConfig.cases.length
+        ) {
+          const caseValue = switchConfig.cases[outputIndex];
+          return String(caseValue);
+        }
+        return "default";
       }
-      return "default";
     case "LOOP":
       return connType === "main" ? "loop" : undefined;
     default:

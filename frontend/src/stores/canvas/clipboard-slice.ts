@@ -106,10 +106,12 @@ export const createClipboardSlice: StateCreator<
     let offset = { x: 50, y: 50 };
     if (position && clipboardNodes.length > 0) {
       const firstNode = clipboardNodes[0];
-      offset = {
-        x: position.x - firstNode.position[0],
-        y: position.y - firstNode.position[1],
-      };
+      if (firstNode) {
+        offset = {
+          x: position.x - firstNode.position[0],
+          y: position.y - firstNode.position[1],
+        };
+      }
     }
 
     // Clone actions with new IDs

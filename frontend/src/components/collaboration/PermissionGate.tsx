@@ -133,7 +133,7 @@ export function PermissionGate({
   const hasPermission = React.useMemo(() => {
     // New API - using project
     if (project && requiredPermission) {
-      const userLevel = getPermissionLevel(project, currentUser);
+      const userLevel = getPermissionLevel(project, currentUser as any);
       const required = Array.isArray(requiredPermission)
         ? requiredPermission
         : [requiredPermission];
@@ -231,7 +231,7 @@ export function usePermission(
   // New API - using project
   const projectPermissionLevel = React.useMemo(() => {
     if (project) {
-      return getPermissionLevel(project, currentUser);
+      return getPermissionLevel(project, currentUser as any);
     }
     return "none" as PermissionLevel;
   }, [project, currentUser]);

@@ -101,7 +101,7 @@ function AutomationBuilderContent() {
 
   // Sync projectId to context whenever currentProjectId changes
   useEffect(() => {
-    setProjectId(currentProjectId);
+    setProjectId(currentProjectId ? String(currentProjectId) : null);
   }, [currentProjectId, setProjectId]);
 
   // Sync project name to backend when it changes
@@ -143,7 +143,7 @@ function AutomationBuilderContent() {
         return;
       }
 
-      const project = await projectService.getProject(Number(projectId));
+      const project = await projectService.getProject(projectId);
 
       // Load configuration first
       await loadConfiguration(project.configuration);
@@ -161,13 +161,13 @@ function AutomationBuilderContent() {
   const updateProjectName = async () => {
     if (!currentProjectId) return;
     try {
-      await projectService.updateProject(currentProjectId, {
+      await projectService.updateProject(String(currentProjectId), {
         name: projectName,
       });
       // Invalidate the projects list cache so dashboard shows updated name
       queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
       queryClient.invalidateQueries({
-        queryKey: projectKeys.detail(currentProjectId),
+        queryKey: projectKeys.detail(String(currentProjectId)),
       });
     } catch (error) {
       console.error("Failed to update project name:", error);
@@ -178,7 +178,7 @@ function AutomationBuilderContent() {
     if (!currentProjectId) return;
     try {
       const config = getConfiguration();
-      await projectService.updateProject(currentProjectId, {
+      await projectService.updateProject(String(currentProjectId), {
         configuration: config,
       });
     } catch (error) {

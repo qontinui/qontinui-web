@@ -706,8 +706,8 @@ class GlobalSearchService {
   }
 
   async searchComponents(
-    query: string,
-    filters: SearchFilter = {}
+    _query: string,
+    _filters: SearchFilter = {}
   ): Promise<SearchResultItem[]> {
     // Placeholder for component search
     // This would search through reusable workflow components
@@ -715,8 +715,8 @@ class GlobalSearchService {
   }
 
   async searchTests(
-    query: string,
-    filters: SearchFilter = {}
+    _query: string,
+    _filters: SearchFilter = {}
   ): Promise<SearchResultItem[]> {
     // Placeholder for test search
     // This would search through test cases
@@ -724,8 +724,8 @@ class GlobalSearchService {
   }
 
   async searchDocumentation(
-    query: string,
-    filters: SearchFilter = {}
+    _query: string,
+    _filters: SearchFilter = {}
   ): Promise<SearchResultItem[]> {
     // Placeholder for documentation search
     // This would search through markdown documentation files
@@ -948,21 +948,21 @@ class GlobalSearchService {
   }
 
   // ============================================================================
-  // Search Aliases
+  // Search Aliases (commented out - will be used in future enhancements)
   // ============================================================================
 
-  private expandAlias(query: string): string {
-    const aliases: Record<string, string> = {
-      wf: "workflow",
-      st: "state",
-      img: "image",
-      tr: "transition",
-      fl: "folder",
-    };
+  // private expandAlias(query: string): string {
+  //   const aliases: Record<string, string> = {
+  //     wf: "workflow",
+  //     st: "state",
+  //     img: "image",
+  //     tr: "transition",
+  //     fl: "folder",
+  //   };
 
-    const words = query.split(" ");
-    return words.map((word) => aliases[word.toLowerCase()] || word).join(" ");
-  }
+  //   const words = query.split(" ");
+  //   return words.map((word) => aliases[word.toLowerCase()] || word).join(" ");
+  // }
 }
 
 // ============================================================================

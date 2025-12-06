@@ -20,9 +20,9 @@ export function calculateTestCoverage(
 ): CoverageReport["testCoverage"] {
   const tested = new Set<string>();
   const workflowTestingService = getWorkflowTestingService();
-  const allTests = workflowTestingService.getAllTests();
+  const allTests = workflowTestingService.getAllTestCases();
 
-  allTests.forEach((test) => {
+  allTests.forEach((test: any) => {
     if (test.enabled !== false) {
       tested.add(test.workflowId);
     }

@@ -175,7 +175,7 @@ export function CollaborationProvider({
 
       // Set first org as current if none selected
       if (orgs.length > 0 && !currentOrg) {
-        setCurrentOrg(orgs[0]);
+        setCurrentOrg(orgs[0] ?? null);
       }
     } catch (error) {
       console.error("[Collaboration] Failed to load organizations:", error);
@@ -221,7 +221,7 @@ export function CollaborationProvider({
         projectId,
         resourceType,
         resourceId,
-        true // auto-refresh
+        1 // auto-refresh (converted from boolean to number)
       );
       setCurrentLock(lock);
     } catch (error) {
@@ -282,7 +282,7 @@ export function CollaborationProvider({
 
   const loadActivityFeed = async () => {
     try {
-      const { activities } = await activityService.getActivities(projectId, {
+      const activities = await activityService.getActivityFeed(projectId, {
         limit: 20,
       });
       setActivityFeed(activities);
