@@ -139,12 +139,8 @@ export function AISuggestions({
     const aGroup = groupedSuggestions[a];
     const bGroup = groupedSuggestions[b];
     if (!aGroup || !bGroup) return 0;
-    const aImpact = Math.min(
-      ...aGroup.map((s) => impactOrder[s.impact])
-    );
-    const bImpact = Math.min(
-      ...bGroup.map((s) => impactOrder[s.impact])
-    );
+    const aImpact = Math.min(...aGroup.map((s) => impactOrder[s.impact]));
+    const bImpact = Math.min(...bGroup.map((s) => impactOrder[s.impact]));
     return aImpact - bImpact;
   });
 

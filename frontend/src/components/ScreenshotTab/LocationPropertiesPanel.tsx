@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { X, Check } from "lucide-react";
-import {
-  ScreenshotLocation,
-  AnchorType,
-} from "../../types/Screenshot";
+import { ScreenshotLocation, AnchorType } from "../../types/Screenshot";
 import { StateImage } from "../../contexts/automation-context/types";
 
 interface LocationPropertiesPanelProps {
@@ -48,7 +45,6 @@ const LocationPropertiesPanel: React.FC<LocationPropertiesPanelProps> = ({
     onUpdate(updatedLocation);
     showSavedIndicator();
   };
-
 
   return (
     <>

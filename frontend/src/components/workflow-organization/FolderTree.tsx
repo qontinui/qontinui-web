@@ -5,11 +5,7 @@
  * Features drag-and-drop, context menus, keyboard navigation, and inline editing.
  */
 
-import React, {
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -41,12 +37,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import {
   DndContext,
   DragOverlay,
@@ -605,7 +596,9 @@ export function FolderTree({
   const [_overId, _setOverId] = useState<UniqueIdentifier | null>(null);
   const [movingFolderId, setMovingFolderId] = useState<string | null>(null);
   const [moveDialogSearchQuery, setMoveDialogSearchQuery] = useState("");
-  const [moveDialogExpandedIds, setMoveDialogExpandedIds] = useState<Set<string>>(new Set());
+  const [moveDialogExpandedIds, setMoveDialogExpandedIds] = useState<
+    Set<string>
+  >(new Set());
 
   // Build tree
   const tree = useMemo(
@@ -624,7 +617,12 @@ export function FolderTree({
 
   // Build tree for move dialog
   const moveDialogTree = useMemo(
-    () => buildFolderTree(folders.filter(f => f.id !== movingFolderId), workflows, moveDialogExpandedIds),
+    () =>
+      buildFolderTree(
+        folders.filter((f) => f.id !== movingFolderId),
+        workflows,
+        moveDialogExpandedIds
+      ),
     [folders, workflows, moveDialogExpandedIds, movingFolderId]
   );
 
@@ -642,7 +640,7 @@ export function FolderTree({
 
   // Get moving folder
   const movingFolder = useMemo(
-    () => folders.find(f => f.id === movingFolderId),
+    () => folders.find((f) => f.id === movingFolderId),
     [folders, movingFolderId]
   );
 
@@ -766,14 +764,17 @@ export function FolderTree({
     });
   }, []);
 
-  const handleMoveFolder = useCallback((targetFolderId: string | null) => {
-    if (movingFolderId) {
-      onMoveFolder(movingFolderId, targetFolderId);
-      setMovingFolderId(null);
-      setMoveDialogSearchQuery("");
-      setMoveDialogExpandedIds(new Set());
-    }
-  }, [movingFolderId, onMoveFolder]);
+  const handleMoveFolder = useCallback(
+    (targetFolderId: string | null) => {
+      if (movingFolderId) {
+        onMoveFolder(movingFolderId, targetFolderId);
+        setMovingFolderId(null);
+        setMoveDialogSearchQuery("");
+        setMoveDialogExpandedIds(new Set());
+      }
+    },
+    [movingFolderId, onMoveFolder]
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -831,7 +832,10 @@ export function FolderTree({
 
         case "Delete":
           e.preventDefault();
-          if (currentNode && window.confirm(`Delete folder "${currentNode.name}"?`)) {
+          if (
+            currentNode &&
+            window.confirm(`Delete folder "${currentNode.name}"?`)
+          ) {
             onDeleteFolder(currentNode.id);
           }
           break;

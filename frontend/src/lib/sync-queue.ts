@@ -245,7 +245,9 @@ class SyncQueue {
 
         // Apply additional filters
         if (filter?.type && filter?.status) {
-          items = items.filter((item: SyncQueueItem) => item.type === filter.type);
+          items = items.filter(
+            (item: SyncQueueItem) => item.type === filter.type
+          );
         }
 
         // Sort by priority (higher first) then createdAt (older first)

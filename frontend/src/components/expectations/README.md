@@ -9,6 +9,7 @@ This directory contains UI components for configuring workflow expectations and 
 Main wrapper component that provides a tabbed interface for all expectation editors.
 
 **Usage:**
+
 ```tsx
 import { ExpectationsPanel } from "@/components/expectations";
 
@@ -17,10 +18,11 @@ import { ExpectationsPanel } from "@/components/expectations";
   onChange={(expectations) => updateWorkflow({ ...workflow, expectations })}
   availableCheckpoints={checkpointNames}
   availableStates={stateNames}
-/>
+/>;
 ```
 
 **Features:**
+
 - Three tabs: Global, Success Criteria, Checkpoints
 - Dark theme styling
 - Integrates all sub-editors
@@ -32,6 +34,7 @@ import { ExpectationsPanel } from "@/components/expectations";
 Editor for workflow-level global expectations.
 
 **Settings:**
+
 - `no_console_errors` - Fail on console errors
 - `no_network_errors` - Fail on network errors
 - `max_action_duration_ms` - Maximum action duration
@@ -40,13 +43,14 @@ Editor for workflow-level global expectations.
 - `min_confidence_threshold` - Pattern matching confidence (0.0-1.0)
 
 **Usage:**
+
 ```tsx
 import { GlobalExpectationsEditor } from "@/components/expectations";
 
 <GlobalExpectationsEditor
   expectations={workflowExpectations.global}
   onChange={(global) => updateExpectations({ ...expectations, global })}
-/>
+/>;
 ```
 
 ---
@@ -56,6 +60,7 @@ import { GlobalExpectationsEditor } from "@/components/expectations";
 Editor for workflow success criteria.
 
 **Criteria Types:**
+
 - `all_actions_pass` - All actions must succeed
 - `min_matches` - Minimum pattern matches required
 - `max_failures` - Maximum failures allowed
@@ -64,15 +69,18 @@ Editor for workflow success criteria.
 - `custom` - Custom Python expression
 
 **Usage:**
+
 ```tsx
 import { SuccessCriteriaEditor } from "@/components/expectations";
 
 <SuccessCriteriaEditor
   criteria={workflowExpectations.success_criteria}
-  onChange={(success_criteria) => updateExpectations({ ...expectations, success_criteria })}
+  onChange={(success_criteria) =>
+    updateExpectations({ ...expectations, success_criteria })
+  }
   availableCheckpoints={["login", "dashboard"]}
   availableStates={["LoginScreen", "Dashboard"]}
-/>
+/>;
 ```
 
 ---
@@ -82,6 +90,7 @@ import { SuccessCriteriaEditor } from "@/components/expectations";
 Editor for workflow checkpoint definitions.
 
 **Checkpoint Features:**
+
 - Named checkpoints
 - Screenshot capture
 - OCR assertions (via OCRAssertionEditor)
@@ -89,13 +98,16 @@ Editor for workflow checkpoint definitions.
 - Timing configuration
 
 **Usage:**
+
 ```tsx
 import { CheckpointListEditor } from "@/components/expectations";
 
 <CheckpointListEditor
   checkpoints={workflowExpectations.checkpoints}
-  onChange={(checkpoints) => updateExpectations({ ...expectations, checkpoints })}
-/>
+  onChange={(checkpoints) =>
+    updateExpectations({ ...expectations, checkpoints })
+  }
+/>;
 ```
 
 ---
@@ -105,6 +117,7 @@ import { CheckpointListEditor } from "@/components/expectations";
 Compact editor for per-action expectation settings.
 
 **Settings:**
+
 - `is_terminal_on_failure` - Stop workflow on failure
 - `capture_checkpoint_on_failure` - Capture on failure
 - `capture_checkpoint_after` - Capture after success
@@ -115,13 +128,14 @@ Compact editor for per-action expectation settings.
 - `expected_state_after` - Expected state after action
 
 **Usage:**
+
 ```tsx
 import { ActionExpectationsEditor } from "@/components/expectations";
 
 <ActionExpectationsEditor
   expectations={action.expectations}
   onChange={(expectations) => updateAction({ ...action, expectations })}
-/>
+/>;
 ```
 
 **Recommended placement:** Action properties sidebar
@@ -141,20 +155,25 @@ All components use types from `@/lib/expectations/types`:
 ## Design Patterns
 
 ### Dark Theme
+
 All components use consistent dark theme styling:
+
 - Background: `bg-[#27272A]` or `bg-[#27272A]/50`
 - Borders: `border-gray-700` or `border-gray-800`
 - Text: `text-gray-200/300/400/500` hierarchy
 - Accent: `text-[#00D9FF]` (cyan)
 
 ### Component Structure
+
 - Card-based sections for visual grouping
 - Clear labels and descriptions
 - Collapsible sections for complex settings
 - Inline validation feedback
 
 ### Icons
+
 From `lucide-react`:
+
 - `Settings` - Global expectations
 - `CheckCircle` - Success criteria
 - `Flag` - Checkpoints
@@ -177,9 +196,7 @@ function WorkflowEditor({ workflow, onUpdate }) {
   return (
     <div className="flex h-full">
       {/* Workflow canvas */}
-      <div className="flex-1">
-        {/* ... */}
-      </div>
+      <div className="flex-1">{/* ... */}</div>
 
       {/* Expectations panel */}
       <div className="w-96">

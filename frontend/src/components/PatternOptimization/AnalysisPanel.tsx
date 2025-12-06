@@ -26,9 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { usePatternOptimization } from "@/contexts/pattern-optimization-context";
-import type {
-  OptimizationStrategy,
-} from "@/types/pattern-optimization";
+import type { OptimizationStrategy } from "@/types/pattern-optimization";
 import type {
   StateImage,
   SearchRegion,

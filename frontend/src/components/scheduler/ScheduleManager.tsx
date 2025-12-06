@@ -14,14 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Trash2,
-  Edit,
-  Plus,
-  Calendar,
-  Clock,
-  RefreshCw,
-} from "lucide-react";
+import { Trash2, Edit, Plus, Calendar, Clock, RefreshCw } from "lucide-react";
 import { ScheduleEditor } from "./ScheduleEditor";
 import { ExecutionHistory } from "./ExecutionHistory";
 import type { Schedule } from "@/contexts/automation-context";

@@ -384,8 +384,10 @@ export class SyncService {
       const localOp = this.changeToOperation(optimistic.change);
       const remoteOp = this.changeToOperation(update.change);
 
-      const [, remoteTransformed] =
-        operationalTransformService.transform(localOp, remoteOp);
+      const [, remoteTransformed] = operationalTransformService.transform(
+        localOp,
+        remoteOp
+      );
 
       // Apply transformed remote change
       // Emit event for UI to handle

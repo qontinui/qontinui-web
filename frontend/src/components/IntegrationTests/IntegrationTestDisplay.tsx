@@ -141,7 +141,6 @@ export const IntegrationTestDisplay: React.FC<IntegrationTestDisplayProps> = ({
     return scenarios;
   }, [allSnapshots, screenshots]);
 
-
   const getActionIcon = (type: ActionSnapshot["actionType"]) => {
     switch (type) {
       case "FIND":

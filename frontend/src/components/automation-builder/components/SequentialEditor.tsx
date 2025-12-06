@@ -191,7 +191,13 @@ export function SequentialEditor({
                     <DropdownMenuItem
                       key={`${actionTemplate.type}-${"preset" in actionTemplate ? actionTemplate.preset : "default"}`}
                       onClick={() =>
-                        addAction(actionTemplate.type as Action["type"], undefined, "preset" in actionTemplate ? actionTemplate.preset : undefined)
+                        addAction(
+                          actionTemplate.type as Action["type"],
+                          undefined,
+                          "preset" in actionTemplate
+                            ? actionTemplate.preset
+                            : undefined
+                        )
                       }
                       className="hover:bg-gray-700 focus:bg-gray-700"
                     >
@@ -255,7 +261,9 @@ export function SequentialEditor({
                                         addAction(
                                           actionTemplate.type as Action["type"],
                                           index - 1,
-                                          "preset" in actionTemplate ? actionTemplate.preset : undefined
+                                          "preset" in actionTemplate
+                                            ? actionTemplate.preset
+                                            : undefined
                                         )
                                       }
                                       className="hover:bg-gray-700 focus:bg-gray-700"
@@ -392,7 +400,9 @@ export function SequentialEditor({
                                   addAction(
                                     actionTemplate.type as Action["type"],
                                     actions.length - 1,
-                                    "preset" in actionTemplate ? actionTemplate.preset : undefined
+                                    "preset" in actionTemplate
+                                      ? actionTemplate.preset
+                                      : undefined
                                   )
                                 }
                                 className="hover:bg-gray-700 focus:bg-gray-700"
@@ -535,8 +545,7 @@ function getActionSummary(
       // Handle new target structure with imageIds array
       const imageIds =
         config.target?.type === "image" ? config.target.imageIds : null;
-      const imageId =
-        imageIds?.[0] || config.target?.imageId || config.image;
+      const imageId = imageIds?.[0] || config.target?.imageId || config.image;
 
       if (imageId) {
         let stateImageName = null;
@@ -581,7 +590,10 @@ function getActionSummary(
       return `${config.mouseButton?.toLowerCase() || "left"} click on ${config.target}`;
     }
     case "TYPE": {
-      const config = action.config as { text?: string; textSource?: { stateId: string; stringIds: string[] } };
+      const config = action.config as {
+        text?: string;
+        textSource?: { stateId: string; stringIds: string[] };
+      };
       if (config.textSource) {
         const stateId = config.textSource.stateId;
         if (!stateId) return "No state selected";
@@ -589,9 +601,7 @@ function getActionSummary(
         if (!state) return "Invalid state";
         if (config.textSource.stringIds?.length > 0 && state.strings) {
           const selectedStrings = state.strings
-            .filter((s: any) =>
-              config.textSource!.stringIds.includes(s.id)
-            )
+            .filter((s: any) => config.textSource!.stringIds.includes(s.id))
             .map((s: any) => s.value)
             .filter((v: any) => v);
           if (selectedStrings.length === 0) {
@@ -624,11 +634,11 @@ function getActionSummary(
       return `Scroll ${config.direction} ${config.clicks || 1} clicks`;
     }
     case "VANISH": {
-      const config = action.config as { target?: { type?: string; imageId?: string } };
+      const config = action.config as {
+        target?: { type?: string; imageId?: string };
+      };
       const vanishImageId =
-        config.target?.type === "image"
-          ? config.target.imageId
-          : undefined;
+        config.target?.type === "image" ? config.target.imageId : undefined;
       if (vanishImageId) {
         const vanishImage = images.find((img) => img.id === vanishImageId);
         if (vanishImage) {
@@ -653,15 +663,17 @@ function getActionSummary(
     case "RUN_WORKFLOW": {
       const config = action.config as { workflowId?: string };
       if (config.workflowId) {
-        const workflow = workflows.find(
-          (w: any) => w.id === config.workflowId
-        );
+        const workflow = workflows.find((w: any) => w.id === config.workflowId);
         return workflow ? workflow.name : config.workflowId;
       }
       return "No workflow selected";
     }
     case "IF": {
-      const config = action.config as { thenActions?: any[]; elseActions?: any[]; condition?: { type?: string } };
+      const config = action.config as {
+        thenActions?: any[];
+        elseActions?: any[];
+        condition?: { type?: string };
+      };
       const thenCount = config.thenActions?.length || 0;
       const elseCount = config.elseActions?.length || 0;
       const conditionType = config.condition?.type || "not configured";
@@ -672,7 +684,11 @@ function getActionSummary(
       }
     }
     case "LOOP": {
-      const config = action.config as { loopType?: string; actions?: any[]; iterations?: number };
+      const config = action.config as {
+        loopType?: string;
+        actions?: any[];
+        iterations?: number;
+      };
       const loopType = config.loopType || "FOR";
       const actionCount = config.actions?.length || 0;
       if (loopType === "FOR") {
@@ -692,14 +708,26 @@ function getActionSummary(
       return `Move mouse to ${config.target}`;
     }
     case "MOUSE_DOWN": {
-      const config = action.config as { target?: string; button?: string; x?: number; y?: number; mouseButton?: string };
+      const config = action.config as {
+        target?: string;
+        button?: string;
+        x?: number;
+        y?: number;
+        mouseButton?: string;
+      };
       if (config.target === "Coordinates") {
         return `Press ${config.button || config.mouseButton || "left"} button at (${config.x}, ${config.y})`;
       }
       return `Press ${config.button || config.mouseButton || "left"} button${config.target ? ` at ${config.target}` : ""}`;
     }
     case "MOUSE_UP": {
-      const config = action.config as { target?: string; button?: string; x?: number; y?: number; mouseButton?: string };
+      const config = action.config as {
+        target?: string;
+        button?: string;
+        x?: number;
+        y?: number;
+        mouseButton?: string;
+      };
       if (config.target === "Coordinates") {
         return `Release ${config.button || config.mouseButton || "left"} button at (${config.x}, ${config.y})`;
       }

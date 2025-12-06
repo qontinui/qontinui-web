@@ -11,9 +11,7 @@
  * - Real-time validation as user edits
  */
 
-import type {
-  Workflow,
-} from "../lib/action-schema/action-types";
+import type { Workflow } from "../lib/action-schema/action-types";
 import { getActionOutputCount } from "../lib/action-schema/action-types";
 
 // ============================================================================
@@ -629,7 +627,6 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
     }
 
     switch (action.type) {
-
       case "TYPE":
         if (!config.text && !config.variableRef) {
           errors.push({
@@ -791,16 +788,16 @@ function validateActionConfigs(workflow: Workflow): ValidationError[] {
         });
       }
       if (!config.method) {
-          errors.push({
-            id: `missing-http-method-${action.id}`,
-            actionId: action.id,
-            type: "invalid_config",
-            severity: "warning",
-            message: `API_CALL action "${action.name || action.id}" should specify HTTP method (defaults to GET)`,
-            details: { actionId: action.id },
-          });
-        }
-        break;
+        errors.push({
+          id: `missing-http-method-${action.id}`,
+          actionId: action.id,
+          type: "invalid_config",
+          severity: "warning",
+          message: `API_CALL action "${action.name || action.id}" should specify HTTP method (defaults to GET)`,
+          details: { actionId: action.id },
+        });
+      }
+      break;
     }
   }
 

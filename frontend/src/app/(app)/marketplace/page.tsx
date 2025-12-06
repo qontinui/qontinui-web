@@ -261,9 +261,7 @@ export default function MarketplacePage() {
             open={installDialogOpen}
             onOpenChange={setInstallDialogOpen}
             package={selectedPackage}
-            projects={
-              projects?.map((p) => ({ id: p.id, name: p.name })) || []
-            }
+            projects={projects?.map((p) => ({ id: p.id, name: p.name })) || []}
             onInstall={handleInstall}
             installStatus={installStatus}
             installProgress={

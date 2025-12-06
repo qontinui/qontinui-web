@@ -217,7 +217,10 @@ export function ScreenshotGallery({
                     variant="outline"
                     size="sm"
                     onClick={() =>
-                      handleDownload(screenshots[selectedIndex] || "", selectedIndex)
+                      handleDownload(
+                        screenshots[selectedIndex] || "",
+                        selectedIndex
+                      )
                     }
                   >
                     <Download className="h-4 w-4" />

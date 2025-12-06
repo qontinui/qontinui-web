@@ -3,12 +3,8 @@
  * Exports states with all their objects (StateImage, StateRegion, StateLocation, StateString)
  */
 
-import {
-  State,
-} from "../contexts/automation-context/types";
-import {
-  Screenshot,
-} from "../types/Screenshot";
+import { State } from "../contexts/automation-context/types";
+import { Screenshot } from "../types/Screenshot";
 
 interface QontinuiStateExport {
   version: string;

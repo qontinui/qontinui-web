@@ -100,7 +100,10 @@ export class StateUpdateCoordinator {
       regions: [],
       locations: [],
       strings: [],
-      position: position,
+      position: {
+        x: Math.round(position.x),
+        y: Math.round(position.y),
+      },
     };
   }
 
@@ -121,7 +124,10 @@ export class StateUpdateCoordinator {
       regions: [],
       locations: [],
       strings: [],
-      position: position,
+      position: {
+        x: Math.round(position.x),
+        y: Math.round(position.y),
+      },
     };
   }
 }

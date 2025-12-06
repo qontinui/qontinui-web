@@ -49,7 +49,10 @@ type ResizeHandle =
   | "inside"
   | null;
 
-const CURSORS: Record<Exclude<ResizeHandle, null> | "default" | "null", string> = {
+const CURSORS: Record<
+  Exclude<ResizeHandle, null> | "default" | "null",
+  string
+> = {
   nw: "nw-resize",
   n: "n-resize",
   ne: "ne-resize",

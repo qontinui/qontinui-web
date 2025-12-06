@@ -693,7 +693,12 @@ interface StyleButtonProps {
   onClick: () => void;
 }
 
-function StyleButton({ style: _style, info, selected, onClick }: StyleButtonProps) {
+function StyleButton({
+  style: _style,
+  info,
+  selected,
+  onClick,
+}: StyleButtonProps) {
   return (
     <button
       className={`style-button ${selected ? "selected" : ""}`}

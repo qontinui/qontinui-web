@@ -214,7 +214,7 @@ export function RegionAnalysisPanel({
       if (!acc[analyzer.type]) {
         acc[analyzer.type] = [];
       }
-      (acc[analyzer.type]!).push(analyzer);
+      acc[analyzer.type]!.push(analyzer);
       return acc;
     },
     {} as Record<string, RegionAnalyzerInfo[]>
@@ -440,7 +440,9 @@ export function RegionAnalysisPanel({
                   max={1}
                   step={0.05}
                   value={[overlapThreshold]}
-                  onValueChange={(value) => setOverlapThreshold(value[0] ?? 0.5)}
+                  onValueChange={(value) =>
+                    setOverlapThreshold(value[0] ?? 0.5)
+                  }
                 />
                 <p className="text-xs text-muted-foreground">
                   IoU threshold for grouping overlapping regions

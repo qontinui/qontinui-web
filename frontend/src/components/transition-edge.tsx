@@ -49,7 +49,8 @@ export function TransitionEdge({
 
   // Determine edge styling based on transition type
   const isIncomingTransition =
-    isIncoming || ("type" in transition && transition.type === "IncomingTransition");
+    isIncoming ||
+    ("type" in transition && transition.type === "IncomingTransition");
 
   // Edge colors
   const normalColor = isIncomingTransition ? "#00FF88" : "#BD00FF"; // Green for incoming, Magenta for outgoing

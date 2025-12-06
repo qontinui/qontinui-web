@@ -182,7 +182,7 @@ export class ConfigImporter {
       actions:
         exportWorkflow.actions?.map((action) => this.importAction(action)) ||
         [],
-      connections: exportWorkflow.connections as any || {},
+      connections: (exportWorkflow.connections as any) || {},
       metadata: exportWorkflow.metadata || {},
     }));
   }
@@ -544,7 +544,8 @@ export class ConfigImporter {
         config: {
           ...action.config,
           imageId: (action.config as any).imageId
-            ? idMap.get((action.config as any).imageId) || (action.config as any).imageId
+            ? idMap.get((action.config as any).imageId) ||
+              (action.config as any).imageId
             : undefined,
         },
       }));

@@ -38,11 +38,15 @@ export const createConnectionSlice: StateCreator<
 
       const sourceConnections = state.workflow.connections[sourceId];
       if (!sourceConnections[outputType as keyof typeof sourceConnections]) {
-        (sourceConnections[outputType as keyof typeof sourceConnections] as Connection[][]) = [];
+        (sourceConnections[
+          outputType as keyof typeof sourceConnections
+        ] as Connection[][]) = [];
       }
 
       // Ensure output index array exists
-      const connArray = sourceConnections[outputType as keyof typeof sourceConnections] as Connection[][];
+      const connArray = sourceConnections[
+        outputType as keyof typeof sourceConnections
+      ] as Connection[][];
       while (connArray.length <= outputIndex) {
         connArray.push([]);
       }
@@ -69,7 +73,9 @@ export const createConnectionSlice: StateCreator<
     set((state) => {
       const sourceConnections = state.workflow?.connections[sourceId];
       if (!sourceConnections) return;
-      const connArray = sourceConnections[outputType as keyof typeof sourceConnections] as Connection[][] | undefined;
+      const connArray = sourceConnections[
+        outputType as keyof typeof sourceConnections
+      ] as Connection[][] | undefined;
       if (!connArray?.[outputIndex]) return;
 
       connArray[outputIndex] = connArray[outputIndex].filter(

@@ -13,13 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Upload,
-  Camera,
-  Image as
-  Trash2,
-  Check,
-} from "lucide-react";
+import { Upload, Camera, Image as Trash2, Check } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";

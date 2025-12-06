@@ -1264,7 +1264,9 @@ export class WorkflowVersionControl {
       const mainBranchId = mainBranch.id; // Capture the ID outside the closure
 
       // Convert each snapshot to a version
-      const sortedSnapshots = snapshots.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      const sortedSnapshots = snapshots.sort((a, b) =>
+        a.timestamp.localeCompare(b.timestamp)
+      );
       for (const snapshot of sortedSnapshots) {
         this.saveVersion(
           workflowId,
@@ -1303,7 +1305,8 @@ export class WorkflowVersionControl {
         targetBranchId = branch.id;
       } else {
         const firstBranch = branches[0];
-        targetBranchId = firstBranch?.id ?? this.createBranch(snapshot.workflowId, "main").id;
+        targetBranchId =
+          firstBranch?.id ?? this.createBranch(snapshot.workflowId, "main").id;
       }
     }
 

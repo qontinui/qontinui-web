@@ -41,10 +41,7 @@ import {
   getConfidenceLevel,
   getConfidenceColor,
 } from "@/types/recording";
-import type {
-  Recording,
-  RecordingStatus,
-} from "@/types/recording";
+import type { Recording, RecordingStatus } from "@/types/recording";
 import { formatDistanceToNow } from "date-fns";
 
 export function RecordingListPage() {

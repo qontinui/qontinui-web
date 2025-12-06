@@ -172,9 +172,7 @@ export default function PackageDetailsPage() {
                 <h1 className="text-3xl font-bold text-gray-100">{pkg.name}</h1>
                 {pkg.verified && (
                   <div title="Verified by staff">
-                    <Shield
-                      className="w-6 h-6 text-cyan-500 flex-shrink-0 mt-1"
-                    />
+                    <Shield className="w-6 h-6 text-cyan-500 flex-shrink-0 mt-1" />
                   </div>
                 )}
               </div>
@@ -581,9 +579,7 @@ export default function PackageDetailsPage() {
         open={installDialogOpen}
         onOpenChange={setInstallDialogOpen}
         package={pkg}
-        projects={
-          projects?.map((p) => ({ id: p.id, name: p.name })) || []
-        }
+        projects={projects?.map((p) => ({ id: p.id, name: p.name })) || []}
         onInstall={handleInstall}
         installStatus={installStatus}
         installProgress={

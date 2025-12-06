@@ -286,9 +286,7 @@ import {
 
 export function WorkflowIntegrationExample() {
   const [showImagePicker, setShowImagePicker] = useState(false);
-  const [selectedImageForWorkflow] = useState<
-    string | null
-  >(null);
+  const [selectedImageForWorkflow] = useState<string | null>(null);
 
   const handleSelectImageForAction = () => {
     setShowImagePicker(true);

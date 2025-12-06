@@ -64,7 +64,8 @@ function AutomationBuilderContent() {
   const previousProjectName = useRef<string>("");
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [imageAssetsDropdownOpen, setImageAssetsDropdownOpen] = useState(false);
-  const [createImagesDropdownOpen, setCreateImagesDropdownOpen] = useState(false);
+  const [createImagesDropdownOpen, setCreateImagesDropdownOpen] =
+    useState(false);
   const [activeCategory, setActiveCategory] = useState<string>("image-assets");
   const [activeTab, setActiveTab] = useState<string>("screenshot-upload");
   const {
@@ -838,7 +839,11 @@ function AutomationBuilderContent() {
                 value="pattern-matching"
                 className="flex-1 min-h-0 overflow-hidden mt-0"
               >
-                <PatternMatchingTest screenshots={screenshots as unknown as import("@/contexts/automation-context/types").Screenshot[]} />
+                <PatternMatchingTest
+                  screenshots={
+                    screenshots as unknown as import("@/contexts/automation-context/types").Screenshot[]
+                  }
+                />
               </TabsContent>
               <TabsContent
                 value="integration-tests"

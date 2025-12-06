@@ -91,7 +91,10 @@ export function updateNodeExecutionState(
     borderColor: colors.border,
     backgroundColor: colors.background,
     color: colors.text,
-    boxShadow: showGlow && status === "running" && "glow" in colors ? colors.glow : undefined,
+    boxShadow:
+      showGlow && status === "running" && "glow" in colors
+        ? colors.glow
+        : undefined,
     transition: animate ? "all 0.3s ease-in-out" : undefined,
   };
 

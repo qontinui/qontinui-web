@@ -8,11 +8,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type {
-  Tutorial,
-  TutorialStep,
-  TutorialMode,
-} from "@/types/tutorial";
+import type { Tutorial, TutorialStep, TutorialMode } from "@/types/tutorial";
 
 // ============================================================================
 // Types

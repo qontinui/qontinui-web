@@ -517,20 +517,10 @@ export class ConflictDetector {
     }
 
     // Apply non-conflicting changes from local
-    this.applyNonConflictingChanges(
-      mergedVersion,
-      local,
-      base,
-      conflicts
-    );
+    this.applyNonConflictingChanges(mergedVersion, local, base, conflicts);
 
     // Apply non-conflicting changes from remote
-    this.applyNonConflictingChanges(
-      mergedVersion,
-      remote,
-      base,
-      conflicts
-    );
+    this.applyNonConflictingChanges(mergedVersion, remote, base, conflicts);
 
     return {
       success: conflicts.filter((c) => !c.autoResolvable).length === 0,

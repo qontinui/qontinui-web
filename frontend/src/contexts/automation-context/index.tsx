@@ -966,15 +966,33 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       workflows.forEach((workflow) => {
         const actionsWithImage = workflow.actions.filter((action) => {
           // Check if action uses this image in new target structure
-          if ("target" in action.config && typeof action.config.target === "object" && action.config.target?.type === "image") {
+          if (
+            "target" in action.config &&
+            typeof action.config.target === "object" &&
+            action.config.target?.type === "image"
+          ) {
             // Handle both single imageId and array imageIds
-            if ("imageId" in action.config.target && action.config.target.imageId === imageId) return true;
-            if ("imageIds" in action.config.target && Array.isArray(action.config.target.imageIds) && action.config.target.imageIds.includes(imageId)) return true;
+            if (
+              "imageId" in action.config.target &&
+              action.config.target.imageId === imageId
+            )
+              return true;
+            if (
+              "imageIds" in action.config.target &&
+              Array.isArray(action.config.target.imageIds) &&
+              action.config.target.imageIds.includes(imageId)
+            )
+              return true;
           }
           // Check legacy format
-          if ("image" in action.config && action.config.image === imageId) return true;
+          if ("image" in action.config && action.config.image === imageId)
+            return true;
           // Check DRAG actions (to field)
-          if (action.type === "DRAG" && "to" in action.config && action.config.to === imageId)
+          if (
+            action.type === "DRAG" &&
+            "to" in action.config &&
+            action.config.to === imageId
+          )
             return true;
           return false;
         });
@@ -1006,7 +1024,9 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       for (const state of affectedStates) {
         const updatedState = {
           ...state,
-          stateImages: state.stateImages.filter((si) => !("image" in si) || si.image !== imageUrl),
+          stateImages: state.stateImages.filter(
+            (si) => !("image" in si) || si.image !== imageUrl
+          ),
         };
         await projectDB.updateState(updatedState);
         setStates((prev) =>
@@ -1061,7 +1081,11 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
             };
           }
           // Check DRAG actions (to field)
-          if (action.type === "DRAG" && "to" in action.config && action.config.to === imageId) {
+          if (
+            action.type === "DRAG" &&
+            "to" in action.config &&
+            action.config.to === imageId
+          ) {
             hasChanges = true;
             return {
               ...action,

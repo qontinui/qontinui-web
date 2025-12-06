@@ -11,12 +11,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
-import {
-  Plus,
-  GripVertical,
-  Trash2,
-  Copy,
-} from "lucide-react";
+import { Plus, GripVertical, Trash2, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useAutomation } from "@/contexts/automation-context";
 
@@ -590,7 +585,9 @@ function getActionSummary(
         if (action.config.selectedStateStrings?.length > 0 && state.strings) {
           // Get the actual string values
           const selectedStrings = state.strings
-            .filter((s: any) => action.config.selectedStateStrings.includes(s.id))
+            .filter((s: any) =>
+              action.config.selectedStateStrings.includes(s.id)
+            )
             .map((s: any) => s.value)
             .filter((v: any) => v); // Remove empty values
 

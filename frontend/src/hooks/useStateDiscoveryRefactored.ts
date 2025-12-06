@@ -22,8 +22,12 @@ const API_PATH = "/api";
 export function useStateDiscovery() {
   // Module instances
   const apiClientRef = useRef<StateDiscoveryAPIClient | undefined>(undefined);
-  const wsManagerRef = useRef<StateDiscoveryWebSocketManager | undefined>(undefined);
-  const stateManagerRef = useRef<StateDiscoveryStateManager | undefined>(undefined);
+  const wsManagerRef = useRef<StateDiscoveryWebSocketManager | undefined>(
+    undefined
+  );
+  const stateManagerRef = useRef<StateDiscoveryStateManager | undefined>(
+    undefined
+  );
 
   // Local React state
   const [stateImages, setStateImages] = useState<StateImage[]>([]);

@@ -6,12 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useOrganization } from "@/hooks/useOrganization";
 import { organizationService } from "@/services/service-factory";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -36,11 +31,7 @@ export default function OrganizationDetailsPage() {
   const orgId = params?.id as string;
 
   const { user, loading: authLoading } = useAuth();
-  const {
-    switchOrg,
-    members,
-    getMembers,
-  } = useOrganization();
+  const { switchOrg, members, getMembers } = useOrganization();
 
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [statistics, _setStatistics] = useState<{

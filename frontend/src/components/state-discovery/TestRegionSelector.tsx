@@ -6,12 +6,16 @@ import React, { useState } from "react";
 import RegionSelector from "./RegionSelector";
 
 const TestRegionSelector: React.FC = () => {
-  const [selectedRegion, setSelectedRegion] = useState<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null | undefined>(null);
+  const [selectedRegion, setSelectedRegion] = useState<
+    | {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }
+    | null
+    | undefined
+  >(null);
 
   // Create a test image URL (data URL for a simple colored rectangle)
   const createTestImage = () => {

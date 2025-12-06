@@ -25,7 +25,12 @@ export function BasicDebuggerExample() {
     format: "graph",
     description: "Basic login flow",
     actions: [
-      { id: "1", type: "FIND", config: { description: "Find username field" }, position: [0, 0] },
+      {
+        id: "1",
+        type: "FIND",
+        config: { description: "Find username field" },
+        position: [0, 0],
+      },
       {
         id: "2",
         type: "CLICK",
@@ -38,7 +43,12 @@ export function BasicDebuggerExample() {
         config: { text: "user@example.com", description: "Type username" },
         position: [0, 0],
       },
-      { id: "4", type: "FIND", config: { description: "Find password field" }, position: [0, 0] },
+      {
+        id: "4",
+        type: "FIND",
+        config: { description: "Find password field" },
+        position: [0, 0],
+      },
       {
         id: "5",
         type: "CLICK",
@@ -51,10 +61,21 @@ export function BasicDebuggerExample() {
         config: { text: "password123", description: "Type password" },
         position: [0, 0],
       },
-      { id: "7", type: "FIND", config: { description: "Find login button" }, position: [0, 0] },
-      { id: "8", type: "CLICK", config: { description: "Click login button" }, position: [0, 0] },
+      {
+        id: "7",
+        type: "FIND",
+        config: { description: "Find login button" },
+        position: [0, 0],
+      },
+      {
+        id: "8",
+        type: "CLICK",
+        config: { description: "Click login button" },
+        position: [0, 0],
+      },
     ],
-    connections: {} as import("../../lib/action-schema/action-types").Connections,
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -152,9 +173,15 @@ export function ControlFlowDebuggerExample() {
         config: { description: "Click special button" },
         position: [0, 0],
       },
-      { id: "6", type: "WAIT", config: { waitFor: "time", duration: 1000 }, position: [0, 0] },
+      {
+        id: "6",
+        type: "WAIT",
+        config: { waitFor: "time", duration: 1000 },
+        position: [0, 0],
+      },
     ],
-    connections: {} as import("../../lib/action-schema/action-types").Connections,
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -268,7 +295,8 @@ export function VariableTrackingExample() {
         position: [0, 0],
       },
     ],
-    connections: {} as import("../../lib/action-schema/action-types").Connections,
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -331,15 +359,30 @@ export function BreakpointExample() {
     format: "graph",
     description: "Demonstrating breakpoint usage",
     actions: [
-      { id: "1", type: "FIND", config: { description: "Action 1" }, position: [0, 0] },
-      { id: "2", type: "CLICK", config: { description: "Action 2" }, position: [0, 0] },
+      {
+        id: "1",
+        type: "FIND",
+        config: { description: "Action 1" },
+        position: [0, 0],
+      },
+      {
+        id: "2",
+        type: "CLICK",
+        config: { description: "Action 2" },
+        position: [0, 0],
+      },
       {
         id: "3",
         type: "TYPE",
         config: { description: "Action 3 - Breakpoint here" },
         position: [0, 0],
       },
-      { id: "4", type: "FIND", config: { description: "Action 4" }, position: [0, 0] },
+      {
+        id: "4",
+        type: "FIND",
+        config: { description: "Action 4" },
+        position: [0, 0],
+      },
       {
         id: "5",
         type: "CLICK",
@@ -347,7 +390,8 @@ export function BreakpointExample() {
         position: [0, 0],
       },
     ],
-    connections: {} as import("../../lib/action-schema/action-types").Connections,
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -412,7 +456,8 @@ export function SpeedControlExample() {
       type: "WAIT",
       config: { description: `Action ${i + 1}`, duration: 100 },
     })) as unknown as Action[],
-    connections: {} as import("../../lib/action-schema/action-types").Connections,
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -478,10 +523,21 @@ export function LogManagementExample() {
     format: "graph",
     description: "Demonstrating log management features",
     actions: [
-      { id: "1", type: "FIND", config: { description: "Action 1" }, position: [0, 0] },
-      { id: "2", type: "CLICK", config: { description: "Action 2" }, position: [0, 0] },
+      {
+        id: "1",
+        type: "FIND",
+        config: { description: "Action 1" },
+        position: [0, 0],
+      },
+      {
+        id: "2",
+        type: "CLICK",
+        config: { description: "Action 2" },
+        position: [0, 0],
+      },
     ],
-    connections: {} as import("../../lib/action-schema/action-types").Connections,
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -589,8 +645,18 @@ export function CompleteIntegrationExample() {
         config: { variableName: "cart", value: [] },
         position: [0, 0],
       },
-      { id: "2", type: "FIND", config: { description: "Find product" }, position: [0, 0] },
-      { id: "3", type: "CLICK", config: { description: "Add to cart" }, position: [0, 0] },
+      {
+        id: "2",
+        type: "FIND",
+        config: { description: "Find product" },
+        position: [0, 0],
+      },
+      {
+        id: "3",
+        type: "CLICK",
+        config: { description: "Add to cart" },
+        position: [0, 0],
+      },
       {
         id: "4",
         type: "SET_VARIABLE",
@@ -603,7 +669,12 @@ export function CompleteIntegrationExample() {
         config: { description: "Find checkout button" },
         position: [0, 0],
       },
-      { id: "6", type: "CLICK", config: { description: "Go to checkout" }, position: [0, 0] },
+      {
+        id: "6",
+        type: "CLICK",
+        config: { description: "Go to checkout" },
+        position: [0, 0],
+      },
       {
         id: "7",
         type: "IF",
@@ -614,11 +685,27 @@ export function CompleteIntegrationExample() {
         },
         position: [0, 0],
       },
-      { id: "8", type: "FIND", config: { description: "Find payment form" }, position: [0, 0] },
-      { id: "9", type: "TYPE", config: { description: "Enter card details" }, position: [0, 0] },
-      { id: "10", type: "CLICK", config: { description: "Submit payment" }, position: [0, 0] },
+      {
+        id: "8",
+        type: "FIND",
+        config: { description: "Find payment form" },
+        position: [0, 0],
+      },
+      {
+        id: "9",
+        type: "TYPE",
+        config: { description: "Enter card details" },
+        position: [0, 0],
+      },
+      {
+        id: "10",
+        type: "CLICK",
+        config: { description: "Submit payment" },
+        position: [0, 0],
+      },
     ],
-    connections: {} as import("../../lib/action-schema/action-types").Connections,
+    connections:
+      {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {

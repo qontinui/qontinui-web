@@ -232,7 +232,9 @@ export class RecordingService {
   /**
    * Get processing logs for a recording
    */
-  async getProcessingLogs(recordingId: string): Promise<Array<{ timestamp: string; level: string; message: string }>> {
+  async getProcessingLogs(
+    recordingId: string
+  ): Promise<Array<{ timestamp: string; level: string; message: string }>> {
     const response = await this.httpClient.fetch(
       `${this.apiUrl}/api/v1/recordings/${recordingId}/logs`
     );

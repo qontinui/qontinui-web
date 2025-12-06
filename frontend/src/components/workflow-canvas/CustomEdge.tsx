@@ -15,7 +15,7 @@ import { X } from "lucide-react";
 import { CanvasEdgeData } from "./canvas-types";
 import { getConnectionColor } from "./canvas-config";
 
-export interface CustomEdgeProps extends Omit<EdgeProps, 'data'> {
+export interface CustomEdgeProps extends Omit<EdgeProps, "data"> {
   data: CanvasEdgeData;
 }
 

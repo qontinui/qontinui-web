@@ -199,18 +199,14 @@ function getEdgeLabel(
       return outputIndex === 0 ? "true" : "false";
     case "TRY_CATCH":
       return connType === "error" ? "catch" : "try";
-    case "SWITCH":
-      {
-        const switchConfig = sourceAction.config as SwitchActionConfig;
-        if (
-          switchConfig.cases &&
-          outputIndex < switchConfig.cases.length
-        ) {
-          const caseValue = switchConfig.cases[outputIndex];
-          return String(caseValue);
-        }
-        return "default";
+    case "SWITCH": {
+      const switchConfig = sourceAction.config as SwitchActionConfig;
+      if (switchConfig.cases && outputIndex < switchConfig.cases.length) {
+        const caseValue = switchConfig.cases[outputIndex];
+        return String(caseValue);
       }
+      return "default";
+    }
     case "LOOP":
       return connType === "main" ? "loop" : undefined;
     default:
@@ -310,11 +306,15 @@ function edgesToConnections(edges: CanvasEdge[]): Connections {
     // Initialize connection type array if needed
     const sourceConnections = connections[sourceId];
     if (!sourceConnections[connType as keyof typeof sourceConnections]) {
-      (sourceConnections[connType as keyof typeof sourceConnections] as Connection[][]) = [];
+      (sourceConnections[
+        connType as keyof typeof sourceConnections
+      ] as Connection[][]) = [];
     }
 
     // Initialize output index array if needed
-    const connArray = sourceConnections[connType as keyof typeof sourceConnections] as Connection[][];
+    const connArray = sourceConnections[
+      connType as keyof typeof sourceConnections
+    ] as Connection[][];
     while (connArray.length <= outputIndex) {
       connArray.push([]);
     }

@@ -150,7 +150,9 @@ function detectUnreachableActions(
       outputs.forEach((outputArray) => {
         outputArray.forEach((conn) => {
           // Find the target action index
-          const targetAction = workflow.actions.find(a => a.id === conn.action);
+          const targetAction = workflow.actions.find(
+            (a) => a.id === conn.action
+          );
           if (targetAction) {
             const targetIndex = workflow.actions.indexOf(targetAction);
             if (!reachable.has(targetIndex)) {
@@ -207,7 +209,9 @@ function detectCycles(
         outputs.forEach((outputArray) => {
           outputArray.forEach((conn) => {
             // Find the target action index
-            const targetAction = workflow.actions.find(a => a.id === conn.action);
+            const targetAction = workflow.actions.find(
+              (a) => a.id === conn.action
+            );
             if (!targetAction) return;
             const targetIndex = workflow.actions.indexOf(targetAction);
 
@@ -243,7 +247,7 @@ function detectCycles(
     const cycleActions = Array.from(cycleDetected)
       .map((index) => {
         const action = workflow.actions[index];
-        return action ? (action.name || action.id) : `unknown-${index}`;
+        return action ? action.name || action.id : `unknown-${index}`;
       })
       .join(", ");
 
@@ -295,7 +299,9 @@ export function hasLoops(workflow: Workflow): boolean {
         for (const outputArray of outputs) {
           for (const conn of outputArray) {
             // Find the target action index
-            const targetAction = workflow.actions.find(a => a.id === conn.action);
+            const targetAction = workflow.actions.find(
+              (a) => a.id === conn.action
+            );
             if (!targetAction) continue;
             const targetIndex = workflow.actions.indexOf(targetAction);
 

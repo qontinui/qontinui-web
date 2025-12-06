@@ -113,9 +113,13 @@ export function TransitionManager() {
       );
 
       if (matchingTransitions.length === 1) {
-        setSelectedTransition((matchingTransitions[0] || null) as Transition | null);
+        setSelectedTransition(
+          (matchingTransitions[0] || null) as Transition | null
+        );
       } else if (matchingTransitions.length > 1) {
-        setSelectedTransition((matchingTransitions[0] || null) as Transition | null);
+        setSelectedTransition(
+          (matchingTransitions[0] || null) as Transition | null
+        );
       } else {
         toast.info("No transition exists for this cell");
       }

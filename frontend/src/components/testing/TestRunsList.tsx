@@ -28,7 +28,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-
 } from "lucide-react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";

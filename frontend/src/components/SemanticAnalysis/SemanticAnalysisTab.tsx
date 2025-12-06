@@ -253,7 +253,11 @@ export function SemanticAnalysisTab() {
                   const val0 = data[i];
                   const val1 = data[i + 1];
                   const val2 = data[i + 2];
-                  if (val0 !== undefined && val1 !== undefined && val2 !== undefined) {
+                  if (
+                    val0 !== undefined &&
+                    val1 !== undefined &&
+                    val2 !== undefined
+                  ) {
                     if (val0 > 0 || val1 > 0 || val2 > 0) {
                       data[i] = r; // Red
                       data[i + 1] = g; // Green

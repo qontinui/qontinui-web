@@ -39,8 +39,7 @@ export const migrationV201ToV21: Migration = {
       for (const action of workflow.actions) {
         if (action.type === "FIND_STATE_IMAGE") {
           // Get the stateId from either field name
-          const stateId =
-            action.config?.stateId || action.config?.state || "";
+          const stateId = action.config?.stateId || action.config?.state || "";
 
           // Convert action type
           action.type = "FIND";

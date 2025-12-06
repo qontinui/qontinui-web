@@ -81,7 +81,13 @@ export const createActionSlice: StateCreator<
         const sourceConnections = state.workflow.connections[sourceId];
         if (!sourceConnections) continue;
         for (const type of Object.keys(sourceConnections)) {
-          (sourceConnections[type as keyof typeof sourceConnections] as Connection[][]) = (sourceConnections[type as keyof typeof sourceConnections] as Connection[][])?.map((outputs: Connection[]) =>
+          (sourceConnections[
+            type as keyof typeof sourceConnections
+          ] as Connection[][]) = (
+            sourceConnections[
+              type as keyof typeof sourceConnections
+            ] as Connection[][]
+          )?.map((outputs: Connection[]) =>
             outputs.filter((conn: Connection) => conn.action !== actionId)
           );
         }
@@ -115,7 +121,13 @@ export const createActionSlice: StateCreator<
         const sourceConnections = state.workflow.connections[sourceId];
         if (!sourceConnections) continue;
         for (const type of Object.keys(sourceConnections)) {
-          (sourceConnections[type as keyof typeof sourceConnections] as Connection[][]) = (sourceConnections[type as keyof typeof sourceConnections] as Connection[][])?.map((outputs: Connection[]) =>
+          (sourceConnections[
+            type as keyof typeof sourceConnections
+          ] as Connection[][]) = (
+            sourceConnections[
+              type as keyof typeof sourceConnections
+            ] as Connection[][]
+          )?.map((outputs: Connection[]) =>
             outputs.filter((conn: Connection) => !idsSet.has(conn.action))
           );
         }

@@ -36,7 +36,9 @@ const STATE_COLORS = [
  * Get a consistent color for a state based on its ID
  */
 function getStateColor(_stateId: string, index: number): string {
-  return STATE_COLORS[index % STATE_COLORS.length] ?? STATE_COLORS[0] ?? "#00D9FF";
+  return (
+    STATE_COLORS[index % STATE_COLORS.length] ?? STATE_COLORS[0] ?? "#00D9FF"
+  );
 }
 
 export function ActiveStatesVisualizer({

@@ -53,7 +53,7 @@ export interface CanvasNodeData {
 /**
  * Canvas node wrapping an Action for React Flow
  */
-export interface CanvasNode extends Omit<Node, 'data'> {
+export interface CanvasNode extends Omit<Node, "data"> {
   type: string; // Node type determines rendering
   data: CanvasNodeData;
   position: XYPosition;
@@ -95,7 +95,7 @@ export interface CanvasEdgeData {
 /**
  * Canvas edge wrapping a Connection for React Flow
  */
-export interface CanvasEdge extends Omit<Edge, 'data'> {
+export interface CanvasEdge extends Omit<Edge, "data"> {
   type: "custom"; // Always use custom edge component
   data: CanvasEdgeData;
   animated?: boolean;

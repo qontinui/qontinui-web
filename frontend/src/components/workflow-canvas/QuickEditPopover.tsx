@@ -244,7 +244,11 @@ export const QuickEditPopover: React.FC<QuickEditPopoverProps> = ({
         side="right"
         align="start"
         {...(position && {
-          style: { position: "fixed", top: position.y, left: position.x } as React.CSSProperties,
+          style: {
+            position: "fixed",
+            top: position.y,
+            left: position.x,
+          } as React.CSSProperties,
         })}
       >
         <div className="space-y-4">

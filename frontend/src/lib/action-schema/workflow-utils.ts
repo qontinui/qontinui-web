@@ -5,12 +5,7 @@
  * No backward compatibility cruft, no format detection.
  */
 
-import {
-  Workflow,
-  Action,
-  ActionType,
-  Connections,
-} from "./action-types";
+import { Workflow, Action, ActionType, Connections } from "./action-types";
 
 // ============================================================================
 // Entry and Exit Points

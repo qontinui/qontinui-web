@@ -25,7 +25,6 @@ import {
   SessionStartEvent,
   ScreenshotEvent,
   LogEvent,
-
 } from "@/lib/runner-websocket";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";

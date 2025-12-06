@@ -12,12 +12,7 @@ import {
   useDeleteProject,
 } from "@/hooks/use-projects";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SubscriptionBadge } from "@/components/subscription-badge";
 import {
@@ -57,7 +52,6 @@ interface Project {
   status: "draft" | "testing" | "production";
 }
 
-
 export default function Dashboard() {
   const { user, logout, loading: authLoading } = useAuth();
   const { projectId: contextProjectId, setProjectId } = useAutomation();
@@ -77,11 +71,8 @@ export default function Dashboard() {
   const [showEarlyAccessWelcome, setShowEarlyAccessWelcome] = useState(false);
 
   // Onboarding state
-  const {
-    showTutorialOverlay,
-    hasCompletedWelcome,
-    toggleWelcomeModal,
-  } = useOnboardingStore();
+  const { showTutorialOverlay, hasCompletedWelcome, toggleWelcomeModal } =
+    useOnboardingStore();
 
   const isNewUser = () => {
     if (!user?.created_at) return false;

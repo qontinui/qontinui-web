@@ -70,7 +70,6 @@ export interface WorkflowMetricsPanelProps {
   className?: string;
 }
 
-
 interface MetricCardProps {
   title: string;
   value: string | number;

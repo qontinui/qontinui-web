@@ -181,7 +181,9 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
  * - Show input/output parameters
  * - Link to function source
  */
-export function CustomFunctionNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
+export function CustomFunctionNode(
+  props: NodeProps<ReactFlowNode<BaseNodeData>>
+) {
   const config = props.data.action.config as CustomFunctionActionConfig;
   const [showDetails, setShowDetails] = useState(false);
 

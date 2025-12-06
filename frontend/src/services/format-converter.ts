@@ -6,9 +6,7 @@
  */
 
 import type { Workflow } from "../lib/action-schema/action-types";
-import {
-  SequentialToGraphConverter,
-} from "../lib/workflow-converter/sequential-to-graph-converter";
+import { SequentialToGraphConverter } from "../lib/workflow-converter/sequential-to-graph-converter";
 import {
   GraphToSequentialConverter,
   type ConversionOptions as GraphToSeqOptions,

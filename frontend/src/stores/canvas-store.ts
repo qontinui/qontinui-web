@@ -255,7 +255,6 @@ function generateActionId(): string {
   return `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-
 /**
  * Deep clone an action with a new ID
  */
@@ -433,10 +432,11 @@ export const useCanvasStore = create<CanvasStore>()(
                   if (isValidConnectionType(type)) {
                     const outputs = (sourceConnections as any)[type];
                     if (outputs && Array.isArray(outputs)) {
-                      const filteredOutputs = outputs.map((conns: Connection[]) =>
-                        conns.filter(
-                          (conn: Connection) => conn.action !== actionId
-                        )
+                      const filteredOutputs = outputs.map(
+                        (conns: Connection[]) =>
+                          conns.filter(
+                            (conn: Connection) => conn.action !== actionId
+                          )
                       );
                       (sourceConnections as any)[type] = filteredOutputs;
                     }
@@ -478,10 +478,11 @@ export const useCanvasStore = create<CanvasStore>()(
                   if (isValidConnectionType(type)) {
                     const outputs = (sourceConnections as any)[type];
                     if (outputs && Array.isArray(outputs)) {
-                      const filteredOutputs = outputs.map((conns: Connection[]) =>
-                        conns.filter(
-                          (conn: Connection) => !idsSet.has(conn.action)
-                        )
+                      const filteredOutputs = outputs.map(
+                        (conns: Connection[]) =>
+                          conns.filter(
+                            (conn: Connection) => !idsSet.has(conn.action)
+                          )
                       );
                       (sourceConnections as any)[type] = filteredOutputs;
                     }

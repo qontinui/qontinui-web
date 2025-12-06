@@ -12,11 +12,7 @@
 
 "use client";
 
-import React, {
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   Search,
   Plus,
@@ -482,7 +478,6 @@ export function EnhancedStateBuilder() {
     });
     toast.success("Location added");
   }, [currentState, handleUpdateCurrentState]);
-
 
   // ============================================================================
   // Render Helpers

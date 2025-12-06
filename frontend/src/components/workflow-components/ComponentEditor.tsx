@@ -774,7 +774,11 @@ interface ActionListItemProps {
   onRemove: () => void;
 }
 
-function ActionListItem({ action, index: _index, onRemove }: ActionListItemProps) {
+function ActionListItem({
+  action,
+  index: _index,
+  onRemove,
+}: ActionListItemProps) {
   return (
     <div className="flex items-center gap-2 p-3 rounded-lg border bg-card hover:bg-accent/50">
       <GripVertical className="size-4 text-muted-foreground cursor-grab" />

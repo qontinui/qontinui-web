@@ -29,8 +29,12 @@ import { formatRelativeTime } from "@/utils/formatDuration";
 import { StatusIndicator } from "./StatusIndicator";
 
 export function ActiveConnectionsList() {
-  const { connections, isLoading, isConnected: _isConnected, refetch } =
-    useRealtimeConnections();
+  const {
+    connections,
+    isLoading,
+    isConnected: _isConnected,
+    refetch,
+  } = useRealtimeConnections();
   const disconnectMutation = useDisconnectRunner();
   const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
   const [error, setError] = useState<Error | null>(null);

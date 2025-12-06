@@ -17,9 +17,7 @@ export {
   usePermission,
   PermissionBoundary,
 } from "./PermissionGate";
-export type {
-  Permission,
-} from "./PermissionGate";
+export type { Permission } from "./PermissionGate";
 
 // Real-time Collaboration
 export { CollaboratorAvatars } from "./CollaboratorAvatars";

@@ -376,7 +376,14 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
     ],
     // @ts-ignore - example code uses simplified connection format
     connections: {
-      "action-1": { main: [[{ action: "action-2", type: "main", index: 0 }, { action: "action-4", type: "main", index: 0 }]] },
+      "action-1": {
+        main: [
+          [
+            { action: "action-2", type: "main", index: 0 },
+            { action: "action-4", type: "main", index: 0 },
+          ],
+        ],
+      },
       "action-2": { main: [[{ action: "action-3", type: "main", index: 0 }]] },
     } as any,
     category: "Testing",

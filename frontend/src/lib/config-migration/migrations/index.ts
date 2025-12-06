@@ -9,6 +9,7 @@ import type { Migration } from "../migration-types";
 import { migrationV1ToV2 } from "./v1.0.0-to-v2.0.0";
 import { migrationV2ToV201 } from "./v2.0.0-to-v2.0.1";
 import { migrationV201ToV21 } from "./v2.0.1-to-v2.1.0";
+import { migrationV21ToV22 } from "./v2.1.0-to-v2.2.0";
 
 /**
  * Current version of the application
@@ -16,7 +17,7 @@ import { migrationV201ToV21 } from "./v2.0.1-to-v2.1.0";
  * Update this when creating new migrations.
  * This should match the version in export-schema.ts
  */
-export const CURRENT_VERSION = "2.1.0";
+export const CURRENT_VERSION = "2.2.0";
 
 /**
  * All registered migrations
@@ -34,6 +35,5 @@ export const ALL_MIGRATIONS: Migration[] = [
   migrationV1ToV2,
   migrationV2ToV201,
   migrationV201ToV21,
-  // Add new migrations here:
-  // migrationV21ToV22,
+  migrationV21ToV22,
 ];

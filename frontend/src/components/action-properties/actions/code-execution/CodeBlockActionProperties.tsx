@@ -118,9 +118,7 @@ export function CodeBlockActionProperties({
         <Label className="text-xs text-gray-400 flex items-center gap-2">
           Code Source
           <span title="Choose between inline code or external Python file">
-            <Info
-              className="w-3 h-3"
-            />
+            <Info className="w-3 h-3" />
           </span>
         </Label>
         <Select value={codeSource} onValueChange={handleCodeSourceChange}>
@@ -216,9 +214,7 @@ export function CodeBlockActionProperties({
             <Label className="text-xs text-gray-400 flex items-center gap-2">
               Function Name (Optional)
               <span title="Leave empty to execute entire file">
-                <Info
-                  className="w-3 h-3"
-                />
+                <Info className="w-3 h-3" />
               </span>
             </Label>
             <Input

@@ -36,7 +36,9 @@ export type QontinuiApiResponse<
   Method extends string,
 > = Route extends keyof paths
   ? Method extends keyof paths[Route]
-    ? paths[Route][Method] extends { responses: { 200: { content: { "application/json": infer T } } } }
+    ? paths[Route][Method] extends {
+        responses: { 200: { content: { "application/json": infer T } } };
+      }
       ? T
       : never
     : never
@@ -50,7 +52,9 @@ export type QontinuiApiRequestBody<
   Method extends string,
 > = Route extends keyof paths
   ? Method extends keyof paths[Route]
-    ? paths[Route][Method] extends { requestBody: { content: { "application/json": infer T } } }
+    ? paths[Route][Method] extends {
+        requestBody: { content: { "application/json": infer T } };
+      }
       ? T
       : never
     : never

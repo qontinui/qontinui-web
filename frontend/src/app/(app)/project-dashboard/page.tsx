@@ -320,7 +320,8 @@ function generateMockProjectData() {
     ];
     const type = types[Math.floor(Math.random() * types.length)] || "created";
     const resourceType =
-      resourceTypes[Math.floor(Math.random() * resourceTypes.length)] || "workflow";
+      resourceTypes[Math.floor(Math.random() * resourceTypes.length)] ||
+      "workflow";
 
     return {
       id: `event-${i}`,
@@ -1583,15 +1584,7 @@ function ExportImportPanel() {
 // ============================================================================
 
 // Treemap content renderer
-const TreemapContent = ({
-  x,
-  y,
-  width,
-  height,
-  index,
-  name,
-  count,
-}: any) => {
+const TreemapContent = ({ x, y, width, height, index, name, count }: any) => {
   if (!x || !y || !width || !height) return null;
   const colors = [
     "#00D9FF",

@@ -76,16 +76,12 @@ export function PackageCard({
               </CardTitle>
               {pkg.verified && (
                 <span title="Verified by staff">
-                  <ShieldCheck
-                    className="flex-shrink-0 w-4 h-4 text-cyan-500"
-                  />
+                  <ShieldCheck className="flex-shrink-0 w-4 h-4 text-cyan-500" />
                 </span>
               )}
               {isInstalled && (
                 <span title="Installed">
-                  <Check
-                    className="flex-shrink-0 w-4 h-4 text-green-500"
-                  />
+                  <Check className="flex-shrink-0 w-4 h-4 text-green-500" />
                 </span>
               )}
             </div>

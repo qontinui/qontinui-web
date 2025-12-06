@@ -1,9 +1,13 @@
 /**
  * Qontinui Automation Configuration Schema
- * Version 2.1.0
+ * Version 2.2.0
  *
  * This defines the structure for exported automation configurations
  * that can be consumed by the Qontinui runner.
+ *
+ * CHANGELOG v2.2.0:
+ * - Normalized state and transition position coordinates to integers
+ * - Math.round() applied to all position.x and position.y values
  *
  * CHANGELOG v2.1.0:
  * - Consolidated FIND_STATE_IMAGE into FIND with stateImage target type

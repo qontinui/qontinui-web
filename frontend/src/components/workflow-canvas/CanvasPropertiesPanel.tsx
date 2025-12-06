@@ -154,7 +154,9 @@ export const CanvasPropertiesPanel: React.FC<CanvasPropertiesPanelProps> = ({
       }
 
       // Get the property component for this action type
-      const PropertyComponent = actionConfigRegistry.getComponent(action.type as any);
+      const PropertyComponent = actionConfigRegistry.getComponent(
+        action.type as any
+      );
 
       if (!PropertyComponent) {
         return (

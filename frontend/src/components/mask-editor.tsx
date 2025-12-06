@@ -79,7 +79,6 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
     height: 27,
   });
 
-
   // Initialize canvases when image loads
   useEffect(() => {
     if (!open || !imageUrl) return;
@@ -127,7 +126,10 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
 
     // Reset brush size if it exceeds the new max
     const currentBrushSize = brushSize[0];
-    if (currentBrushSize !== undefined && currentBrushSize > calculatedMaxBrushSize) {
+    if (
+      currentBrushSize !== undefined &&
+      currentBrushSize > calculatedMaxBrushSize
+    ) {
       setBrushSize([Math.min(15, calculatedMaxBrushSize)]);
     }
 
@@ -612,7 +614,6 @@ export const MaskEditor: React.FC<MaskEditorProps> = ({
         : "Mask saved"
     );
   };
-
 
   const getCurrentMaskedImage = (): string | null => {
     if (!originalCanvasRef.current || !maskDataRef.current || !imageRef.current)

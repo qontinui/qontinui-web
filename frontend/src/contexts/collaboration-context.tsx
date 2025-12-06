@@ -16,9 +16,7 @@ import type {
   ResourceType,
 } from "@/types/collaboration";
 import type { PermissionLevel } from "@/lib/permissions";
-import {
-  hasPermission,
-} from "@/lib/permissions";
+import { hasPermission } from "@/lib/permissions";
 import {
   organizationService,
   lockService,
@@ -105,9 +103,7 @@ export function CollaborationProvider({
   const [organizations, setOrganizations] = useState<Organization[]>([]);
 
   // Permission state
-  const [projectAccess] = useState<PermissionLevel | null>(
-    null
-  );
+  const [projectAccess] = useState<PermissionLevel | null>(null);
 
   // Presence state
   const [activeUsers, setActiveUsers] = useState<UserPresence[]>([]);

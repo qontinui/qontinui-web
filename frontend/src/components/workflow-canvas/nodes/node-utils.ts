@@ -14,12 +14,8 @@ import {
   ActionType,
   getActionOutputCount,
 } from "@/lib/action-schema/action-types";
-import type {
-  ClickActionConfig,
-} from "@/lib/action-schema/configs/mouse-actions";
-import type {
-  WaitActionConfig,
-} from "@/lib/action-schema/configs/find-actions";
+import type { ClickActionConfig } from "@/lib/action-schema/configs/mouse-actions";
+import type { WaitActionConfig } from "@/lib/action-schema/configs/find-actions";
 import type { TypeActionConfig } from "@/lib/action-schema/configs/keyboard-actions";
 import type {
   IfActionConfig,
@@ -167,10 +163,7 @@ export function getNodeSummary(action: Action): string {
     // Mouse Actions
     case "CLICK":
       const clickConfig = config as ClickActionConfig;
-      if (
-        !clickConfig.target ||
-        clickConfig.target === "Current Position"
-      ) {
+      if (!clickConfig.target || clickConfig.target === "Current Position") {
         return "Click at current position";
       }
       return `Click ${clickConfig.target}`;

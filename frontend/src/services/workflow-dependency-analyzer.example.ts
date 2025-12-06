@@ -24,22 +24,12 @@ function createExampleWorkflows(): Workflow[] {
     format: "graph",
     category: "Main",
     actions: [
-      createAction(
-        "CLICK",
-        { target: "login-button.png" as any },
-        [100, 100],
-        {
-          id: "action-1",
-        }
-      ),
-      createAction(
-        "TYPE",
-        { text: "username" },
-        [100, 250],
-        {
-          id: "action-2",
-        }
-      ),
+      createAction("CLICK", { target: "login-button.png" as any }, [100, 100], {
+        id: "action-1",
+      }),
+      createAction("TYPE", { text: "username" }, [100, 250], {
+        id: "action-2",
+      }),
     ],
     connections: {
       "action-1": {

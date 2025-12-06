@@ -134,11 +134,7 @@ export const ContextualTutorial: React.FC<ContextualTutorialProps> = ({
 
     setValidationStatus("validating");
 
-    const {
-      type: _type,
-      condition,
-      optional = false,
-    } = currentStep.validation;
+    const { type: _type, condition, optional = false } = currentStep.validation;
 
     try {
       // Execute validation function
