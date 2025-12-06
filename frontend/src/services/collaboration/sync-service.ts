@@ -3,6 +3,18 @@
  *
  * Handles real-time synchronization of changes between client and server,
  * including offline support, optimistic updates, and conflict handling.
+ *
+ * Usage:
+ * ```typescript
+ * import { syncService } from './sync-service';
+ * import { useAuth } from '@/contexts/auth-context';
+ *
+ * // In a React component:
+ * const { user } = useAuth();
+ * useEffect(() => {
+ *   syncService.setUserIdProvider(() => user?.id || null);
+ * }, [user]);
+ * ```
  */
 
 import {
@@ -31,6 +43,7 @@ export class SyncService {
   private isOnline: boolean = navigator.onLine;
   private syncInterval: number | null = null;
   private processingQueue: boolean = false;
+  private getUserId: (() => string | null) | null = null;
 
   constructor(config: Partial<SyncServiceConfig> = {}) {
     this.config = {
@@ -45,6 +58,14 @@ export class SyncService {
 
     this.setupEventListeners();
     this.startSyncInterval();
+  }
+
+  /**
+   * Set the user ID provider function
+   * This should be called with a function that returns the current user ID from auth context
+   */
+  setUserIdProvider(getUserId: () => string | null): void {
+    this.getUserId = getUserId;
   }
 
   /**
@@ -198,6 +219,7 @@ export class SyncService {
       // Check if online
       if (!this.isOnline && !forceSync) {
         // Queue for later
+        const userId = this.getUserId ? this.getUserId() : null;
         this.queueOfflineChange({
           id: `change-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           type: "update",
@@ -206,7 +228,7 @@ export class SyncService {
           path: [],
           value: localVersion,
           timestamp: new Date(),
-          userId: "current-user", // TODO: Get from auth
+          userId: userId || "unknown-user",
         });
 
         return {
@@ -312,6 +334,7 @@ export class SyncService {
         this.optimisticUpdates.get(optimisticKey)!.confirmed = true;
       }
 
+      const userId = this.getUserId ? this.getUserId() : null;
       return {
         success: true,
         status: "success",
@@ -325,7 +348,7 @@ export class SyncService {
             path: [],
             value: versionToSync,
             timestamp: new Date(),
-            userId: "current-user",
+            userId: userId || "unknown-user",
           },
         ],
         failedChanges: [],
@@ -396,7 +419,11 @@ export class SyncService {
           detail: {
             resourceType: update.resourceType,
             resourceId: update.resourceId,
-            change: this.operationToChange(remoteTransformed),
+            change: this.operationToChange(
+              remoteTransformed,
+              update.resourceType,
+              update.resourceId
+            ),
           },
         })
       );
@@ -442,8 +469,10 @@ export class SyncService {
 
   /**
    * Apply optimistic update
+   * @param change - The change to apply optimistically
+   * @param originalState - The original state before the change (for rollback)
    */
-  applyOptimisticUpdate(change: Change): void {
+  applyOptimisticUpdate(change: Change, originalState: any = null): void {
     if (!this.config.enableOptimisticUpdates) {
       return;
     }
@@ -453,7 +482,7 @@ export class SyncService {
     const optimistic: OptimisticUpdate = {
       id: change.id,
       change,
-      originalState: null, // TODO: Store original state
+      originalState: originalState,
       appliedAt: new Date(),
       confirmed: false,
       rollback: false,
@@ -703,13 +732,20 @@ export class SyncService {
 
   /**
    * Convert operation to change
+   * @param operation - The operation to convert
+   * @param resourceType - The resource type (e.g., "workflow", "project")
+   * @param resourceId - The resource ID
    */
-  private operationToChange(operation: any): Change {
+  private operationToChange(
+    operation: any,
+    resourceType: ResourceType,
+    resourceId: string
+  ): Change {
     return {
       id: operation.operationId,
       type: operation.type,
-      resourceType: "workflow", // TODO: Infer from context
-      resourceId: "",
+      resourceType,
+      resourceId,
       path: operation.path,
       value: operation.value,
       oldValue: operation.oldValue,

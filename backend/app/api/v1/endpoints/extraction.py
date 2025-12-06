@@ -288,6 +288,38 @@ async def get_annotations(
     return list(result.scalars().all())
 
 
+def _collect_states_to_import(
+    session: ExtractionSession,
+    state_ids: list[str] | None,
+) -> list[tuple[Any, dict[str, Any]]]:
+    """Collect states from annotations, optionally filtered by state IDs."""
+    states_to_import = []
+    for annotation in session.annotations:
+        for state_data in annotation.states:
+            if state_ids and state_data.get("id") not in state_ids:
+                continue
+            states_to_import.append((annotation, state_data))
+    return states_to_import
+
+
+def _create_state_config(
+    state_data: dict[str, Any],
+    annotation: Any,
+    extraction_id: str,
+) -> dict[str, Any]:
+    """Create a state configuration dict from extraction data."""
+    bbox = state_data.get("bbox", {})
+    return {
+        "id": state_data.get("id"),
+        "name": state_data.get("name", state_data.get("id")),
+        "description": f"Imported from extraction {extraction_id[:8]}... - {annotation.source_url}",
+        "identifyingImages": [],
+        "position": {"x": float(bbox.get("x", 0)), "y": float(bbox.get("y", 0))},
+        "isInitial": False,
+        "isFinal": False,
+    }
+
+
 @router.post(
     "/extractions/{extraction_id}/import-states",
     response_model=ImportResult,
@@ -300,35 +332,81 @@ async def import_to_state_structure(
 ) -> Any:
     """Import extracted states into a workflow's state structure."""
     try:
-        UUID(extraction_id)  # Validate format
+        extraction_uuid = UUID(extraction_id)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid extraction ID format",
         )
 
-    # TODO: Implement state import logic
-    # This would create State objects in the target workflow
-    # DESIGN DECISION NEEDED:
-    # 1. State model needs to be created (currently only DiscoveredState exists)
-    # 2. Determine if workflows should have a dedicated Workflow model or remain in project.configuration JSON
-    # 3. Define the relationship between ExtractionAnnotation states and formal State objects
-    # 4. Implement state conversion logic that:
-    #    - Validates state data from extraction annotations
-    #    - Creates State objects in the workflow's state machine
-    #    - Optionally creates Transition objects between states
-    #    - Handles duplicate state detection and merging
-
-    logger.info(
-        "import_states_requested",
-        extraction_id=extraction_id,
-        state_ids=data.state_ids,
-        workflow_id=data.target_workflow_id,
-        note="State import not yet implemented - awaiting State/Workflow model design",
+    # Get extraction session with annotations
+    query = (
+        select(ExtractionSession)
+        .where(ExtractionSession.id == extraction_uuid)
+        .options(selectinload(ExtractionSession.annotations))
     )
+    result = await db.execute(query)
+    session = result.scalar_one_or_none()
 
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Extraction session not found",
+        )
+
+    # Get project and check permissions
+    from app.crud.project import get_project
+
+    project = await get_project(db, project_id=session.project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+    if project.owner_id != current_user.id and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions"
+        )
+
+    # Collect and import states
+    states_to_import = _collect_states_to_import(session, data.state_ids)
+    if not states_to_import:
+        logger.info(
+            "no_states_to_import", extraction_id=extraction_id, state_ids=data.state_ids
+        )
+        return ImportResult(
+            imported_states=0,
+            imported_transitions=0,
+            workflow_id=data.target_workflow_id,
+        )
+
+    config = project.configuration or {}
+    config.setdefault("states", [])
+    existing_state_ids = {state.get("id") for state in config["states"]}
+    imported_count = 0
+
+    for annotation, state_data in states_to_import:
+        state_id = state_data.get("id")
+        if not state_id or state_id in existing_state_ids:
+            continue
+        config["states"].append(
+            _create_state_config(state_data, annotation, extraction_id)
+        )
+        existing_state_ids.add(state_id)
+        imported_count += 1
+
+    # Update project configuration
+    from app.crud.project import update_project
+    from app.schemas.project import ProjectUpdate
+
+    await update_project(db, project, ProjectUpdate(configuration=config))
+    logger.info(
+        "states_imported",
+        extraction_id=extraction_id,
+        imported_count=imported_count,
+        workflow_id=data.target_workflow_id,
+    )
     return ImportResult(
-        imported_states=0,
+        imported_states=imported_count,
         imported_transitions=0,
         workflow_id=data.target_workflow_id,
     )

@@ -962,8 +962,7 @@ export function FolderTree({
                     onChangeColor={(id) => setShowColorPicker(id)}
                     onChangeIcon={(id) => setShowIconPicker(id)}
                     onMove={(id) => {
-                      // TODO: Implement move dialog
-                      console.log("Move folder:", id);
+                      setMovingFolderId(id);
                     }}
                   />
                 ))}
