@@ -1,40 +1,38 @@
 /**
  * Popover Component
  *
- * TODO: Implement proper popover using @radix-ui/react-popover
- * This is a stub implementation to fix TypeScript errors
+ * Floating element for rich content that appears on user interaction.
+ * Built with @radix-ui/react-popover.
  */
 
 "use client";
 
 import * as React from "react";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
 
-export interface PopoverProps {
-  children: React.ReactNode;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-}
+import { cn } from "@/lib/utils";
 
-export function Popover({ children }: PopoverProps) {
-  return <>{children}</>;
-}
+const Popover = PopoverPrimitive.Root;
 
-export interface PopoverTriggerProps {
-  children: React.ReactNode;
-  asChild?: boolean;
-}
+const PopoverTrigger = PopoverPrimitive.Trigger;
 
-export function PopoverTrigger({ children }: PopoverTriggerProps) {
-  return <>{children}</>;
-}
+const PopoverContent = React.forwardRef<
+  React.ElementRef<typeof PopoverPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
+>(({ className, align = "center", sideOffset = 4, ...props }, ref) => (
+  <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Content
+      ref={ref}
+      align={align}
+      sideOffset={sideOffset}
+      className={cn(
+        "z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        className
+      )}
+      {...props}
+    />
+  </PopoverPrimitive.Portal>
+));
+PopoverContent.displayName = PopoverPrimitive.Content.displayName;
 
-export interface PopoverContentProps {
-  children: React.ReactNode;
-  className?: string;
-  align?: "start" | "center" | "end";
-  side?: "top" | "right" | "bottom" | "left";
-}
-
-export function PopoverContent({ children, className }: PopoverContentProps) {
-  return <div className={className}>{children}</div>;
-}
+export { Popover, PopoverTrigger, PopoverContent };
