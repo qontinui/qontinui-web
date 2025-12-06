@@ -153,15 +153,20 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   const isRenamingRef = useRef(false);
 
   // Track if we're loading from backend to prevent IndexedDB from overwriting
-  const [isLoadingFromBackend, setIsLoadingFromBackend] = useState(false);
+  const [isLoadingFromBackend, setIsLoadingFromBackendState] = useState(false);
   const isLoadingFromBackendRef = useRef(false);
 
-  // Keep ref in sync with state
+  // Wrapper that updates both ref (synchronously) and state
+  // This prevents race conditions where the ref is checked before state updates
+  const setIsLoadingFromBackend = useCallback((value: boolean) => {
+    isLoadingFromBackendRef.current = value;
+    setIsLoadingFromBackendState(value);
+    projectLogger.contextProvider("isLoadingFromBackend set", { value });
+  }, []);
+
+  // Keep ref in sync with state (backup for any direct state updates)
   useEffect(() => {
     isLoadingFromBackendRef.current = isLoadingFromBackend;
-    projectLogger.contextProvider("isLoadingFromBackend changed", {
-      value: isLoadingFromBackend,
-    });
   }, [isLoadingFromBackend]);
 
   // Clean up old settings and categories on mount
@@ -816,15 +821,15 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
       workflows.forEach((workflow) => {
         const actionsWithImage = workflow.actions.filter((action) => {
           // Check if action uses this image in new target structure
-          if (action.config.target?.type === "image") {
+          if ("target" in action.config && typeof action.config.target === "object" && action.config.target?.type === "image") {
             // Handle both single imageId and array imageIds
-            if (action.config.target.imageId === imageId) return true;
-            if (action.config.target.imageIds?.includes(imageId)) return true;
+            if ("imageId" in action.config.target && action.config.target.imageId === imageId) return true;
+            if ("imageIds" in action.config.target && Array.isArray(action.config.target.imageIds) && action.config.target.imageIds.includes(imageId)) return true;
           }
           // Check legacy format
-          if (action.config.image === imageId) return true;
+          if ("image" in action.config && action.config.image === imageId) return true;
           // Check DRAG actions (to field)
-          if (action.type === "DRAG" && action.config.to === imageId)
+          if (action.type === "DRAG" && "to" in action.config && action.config.to === imageId)
             return true;
           return false;
         });
@@ -850,13 +855,13 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
   const removeImageFromStates = useCallback(
     async (imageUrl: string) => {
       const affectedStates = states.filter((state) =>
-        state.stateImages?.some((si) => si.image === imageUrl)
+        state.stateImages?.some((si) => "image" in si && si.image === imageUrl)
       );
 
       for (const state of affectedStates) {
         const updatedState = {
           ...state,
-          stateImages: state.stateImages.filter((si) => si.image !== imageUrl),
+          stateImages: state.stateImages.filter((si) => !("image" in si) || si.image !== imageUrl),
         };
         await projectDB.updateState(updatedState);
         setStates((prev) =>
@@ -879,7 +884,10 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
         const updatedActions = workflow.actions.map((action) => {
           // Check if action uses this image in new target structure
           if (
+            "target" in action.config &&
+            typeof action.config.target === "object" &&
             action.config.target?.type === "image" &&
+            "imageId" in action.config.target &&
             action.config.target.imageId === imageId
           ) {
             hasChanges = true;
@@ -896,7 +904,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
             };
           }
           // Check legacy format
-          if (action.config.image === imageId) {
+          if ("image" in action.config && action.config.image === imageId) {
             hasChanges = true;
             return {
               ...action,
@@ -908,7 +916,7 @@ export function AutomationProvider({ children }: AutomationProviderProps) {
             };
           }
           // Check DRAG actions (to field)
-          if (action.type === "DRAG" && action.config.to === imageId) {
+          if (action.type === "DRAG" && "to" in action.config && action.config.to === imageId) {
             hasChanges = true;
             return {
               ...action,

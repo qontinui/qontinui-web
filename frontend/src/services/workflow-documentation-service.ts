@@ -14,11 +14,7 @@
 
 import {
   Workflow,
-  Action,
   ActionType,
-  Connections,
-  WorkflowVariables,
-  getActionOutputCount,
 } from "../lib/action-schema/action-types";
 
 // ============================================================================
@@ -541,7 +537,7 @@ export class WorkflowDocumentationService {
 
     if (entryPoints.length === 0 && workflow.actions.length > 0) {
       // Fallback to first action
-      entryPoints.push(workflow.actions[0].id);
+      entryPoints.push(workflow.actions[0]!.id);
     }
 
     let stepNumber = 1;
@@ -571,7 +567,7 @@ export class WorkflowDocumentationService {
       // Get connections from this action
       const connections = workflow.connections[actionId];
       if (connections?.main) {
-        connections.main.forEach((outputs, outputIndex) => {
+        connections.main.forEach((outputs) => {
           outputs.forEach((conn) => {
             processAction(conn.action, indent + "   ");
           });
@@ -1010,8 +1006,8 @@ How errors are detected in this workflow.
     lines.forEach((line) => {
       const match = line.match(/^(#{1,6})\s+(.+)$/);
       if (match) {
-        const level = match[1].length;
-        const text = match[2].trim();
+        const level = match[1]!.length;
+        const text = match[2]!.trim();
         const anchor = text
           .toLowerCase()
           .replace(/[^\w\s-]/g, "")
@@ -1267,7 +1263,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
     parts.push(`Generated: ${new Date().toISOString()}\n`);
     parts.push(`Total Workflows: ${this.documentations.size}\n`);
 
-    this.documentations.forEach((doc, workflowId) => {
+    this.documentations.forEach((_doc, workflowId) => {
       parts.push("\n---\n");
       const exported = this.exportDocumentation(workflowId, {
         ...options,
@@ -1301,7 +1297,7 @@ ${doc.tags && doc.tags.length > 0 ? `Tags: ${doc.tags.join(", ")}` : ""}
 
     // Table of contents
     parts.push("## Table of Contents\n");
-    byCategory.forEach((wfs, category) => {
+    byCategory.forEach((_wfs, category) => {
       parts.push(
         `- [${category}](#${category.toLowerCase().replace(/\s+/g, "-")})`
       );

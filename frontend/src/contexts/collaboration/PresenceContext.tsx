@@ -41,21 +41,21 @@ export function PresenceProvider({ children }: PresenceProviderProps) {
   const addUser = (user: UserPresence) => {
     setActiveUsers((prev) => {
       // Check if user already exists
-      const exists = prev.some((u) => u.id === user.id);
+      const exists = prev.some((u) => u.user_id === user.user_id);
       if (exists) {
-        return prev.map((u) => (u.id === user.id ? user : u));
+        return prev.map((u) => (u.user_id === user.user_id ? user : u));
       }
       return [...prev, user];
     });
   };
 
   const removeUser = (userId: string) => {
-    setActiveUsers((prev) => prev.filter((u) => u.id !== userId));
+    setActiveUsers((prev) => prev.filter((u) => u.user_id !== userId));
   };
 
   const updateUser = (userId: string, updates: Partial<UserPresence>) => {
     setActiveUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, ...updates } : u))
+      prev.map((u) => (u.user_id === userId ? { ...u, ...updates } : u))
     );
   };
 

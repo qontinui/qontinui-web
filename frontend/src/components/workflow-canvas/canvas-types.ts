@@ -259,8 +259,6 @@ export const ACTION_TYPE_TO_CATEGORY: Record<ActionType, ActionCategory> = {
 
   // Mouse actions
   CLICK: ActionCategory.MOUSE,
-  DOUBLE_CLICK: ActionCategory.MOUSE,
-  RIGHT_CLICK: ActionCategory.MOUSE,
   MOUSE_MOVE: ActionCategory.MOUSE,
   MOUSE_DOWN: ActionCategory.MOUSE,
   MOUSE_UP: ActionCategory.MOUSE,

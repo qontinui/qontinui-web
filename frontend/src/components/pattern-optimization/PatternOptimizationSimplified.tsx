@@ -121,7 +121,7 @@ const PatternOptimizationContent: React.FC = () => {
       await addScreenshots(files);
       // Select first screenshot after adding if none selected
       setTimeout(() => {
-        if (!selectedScreenshotId && session?.screenshots?.length > 0) {
+        if (!selectedScreenshotId && (session?.screenshots?.length ?? 0) > 0) {
           const firstScreenshot = session.screenshots[0];
           if (firstScreenshot) {
             setSelectedScreenshotId(firstScreenshot.id);
@@ -155,8 +155,8 @@ const PatternOptimizationContent: React.FC = () => {
 
       // Select the first newly added screenshot
       setTimeout(() => {
-        if (session?.screenshots?.length > 0) {
-          const targetScreenshot = session.screenshots[session.screenshots.length - files.length];
+        if ((session?.screenshots?.length ?? 0) > 0) {
+          const targetScreenshot = session.screenshots[(session.screenshots?.length ?? 0) - files.length];
           if (targetScreenshot) {
             setSelectedScreenshotId(targetScreenshot.id);
           }
@@ -220,7 +220,7 @@ const PatternOptimizationContent: React.FC = () => {
   // Check if we can extract - need at least one screenshot with a region
   const hasRegions = session?.screenshots?.some((s) => s.region) || false;
   const hasRequirements =
-    session && session.screenshots.length > 0 && hasRegions;
+    session && (session.screenshots?.length ?? 0) > 0 && hasRegions;
 
   const canExtract = hasRequirements && !isExtracting;
 
@@ -384,7 +384,7 @@ const PatternOptimizationContent: React.FC = () => {
             height: number;
           }
         | undefined;
-      if (fixedLocation && session?.screenshots?.length > 0) {
+      if (fixedLocation && (session?.screenshots?.length ?? 0) > 0) {
         const firstScreenshot = session.screenshots[0];
         if (firstScreenshot?.region) {
           searchRegion = {

@@ -43,7 +43,7 @@ export interface NodePaletteProps {
   showFavorites?: boolean;
   defaultCollapsed?: boolean;
   onNodeAdd?: (nodeType: ActionType) => void;
-  canvasRef?: React.RefObject<HTMLElement>;
+  canvasRef?: React.RefObject<HTMLElement | null>;
   className?: string;
 }
 

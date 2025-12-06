@@ -8,6 +8,11 @@ import type {
   ProjectCreate,
   ProjectUpdate,
 } from "@/lib/api-client/types";
+import type {
+  AutomationSession,
+  Screenshot,
+  AutomationLog,
+} from "@/types/automation";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
@@ -522,7 +527,7 @@ class ApiClient {
   async listAutomationSessions(params?: {
     project_id?: string;
     status?: "active" | "completed" | "failed" | "disconnected";
-  }): Promise<any[]> {
+  }): Promise<{ sessions: AutomationSession[] }> {
     const queryParams = new URLSearchParams();
     if (params?.project_id) queryParams.append("project_id", params.project_id);
     if (params?.status) queryParams.append("status", params.status);
@@ -558,7 +563,7 @@ class ApiClient {
   async listSessionScreenshots(
     sessionId: string,
     params?: { page?: number; page_size?: number }
-  ): Promise<any> {
+  ): Promise<{ screenshots: Screenshot[] }> {
     const queryParams = new URLSearchParams();
     if (params?.page) queryParams.append("page", params.page.toString());
     if (params?.page_size)
@@ -582,7 +587,7 @@ class ApiClient {
   async listSessionLogs(
     sessionId: string,
     params?: { page?: number; page_size?: number }
-  ): Promise<any> {
+  ): Promise<{ logs: AutomationLog[] }> {
     const queryParams = new URLSearchParams();
     if (params?.page) queryParams.append("page", params.page.toString());
     if (params?.page_size)

@@ -481,7 +481,7 @@ export class WorkflowFolderManager {
       this.associations.splice(index, 1);
 
       // Update workflow count
-      this.updateWorkflowCounts(association.folderId);
+      this.updateWorkflowCounts(association?.folderId);
       this.save();
 
       return {

@@ -60,7 +60,7 @@ export function EditLockProvider({
         projectId,
         resourceType,
         resourceId,
-        true // auto-refresh
+        1 // auto-refresh (converted from boolean to number)
       );
       setCurrentLock(lock);
     } catch (error) {

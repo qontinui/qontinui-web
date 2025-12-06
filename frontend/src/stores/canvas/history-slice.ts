@@ -34,6 +34,7 @@ export const createHistorySlice: StateCreator<
 
     const newIndex = historyIndex - 1;
     const state = history[newIndex];
+    if (!state) return;
 
     set((s) => {
       s.workflow = state.workflow;
@@ -48,6 +49,7 @@ export const createHistorySlice: StateCreator<
 
     const newIndex = historyIndex + 1;
     const state = history[newIndex];
+    if (!state) return;
 
     set((s) => {
       s.workflow = state.workflow;

@@ -2,18 +2,13 @@
 
 import React from "react";
 
-import { useState, useCallback, useRef, useEffect } from "react";
-import { flushSync } from "react-dom";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Plus,
   Square,
   Trash2,
   Settings,
-  ArrowRight,
-  MapPin,
-  Type,
   Network,
 } from "lucide-react";
 import {
@@ -45,7 +40,6 @@ import {
   type IncomingTransition,
 } from "@/contexts/automation-context";
 import { StateUpdateCoordinator } from "@/contexts/automation-context/state-update-coordinator";
-import { ImageSelector } from "@/components/image-selector";
 import { OutgoingTransitionBuilder } from "@/components/outgoing-transition-builder";
 import { StatePropertiesPanel } from "@/components/state-properties-panel";
 import { TransitionPropertiesPanel } from "@/components/transition-properties-panel";
@@ -74,8 +68,6 @@ export function StateStructure() {
     workflows,
     addWorkflow,
     images,
-    updateImageUsage,
-    removeImageUsage,
   } = useAutomation();
 
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -338,7 +330,7 @@ export function StateStructure() {
   };
 
   const applyAutoLayout = useCallback(() => {
-    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+    const { nodes: layoutedNodes } = getLayoutedElements(
       nodes,
       edges,
       {
@@ -402,7 +394,7 @@ export function StateStructure() {
         activateStates: [params.target], // Target state is just the first in activateStates
         staysVisible: false,
         deactivateStates: [],
-        process: "",
+        workflows: [],
       };
 
       addTransition(newTransition);

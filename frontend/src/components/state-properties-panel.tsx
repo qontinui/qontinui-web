@@ -30,7 +30,6 @@ import {
   ChevronRight,
   Link2,
   Target,
-  ChevronUp,
   Sparkles,
 } from "lucide-react";
 import { ImageSelector } from "@/components/image-selector";
@@ -100,16 +99,11 @@ export function StatePropertiesPanel({
   updateState,
   addTransition,
   updateTransition,
-  deleteTransition,
   addWorkflow,
   addStateImage,
   updateStateImage,
   removeStateImage,
-  addRegion,
-  updateRegion,
   removeRegion,
-  addLocation,
-  updateLocation,
   removeLocation,
   addString,
   updateString,
@@ -178,7 +172,7 @@ export function StatePropertiesPanel({
 
     // Check if new patterns were added to existing StateImages (only if same state)
     if (state.stateImages) {
-      state.stateImages.forEach((stateImage, idx) => {
+      state.stateImages.forEach((stateImage) => {
         const currentPatternCount = stateImage.patterns?.length || 0;
         const prevPatternCount = prevPatternsCount.current[stateImage.id] || 0;
 
@@ -805,7 +799,7 @@ export function StatePropertiesPanel({
                                                       updatedPatterns[pIdx] = {
                                                         ...currentPattern,
                                                         similarity:
-                                                          values[0] / 100,
+                                                          (values[0]!) / 100,
                                                       };
                                                       updateStateImage(index, {
                                                         patterns: updatedPatterns,
@@ -1126,7 +1120,7 @@ export function StatePropertiesPanel({
                                       value={[(stateImage.probability ?? 0.85) * 100]}
                                       onValueChange={(values) => {
                                         updateStateImage(index, {
-                                          probability: values[0] / 100,
+                                          probability: (values[0]!) / 100,
                                         });
                                       }}
                                       className="w-full"
@@ -1250,7 +1244,7 @@ export function StatePropertiesPanel({
               <Label className="text-xs text-gray-400">State Regions</Label>
               <Info
                 className="w-4 h-4 text-gray-500"
-                title="Regions are created in Create Regions & Locations tab"
+                aria-label="Regions are created in Create Regions & Locations tab"
               />
             </div>
             {state.regions?.length === 0 ? (
@@ -1329,7 +1323,7 @@ export function StatePropertiesPanel({
               <Label className="text-xs text-gray-400">State Locations</Label>
               <Info
                 className="w-4 h-4 text-gray-500"
-                title="Locations are created in Create Regions & Locations tab"
+                aria-label="Locations are created in Create Regions & Locations tab"
               />
             </div>
             {state.locations?.length === 0 ? (

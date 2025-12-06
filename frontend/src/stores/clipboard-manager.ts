@@ -166,8 +166,8 @@ export class ClipboardManager {
     if (position && actions.length > 0) {
       const firstAction = actions[0];
       actualOffset = {
-        x: position.x - firstAction.position[0],
-        y: position.y - firstAction.position[1],
+        x: position.x - (firstAction?.position[0] ?? 0),
+        y: position.y - (firstAction?.position[1] ?? 0),
       };
     }
 

@@ -2,12 +2,11 @@
 
 import {
   type EdgeProps,
+  type Edge as ReactFlowEdge,
   getBezierPath,
-  EdgeLabelRenderer,
 } from "@xyflow/react";
-import { Badge } from "@/components/ui/badge";
 
-interface TransitionEdgeData {
+interface TransitionEdgeData extends Record<string, unknown> {
   transition: {
     id: string;
     type?: "OutgoingTransition" | "IncomingTransition";
@@ -35,8 +34,8 @@ export function TransitionEdge({
   targetPosition,
   data,
   selected,
-}: EdgeProps<TransitionEdgeData>) {
-  const [edgePath, labelX, labelY] = getBezierPath({
+}: EdgeProps<ReactFlowEdge<TransitionEdgeData>>) {
+  const [edgePath] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -45,23 +44,12 @@ export function TransitionEdge({
     targetPosition,
   });
 
-  const {
-    transition = { process: "", staysVisible: false },
-    isMultiTarget = false,
-    targetIndex = 0,
-    totalTargets = 1,
-    isIncoming = false,
-  } = data || {
-    transition: { process: "", staysVisible: false },
-    isMultiTarget: false,
-    targetIndex: 0,
-    totalTargets: 1,
-    isIncoming: false,
-  };
+  const transition = data?.transition ?? { process: "", staysVisible: false };
+  const isIncoming = data?.isIncoming ?? false;
 
   // Determine edge styling based on transition type
   const isIncomingTransition =
-    isIncoming || transition.type === "IncomingTransition";
+    isIncoming || ("type" in transition && transition.type === "IncomingTransition");
 
   // Edge colors
   const normalColor = isIncomingTransition ? "#00FF88" : "#BD00FF"; // Green for incoming, Magenta for outgoing

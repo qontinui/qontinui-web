@@ -64,7 +64,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
   // Get connection details
   const connection = workflow.connections[sourceId]?.[outputType]?.[
     Number(outputIndex)
-  ]?.find((c) => c.action === targetId);
+  ]?.find((c: any) => c.action === targetId);
 
   if (!connection) {
     return (
@@ -80,7 +80,7 @@ export const ConnectionProperties: React.FC<ConnectionPropertiesProps> = ({
     }
   };
 
-  const getConnectionColor = (type: string) => {
+  const getConnectionColor = (type: string): string => {
     switch (type) {
       case "main":
         return "blue";

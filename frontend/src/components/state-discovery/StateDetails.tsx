@@ -258,7 +258,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
                             </div>
                             <div className="text-xs text-gray-500 mt-1">
                               Frequency:{" "}
-                              {(stateImage.frequency * 100).toFixed(1)}%
+                              {((stateImage.frequency ?? 0) * 100).toFixed(1)}%
                             </div>
                           </div>
                         </div>

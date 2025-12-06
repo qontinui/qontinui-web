@@ -264,7 +264,7 @@ export function AutoLayoutPanel({
     "balanced-hierarchical"
   );
   const [customOptions, setCustomOptions] = useState<LayoutOptions>(
-    BUILTIN_PRESETS[2].options
+    BUILTIN_(PRESETS[2]!).options
   );
   const [animate, setAnimate] = useState(true);
   const [showPreview, setShowPreview] = useState(true);

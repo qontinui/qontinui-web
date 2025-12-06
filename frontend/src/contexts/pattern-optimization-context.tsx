@@ -440,10 +440,8 @@ export function PatternOptimizationProvider({
       );
 
       const analysis: PatternAnalysis = {
-        id: `analysis-${Date.now()}`,
         extractedPatterns: patterns,
         similarityMatrix: {
-          patterns,
           scores: apiResult.similarityMatrix.scores,
         },
         statistics: apiResult.statistics,
@@ -499,8 +497,6 @@ export function PatternOptimizationProvider({
           processingTime: 100,
         },
         recommendations: {
-          optimalThreshold: 0.8,
-          suggestedStrategy: strategy.type,
           confidenceLevel: "medium",
         },
       };
@@ -613,20 +609,9 @@ export function PatternOptimizationProvider({
 
         const result: OptimizationResult = {
           sessionId: session.id,
-          recommendedStrategy: session.selectedStrategy,
-          stateImage: {
-            patterns: session.analysis.extractedPatterns,
-            config: session.selectedStrategy.parameters,
-          },
-          exportData: {
-            format: "stateImage",
-            data: {
-              patterns: session.analysis.extractedPatterns,
-              strategy: session.selectedStrategy,
-              stateImageName: apiResult.stateImage?.name,
-              message: apiResult.message,
-            },
-          },
+          patterns: session.analysis.extractedPatterns,
+          strategy: session.selectedStrategy,
+          createdAt: new Date(),
         };
 
         return result;
@@ -640,7 +625,7 @@ export function PatternOptimizationProvider({
 
   const exportResult = useCallback((result: OptimizationResult) => {
     // Convert result to JSON and trigger download
-    const dataStr = JSON.stringify(result.exportData.data, null, 2);
+    const dataStr = JSON.stringify(result, null, 2);
     const dataUri = `data:application/json;charset=utf-8,${encodeURIComponent(dataStr)}`;
 
     const exportFileDefaultName = `pattern-optimization-${result.sessionId}.json`;

@@ -63,7 +63,7 @@ function VerifyStatesContent() {
   // Auto-select first state if none selected
   useMemo(() => {
     if (!selectedStateId && states.length > 0) {
-      setSelectedStateId(states[0].id);
+      setSelectedStateId((states[0]!).id);
     }
   }, [states, selectedStateId]);
 

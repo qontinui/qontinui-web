@@ -1,10 +1,10 @@
 "use client";
 
-import { type NodeProps, Handle, Position } from "@xyflow/react";
+import { type NodeProps, type Node as ReactFlowNode, Handle, Position } from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
 import { Zap } from "lucide-react";
 
-interface TransitionNodeData {
+interface TransitionNodeData extends Record<string, unknown> {
   transition: {
     id: string;
     type: "OutgoingTransition" | "IncomingTransition";
@@ -24,13 +24,11 @@ interface TransitionNodeData {
 export function TransitionNode({
   data,
   selected,
-}: NodeProps<TransitionNodeData>) {
-  const { transition, label, isSingleTarget = false, isIncoming = false } = data || {
-    transition: { id: "", type: "OutgoingTransition" as const, workflows: [] },
-    label: "",
-    isSingleTarget: false,
-    isIncoming: false,
-  };
+}: NodeProps<ReactFlowNode<TransitionNodeData>>) {
+  const transition = data?.transition ?? { id: "", type: "OutgoingTransition" as const, workflows: [] };
+  const label = data?.label ?? "";
+  const isSingleTarget = data?.isSingleTarget ?? false;
+  const isIncoming = data?.isIncoming ?? false;
 
   // Determine color based on transition type
   const color =

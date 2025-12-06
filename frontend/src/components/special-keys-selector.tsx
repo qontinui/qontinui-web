@@ -69,7 +69,7 @@ const SPECIAL_KEYS = {
 
 interface SpecialKeysSelectorProps {
   onInsertKey: (key: string) => void;
-  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement | null>;
 }
 
 export function SpecialKeysSelector({

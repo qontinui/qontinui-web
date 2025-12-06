@@ -12,7 +12,7 @@
  */
 
 import React from "react";
-import { Handle, Position, NodeProps } from "@xyflow/react";
+import { Handle, Position, NodeProps, Node as ReactFlowNode } from "@xyflow/react";
 import { Action, ActionType } from "@/lib/action-schema/action-types";
 import { getNodeIcon } from "./node-icons";
 import {
@@ -21,7 +21,7 @@ import {
   getCategoryColor,
 } from "./node-utils";
 
-export interface BaseNodeData {
+export interface BaseNodeData extends Record<string, unknown> {
   action: Action;
   executionState?: "idle" | "running" | "completed" | "failed" | "skipped";
   error?: string;
@@ -30,7 +30,7 @@ export interface BaseNodeData {
   onNodeDoubleClick?: (nodeId: string) => void;
 }
 
-export interface BaseNodeProps extends NodeProps<BaseNodeData> {
+export interface BaseNodeProps extends NodeProps<ReactFlowNode<BaseNodeData>> {
   showInputHandle?: boolean;
   showOutputHandle?: boolean;
   outputHandleIds?: string[];
@@ -51,7 +51,14 @@ export function BaseNode({
   className = "",
   compact = false,
 }: BaseNodeProps) {
-  const { action, executionState = "idle", error } = data;
+  const action = data?.action;
+  const executionState = data?.executionState ?? "idle";
+  const error = data?.error;
+
+  if (!action) {
+    return null;
+  }
+
   const category = getNodeCategory(action.type);
   const categoryColor = getCategoryColor(category);
   const Icon = getNodeIcon(action.type);
@@ -184,15 +191,6 @@ export function BaseNode({
         {error && (
           <div className="node-error mt-2 px-2 py-1 bg-red-50 border border-red-200 rounded text-xs text-red-700">
             {error}
-          </div>
-        )}
-
-        {/* Base Settings Badge */}
-        {action.base?.enabled === false && (
-          <div className="mt-2">
-            <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-              Disabled
-            </span>
           </div>
         )}
       </div>

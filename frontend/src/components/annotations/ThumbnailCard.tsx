@@ -18,12 +18,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export interface ThumbnailCardProps {
-  id: string;
-  url: string;
+  id?: string;
+  url?: string;
   index: number;
   annotationCount: number;
   isActive: boolean;
-  hasUnsavedChanges: boolean;
+  hasUnsavedChanges?: boolean;
   onClick: () => void;
   onRemove: () => void;
   fileName?: string;
@@ -43,9 +43,9 @@ export function ThumbnailCard({
   React.useEffect(() => {
     console.log(`[ThumbnailCard] Screenshot ${index} rendering with URL:`, {
       url,
-      urlType: url.startsWith("blob:")
+      urlType: url?.startsWith("blob:")
         ? "blob"
-        : url.startsWith("http")
+        : url?.startsWith("http")
           ? "http"
           : "other",
       fileName,

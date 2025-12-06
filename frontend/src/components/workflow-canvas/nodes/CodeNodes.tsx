@@ -7,7 +7,7 @@
  */
 
 import React, { useState } from "react";
-import { NodeProps } from "@xyflow/react";
+import { NodeProps, Node as ReactFlowNode } from "@xyflow/react";
 import { BaseNode, BaseNodeData } from "./BaseNode";
 import { Code, Play, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import Editor from "@monaco-editor/react";
@@ -29,7 +29,7 @@ import type {
  * - Error display
  * - Collapsible code editor
  */
-export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
+export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const config = props.data.action.config as CodeBlockActionConfig;
   const [showEditor, setShowEditor] = useState(false);
   const [validationStatus, setValidationStatus] = useState<
@@ -181,7 +181,7 @@ export function CodeBlockNode(props: NodeProps<BaseNodeData>) {
  * - Show input/output parameters
  * - Link to function source
  */
-export function CustomFunctionNode(props: NodeProps<BaseNodeData>) {
+export function CustomFunctionNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const config = props.data.action.config as CustomFunctionActionConfig;
   const [showDetails, setShowDetails] = useState(false);
 

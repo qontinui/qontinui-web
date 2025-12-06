@@ -11,19 +11,18 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { ProjectCollaborationService } from "@/services/collaboration/project-collaboration-service";
-import { OrganizationService } from "@/services/collaboration/organization-service";
-import { HttpClient } from "@/services/http-client";
+import {
+  projectCollaborationService,
+  organizationService,
+} from "@/services/service-factory";
 import type {
   Collaborator,
   Organization,
   PermissionLevel,
 } from "@/types/collaboration";
 
-// Initialize services
-const httpClient = new HttpClient();
-const collaborationService = new ProjectCollaborationService(httpClient);
-const organizationService = new OrganizationService(httpClient);
+// Use services from the service factory (properly wired with TokenManager)
+const collaborationService = projectCollaborationService;
 
 interface UseProjectSharingOptions {
   projectId: string | null;

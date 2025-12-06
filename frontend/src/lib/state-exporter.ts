@@ -106,10 +106,12 @@ export function exportStatesToQontinui(
       state.stateImages.forEach((stateImage) => {
         if (!imageIds.has(stateImage.id)) {
           imageIds.add(stateImage.id);
+          // Get image data and fixed flag from first pattern
+          const firstPattern = stateImage.patterns?.[0];
           stateImages.push({
             id: stateImage.id,
             name: stateImage.name,
-            imageData: stateImage.image, // Assuming this is base64 or a path
+            imageData: firstPattern?.imageId, // Pattern references image by ID
             searchRegions: (stateImage.searchRegions || []).map((sr) => ({
               id: sr.id,
               name: sr.name,
@@ -118,7 +120,7 @@ export function exportStatesToQontinui(
               width: sr.width,
               height: sr.height,
             })),
-            fixed: stateImage.fixed || false,
+            fixed: firstPattern?.fixed || false,
           });
         }
       });

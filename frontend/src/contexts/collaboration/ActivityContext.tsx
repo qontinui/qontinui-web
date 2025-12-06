@@ -64,7 +64,7 @@ export function ActivityProvider({
 
   const loadActivityFeed = async () => {
     try {
-      const { activities } = await activityService.getActivities(projectId, {
+      const activities = await activityService.getActivityFeed(projectId, {
         limit,
       });
       setActivityFeed(activities);

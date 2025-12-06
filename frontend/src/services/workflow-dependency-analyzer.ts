@@ -1020,6 +1020,7 @@ export class WorkflowDependencyAnalyzer {
     // Edges
     for (let i = 0; i < graph.edges.length; i++) {
       const edge = graph.edges[i];
+      if (!edge) continue;
       xml += `    <edge id="e${i}" source="${this.escapeXml(edge.from)}" target="${this.escapeXml(edge.to)}">\n`;
       xml += `      <data key="actions">${edge.actionIds.length}</data>\n`;
       xml += "    </edge>\n";

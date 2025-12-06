@@ -307,8 +307,7 @@ export function parseApi<T>(
         console.error(`Error ${index + 1}:`, {
           path: err.path.join("."),
           message: err.message,
-          received: err.received,
-          expected: err.expected,
+          code: err.code,
         });
       });
     }

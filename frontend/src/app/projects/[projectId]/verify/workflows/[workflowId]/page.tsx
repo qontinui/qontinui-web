@@ -46,6 +46,7 @@ function getActiveStatesAtStep(
   // Analyze all actions up to and including the current step
   for (let i = 0; i <= step; i++) {
     const action = workflow.actions[i];
+    if (!action) continue;
 
     // Handle GO_TO_STATE actions
     if (action.type === "GO_TO_STATE" && "stateIds" in action.config) {

@@ -15,7 +15,6 @@ import {
   Action,
   Connections,
   createAction,
-  Connection,
 } from "../lib/action-schema/action-types";
 
 // ============================================================================
@@ -333,10 +332,10 @@ export class WorkflowComponentsService {
    * Create a component from selected actions in a workflow
    */
   createComponentFromActions(
-    workflowId: string,
-    actionIds: string[],
-    name: string,
-    parameters?: ComponentParameter[]
+    _workflowId: string,
+    _actionIds: string[],
+    _name: string,
+    _parameters?: ComponentParameter[]
   ): WorkflowComponent | null {
     // Extract actions would need to get the workflow from somewhere
     // For now, accepting actions and connections directly
@@ -503,7 +502,7 @@ export class WorkflowComponentsService {
    */
   replaceActionsWithComponent(
     workflowId: string,
-    actionIds: string[],
+    _actionIds: string[],
     componentId: string
   ): ComponentInstance | null {
     const component = this.components.get(componentId);
@@ -538,8 +537,6 @@ export class WorkflowComponentsService {
     if (!component) {
       return false;
     }
-
-    const usages = this.usageData.get(componentId) || [];
 
     // In a real implementation, this would update all workflow instances
     // For now, just update the metadata
@@ -1110,7 +1107,7 @@ export class WorkflowComponentsService {
       updated[newSourceId] = {};
 
       Object.entries(outputs).forEach(([type, outputList]) => {
-        updated[newSourceId][type] = outputList?.map((output) =>
+        updated[newSourceId]![type]! = outputList?.map((output) =>
           output.map((conn) => ({
             ...conn,
             action: idMap.get(conn.action) || conn.action,

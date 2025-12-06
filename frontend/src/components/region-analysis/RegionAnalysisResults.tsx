@@ -95,7 +95,7 @@ export function RegionAnalysisResults({
       "#06b6d4", // cyan
       "#f97316", // orange
     ];
-    return colors[index % colors.length];
+    return colors[index % colors.length] ?? colors[0];
   };
 
   const regionsToDisplay =

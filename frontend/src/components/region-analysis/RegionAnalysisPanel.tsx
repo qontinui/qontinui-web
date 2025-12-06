@@ -214,7 +214,7 @@ export function RegionAnalysisPanel({
       if (!acc[analyzer.type]) {
         acc[analyzer.type] = [];
       }
-      acc[analyzer.type].push(analyzer);
+      (acc[analyzer.type]!).push(analyzer);
       return acc;
     },
     {} as Record<string, RegionAnalyzerInfo[]>

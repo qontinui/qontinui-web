@@ -33,8 +33,7 @@ export async function runWorkflowTest(
       workflow_metadata: {
         workflow_id: workflow.id,
         workflow_name: workflow.name,
-        total_states: workflow.states?.length || 0,
-        total_transitions: workflow.actions?.length || 0,
+        total_actions: workflow.actions?.length || 0,
       },
       configuration_snapshot: {
         test_case: testCase,
@@ -193,8 +192,8 @@ async function executeWorkflowWithInputs(
 
   return {
     variables: { ...inputs, result: "simulated_execution" },
-    executionPath: workflow.actions?.slice(0, 3).map((a) => a.id) || [],
-    activeStates: workflow.states?.slice(0, 2).map((s) => s.id) || [],
+    executionPath: workflow.actions?.slice(0, 3).map((a: any) => a.id) || [],
+    activeStates: [],
     actionsExecuted: Math.min(3, workflow.actions?.length || 0),
   };
 }

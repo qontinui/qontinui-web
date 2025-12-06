@@ -12,7 +12,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Workflow, Action } from "@/lib/action-schema/action-types";
+import { Workflow } from "@/lib/action-schema/action-types";
 import {
   BarChart,
   Bar,
@@ -20,16 +20,11 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
-  ScatterChart,
-  Scatter,
   Cell,
-  ReferenceLine,
 } from "recharts";
 import {
   Zap,
-  AlertTriangle,
   Clock,
   TrendingUp,
   GitBranch,
@@ -39,7 +34,6 @@ import {
   CheckCircle,
   XCircle,
   Info,
-  ChevronRight,
   Activity,
 } from "lucide-react";
 import {

@@ -152,10 +152,10 @@ export const StateImageDisplay: React.FC<StateImageDisplayProps> = ({
           for (let i = 0; i < imageData.data.length; i += 4) {
             const maskIndex = i;
             // Use red channel of mask as alpha multiplier (grayscale mask)
-            const maskValue = maskData.data[maskIndex] / 255; // Normalize to 0-1
+            const maskValue = (maskData.data[maskIndex] ?? 0) / 255; // Normalize to 0-1
             const currentAlpha = imageData.data[i + 3];
             // Multiply current alpha by mask value
-            imageData.data[i + 3] = currentAlpha * maskValue;
+            imageData.data[i + 3] = (currentAlpha ?? 1) * maskValue;
           }
 
           console.log("[StateImageDisplay] Mask applied successfully");

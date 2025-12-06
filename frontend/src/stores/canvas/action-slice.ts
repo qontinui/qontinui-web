@@ -79,9 +79,10 @@ export const createActionSlice: StateCreator<
       // Remove connections TO this action
       for (const sourceId of Object.keys(state.workflow.connections)) {
         const sourceConnections = state.workflow.connections[sourceId];
+        if (!sourceConnections) continue;
         for (const type of Object.keys(sourceConnections)) {
-          sourceConnections[type] = sourceConnections[type]?.map((outputs) =>
-            outputs.filter((conn) => conn.action !== actionId)
+          sourceConnections[type] = sourceConnections[type]?.map((outputs: any) =>
+            outputs.filter((conn: any) => conn.action !== actionId)
           );
         }
       }
@@ -112,9 +113,10 @@ export const createActionSlice: StateCreator<
       // Remove connections TO these actions
       for (const sourceId of Object.keys(state.workflow.connections)) {
         const sourceConnections = state.workflow.connections[sourceId];
+        if (!sourceConnections) continue;
         for (const type of Object.keys(sourceConnections)) {
-          sourceConnections[type] = sourceConnections[type]?.map((outputs) =>
-            outputs.filter((conn) => !idsSet.has(conn.action))
+          sourceConnections[type] = sourceConnections[type]?.map((outputs: any) =>
+            outputs.filter((conn: any) => !idsSet.has(conn.action))
           );
         }
       }
@@ -150,7 +152,10 @@ export const createActionSlice: StateCreator<
           (a) => a.id === actionId
         );
         if (index !== -1) {
-          state.workflow.actions[index].position = position;
+          const action = state.workflow.actions[index];
+          if (action) {
+            action.position = position;
+          }
         }
       }
       state.isDirty = true;

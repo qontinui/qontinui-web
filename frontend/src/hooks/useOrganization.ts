@@ -79,7 +79,7 @@ export function useOrganization(): UseOrganizationReturn {
       if (orgs.length > 0 && !currentOrg) {
         setCurrentOrg(orgs[0]);
         // Load members for the first org
-        await loadMembers(orgs[0].id);
+        await loadMembers((orgs[0]!).id);
       }
     } catch (err) {
       console.error("[useOrganization] Failed to load organizations:", err);

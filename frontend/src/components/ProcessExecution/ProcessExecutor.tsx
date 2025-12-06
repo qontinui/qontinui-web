@@ -588,7 +588,7 @@ export const ProcessExecutor: React.FC<ProcessExecutorProps> = ({
         <div className="border-t">
           {/* Action List */}
           <div className="max-h-64 overflow-y-auto">
-            {process.actions.map((action, index) => {
+            {process.actions.map((action: any, index: number) => {
               const result = status.results.find(
                 (r) => r.actionIndex === index
               );

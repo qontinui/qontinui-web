@@ -12,7 +12,7 @@
  */
 
 import React from "react";
-import { NodeProps } from "@xyflow/react";
+import { NodeProps, Node as ReactFlowNode } from "@xyflow/react";
 import { BaseNode, BaseNodeData, TerminalNode } from "./BaseNode";
 import type {
   GoToStateActionConfig,
@@ -26,7 +26,7 @@ import type {
 /**
  * START Node - Entry point for workflow
  */
-export function StartNode(props: NodeProps<BaseNodeData>) {
+export function StartNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <TerminalNode
       {...props}
@@ -39,7 +39,7 @@ export function StartNode(props: NodeProps<BaseNodeData>) {
 /**
  * END Node - Exit point for workflow
  */
-export function EndNode(props: NodeProps<BaseNodeData>) {
+export function EndNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   return (
     <TerminalNode
       {...props}
@@ -52,9 +52,10 @@ export function EndNode(props: NodeProps<BaseNodeData>) {
 /**
  * COMMENT Node - Annotations and notes
  */
-export function CommentNode(props: NodeProps<BaseNodeData>) {
-  const { action } = props.data;
-  const text = action.name || action.base?.description || "Comment";
+export function CommentNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
+  const action = props.data?.action;
+  if (!action) return null;
+  const text = action.name || "Comment";
 
   return (
     <div
@@ -82,8 +83,9 @@ export function CommentNode(props: NodeProps<BaseNodeData>) {
 /**
  * GROUP Node - Visual grouping container
  */
-export function GroupNode(props: NodeProps<BaseNodeData>) {
-  const { action } = props.data;
+export function GroupNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
+  const action = props.data?.action;
+  if (!action) return null;
   const groupName = action.name || "Group";
 
   return (
@@ -121,8 +123,9 @@ export function GroupNode(props: NodeProps<BaseNodeData>) {
 /**
  * MERGE Node - Merge point for multiple branches
  */
-export function MergeNode(props: NodeProps<BaseNodeData>) {
-  const { action } = props.data;
+export function MergeNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
+  const action = props.data?.action;
+  if (!action) return null;
 
   return (
     <div
@@ -164,9 +167,11 @@ export function MergeNode(props: NodeProps<BaseNodeData>) {
 /**
  * GO_TO_STATE Node - State transition
  */
-export function GoToStateNode(props: NodeProps<BaseNodeData>) {
-  const config = props.data.action.config as GoToStateActionConfig;
-  const stateName = config.stateName || "Unknown State";
+export function GoToStateNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
+  const action = props.data?.action;
+  if (!action) return null;
+  const config = action.config as GoToStateActionConfig;
+  const stateName = config.stateIds?.[0] || "Unknown State";
 
   return (
     <div className="relative">
@@ -188,7 +193,7 @@ export function GoToStateNode(props: NodeProps<BaseNodeData>) {
 /**
  * RUN_WORKFLOW Node - Execute sub-workflow
  */
-export function RunWorkflowNode(props: NodeProps<BaseNodeData>) {
+export function RunWorkflowNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
   const config = props.data.action.config as RunWorkflowActionConfig;
   const workflowId = config.workflowId || "Sub-workflow";
 

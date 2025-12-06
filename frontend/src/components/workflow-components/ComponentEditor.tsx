@@ -235,7 +235,7 @@ export function ComponentEditor({
       id: crypto.randomUUID(),
       type: "WAIT" as ActionType,
       name: "New Action",
-      position: { x: 0, y: 0 },
+      position: [0, 0],
     };
     setActions([...actions, newAction as Action]);
   };

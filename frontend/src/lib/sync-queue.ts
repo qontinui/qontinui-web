@@ -245,11 +245,11 @@ class SyncQueue {
 
         // Apply additional filters
         if (filter?.type && filter?.status) {
-          items = items.filter((item) => item.type === filter.type);
+          items = items.filter((item: SyncQueueItem) => item.type === filter.type);
         }
 
         // Sort by priority (higher first) then createdAt (older first)
-        items.sort((a, b) => {
+        items.sort((a: SyncQueueItem, b: SyncQueueItem) => {
           if (a.priority !== b.priority) {
             return b.priority - a.priority;
           }

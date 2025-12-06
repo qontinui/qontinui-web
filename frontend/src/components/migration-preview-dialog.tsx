@@ -194,7 +194,7 @@ export function MigrationPreviewDialog({
           </Button>
           <Button
             onClick={onApprove}
-            disabled={loading || (preview && !preview.needsMigration)}
+            disabled={loading || (preview ? !preview.needsMigration : false)}
           >
             {preview && preview.needsMigration
               ? "Approve & Migrate"

@@ -577,7 +577,7 @@ export function calculateMetricsTrend(
       issues: issuesTrend,
     },
     period: {
-      start: filtered[0].timestamp,
+      start: filtered[0]!!.timestamp,
       end: filtered[filtered.length - 1].timestamp,
     },
   };

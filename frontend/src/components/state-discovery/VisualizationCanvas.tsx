@@ -134,9 +134,9 @@ const VisualizationCanvas: React.FC<VisualizationCanvasProps> = ({
     for (let py = y; py < y2 && py < imageData.height; py++) {
       for (let px = x; px < x2 && px < imageData.width; px++) {
         const index = (py * imageData.width + px) * 4;
-        const r = imageData.data[index];
-        const g = imageData.data[index + 1];
-        const b = imageData.data[index + 2];
+        const r = imageData.data[index] ?? 0;
+        const g = imageData.data[index + 1] ?? 0;
+        const b = imageData.data[index + 2] ?? 0;
 
         // Calculate brightness (simple average)
         const brightness = (r + g + b) / 3;

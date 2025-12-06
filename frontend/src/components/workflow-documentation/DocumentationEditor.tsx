@@ -1,16 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Workflow, Action } from "@/lib/action-schema/action-types";
+import { Workflow } from "@/lib/action-schema/action-types";
 import {
   WorkflowDocumentation,
   WorkflowDocumentationService,
-  DocumentationTemplate,
 } from "@/services/workflow-documentation-service";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -24,9 +22,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -46,7 +41,6 @@ import {
   Sparkles,
   Save,
   X,
-  History,
   Download,
   Search,
   Eye,
@@ -260,10 +254,10 @@ export function DocumentationEditor({
     URL.revokeObjectURL(url);
   };
 
-  // Search in documentation
-  const highlightedContent = searchQuery
-    ? content.replace(new RegExp(searchQuery, "gi"), (match) => `**${match}**`)
-    : content;
+  // Search in documentation (currently unused but kept for future implementation)
+  // const highlightedContent = searchQuery
+  //   ? content.replace(new RegExp(searchQuery, "gi"), (match) => `**${match}**`)
+  //   : content;
 
   // Generate preview content (simplified - in real implementation would use react-markdown)
   const generatePreview = () => {
@@ -337,8 +331,8 @@ export function DocumentationEditor({
     lines.forEach((line, idx) => {
       const match = line.match(/^(#{1,6})\s+(.+)$/);
       if (match) {
-        const level = match[1].length;
-        const text = match[2].trim();
+        const level = match[1]!.length;
+        const text = match[2]!.trim();
         const id = `heading-${idx}`;
         headers.push({ level, text, id });
       }

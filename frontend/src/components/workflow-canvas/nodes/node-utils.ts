@@ -171,13 +171,11 @@ export function getNodeSummary(action: Action): string {
       const clickConfig = config as ClickActionConfig;
       if (
         !clickConfig.target ||
-        clickConfig.target.type === "currentPosition"
+        clickConfig.target === "Current Position"
       ) {
         return "Click at current position";
       }
-      return clickConfig.target?.text
-        ? `Click "${clickConfig.target.text}"`
-        : "Click element";
+      return `Click ${clickConfig.target}`;
 
     case "DOUBLE_CLICK":
       const doubleClickConfig = config as DoubleClickActionConfig;
@@ -314,7 +312,7 @@ export function getNodeSummary(action: Action): string {
       return `Function: ${customFunctionConfig.functionName || "unnamed"}`;
 
     default:
-      return type.replace(/_/g, " ").toLowerCase();
+      return (type as string).replace(/_/g, " ").toLowerCase();
   }
 }
 
@@ -538,8 +536,6 @@ export function isBranchingNode(actionType: ActionType): boolean {
 export function getActionTypeDisplayName(actionType: ActionType): string {
   const displayNames: Partial<Record<ActionType, string>> = {
     FIND_STATE_IMAGE: "Find State Image",
-    DOUBLE_CLICK: "Double Click",
-    RIGHT_CLICK: "Right Click",
     MOUSE_MOVE: "Mouse Move",
     MOUSE_DOWN: "Mouse Down",
     MOUSE_UP: "Mouse Up",

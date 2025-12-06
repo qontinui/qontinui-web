@@ -108,12 +108,12 @@ export function ScreenshotThumbnailStrip({
                 id={screenshot.id}
                 url={screenshot.url}
                 index={index}
-                annotationCount={screenshot.annotations.length}
+                annotationCount={(screenshot.annotations?.length ?? 0)}
                 isActive={index === currentIndex}
                 hasUnsavedChanges={screenshot.hasUnsavedChanges}
                 onClick={() => onScreenshotSelect(index)}
                 onRemove={() => onScreenshotRemove(index)}
-                fileName={screenshot.file.name}
+                fileName={screenshot.file?.name ?? ""}
               />
             ))}
           </div>

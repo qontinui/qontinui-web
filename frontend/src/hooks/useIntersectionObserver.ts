@@ -35,7 +35,7 @@ export function useIntersectionObserver(
     const observer = new IntersectionObserver(([entry]) => {
       // Once visible, keep it visible (for lazy loading)
       // Images should load once and stay loaded
-      if (entry.isIntersecting) {
+      if (entry?.isIntersecting) {
         setIsVisible(true);
       }
     }, defaultOptions);
@@ -75,7 +75,7 @@ export function useIntersectionObserverRepeating(
     };
 
     const observer = new IntersectionObserver(([entry]) => {
-      setIsVisible(entry.isIntersecting);
+      setIsVisible(entry?.isIntersecting ?? false);
     }, defaultOptions);
 
     observer.observe(element);

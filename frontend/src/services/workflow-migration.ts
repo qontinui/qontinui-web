@@ -289,8 +289,8 @@ function migrateV09ToV10(
       const currentAction = workflow.actions[i];
       const nextAction = workflow.actions[i + 1];
 
-      workflow.connections[currentAction.id] = {
-        main: [[{ action: nextAction.id, type: "main", index: 0 }]],
+      workflow.connections[currentAction?.id] = {
+        main: [[{ action: nextAction?.id, type: "main", index: 0 }]],
       };
     }
 

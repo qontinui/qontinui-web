@@ -460,7 +460,7 @@ export async function animateStaggered(
 
   for (let i = 0; i < actions.length; i++) {
     const action = actions[i];
-    const toPosition = toPositions[action.id];
+    const toPosition = toPositions[action?.id];
 
     if (!toPosition) continue;
 

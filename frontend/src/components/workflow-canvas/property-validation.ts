@@ -427,9 +427,9 @@ export function validateAction(action: Action): ValidationResult {
 
   // Validate base settings if present
   if (action.base) {
-    if (action.base.pauseBefore !== undefined && action.base.pauseBefore < 0) {
+    if ("pauseBeforeBegin" in action.base && action.base.pauseBeforeBegin !== undefined && action.base.pauseBeforeBegin < 0) {
       errors.push({
-        property: "base.pauseBefore",
+        property: "base.pauseBeforeBegin",
         message: "Pause before cannot be negative",
         severity: "error",
         code: "INVALID_VALUE",
@@ -461,12 +461,13 @@ export function validateAction(action: Action): ValidationResult {
     }
 
     if (
-      action.execution.maxRetries !== undefined &&
-      action.execution.maxRetries < 0
+      "retryCount" in action.execution &&
+      action.execution.retryCount !== undefined &&
+      action.execution.retryCount < 0
     ) {
       errors.push({
-        property: "execution.maxRetries",
-        message: "Max retries cannot be negative",
+        property: "execution.retryCount",
+        message: "Retry count cannot be negative",
         severity: "error",
         code: "INVALID_VALUE",
       });

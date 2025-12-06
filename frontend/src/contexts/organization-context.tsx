@@ -78,13 +78,13 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
           setCurrentOrganization(storedOrg);
         } else {
           // Stored org not found, select first org
-          setCurrentOrganization(orgs[0]);
-          localStorage.setItem(STORAGE_KEY, orgs[0].id);
+          setCurrentOrganization(orgs[0] ?? null);
+          localStorage.setItem(STORAGE_KEY, (orgs[0]!).id);
         }
       } else if (orgs.length > 0 && !currentOrganization) {
         // No stored org, select first one
-        setCurrentOrganization(orgs[0]);
-        localStorage.setItem(STORAGE_KEY, orgs[0].id);
+        setCurrentOrganization(orgs[0] ?? null);
+        localStorage.setItem(STORAGE_KEY, (orgs[0]!).id);
       }
     } catch (error) {
       console.error("[Organization] Failed to load organizations:", error);

@@ -1,6 +1,6 @@
 "use client";
 
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps, type Node as ReactFlowNode } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ImageIcon, Target, Play, MapPin, Square, Type } from "lucide-react";
@@ -53,7 +53,7 @@ interface IncomingTransition {
   workflows: string[];
 }
 
-interface StateNodeData {
+interface StateNodeData extends Record<string, unknown> {
   state: {
     id: string;
     name: string;
@@ -71,20 +71,11 @@ interface StateNodeData {
   onSelect: (id: string, selected: boolean) => void;
 }
 
-export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
-  const {
-    state,
-    images = [],
-    hasIncomingTransitions = false,
-    incomingTransitions = [],
-  } = data || {
-    state: { id: "", name: "", description: "", stateImages: [] },
-    images: [],
-    hasIncomingTransitions: false,
-    incomingTransitions: [],
-    isSelected: false,
-    onSelect: () => {},
-  };
+export function StateNode({ data, selected }: NodeProps<ReactFlowNode<StateNodeData>>) {
+  const state = data?.state ?? { id: "", name: "", description: "", stateImages: [] };
+  const images = data?.images ?? [];
+  const hasIncomingTransitions = data?.hasIncomingTransitions ?? false;
+  const incomingTransitions = data?.incomingTransitions ?? [];
   const { resolvePatternImage } = useAutomation();
 
   return (
@@ -141,7 +132,7 @@ export function StateNode({ data, selected }: NodeProps<StateNodeData>) {
             {/* State Images Thumbnail Grid */}
             {state.stateImages && state.stateImages.length > 0 && (
               <div className="grid grid-cols-3 gap-1 max-w-[150px] mx-auto">
-                {state.stateImages.slice(0, 6).map((stateImage) => {
+                {state.stateImages.slice(0, 6).map((stateImage: any) => {
                   // Get first pattern's image from library
                   const firstPattern = stateImage.patterns?.[0];
                   const imageData = firstPattern
