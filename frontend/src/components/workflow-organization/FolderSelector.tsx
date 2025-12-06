@@ -101,7 +101,6 @@ export function FolderSelector({
   excludeFolderIds = [],
   allowRoot = true,
   allowUncategorized = false,
-  placeholder = "Select a folder",
   className,
 }: FolderSelectorProps) {
   const [open, setOpen] = useState(false);

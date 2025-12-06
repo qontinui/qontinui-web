@@ -11,6 +11,13 @@
 import React from "react";
 import { NodeProps, Node as ReactFlowNode } from "@xyflow/react";
 import { BaseNode, BaseNodeData, CompactNode } from "./BaseNode";
+// MathOperationActionConfig is defined internally in action-types but not exported
+// Using a local interface for the type needed
+interface MathOperationConfig {
+  operation: string;
+  operands: unknown[];
+  variable?: string;
+}
 
 // =============================================================================
 // Variable Operation Nodes
@@ -116,7 +123,7 @@ export function StringOperationNode(props: NodeProps<ReactFlowNode<BaseNodeData>
  * MATH_OPERATION Node
  */
 export function MathOperationNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
-  const config = props.data.action.config as MathOperationActionConfig;
+  const config = props.data.action.config as MathOperationConfig;
   const operation = config.operation || "add";
 
   // Map operation to symbol

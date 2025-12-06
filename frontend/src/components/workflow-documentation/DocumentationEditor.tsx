@@ -86,7 +86,7 @@ export function DocumentationEditor({
   >("saved");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout>();
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const docService = WorkflowDocumentationService.getInstance();
   const templates = docService.getTemplates();

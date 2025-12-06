@@ -1,4 +1,4 @@
-import { Action } from "../../contexts/automation-context/types";
+import type { Action } from "../../lib/action-schema/action-types";
 
 export type ExecutionState =
   | "idle"

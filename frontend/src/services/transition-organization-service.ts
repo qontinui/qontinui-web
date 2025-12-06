@@ -672,21 +672,21 @@ export class TransitionOrganizationService {
       }
     } else if (rules.pattern === "linear") {
       for (let i = 0; i < stateIds.length - 1; i++) {
-        connections.push({ from: stateIds[i], to: stateIds[i + 1] });
+        connections.push({ from: stateIds[i]!, to: stateIds[i + 1]! });
       }
     } else if (rules.pattern === "circular") {
       for (let i = 0; i < stateIds.length; i++) {
         connections.push({
-          from: stateIds[i],
-          to: stateIds[(i + 1) % stateIds.length],
+          from: stateIds[i]!,
+          to: stateIds[(i + 1) % stateIds.length]!,
         });
       }
     } else if (rules.pattern === "star") {
       // First state is the hub
-      const hub = stateIds[0];
+      const hub = stateIds[0]!;
       for (let i = 1; i < stateIds.length; i++) {
-        connections.push({ from: hub, to: stateIds[i] });
-        connections.push({ from: stateIds[i], to: hub });
+        connections.push({ from: hub, to: stateIds[i]! });
+        connections.push({ from: stateIds[i]!, to: hub });
       }
     } else if (rules.customRules) {
       connections.push(...rules.customRules);
@@ -2029,7 +2029,7 @@ export class TransitionOrganizationService {
    */
   optimizeTransitionOrder(
     transitions: Transition[],
-    states: State[]
+    _states: State[]
   ): OptimizationSuggestion[] {
     const suggestions: OptimizationSuggestion[] = [];
 

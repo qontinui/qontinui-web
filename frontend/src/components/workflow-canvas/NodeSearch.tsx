@@ -9,7 +9,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ActionType } from "@/lib/action-schema/action-types";
 import { searchNodes, NODE_METADATA } from "./palette-config";
 import { PaletteItem } from "./PaletteItem";
-import { Search, X, Clock, TrendingUp } from "lucide-react";
+import { Search, X, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -65,7 +65,7 @@ export const NodeSearch: React.FC<NodeSearchProps> = ({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<NodeJS.Timeout>();
+  const debounceRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Load search history from localStorage
   useEffect(() => {

@@ -123,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       };
     }
+    return undefined;
   }, []);
 
   const checkAuth = async () => {

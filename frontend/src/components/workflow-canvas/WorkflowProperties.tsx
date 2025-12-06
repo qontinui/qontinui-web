@@ -38,7 +38,6 @@ import {
   Info,
   GitBranch,
   Repeat,
-  Zap,
 } from "lucide-react";
 import { hasConditionalLogic, hasLoops } from "@/lib/workflow-validator";
 
@@ -54,7 +53,6 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
   className = "",
 }) => {
   const workflow = useCanvasStore((state) => state.workflow);
-  const updateAction = useCanvasStore((state) => state.updateAction);
 
   const [newTag, setNewTag] = useState("");
   const [newVarName, setNewVarName] = useState("");
@@ -466,7 +464,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                     </div>
 
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {hasConditionalLogic(workflow) && (
+                      {hasConditionalLogic(workflow as import("@/lib/export-schema").Workflow) && (
                         <Badge
                           variant="outline"
                           className="border-green-600 text-green-400"
@@ -476,7 +474,7 @@ export const WorkflowProperties: React.FC<WorkflowPropertiesProps> = ({
                         </Badge>
                       )}
 
-                      {hasLoops(workflow) && (
+                      {hasLoops(workflow as import("@/lib/export-schema").Workflow) && (
                         <Badge
                           variant="outline"
                           className="border-yellow-600 text-yellow-400"

@@ -17,7 +17,7 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import type { State } from "@/contexts/automation-context/types";
 import { useAutomation } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
-import { ZoomIn, ZoomOut, Move, Maximize2 } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 
 export interface StateVisualizerProps {
   state: State;

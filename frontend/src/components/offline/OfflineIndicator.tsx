@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { syncQueue, SyncQueueStats } from "@/lib/sync-queue";
 import { syncProcessor } from "@/lib/sync-processor";
-import { WifiOff, Wifi, CloudOff, Cloud, RefreshCw } from "lucide-react";
+import { WifiOff, CloudOff, Cloud, RefreshCw } from "lucide-react";
 
 export function OfflineIndicator() {
   // Start with null to prevent hydration mismatch - only render after mount

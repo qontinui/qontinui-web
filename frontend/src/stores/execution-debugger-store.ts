@@ -3,15 +3,13 @@ import {
   ExecutionDebuggerState,
   ExecutionState,
   ActionExecutionEvent,
-  ActionExecutionStatus,
   ConditionEvaluation,
   LoopState,
-  BreakpointConfig,
   ExecutionLogEntry,
   VariableValue,
   ExecutionSpeed,
 } from "../types/debugger/execution-types";
-import { Action } from "../contexts/automation-context/types";
+import type { Action } from "../lib/action-schema/action-types";
 
 interface ExecutionDebuggerStore extends ExecutionDebuggerState {
   // State management

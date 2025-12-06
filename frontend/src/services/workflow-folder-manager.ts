@@ -26,7 +26,6 @@ import {
   CreateFolderOptions,
   UpdateFolderOptions,
   DeleteFolderOptions,
-  GetWorkflowsOptions,
   FolderSearchOptions,
   FolderSearchResult,
   FolderStorageData,

@@ -432,7 +432,7 @@ export const EXPECTATION_DEFAULTS = {
   /** Default retry interval for checkpoint assertions (ms) */
   RETRY_INTERVAL_MS: 500,
   /** Default terminal on failure setting */
-  IS_TERMINAL_ON_FAILURE: true,
+  IS_TERMINAL_ON_FAILURE: false,
   /** Default capture checkpoint on failure setting */
   CAPTURE_CHECKPOINT_ON_FAILURE: false,
   /** Default capture checkpoint after success setting */

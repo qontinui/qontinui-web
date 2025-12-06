@@ -413,7 +413,7 @@ export function ImageCanvas({
       // Update cursor based on hover
       if (!readonly && !isDrawing && !isDragging && !isPanning) {
         const hit = findBoxAtPoint(coords.x, coords.y);
-        if (hit) {
+        if (hit && hit.handle !== null) {
           setCursor(CURSORS[hit.handle]);
         } else {
           setCursor(CURSORS.default);

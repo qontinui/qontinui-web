@@ -106,7 +106,7 @@ const ConfettiCelebration: React.FC<{ show: boolean }> = ({ show }) => {
       const newParticles = Array.from({ length: 30 }, (_, i) => ({
         id: i,
         left: Math.random() * 100,
-        color: colors[Math.floor(Math.random() * colors.length)],
+        color: colors[Math.floor(Math.random() * colors.length)] as string,
       }));
       setParticles(newParticles);
 
@@ -114,6 +114,7 @@ const ConfettiCelebration: React.FC<{ show: boolean }> = ({ show }) => {
       const timer = setTimeout(() => setParticles([]), 3000);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [show]);
 
   if (!show || particles.length === 0) return null;
@@ -175,6 +176,7 @@ export const QuickStartChecklist: React.FC = () => {
         }, 3000);
       }
     }
+    return undefined;
   }, [
     completedTasks,
     lastCompletedCount,

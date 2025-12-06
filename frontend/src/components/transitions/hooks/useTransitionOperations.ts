@@ -46,7 +46,7 @@ export function useTransitionOperations({
 
   const handleUpdate = useCallback(
     (transition: Transition, updates: Partial<Transition>) => {
-      updateTransition({ ...transition, ...updates });
+      updateTransition({ ...transition, ...updates } as Transition);
       toast.success("Transition updated");
     },
     [updateTransition]

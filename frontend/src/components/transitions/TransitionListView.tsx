@@ -40,7 +40,7 @@ interface TransitionListViewProps {
 export function TransitionListView({
   transitions,
   states,
-  workflows,
+  workflows: _workflows,
   validation,
   selectedTransitions,
   onTransitionSelect,

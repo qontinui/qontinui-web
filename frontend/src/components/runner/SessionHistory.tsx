@@ -313,7 +313,7 @@ export function SessionHistory() {
                         <div key={screenshot.id} className="space-y-2">
                           <div className="relative aspect-video bg-muted rounded-md overflow-hidden border">
                             <Image
-                              src={screenshot.presigned_url}
+                              src={screenshot.presigned_url ?? ""}
                               alt={screenshot.name}
                               fill
                               className="object-cover"

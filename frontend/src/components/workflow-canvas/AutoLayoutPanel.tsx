@@ -264,7 +264,7 @@ export function AutoLayoutPanel({
     "balanced-hierarchical"
   );
   const [customOptions, setCustomOptions] = useState<LayoutOptions>(
-    BUILTIN_(PRESETS[2]!).options
+    BUILTIN_PRESETS[2]!.options
   );
   const [animate, setAnimate] = useState(true);
   const [showPreview, setShowPreview] = useState(true);
@@ -369,7 +369,6 @@ export function AutoLayoutPanel({
   };
 
   const allPresets = [...BUILTIN_PRESETS, ...customPresets];
-  const needsLayout = layoutService.needsLayout(workflow);
 
   return (
     <div className="auto-layout-panel">
@@ -694,7 +693,7 @@ interface StyleButtonProps {
   onClick: () => void;
 }
 
-function StyleButton({ style, info, selected, onClick }: StyleButtonProps) {
+function StyleButton({ style: _style, info, selected, onClick }: StyleButtonProps) {
   return (
     <button
       className={`style-button ${selected ? "selected" : ""}`}

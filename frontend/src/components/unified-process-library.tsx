@@ -12,7 +12,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Play,
   Trash2,
   Folder,
   FolderOpen,
@@ -51,7 +50,7 @@ export function UnifiedProcessLibrary({
   onCreateGraph,
   onConvertItem,
 }: UnifiedProcessLibraryProps) {
-  const { workflows, transitions, categories, addCategory, deleteCategory } =
+  const { workflows, categories, addCategory, deleteCategory } =
     useAutomation();
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
@@ -89,13 +88,6 @@ export function UnifiedProcessLibrary({
     },
     {} as Record<string, LibraryItem[]>
   );
-
-  const getItemUsageCount = (item: LibraryItem) => {
-    // Count how many transitions reference this workflow
-    return transitions.filter(
-      (t) => t.workflows && t.workflows.includes(item.id)
-    ).length;
-  };
 
   const getItemName = (item: LibraryItem) => {
     return item.name;
@@ -262,7 +254,6 @@ export function UnifiedProcessLibrary({
   };
 
   const renderItem = (item: LibraryItem) => {
-    const usageCount = getItemUsageCount(item);
     const isLinear = isLinearWorkflow(item);
     const isDraggable = true; // All workflows can be dragged
 

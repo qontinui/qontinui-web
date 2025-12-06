@@ -4,10 +4,9 @@
  * Defines the bridge between qontinui's workflow format and React Flow's node/edge system.
  */
 
-import { Node, Edge, Viewport, XYPosition } from "@xyflow/react";
+import { Node, Edge, XYPosition } from "@xyflow/react";
 import {
   Action,
-  Workflow,
   Connection,
   ActionType,
 } from "@/lib/action-schema/action-types";
@@ -54,7 +53,7 @@ export interface CanvasNodeData {
 /**
  * Canvas node wrapping an Action for React Flow
  */
-export interface CanvasNode extends Node {
+export interface CanvasNode extends Omit<Node, 'data'> {
   type: string; // Node type determines rendering
   data: CanvasNodeData;
   position: XYPosition;
@@ -96,7 +95,7 @@ export interface CanvasEdgeData {
 /**
  * Canvas edge wrapping a Connection for React Flow
  */
-export interface CanvasEdge extends Edge {
+export interface CanvasEdge extends Omit<Edge, 'data'> {
   type: "custom"; // Always use custom edge component
   data: CanvasEdgeData;
   animated?: boolean;
@@ -252,7 +251,6 @@ export enum ActionCategory {
 export const ACTION_TYPE_TO_CATEGORY: Record<ActionType, ActionCategory> = {
   // Find actions
   FIND: ActionCategory.FIND,
-  FIND_STATE_IMAGE: ActionCategory.FIND,
   VANISH: ActionCategory.FIND,
   EXISTS: ActionCategory.FIND,
   WAIT: ActionCategory.FIND,
@@ -294,6 +292,10 @@ export const ACTION_TYPE_TO_CATEGORY: Record<ActionType, ActionCategory> = {
   GO_TO_STATE: ActionCategory.STATE,
   RUN_WORKFLOW: ActionCategory.STATE,
   SCREENSHOT: ActionCategory.STATE,
+
+  // Code actions
+  CODE_BLOCK: ActionCategory.DATA,
+  CUSTOM_FUNCTION: ActionCategory.DATA,
 };
 
 /**

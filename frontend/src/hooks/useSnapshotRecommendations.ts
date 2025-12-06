@@ -51,7 +51,7 @@ export function useSnapshotRecommendations(
 
       // Auto-select the first (best) recommendation
       if (data.recommendations.length > 0) {
-        setSelectedRecommendation(data.recommendations[0]);
+        setSelectedRecommendation(data.recommendations[0] || null);
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error("Unknown error");

@@ -4,13 +4,11 @@ import React, { useState, useMemo } from "react";
 import { Workflow, Action } from "@/lib/action-schema/action-types";
 import {
   ActionComment,
-  WorkflowDocumentationService,
 } from "@/services/workflow-documentation-service";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,7 +33,6 @@ import {
   MoreVertical,
   Search,
   Download,
-  FileText,
   X,
   Check,
   ChevronRight,
@@ -76,8 +73,6 @@ export function ActionCommentsPanel({
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"selected" | "all">("selected");
-
-  const docService = WorkflowDocumentationService.getInstance();
 
   // Get action by ID
   const getAction = (actionId: string): Action | undefined => {

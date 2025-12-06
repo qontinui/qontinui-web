@@ -26,7 +26,7 @@ function createExampleWorkflows(): Workflow[] {
     actions: [
       createAction(
         "CLICK",
-        { target: { image: "login-button.png" } },
+        { target: "login-button.png" as any },
         [100, 100],
         {
           id: "action-1",
@@ -34,7 +34,7 @@ function createExampleWorkflows(): Workflow[] {
       ),
       createAction(
         "TYPE",
-        { text: "username", target: { selector: "#username" } },
+        { text: "username" },
         [100, 250],
         {
           id: "action-2",
@@ -59,7 +59,7 @@ function createExampleWorkflows(): Workflow[] {
       createAction("RUN_WORKFLOW", { workflowId: "workflow-a" }, [100, 100], {
         id: "action-1",
       }),
-      createAction("CLICK", { target: { selector: "#checkout" } }, [100, 250], {
+      createAction("CLICK", { target: "#checkout" as any }, [100, 250], {
         id: "action-2",
       }),
     ],
@@ -81,7 +81,7 @@ function createExampleWorkflows(): Workflow[] {
       createAction("RUN_WORKFLOW", { workflowId: "workflow-b" }, [100, 100], {
         id: "action-1",
       }),
-      createAction("CLICK", { target: { selector: "#confirm" } }, [100, 250], {
+      createAction("CLICK", { target: "#confirm" as any }, [100, 250], {
         id: "action-2",
       }),
     ],
@@ -100,7 +100,7 @@ function createExampleWorkflows(): Workflow[] {
     format: "graph",
     category: "Utilities",
     actions: [
-      createAction("WAIT", { duration: 1000 }, [100, 100], {
+      createAction("WAIT", { waitFor: "time", duration: 1000 }, [100, 100], {
         id: "action-1",
       }),
     ],
@@ -185,7 +185,7 @@ export function example2_BuildDependencyGraph() {
   console.log(`Leaf workflows: ${graph.leaves.join(", ")}`);
 
   console.log("\nNode details:");
-  for (const [id, node] of graph.nodes) {
+  for (const [, node] of graph.nodes) {
     console.log(`  ${node.name}:`);
     console.log(
       `    - Dependencies (${node.outDegree}): ${node.dependencies.join(", ") || "none"}`

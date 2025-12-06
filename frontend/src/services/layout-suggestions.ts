@@ -139,7 +139,7 @@ export function autoFixSuggestions(
 // ============================================================================
 
 function detectOverlapIssues(context: SuggestionContext): LayoutSuggestion[] {
-  const { workflow, statistics } = context;
+  const { statistics } = context;
 
   if (statistics.nodesOverlapping === 0) {
     return [];

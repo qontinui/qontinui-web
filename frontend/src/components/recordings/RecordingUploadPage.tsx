@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
 import { useProjects } from "@/hooks/use-projects";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +33,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { recordingService } from "@/services/service-factory";
-import type { UploadResponse, RecordingError } from "@/types/recording";
+// Removed unused type imports - types are inferred from service responses
 
 interface UploadState {
   file: File | null;
@@ -54,8 +53,7 @@ interface UploadState {
 
 export function RecordingUploadPage() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { data: projects = [], isLoading: projectsLoading } = useProjects();
+  const { data: projects = [] } = useProjects();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [state, setState] = useState<UploadState>({

@@ -27,8 +27,8 @@ export class TokenManager {
       ? Date.now() + tokens.refresh_expires_in * 1000
       : null;
 
-    this.storage.saveAccessToken(tokens.access_token);
-    this.storage.saveRefreshToken(tokens.refresh_token);
+    this.storage.saveAccessToken();
+    this.storage.saveRefreshToken();
     if (expiry) {
       this.storage.saveTokenExpiry(expiry);
     }

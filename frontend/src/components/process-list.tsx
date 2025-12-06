@@ -12,7 +12,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Play,
   Trash2,
   Folder,
   FolderOpen,
@@ -56,7 +55,7 @@ export function ProcessList({
   onUpdateProcess,
   onCreateProcess,
 }: ProcessListProps) {
-  const { transitions, categories, addCategory, deleteCategory } =
+  const { categories, addCategory, deleteCategory } =
     useAutomation();
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
     new Set()
@@ -102,9 +101,6 @@ export function ProcessList({
     {} as Record<string, Process[]>
   );
 
-  const getProcessUsageCount = (processId: string) => {
-    return transitions.filter((t) => t.workflows.includes(processId)).length;
-  };
 
   const handleDelete = (processId: string, processName: string) => {
     setDeleteWorkflowDialog({
@@ -234,7 +230,6 @@ export function ProcessList({
   };
 
   const renderProcess = (process: Process) => {
-    const usageCount = getProcessUsageCount(process.id);
     return (
       <Card
         key={process.id}

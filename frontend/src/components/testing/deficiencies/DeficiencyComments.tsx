@@ -52,7 +52,7 @@ interface DeficiencyCommentsProps {
  * - Keyboard shortcuts (Ctrl+Enter to submit)
  */
 export function DeficiencyComments({
-  deficiencyId,
+  deficiencyId: _deficiencyId,
   comments,
   onCommentAdd,
   className,

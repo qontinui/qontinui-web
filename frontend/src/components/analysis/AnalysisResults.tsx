@@ -89,7 +89,7 @@ export function AnalysisResults({
       "#8b5cf6", // purple
       "#ec4899", // pink
     ];
-    return colors[index % colors.length] ?? colors[0];
+    return (colors[index % colors.length] ?? colors[0]) as string;
   };
 
   const elementsToDisplay =

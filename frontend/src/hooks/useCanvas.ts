@@ -12,12 +12,6 @@
 
 import { useCallback, useMemo } from "react";
 import { useCanvasStore } from "../stores/canvas-store";
-import type {
-  Action,
-  Workflow,
-  Connection,
-} from "../lib/action-schema/action-types";
-import type { Viewport, ValidationResult } from "../stores/canvas-store";
 
 // ============================================================================
 // Main Canvas Hook
@@ -30,14 +24,6 @@ export function useCanvas() {
   const store = useCanvasStore();
 
   return {
-    // State
-    workflow: store.workflow,
-    isDirty: store.isDirty,
-    selectedNodes: store.selectedNodes,
-    selectedEdges: store.selectedEdges,
-    viewport: store.viewport,
-    validationResult: store.validationResult,
-
     // All actions available
     ...store,
   };

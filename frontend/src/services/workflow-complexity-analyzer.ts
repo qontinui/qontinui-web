@@ -13,10 +13,8 @@
  * - Normalized to 0-100 scale
  */
 
-import {
+import type {
   Workflow,
-  Action,
-  Connections,
 } from "@/lib/action-schema/action-types";
 
 // ============================================================================
@@ -226,7 +224,10 @@ function calculateDepthBFS(workflow: Workflow): number {
   if (rootNodes.length === 0 && workflow.actions.length > 0) {
     // If no root nodes but we have actions, there might be cycles
     // Start from first action
-    rootNodes.push(workflow.actions[0].id);
+    const firstAction = workflow.actions[0];
+    if (firstAction) {
+      rootNodes.push(firstAction.id);
+    }
   }
 
   let maxDepth = 0;
@@ -616,7 +617,7 @@ export function getComplexityDistribution(
  * Get complexity trends over time
  */
 export function getComplexityTrends(
-  workflowId: string,
+  _workflowId: string,
   history: Array<{ version: string; workflow: Workflow; timestamp: string }>
 ): ComplexityTrendPoint[] {
   return history.map((entry) => {

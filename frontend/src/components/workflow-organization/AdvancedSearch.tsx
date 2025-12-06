@@ -13,7 +13,6 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Search,
   Filter,
-  X,
   Save,
   Download,
   ChevronDown,
@@ -25,7 +24,6 @@ import {
   BarChart3,
   FileCheck,
   BookOpen,
-  TrendingUp,
   RotateCcw,
 } from "lucide-react";
 import { Workflow } from "../../lib/action-schema/action-types";
@@ -39,7 +37,6 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Badge } from "../ui/badge";
-import { Slider } from "../ui/slider";
 import { Separator } from "../ui/separator";
 import { ScrollArea } from "../ui/scroll-area";
 import {
@@ -74,10 +71,6 @@ export interface AdvancedSearchProps {
   className?: string;
 }
 
-interface MultiSelectItem {
-  id: string;
-  label: string;
-}
 
 // ============================================================================
 // Helper Functions
@@ -199,7 +192,7 @@ function matchesFilter(workflow: Workflow, filter: SearchFilter): boolean {
   // Action types filter
   if (filter.actionTypes && filter.actionTypes.length > 0) {
     const workflowActionTypes = new Set(workflow.actions.map((a) => a.type));
-    if (!filter.actionTypes.some((type) => workflowActionTypes.has(type))) {
+    if (!filter.actionTypes.some((type) => workflowActionTypes.has(type as import("@/lib/action-schema/action-types").ActionType))) {
       return false;
     }
   }

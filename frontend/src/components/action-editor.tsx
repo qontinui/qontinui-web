@@ -51,7 +51,6 @@ interface Action {
     | "LOOP"
     // Other actions
     | "FIND"
-    | "FIND_STATE_IMAGE"
     | "VANISH"
     | "GO_TO_STATE"
     | "RUN_WORKFLOW";
@@ -69,9 +68,10 @@ const ACTION_GROUPS = {
   Find: [
     { type: "FIND", label: "Find Element", color: "bg-blue-500" },
     {
-      type: "FIND_STATE_IMAGE",
-      label: "Find State Image",
+      type: "FIND",
+      label: "Find State",
       color: "bg-cyan-500",
+      preset: "stateImage",
     },
   ],
   Mouse: [
@@ -317,11 +317,6 @@ function getDefaultConfig(type: Action["type"]): Record<string, any> {
         },
         // similarity, strategy, pause_before_begin, pause_after_end are optional overrides
       };
-    case "FIND_STATE_IMAGE":
-      return {
-        state: null,
-        // similarity, strategy, pause_before_begin, pause_after_end are optional overrides
-      };
     case "CLICK":
       return {
         target: "Last Find Result",
@@ -500,6 +495,19 @@ function getActionSummary(
       if (action.config.removedImage) {
         return `[REMOVED: ${action.config.removedImage}]`;
       }
+
+      // Handle stateImage target type (Find State)
+      if (action.config.target?.type === "stateImage") {
+        const stateId = action.config.target.stateId;
+        if (stateId) {
+          const state = states.find((s: any) => s.id === stateId);
+          return state
+            ? `Find any image from ${state.name}`
+            : "State not found";
+        }
+        return "No state selected";
+      }
+
       // Handle new target structure
       const imageId =
         action.config.target?.type === "image"
@@ -540,12 +548,6 @@ function getActionSummary(
         return "Image not found";
       }
       return "No image selected";
-    case "FIND_STATE_IMAGE":
-      if (action.config.state) {
-        const state = states.find((s) => s.id === action.config.state);
-        return state ? `Find any image from ${state.name}` : "State not found";
-      }
-      return "No state selected";
     case "CLICK":
       return `${action.config.mouseButton?.toLowerCase() || "left"} click on ${action.config.target}`;
     case "DOUBLE_CLICK":

@@ -113,9 +113,9 @@ export function TransitionManager() {
       );
 
       if (matchingTransitions.length === 1) {
-        setSelectedTransition(matchingTransitions[0]);
+        setSelectedTransition((matchingTransitions[0] || null) as Transition | null);
       } else if (matchingTransitions.length > 1) {
-        setSelectedTransition(matchingTransitions[0]);
+        setSelectedTransition((matchingTransitions[0] || null) as Transition | null);
       } else {
         toast.info("No transition exists for this cell");
       }
@@ -133,7 +133,7 @@ export function TransitionManager() {
   }, [transitionToDelete, operations]);
 
   const handleIssueClick = useCallback(
-    (issueType: string, itemId: string) => {
+    (_issueType: string, itemId: string) => {
       const transition = transitions.find((t) => t.id === itemId);
       if (transition) {
         setSelectedTransition(transition);

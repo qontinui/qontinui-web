@@ -18,7 +18,7 @@ import type {
   GenerationContext,
   RefinementFeedback,
 } from "../services/mcp-client";
-import type { Workflow, Action } from "../lib/action-schema/action-types";
+import type { Workflow } from "../lib/action-schema/action-types";
 
 // ============================================================================
 // Types

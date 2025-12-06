@@ -50,8 +50,8 @@ export async function applyBackgroundRemoval(
       currentMaskData.height
     );
     for (let i = 0; i < combinedMaskData.data.length; i += 4) {
-      const currentMaskValue = currentMaskData.data[i]; // R channel (0 = masked, 255 = visible)
-      const newMaskValue = newMaskData.data[i]; // R channel (0 = masked, 255 = visible)
+      const currentMaskValue = currentMaskData.data[i]!; // R channel (0 = masked, 255 = visible)
+      const newMaskValue = newMaskData.data[i]!; // R channel (0 = masked, 255 = visible)
 
       // If either mask says to hide the pixel, hide it (use minimum value)
       const finalValue = Math.min(currentMaskValue, newMaskValue);
@@ -131,9 +131,9 @@ export async function applyBorderRemoval(
 
         // Check if pixel matches edge color (border)
         const isBorder = colorMatches(
-          r,
-          g,
-          b,
+          r!,
+          g!,
+          b!,
           edgeColor.r,
           edgeColor.g,
           edgeColor.b,
@@ -155,8 +155,8 @@ export async function applyBorderRemoval(
       currentMaskData.height
     );
     for (let i = 0; i < combinedMaskData.data.length; i += 4) {
-      const currentMaskValue = currentMaskData.data[i]; // R channel (0 = masked, 255 = visible)
-      const newMaskValue = newMaskData.data[i]; // R channel (0 = masked, 255 = visible)
+      const currentMaskValue = currentMaskData.data[i]!; // R channel (0 = masked, 255 = visible)
+      const newMaskValue = newMaskData.data[i]!; // R channel (0 = masked, 255 = visible)
 
       // If either mask says to hide the pixel, hide it (use minimum value)
       const finalValue = Math.min(currentMaskValue, newMaskValue);

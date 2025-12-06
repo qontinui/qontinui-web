@@ -32,7 +32,6 @@ import type {
   RegionAnalysisResponse,
   FusedRegion,
   DetectedRegion,
-  RegionAnalyzerResult,
 } from "@/services/regionAnalysis";
 
 interface RegionAnalysisResultsProps {
@@ -84,7 +83,7 @@ export function RegionAnalysisResults({
     toast.success("Results exported");
   };
 
-  const getColorForSource = (source: string, index: number): string => {
+  const getColorForSource = (_source: string, index: number): string => {
     const colors = [
       "#ef4444", // red
       "#3b82f6", // blue
@@ -95,7 +94,7 @@ export function RegionAnalysisResults({
       "#06b6d4", // cyan
       "#f97316", // orange
     ];
-    return colors[index % colors.length] ?? colors[0];
+    return (colors[index % colors.length] ?? colors[0]) as string;
   };
 
   const regionsToDisplay =
@@ -296,7 +295,7 @@ export function RegionAnalysisResults({
                       (results.fused_regions || []).map(
                         (region, regionIndex) => {
                           const color = getColorForSource(
-                            region.sources[0],
+                            region.sources[0] ?? "",
                             regionIndex
                           );
                           const hasGrid =

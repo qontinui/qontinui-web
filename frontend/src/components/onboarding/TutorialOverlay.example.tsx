@@ -298,16 +298,14 @@ For additional mobile customizations:
 // ============================================================================
 
 export function TutorialAnalytics() {
-  const { hasStartedTour, hasCompletedWelcome, currentTourStep } =
-    useOnboardingStore();
-
   // Track tutorial progress
+  // Removed unused onboardingState variable
   // You can send this data to your analytics service
-  const tutorialProgress = {
-    started: hasStartedTour,
-    completed: hasCompletedWelcome,
-    currentStep: currentTourStep,
-  };
+  // const tutorialProgress = {
+  //   started: hasStartedTour,
+  //   completed: hasCompletedWelcome,
+  //   currentStep: currentTourStep,
+  // };
 
   // Example: Send to analytics
   // useEffect(() => {

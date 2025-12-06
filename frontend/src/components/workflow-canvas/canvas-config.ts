@@ -266,7 +266,9 @@ export const NODE_DIMENSIONS = {
  * Get dimensions for a node category
  */
 export function getNodeDimensions(category: ActionCategory) {
-  return NODE_DIMENSIONS[category] || NODE_DIMENSIONS.default;
+  // Map category to property name (handle both camelCase and snake_case)
+  const categoryKey = category === "control_flow" ? "controlFlow" : category;
+  return NODE_DIMENSIONS[categoryKey as keyof typeof NODE_DIMENSIONS] || NODE_DIMENSIONS.default;
 }
 
 // ============================================================================

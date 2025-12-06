@@ -112,7 +112,7 @@ export function WorkflowAnalyticsExample() {
           a2: { main: [[{ action: "a3", type: "main", index: 0 }]] },
         },
       },
-    ];
+    ] as Workflow[];
   }, []);
 
   // Get all metrics

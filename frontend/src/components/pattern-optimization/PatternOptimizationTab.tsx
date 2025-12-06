@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { StateImage } from "../../types/stateDiscovery";
-import { MaskVisualization } from "../masks/MaskVisualization";
 import { ScreenshotSelector } from "../screenshot-selector";
-import { useAutomation } from "../../contexts/automation-context";
 
 interface Pattern {
   id: string;
@@ -26,17 +24,15 @@ interface Pattern {
 }
 
 export const PatternOptimizationTab: React.FC = () => {
-  const { screenshots } = useAutomation();
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [selectedPattern, setSelectedPattern] = useState<Pattern | null>(null);
-  const [stateImages, setStateImages] = useState<StateImage[]>([]);
+  const [stateImages] = useState<StateImage[]>([]);
   const [selectedStateImage, setSelectedStateImage] =
     useState<StateImage | null>(null);
   const [selectedScreenshotId, setSelectedScreenshotId] = useState<string>("");
   const [isCreatingPattern, setIsCreatingPattern] = useState(false);
   const [patternName, setPatternName] = useState("");
   const [similarityThreshold, setSimilarityThreshold] = useState(0.95);
-  const [useColor, setUseColor] = useState(true);
   const [isOptimizing, setIsOptimizing] = useState(false);
 
   useEffect(() => {

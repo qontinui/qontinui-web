@@ -18,7 +18,6 @@ import {
   Settings,
   Code,
   Eye,
-  Copy,
 } from "lucide-react";
 import {
   SubflowComponent,
@@ -108,9 +107,6 @@ export function ComponentEditor({
     ValidationError[]
   >([]);
   const [activeTab, setActiveTab] = React.useState("metadata");
-  const [expandedSections, setExpandedSections] = React.useState<Set<string>>(
-    new Set(["parameters", "actions"])
-  );
 
   // Validation
   const validate = React.useCallback((): boolean => {
@@ -222,7 +218,7 @@ export function ComponentEditor({
     updates: Partial<ComponentParameter>
   ) => {
     const updated = [...parameters];
-    updated[index] = { ...updated[index], ...updates };
+    updated[index] = { ...updated[index], ...updates } as ComponentParameter;
     setParameters(updated);
   };
 
@@ -242,18 +238,6 @@ export function ComponentEditor({
 
   const handleRemoveAction = (index: number) => {
     setActions(actions.filter((_, i) => i !== index));
-  };
-
-  const toggleSection = (section: string) => {
-    setExpandedSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(section)) {
-        next.delete(section);
-      } else {
-        next.add(section);
-      }
-      return next;
-    });
   };
 
   const getErrorForField = (field: string): string | undefined => {
@@ -790,7 +774,7 @@ interface ActionListItemProps {
   onRemove: () => void;
 }
 
-function ActionListItem({ action, index, onRemove }: ActionListItemProps) {
+function ActionListItem({ action, index: _index, onRemove }: ActionListItemProps) {
   return (
     <div className="flex items-center gap-2 p-3 rounded-lg border bg-card hover:bg-accent/50">
       <GripVertical className="size-4 text-muted-foreground cursor-grab" />

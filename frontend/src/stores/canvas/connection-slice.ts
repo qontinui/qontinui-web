@@ -36,15 +36,15 @@ export const createConnectionSlice: StateCreator<
         state.workflow.connections[sourceId] = {};
       }
 
-      if (!state.workflow.connections[sourceId][outputType]) {
-        state.workflow.connections[sourceId][outputType] = [];
+      const sourceConnections = state.workflow.connections[sourceId];
+      if (!sourceConnections[outputType as keyof typeof sourceConnections]) {
+        (sourceConnections[outputType as keyof typeof sourceConnections] as Connection[][]) = [];
       }
 
       // Ensure output index array exists
-      while (
-        state.workflow.connections[sourceId][outputType]!.length <= outputIndex
-      ) {
-        state.workflow.connections[sourceId][outputType]!.push([]);
+      const connArray = sourceConnections[outputType as keyof typeof sourceConnections] as Connection[][];
+      while (connArray.length <= outputIndex) {
+        connArray.push([]);
       }
 
       // Add connection
@@ -54,9 +54,7 @@ export const createConnectionSlice: StateCreator<
         index: targetIndex,
       };
 
-      state.workflow.connections[sourceId][outputType]![outputIndex].push(
-        connection
-      );
+      connArray[outputIndex]?.push(connection);
       state.isDirty = true;
     });
     get().recordHistory("Add connection");
@@ -69,13 +67,14 @@ export const createConnectionSlice: StateCreator<
     targetId: string
   ) => {
     set((state) => {
-      if (!state.workflow?.connections[sourceId]?.[outputType]?.[outputIndex])
-        return;
+      const sourceConnections = state.workflow?.connections[sourceId];
+      if (!sourceConnections) return;
+      const connArray = sourceConnections[outputType as keyof typeof sourceConnections] as Connection[][] | undefined;
+      if (!connArray?.[outputIndex]) return;
 
-      state.workflow.connections[sourceId][outputType]![outputIndex] =
-        state.workflow.connections[sourceId][outputType]![outputIndex].filter(
-          (conn: any) => conn.action !== targetId
-        );
+      connArray[outputIndex] = connArray[outputIndex].filter(
+        (conn: Connection) => conn.action !== targetId
+      );
 
       state.isDirty = true;
     });

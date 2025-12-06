@@ -89,7 +89,7 @@ const StateDiscoveryTab: React.FC = () => {
     startAnalysis,
     deleteStateImage,
     bulkDeleteStateImages,
-    mergeStateImages,
+
     saveStructure,
     stateImages,
     states,
@@ -159,7 +159,10 @@ const StateDiscoveryTab: React.FC = () => {
       screenshots.length > 0 &&
       selectedScreenshotIndex < screenshots.length
     ) {
-      return URL.createObjectURL(screenshots[selectedScreenshotIndex]);
+      const screenshot = screenshots[selectedScreenshotIndex];
+      if (screenshot) {
+        return URL.createObjectURL(screenshot);
+      }
     }
     return "";
   }, [screenshots, selectedScreenshotIndex]);
@@ -488,7 +491,7 @@ const StateDiscoveryTab: React.FC = () => {
             </div>
             <Slider
               value={[similarityThreshold]}
-              onValueChange={([value]) => setSimilarityThreshold(value)}
+              onValueChange={([value]) => setSimilarityThreshold(value ?? 0.85)}
               min={0}
               max={1}
               step={0.01}
@@ -682,7 +685,7 @@ const StateDiscoveryTab: React.FC = () => {
                   <Slider
                     value={[maxDarkPixelPercentage]}
                     onValueChange={([value]) =>
-                      setMaxDarkPixelPercentage(value)
+                      setMaxDarkPixelPercentage(value ?? 50)
                     }
                     min={0}
                     max={100}
@@ -706,7 +709,7 @@ const StateDiscoveryTab: React.FC = () => {
                   <Slider
                     value={[maxLightPixelPercentage]}
                     onValueChange={([value]) =>
-                      setMaxLightPixelPercentage(value)
+                      setMaxLightPixelPercentage(value ?? 50)
                     }
                     min={0}
                     max={100}
@@ -813,8 +816,8 @@ const StateDiscoveryTab: React.FC = () => {
                   imageUrl={selectedScreenshotUrl}
                   imageWidth={screenshotDimensions.width}
                   imageHeight={screenshotDimensions.height}
-                  onRegionSelect={setSelectedRegion}
-                  initialRegion={selectedRegion}
+                  onRegionSelect={(region) => setSelectedRegion(region ?? null)}
+                  initialRegion={selectedRegion ?? undefined}
                 />
               </div>
             ) : (
@@ -829,9 +832,9 @@ const StateDiscoveryTab: React.FC = () => {
                   minWidth: "300px",
                 }}
               >
-                {screenshots.length > 0 ? (
+                {screenshots.length > 0 && screenshots[selectedScreenshotIndex] ? (
                   <VisualizationCanvas
-                    screenshot={screenshots[selectedScreenshotIndex]}
+                    screenshot={screenshots[selectedScreenshotIndex]!}
                     stateImages={stateImages} // Pass all state images for pixel analysis
                     selectedStateImage={selectedStateImage}
                     selectedStateImages={selectedStateImages}
@@ -882,7 +885,7 @@ const StateDiscoveryTab: React.FC = () => {
                   stateImage={selectedStateImage}
                   screenshots={screenshots}
                   states={filteredStates} // Use filtered states
-                  onUpdate={(updates) => {
+                  onUpdate={() => {
                     // Handle StateImage updates
                     // Update StateImage
                   }}

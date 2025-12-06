@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from "react";
 import { ExecutionDebugger } from "./ExecutionDebugger";
 import { useExecutionDebugger } from "../../stores/execution-debugger-store";
-import { Action, Process } from "../../contexts/automation-context/types";
+import type { Action, Workflow } from "../../lib/action-schema/action-types";
 
 // ============================================================================
 // Example 1: Basic Usage with Simple Process
@@ -18,36 +18,43 @@ export function BasicDebuggerExample() {
   const [debuggerOpen, setDebuggerOpen] = useState(false);
   const { setDebugEnabled, initialize } = useExecutionDebugger();
 
-  const simpleProcess: Process = {
+  const simpleProcess: Workflow = {
     id: "simple-1",
     name: "Simple Login Process",
+    version: "1.0.0",
+    format: "graph",
     description: "Basic login flow",
     actions: [
-      { id: "1", type: "FIND", config: { description: "Find username field" } },
+      { id: "1", type: "FIND", config: { description: "Find username field" }, position: [0, 0] },
       {
         id: "2",
         type: "CLICK",
         config: { description: "Click username field" },
+        position: [0, 0],
       },
       {
         id: "3",
         type: "TYPE",
         config: { text: "user@example.com", description: "Type username" },
+        position: [0, 0],
       },
-      { id: "4", type: "FIND", config: { description: "Find password field" } },
+      { id: "4", type: "FIND", config: { description: "Find password field" }, position: [0, 0] },
       {
         id: "5",
         type: "CLICK",
         config: { description: "Click password field" },
+        position: [0, 0],
       },
       {
         id: "6",
         type: "TYPE",
         config: { text: "password123", description: "Type password" },
+        position: [0, 0],
       },
-      { id: "7", type: "FIND", config: { description: "Find login button" } },
-      { id: "8", type: "CLICK", config: { description: "Click login button" } },
+      { id: "7", type: "FIND", config: { description: "Find login button" }, position: [0, 0] },
+      { id: "8", type: "CLICK", config: { description: "Click login button" }, position: [0, 0] },
     ],
+    connections: {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -99,45 +106,55 @@ export function ControlFlowDebuggerExample() {
     setVariable,
   } = useExecutionDebugger();
 
-  const controlFlowProcess: Process = {
+  const controlFlowProcess: Workflow = {
     id: "control-1",
     name: "Control Flow Process",
+    version: "1.0.0",
+    format: "graph",
     description: "Process with IF and LOOP actions",
     actions: [
       {
         id: "1",
         type: "SET_VARIABLE",
         config: { variableName: "counter", value: 0 },
+        position: [0, 0],
       },
       {
         id: "2",
         type: "LOOP",
         config: {
-          description: "Loop 5 times",
-          maxIterations: 5,
-          loopVariable: "i",
+          loopType: "FOR",
+          iterations: 5,
+          actions: [],
+          iteratorVariable: "i",
         },
+        position: [0, 0],
       },
       {
         id: "3",
         type: "SET_VARIABLE",
         config: { variableName: "counter", value: "{{counter + 1}}" },
+        position: [0, 0],
       },
       {
         id: "4",
         type: "IF",
         config: {
-          description: "Check if counter > 3",
-          condition: "{{counter > 3}}",
+          condition: { type: "expression", expression: "counter > 3" },
+          thenActions: ["5"],
+          elseActions: [],
         },
+        position: [0, 0],
       },
       {
         id: "5",
         type: "CLICK",
         config: { description: "Click special button" },
+        position: [0, 0],
       },
-      { id: "6", type: "WAIT", config: { duration: 1000 } },
+      { id: "6", type: "WAIT", config: { waitFor: "time", duration: 1000 }, position: [0, 0] },
     ],
+    connections: {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -205,20 +222,24 @@ export function ControlFlowDebuggerExample() {
 export function VariableTrackingExample() {
   const { setDebugEnabled, initialize, setVariable } = useExecutionDebugger();
 
-  const variableProcess: Process = {
+  const variableProcess: Workflow = {
     id: "var-1",
     name: "Variable Processing",
+    version: "1.0.0",
+    format: "graph",
     description: "Process demonstrating variable operations",
     actions: [
       {
         id: "1",
         type: "SET_VARIABLE",
         config: { variableName: "username", value: "john_doe" },
+        position: [0, 0],
       },
       {
         id: "2",
         type: "SET_VARIABLE",
         config: { variableName: "email", value: "john@example.com" },
+        position: [0, 0],
       },
       {
         id: "3",
@@ -227,22 +248,27 @@ export function VariableTrackingExample() {
           variableName: "user",
           value: { name: "John Doe", age: 30, active: true },
         },
+        position: [0, 0],
       },
       {
         id: "4",
         type: "SET_VARIABLE",
         config: { variableName: "scores", value: [95, 87, 92, 88] },
+        position: [0, 0],
       },
       {
         id: "5",
         type: "MATH_OPERATION",
         config: {
-          operation: "average",
-          variableName: "averageScore",
-          values: "{{scores}}",
+          operation: "CUSTOM",
+          customExpression: "scores.reduce((a, b) => a + b, 0) / scores.length",
+          operands: [{ variableName: "scores" }],
+          outputVariable: "averageScore",
         },
+        position: [0, 0],
       },
     ],
+    connections: {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -298,25 +324,30 @@ export function BreakpointExample() {
   const { setDebugEnabled, initialize, addBreakpoint, removeBreakpoint } =
     useExecutionDebugger();
 
-  const breakpointProcess: Process = {
+  const breakpointProcess: Workflow = {
     id: "bp-1",
     name: "Breakpoint Demo",
+    version: "1.0.0",
+    format: "graph",
     description: "Demonstrating breakpoint usage",
     actions: [
-      { id: "1", type: "FIND", config: { description: "Action 1" } },
-      { id: "2", type: "CLICK", config: { description: "Action 2" } },
+      { id: "1", type: "FIND", config: { description: "Action 1" }, position: [0, 0] },
+      { id: "2", type: "CLICK", config: { description: "Action 2" }, position: [0, 0] },
       {
         id: "3",
         type: "TYPE",
         config: { description: "Action 3 - Breakpoint here" },
+        position: [0, 0],
       },
-      { id: "4", type: "FIND", config: { description: "Action 4" } },
+      { id: "4", type: "FIND", config: { description: "Action 4" }, position: [0, 0] },
       {
         id: "5",
         type: "CLICK",
         config: { description: "Action 5 - Another breakpoint" },
+        position: [0, 0],
       },
     ],
+    connections: {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -370,15 +401,18 @@ export function SpeedControlExample() {
   const { setDebugEnabled, initialize, setSpeed, speed } =
     useExecutionDebugger();
 
-  const speedProcess: Process = {
+  const speedProcess: Workflow = {
     id: "speed-1",
     name: "Speed Control Demo",
+    version: "1.0.0",
+    format: "graph",
     description: "Demonstrating execution speed control",
     actions: Array.from({ length: 10 }, (_, i) => ({
       id: String(i + 1),
       type: "WAIT",
       config: { description: `Action ${i + 1}`, duration: 100 },
-    })) as Action[],
+    })) as unknown as Action[],
+    connections: {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -437,14 +471,17 @@ export function LogManagementExample() {
   const { setDebugEnabled, initialize, addLog, clearLogs, exportLogs } =
     useExecutionDebugger();
 
-  const logProcess: Process = {
+  const logProcess: Workflow = {
     id: "log-1",
     name: "Log Management Demo",
+    version: "1.0.0",
+    format: "graph",
     description: "Demonstrating log management features",
     actions: [
-      { id: "1", type: "FIND", config: { description: "Action 1" } },
-      { id: "2", type: "CLICK", config: { description: "Action 2" } },
+      { id: "1", type: "FIND", config: { description: "Action 1" }, position: [0, 0] },
+      { id: "2", type: "CLICK", config: { description: "Action 2" }, position: [0, 0] },
     ],
+    connections: {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -539,41 +576,49 @@ export function CompleteIntegrationExample() {
     state: debuggerState,
   } = useExecutionDebugger();
 
-  const complexProcess: Process = {
+  const complexProcess: Workflow = {
     id: "complex-1",
     name: "E-Commerce Checkout",
+    version: "1.0.0",
+    format: "graph",
     description: "Complete checkout process with error handling",
     actions: [
       {
         id: "1",
         type: "SET_VARIABLE",
         config: { variableName: "cart", value: [] },
+        position: [0, 0],
       },
-      { id: "2", type: "FIND", config: { description: "Find product" } },
-      { id: "3", type: "CLICK", config: { description: "Add to cart" } },
+      { id: "2", type: "FIND", config: { description: "Find product" }, position: [0, 0] },
+      { id: "3", type: "CLICK", config: { description: "Add to cart" }, position: [0, 0] },
       {
         id: "4",
         type: "SET_VARIABLE",
         config: { variableName: "cart", value: "{{cart.push(product)}}" },
+        position: [0, 0],
       },
       {
         id: "5",
         type: "FIND",
         config: { description: "Find checkout button" },
+        position: [0, 0],
       },
-      { id: "6", type: "CLICK", config: { description: "Go to checkout" } },
+      { id: "6", type: "CLICK", config: { description: "Go to checkout" }, position: [0, 0] },
       {
         id: "7",
         type: "IF",
         config: {
-          condition: "{{cart.length > 0}}",
-          description: "Check if cart has items",
+          condition: { type: "expression", expression: "cart.length > 0" },
+          thenActions: [],
+          elseActions: [],
         },
+        position: [0, 0],
       },
-      { id: "8", type: "FIND", config: { description: "Find payment form" } },
-      { id: "9", type: "TYPE", config: { description: "Enter card details" } },
-      { id: "10", type: "CLICK", config: { description: "Submit payment" } },
+      { id: "8", type: "FIND", config: { description: "Find payment form" }, position: [0, 0] },
+      { id: "9", type: "TYPE", config: { description: "Enter card details" }, position: [0, 0] },
+      { id: "10", type: "CLICK", config: { description: "Submit payment" }, position: [0, 0] },
     ],
+    connections: {} as import("../../lib/action-schema/action-types").Connections,
   };
 
   useEffect(() => {
@@ -588,15 +633,16 @@ export function CompleteIntegrationExample() {
       const action = complexProcess.actions[i];
 
       // Start action
-      startAction(i, action);
+      startAction(i, action!);
 
       // Simulate action execution
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Simulate variable operations
-      if (action.type === "SET_VARIABLE") {
-        const varName = action.config.variableName;
-        const value = action.config.value;
+      if (action?.type === "SET_VARIABLE") {
+        const setVarConfig = action.config as any;
+        const varName = setVarConfig.variableName;
+        const value = setVarConfig.value;
         setVariable(varName, value, i);
       }
 

@@ -154,8 +154,8 @@ export function useProjectLoader(): UseProjectLoaderResult {
 
         // Update project metadata
         setProjectName(project.name);
-        setProjectId(project.id);
-        setContextProjectId(project.id);
+        setProjectId(String(project.id));
+        setContextProjectId(String(project.id));
 
         // Mark as successfully loaded
         loadedProjectIdRef.current = urlProjectId;

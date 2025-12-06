@@ -212,8 +212,6 @@ export function SplitViewExample() {
  * Use the VariableHistory component independently
  */
 export function StandaloneHistoryExample() {
-  const runId = "workflow-run-123";
-
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold mb-4">Variable Change Timeline</h1>

@@ -55,7 +55,6 @@ export function PresetManagerDialog({
   const [selectedPreset, setSelectedPreset] = useState<LayoutPreset | null>(
     null
   );
-  const [showEditDialog, setShowEditDialog] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -237,7 +236,8 @@ export function PresetManagerDialog({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedPreset(preset);
-                        setShowEditDialog(true);
+                        // TODO: implement edit dialog
+                        // setShowEditDialog(true);
                       }}
                     >
                       ✎

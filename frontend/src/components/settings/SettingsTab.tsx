@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Slider } from "@/components/ui/slider";
 import {
   Card,
   CardContent,
@@ -21,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Save, RotateCcw, Download, Upload } from "lucide-react";
+import { Save, RotateCcw, Download } from "lucide-react";
 
 interface QontinuiSettings {
   core: {

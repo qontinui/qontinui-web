@@ -13,9 +13,9 @@ import {
 } from "@xyflow/react";
 import { X } from "lucide-react";
 import { CanvasEdgeData } from "./canvas-types";
-import { getConnectionColor, hexToRgba } from "./canvas-config";
+import { getConnectionColor } from "./canvas-config";
 
-export interface CustomEdgeProps extends EdgeProps {
+export interface CustomEdgeProps extends Omit<EdgeProps, 'data'> {
   data: CanvasEdgeData;
 }
 

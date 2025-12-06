@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { StateImage } from "../../types/stateDiscovery";
-import { MaskVisualization } from "../masks/MaskVisualization";
 
 interface MaskedPattern {
   id: string;

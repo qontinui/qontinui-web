@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Region } from "@/types/pattern-optimization";
 import { patternOptimizationStorage } from "@/lib/pattern-optimization-storage";
-import { ZoomIn, ZoomOut, Maximize2, Move } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 
 interface AdvancedRegionSelectorProps {
   screenshotId: string;
@@ -31,7 +31,7 @@ type DragHandle =
  * - Mouse Wheel: Zoom in/out
  */
 export const AdvancedRegionSelector: React.FC<AdvancedRegionSelectorProps> = ({
-  screenshotId,
+  screenshotId: _screenshotId,
   screenshotUrl,
   region,
   onRegionChange,

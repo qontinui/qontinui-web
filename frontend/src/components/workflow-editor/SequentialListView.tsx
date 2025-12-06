@@ -14,7 +14,7 @@
  * - Visual connection lines for nesting
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import type { Workflow, Action } from "@/lib/action-schema/action-types";
 
 // ============================================================================

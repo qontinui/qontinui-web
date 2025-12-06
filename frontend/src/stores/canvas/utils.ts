@@ -4,7 +4,7 @@
  * Shared utility functions used across multiple slices
  */
 
-import type { Action, Connections } from "./types";
+import type { Action, Connections, Connection } from "./types";
 
 /**
  * Generate a unique ID for actions
@@ -54,7 +54,7 @@ export function updateConnectionsForClonedActions(
     newConnections[newSourceId] = {};
 
     for (const [type, outputs] of Object.entries(connectionTypes)) {
-      newConnections[newSourceId][type] = outputs.map((outputConnections) =>
+      (newConnections[newSourceId][type as keyof typeof connectionTypes] as Connection[][]) = outputs.map((outputConnections) =>
         outputConnections.map((conn) => ({
           ...conn,
           action: oldToNewIdMap.get(conn.action) || conn.action,

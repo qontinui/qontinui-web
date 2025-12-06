@@ -16,7 +16,7 @@ export const createViewportSlice: StateCreator<
   [["zustand/immer", never]],
   [],
   ViewportSlice
-> = (set, get) => ({
+> = (set) => ({
   // State
   viewport: { x: 0, y: 0, zoom: 1 },
   isDragging: false,

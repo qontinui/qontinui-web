@@ -41,7 +41,6 @@ function getActionIcon(actionType: string) {
     RIGHT_CLICK: MousePointerClick,
     TYPE: Type,
     FIND: Search,
-    FIND_STATE_IMAGE: Search,
     WAIT: Clock,
     VANISH: EyeOff,
     GO_TO_STATE: Navigation,
@@ -65,7 +64,7 @@ function getActionIcon(actionType: string) {
 /**
  * Get a display-friendly name for the action
  */
-function getActionDisplayName(action: any, index: number): string {
+function getActionDisplayName(action: any, _index: number): string {
   // Use custom name if provided
   if (action.name) {
     return action.name;
@@ -92,10 +91,11 @@ function getActionDisplayName(action: any, index: number): string {
       return "Type Text";
 
     case "FIND":
+      // Check if this is a stateImage find (Find State)
+      if (config?.target?.type === "stateImage") {
+        return "Find State";
+      }
       return "Find Element";
-
-    case "FIND_STATE_IMAGE":
-      return "Find State Image";
 
     case "WAIT":
       if (config.duration) {

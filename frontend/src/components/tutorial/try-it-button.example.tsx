@@ -6,7 +6,6 @@
  */
 
 import { TryItButton } from "./try-it-button";
-import type { TryItConfig } from "@/types/tutorial";
 
 /**
  * Example 1: Simple Screenshot Upload Exercise

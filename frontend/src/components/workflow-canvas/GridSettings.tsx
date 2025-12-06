@@ -13,7 +13,6 @@
 
 import React, { useState } from "react";
 import { useCanvasStore } from "@/stores/canvas-store";
-import { GRID_CONFIG } from "./canvas-config";
 
 // ============================================================================
 // Types
@@ -24,7 +23,6 @@ export interface GridSettingsProps {
 }
 
 const GRID_SIZES = [5, 10, 15, 20, 25, 50];
-const GRID_PATTERNS = ["dots", "lines", "cross"] as const;
 
 // ============================================================================
 // Grid Settings Component

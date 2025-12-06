@@ -92,7 +92,7 @@ export function GlobalSearch({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [activeFilters, setActiveFilters] = useState<SearchFilter>({});
-  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const searchTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const resultRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const open = controlledOpen ?? internalOpen;

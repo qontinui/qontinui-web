@@ -4,7 +4,6 @@ import * as React from "react";
 import {
   Share2,
   Users,
-  Link as LinkIcon,
   Check,
   Copy,
   Trash2,
@@ -13,8 +12,6 @@ import {
   Shield,
   Eye,
   Edit,
-  Crown,
-  X,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,7 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
@@ -94,7 +90,7 @@ const permissionColors = {
 export function ProjectSharingDialog({
   open,
   onOpenChange,
-  projectId,
+  projectId: _projectId,
   collaborators,
   organizations,
   shareLink,

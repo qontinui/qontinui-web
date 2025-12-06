@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+// Removed unused Tabs components - not used in current implementation
 import { Separator } from "@/components/ui/separator";
 import {
   Edit2,
@@ -20,7 +20,7 @@ import {
   X,
   CheckCircle,
   XCircle,
-  AlertTriangle,
+
 } from "lucide-react";
 import { StateImage, DiscoveredState } from "@/types/stateDiscovery";
 import DeleteConfirmationDialog from "./DeleteConfirmationDialog";

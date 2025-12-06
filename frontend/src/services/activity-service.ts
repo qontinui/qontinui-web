@@ -14,7 +14,7 @@ import type {
   ActivityActionType,
   ResourceType,
 } from "@/types/collaboration";
-import { httpClient } from "./http-client";
+import { httpClient } from "./service-factory";
 
 const API_BASE = "/api/activities";
 
@@ -102,7 +102,12 @@ class ActivityService {
       days: days.toString(),
     });
 
-    const summary = await httpClient.get(`${API_BASE}/summary?${params}`);
+    const summary = await httpClient.get<{
+      total_activities: number;
+      active_users: number;
+      top_actions: { action_type: ActivityActionType; count: number }[];
+      recent_contributors: { user_id: string; user_name: string; count: number }[];
+    }>(`${API_BASE}/summary?${params}`);
     return summary;
   }
 
@@ -148,10 +153,7 @@ class ActivityService {
    * Clear old activities (admin only)
    */
   async clearOldActivities(projectId: string, days: number): Promise<void> {
-    await httpClient.delete(`${API_BASE}/cleanup`, {
-      project_id: projectId,
-      older_than_days: days,
-    });
+    await httpClient.delete(`${API_BASE}/cleanup?project_id=${projectId}&older_than_days=${days}`);
   }
 }
 

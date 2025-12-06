@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Keyboard } from "lucide-react";
+import { Keyboard } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 // Define special keys based on qontinui Key enum

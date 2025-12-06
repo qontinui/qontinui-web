@@ -280,8 +280,8 @@ export function useGlobalVariables({
     variables: data || [],
     isLoading,
     error: error as Error | null,
-    createVariable: (data) => createMutation.mutateAsync(data),
-    updateVariable: (name, data) => updateMutation.mutateAsync({ name, data }),
+    createVariable: async (data) => { await createMutation.mutateAsync(data); },
+    updateVariable: async (name, data) => { await updateMutation.mutateAsync({ name, data }); },
     deleteVariable: (name) => deleteMutation.mutateAsync(name),
     deleteMultiple: (names) => deleteMultipleMutation.mutateAsync(names),
     refetch: () => {

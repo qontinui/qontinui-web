@@ -106,7 +106,7 @@ Comprehensive integration tests have been created for all expectations UI compon
 - Field preservation across updates
 
 **Key Tests**:
-- ✅ Toggles is_terminal_on_failure (defaults to true)
+- ✅ Toggles is_terminal_on_failure (defaults to false)
 - ✅ Toggles capture_checkpoint_on_failure (defaults to false)
 - ✅ Shows/hides checkpoint name field based on capture_checkpoint_after
 - ✅ Updates retry configuration (max_retries, retry_delay_ms)

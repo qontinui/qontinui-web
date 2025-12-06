@@ -9,7 +9,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { ActionType } from "@/lib/action-schema/action-types";
 import { searchNodes, NODE_METADATA } from "./palette-config";
 import { useRecentNodeTypes } from "@/stores/recent-nodes";
-import { PaletteItem } from "./PaletteItem";
 import { Search, Clock, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -180,7 +179,6 @@ export const QuickAddMenu: React.FC<QuickAddMenuProps> = ({
         {results.length > 0 ? (
           <div className="quick-add-menu__list">
             {results.map((metadata, index) => {
-              const category = metadata.category;
               const IconComponent = metadata.icon;
 
               return (

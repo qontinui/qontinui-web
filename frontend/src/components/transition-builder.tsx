@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
+
 import {
   Select,
   SelectContent,
@@ -24,7 +24,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  ArrowRight,
+
   Plus,
   Trash2,
   MoveRight,
@@ -100,10 +100,12 @@ export function TransitionBuilder() {
         staysVisible,
         activateStates,
         deactivateStates,
-        process: selectedProcess,
+        workflows: selectedProcess ? [selectedProcess] : [],
+        timeout: 30000,
+        retryCount: 3,
       };
 
-      addTransition(transition);
+      addTransition(transition as import("@/contexts/automation-context/types").Transition);
       toast.success("OutgoingTransition created");
     } else {
       if (!incomingTransitionState) {
@@ -115,10 +117,12 @@ export function TransitionBuilder() {
         id: `transition-${Date.now()}`,
         type: "IncomingTransition" as const,
         toState: incomingTransitionState,
-        process: selectedProcess,
+        workflows: selectedProcess ? [selectedProcess] : [],
+        timeout: 30000,
+        retryCount: 3,
       };
 
-      addTransition(transition);
+      addTransition(transition as import("@/contexts/automation-context/types").Transition);
       toast.success("IncomingTransition created");
     }
 

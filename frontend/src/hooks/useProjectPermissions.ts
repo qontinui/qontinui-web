@@ -115,11 +115,11 @@ export function useProjectPermissions(
   const { user: currentUser, loading: isLoading } = useAuth();
 
   // Compute all permissions in a single memo to avoid unnecessary recalculation
-  const permissions = useMemo<ProjectPermissions>(() => {
+  const permissions = useMemo(() => {
     if (!project) {
       // No project provided - return no permissions
       return {
-        permissionLevel: "none",
+        permissionLevel: "none" as PermissionLevel,
         canView: false,
         canComment: false,
         canEdit: false,
@@ -128,18 +128,18 @@ export function useProjectPermissions(
         hasPermission: () => false,
         currentUser,
         isLoading,
-      };
+      } as ProjectPermissions;
     }
 
     // Get user's permission level
-    const permissionLevel = getPermissionLevel(project, currentUser);
+    const permissionLevel = getPermissionLevel(project, currentUser as any);
 
     // Pre-compute all permission checks
-    const canView = canUserView(project, currentUser);
-    const canComment = canUserComment(project, currentUser);
-    const canEdit = canUserEdit(project, currentUser);
-    const canAdmin = canUserAdmin(project, currentUser);
-    const isOwner = isProjectOwner(project, currentUser);
+    const canView = canUserView(project, currentUser as any);
+    const canComment = canUserComment(project, currentUser as any);
+    const canEdit = canUserEdit(project, currentUser as any);
+    const canAdmin = canUserAdmin(project, currentUser as any);
+    const isOwner = isProjectOwner(project, currentUser as any);
 
     return {
       permissionLevel,
@@ -152,7 +152,7 @@ export function useProjectPermissions(
         hasPermission(required, permissionLevel),
       currentUser,
       isLoading,
-    };
+    } as ProjectPermissions;
   }, [project, currentUser, isLoading]);
 
   return permissions;

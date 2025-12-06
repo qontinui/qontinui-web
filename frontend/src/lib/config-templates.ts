@@ -1,4 +1,5 @@
 import { QontinuiConfig } from "./export-schema";
+import type { Transition } from "@/contexts/automation-context";
 
 /**
  * Pre-built configuration templates for common automation scenarios
@@ -55,7 +56,8 @@ export class ConfigTemplates {
           id: "start-game",
           name: "Start Game",
           description: "Click play button to start game",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "find-play-btn",
@@ -77,12 +79,18 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {
+            "find-play-btn": {
+              main: [[{ action: "click-play-btn", type: "main", index: 0 }]],
+            },
+          },
         },
         {
           id: "open-inventory",
           name: "Open Inventory",
           description: "Press key to open inventory",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "press-i-key",
@@ -94,6 +102,7 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {},
         },
       ],
       transitions: [
@@ -123,7 +132,7 @@ export class ConfigTemplates {
           timeout: 5000,
           retryCount: 2,
         },
-      ],
+      ] as unknown as Transition[],
       images: [],
       settings: {
         execution: {
@@ -200,7 +209,8 @@ export class ConfigTemplates {
           id: "login-process",
           name: "Login",
           description: "Enter credentials and login",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "find-username",
@@ -258,12 +268,30 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {
+            "find-username": {
+              main: [[{ action: "click-username", type: "main", index: 0 }]],
+            },
+            "click-username": {
+              main: [[{ action: "type-username", type: "main", index: 0 }]],
+            },
+            "type-username": {
+              main: [[{ action: "tab-to-password", type: "main", index: 0 }]],
+            },
+            "tab-to-password": {
+              main: [[{ action: "type-password", type: "main", index: 0 }]],
+            },
+            "type-password": {
+              main: [[{ action: "submit-login", type: "main", index: 0 }]],
+            },
+          },
         },
         {
           id: "fill-form",
           name: "Fill Form",
           description: "Automated form filling",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "find-field1",
@@ -294,6 +322,14 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {
+            "find-field1": {
+              main: [[{ action: "click-field1", type: "main", index: 0 }]],
+            },
+            "click-field1": {
+              main: [[{ action: "type-field1", type: "main", index: 0 }]],
+            },
+          },
         },
       ],
       transitions: [
@@ -310,7 +346,7 @@ export class ConfigTemplates {
           timeout: 15000,
           retryCount: 2,
         },
-      ],
+      ] as unknown as Transition[],
       images: [],
       settings: {
         execution: {
@@ -394,7 +430,8 @@ export class ConfigTemplates {
           id: "launch-app",
           name: "Launch Application",
           description: "Start the application",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "find-desktop-icon",
@@ -425,12 +462,21 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {
+            "find-desktop-icon": {
+              main: [[{ action: "double-click-icon", type: "main", index: 0 }]],
+            },
+            "double-click-icon": {
+              main: [[{ action: "wait-for-launch", type: "main", index: 0 }]],
+            },
+          },
         },
         {
           id: "open-file",
           name: "Open File",
           description: "Open file via menu",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "press-ctrl-o",
@@ -442,12 +488,14 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {},
         },
         {
           id: "save-file",
           name: "Save File",
           description: "Save current file",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "press-ctrl-s",
@@ -459,6 +507,7 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {},
         },
       ],
       transitions: [
@@ -488,7 +537,7 @@ export class ConfigTemplates {
           timeout: 5000,
           retryCount: 2,
         },
-      ],
+      ] as unknown as Transition[],
       images: [],
       settings: {
         execution: {
@@ -564,7 +613,8 @@ export class ConfigTemplates {
           id: "select-item",
           name: "Select Item",
           description: "Select next item from list",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "find-next-item",
@@ -586,12 +636,18 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {
+            "find-next-item": {
+              main: [[{ action: "click-item", type: "main", index: 0 }]],
+            },
+          },
         },
         {
           id: "extract-data",
           name: "Extract Data",
           description: "Extract data from current view",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "screenshot-data",
@@ -629,12 +685,21 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {
+            "screenshot-data": {
+              main: [[{ action: "select-all", type: "main", index: 0 }]],
+            },
+            "select-all": {
+              main: [[{ action: "copy-data", type: "main", index: 0 }]],
+            },
+          },
         },
         {
           id: "next-page",
           name: "Next Page",
           description: "Navigate to next page of results",
-          type: "sequence",
+          format: "graph" as const,
+          version: "1.0.0",
           actions: [
             {
               id: "find-next-button",
@@ -665,6 +730,14 @@ export class ConfigTemplates {
               retryCount: 1,
             },
           ],
+          connections: {
+            "find-next-button": {
+              main: [[{ action: "click-next", type: "main", index: 0 }]],
+            },
+            "click-next": {
+              main: [[{ action: "wait-for-load", type: "main", index: 0 }]],
+            },
+          },
         },
       ],
       transitions: [
@@ -690,7 +763,7 @@ export class ConfigTemplates {
           timeout: 5000,
           retryCount: 1,
         },
-      ],
+      ] as unknown as Transition[],
       images: [],
       settings: {
         execution: {

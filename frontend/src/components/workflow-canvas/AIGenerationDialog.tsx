@@ -69,11 +69,6 @@ export function AIGenerationDialog({
   );
   const [refinementInput, setRefinementInput] = useState("");
   const [showExamples, setShowExamples] = useState(true);
-  const [selectedTemplate, setSelectedTemplate] =
-    useState<PromptTemplate | null>(null);
-  const [generationHistory, setGenerationHistory] = useState<
-    GeneratedWorkflow[]
-  >([]);
 
   // Context options
   const [useExistingWorkflow, setUseExistingWorkflow] =
@@ -125,7 +120,6 @@ export function AIGenerationDialog({
       const generated = await mcpClient.generateWorkflow(description, context);
 
       setResult(generated);
-      setGenerationHistory((prev) => [generated, ...prev]);
       setState("success");
       setShowExamples(false);
     } catch (err) {
@@ -160,7 +154,6 @@ export function AIGenerationDialog({
       );
 
       setResult(refined);
-      setGenerationHistory((prev) => [refined, ...prev]);
       setState("success");
       setRefinementInput("");
     } catch (err) {
@@ -195,19 +188,10 @@ export function AIGenerationDialog({
   // ==========================================================================
 
   const handleTemplateSelect = useCallback((template: PromptTemplate) => {
-    setSelectedTemplate(template);
+    setSelectedTemplates([template.id]);
     setDescription(template.template);
     setShowExamples(false);
   }, []);
-
-  const handleExampleSelect = useCallback(
-    (example: string) => {
-      if (!selectedTemplate) return;
-      const filled = selectedTemplate.template.replace(/\{[^}]+\}/g, example);
-      setDescription(filled);
-    },
-    [selectedTemplate]
-  );
 
   // ==========================================================================
   // Render

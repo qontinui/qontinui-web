@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { useImageStats } from "@/hooks/use-image-stats";
 import { useAutomation } from "@/contexts/automation-context";
+import type { Pattern } from "@/contexts/automation-context/types";
 
 interface ImageAsset {
   id: string;
@@ -43,7 +44,7 @@ interface ImageAsset {
 interface StateImage {
   id: string;
   name: string;
-  patterns?: Array<{ image: string }>;
+  patterns?: Pattern[];
 }
 
 interface State {

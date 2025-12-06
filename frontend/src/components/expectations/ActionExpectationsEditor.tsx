@@ -56,7 +56,7 @@ export function ActionExpectationsEditor({
             </p>
           </div>
           <Switch
-            checked={current.is_terminal_on_failure ?? true}
+            checked={current.is_terminal_on_failure ?? false}
             onCheckedChange={(checked) =>
               updateField("is_terminal_on_failure", checked)
             }

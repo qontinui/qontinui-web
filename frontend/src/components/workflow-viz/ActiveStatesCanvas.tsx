@@ -171,7 +171,7 @@ export function ActiveStatesCanvas({
       const isHighlighted = state.id === highlightStateId;
 
       // Draw state bounds rectangle
-      ctx.fillStyle = color;
+      ctx.fillStyle = color || "rgba(59, 130, 246, 0.1)";
       ctx.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
 
       // Draw border

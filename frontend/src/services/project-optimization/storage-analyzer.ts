@@ -57,7 +57,7 @@ export function getStorageUsage(
   // Calculate potential savings
   const unusedImages = images.filter((img) => {
     const analyses = analyzeImages([img], workflows, states);
-    return !analyses[0].isUsed;
+    return !analyses[0]?.isUsed;
   });
   const unusedStorage = unusedImages.reduce((sum, img) => sum + img.size, 0);
 

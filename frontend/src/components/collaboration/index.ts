@@ -19,7 +19,6 @@ export {
 } from "./PermissionGate";
 export type {
   Permission,
-  PermissionLevel as UserPermissionLevel,
 } from "./PermissionGate";
 
 // Real-time Collaboration

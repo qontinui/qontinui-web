@@ -38,7 +38,6 @@ import {
   StopCircle,
   MessageSquare,
   Folder,
-  Image as ImageIcon,
   Settings,
   Zap,
   Box,
@@ -62,7 +61,6 @@ export interface NodeIconProps {
 const ACTION_ICONS: Record<ActionType, LucideIcon> = {
   // Find Actions
   FIND: Search,
-  FIND_STATE_IMAGE: ImageIcon,
   VANISH: EyeOff,
   EXISTS: Eye,
   WAIT: Clock,

@@ -35,7 +35,6 @@ import type {
   PatternSaveResult,
 } from "@/types/direct-pattern-creation";
 
-import { createStateImage } from "@/lib/state-image-creator";
 import { useAutomation } from "@/contexts/automation-context";
 
 export function DirectPatternCreation() {

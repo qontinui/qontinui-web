@@ -10,10 +10,8 @@
  * - Support dry-run mode
  */
 
-import {
+import type {
   Workflow,
-  Action,
-  Connections,
 } from "../lib/action-schema/action-types";
 
 // ============================================================================
@@ -109,7 +107,7 @@ export function migrateWorkflow(
   toVersion: string = CURRENT_VERSION,
   options: MigrationOptions = {}
 ): Workflow {
-  const { dryRun = false, preserveUnknown = true, strict = false } = options;
+  const { preserveUnknown = true, strict = false } = options;
 
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -289,9 +287,11 @@ function migrateV09ToV10(
       const currentAction = workflow.actions[i];
       const nextAction = workflow.actions[i + 1];
 
-      workflow.connections[currentAction?.id] = {
-        main: [[{ action: nextAction?.id, type: "main", index: 0 }]],
-      };
+      if (currentAction?.id && nextAction?.id) {
+        workflow.connections[currentAction.id] = {
+          main: [[{ action: nextAction.id, type: "main", index: 0 }]],
+        };
+      }
     }
 
     warnings.push(

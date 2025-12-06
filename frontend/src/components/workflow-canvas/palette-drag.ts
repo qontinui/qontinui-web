@@ -5,11 +5,11 @@
  * Handles ghost images, drop zones, position calculation, and grid snapping.
  */
 
-import { RefObject, useCallback, useState, useEffect, useRef } from "react";
+import { RefObject, useCallback, useState, useEffect } from "react";
 import { ActionType, createAction } from "@/lib/action-schema/action-types";
 import { getDefaultConfig } from "@/lib/action-schema/default-configs";
 import { useCanvasStore } from "@/stores/canvas-store";
-import { useReactFlow, ReactFlowInstance } from "@xyflow/react";
+import { useReactFlow } from "@xyflow/react";
 
 // ============================================================================
 // Types
@@ -58,7 +58,7 @@ const GHOST_OFFSET_Y = 20;
  * Create a ghost image element for dragging
  */
 function createGhostElement(
-  nodeType: ActionType,
+  _nodeType: ActionType,
   displayName: string
 ): HTMLElement {
   const ghost = document.createElement("div");
@@ -187,6 +187,7 @@ export function usePaletteDrag(
       document.addEventListener("keydown", handleEscape);
       return () => document.removeEventListener("keydown", handleEscape);
     }
+    return undefined;
   }, [state.isDragging, state.ghostElement]);
 
   const onDragStart = useCallback(
@@ -215,7 +216,7 @@ export function usePaletteDrag(
   );
 
   const onDragEnd = useCallback(
-    (event: React.DragEvent) => {
+    (_event: React.DragEvent) => {
       // Clean up
       if (state.ghostElement) {
         removeGhostElement(state.ghostElement);
@@ -340,15 +341,12 @@ export function usePaletteDrag(
  * Hook for click-to-add functionality (adds node at viewport center)
  */
 export function useClickToAdd() {
-  const { addAction, viewport } = useCanvasStore();
+  const { addAction } = useCanvasStore();
   const reactFlowInstance = useReactFlow();
 
   const addNodeAtCenter = useCallback(
     (nodeType: ActionType) => {
       if (!reactFlowInstance) return;
-
-      // Get viewport center
-      const center = reactFlowInstance.getViewport();
 
       // Calculate center position in workflow coordinates
       // Viewport center is at the middle of the visible area

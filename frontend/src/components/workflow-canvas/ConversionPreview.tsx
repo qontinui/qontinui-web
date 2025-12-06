@@ -412,11 +412,6 @@ function analyzeChanges(before: Workflow, after: Workflow): ChangeType[] {
       const configChanged =
         JSON.stringify(beforeAction.config) !==
         JSON.stringify(afterAction.config);
-      const positionChanged =
-        beforeAction.position &&
-        afterAction.position &&
-        (beforeAction.position[0] !== afterAction.position[0] ||
-          beforeAction.position[1] !== afterAction.position[1]);
 
       if (configChanged) {
         changes.push({

@@ -8,7 +8,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { CanvasStore, ActionSlice, Action } from "./types";
+import type { CanvasStore, ActionSlice, Action, Connection } from "./types";
 
 /**
  * Generate a unique ID for actions
@@ -81,8 +81,8 @@ export const createActionSlice: StateCreator<
         const sourceConnections = state.workflow.connections[sourceId];
         if (!sourceConnections) continue;
         for (const type of Object.keys(sourceConnections)) {
-          sourceConnections[type] = sourceConnections[type]?.map((outputs: any) =>
-            outputs.filter((conn: any) => conn.action !== actionId)
+          (sourceConnections[type as keyof typeof sourceConnections] as Connection[][]) = (sourceConnections[type as keyof typeof sourceConnections] as Connection[][])?.map((outputs: Connection[]) =>
+            outputs.filter((conn: Connection) => conn.action !== actionId)
           );
         }
       }
@@ -115,8 +115,8 @@ export const createActionSlice: StateCreator<
         const sourceConnections = state.workflow.connections[sourceId];
         if (!sourceConnections) continue;
         for (const type of Object.keys(sourceConnections)) {
-          sourceConnections[type] = sourceConnections[type]?.map((outputs: any) =>
-            outputs.filter((conn: any) => !idsSet.has(conn.action))
+          (sourceConnections[type as keyof typeof sourceConnections] as Connection[][]) = (sourceConnections[type as keyof typeof sourceConnections] as Connection[][])?.map((outputs: Connection[]) =>
+            outputs.filter((conn: Connection) => !idsSet.has(conn.action))
           );
         }
       }

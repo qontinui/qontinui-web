@@ -417,7 +417,7 @@ export function validateAction(action: Action): ValidationResult {
     const propertyMatch = validatorStr.match(/property:\s*["']([^"']+)["']/);
     const propertyName = propertyMatch ? propertyMatch[1] : "unknown";
 
-    const value = config[propertyName];
+    const value = propertyName ? config[propertyName] : undefined;
     const error = validator(value, config, action);
 
     if (error) {
@@ -436,9 +436,9 @@ export function validateAction(action: Action): ValidationResult {
       });
     }
 
-    if (action.base.pauseAfter !== undefined && action.base.pauseAfter < 0) {
+    if (action.base.pauseAfterEnd !== undefined && action.base.pauseAfterEnd < 0) {
       errors.push({
-        property: "base.pauseAfter",
+        property: "base.pauseAfterEnd",
         message: "Pause after cannot be negative",
         severity: "error",
         code: "INVALID_VALUE",

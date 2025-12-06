@@ -9,7 +9,6 @@ import type {
   WorkflowAnalysis,
   StateAnalysis,
   ImageAnalysis,
-  TransitionAnalysis,
   OptimizationSuggestion,
 } from "./types";
 import { formatBytes } from "./utils";

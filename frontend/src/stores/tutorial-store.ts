@@ -12,7 +12,6 @@ import type {
   Tutorial,
   TutorialStep,
   TutorialMode,
-  StepValidation,
 } from "@/types/tutorial";
 
 // ============================================================================
@@ -687,7 +686,7 @@ export const useTutorialStore = create<TutorialStore>()(
       // Tutorial Trigger Methods
       // ========================================================================
 
-      checkTriggers: (page: string, context?: any): Tutorial | null => {
+      checkTriggers: (_page: string, _context?: any): Tutorial | null => {
         // This is a placeholder implementation
         // In a real application, you would:
         // 1. Load all available tutorials

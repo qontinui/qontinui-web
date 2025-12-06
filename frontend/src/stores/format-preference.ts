@@ -210,7 +210,7 @@ export const useFormatPreferenceStore = create<FormatPreferenceStore>()(
             new Date(a.lastUpdated).getTime()
         );
 
-        return sorted[0].format;
+        return sorted[0]?.format ?? state.defaultView;
       },
 
       getPreferenceStats: () => {

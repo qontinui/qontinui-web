@@ -9,7 +9,7 @@
  */
 
 import type { Workflow } from "@/lib/action-schema/action-types";
-import type { State, ImageAsset } from "@/contexts/automation-context/types";
+import type { State } from "@/contexts/automation-context/types";
 import { WorkflowDependencyAnalyzer } from "../workflow-dependency-analyzer";
 
 /**

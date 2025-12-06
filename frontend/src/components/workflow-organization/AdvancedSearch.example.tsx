@@ -18,12 +18,11 @@ import { Workflow } from "../../lib/action-schema/action-types";
 export function WorkflowManagementExample() {
   // State
   const [workflows, setWorkflows] = useState<Workflow[]>(EXAMPLE_WORKFLOWS);
-  const [folders, setFolders] = useState<WorkflowFolder[]>(EXAMPLE_FOLDERS);
+  const [folders] = useState<WorkflowFolder[]>(EXAMPLE_FOLDERS);
   const [filteredWorkflows, setFilteredWorkflows] =
     useState<Workflow[]>(workflows);
   const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<string[]>([]);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
-  const [currentFilter, setCurrentFilter] = useState<SearchFilter>({});
 
   // Get selected workflow objects
   const selectedWorkflows = workflows.filter((w) =>
@@ -31,9 +30,8 @@ export function WorkflowManagementExample() {
   );
 
   // Handlers
-  const handleSearch = (results: Workflow[], filter: SearchFilter) => {
+  const handleSearch = (results: Workflow[]) => {
     setFilteredWorkflows(results);
-    setCurrentFilter(filter);
   };
 
   const handleSaveFilter = (name: string, filter: SearchFilter) => {
@@ -376,10 +374,11 @@ const EXAMPLE_WORKFLOWS: Workflow[] = [
         position: [0, 0],
       },
     ],
+    // @ts-ignore - example code uses simplified connection format
     connections: {
-      "action-1": ["action-2", "action-4"],
-      "action-2": ["action-3"],
-    },
+      "action-1": { main: [[{ action: "action-2", type: "main", index: 0 }, { action: "action-4", type: "main", index: 0 }]] },
+      "action-2": { main: [[{ action: "action-3", type: "main", index: 0 }]] },
+    } as any,
     category: "Testing",
     description: "Comprehensive UI testing",
     tags: ["testing", "ui", "validation"],

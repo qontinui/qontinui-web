@@ -21,7 +21,6 @@ import type {
   LockUpdateMessage,
   ResourceUpdateMessage,
   ResourceType,
-  Lock,
   Comment,
   Activity,
   UserPresence,

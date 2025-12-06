@@ -47,7 +47,7 @@ export interface ImportResult {
 }
 
 export class ConfigImporter {
-  private readonly SUPPORTED_VERSION = "2.0.1";
+  private readonly SUPPORTED_VERSION = "2.1.0";
 
   /**
    * Import a Qontinui configuration from JSON
@@ -189,6 +189,10 @@ export class ConfigImporter {
 
   /**
    * Import a single action from export format
+   *
+   * Note: FIND_STATE_IMAGE conversion is handled by the migration system
+   * (v2.0.1-to-v2.1.0 migration). This method assumes the config has
+   * already been migrated to the latest version.
    */
   private importAction(action: any): any {
     const imported: any = {
@@ -265,9 +269,6 @@ export class ConfigImporter {
     // Handle action-specific transformations
     if (action.type === "GO_TO_STATE" && config.stateIds) {
       config.states = config.stateIds;
-    }
-    if (action.type === "FIND_STATE_IMAGE" && config.stateId) {
-      config.state = config.stateId;
     }
 
     return config;

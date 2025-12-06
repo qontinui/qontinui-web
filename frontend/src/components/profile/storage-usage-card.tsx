@@ -7,7 +7,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { HardDrive } from "lucide-react";
 
 interface StorageUsageCardProps {
@@ -31,11 +30,6 @@ export function StorageUsageCard({
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
-  const getProgressColor = () => {
-    if (usedPercentage >= 90) return "bg-red-500";
-    if (usedPercentage >= 75) return "bg-yellow-500";
-    return "bg-[#00D9FF]";
-  };
 
   const getProgressGradient = () => {
     if (usedPercentage >= 90) return "from-red-500 to-red-600";

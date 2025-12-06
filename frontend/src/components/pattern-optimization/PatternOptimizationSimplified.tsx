@@ -23,12 +23,11 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { useAutomation } from "@/contexts/automation-context";
-import type { StateImage } from "@/contexts/automation-context/types";
 import { ScreenshotSelector } from "../screenshot-selector";
 import { prepareStateImageCreation } from "@/lib/state-image-creator";
 import {
   createImageAsset,
-  imageExistsInLibrary,
+  findImageByData,
 } from "@/lib/image-library-utils";
 import { toast } from "sonner";
 
@@ -43,7 +42,6 @@ const PatternOptimizationContent: React.FC = () => {
     clearSession,
     addScreenshots,
     removeScreenshot,
-    setScreenshotRegion,
     setAllScreenshotRegions,
     extractPattern,
     isExtracting,
@@ -71,7 +69,6 @@ const PatternOptimizationContent: React.FC = () => {
   const [editMode, setEditMode] = useState<"none" | "add" | "remove">("none");
   const [editedPattern, setEditedPattern] = useState<string | null>(null);
   const [showStateImageDialog, setShowStateImageDialog] = useState(false);
-  const [showScreenshotSelector, setShowScreenshotSelector] = useState(false);
   const [stateImageName, setStateImageName] = useState("");
   const [selectedStateId, setSelectedStateId] = useState<string>("");
   const [newStateName, setNewStateName] = useState("");
@@ -82,7 +79,6 @@ const PatternOptimizationContent: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const patternCanvasRef = useRef<HTMLCanvasElement>(null);
-  const cursorCanvasRef = useRef<HTMLCanvasElement>(null);
   const screenshotSelectorTriggerRef = useRef<HTMLButtonElement>(null);
   const {
     states,
@@ -122,7 +118,7 @@ const PatternOptimizationContent: React.FC = () => {
       // Select first screenshot after adding if none selected
       setTimeout(() => {
         if (!selectedScreenshotId && (session?.screenshots?.length ?? 0) > 0) {
-          const firstScreenshot = session.screenshots[0];
+          const firstScreenshot = session?.screenshots[0];
           if (firstScreenshot) {
             setSelectedScreenshotId(firstScreenshot.id);
           }
@@ -156,15 +152,13 @@ const PatternOptimizationContent: React.FC = () => {
       // Select the first newly added screenshot
       setTimeout(() => {
         if ((session?.screenshots?.length ?? 0) > 0) {
-          const targetScreenshot = session.screenshots[(session.screenshots?.length ?? 0) - files.length];
+          const targetScreenshot = session?.screenshots[(session?.screenshots?.length ?? 0) - files.length];
           if (targetScreenshot) {
             setSelectedScreenshotId(targetScreenshot.id);
           }
         }
       }, 100);
     }
-
-    setShowScreenshotSelector(false);
   };
 
   // Helper function to convert data URL to File object
@@ -373,7 +367,24 @@ const PatternOptimizationContent: React.FC = () => {
     try {
       const imageData = editedPattern || extractedPattern.patternImage || "";
 
-      // If fixed location is enabled, get the first screenshot's region as the search region
+      // Step 1: Add image to library first (or find existing)
+      // The library is the source of truth for all image data
+      let imageAsset = findImageByData(images, imageData);
+      if (!imageAsset) {
+        imageAsset = createImageAsset(
+          imageData,
+          stateImageName,
+          "pattern_optimization"
+        );
+        // Add mask to the image asset if present
+        if (extractedPattern.maskImage) {
+          imageAsset.mask = extractedPattern.maskImage;
+        }
+        addImage(imageAsset);
+        toast.success("Added to Image Library");
+      }
+
+      // Step 2: If fixed location is enabled, get the first screenshot's region as the search region
       let searchRegion:
         | {
             id: string;
@@ -385,7 +396,7 @@ const PatternOptimizationContent: React.FC = () => {
           }
         | undefined;
       if (fixedLocation && (session?.screenshots?.length ?? 0) > 0) {
-        const firstScreenshot = session.screenshots[0];
+        const firstScreenshot = session?.screenshots[0];
         if (firstScreenshot?.region) {
           searchRegion = {
             id: `search_region_${Date.now()}`,
@@ -398,11 +409,11 @@ const PatternOptimizationContent: React.FC = () => {
         }
       }
 
+      // Step 3: Create StateImage with imageId referencing the library
       const result = prepareStateImageCreation(
         {
           name: stateImageName,
-          image: imageData,
-          mask: extractedPattern.maskImage,
+          imageId: imageAsset.id, // Reference to library image
           source: "pattern-optimization",
           fixed: fixedLocation,
           searchRegion: searchRegion,
@@ -418,17 +429,6 @@ const PatternOptimizationContent: React.FC = () => {
       } else if (result.action === "update-state" && result.targetState) {
         updateState(result.targetState);
         toast.success(`Added StateImage to ${result.targetState.name}`);
-      }
-
-      // Add image to Image Library (avoid duplicates)
-      if (!imageExistsInLibrary(images, imageData)) {
-        const imageAsset = createImageAsset(
-          imageData,
-          stateImageName,
-          "pattern_optimization"
-        );
-        addImage(imageAsset);
-        toast.success("Added to Image Library");
       }
 
       // Reset dialog
@@ -867,7 +867,7 @@ const PatternOptimizationContent: React.FC = () => {
                           />
                           {/* Cursor indicator overlay */}
                           {cursorPos &&
-                            editMode !== "none" &&
+                            (editMode === "add" || editMode === "remove") &&
                             patternCanvasRef.current && (
                               <div
                                 className="absolute pointer-events-none border-2 rounded-full"

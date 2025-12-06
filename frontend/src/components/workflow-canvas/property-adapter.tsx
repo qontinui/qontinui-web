@@ -29,16 +29,6 @@ function canvasActionToPropertyAction(action: CanvasAction): PropertyAction {
   };
 }
 
-/**
- * Convert config updates back to canvas Action partial
- */
-function configUpdatesToActionPartial(
-  configUpdates: Record<string, any>
-): Partial<CanvasAction> {
-  return {
-    config: configUpdates,
-  };
-}
 
 // ============================================================================
 // Property Adapter Hook
@@ -217,7 +207,7 @@ export function usePropertyAdapter(actionId: string): PropertyAdapterResult {
     hasUnsavedChanges: hasChangesForAction,
     saveChanges,
     discardChanges,
-    canvasAction,
+    canvasAction: canvasAction || null,
   };
 }
 

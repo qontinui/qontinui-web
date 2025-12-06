@@ -5,7 +5,7 @@
  * with React Flow for building workflow visualizations.
  */
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback } from "react";
 import {
   Node,
   Edge,
@@ -36,9 +36,7 @@ export function SimpleWorkflowExample() {
         action: {
           id: "1",
           type: "CLICK",
-          config: {
-            target: { text: "Login Button" },
-          },
+          config: {} as any,
           position: [100, 100],
         },
         executionState: "idle",
@@ -70,7 +68,7 @@ export function SimpleWorkflowExample() {
           type: "WAIT",
           config: {
             duration: 1000,
-          },
+          } as any,
           position: [500, 100],
         },
         executionState: "idle",
@@ -123,9 +121,7 @@ export function ConditionalWorkflowExample() {
         action: {
           id: "1",
           type: "FIND",
-          config: {
-            target: { imageId: "login-screen" },
-          },
+          config: {} as any,
           position: [100, 150],
         },
       },
@@ -140,12 +136,12 @@ export function ConditionalWorkflowExample() {
           type: "IF",
           config: {
             condition: {
-              type: "image_exists",
+              type: "image_exists" as any,
               imageId: "success-icon",
             },
             thenActions: ["3"],
             elseActions: ["4"],
-          },
+          } as any,
           position: [300, 150],
         },
       },
@@ -159,8 +155,8 @@ export function ConditionalWorkflowExample() {
           id: "3",
           type: "SCREENSHOT",
           config: {
-            region: "fullscreen",
-          },
+            region: "fullscreen" as any,
+          } as any,
           position: [500, 50],
         },
       },
@@ -175,7 +171,7 @@ export function ConditionalWorkflowExample() {
           type: "WAIT",
           config: {
             duration: 2000,
-          },
+          } as any,
           position: [500, 250],
         },
       },
@@ -257,9 +253,7 @@ export function LoopWorkflowExample() {
         action: {
           id: "3",
           type: "CLICK",
-          config: {
-            target: { text: "Next" },
-          },
+          config: {} as any,
           position: [500, 100],
         },
       },
@@ -273,8 +267,8 @@ export function LoopWorkflowExample() {
           id: "4",
           type: "SCREENSHOT",
           config: {
-            region: "fullscreen",
-          },
+            region: "fullscreen" as any,
+          } as any,
           position: [500, 200],
         },
       },
@@ -313,7 +307,7 @@ export function LoopWorkflowExample() {
  * Example 4: Interactive Workflow with Execution States
  */
 export function InteractiveWorkflowExample() {
-  const [nodes, setNodes, onNodesChange] = useNodesState<ReactFlowNode<BaseNodeData>>([
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node<BaseNodeData>>([
     {
       id: "1",
       type: "CLICK",
@@ -322,7 +316,7 @@ export function InteractiveWorkflowExample() {
         action: {
           id: "1",
           type: "CLICK",
-          config: { target: { text: "Start" } },
+          config: {} as any,
           position: [100, 100],
         },
         executionState: "idle",
@@ -337,7 +331,7 @@ export function InteractiveWorkflowExample() {
         action: {
           id: "2",
           type: "WAIT",
-          config: { duration: 1000 },
+          config: { duration: 1000 } as any,
           position: [300, 100],
         },
         executionState: "idle",
@@ -352,7 +346,7 @@ export function InteractiveWorkflowExample() {
         action: {
           id: "3",
           type: "SCREENSHOT",
-          config: { region: "fullscreen" },
+          config: { region: { x: 0, y: 0, width: 1920, height: 1080 } },
           position: [500, 100],
         },
         executionState: "idle",

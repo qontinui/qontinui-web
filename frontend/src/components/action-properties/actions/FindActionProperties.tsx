@@ -1,6 +1,13 @@
 "use client";
 
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ImageSelector } from "@/components/image-selector";
 import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
@@ -10,8 +17,9 @@ import { DurationOverride } from "../DurationOverride";
 
 /**
  * Properties component for FIND action.
- * Supports multi-image selection with new target structure:
- * {target: {type: "image", imageIds: ["id1", "id2", ...]}}
+ * Supports two target types:
+ * - "image": Multi-image selection with {target: {type: "image", imageIds: ["id1", "id2", ...]}}
+ * - "stateImage": Find any image from a state with {target: {type: "stateImage", stateId: "...", imageIds: [...]}}
  */
 export function FindActionProperties({
   action,
@@ -20,17 +28,73 @@ export function FindActionProperties({
   states,
   shouldOpenImageSelector,
 }: ActionPropertiesComponentProps) {
-  // Extract imageIds from the new target structure (array format)
+  const targetType = action.config.target?.type;
+
+  // Handle stateImage target type (Find State)
+  if (targetType === "stateImage") {
+    const stateId = action.config.target?.stateId || "";
+
+    const handleStateSelect = (selectedStateId: string) => {
+      // Get all image IDs from the selected state
+      const selectedState = states.find((s) => s.id === selectedStateId);
+      const imageIds =
+        selectedState?.stateImages?.map((si: any) => si.id) || [];
+
+      updateConfig("target", {
+        type: "stateImage",
+        stateId: selectedStateId,
+        imageIds,
+      });
+    };
+
+    const selectedState = states.find((s) => s.id === stateId);
+
+    return (
+      <>
+        <div className="space-y-2">
+          <Label className="text-xs text-gray-400">Select State</Label>
+          <Select value={stateId} onValueChange={handleStateSelect}>
+            <SelectTrigger className="bg-transparent border-gray-700">
+              <SelectValue placeholder="Select a state" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#27272A] border-gray-700">
+              {states.map((state) => (
+                <SelectItem key={state.id} value={state.id}>
+                  {state.name || state.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {stateId && (
+            <div className="text-xs text-gray-400 mt-2">
+              {selectedState && selectedState.stateImages?.length > 0
+                ? `Will find any of ${selectedState.stateImages.length} image${selectedState.stateImages.length > 1 ? "s" : ""} from ${selectedState.name}`
+                : selectedState
+                  ? `No images defined for ${selectedState.name}`
+                  : "State not found"}
+            </div>
+          )}
+        </div>
+
+        <SimilarityThresholdOverride
+          action={action}
+          updateConfig={updateConfig}
+        />
+        <SearchStrategyOverride action={action} updateConfig={updateConfig} />
+        <TimingProperties action={action} updateConfig={updateConfig} />
+      </>
+    );
+  }
+
+  // Default: Handle image target type
   const imageIds =
     action.config.target?.type === "image"
       ? action.config.target.imageIds
       : null;
 
-  // Handle single image IDs for backward compatibility (shouldn't happen with new schema)
   const hasImageIds = imageIds && Array.isArray(imageIds);
 
   const handleImagesSelect = (selectedImageIds: string[]) => {
-    // Generate the new target structure with array of image IDs
     updateConfig("target", {
       type: "image",
       imageIds: selectedImageIds,

@@ -172,10 +172,9 @@ export class ProjectOptimizationService {
   generateSuggestions(
     workflows: ReturnType<typeof analyzeWorkflows>,
     states: ReturnType<typeof analyzeStates>,
-    images: ReturnType<typeof analyzeImages>,
-    transitions: ReturnType<typeof analyzeTransitions>
+    images: ReturnType<typeof analyzeImages>
   ) {
-    return generateSuggestions(workflows, states, images, transitions);
+    return generateSuggestions(workflows, states, images);
   }
 
   // ==========================================================================
@@ -224,10 +223,9 @@ export class ProjectOptimizationService {
 
   findDuplicateWorkflows(
     workflow: Workflow,
-    allWorkflows: Workflow[],
-    threshold: number = 0.9
+    allWorkflows: Workflow[]
   ) {
-    return findDuplicateWorkflows(workflow, allWorkflows, threshold);
+    return findDuplicateWorkflows(workflow, allWorkflows);
   }
 
   // ==========================================================================
@@ -345,10 +343,9 @@ export class ProjectOptimizationService {
     resourceId: string,
     type: "workflow" | "state" | "image",
     workflows: Workflow[],
-    states: State[],
-    images: ImageAsset[]
+    states: State[]
   ) {
-    return getImpactAnalysis(resourceId, type, workflows, states, images);
+    return getImpactAnalysis(resourceId, type, workflows, states);
   }
 
   // ==========================================================================

@@ -20,15 +20,13 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useCanvasStore } from "@/stores/canvas-store";
-import { CanvasNode, CanvasEdge } from "./canvas-types";
-import { ActionCategory, getActionCategory } from "./canvas-types";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface ContextMenuItem {
-  label: string;
+  label?: string;
   icon?: React.ReactNode;
   shortcut?: string;
   onClick?: () => void;
@@ -377,7 +375,7 @@ export function ContextMenu({
   position,
   items,
   onClose,
-  parent,
+  parent: _parent,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<number | null>(null);
@@ -606,8 +604,6 @@ export function useContextMenu() {
   const [menuState, setMenuState] = useState<ContextMenuState | null>(null);
 
   const {
-    workflow,
-    selectedNodes,
     clipboardNodes,
     copy,
     paste,
@@ -636,8 +632,8 @@ export function useContextMenu() {
               submenu: [
                 { label: "Find", onClick: () => console.log("Add Find") },
                 {
-                  label: "Find State Image",
-                  onClick: () => console.log("Add Find State Image"),
+                  label: "Find State",
+                  onClick: () => console.log("Add Find State"),
                 },
                 { label: "Vanish", onClick: () => console.log("Add Vanish") },
                 { label: "Exists", onClick: () => console.log("Add Exists") },

@@ -25,12 +25,6 @@ export function getDefaultConfig<T extends ActionType>(
         },
       } as ActionConfigMap[T];
 
-    case "FIND_STATE_IMAGE":
-      return {
-        stateId: "",
-        imageId: "",
-      } as ActionConfigMap[T];
-
     case "VANISH":
       return {
         target: {
@@ -65,7 +59,7 @@ export function getDefaultConfig<T extends ActionType>(
         },
         mouseButton: "LEFT",
         numberOfClicks: 1,
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "MOUSE_MOVE":
       return {
@@ -77,12 +71,12 @@ export function getDefaultConfig<T extends ActionType>(
     case "MOUSE_DOWN":
       return {
         button: "left",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "MOUSE_UP":
       return {
         button: "left",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "DRAG":
       return {
@@ -92,13 +86,13 @@ export function getDefaultConfig<T extends ActionType>(
         to: {
           type: "currentPosition",
         },
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "SCROLL":
       return {
         direction: "down",
         amount: 3,
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     // ========================================================================
     // Keyboard Actions
@@ -111,22 +105,22 @@ export function getDefaultConfig<T extends ActionType>(
     case "KEY_PRESS":
       return {
         key: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "KEY_DOWN":
       return {
         key: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "KEY_UP":
       return {
         key: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "HOTKEY":
       return {
         keys: [],
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     // ========================================================================
     // Control Flow Actions
@@ -138,14 +132,14 @@ export function getDefaultConfig<T extends ActionType>(
           expression: "true",
         },
         thenBranch: [],
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "LOOP":
       return {
         loopType: "count",
         count: 10,
         body: [],
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "BREAK":
       return {} as ActionConfigMap[T];
@@ -160,13 +154,13 @@ export function getDefaultConfig<T extends ActionType>(
           expression: "",
         },
         cases: [],
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "TRY_CATCH":
       return {
         tryBranch: [],
         catchBranch: [],
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     // ========================================================================
     // Data Actions
@@ -194,7 +188,7 @@ export function getDefaultConfig<T extends ActionType>(
         },
         order: "ascending",
         outputVariable: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "FILTER":
       return {
@@ -207,7 +201,7 @@ export function getDefaultConfig<T extends ActionType>(
           expression: "",
         },
         outputVariable: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "MAP":
       return {
@@ -220,7 +214,7 @@ export function getDefaultConfig<T extends ActionType>(
           expression: "",
         },
         outputVariable: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "REDUCE":
       return {
@@ -234,21 +228,21 @@ export function getDefaultConfig<T extends ActionType>(
         },
         initialValue: null,
         outputVariable: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "STRING_OPERATION":
       return {
         operation: "concat",
         inputs: [],
         outputVariable: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     case "MATH_OPERATION":
       return {
         operation: "add",
         operands: [],
         outputVariable: "",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     // ========================================================================
     // State Actions
@@ -267,7 +261,7 @@ export function getDefaultConfig<T extends ActionType>(
       return {
         region: "fullscreen",
         outputVariable: "screenshot",
-      } as ActionConfigMap[T];
+      } as unknown as ActionConfigMap[T];
 
     default:
       return {} as ActionConfigMap[T];

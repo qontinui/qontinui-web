@@ -84,8 +84,8 @@ export function StateStructureReview({
       const flowNodes = createFlowNodes(data.states);
       const flowEdges = createFlowEdges(data.transitions);
 
-      setNodes(flowNodes);
-      setEdges(flowEdges);
+      setNodes(flowNodes as any);
+      setEdges(flowEdges as any);
 
       // Select all by default
       setSelectedStateIds(new Set(data.states.map((s) => s.id)));

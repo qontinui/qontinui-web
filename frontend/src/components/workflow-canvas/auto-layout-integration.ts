@@ -7,7 +7,6 @@
 
 import type { Workflow } from "../../lib/action-schema/action-types";
 import {
-  AutoLayout,
   LayoutStyle,
   type LayoutConfig,
   autoLayoutWorkflow,

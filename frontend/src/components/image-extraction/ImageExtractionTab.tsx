@@ -1,11 +1,8 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  Upload,
-  X,
   Scissors,
   ImageIcon,
   Plus,
-  FolderOpen,
   AlertCircle,
   Edit,
 } from "lucide-react";
@@ -22,12 +19,11 @@ import {
   ProcessedImageResult,
 } from "@/lib/image-processing";
 import {
-  createStateImage,
   prepareStateImageCreation,
 } from "@/lib/state-image-creator";
 import {
   createImageAsset,
-  imageExistsInLibrary,
+  findImageByData,
 } from "@/lib/image-library-utils";
 import { toast } from "sonner";
 
@@ -223,7 +219,24 @@ export const ImageExtractionTab: React.FC = () => {
     try {
       const imageData = extractedResult.croppedImage;
 
-      // Prepare search region if fixed location is enabled
+      // Step 1: Add image to library first (or find existing)
+      // The library is the source of truth for all image data
+      let imageAsset = findImageByData(images, imageData);
+      if (!imageAsset) {
+        imageAsset = createImageAsset(
+          imageData,
+          stateImageName,
+          "image_extraction"
+        );
+        // Add mask to the image asset if present
+        if (extractedResult.mask) {
+          imageAsset.mask = extractedResult.mask;
+        }
+        addImage(imageAsset);
+        toast.success("Added to Image Library");
+      }
+
+      // Step 2: Prepare search region if fixed location is enabled
       // Use the cropped bounds (after border/background removal) rather than original selection
       const searchRegion =
         fixedLocation && extractedResult.bounds
@@ -237,11 +250,11 @@ export const ImageExtractionTab: React.FC = () => {
             }
           : undefined;
 
+      // Step 3: Create StateImage with imageId referencing the library
       const result = prepareStateImageCreation(
         {
           name: stateImageName,
-          image: imageData,
-          mask: extractedResult.mask,
+          imageId: imageAsset.id, // Reference to library image
           source: "image-extraction",
           fixed: fixedLocation,
           searchRegion: searchRegion,
@@ -257,17 +270,6 @@ export const ImageExtractionTab: React.FC = () => {
       } else if (result.action === "update-state" && result.targetState) {
         updateState(result.targetState);
         toast.success(`Added StateImage to ${result.targetState.name}`);
-      }
-
-      // Add image to Image Library (avoid duplicates)
-      if (!imageExistsInLibrary(images, imageData)) {
-        const imageAsset = createImageAsset(
-          imageData,
-          stateImageName,
-          "image_extraction"
-        );
-        addImage(imageAsset);
-        toast.success("Added to Image Library");
       }
 
       // Reset dialog

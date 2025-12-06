@@ -89,7 +89,7 @@ export function DocumentationViewer({
     const sections: Section[] = [];
     let currentSection: Section | null = null;
 
-    lines.forEach((line, idx) => {
+    lines.forEach((line) => {
       const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
 
       if (headerMatch) {
@@ -420,7 +420,7 @@ export function DocumentationViewer({
             variant="outline"
             size="sm"
             className="w-full"
-            onClick={() => scrollToSection(sections[0]?.id)}
+            onClick={() => scrollToSection(sections[0]?.id!)}
           >
             Back to Top
           </Button>
@@ -480,7 +480,7 @@ export function DocumentationViewer({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   onClick={() =>
-                    copyLinkToSection(activeSection || sections[0]?.id)
+                    copyLinkToSection(activeSection || sections[0]?.id!)
                   }
                 >
                   {copiedLink ? (

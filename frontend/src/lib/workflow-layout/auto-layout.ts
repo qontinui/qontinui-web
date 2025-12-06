@@ -164,7 +164,7 @@ export class AutoLayout {
     if (entryPoints.length === 0) return;
 
     // Use first entry point as root
-    const root = entryPoints[0];
+    const root = entryPoints[0]!;
     this.layoutTree(workflow, root, 0, 0, new Set());
 
     this.reduceOverlaps(workflow);
@@ -680,8 +680,8 @@ export class AutoLayout {
       // Check all pairs for overlaps
       for (let i = 0; i < workflow.actions.length; i++) {
         for (let j = i + 1; j < workflow.actions.length; j++) {
-          if (this.hasOverlap(workflow.actions[i], workflow.actions[j])) {
-            this.separateNodes(workflow.actions[i], workflow.actions[j]);
+          if (this.hasOverlap(workflow.actions[i]!, workflow.actions[j]!)) {
+            this.separateNodes(workflow.actions[i]!, workflow.actions[j]!);
             hadOverlap = true;
           }
         }

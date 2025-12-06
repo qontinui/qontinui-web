@@ -14,7 +14,6 @@ import type {
 // Import all action configs
 import {
   FindActionConfig,
-  FindStateImageActionConfig,
   VanishActionConfig,
   ExistsActionConfig,
   WaitActionConfig,
@@ -72,12 +71,7 @@ import {
 // Action Types
 // ============================================================================
 
-export type FindActionType =
-  | "FIND"
-  | "FIND_STATE_IMAGE"
-  | "VANISH"
-  | "EXISTS"
-  | "WAIT";
+export type FindActionType = "FIND" | "VANISH" | "EXISTS" | "WAIT";
 
 export type MouseActionType =
   | "CLICK"
@@ -132,7 +126,6 @@ export type ActionType =
 export interface ActionConfigMap {
   // Find actions
   FIND: FindActionConfig;
-  FIND_STATE_IMAGE: FindStateImageActionConfig;
   VANISH: VanishActionConfig;
   EXISTS: ExistsActionConfig;
   WAIT: WaitActionConfig;

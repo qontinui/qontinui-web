@@ -277,7 +277,7 @@ export function LayoutPreview({
         "success",
         "parallel",
       ] as const) {
-        const outputs = connections[outputType];
+        const outputs = connections[outputType as keyof typeof connections];
         if (!outputs) continue;
 
         // Set color based on output type
@@ -393,7 +393,7 @@ export function LayoutPreview({
       TRY_CATCH: "#ef4444",
       DEFAULT: "#6b7280",
     };
-    return colors[type] || colors.DEFAULT;
+    return (colors[type] || colors.DEFAULT) as string;
   };
 
   const roundRect = (
@@ -671,7 +671,7 @@ function calculateBoundingBox(actions: Action[]): BoundingBox {
 }
 
 function useMemo<T>(factory: () => T, deps: any[]): T {
-  const ref = useRef<{ value: T; deps: any[] }>();
+  const ref = useRef<{ value: T; deps: any[] } | undefined>(undefined);
 
   if (!ref.current || !depsEqual(ref.current.deps, deps)) {
     ref.current = { value: factory(), deps };

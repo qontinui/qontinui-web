@@ -87,7 +87,7 @@ export async function generateStateImageThumbnail(
       const firstScreenshotId = stateImage.screenshots[0];
       if (firstScreenshotId) {
         const match = firstScreenshotId.match(/screenshot_(\d+)/);
-        if (match) {
+        if (match && match[1]) {
           targetIndex = parseInt(match[1], 10);
         }
       }
@@ -100,7 +100,7 @@ export async function generateStateImageThumbnail(
 
     // Extract the region from the screenshot
     const thumbnail = await extractImageRegion(
-      screenshots[targetIndex],
+      screenshots[targetIndex]!,
       stateImage.x,
       stateImage.y,
       stateImage.x2,

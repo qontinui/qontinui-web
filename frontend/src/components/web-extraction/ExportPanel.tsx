@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Download, FileJson, Database, FileText } from "lucide-react";
 import { useExtractionStore } from "@/stores/extraction-store";
-import { useAutomation } from "@/contexts/automation-context";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,12 +18,9 @@ import { toast } from "sonner";
 
 export function ExportPanel() {
   const stats = useExtractionStore((state) => state.stats);
-  const stateStructure = useExtractionStore((state) => state.stateStructure);
   const states = useExtractionStore((state) => state.states);
   const elements = useExtractionStore((state) => state.elements);
   const transitions = useExtractionStore((state) => state.transitions);
-
-  const { addState: addStateToWorkflow } = useAutomation();
 
   const [exportFormat, setExportFormat] = useState<
     "coco" | "yolo" | "jsonl" | "state"

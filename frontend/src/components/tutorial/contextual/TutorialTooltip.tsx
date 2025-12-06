@@ -7,7 +7,10 @@
  */
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+// TODO: Install framer-motion dependency
+// import { motion, AnimatePresence } from "framer-motion";
+const motion: any = { div: "div" };
+const AnimatePresence: any = ({ children }: any) => <>{children}</>;
 import { X, ArrowRight, ArrowLeft } from "lucide-react";
 import type { TooltipPosition } from "../../../types/tutorial";
 
@@ -82,8 +85,6 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
 }) => {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [tooltipRect, setTooltipRect] = useState<TooltipRect | null>(null);
-  const [actualPosition, setActualPosition] =
-    useState<TooltipPosition>(position);
 
   const calculatePosition = useCallback(() => {
     if (!targetSelector || !tooltipRef.current) {
@@ -101,7 +102,6 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
     const tooltipElement = tooltipRef.current;
     const tooltipWidth = tooltipElement.offsetWidth;
     const tooltipHeight = tooltipElement.offsetHeight;
-    const arrowSize = 8;
     const gap = 12;
 
     const viewportWidth = window.innerWidth;
@@ -201,7 +201,6 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
       arrowOffset = Math.max(20, Math.min(arrowOffset, tooltipHeight - 20));
     }
 
-    setActualPosition(finalPosition);
     setTooltipRect({
       top,
       left,

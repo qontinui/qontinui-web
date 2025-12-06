@@ -126,15 +126,13 @@ export function getHealthReport(
   const suggestions = generateSuggestions(
     workflowAnalyses,
     stateAnalyses,
-    imageAnalyses,
-    transitionAnalyses
+    imageAnalyses
   );
 
   const issues = collectIssues(
     workflowAnalyses,
     stateAnalyses,
-    imageAnalyses,
-    transitionAnalyses
+    imageAnalyses
   );
 
   const storage = getStorageUsage(workflows, states, images, transitions);
@@ -577,8 +575,8 @@ export function calculateMetricsTrend(
       issues: issuesTrend,
     },
     period: {
-      start: filtered[0]!!.timestamp,
-      end: filtered[filtered.length - 1].timestamp,
+      start: filtered[0]?.timestamp ?? new Date().toISOString(),
+      end: filtered[filtered.length - 1]?.timestamp ?? new Date().toISOString(),
     },
   };
 }

@@ -57,7 +57,7 @@ export function ProcessingMonitor({
         // Fetch logs
         const logEntries =
           await recordingService.getProcessingLogs(recordingId);
-        setLogs(logEntries);
+        setLogs(logEntries as any);
 
         // Check if completed or failed
         if (jobStatus.status === "completed") {

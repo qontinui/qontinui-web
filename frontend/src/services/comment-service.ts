@@ -9,11 +9,10 @@
 
 import type {
   Comment,
-  CreateCommentRequest,
-  UpdateCommentRequest,
-  CommentStatus,
+  CommentCreate,
+  CommentUpdate,
 } from "@/types/collaboration";
-import { httpClient } from "./http-client";
+import { httpClient } from "./service-factory";
 
 const API_BASE = "/api/comments";
 
@@ -50,14 +49,13 @@ class CommentService {
    * Add a new comment
    */
   async addComment(
-    projectId: string,
+    _projectId: string,
     workflowId: string | undefined,
     content: string,
     position?: { x: number; y: number },
     parentId?: string
   ): Promise<Comment> {
-    const data: CreateCommentRequest = {
-      project_id: projectId,
+    const data: CommentCreate = {
       workflow_id: workflowId,
       content,
       position,
@@ -73,7 +71,7 @@ class CommentService {
    */
   async updateComment(
     commentId: string,
-    data: UpdateCommentRequest
+    data: CommentUpdate | { resolved?: boolean }
   ): Promise<Comment> {
     const comment = await httpClient.patch<Comment>(
       `${API_BASE}/${commentId}`,
@@ -93,14 +91,14 @@ class CommentService {
    * Resolve a comment
    */
   async resolveComment(commentId: string): Promise<Comment> {
-    return this.updateComment(commentId, { status: "resolved" });
+    return this.updateComment(commentId, { resolved: true });
   }
 
   /**
    * Reopen a comment
    */
   async reopenComment(commentId: string): Promise<Comment> {
-    return this.updateComment(commentId, { status: "open" });
+    return this.updateComment(commentId, { resolved: false });
   }
 
   /**
@@ -122,15 +120,15 @@ class CommentService {
   }
 
   /**
-   * Get comments by status
+   * Get comments by resolved status
    */
   async getCommentsByStatus(
     projectId: string,
-    status: CommentStatus
+    resolved: boolean
   ): Promise<Comment[]> {
     const params = new URLSearchParams({
       project_id: projectId,
-      status,
+      resolved: resolved.toString(),
     });
 
     const comments = await httpClient.get<Comment[]>(`${API_BASE}?${params}`);

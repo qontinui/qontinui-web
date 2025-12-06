@@ -15,7 +15,7 @@
 import React, { useState } from "react";
 import { MiniMap } from "@xyflow/react";
 import { CanvasNode } from "./canvas-types";
-import { getActionCategory, ActionCategory } from "./canvas-types";
+import { getActionCategory } from "./canvas-types";
 import { getCategoryColor, COLORS } from "./canvas-config";
 
 // ============================================================================

@@ -52,7 +52,7 @@ let nextColorIndex = 0;
 
 function assignUserColor(userId: string): string {
   if (!userColorMap.has(userId)) {
-    userColorMap.set(userId, USER_COLORS[nextColorIndex % USER_COLORS.length]);
+    userColorMap.set(userId, USER_COLORS[nextColorIndex % USER_COLORS.length]!);
     nextColorIndex++;
   }
   return userColorMap.get(userId)!;

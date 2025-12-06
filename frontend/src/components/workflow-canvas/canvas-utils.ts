@@ -5,7 +5,7 @@
  * plus validation and helper functions.
  */
 
-import { Node, Edge, MarkerType } from "@xyflow/react";
+import { MarkerType } from "@xyflow/react";
 import {
   Workflow,
   Action,
@@ -125,7 +125,7 @@ function connectionsToEdges(
   Object.entries(connections).forEach(([sourceActionId, outputs]) => {
     // Process each connection type (main, error, success, parallel)
     (["main", "error", "success", "parallel"] as const).forEach((connType) => {
-      const connectionArray = outputs[connType];
+      const connectionArray = outputs[connType as keyof typeof outputs];
       if (!connectionArray) return;
 
       // Process each output index
@@ -283,7 +283,7 @@ function edgesToConnections(edges: CanvasEdge[]): Connections {
     } else if (edge.sourceHandle) {
       // Parse sourceHandle for newly created edges
       const parts = edge.sourceHandle.split("-");
-      if (parts.length >= 2) {
+      if (parts.length >= 2 && parts[1]) {
         const handleType = parts[0];
         const handleIndex = parseInt(parts[1], 10);
 
@@ -308,17 +308,19 @@ function edgesToConnections(edges: CanvasEdge[]): Connections {
     }
 
     // Initialize connection type array if needed
-    if (!connections[sourceId][connType]) {
-      connections[sourceId][connType] = [];
+    const sourceConnections = connections[sourceId];
+    if (!sourceConnections[connType as keyof typeof sourceConnections]) {
+      (sourceConnections[connType as keyof typeof sourceConnections] as Connection[][]) = [];
     }
 
     // Initialize output index array if needed
-    while (connections[sourceId][connType]!.length <= outputIndex) {
-      connections[sourceId][connType]!.push([]);
+    const connArray = sourceConnections[connType as keyof typeof sourceConnections] as Connection[][];
+    while (connArray.length <= outputIndex) {
+      connArray.push([]);
     }
 
     // Add connection
-    connections[sourceId][connType]![outputIndex].push({
+    connArray[outputIndex]?.push({
       action: targetId,
       type: connType,
       index: 0, // Always 0 for now (single input per action)

@@ -39,7 +39,7 @@ export function CodeBlockNode(props: NodeProps<ReactFlowNode<BaseNodeData>>) {
 
   // Get code preview (first line or empty)
   const codePreview = config.code
-    ? config.code.split("\n")[0].substring(0, 40) +
+    ? (config.code.split("\n")[0]?.substring(0, 40) ?? "") +
       (config.code.length > 40 ? "..." : "")
     : "Empty code block";
 

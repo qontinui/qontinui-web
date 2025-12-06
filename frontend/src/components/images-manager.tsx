@@ -15,7 +15,6 @@ import {
   ImageDeletionDialog,
   type ImageUsageInfo,
 } from "@/components/image-deletion-dialog";
-import { apiClient } from "@/lib/api-client";
 import { uploadScreenshotOffline } from "@/lib/offline-screenshot-upload";
 import {
   ImageUploadProgress,
@@ -64,9 +63,6 @@ export function ImagesManager() {
     states: [],
     processes: [],
   });
-  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
-    {}
-  );
   const [uploadingFiles, setUploadingFiles] = useState<UploadingImage[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -116,13 +112,10 @@ export function ImagesManager() {
       }
 
       // Initialize upload progress for all files
-      const initialProgress: Record<string, number> = {};
       const initialUploading: UploadingImage[] = [];
       fileArray.forEach((file) => {
-        initialProgress[file.name] = 0;
         initialUploading.push({ name: file.name, progress: 0 });
       });
-      setUploadProgress(initialProgress);
       setUploadingFiles(initialUploading);
 
       // Upload all files concurrently (with progress tracking)
@@ -155,8 +148,7 @@ export function ImagesManager() {
           // Upload with offline-first support
           const result = await uploadScreenshotOffline(file, Number(projectId), {
             name: file.name,
-            onProgress: (progress, status) => {
-              setUploadProgress((prev) => ({ ...prev, [file.name]: progress }));
+            onProgress: (progress, _status) => {
               setUploadingFiles((prev) =>
                 prev.map((f) => (f.name === file.name ? { ...f, progress } : f))
               );

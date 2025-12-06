@@ -220,6 +220,8 @@ export const PatternMatchingTest: React.FC<PatternMatchingTestProps> = ({
         name: file.name,
         url: dataUrl,
         timestamp: Date.now(),
+        size: file.size,
+        uploadedAt: new Date(),
       };
       setSelectedScreenshot(newScreenshot);
       setMatches([]);

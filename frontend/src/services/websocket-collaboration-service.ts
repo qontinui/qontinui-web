@@ -16,7 +16,6 @@ import type {
   Comment,
   Activity,
   WebSocketMessage,
-  WebSocketMessageType,
   PresenceUpdateMessage,
   CursorMoveMessage,
   CursorPosition,
@@ -104,7 +103,7 @@ class WebSocketCollaborationService {
               "[CollaborationWS] Reconnecting, requesting sync state"
             );
             this.send({
-              type: "sync_state",
+              type: "sync_state" as any,
               timestamp: new Date().toISOString(),
               data: {
                 last_acked_sequence: this.lastAckedSequence,
@@ -130,7 +129,7 @@ class WebSocketCollaborationService {
         onMessage: (event: any) => {
           this.handleMessage(event);
         },
-        onError: (error: Error) => {
+        onError: (error: any) => {
           console.error("[CollaborationWS] Error:", error);
           this.handlers.onError?.(error);
         },
@@ -471,7 +470,7 @@ class WebSocketCollaborationService {
    */
   private sendAck(sequence: number): void {
     this.send({
-      type: "ack",
+      type: "ack" as any,
       timestamp: new Date().toISOString(),
       data: { sequence },
     });
@@ -484,7 +483,7 @@ class WebSocketCollaborationService {
    */
   private requestResend(fromSequence: number): void {
     this.send({
-      type: "resend",
+      type: "resend" as any,
       timestamp: new Date().toISOString(),
       data: { from_sequence: fromSequence },
     });

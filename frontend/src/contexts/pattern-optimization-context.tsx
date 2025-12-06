@@ -348,11 +348,11 @@ export function PatternOptimizationProvider({
           );
           if (imageData) {
             // Convert data URL to base64
-            const base64Data = imageData.split(",")[1];
+            const base64Data = imageData.split(",")[1]!;
             positiveScreenshots.push(base64Data);
           } else {
             // Fallback if image is stored as URL
-            const base64Data = screenshot.url.split(",")[1];
+            const base64Data = screenshot.url.split(",")[1]!;
             positiveScreenshots.push(base64Data);
           }
           regions.push({
@@ -367,11 +367,11 @@ export function PatternOptimizationProvider({
             screenshot.id
           );
           if (imageData) {
-            const base64Data = imageData.split(",")[1];
+            const base64Data = imageData.split(",")[1]!;
             negativeScreenshots.push(base64Data);
           } else {
             // Fallback if image is stored as URL
-            const base64Data = screenshot.url.split(",")[1];
+            const base64Data = screenshot.url.split(",")[1]!;
             negativeScreenshots.push(base64Data);
           }
         }
@@ -605,7 +605,7 @@ export function PatternOptimizationProvider({
           );
         }
 
-        const apiResult = await response.json();
+        await response.json();
 
         const result: OptimizationResult = {
           sessionId: session.id,

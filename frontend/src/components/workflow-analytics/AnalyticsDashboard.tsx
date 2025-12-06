@@ -33,7 +33,6 @@ import {
 import {
   Calendar,
   Download,
-  RefreshCw,
   Activity,
   CheckCircle,
   Clock,
@@ -273,7 +272,6 @@ export function AnalyticsDashboard({
 
   // Timeline data
   const timelineData = useMemo(() => {
-    const metricsArray = Object.values(metrics);
     const data: Array<{
       name: string;
       executions: number;
@@ -400,6 +398,7 @@ export function AnalyticsDashboard({
               <SelectItem value="custom">Custom range...</SelectItem>
             </SelectContent>
           </Select>
+          {/* TODO: Implement refresh functionality
           <Button
             variant="outline"
             size="icon"
@@ -407,6 +406,7 @@ export function AnalyticsDashboard({
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
+          */}
           <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Export

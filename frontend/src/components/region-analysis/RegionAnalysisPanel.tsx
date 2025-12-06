@@ -440,7 +440,7 @@ export function RegionAnalysisPanel({
                   max={1}
                   step={0.05}
                   value={[overlapThreshold]}
-                  onValueChange={(value) => setOverlapThreshold(value[0])}
+                  onValueChange={(value) => setOverlapThreshold(value[0] ?? 0.5)}
                 />
                 <p className="text-xs text-muted-foreground">
                   IoU threshold for grouping overlapping regions

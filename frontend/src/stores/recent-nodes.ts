@@ -89,11 +89,14 @@ export const useRecentNodes = create<RecentNodesStore>()(
           if (existingIndex >= 0) {
             // Update existing entry
             newRecent = [...state.recentNodes];
-            newRecent[existingIndex] = {
-              type: nodeType,
-              lastUsed: now,
-              useCount: newRecent[existingIndex].useCount + 1,
-            };
+            const existingEntry = newRecent[existingIndex];
+            if (existingEntry) {
+              newRecent[existingIndex] = {
+                type: nodeType,
+                lastUsed: now,
+                useCount: existingEntry.useCount + 1,
+              };
+            }
           } else {
             // Add new entry
             const newEntry: RecentNodeEntry = {

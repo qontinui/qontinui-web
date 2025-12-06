@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { Lock, ResourceType } from "@/types/collaboration";
 import { lockService } from "@/services/lock-service";
 import { websocketCollaborationService } from "@/services/websocket-collaboration-service";
+import { useAuth } from "@/contexts/auth-context";
 
 // ============================================================================
 // Hook Return Type
@@ -43,6 +44,7 @@ export function useEditLock(
   resourceId: string,
   autoAcquire: boolean = false
 ): UseEditLockReturn {
+  const { user } = useAuth();
   const [lock, setLock] = useState<Lock | null>(null);
   const [isLocked, setIsLocked] = useState(false);
   const [lockedByMe, setLockedByMe] = useState(false);
@@ -134,9 +136,9 @@ export function useEditLock(
       );
 
       if (isMounted.current) {
-        setIsLocked(status.is_locked);
-        setLockedByMe(status.locked_by_me);
-        setLock(status.lock || null);
+        setIsLocked(!!status);
+        setLockedByMe(status?.user_id === user?.id);
+        setLock(status);
       }
     } catch (err) {
       console.error("[useEditLock] Failed to check lock status:", err);

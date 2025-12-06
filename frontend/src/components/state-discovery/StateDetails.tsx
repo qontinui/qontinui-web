@@ -97,7 +97,7 @@ const StateDetails: React.FC<StateDetailsProps> = ({
     let actualScreenshotIndex = 0;
 
     if (match) {
-      actualScreenshotIndex = parseInt(match[1], 10);
+      actualScreenshotIndex = parseInt(match[1] ?? "0", 10);
     } else {
       console.warn("Could not extract index from screenshotId:", screenshotId);
     }

@@ -83,7 +83,7 @@ export function updateNodeExecutionState(
   const { showGlow = true, showBadge = true, animate = true } = options;
 
   const colors = EXECUTION_COLORS[status];
-  const canvasNode = node as CanvasNode;
+  const canvasNode = node as unknown as CanvasNode;
 
   // Update node style
   const style = {
@@ -152,7 +152,7 @@ export function resetNodesExecutionState(nodes: Node[]): Node[] {
  * Highlight a node (e.g., current executing action)
  */
 export function highlightNode(node: Node, highlight: boolean): Node {
-  const canvasNode = node as CanvasNode;
+  const canvasNode = node as unknown as CanvasNode;
 
   if (highlight) {
     return {
@@ -198,7 +198,7 @@ export function updateEdgeExecutionState(
   active: boolean,
   status?: "success" | "error"
 ): Edge {
-  const canvasEdge = edge as CanvasEdge;
+  const canvasEdge = edge as unknown as CanvasEdge;
 
   const strokeColor = active
     ? status === "error"

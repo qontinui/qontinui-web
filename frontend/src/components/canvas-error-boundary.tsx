@@ -52,7 +52,7 @@ export class CanvasErrorBoundary extends Component<Props, State> {
     };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+  override componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     // Log canvas-specific errors with additional context
     console.error("CanvasErrorBoundary caught an error:", {
       error,
@@ -110,7 +110,7 @@ export class CanvasErrorBoundary extends Component<Props, State> {
     window.location.reload();
   };
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
         return <>{this.props.fallback}</>;

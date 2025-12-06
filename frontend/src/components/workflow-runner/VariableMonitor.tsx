@@ -23,7 +23,6 @@ import {
 import type {
   WorkflowVariable,
   VariableScope,
-  VariableFilter,
 } from "@/types/workflow-variables";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
@@ -46,11 +45,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
   Search,
   Copy,
   Download,
@@ -62,7 +56,6 @@ import {
   Database,
   Globe,
   AlertCircle,
-  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { VariableHistory } from "./VariableHistory";

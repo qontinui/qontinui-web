@@ -164,7 +164,7 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
         },
 
         setFloatingPosition: (x: number, y: number) => {
-          set((state) => ({
+          set(() => ({
             floatingPosition: { x, y },
           }));
         },
@@ -174,7 +174,7 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
           const clampedWidth = Math.max(300, Math.min(800, width));
           const clampedHeight = Math.max(400, Math.min(1000, height));
 
-          set((state) => ({
+          set(() => ({
             floatingSize: { width: clampedWidth, height: clampedHeight },
           }));
         },
@@ -244,10 +244,13 @@ export const usePropertiesPanelStore = create<PropertiesPanelStore>()(
 
             if (existingIndex >= 0) {
               // Update existing change, keep original oldValue
-              actionChanges[existingIndex] = {
-                ...change,
-                oldValue: actionChanges[existingIndex].oldValue,
-              };
+              const existingChange = actionChanges[existingIndex];
+              if (existingChange) {
+                actionChanges[existingIndex] = {
+                  ...change,
+                  oldValue: existingChange.oldValue,
+                };
+              }
             } else {
               // Add new change
               actionChanges.push(change);

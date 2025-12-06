@@ -15,18 +15,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+// Removed unused Select components - using native select instead
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertTriangle, Copy, Download, Plus } from "lucide-react";
 import { useCreateRunnerToken } from "@/hooks/useRunners";
 import type { RunnerTokenWithSecret } from "@/types/runner";
-import { ConnectionString } from "./ConnectionString";
 import { toast } from "sonner";
 
 const formSchema = z.object({
