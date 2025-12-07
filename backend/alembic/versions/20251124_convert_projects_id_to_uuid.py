@@ -19,8 +19,9 @@ Steps:
 from typing import Sequence, Union
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "20251124_projects_uuid"
@@ -32,24 +33,102 @@ depends_on: Union[str, Sequence[str], None] = None
 # Format: (table_name, column_name, constraint_name, on_delete, nullable)
 REFERENCING_TABLES = [
     ("storage_usage", "project_id", "storage_usage_project_id_fkey", "CASCADE", True),
-    ("project_versions", "project_id", "project_versions_project_id_fkey", "CASCADE", False),
-    ("automation_videos", "project_id", "automation_videos_project_id_fkey", "SET NULL", True),
+    (
+        "project_versions",
+        "project_id",
+        "project_versions_project_id_fkey",
+        "CASCADE",
+        False,
+    ),
+    (
+        "automation_videos",
+        "project_id",
+        "automation_videos_project_id_fkey",
+        "SET NULL",
+        True,
+    ),
     ("snapshot_runs", "project_id", "snapshot_runs_project_id_fkey", "CASCADE", True),
-    ("software_test_runs", "project_id", "software_test_runs_project_id_fkey", "CASCADE", False),
-    ("project_access_control", "project_id", "project_access_control_project_id_fkey", "CASCADE", False),
-    ("workflow_variables", "project_id", "workflow_variables_project_id_fkey", None, False),
-    ("transition_reliability", "project_id", "transition_reliability_project_id_fkey", "CASCADE", False),
-    ("automation_sessions", "project_id", "automation_sessions_project_id_fkey", "SET NULL", True),
+    (
+        "software_test_runs",
+        "project_id",
+        "software_test_runs_project_id_fkey",
+        "CASCADE",
+        False,
+    ),
+    (
+        "project_access_control",
+        "project_id",
+        "project_access_control_project_id_fkey",
+        "CASCADE",
+        False,
+    ),
+    (
+        "workflow_variables",
+        "project_id",
+        "workflow_variables_project_id_fkey",
+        None,
+        False,
+    ),
+    (
+        "transition_reliability",
+        "project_id",
+        "transition_reliability_project_id_fkey",
+        "CASCADE",
+        False,
+    ),
+    (
+        "automation_sessions",
+        "project_id",
+        "automation_sessions_project_id_fkey",
+        "SET NULL",
+        True,
+    ),
     ("notifications", "project_id", "notifications_project_id_fkey", "CASCADE", True),
-    ("automation_screenshots", "project_id", "fk_automation_screenshots_project_id", "SET NULL", True),
-    ("package_installations", "project_id", "package_installations_project_id_fkey", "CASCADE", False),
-    ("coverage_snapshots", "project_id", "coverage_snapshots_project_id_fkey", "CASCADE", False),
-    ("capture_sessions", "project_id", "capture_sessions_project_id_fkey", "CASCADE", False),
-    ("capture_events", "project_id", "capture_events_project_id_fkey", "CASCADE", False),
+    (
+        "automation_screenshots",
+        "project_id",
+        "fk_automation_screenshots_project_id",
+        "SET NULL",
+        True,
+    ),
+    (
+        "package_installations",
+        "project_id",
+        "package_installations_project_id_fkey",
+        "CASCADE",
+        False,
+    ),
+    (
+        "coverage_snapshots",
+        "project_id",
+        "coverage_snapshots_project_id_fkey",
+        "CASCADE",
+        False,
+    ),
+    (
+        "capture_sessions",
+        "project_id",
+        "capture_sessions_project_id_fkey",
+        "CASCADE",
+        False,
+    ),
+    (
+        "capture_events",
+        "project_id",
+        "capture_events_project_id_fkey",
+        "CASCADE",
+        False,
+    ),
     ("edit_commands", "project_id", "edit_commands_project_id_fkey", "CASCADE", False),
     ("custom_functions", "project_id", "custom_functions_project_id_fkey", None, False),
     ("runner_connections", "project_id", None, None, True),  # No FK constraint
-    ("learned_workflows", "project_id", "learned_workflows_project_id_fkey", "CASCADE", False),
+    (
+        "learned_workflows",
+        "project_id",
+        "learned_workflows_project_id_fkey",
+        "CASCADE",
+        False,
+    ),
     ("project_locks", "project_id", None, "CASCADE", False),  # If exists
     ("project_comments", "project_id", None, "CASCADE", False),  # If exists
     ("activity_logs", "project_id", None, "CASCADE", False),  # If exists
@@ -99,6 +178,21 @@ def constraint_exists(conn, constraint_name: str) -> bool:
     return result.scalar()
 
 
+def get_column_type(conn, table_name: str, column_name: str) -> str | None:
+    """Get the data type of a column."""
+    result = conn.execute(
+        sa.text(
+            """
+            SELECT data_type FROM information_schema.columns
+            WHERE table_name = :table AND column_name = :column
+            """
+        ),
+        {"table": table_name, "column": column_name},
+    )
+    row = result.fetchone()
+    return row[0] if row else None
+
+
 def upgrade() -> None:
     """Convert projects.id from Integer to UUID."""
     conn = op.get_bind()
@@ -106,6 +200,19 @@ def upgrade() -> None:
     print("=" * 80)
     print("CONVERTING projects.id FROM INTEGER TO UUID")
     print("=" * 80)
+
+    # Check if projects.id is already UUID - if so, skip this migration
+    projects_id_type = get_column_type(conn, "projects", "id")
+    print(f"\nCurrent projects.id type: {projects_id_type}")
+
+    if projects_id_type == "uuid":
+        print("\n" + "=" * 80)
+        print("SKIPPING: projects.id is already UUID type")
+        print(
+            "This migration has already been applied or the schema was created with UUID."
+        )
+        print("=" * 80)
+        return
 
     # Step 1: Add new UUID column to projects table
     print("\n[1/6] Adding UUID column to projects table...")
@@ -172,14 +279,22 @@ def upgrade() -> None:
             )
             # Count how many were updated
             result = conn.execute(
-                sa.text(f"SELECT COUNT(*) FROM {table_name} WHERE {new_col_name} IS NOT NULL")
+                sa.text(
+                    f"SELECT COUNT(*) FROM {table_name} WHERE {new_col_name} IS NOT NULL"
+                )
             )
             count = result.scalar()
             print(f"  Populated {count} rows in {table_name}")
 
     # Step 5: Drop old foreign key constraints and columns, rename new columns
     print("\n[5/6] Dropping old constraints and columns, renaming new columns...")
-    for table_name, col_name, constraint_name, on_delete, nullable in REFERENCING_TABLES:
+    for (
+        table_name,
+        col_name,
+        constraint_name,
+        on_delete,
+        nullable,
+    ) in REFERENCING_TABLES:
         if not table_exists(conn, table_name):
             continue
 
@@ -221,9 +336,13 @@ def upgrade() -> None:
                 sa.text(f"SELECT COUNT(*) FROM {table_name} WHERE {col_name} IS NULL")
             ).scalar()
             if null_count > 0:
-                print(f"  Warning: {null_count} rows in {table_name} have NULL {col_name}")
+                print(
+                    f"  Warning: {null_count} rows in {table_name} have NULL {col_name}"
+                )
                 # Delete orphaned records
-                conn.execute(sa.text(f"DELETE FROM {table_name} WHERE {col_name} IS NULL"))
+                conn.execute(
+                    sa.text(f"DELETE FROM {table_name} WHERE {col_name} IS NULL")
+                )
                 print(f"  Deleted {null_count} orphaned rows")
 
             op.alter_column(table_name, col_name, nullable=False)
