@@ -2,6 +2,9 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
   enabled: process.env.ANALYZE === 'true',
 })
 
+// Backend URL: Use environment variable in production, localhost in development
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -52,7 +55,7 @@ const nextConfig = {
       fallback: [
         {
           source: '/api/:path*',
-          destination: 'http://localhost:8000/api/:path*', // Proxy to Backend
+          destination: `${BACKEND_URL}/api/:path*`, // Proxy to Backend (uses env var in production)
         },
       ],
     }
